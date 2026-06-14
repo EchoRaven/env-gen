@@ -19,3 +19,7 @@ logs/
 .DS_Store
 .idea/
 .vscode/
+
+# dev DB
+*.db
+forgingground_gen.db

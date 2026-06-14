@@ -1,0 +1,14 @@
+[project]
+name = "forgingground-gen"
+version = "0.1.0"
+description = "env-gen generator backend service — env/run registry + live collaboration-hub state for the agentsuite-red Env Forge UI."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    "pydantic>=2.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
