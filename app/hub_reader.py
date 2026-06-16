@@ -344,8 +344,11 @@ def _parse_action_entry(e: dict) -> dict:
             args_obj = None
     md = e.get("metadata")
     result = ""
+    ok = None  # authoritative tool-success flag when the log carries it (None = unknown → UI falls back)
     if isinstance(md, dict):
         result = str(md.get("result", md))
+        if "ok" in md:
+            ok = bool(md.get("ok"))
     elif isinstance(md, str) and md.strip():
         s = md.strip()
         if s.startswith("{"):
@@ -358,7 +361,7 @@ def _parse_action_entry(e: dict) -> dict:
             result = s
     return {"at": str(e.get("timestamp", "")), "type": str(e.get("event_type", "")),
             "tool": tool, "args": args[:400], "args_obj": args_obj,
-            "result": result[:400], "content": content[:400]}
+            "result": result[:400], "content": content[:400], "ok": ok}
 
 
 def _agent_log_activity(gen: Path, role: str):
