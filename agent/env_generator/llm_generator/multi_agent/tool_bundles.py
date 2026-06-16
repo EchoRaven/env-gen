@@ -406,7 +406,7 @@ def _bundle_workhub_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext
             "workhub_get_task",
             "workhub_list_tasks",
             "workhub_available_tasks",
-            "workhub_get_page",
+            "workhub_get_document",
             "workhub_list_documents",
             "workhub_list_ui_pages",
             "workhub_list_ui_components",

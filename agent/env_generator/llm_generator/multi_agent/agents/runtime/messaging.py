@@ -1183,7 +1183,7 @@ Start by thinking about what might cause this issue.
         # Fix #5-bis (same rationale as _handle_kickoff_request):
         # pre-set hub focus = workhub so _apply_hub_focus does not
         # drop the workhub writes the kickoff_revision_prompt macro
-        # instructs the LLM to call (workhub_get_page +
+        # instructs the LLM to call (workhub_get_document +
         # workhub_add_meeting_decision). Restore on exit.
         prev_focus_hub = getattr(self, "_focus_hub", None)
         self._focus_hub = "workhub"
@@ -1322,7 +1322,7 @@ Start by thinking about what might cause this issue.
         event_type + different macro name. Same Fix #5-bis pre-set
         of ``self._focus_hub = 'workhub'`` so the always_include
         ranker can surface ``workhub_add_meeting_decision`` /
-        ``workhub_get_page`` to the per-step LLM tool surface.
+        ``workhub_get_document`` to the per-step LLM tool surface.
         """
         payload = message.payload if isinstance(message.payload, Mapping) else {}
         meeting_id = payload.get("meeting_id") if isinstance(payload, Mapping) else None
@@ -1407,7 +1407,7 @@ Start by thinking about what might cause this issue.
         # Fix #5-bis (same rationale as _handle_kickoff_request):
         # pre-set hub focus = workhub so _apply_hub_focus does not
         # drop the workhub writes the kickoff_facilitation_prompt
-        # macro instructs the LLM to call (workhub_get_page +
+        # macro instructs the LLM to call (workhub_get_document +
         # workhub_add_meeting_decision). Restore on exit.
         prev_focus_hub = getattr(self, "_focus_hub", None)
         self._focus_hub = "workhub"
@@ -1560,7 +1560,7 @@ Start by thinking about what might cause this issue.
         """Round-8g: phase-aware kickoff meeting — comment phase.
 
         Wakes the attendee to read all initial-round drafts via
-        workhub_get_page, post 0+ section="comment" decisions targeting
+        workhub_get_document, post 0+ section="comment" decisions targeting
         OTHER attendees' drafts, then end with a section="phase_ack"
         decision marking the comment phase done for this round.
         Mirrors the structural pattern of _handle_kickoff_request.
@@ -1601,7 +1601,7 @@ Start by thinking about what might cause this issue.
             rendered = (
                 f"## Kickoff comment phase — meeting `{meeting_id}` "
                 f"(M{milestone_index}, round {current_round})\n\n"
-                "Read all initial drafts via workhub_get_page, post 0+ "
+                "Read all initial drafts via workhub_get_document, post 0+ "
                 "section='comment' decisions targeting other attendees' "
                 "sections (kind=question/disagree/suggest/ack with "
                 "target_decision_id + target_section + body), then end "
@@ -1697,7 +1697,7 @@ Start by thinking about what might cause this issue.
                 f"## Kickoff reply phase — meeting `{meeting_id}` "
                 f"(M{milestone_index}, round {current_round})\n\n"
                 "Read all section='comment' decisions targeting your "
-                f"section ('{self.agent_id}') via workhub_get_page. For "
+                f"section ('{self.agent_id}') via workhub_get_document. For "
                 "each comment, either reply (post another comment with "
                 "parent_id), revise your initial draft (new "
                 f"section='{self.agent_id}' decision with "

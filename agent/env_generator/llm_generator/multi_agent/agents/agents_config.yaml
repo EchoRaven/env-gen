@@ -243,17 +243,17 @@ profiles:
     stage_tool_allowlist:
       "kickoff:action":
         - workhub_add_meeting_decision
-        - workhub_get_page
+        - workhub_get_document
         - workhub_list_documents
         - workhub_comment
         - read
         - finish
       # Smoke #4 (2026-06-06): backend entered edit_code 38x but called
-      # workhub_get_page/read (NOT write/register), 0 endpoints implemented ->
+      # workhub_get_document/read (NOT write/register), 0 endpoints implemented ->
       # orchestrator spun 20min. Code+registration tools WERE available
       # (always-include) — the LLM chose to read/coordinate. This allowlist
       # forces the implementation action stages to code-producing tools and
-      # STRIPS the drift sinks (get_page/list_documents/comment/add_meeting_decision
+      # STRIPS the drift sinks (get_document/list_documents/comment/add_meeting_decision
       # /ask_agent/broadcast). Over-listing is harmless (intersected with the
       # agent's real tools); only an omission hurts, so it's deliberately
       # generous. (_active_phase="implementation" pinned in base.process_task.)
@@ -399,7 +399,7 @@ profiles:
     stage_tool_allowlist:
       "kickoff:action":
         - workhub_add_meeting_decision
-        - workhub_get_page
+        - workhub_get_document
         - workhub_list_documents
         - workhub_comment
         - read
@@ -560,7 +560,7 @@ profiles:
     stage_tool_allowlist:
       "kickoff:action":
         - workhub_add_meeting_decision
-        - workhub_get_page
+        - workhub_get_document
         - workhub_list_documents
         - workhub_comment
         - read
@@ -587,7 +587,7 @@ profiles:
         - workhub_task
         - workhub_list_tasks
         - workhub_cancel_task
-        - workhub_get_page
+        - workhub_get_document
         - workhub_list_documents
         - registryhub_list_endpoints
         - registryhub_get_endpoint

@@ -44,7 +44,7 @@
 
     hubs=[
         {"name": "RegistryHub",   "read_when": "summarization wake referencing an API artifact",            "write_when": "never (read-only consumer)",         "tools": "registryhub_list_endpoints, registryhub_list_tables"},
-        {"name": "WorkHub",  "read_when": "summarization wake referencing a task / decision artifact", "write_when": "never (read-only consumer)",         "tools": "workhub_get_page, workhub_get_page"},
+        {"name": "WorkHub",  "read_when": "summarization wake referencing a task / decision artifact", "write_when": "never (read-only consumer)",         "tools": "workhub_get_document"},
         {"name": "CodeHub",  "read_when": "summarization wake referencing a code diff",                "write_when": "never (read-only consumer)",         "tools": "codehub_get_diff"},
         {"name": "EventHub", "read_when": "ONCE per wake to identify the triggering event",           "write_when": "never (emit nothing — this agent is sink-only)", "tools": "eventhub_inbox(my_subscriptions)"}
     ],
@@ -57,7 +57,7 @@
 "| Trigger | What you do | Then |\n"
 "|---------|-------------|------|\n"
 "| Another agent invoked `retrieve_context(query=...)` against you | Run ONE `query_knowledge(query=...)`. Return the matching entry, or `{found: false}` if no match. | Return. |\n"
-"| Event `task_complete` arrived (other agent finished a task) | Read the artifact via ONE of: codehub_get_diff / workhub_get_page / registryhub_get_endpoint. Apply <knowledge_quality_rubric>. If it passes, dedup via ONE query_knowledge, then ONE store_knowledge (or refine if dup). If it fails the rubric, skip. | Return. |\n"
+"| Event `task_complete` arrived (other agent finished a task) | Read the artifact via ONE of: codehub_get_diff / workhub_get_document / registryhub_get_endpoint. Apply <knowledge_quality_rubric>. If it passes, dedup via ONE query_knowledge, then ONE store_knowledge (or refine if dup). If it fails the rubric, skip. | Return. |\n"
 "| Event `learning_event` arrived (peer called submit_learning(...)) | Read the submitted lesson. Decide ONE of: keep as knowledge, promote to skill, or discard. Make at most ONE write call. | Return. |\n"
 "| Event `breaking_change` arrived (an API contract changed) | If you have a prior knowledge entry about the now-broken interface, refine it via ONE store_knowledge call with the same title. If no prior entry, skip. | Return. |\n"
 "| Inbox is empty / no trigger you can match | Return immediately. Do not improvise work. | Return. |\n"
@@ -73,7 +73,7 @@
         {"tool": "store_knowledge",            "when": "after dedup, when the lesson meets all four parts of <knowledge_quality_rubric>. Observer-mode self-commentary, run-specific status, and duplicates are not lessons.",                                                                                                                                                                                                          "cap": "1 per wake"},
         {"tool": "submit_adr / submit_runbook / submit_postmortem", "when": "the triggering artifact exactly matches the document shape (decision / procedure / incident). Ad-hoc notes belong in store_knowledge.",                                                                                                                                                                                                                    "cap": "1 per wake"},
         {"tool": "upsert_skill",               "when": "a procedure has appeared in prior summarization wakes and is now stable — promote it. First-time procedures are too early to promote.",                                                                                                                                                                                                                                          "cap": "1 per wake"},
-        {"tool": "codehub_get_diff / workhub_get_page / registryhub_get_endpoint", "when": "during a summarization wake, to read the artifact the triggering event referenced. During a query wake, your caller already gave you the query text — no need to re-fetch.",                                                                                                                                                                  "cap": "1 per wake"},
+        {"tool": "codehub_get_diff / workhub_get_document / registryhub_get_endpoint", "when": "during a summarization wake, to read the artifact the triggering event referenced. During a query wake, your caller already gave you the query text — no need to re-fetch.",                                                                                                                                                                  "cap": "1 per wake"},
         {"tool": "hub_snapshot / get_example_patterns", "when": "ONLY if the trigger artifact reference is broken and you must reconstruct context. It's a firehose, not a default exploration step.",                                                                                                                                                                                                                                  "cap": "1 per wake (rare)"},
     ],
 

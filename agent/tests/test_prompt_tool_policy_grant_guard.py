@@ -54,7 +54,7 @@ KNOWN_PRE_EXISTING_GAPS = frozenset({
     ("knowledge", "get_example_patterns"),
     ("knowledge", "hub_snapshot"),
     ("knowledge", "registryhub_get_endpoint"),
-    ("knowledge", "workhub_get_page"),
+    ("knowledge", "workhub_get_document"),
     # worker profiles describe reading diffs / PR files / contracts they aren't granted.
     ("analysis_worker", "codehub_get_diff"),
     ("analysis_worker", "codehub_get_file_content"),

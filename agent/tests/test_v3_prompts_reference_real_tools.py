@@ -7,7 +7,7 @@ Origin (2026-06-01 v3 re-pilot debugging chain):
     workhub_create_task / workhub_claim_task / workhub_complete_task —
     none exist; the real tool is workhub_task(action=...)
   - GAP-8: knowledge prompt called workhub_get_block + registryhub_lookup —
-    neither exists; the real tools are workhub_get_page +
+    neither exists; the real tools are workhub_get_document +
     registryhub_get_endpoint
   - GAP-13: orchestrator prompt listed retrieve_context as a tool — it's
     a pipeline stage name, not a tool

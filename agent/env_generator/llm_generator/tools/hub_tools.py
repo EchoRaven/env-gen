@@ -806,8 +806,8 @@ class WorkhubListBlockedTool(HubTool):
 
 
 class WorkHubGetPageTool(HubTool):
-    NAME = "workhub_get_page"
-    DESCRIPTION = "Get a WorkHub page by id, optionally including its blocks."
+    NAME = "workhub_get_document"
+    DESCRIPTION = "Get a WorkHub coordination document (kickoff/meeting/retro/project) by id, optionally including its blocks."
     PARAMETERS = {"type": "object", "properties": {"page_id": {"type": "string"}, "with_blocks": {"type": "boolean"}}, "required": ["page_id"]}
 
     async def _run(self, page_id: str, with_blocks: bool = True) -> ToolResult:

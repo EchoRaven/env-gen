@@ -242,11 +242,11 @@ class EnvGenAgent(
         # the meeting page (other attendees' drafts, comments targeting
         # your section) during comment + reply phases. Smoke #9-bis
         # 2026-06-02 23:40 caught backend finishing reply phase early
-        # with "Blocked: workhub_get_page tool is not available in
+        # with "Blocked: workhub_get_document tool is not available in
         # current toolset" — same ranker-drops-it pattern as Fix #5.
         # Pin so multi-round meeting always has read access to the
         # meeting state.
-        "workhub_get_page",
+        "workhub_get_document",
     }
     # Claim-flow primitives that must always reach the LLM's per-step
     # surface: focus_hub (meta — needed to unlock hub WRITE tools),
@@ -660,9 +660,9 @@ class EnvGenAgent(
         
         # Pin the implementation phase so a profile's ``implementation:*``
         # stage_tool_allowlist applies (kickoff handlers pin "kickoff"; outside
-        # them _active_phase is None and lanes drift into get_page/coordination
+        # them _active_phase is None and lanes drift into get_document/coordination
         # instead of writing code — smoke #4: backend entered edit_code 38× yet
-        # called workhub_get_page/read, never write/register, 0 endpoints). Only
+        # called workhub_get_document/read, never write/register, 0 endpoints). Only
         # affects allowlist lookup (tooling.py:493, step_pipeline/tooling.py:112);
         # profiles without an ``implementation:*`` entry are unaffected.
         _prev_phase = getattr(self, "_active_phase", None)

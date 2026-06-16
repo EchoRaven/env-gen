@@ -48,7 +48,7 @@ HUB_TOOL_SURFACE: Dict[str, Dict[str, Set[str]]] = {
         "reads": {
             "workhub_available_tasks",
             "workhub_comments_for",
-            "workhub_get_page",
+            "workhub_get_document",
             "workhub_get_task",
             "workhub_list_blocked",
             "workhub_list_documents",

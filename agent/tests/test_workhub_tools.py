@@ -22,7 +22,7 @@ REQUIRED_WORKHUB_TOOLS = {
     "workhub_get_task",
     "workhub_list_tasks",
     "workhub_available_tasks",
-    "workhub_get_page",
+    "workhub_get_document",
     "workhub_list_documents",
     # ``workhub_get_plan`` retired in Tier B B3c — read ``task.plan``
     # via ``workhub_get_task`` instead.

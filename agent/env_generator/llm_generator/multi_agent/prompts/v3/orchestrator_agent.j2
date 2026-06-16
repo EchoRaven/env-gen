@@ -977,7 +977,7 @@ events to revisers after reading your decision.
 **Step 1 — Read the meeting state**
 
 ```
-page = workhub_get_page(page_id="{{ meeting_id }}")
+page = workhub_get_document(page_id="{{ meeting_id }}")
 decisions = (page.get("metadata") or {}).get("decisions") or []
 ```
 
@@ -1128,7 +1128,7 @@ lands it advances:
   payload carries the canonical `meeting_id / current_round /
   max_rounds / revision_focus / acks_consensus_on / open_questions`
   shape that revisers' handlers expect.
-- Do **NOT** loop — no `wait()`, no second `workhub_get_page` poll, no
+- Do **NOT** loop — no `wait()`, no second `workhub_get_document` poll, no
   re-read of the meeting waiting for a new decision. Single turn,
   single decision, `finish()`.
 - Do **NOT** request revision from a reviser whose section had only

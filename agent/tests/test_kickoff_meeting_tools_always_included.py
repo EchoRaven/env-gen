@@ -86,12 +86,12 @@ def test_hub_registration_includes_kickoff_meeting_primitives():
         "but the orchestrator lane may also close meetings during "
         "fallback or recovery; the tool must stay reachable."
     )
-    assert "workhub_get_page" in hub_reg, (
-        "round-8g Fix #B: workhub_get_page MUST be in _HUB_REGISTRATION. "
+    assert "workhub_get_document" in hub_reg, (
+        "round-8g Fix #B: workhub_get_document MUST be in _HUB_REGISTRATION. "
         "Multi-round phase-aware meetings (comment + reply phases) need "
-        "to READ the meeting page to see other attendees' drafts and "
+        "to READ the meeting document to see other attendees' drafts and "
         "comments. Smoke #9-bis (2026-06-02 23:40) caught backend finishing "
-        "reply phase early with 'workhub_get_page tool is not available' — "
+        "reply phase early with 'workhub_get_document tool is not available' — "
         "same ranker-drops-it pattern as the Fix #5 write side."
     )
 

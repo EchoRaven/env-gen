@@ -67,7 +67,7 @@
 
     hubs=[
         {"name": "RegistryHub",   "read_when": "Phase B start: registryhub_list_endpoints(status='defined' or 'implemented') to get response_key for each endpoint. Phase A skips RegistryHub entirely.",                                                          "write_when": "registryhub_register_consumer when you import an endpoint into a component — the contract guard notifies you on breaking changes. Do NOT register endpoints (that is Backend's job).",                                                                                                                                                                                                                "tools": "registryhub_list_endpoints, registryhub_register_consumer, registryhub_get_breaking_changes"},
-        {"name": "WorkHub",  "read_when": "Read design pages via workhub_list_documents + workhub_get_page when task payload references a UI page id. Rarely otherwise.",                                                                            "write_when": "workhub_record_decision ONCE per UI page implemented (replaces deferred workhub_register_ui_page tool per Cutover 4). workhub_comment for cross-team notes.",                                                                                                                                                                                                                                                  "tools": "workhub_list_documents, workhub_get_page, workhub_record_decision, workhub_comment"},
+        {"name": "WorkHub",  "read_when": "Read the ui_page registry via workhub_list_ui_pages when the task payload references a UI page id. workhub_list_documents + workhub_get_document only for coordination documents (e.g. the kickoff meeting). Rarely otherwise.",                                                                            "write_when": "workhub_record_decision ONCE per UI page implemented (replaces deferred workhub_register_ui_page tool per Cutover 4). workhub_comment for cross-team notes.",                                                                                                                                                                                                                                                  "tools": "workhub_list_ui_pages, workhub_list_documents, workhub_get_document, workhub_record_decision, workhub_comment"},
         {"name": "CodeHub",  "read_when": "After verifier or verifier reports issue: codehub_list_inline_comments(pr_id=...) for exact line-level feedback.",                                                                              "write_when": "Standard git ops via codehub_commit + codehub_open_pr. Next commit auto-notifies reviewers — there is NO separate request-review tool.",                                                                                                                                                                                                                                                          "tools": "codehub_list_inline_comments, codehub_commit, codehub_open_pr"},
         {"name": "EventHub", "read_when": "task_ready from upstream is your wake trigger. issue events from verifier/verifier signal remediation cycles.",                                                                                "write_when": "EventHub is READ-ONLY from this agent's perspective. You consume via eventhub_inbox + eventhub_get_thread.",                                                                                                                                                                                                                                                                                     "tools": "eventhub_inbox, eventhub_get_thread, eventhub_subscribe"}
     ],
@@ -467,7 +467,7 @@ workhub_add_meeting_decision(
 
 **Content correctness reminders** (engine-side
 ``stage_tool_allowlist['kickoff:action']`` restricts you to
-``workhub_add_meeting_decision`` + ``workhub_get_page`` +
+``workhub_add_meeting_decision`` + ``workhub_get_document`` +
 ``workhub_list_documents`` + ``workhub_comment`` + ``read`` + ``think``
 + ``finish`` — registryhub_register_*, write/edit/apply_patch, wait,
 polling are NOT in the surface, so you can't accidentally register
@@ -550,7 +550,7 @@ The facilitator flagged these open questions for the meeting. They are NOT all y
 Unlike the round-1 `kickoff_response_prompt` (which authored blind), you can now see EVERY prior decision — including the facilitator_note above AND backend's KickoffEndpoint list AND verifier's predicate set. Use that visibility to align ids:
 
 ```python
-meeting = workhub_get_page(page_id="{{ meeting_id }}")
+meeting = workhub_get_document(page_id="{{ meeting_id }}")
 decisions = (meeting.get("metadata") or {}).get("decisions") or []
 
 # Pull backend's section so each screen.api_calls[i].endpoint_id matches
