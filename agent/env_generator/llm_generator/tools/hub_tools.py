@@ -1202,16 +1202,22 @@ class WorkhubAddMeetingDecisionTool(HubTool):
             if (_sec in ("frontend", "backend", "verifier")
                     and not _content.get("deferred")
                     and not decision_has_substance(_c, _sec)):
+                _keys = {"frontend": "ui_pages / screens / user_flows / ui_components",
+                         "backend": "endpoints / data_model.tables",
+                         "verifier": "predicates"}.get(_sec, "ui_pages / endpoints / predicates")
+                _eg = {"frontend": "{'user_flows': [<ONE flow>]}",
+                       "backend": "{'endpoints': [<ONE endpoint>]}",
+                       "verifier": "{'predicates': [<ONE predicate>]}"}.get(
+                           _sec, "{'ui_pages': [<ONE page>]}")
                 return ToolResult.fail(
-                    f"decision for section '{_sec}' has NO substantive content "
-                    "(empty/null ui_pages/endpoints/predicates). Long payloads "
-                    "get mangled — SUBMIT IN PARTS instead: call this tool "
-                    "SEVERAL times, each with a SMALL piece (e.g. decision="
-                    f"{{'section': '{_sec}', 'content': {{'ui_pages': [<ONE "
-                    "page>]}}}}); the meeting MERGES your pieces into one "
-                    "section. Or write the full JSON to "
-                    f"design/kickoff_{_sec}_section.json (several small "
-                    "write/edit calls) and pass decision_file=...")
+                    f"decision for section '{_sec}' has NO non-empty content in any "
+                    f"recognized key ({_keys}) — every recognized list was empty/null. "
+                    "If a large inline payload got truncated, SUBMIT IN PARTS: call "
+                    "this tool SEVERAL times, each with a SMALL piece (e.g. decision="
+                    f"{{'section': '{_sec}', 'content': {_eg}}}); the meeting MERGES "
+                    "your pieces. Prefer the dedicated kickoff_declare_* tools (one "
+                    "item per call). Or write the full JSON to "
+                    f"design/kickoff_{_sec}_section.json and pass decision_file=...")
         except ImportError:
             pass
         try:

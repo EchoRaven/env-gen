@@ -29,8 +29,18 @@ def section_has_substance(content: Any, section: str) -> bool:
     if content.get("deferred"):
         return False
     if section == "frontend":
+        # ALL first-class frontend declarations count as substance — each has a
+        # dedicated kickoff_declare_* tool and the section MERGES parts. Counting
+        # only ui_pages/screens wrongly rejected a `user_flows`-only part submitted
+        # via the generic workhub_add_meeting_decision tool (kickoff_declare_user_flow
+        # bypasses this guard by calling the service directly), even though that IS
+        # the "submit in parts" the guard's own error message demands. Empty shells
+        # / null skeletons still read as no-substance (real_items() counts only
+        # non-empty mappings).
         return bool(real_items(content.get("ui_pages"))
-                    or real_items(content.get("screens")))
+                    or real_items(content.get("screens"))
+                    or real_items(content.get("user_flows"))
+                    or real_items(content.get("ui_components")))
     if section == "backend":
         dm = content.get("data_model")
         return bool(real_items(content.get("endpoints"))
