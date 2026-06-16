@@ -55,6 +55,32 @@ _TARGET_FK_NAMES = (
 _USER_PARAM_NAMES = ("username", "user_id", "userid", "user", "handle")
 
 
+# SQLAlchemy type names that map to a Python ``int`` path param. A path param compared
+# against one of these columns MUST be typed ``int`` so FastAPI coerces ``"123"→123``
+# (and 422s non-numeric input) instead of handing a ``str`` to a postgres integer
+# comparison → ``invalid input syntax for integer`` → HTTP 500 (the 500 that stalled
+# validation, 2026-06-16). Everything else (String/Text/UUID/...) stays ``str``.
+_INT_SA_TYPES = ("Integer", "BigInteger", "SmallInteger", "INTEGER", "BIGINT", "SMALLINT")
+
+
+def _express_to_fastapi(path: str) -> str:
+    """Normalise an Express-style ``:param`` path to FastAPI ``{param}``.
+
+    A backend lane that wrote ``@app.get("/api/videos/:id")`` (Express idiom) makes
+    ``:id`` a LITERAL segment in FastAPI — it matches only the literal URL and 404/405s
+    real ids (fails ``business_endpoints_implemented``). Both DECLARED endpoint paths
+    and the path we stamp into the decorator go through this so a ``:id`` always becomes
+    a real ``{id}`` path param (2026-06-16). Idempotent on already-``{}`` paths."""
+    return re.sub(r":([A-Za-z_][A-Za-z0-9_]*)", r"{\1}", path or "")
+
+
+def _py_type_for_sa(sa_type: Optional[str]) -> str:
+    """SQLAlchemy type name → FastAPI path-param annotation (``int`` for integer
+    columns, else ``str``). Unknown/absent → ``str`` (the safe default; a str param
+    never causes the int-coercion 500)."""
+    return "int" if sa_type in _INT_SA_TYPES else "str"
+
+
 def _norm_path(path: str) -> str:
     """Collapse path params to a single placeholder so ``/x/{id}`` == ``/x/{pid}``."""
     return re.sub(r"\{[^}]+\}", "{}", path or "")
@@ -84,16 +110,45 @@ def _existing_routes(src: str) -> set:
                 continue
             arg0 = dec.args[0]
             if isinstance(arg0, ast.Constant) and isinstance(arg0.value, str):
-                routes.add((func.attr.upper(), _norm_path(arg0.value)))
+                # Normalise an Express-style ``:id`` the lane wrote so a declared
+                # ``:id``/``{id}`` endpoint is recognised as already-routed and not
+                # re-projected into a duplicate handler for the same method+path.
+                routes.add((func.attr.upper(), _norm_path(_express_to_fastapi(arg0.value))))
     return routes
 
 
+def _column_sa_type(call: ast.Call) -> Optional[str]:
+    """The SQLAlchemy type name of a ``Column(<Type>, ...)`` declaration, e.g.
+    ``Column(Integer, primary_key=True)`` → ``"Integer"`` and ``Column(String(255))``
+    → ``"String"``. Returns None when the first positional arg is not a type
+    reference (e.g. ``Column(ForeignKey(...))`` with the type inferred). Used to type
+    a path param to its target column so an int PK lookup coerces ``"123"→123``
+    (a 422 on bad input, never the postgres ``invalid input syntax for integer`` 500)."""
+    if not call.args:
+        return None
+    first = call.args[0]
+    # Column(Integer, ...) — a bare type name
+    if isinstance(first, ast.Name):
+        return first.id
+    # Column(String(255), ...) / Column(Numeric(10, 2), ...) — a parametrised type
+    if isinstance(first, ast.Call):
+        fn = first.func
+        return getattr(fn, "id", None) or getattr(fn, "attr", None)
+    # Column(sa.Integer, ...) — attribute access
+    if isinstance(first, ast.Attribute):
+        return first.attr
+    return None
+
+
 def _orm_models(backend_dir: Path) -> Dict[str, Dict[str, Any]]:
-    """Parse models.py → ``{tablename: {"cls", "cols": [...], "fks": {col: table}}}``.
+    """Parse models.py → ``{tablename: {"cls", "cols": [...], "fks": {col: table},
+    "types": {col: "Integer"|...}}}``.
 
     ``fks`` captures ``Column(..., ForeignKey("users.id"))`` targets when present;
     handler projection also falls back to column-name heuristics so models that omit
-    explicit ``ForeignKey`` (common in LLM-written ORMs) still wire correctly."""
+    explicit ``ForeignKey`` (common in LLM-written ORMs) still wire correctly.
+    ``types`` captures each column's SQLAlchemy type name so the projector can type a
+    path param to the column it is compared against (int PK/FK → ``int`` path param)."""
     models: Dict[str, Dict[str, Any]] = {}
     models_py = backend_dir / "models.py"
     if not models_py.exists():
@@ -108,6 +163,7 @@ def _orm_models(backend_dir: Path) -> Dict[str, Dict[str, Any]]:
         tablename: Optional[str] = None
         cols: List[str] = []
         fks: Dict[str, str] = {}
+        types: Dict[str, str] = {}
         for stmt in node.body:
             # __tablename__ = "users"
             if isinstance(stmt, ast.Assign):
@@ -120,6 +176,9 @@ def _orm_models(backend_dir: Path) -> Dict[str, Dict[str, Any]]:
                     callee = stmt.value.func
                     if getattr(callee, "id", None) == "Column" or getattr(callee, "attr", None) == "Column":
                         cols.append(name)
+                        sa_type = _column_sa_type(stmt.value)
+                        if sa_type:
+                            types[name] = sa_type
                         for a in stmt.value.args:  # scan for ForeignKey("table.col")
                             if not isinstance(a, ast.Call):
                                 continue
@@ -128,7 +187,7 @@ def _orm_models(backend_dir: Path) -> Dict[str, Dict[str, Any]]:
                                     and a.args and isinstance(a.args[0], ast.Constant):
                                 fks[name] = str(a.args[0].value).split(".")[0]
         if tablename:
-            models[tablename] = {"cls": node.name, "cols": cols, "fks": fks}
+            models[tablename] = {"cls": node.name, "cols": cols, "fks": fks, "types": types}
     return models
 
 
@@ -158,8 +217,62 @@ def _ends_in_param(path: str) -> bool:
     return bool(segs) and segs[-1][1]
 
 
-def _param_type(param: str) -> str:
-    return "int" if param == "id" or param.endswith("id") or param.endswith("_id") else "str"
+def _param_type_by_name(param: str) -> str:
+    """Name-only fallback when the schema can't resolve a param's column (e.g. a
+    raw-SQL app with no models.py): ``id``/``*_id``/``*id``/``*Id`` look like int PKs."""
+    return "int" if _is_id_param(param) else "str"
+
+
+def _param_column_type(param: str, path: str, models: Dict[str, Dict[str, Any]]) -> str:
+    """Type a path param to the COLUMN it is compared against, so an int PK/FK lookup
+    coerces ``"123"→123`` (FastAPI returns 422 on non-numeric, never the postgres
+    integer-coercion 500). By-construction from the schema — never hardcodes names:
+
+    * a terminal param (``/videos/{id}``) → its resource model's matched column (PK
+      ``id`` for ``*id``/``id``, else the matched text column username/slug/...);
+    * a nested parent param (``/channels/{channelId}/videos``) → the PARENT model's
+      matched column (``Channel.id`` here → ``int``).
+
+    Falls back to the name heuristic when no model resolves (raw-SQL apps)."""
+    segs = _segments(path)
+    # Locate the param's position to find the model it qualifies.
+    for i, (seg, is_p) in enumerate(segs):
+        if not is_p or seg != param:
+            continue
+        prev = segs[i - 1][0] if i > 0 and not segs[i - 1][1] else None
+        target_meta: Optional[Dict[str, Any]] = None
+        if prev:
+            pm = _match_model(prev, models)
+            if pm:
+                target_meta = pm[1]
+        if target_meta is None and i == len(segs) - 1:
+            # terminal param with no immediately-preceding model segment: fall back to
+            # the resource model the whole path operates on (e.g. /api/{id} edge cases).
+            rm = _resource_model(path, models)
+            if rm:
+                target_meta = rm[1]
+        if target_meta is not None:
+            field = _lookup_field(param, target_meta)
+            cols = target_meta.get("cols", [])
+            param_is_id = _is_id_param(param)
+            # ``_lookup_field`` DEFAULTS to "id" when nothing matches. Only treat the
+            # param as the id column when that's a real match — i.e. the param NAME
+            # looks like an id, OR "id" is genuinely a column. A non-id-named param
+            # (``{username}``) over a model with no matching text column must stay
+            # ``str`` so the handler's graceful "non-numeric → 404" path is preserved
+            # (not a 422). Otherwise type to the resolved column.
+            if field == "id" and not (param_is_id or "id" in cols):
+                return "str"
+            sa_type = (target_meta.get("types") or {}).get(field)
+            if sa_type is not None:
+                return _py_type_for_sa(sa_type)
+            # Column resolved but no captured type (e.g. an inferred-type FK column):
+            # ``id``/``*_id`` columns are integer PKs/FKs by overwhelming convention.
+            if field == "id" or field.endswith("_id"):
+                return "int"
+            return "str"
+        break
+    return _param_type_by_name(param)
 
 
 def _match_model(seg: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tuple[str, Dict[str, Any]]]:
@@ -244,10 +357,19 @@ def _resource_model(path: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tu
     return chosen
 
 
+def _is_id_param(param: str) -> bool:
+    """An id-referencing path param — case-insensitively, so camelCase ``channelId`` /
+    ``videoId`` (the common Express/JS idiom) resolve to the ``id`` column just like
+    snake_case ``channel_id``. Without this, ``channelId`` slipped through to a slug/
+    username match (or the default), producing a wrong-column comparison."""
+    p = param.lower()
+    return p == "id" or p.endswith("id") or p.endswith("_id")
+
+
 def _lookup_field(param: str, parent_meta: Dict[str, Any]) -> str:
-    """Which parent column a path param matches: id for ``*_id``, else username/slug."""
+    """Which parent column a path param matches: id for ``*id``, else username/slug."""
     cols = parent_meta.get("cols", [])
-    if param.endswith("id") or param == "id":
+    if _is_id_param(param):
         return "id"
     if param in cols:
         return param
@@ -344,8 +466,10 @@ def _serialize_expr(var: str, cols: List[str]) -> str:
     return "{" + ", ".join(parts) + "}"
 
 
-def _sig_for_params(params: List[str]) -> str:
-    return "".join(f"{p}: {_param_type(p)}, " for p in params)
+def _sig_for_params(params: List[str], path: str, models: Dict[str, Dict[str, Any]]) -> str:
+    """Path-param signature fragment, each param typed to the COLUMN it is compared
+    against (int PK/FK → ``int``) so non-coercible input 422s instead of 500-ing."""
+    return "".join(f"{p}: {_param_column_type(p, path, models)}, " for p in params)
 
 
 def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict[str, Any]], idx: int) -> str:
@@ -365,7 +489,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
 
     params = _path_params(path)
     last_param = params[-1] if params else None
-    sig_params = _sig_for_params(params)
+    sig_params = _sig_for_params(params, path, models)
 
     cls = None
     cols: List[str] = []
@@ -401,7 +525,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             f'    rows = db.query({cls}).filter(getattr({cls}, "{scope_fk}") == parent.id).limit(100).all()',
             f'    return {{"items": [{_serialize_expr("r", cols)} for r in rows], "total": len(rows)}}',
         ]
-    elif cls and m == "GET" and _ends_in_param(path) and last_param and (last_param.endswith("id") or last_param == "id"):
+    elif cls and m == "GET" and _ends_in_param(path) and last_param and _is_id_param(last_param):
         # GET item by id
         body_lines = [
             f"    obj = db.get({cls}, {last_param})",
@@ -409,7 +533,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             '        raise HTTPException(status_code=404, detail="not found")',
             f"    return {{\"item\": {_serialize_expr('obj', cols)}}}",
         ]
-    elif cls and m == "DELETE" and last_param and (last_param.endswith("id") or last_param == "id"):
+    elif cls and m == "DELETE" and last_param and _is_id_param(last_param):
         body_lines = [
             f"    obj = db.get({cls}, {last_param})",
             "    if obj is None:",
@@ -418,7 +542,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             "    db.commit()",
             f"    return {{\"item\": {{\"id\": {last_param}, \"deleted\": True}}}}",
         ]
-    elif cls and m == "GET" and _ends_in_param(path) and last_param and last_param != "id":
+    elif cls and m == "GET" and _ends_in_param(path) and last_param and not _is_id_param(last_param):
         # GET by non-id field (e.g. username). Match on the model's matching column.
         field = "username" if "username" in cols else (last_param if last_param in cols else "id")
         if field == "id":
@@ -613,7 +737,12 @@ def project_missing_routes(
     block_info: List[Tuple[str, str]] = []  # (path, handler source)
     for i, ep in enumerate(declared_endpoints):
         method = str(ep.get("method", "")).upper()
-        path = str(ep.get("path", ""))
+        # Normalise Express-style ``:id`` → FastAPI ``{id}`` before anything reads the
+        # path: the decorator we emit, the param list, and the dedup key all then see a
+        # real path param (BUG #11). ``_norm_path`` collapses ``{id}``≡``{x}`` so a
+        # ``:id`` that duplicates an existing ``{x}`` route is de-duped automatically
+        # (the native ``{...}`` route already in ``existing`` wins; no 2nd decorator).
+        path = _express_to_fastapi(str(ep.get("path", "")))
         # Only /api/ business endpoints are lane-owned + projectable. /auth/* is
         # owned by the embedded OAuth2 AS (register/login are framework-guaranteed)
         # so it is never projected here.
