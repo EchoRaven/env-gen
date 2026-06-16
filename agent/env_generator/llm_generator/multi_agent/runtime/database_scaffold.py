@@ -87,6 +87,55 @@ def _normalize_inline_fk(text: str) -> str:
     return _FK_DOTTED_REF.sub(r'references \1(\2)', text)
 
 
+# A column can carry its FK INLINE in the type string (``"integer references
+# channels(id)"`` — handled by ``_normalize_inline_fk`` above) OR as a STRUCTURED
+# field, which is what kickoff_declare_table / the normalizer / re-registered
+# flat-map tables produce: ``references`` / ``fk`` keyed off the column dict, in
+# any of ``"table(col)"`` / ``"table.col"`` / ``{"table":...,"column":...}`` form.
+# The ORM renderer (backend_skeleton._fk_target) already reads these; the DDL
+# renderer did NOT, so structured FKs were silently dropped from CREATE TABLE
+# (no referential integrity). This helper extracts (ref_table, ref_column) from
+# the structured field regardless of shape — domain-agnostic, no name special-casing.
+_FK_INLINE_IN_TYPE_RE = re.compile(r"\breferences\b", re.IGNORECASE)
+# ``table(col)`` / ``table.col`` parser for a structured string FK value.
+_STRUCT_FK_STR_RE = re.compile(
+    r'^\s*"?(\w+)"?\s*(?:\(\s*"?(\w+)"?\s*\)|\.\s*"?(\w+)"?)\s*$'
+)
+
+
+def _structured_fk_ref(col: Dict[str, Any]) -> Optional[tuple]:
+    """Return ``(ref_table, ref_column)`` from a column's STRUCTURED FK field
+    (``references`` / ``fk``), or None when there is no structured FK.
+
+    Accepts every shape the contract/normalizer emits:
+      * ``"users(id)"`` / ``"users.id"`` (string)
+      * ``{"table": "users", "column": "id"}`` (nested dict)
+      * a bare ``"users"`` (string with no column → defaults to ``id``)
+    A FK written INLINE in the ``type`` string is NOT a structured FK and is
+    intentionally ignored here (the inline path / ``_normalize_inline_fk``
+    already renders it) so the two sources can't double-emit."""
+    raw = col.get("references")
+    if raw is None:
+        raw = col.get("fk")
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        tbl = str(raw.get("table") or raw.get("ref_table") or "").strip()
+        rcol = str(raw.get("column") or raw.get("col") or raw.get("ref_column") or "").strip()
+        if tbl:
+            return (tbl, rcol or "id")
+        return None
+    if isinstance(raw, str) and raw.strip():
+        m = _STRUCT_FK_STR_RE.match(raw)
+        if m:
+            return (m.group(1), m.group(2) or m.group(3) or "id")
+        # Bare ``"users"`` with no column part → FK to its primary key ``id``.
+        bare = raw.strip().strip('"')
+        if re.fullmatch(r"\w+", bare):
+            return (bare, "id")
+    return None
+
+
 def _quote_ident(name: str) -> str:
     """Double-quote an identifier (protects reserved words like ``user`` /
     ``order``). Lowercase snake_case names round-trip unchanged for
@@ -218,6 +267,14 @@ def _render_column(table_name: str, col: Any) -> str:
     default = col.get("default")
     if default is not None:
         parts.append(f"DEFAULT {default}")
+    # Emit a STRUCTURED FK (``references``/``fk`` field) the same way the inline
+    # form is rendered — but ONLY when the type string doesn't already carry an
+    # inline ``references`` (which the passthrough above renders), so the two
+    # sources never double-emit a duplicate REFERENCES clause.
+    if not _FK_INLINE_IN_TYPE_RE.search(ctype):
+        fk = _structured_fk_ref(col)
+        if fk:
+            parts.append(f"REFERENCES {_quote_ident(fk[0])} ({_quote_ident(fk[1])})")
     # Fix dotted inline FKs (`references users.id` → `references users(id)`)
     # wherever they landed — contracts cram them into the `type` passthrough.
     return "    " + _normalize_inline_fk(" ".join(parts))
@@ -398,6 +455,12 @@ def _spine_extra_column_alters(
             parts.append(f"DEFAULT {default}")
             if col.get("nullable") is False or col.get("not_null"):
                 parts.append("NOT NULL")
+        # Structured FK on an app-extended column — render it the same way as a
+        # top-level column (don't double-emit when the type already carries one).
+        if not _FK_INLINE_IN_TYPE_RE.search(ctype):
+            fk = _structured_fk_ref(col)
+            if fk:
+                parts.append(f"REFERENCES {_quote_ident(fk[0])} ({_quote_ident(fk[1])})")
         clause = _normalize_inline_fk(" ".join(parts))
         out.append(
             f"ALTER TABLE {_quote_ident(table_name)} "
