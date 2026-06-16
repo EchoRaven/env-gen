@@ -1383,6 +1383,16 @@ class Orchestrator:
                 # …and missing UI pages (frontend analog): declared-but-unbuilt
                 # screens get a functional, API-wired, navigable page so the booted
                 # app is not thin/unreachable.
+                # COMMIT the framework writes above on integration — mirrors the
+                # happy-path delivery (see _commit_framework_delivery before
+                # create_release). The skeleton/infra/projection are working-tree-only
+                # until committed, and a release is cut from the COMMITTED head; without
+                # this, a release cut after an abnormal exit (timeout/kill) — or any
+                # later consumer of the integration ref — ships a HOLLOW tree (every
+                # framework-generated artifact: backend models/db/schemas, app/database,
+                # docker, mcp_server) even though the on-disk docker build looks green.
+                # Idempotent + best-effort (nothing-to-commit is fine; never raises).
+                self._commit_framework_delivery()
             except Exception as _final_merge_err:
                 self._logger.warning(
                     "final merge-committed-agent-work flush failed: %s",
