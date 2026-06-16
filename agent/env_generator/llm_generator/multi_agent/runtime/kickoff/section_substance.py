@@ -17,10 +17,18 @@ _META_KEYS = ("section", "kind", "recorded_by", "agent", "recorded_at",
 
 
 def real_items(seq: Any) -> int:
-    """Count NON-EMPTY mapping entries (null-placeholder skeletons count 0)."""
+    """Count NON-EMPTY items — mappings OR non-empty strings.
+
+    Null-placeholder skeletons ([null, ...]), empty mappings and blank strings
+    count 0 (the malformed/empty shells this guard exists to reject). Plain
+    strings count because a section legitimately submits list-of-strings content
+    — e.g. the verifier's predicates as descriptions
+    (['docker_up succeeds', 'validation:api_smoke passes']) — which previously
+    read as 0 and was falsely rejected as "no substantive content"."""
     if not isinstance(seq, (list, tuple)):
         return 0
-    return sum(1 for x in seq if isinstance(x, Mapping) and x)
+    return sum(1 for x in seq
+               if (isinstance(x, Mapping) and x) or (isinstance(x, str) and x.strip()))
 
 
 def section_has_substance(content: Any, section: str) -> bool:

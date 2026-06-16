@@ -57,6 +57,16 @@ class FrontendSubstanceTests(unittest.TestCase):
         self.assertFalse(section_has_substance({"user_flows": [{"id": "f"}]}, "backend"))  # not a backend key
         self.assertTrue(section_has_substance({"predicates": [{"id": "p", "description": "d"}]}, "verifier"))
 
+    def test_verifier_predicates_as_strings_count(self):
+        # The verifier submitted predicates as plain strings (not dicts) — real
+        # content that real_items() previously read as 0 (mappings-only) → false
+        # "no substantive content" rejection. Strings now count.
+        c = {"predicates": ["docker_up succeeds and containers healthy",
+                            "validation:api_smoke passes for all business endpoints"]}
+        self.assertTrue(section_has_substance(c, "verifier"))
+        # but blank/null entries still don't
+        self.assertFalse(section_has_substance({"predicates": ["", None, "   "]}, "verifier"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -32,16 +32,19 @@ def suggest_tools(tool_name: str, available) -> list:
     back to an intent map (shell / file-search). Only ever returns tools the
     agent actually has, so every suggestion is immediately callable."""
     available = list(available)
-    hits = difflib.get_close_matches(tool_name, sorted(available), n=3, cutoff=0.6)
-    if hits:
-        return hits
     low = tool_name.lower()
+    # Intent map FIRST: a curated SEMANTIC mapping must beat a spurious fuzzy
+    # hit. `run_command` fuzzy-matched `workhub_comment` (shared 'comm'),
+    # preempting the shell intent → the orchestrator was pointed at the wrong
+    # tool and burned rounds. Now the shell/search intent leads, with fuzzy
+    # (typo) hits appended as secondary so genuine typos still resolve.
+    intent_hits: list = []
     for keys, cands in _TOOL_INTENTS:
         if any(k in low for k in keys):
-            avail_hits = [c for c in cands if c in available]
-            if avail_hits:
-                return avail_hits
-    return []
+            intent_hits.extend(c for c in cands if c in available and c not in intent_hits)
+    fuzzy = difflib.get_close_matches(tool_name, sorted(available), n=3, cutoff=0.6)
+    out = intent_hits + [h for h in fuzzy if h not in intent_hits]
+    return out[:3]
 
 
 class AgentTooling:

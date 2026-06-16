@@ -1651,14 +1651,25 @@ class RegistryHubRegisterTableTool(HubTool):
 
 class RegistryHubListTablesTool(HubTool):
     NAME = "registryhub_list_tables"
-    DESCRIPTION = "List registered tables, optionally filtered by provider."
+    DESCRIPTION = "List registered tables, optionally filtered by provider or status."
     PARAMETERS = {
         "type": "object",
-        "properties": {"provider": {"type": "string"}},
+        "properties": {
+            "provider": {"type": "string"},
+            # `status` mirrors registryhub_list_endpoints — the model reasonably
+            # assumes the two list tools take the same filters, and called
+            # list_tables(status=...) → crash. Accept + apply it (tables carry a
+            # status the skeleton flips to 'implemented').
+            "status": {"type": "string", "description": "Optional status filter, e.g. 'implemented' / 'defined'."},
+        },
     }
 
-    async def _run(self, provider: str = None) -> ToolResult:
-        return ToolResult(data={"tables": self._hubs.schema_hub.list_tables(provider=provider)})
+    async def _run(self, provider: str = None, status: str = None) -> ToolResult:
+        tables = self._hubs.schema_hub.list_tables(provider=provider)
+        if status and isinstance(tables, dict):
+            tables = {k: v for k, v in tables.items()
+                      if isinstance(v, dict) and v.get("status") == status}
+        return ToolResult(data={"tables": tables})
 
 
 class RegistryHubRegisterTableConsumerTool(HubTool):
