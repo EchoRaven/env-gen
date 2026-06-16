@@ -170,17 +170,66 @@ def _match_model(seg: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tuple[
     return None
 
 
-# Endpoints whose RESOURCE is posts even though no segment names a table: the
-# classic Instagram surface. Without this, /api/feed and /api/explore resolved to
-# NO model and the projector emitted a hardcoded empty list — every feed/explore
-# screen showed "no posts" forever (2026-06-10 08:50, seeded posts invisible).
-_POSTS_SHAPED_TOKENS = ("feed", "explore", "timeline", "reels", "discover")
+# Path tokens that name a FEED/TIMELINE of the app's primary content rather than
+# a table. Without this, /api/feed and /api/explore resolved to NO model and the
+# projector emitted a hardcoded empty list — every feed screen showed "no items"
+# forever (2026-06-10, seeded posts invisible). Resolution is DOMAIN-AGNOSTIC (see
+# _primary_content_model): the social `posts` table when present, else the most
+# feed-shaped business table — so news/activity/task feeds work too, not only the
+# Instagram surface.
+_FEED_SHAPED_TOKENS = ("feed", "explore", "timeline", "reels", "discover", "stream")
+
+# Identity / auth / tenant control-plane tables a content feed never lists.
+_SPINE_TABLE_STEMS = ("user", "tenant", "role", "permission", "session", "migration", "setting")
+# Columns that make a row time-ordered (a feed is chronological).
+_FEED_TS_COLS = ("created_at", "created", "timestamp", "posted_at", "published_at", "inserted_at")
+
+
+def _is_spine_table(table: str) -> bool:
+    n = table.lower().rstrip("s")
+    return (
+        n in _SPINE_TABLE_STEMS
+        or n.startswith("oauth")
+        or n.startswith("auth")
+        or "token" in n
+        or "credential" in n
+    )
+
+
+def _has_timestamp(cols: List[str]) -> bool:
+    return any(c in _FEED_TS_COLS or c.endswith("_at") for c in cols)
+
+
+def _primary_content_model(
+    models: Dict[str, Dict[str, Any]]
+) -> Optional[Tuple[str, Dict[str, Any]]]:
+    """The business table a domain-agnostic feed/timeline lists, picked BY SHAPE
+    (not a hardcoded name): a non-spine table that looks like a feed item — a
+    timestamp column (time-ordered) and, preferably, an owner FK to users
+    (authored). Among candidates, prefer feed-item shape, then the richest table,
+    then alphabetical (deterministic). Returns None when nothing is feed-shaped,
+    so the projector never guesses a wrong table."""
+    candidates: List[Tuple[int, int, str, Dict[str, Any]]] = []
+    for table, meta in models.items():
+        if _is_spine_table(table):
+            continue
+        cols = meta.get("cols", [])
+        if not _has_timestamp(cols):
+            continue  # a feed is chronological; no timestamp → not a feed source
+        rank = 2 if _owner_fk(meta) else 1  # authored content ranks above un-owned
+        candidates.append((rank, len(cols), table, meta))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: (-c[0], -c[1], c[2]))
+    _, _, table, meta = candidates[0]
+    return (table, meta)
 
 
 def _resource_model(path: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tuple[str, Dict[str, Any]]]:
     """Pick the ORM model a path operates on: the LAST path segment that matches a
     known table (plural or singular). ``/api/users/{u}/posts`` → posts(Post).
-    Posts-shaped feeds (feed/explore/timeline/reels) fall back to the posts table."""
+    A feed/timeline path that names no table resolves to the app's primary content
+    table (the social ``posts`` when present, else shape-derived — domain-agnostic)."""
     chosen: Optional[Tuple[str, Dict[str, Any]]] = None
     for seg, is_p in _segments(path):
         if is_p:
@@ -190,8 +239,8 @@ def _resource_model(path: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tu
             chosen = m
     if chosen is None:
         segs = {seg for seg, is_p in _segments(path) if not is_p}
-        if segs & set(_POSTS_SHAPED_TOKENS):
-            chosen = _match_model("posts", models)
+        if segs & set(_FEED_SHAPED_TOKENS):
+            chosen = _match_model("posts", models) or _primary_content_model(models)
     return chosen
 
 

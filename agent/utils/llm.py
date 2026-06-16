@@ -169,6 +169,55 @@ class Message:
         return cls(role="tool", content=content, tool_call_id=tool_call_id)
 
 
+# --- Context-size control --------------------------------------------------
+# The per-call message history grows unbounded as agents accumulate tool outputs
+# (observed: median ~95K, max ~768K chars/call) and input tokens dominate the LLM
+# cost (input >> output). Cap it by truncating the bulky text CONTENT of OLD
+# messages (older than the recent window), while preserving system messages, the
+# first message (the task), every message's role, and tool_call pairing — so
+# correctness holds and only stale bulk is dropped. The stable prefix that remains
+# is also what Gemini implicit caching discounts. Tunable via env:
+#   ENVGEN_CTX_MASK=0 disables; ENVGEN_CTX_KEEP_RECENT (default 8);
+#   ENVGEN_CTX_MAX_OLD_CHARS (default 6000).
+def _ctx_cfg():
+    if os.environ.get("ENVGEN_CTX_MASK", "1") != "1":
+        return None
+    try:
+        keep = int(os.environ.get("ENVGEN_CTX_KEEP_RECENT", "8"))
+        cap = int(os.environ.get("ENVGEN_CTX_MAX_OLD_CHARS", "6000"))
+    except ValueError:
+        keep, cap = 8, 6000
+    return max(keep, 1), max(cap, 500)
+
+
+def _mask_old_observations(messages: list) -> list:
+    """Truncate the bulky text content of stale messages to bound per-call input."""
+    cfg = _ctx_cfg()
+    if not cfg or not messages:
+        return messages
+    keep_recent, max_old = cfg
+    n = len(messages)
+    if n <= keep_recent:
+        return messages
+    cutoff = n - keep_recent
+    # protect the system prompt(s) and the first non-system message (the task)
+    first_task = next((i for i, m in enumerate(messages)
+                       if getattr(m, "role", "") != "system"), -1)
+    stub = "\n…[older output truncated to save context]…\n"
+    out = []
+    for i, m in enumerate(messages):
+        c = getattr(m, "content", None)
+        if (i >= cutoff or i == first_task or getattr(m, "role", "") == "system"
+                or not isinstance(c, str) or len(c) <= max_old):
+            out.append(m)
+            continue
+        out.append(Message(role=m.role,
+                           content=c[: max_old * 3 // 4] + stub + c[-max_old // 4:],
+                           name=m.name, function_call=m.function_call,
+                           tool_calls=m.tool_calls, tool_call_id=m.tool_call_id))
+    return out
+
+
 @dataclass
 class LLMResponse:
     """LLM response"""
@@ -795,7 +844,7 @@ class OpenAIClient(BaseLLMClient):
         # Always sanitize outgoing content (redact keys/tokens/password-like lines).
         safe_messages: list[Message] = [
             Message(role=m.role, content=_sanitize_message_content(m.content), name=m.name, function_call=m.function_call, tool_calls=m.tool_calls, tool_call_id=m.tool_call_id)
-            for m in messages
+            for m in _mask_old_observations(messages)
         ]
         
         # Determine token parameter name based on model. Reasoning-class models
@@ -1521,7 +1570,8 @@ class GoogleClient(BaseLLMClient):
         Returns: (system_instruction, contents)
         """
         from google.genai import types
-        
+
+        messages = _mask_old_observations(messages)  # bound per-call input growth
         system_instruction = None
         contents = []
         
@@ -1624,7 +1674,7 @@ class GoogleClient(BaseLLMClient):
         # Always sanitize outgoing content
         safe_messages: list[Message] = [
             Message(role=m.role, content=_sanitize_message_content(m.content), name=m.name, function_call=m.function_call, tool_calls=m.tool_calls, tool_call_id=m.tool_call_id)
-            for m in messages
+            for m in _mask_old_observations(messages)
         ]
         
         # Convert messages to Google format

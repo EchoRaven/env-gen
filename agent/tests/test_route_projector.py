@@ -16,6 +16,8 @@ sys.path.insert(0, str(AGENT_DIR / "env_generator" / "llm_generator"))
 
 from multi_agent.runtime.route_projector import (  # noqa: E402
     _existing_routes,
+    _primary_content_model,
+    _resource_model,
     project_missing_routes,
 )
 
@@ -197,3 +199,65 @@ def test_nested_create_binds_parent_target_and_owner(tmp_path):
     ast.parse(src)
     assert 'valid["following_id"] = _parent.id' in src         # target = path-param user
     assert 'valid.setdefault("follower_id", user.id)' in src   # actor = authenticated caller
+
+
+# ---------------------------------------------------------------------------
+# Feed/timeline resolution is DOMAIN-AGNOSTIC (generality sweep 2026-06-15):
+# a /feed path that names no table must resolve to the app's primary content
+# table by SHAPE, not the hardcoded social `posts` — so news/activity/task feeds
+# work, not only the Instagram surface. Social apps stay back-compatible.
+# ---------------------------------------------------------------------------
+def _m(cls, cols, fks=None):
+    return {"cls": cls, "cols": cols, "fks": fks or {}}
+
+
+def test_feed_resolves_to_posts_for_social_app_backcompat():
+    models = {
+        "users": _m("User", ["id", "username"]),
+        "posts": _m("Post", ["id", "author_id", "caption", "created_at"], {"author_id": "users"}),
+    }
+    res = _resource_model("/api/feed", models)
+    assert res is not None and res[0] == "posts", res
+
+
+def test_feed_resolves_to_primary_content_table_for_non_social_app():
+    # a news app: no 'posts' table; /feed should list articles (timestamped + authored)
+    models = {
+        "users": _m("User", ["id", "email"]),
+        "articles": _m("Article", ["id", "title", "body", "author_id", "created_at"], {"author_id": "users"}),
+        "tags": _m("Tag", ["id", "name"]),  # not feed-shaped (no timestamp)
+    }
+    res = _resource_model("/api/feed", models)
+    assert res is not None and res[0] == "articles", res
+
+
+def test_timeline_does_not_guess_when_no_feed_shaped_table():
+    # only a non-timestamped lookup table besides users → resolve to nothing, never
+    # force a wrong table onto a feed route.
+    models = {
+        "users": _m("User", ["id", "email"]),
+        "tags": _m("Tag", ["id", "name"]),
+    }
+    assert _resource_model("/api/timeline", models) is None
+
+
+def test_primary_content_prefers_timestamped_authored_over_unowned():
+    models = {
+        "users": _m("User", ["id"]),
+        "categories": _m("Category", ["id", "name", "created_at"]),          # ts, no owner → rank 1
+        "tasks": _m("Task", ["id", "title", "owner_id", "created_at"], {"owner_id": "users"}),  # ts + owner → rank 2
+    }
+    res = _primary_content_model(models)
+    assert res is not None and res[0] == "tasks", res
+
+
+def test_primary_content_excludes_identity_and_auth_spine():
+    # spine tables (users/tenants/oauth/sessions) are never the content a feed lists,
+    # even though they carry created_at.
+    models = {
+        "users": _m("User", ["id", "created_at"]),
+        "tenants": _m("Tenant", ["id", "created_at"]),
+        "oauth_tokens": _m("OAuthToken", ["id", "created_at"]),
+        "sessions": _m("Session", ["id", "created_at"]),
+    }
+    assert _primary_content_model(models) is None
