@@ -568,27 +568,36 @@ def _knowledge(gen: Path) -> list[dict]:
 
 
 def _references(gen: Path) -> list[dict]:
+    from urllib.parse import quote
+    env_id = gen.name
     out: list[dict] = []
     seen: set[str] = set()
-    # 1) the compiled reference spec — the structured screen list the run matches
-    #    against (name + route hint + must-have checklist). The richest source; the
-    #    raw screenshots usually live in the source --reference-dir, not the env.
-    spec = _load(gen / "design" / "reference_spec.json")
-    for s in (spec.get("screens") or []):
-        if isinstance(s, dict) and s.get("name"):
-            out.append({"name": s["name"], "screen": s["name"],
-                        "route": s.get("route_hint", ""),
-                        "must_have": s.get("must_have") or [], "url": ""})
-            seen.add(s["name"])
-    # 2) any actual reference image files staged into the env
+    img_exts = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+    doc_exts = (".md", ".txt", ".html", ".pdf")
+    # 1) actual reference FILES staged into the env (screenshots + docs) — served
+    #    via the backend's reference endpoint so the UI can show them.
     for sub in ("design/references", "design/reference_images"):
         d = gen / sub
         if d.is_dir():
-            for f in sorted(list(d.glob("*.png")) + list(d.glob("*.jpg")) + list(d.glob("*.jpeg"))):
-                if f.stem not in seen:
-                    out.append({"name": f.name, "screen": f.stem, "route": "",
-                                "must_have": [], "url": ""})
-                    seen.add(f.stem)
+            for f in sorted(d.iterdir()):
+                if not f.is_file() or f.name in seen:
+                    continue
+                ext = f.suffix.lower()
+                if ext in img_exts or ext in doc_exts:
+                    seen.add(f.name)
+                    out.append({"name": f.name, "screen": f.stem,
+                                "kind": "image" if ext in img_exts else "doc",
+                                "url": f"/api/env-forge/environments/{env_id}/references/{quote(f.name)}",
+                                "route": "", "must_have": []})
+    # 2) the compiled reference-spec screens (the must-have checklist) for any
+    #    screen not already covered by a staged file.
+    spec = _load(gen / "design" / "reference_spec.json")
+    for s in (spec.get("screens") or []):
+        if isinstance(s, dict) and s.get("name") and s["name"] not in seen:
+            seen.add(s["name"])
+            out.append({"name": s["name"], "screen": s["name"], "kind": "screen",
+                        "route": s.get("route_hint", ""),
+                        "must_have": s.get("must_have") or [], "url": ""})
     return out
 
 
