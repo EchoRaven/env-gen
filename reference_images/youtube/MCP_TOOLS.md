@@ -47,12 +47,28 @@ API contract 1:1). Conventions:
 | `library_watchHistory` | `GET /api/library/history` | — |
 | `library_likedVideos` | `GET /api/library/liked` | — |
 
+## Creator Studio + notifications (this env adds these — authenticated)
+
+| tool | maps to | params |
+|------|---------|--------|
+| `videos_listShorts` | `GET /api/videos/shorts` | `maxResults?` |
+| `videos_updateVideo` | `PATCH /api/videos/{videoId}` | `videoId` (req), `title?`, `description?`, `visibility?` |
+| `channels_getMyChannel` | `GET /api/channels/me` | — |
+| `studio_listMyVideos` | `GET /api/studio/videos` | — (creator's own videos + per-video stats) |
+| `studio_getAnalytics` | `GET /api/studio/analytics` | — (aggregate views / watch-time / subscribers + top videos) |
+| `studio_getMonetization` | `GET /api/studio/monetization` | — (eligibility + estimated revenue, display-only) |
+| `audio_searchTracks` | `GET /api/audio-tracks` | `query?`, `genre?` |
+| `notifications_list` | `GET /api/notifications` | — |
+| `notifications_markRead` | `POST /api/notifications/{id}/read` | `id` (req) |
+
 ## Capability categories
-- **Video management** — search, detail, feed, upload, delete, rate
-- **Channels** — lookup, search, list-videos, update-own, subscribe/unsubscribe
+- **Video management** — search, detail, feed, shorts, upload, edit, delete, rate
+- **Channels** — lookup, search, list-videos, get/update-own, subscribe/unsubscribe
 - **Playlists** — read items, create, add/remove items
 - **Engagement** — comments (list/add), likes/dislikes
 - **Library** — watch history, liked videos, subscription feed
+- **Creator Studio** — my-videos + stats, analytics, monetization, audio library
+- **Notifications** — list, mark read
 
 ## Divergences from the reference
 - `transcripts_getTranscript` is **omitted**: a self-contained clone has no real
