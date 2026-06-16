@@ -389,6 +389,16 @@ profiles:
       - codehub_force_merge
       - wait
       - wait_for_process
+    # Frontend finish-gate (run #5): the lane authored its pages via execute_bash
+    # heredocs to the repo-root ./src instead of app/frontend/src — bash bypasses
+    # the write-tool path routing — leaving the canonical tree a blank shell and
+    # most pages untracked (lost at merge). frontend_canonical_root blocks finish
+    # on that wrong-root mismatch with a directed fix (re-author under app/frontend/
+    # via write/edit), mirroring the backend's code-presence finish gate. Tight
+    # trigger (repo-root materially richer) → never wedges a correctly-built lane.
+    stage_tool_preconditions:
+      action:
+        finish: frontend_canonical_root
     # PR1.3 — kickoff stage allowlist. Same shape as backend/verifier.
     # Frontend's kickoff role is to record screen/api_call/user_flow
     # declarations (NOT to register endpoints — orchestrator does that
