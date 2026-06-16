@@ -64,6 +64,15 @@ CORE BEHAVIORS / ENDPOINTS (FastAPI, JWT auth):
 - Engagement: like / dislike a video (toggle), add / list comments on a video.
 - Library: watch history (record + list), liked videos, playlists CRUD (+ add / remove a video to a playlist).
 
+MCP TOOLS (FastMCP server mirroring the API 1:1, <resource>_<action> naming, modeled on the
+youtube-mcp-server design): read tools videos_searchVideos / videos_getVideo / videos_listFeed /
+channels_getChannel / channels_listVideos / channels_searchChannels / playlists_getPlaylist /
+playlists_getPlaylistItems / comments_listComments, plus authenticated write tools
+videos_uploadVideo / videos_deleteVideo / videos_rateVideo / comments_addComment /
+subscriptions_subscribe / subscriptions_unsubscribe / subscriptions_listSubscriptions /
+videos_listSubscriptionFeed / channels_updateChannel / playlists_createPlaylist / playlists_addItem /
+library_watchHistory / library_likedVideos — one tool per business endpoint.
+
 Include the FastAPI backend (all endpoints above + the auth/tenant control surface), the
 React/Vite/Tailwind frontend (all pages above; the YouTube look: white surface, left sidebar, top
 search bar, red accent), the Postgres schema for the data model, and seed data: several demo channels
