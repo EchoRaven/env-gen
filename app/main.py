@@ -8,7 +8,9 @@ Env:  DATABASE_URL (default sqlite), ENVS_ROOT (where generated envs live).
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -212,6 +214,67 @@ def get_reference_file(env_id: str, name: str, db: Session = Depends(get_db)):
         if (f == root or root in f.parents) and f.is_file():
             return FileResponse(str(f))
     raise HTTPException(404, "reference not found")
+
+
+class SkillCreate(BaseModel):
+    name: str
+    body: str = ""
+
+
+@app.post("/env-forge/environments/{env_id}/skills")
+def add_skill(env_id: str, body: SkillCreate, db: Session = Depends(get_db)) -> dict:
+    """Create a skill: write .agents/skills/<name>/SKILL.md so the runtime + UI see it."""
+    e = _get_env(db, env_id)
+    if not e.generated_dir:
+        raise HTTPException(404, "not found")
+    safe = re.sub(r"[^a-z0-9_-]", "-", body.name.strip().lower()).strip("-")[:60] or "skill"
+    d = Path(e.generated_dir) / ".agents" / "skills" / safe
+    d.mkdir(parents=True, exist_ok=True)
+    content = body.body.strip() or f"---\nname: {body.name}\ndescription: \n---\n"
+    (d / "SKILL.md").write_text(content, encoding="utf-8")
+    return {"ok": True, "name": safe}
+
+
+class GateCreate(BaseModel):
+    name: str
+    detail: str = ""
+
+
+def _custom_gates_file(generated_dir: str) -> Path:
+    return Path(generated_dir) / "design" / "custom_gates.json"
+
+
+def _read_custom_gates(p: Path) -> list:
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+@app.post("/env-forge/environments/{env_id}/gates")
+def add_gate(env_id: str, body: GateCreate, db: Session = Depends(get_db)) -> dict:
+    """Create/update a user-defined custom gate (design/custom_gates.json)."""
+    e = _get_env(db, env_id)
+    if not e.generated_dir:
+        raise HTTPException(404, "not found")
+    p = _custom_gates_file(e.generated_dir)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    gates = [g for g in _read_custom_gates(p) if g.get("name") != body.name]
+    gates.append({"name": body.name, "detail": body.detail, "status": "manual"})
+    p.write_text(json.dumps(gates, indent=2), encoding="utf-8")
+    return {"ok": True}
+
+
+@app.delete("/env-forge/environments/{env_id}/gates/{name}")
+def delete_gate(env_id: str, name: str, db: Session = Depends(get_db)) -> dict:
+    e = _get_env(db, env_id)
+    if not e.generated_dir:
+        raise HTTPException(404, "not found")
+    p = _custom_gates_file(e.generated_dir)
+    gates = [g for g in _read_custom_gates(p) if g.get("name") != name]
+    p.write_text(json.dumps(gates, indent=2), encoding="utf-8")
+    return {"ok": True}
 
 
 class ChatSend(BaseModel):

@@ -417,10 +417,14 @@ def _agents(h: Path) -> list[dict]:
 
 
 def _pages(h: Path) -> list[dict]:
+    # WorkHub's document model calls everything a "page", but ui_page / ui_component
+    # docs belong in RegistryHub (shown there) — exclude them so this is only the
+    # coordination docs (project / kickoff / retro / meeting notes).
     return [{"id": v.get("id", ""), "title": v.get("title", ""), "kind": v.get("kind", ""),
              "status": v.get("status", ""), "description": (v.get("description") or "")[:300],
              "attendees": [str(a) for a in (v.get("attendees") or [])]}
-            for v in _records(_load(h / "workhub_pages.json"))]
+            for v in _records(_load(h / "workhub_pages.json"))
+            if v.get("kind") not in ("ui_page", "ui_component")]
 
 
 def _milestones(h: Path) -> list[dict]:
@@ -483,6 +487,16 @@ def _gates(h: Path, ui_pages: list[dict], chains: list[dict]) -> list[dict]:
     if chains:
         gates.append({"name": "business_chain", "status": "fail" if failing else "pass",
                       "detail": f"{len(failing)} of {len(chains)} chains failing"})
+    # user-defined custom gates (managed from the UI; design/custom_gates.json)
+    cg_path = h.parent.parent / "design" / "custom_gates.json"
+    try:
+        custom = json.loads(cg_path.read_text(encoding="utf-8")) if cg_path.is_file() else []
+    except Exception:
+        custom = []
+    for g in custom if isinstance(custom, list) else []:
+        if isinstance(g, dict) and g.get("name"):
+            gates.append({"name": g["name"], "status": g.get("status", "manual"),
+                          "detail": g.get("detail", ""), "custom": True})
     return gates
 
 
