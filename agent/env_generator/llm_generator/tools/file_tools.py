@@ -7,6 +7,7 @@ This module provides path resolution, lint-on-write, JSON/YAML helpers, images, 
 
 import os
 import re
+import difflib
 import subprocess
 import hashlib
 import json
@@ -32,6 +33,42 @@ def _workspace_rel(workspace: Workspace, abs_path: Path) -> str:
         return str(abs_path.relative_to(workspace.root))
     except Exception:
         return str(abs_path)
+
+
+def _path_not_found_hint(workspace: Workspace, resolved: Path, raw_path: str) -> str:
+    """A 'did-you-mean' hint for a missing path.
+
+    Agents guess conventional layouts (``app/backend/models.py``,
+    ``backend/package.json``) that a given generated project may not use, then
+    get a bare "path not found" and re-guess — burning rounds. So when a path
+    doesn't exist, point at what DOES: list the nearest existing ancestor
+    directory's entries (+ the closest-named match). Same spirit as the
+    closest-granted-tool suggestion. Best-effort; never raises.
+    """
+    try:
+        root = workspace.root
+        anc = resolved.parent
+        # Climb to the nearest existing directory, never above the workspace root
+        # (resolve() guarantees `resolved` is inside root, so this terminates).
+        while not anc.exists() and anc != root:
+            anc = anc.parent
+        if not anc.exists() or not anc.is_dir():
+            return ""
+        entries = sorted(
+            p.name + ("/" if p.is_dir() else "")
+            for p in anc.iterdir() if not p.name.startswith(".")
+        )
+        rel = _workspace_rel(workspace, anc) or "."
+        if not entries:
+            return f" (nearest existing dir '{rel}/' is empty)"
+        shown = entries[:40]
+        more = f" …(+{len(entries) - len(shown)} more)" if len(entries) > len(shown) else ""
+        names = [e.rstrip("/") for e in entries]
+        close = difflib.get_close_matches(Path(raw_path).name, names, n=1, cutoff=0.6)
+        did = f"; did you mean '{close[0]}'?" if close else ""
+        return f" (nearest existing dir '{rel}/' contains: {', '.join(shown)}{more}{did})"
+    except Exception:
+        return ""
 
 
 def _resolve_workspace_path(
@@ -60,7 +97,7 @@ def _resolve_workspace_path(
         return None, f"{op_name}: invalid path '{raw_path}': {e}"
 
     if must_exist and not resolved.exists():
-        return None, f"{op_name}: path not found: {raw_path}"
+        return None, f"{op_name}: path not found: {raw_path}" + _path_not_found_hint(workspace, resolved, raw_path)
     if expect_file is True and resolved.exists() and not resolved.is_file():
         return None, f"{op_name}: expected file, got directory: {_workspace_rel(workspace, resolved)}"
     if expect_file is False and resolved.exists() and not resolved.is_dir():
