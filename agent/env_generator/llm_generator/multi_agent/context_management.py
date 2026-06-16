@@ -527,11 +527,24 @@ class ToolResultCompressor:
     - run_command: Variable, keep errors fully, truncate success
     """
     
+    # Downstream hard clip (step_pipeline/tooling.py: max_result_len) is the REAL
+    # per-tool-result budget the rest of the pipeline absorbs. The compressor must
+    # not destructively pre-empt it for reads.
+    DOWNSTREAM_CLIP_CHARS = 16000
+
     # Tool-specific compression rules
     COMPRESSION_RULES = {
+        # `read` previously used head_tail @ 2000 chars: it kept head+tail and
+        # DROPPED THE MIDDLE. For a code file the route/function bodies live in
+        # that middle, so the model saw an empty-looking shell -> the "all
+        # endpoints return empty dicts" mis-diagnosis, then re-read/flail loops.
+        # Fix: keep a CONTIGUOUS leading span (head strategy, no dropped middle)
+        # bounded by the downstream clip. Cost tradeoff: bigger reads cost more
+        # input tokens, but the 2000-char middle-drop provoked re-read loops that
+        # cost more overall — head-to-clip is the cheaper, correct budget.
         "read": {
-            "max_chars": 2000,
-            "strategy": "head_tail",  # Keep head + tail
+            "max_chars": DOWNSTREAM_CLIP_CHARS,
+            "strategy": "head",  # contiguous leading span; never drop the middle
             "keep_structure": True,
         },
         "list_dir": {
@@ -569,6 +582,12 @@ class ToolResultCompressor:
             "strategy": "head",
             "keep_structure": True,
         },
+        # `default` (unknown tools) stays at 1000 with `truncate`: that strategy
+        # keeps a CONTIGUOUS leading span and never drops the middle, so it does
+        # NOT exhibit the read-shell pathology this fix targets. It is also
+        # deliberately small (test_inbox_no_content_truncation) to avoid
+        # ballooning context for every tool — widen specific tools explicitly
+        # instead of the global default.
         "default": {
             "max_chars": 1000,
             "strategy": "truncate",

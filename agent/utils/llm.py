@@ -1574,7 +1574,31 @@ class GoogleClient(BaseLLMClient):
         messages = _mask_old_observations(messages)  # bound per-call input growth
         system_instruction = None
         contents = []
-        
+
+        # Gemini pairs function_call<->function_response BY NAME (unlike OpenAI's
+        # tool_call_id and Anthropic's tool_use_id, which pair by id). Our Message
+        # tool results only carry `tool_call_id`, never `.name`, so every result
+        # used to be sent named "tool" -> name mismatch on every turn ->
+        # MALFORMED_FUNCTION_CALL and the model echoing literal tokens like
+        # `tool_error`/`get_skill` as tool names (youtube run). Build a
+        # {tool_call_id: function_name} map from the assistant tool_calls so each
+        # response is paired with the REAL function name of its originating call.
+        tool_call_names: dict[str, str] = {}
+        for msg in messages:
+            if getattr(msg, "role", "") != "assistant" or not msg.tool_calls:
+                continue
+            for tc in msg.tool_calls:
+                if hasattr(tc, "function"):
+                    tc_id = getattr(tc, "id", None)
+                    fn_name = getattr(tc.function, "name", None)
+                elif isinstance(tc, dict):
+                    tc_id = tc.get("id")
+                    fn_name = (tc.get("function") or {}).get("name")
+                else:
+                    tc_id = fn_name = None
+                if tc_id and fn_name:
+                    tool_call_names[tc_id] = fn_name
+
         for msg in messages:
             if msg.role == "system":
                 system_instruction = msg.content if isinstance(msg.content, str) else str(msg.content)
@@ -1645,11 +1669,19 @@ class GoogleClient(BaseLLMClient):
                 if parts:
                     contents.append(types.Content(role="model", parts=parts))
             elif msg.role == "tool":
-                # Tool response
+                # Tool response: pair with the REAL originating function name so
+                # Gemini's name-based call<->response matching succeeds. Prefer the
+                # name resolved from this turn's tool_calls (by tool_call_id), then
+                # any explicit msg.name, falling back to "tool" only if truly unknown.
+                resolved_name = (
+                    tool_call_names.get(msg.tool_call_id)
+                    or msg.name
+                    or "tool"
+                )
                 contents.append(types.Content(
                     role="user",
                     parts=[types.Part.from_function_response(
-                        name=msg.name or "tool",
+                        name=resolved_name,
                         response={"result": msg.content}
                     )]
                 ))
