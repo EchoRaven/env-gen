@@ -125,17 +125,26 @@ def _ui_pages(gen: Path, h: Path) -> list[dict]:
 
 
 def _ui_components(gen: Path, h: Path) -> list[dict]:
-    out = [{"id": v.get("id", ""), "name": v.get("name", v.get("component", "")),
-            "status": v.get("status", "defined"), "used_by": len(v.get("used_by") or [])}
-           for v in _records(_load(h / "registryhub_ui_components.json"))]
+    # The lane rarely fills a component's own ``used_by`` — but pages DO declare the
+    # components they compose, so derive the reverse mapping (component -> #pages).
+    usage: dict[str, int] = {}
+    for p in _records(_load(h / "registryhub_ui_pages.json")):
+        for c in (p.get("components") or []):
+            usage[str(c)] = usage.get(str(c), 0) + 1
+    out = []
+    for v in _records(_load(h / "registryhub_ui_components.json")):
+        comp = v.get("component") or v.get("name", "")
+        cid = v.get("id", "")
+        ub = v.get("used_by")
+        used = len(ub) if isinstance(ub, list) else (usage.get(comp) or usage.get(cid) or usage.get(v.get("name", "")) or 0)
+        out.append({"id": cid, "name": comp, "status": v.get("status", "defined"), "used_by": int(used)})
     if out:
         return out
-    # Registry empty (lane didn't register components) — surface the components that
-    # actually exist in the built frontend so the UI reflects reality, not a blank.
+    # Registry empty — surface the components that actually exist in the built frontend.
     comps_dir = gen / "app" / "frontend" / "src" / "components"
     if comps_dir.is_dir():
         for f in sorted(comps_dir.rglob("*.jsx")):
-            out.append({"id": f.stem, "name": f.stem, "status": "implemented", "used_by": 0})
+            out.append({"id": f.stem, "name": f.stem, "status": "implemented", "used_by": int(usage.get(f.stem, 0))})
     return out
 
 
