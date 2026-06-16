@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import chat_bridge, hub_reader
+from . import approval_bridge, chat_bridge, hub_reader
 from .auth import AuthContext, assert_env_access, current_admin, scope_query
 from .db import get_db, init_db, SessionLocal
 # NB: ChatMessage table is retained in models.py but no longer read/written here —
@@ -337,6 +337,15 @@ class ChatSend(BaseModel):
     thread_id: str = "main"
 
 
+class ApprovalModeSet(BaseModel):
+    mode: str  # "auto" | "ask"
+
+
+class ApprovalDecision(BaseModel):
+    approve: bool
+    feedback: str = ""
+
+
 @app.get("/env-forge/environments/{env_id}/chat")
 def list_chat(env_id: str, thread_id: str | None = None, db: Session = Depends(get_db),
               user: AuthContext = Depends(current_admin)) -> list[dict]:
@@ -368,4 +377,48 @@ def send_chat(env_id: str, body: ChatSend, db: Session = Depends(get_db),
             from_user=user.user_id,
         )
     except chat_bridge.ChatBridgeError as exc:
+        raise HTTPException(400, str(exc))
+
+
+# ── Human-in-the-loop approval (Claude-Code-style permission modes) ──────────
+@app.get("/env-forge/environments/{env_id}/approval-mode")
+def get_approval_mode(env_id: str, db: Session = Depends(get_db),
+                      user: AuthContext = Depends(current_admin)) -> dict:
+    """Current approval mode for the env: auto (autonomous) or ask (gate
+    structural decisions for human approval)."""
+    e = _get_env(db, env_id, user)
+    return approval_bridge.get_mode(e.generated_dir)
+
+
+@app.put("/env-forge/environments/{env_id}/approval-mode")
+def set_approval_mode(env_id: str, body: ApprovalModeSet, db: Session = Depends(get_db),
+                      user: AuthContext = Depends(current_admin)) -> dict:
+    """Flip the env between auto and ask. In ask mode the engine pauses gated
+    actions (task/gate creation) until approved here."""
+    e = _get_env(db, env_id, user)
+    try:
+        return approval_bridge.set_mode(e.generated_dir, body.mode)
+    except approval_bridge.ApprovalBridgeError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get("/env-forge/environments/{env_id}/approvals")
+def list_approvals(env_id: str, status: str | None = None, db: Session = Depends(get_db),
+                   user: AuthContext = Depends(current_admin)) -> list[dict]:
+    """Approval requests for the env (optionally filtered by status, e.g.
+    'pending'). Newest last."""
+    e = _get_env(db, env_id, user)
+    return approval_bridge.list_requests(e.generated_dir, status)
+
+
+@app.post("/env-forge/environments/{env_id}/approvals/{req_id}/decision")
+def decide_approval(env_id: str, req_id: str, body: ApprovalDecision,
+                    db: Session = Depends(get_db),
+                    user: AuthContext = Depends(current_admin)) -> dict:
+    """Approve or reject a pending request; the paused agent then proceeds or
+    revises per the feedback."""
+    e = _get_env(db, env_id, user)
+    try:
+        return approval_bridge.decide(e.generated_dir, req_id, body.approve, body.feedback, user.user_id)
+    except approval_bridge.ApprovalBridgeError as exc:
         raise HTTPException(400, str(exc))
