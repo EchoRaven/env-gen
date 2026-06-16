@@ -82,8 +82,19 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
             errors.append(f"step[{i}] lacks method+path (or endpoint='METHOD /path')")
             continue
         pth = str(st["path"]).rstrip("/")
-        if pth in ("/auth/register", "/auth/login") and not st.get("save"):
-            st["save"] = {"token": "access_token"}
+        # CANONICAL TOKEN SAVE: an /auth/* step ALWAYS saves the token under the
+        # canonical var "token" — merged, never skipped when the verifier already
+        # authored a custom save (e.g. {"commenter_token": "access_token"}). The
+        # auto-auth below defaults unset /api/ steps to auth="token", and verifiers
+        # frequently reference auth="token" on some steps while saving under a
+        # different name on the auth step → "token" was never set → those steps
+        # sent an EMPTY bearer → 401 → business_chain failed forever. Saving "token"
+        # too makes the default/explicit token-auth resolve regardless of naming
+        # (the custom var stays saved, so steps using it keep working).
+        if pth in ("/auth/register", "/auth/login"):
+            _save = dict(st.get("save") or {})
+            _save.setdefault("token", "access_token")
+            st["save"] = _save
         # AUTH BODY DEFAULT (round 47): an /auth/register|login step with NO body
         # (verifier authored the step from just an endpoint id, body=None) sends an
         # empty request → the framework AS returns 422 "email and password are
@@ -102,6 +113,16 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
         if pth.startswith("/api/") and not st.get("auth"):
             st["auth"] = "token"
         out.append(st)
+    # CANONICAL TOKEN-AUTH: a verifier can reference auth="<var>" that no step
+    # actually saves (it saved under a different name, or a bare "token" while the
+    # auth step saved a custom name). Any /api/ step whose auth var is never saved
+    # anywhere in the chain is repointed at the canonical "token" (guaranteed saved
+    # by the /auth step above) so it can't send an empty bearer → 401.
+    _saved = {v for s in out for v in (s.get("save") or {})}
+    for s in out:
+        a = s.get("auth")
+        if a and a not in _saved and str(s.get("path", "")).rstrip("/").startswith("/api/"):
+            s["auth"] = "token"
     # AUTH-FIRST REORDER (round 45): the verifier wrote /api/* steps that use a
     # token BEFORE the /auth/register|login step that mints it → 401 "missing
     # token" → business_chain fails forever. "auth round-trip first" is a
