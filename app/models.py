@@ -20,6 +20,9 @@ class Environment(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)  # slug == generated dir name
     name: Mapped[str] = mapped_column(String, nullable=False)
+    # multi-tenancy: each environment is owned by the tenant/user that created it
+    tenant_id: Mapped[str] = mapped_column(String, default="", index=True)
+    created_by: Mapped[str] = mapped_column(String, default="")
     reference: Mapped[str] = mapped_column(String, default="")
     model: Mapped[str] = mapped_column(String, default="")
     provider: Mapped[str] = mapped_column(String, default="")
