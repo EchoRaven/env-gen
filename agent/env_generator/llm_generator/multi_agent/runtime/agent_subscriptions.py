@@ -85,7 +85,12 @@ DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
         ("registryhub", "endpoint_defined", "normal"),
         ("registryhub", "endpoint_implemented", "normal"),
         ("registryhub", "endpoint_schema_changed", "high"),
-        ("workhub", "ui_page_updated", "normal"),
+        # A3 (2026-06-12): ui_pages moved to registryhub (sole owner); the
+        # workhub ``ui_page_updated`` event no longer exists. Subscribe to the
+        # registryhub-emitted ui_page lifecycle events instead (same admit rule
+        # as the endpoint_* registryhub subscriptions above).
+        ("registryhub", "ui_page_registered", "normal"),
+        ("registryhub", "ui_page_implemented", "normal"),
         ("workhub", "task_created", "high"),
         ("codehub", "review_requested", "high"),
         # Kickoff loop.

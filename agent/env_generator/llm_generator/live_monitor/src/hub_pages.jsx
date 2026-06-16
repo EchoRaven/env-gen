@@ -2370,12 +2370,13 @@ window.HubPages = (function () {
     const mcpTools = mcpRegistry.filter(p => p.kind === "tool");
     const mcpConsumers = mcpRegistry.filter(p => p.kind === "consumer");
     // FRONTEND CONTRACT (mechanism #50/#52): the ui_page / ui_component
-    // lifecycle registries live on WorkHub's pages store — surface them
-    // here because they ARE contract surface (declared, framework-audited
-    // defined→implemented), exactly like endpoints/tables.
-    const whPages = Object.values(state?.hubs?.workhub?.pages || {});
-    const uiPages = whPages.filter(p => p.kind === "ui_page");
-    const uiComponents = whPages.filter(p => p.kind === "ui_component");
+    // lifecycle registries live on RegistryHub's ui_pages/ui_components
+    // stores — surface them here because they ARE contract surface
+    // (declared, framework-audited defined→implemented), exactly like
+    // endpoints/tables. The ``title: name`` alias keeps downstream
+    // ``.title`` usages working against the registry record's ``name``.
+    const uiPages = Object.values(hub?.ui_pages || {}).map(p => ({ ...p, title: p.name }));
+    const uiComponents = Object.values(hub?.ui_components || {}).map(c => ({ ...c, title: c.name }));
     const uiImpl = uiPages.filter(p => p.status === "implemented").length;
     const chains = Object.values(hub?.verification_chains || {});
     const chainsPassing = chains.filter(c => c.status === "passing").length;

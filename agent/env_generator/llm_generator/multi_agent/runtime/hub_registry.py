@@ -89,12 +89,15 @@ class HubRegistry:
         # tests, examples, breaking changes; MCP registry rides alongside.
         self.registryhub = RegistryHub(self._store_dir, eventhub=self.eventhub)
         self.registryhub.attach_workhub(self.workhub)
-        # A1 (2026-06-12): reverse handle so WorkHub shadow-writes ui_page/
-        # ui_component upserts into the registryhub contract layer (must run
-        # after registryhub constructs).
+        # A1→A3 (2026-06-12): reverse handle so WorkHub can delegate its
+        # ui_page/ui_component methods to the registryhub contract layer (the
+        # SOLE OWNER as of A3 — workhub no longer stores ui_pages). MANDATORY:
+        # workhub.update_ui_page/get_ui_pages raise without it. Must run after
+        # registryhub constructs.
         self.workhub.attach_registryhub(self.registryhub)
-        # A2: backfill any ui_pages that pre-date A1 (resume of an old run) so
-        # the registryhub read path sees them. No-op on a fresh run.
+        # Backfill any ui_pages that pre-date A1 (resume of an old run from a
+        # legacy workhub_pages.json) so the registryhub read path sees them.
+        # No-op on a fresh post-A3 run (workhub stores no ui_pages).
         self.registryhub.backfill_ui_pages_from_workhub()
         self.codehub.attach_workhub(self.workhub)
         self.codehub.attach_registryhub(self.registryhub)

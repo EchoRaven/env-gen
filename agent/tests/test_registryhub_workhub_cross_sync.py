@@ -88,6 +88,32 @@ def _seed_kickoff_impl_table_task(
     )
 
 
+def _seed_kickoff_impl_page_task(
+    workhub, *, name: str, owner: str = "frontend",
+) -> str:
+    return _create_kickoff_task(
+        workhub,
+        task_id=f"impl.page.{name}",
+        title=f"Implement page {name}",
+        assignee=owner,
+        depends_on=None,
+        kind="implement_page",
+    )
+
+
+def _seed_kickoff_impl_component_task(
+    workhub, *, name: str, owner: str = "frontend",
+) -> str:
+    return _create_kickoff_task(
+        workhub,
+        task_id=f"impl.component.{name}",
+        title=f"Implement component {name}",
+        assignee=owner,
+        depends_on=None,
+        kind="implement_component",
+    )
+
+
 def _create_kickoff_task(workhub, *, task_id, title, assignee, depends_on, kind):
     """Drive ``workhub.create_task`` exactly the way run_kickoff does:
     pass ``kind=<...>`` as a kwarg which create_task funnels into
@@ -239,6 +265,54 @@ class RegistryHubWorkHubCrossSync(unittest.TestCase):
         t = self.workhub.stores.tasks.get(tid)
         self.assertEqual(t["status"], "completed")
         self.assertEqual(t["claimed_by"], "backend")
+
+    def test_register_ui_page_implemented_completes_matching_task(self):
+        """A3 pin: when register_ui_page flips a page to ``implemented``, the
+        matching WorkHub ``impl.page.<name>`` task auto-completes. The cascade
+        lives on RegistryHub (register_ui_page → sync_impl_page_completed) now
+        that workhub.update_ui_page is a thin delegate. ``agent='orchestrator'``
+        because the lifecycle-authority gate downgrades a non-orchestrator
+        ``implemented`` to ``defined``."""
+        tid = _seed_kickoff_impl_page_task(self.workhub, name="login")
+        self.assertEqual(self.workhub.stores.tasks.get(tid)["status"], "pending")
+
+        # defined first — must NOT complete the task.
+        self.registryhub.register_ui_page(
+            "login", agent="orchestrator", status="defined",
+        )
+        self.assertEqual(
+            self.workhub.stores.tasks.get(tid)["status"], "pending",
+            "status='defined' must NOT close the impl.page task",
+        )
+        self.registryhub.register_ui_page(
+            "login", agent="orchestrator", status="implemented",
+        )
+        t = self.workhub.stores.tasks.get(tid)
+        self.assertEqual(
+            t["status"], "completed",
+            f"impl.page task should auto-complete on status=implemented, "
+            f"got status={t['status']!r}",
+        )
+        self.assertEqual(t["claimed_by"], "frontend")
+        self.assertIn("registryhub_sync", str(t.get("evidence") or {}))
+
+    def test_register_ui_component_implemented_completes_matching_task(self):
+        """A3 pin: register_ui_component(status='implemented') auto-completes the
+        matching ``impl.component.<name>`` task (register_ui_component is
+        ungated, so any agent value works)."""
+        tid = _seed_kickoff_impl_component_task(self.workhub, name="nav_bar")
+        self.assertEqual(self.workhub.stores.tasks.get(tid)["status"], "pending")
+
+        self.registryhub.register_ui_component(
+            "nav_bar", agent="frontend", status="implemented",
+        )
+        t = self.workhub.stores.tasks.get(tid)
+        self.assertEqual(
+            t["status"], "completed",
+            f"impl.component task should auto-complete; got "
+            f"status={t['status']!r}",
+        )
+        self.assertEqual(t["claimed_by"], "frontend")
 
     def test_dep_blocked_task_is_not_prematurely_completed(self):
         """``schema_tolerance`` links impl_endpoint tasks to their

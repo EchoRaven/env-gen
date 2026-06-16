@@ -17,6 +17,7 @@ if str(LLM_DIR) not in sys.path:
     sys.path.insert(0, str(LLM_DIR))
 
 from multi_agent.runtime.hubs.workhub.service import WorkHub  # noqa: E402
+from multi_agent.runtime.hub_registry import HubRegistry  # noqa: E402
 
 
 def _hub() -> WorkHub:
@@ -29,9 +30,22 @@ def _hub() -> WorkHub:
 # ---------------------------------------------------------------------------
 
 class TestUiPages(unittest.TestCase):
+    """A3 (2026-06-12): WorkHub.update_ui_page/get_ui_pages are thin delegates
+    to the RegistryHub (the sole owner), which raise without an attached
+    registryhub — so these tests build a full HubRegistry and exercise
+    ``hubs.workhub`` (the registryhub handle is wired at construction)."""
+
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory(prefix="workhub_ui_pages_")
+        self.hubs = HubRegistry(Path(self._td.name))
+        self.workhub = self.hubs.workhub
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
     def test_update_and_get_ui_page(self):
         """update_ui_page creates a ui_page and get_ui_pages returns it by name."""
-        hub = _hub()
+        hub = self.workhub
         hub.update_ui_page("home", {"status": "defined"}, agent="frontend")
         pages = hub.get_ui_pages()
         self.assertIn("home", pages)
@@ -42,7 +56,7 @@ class TestUiPages(unittest.TestCase):
         """Twice-updated entry keeps the latest data; 'implemented' is the
         FRAMEWORK's verdict (mechanism #54) — agent self-claims downgrade,
         the orchestrator-audit write sticks."""
-        hub = _hub()
+        hub = self.workhub
         hub.update_ui_page("home", {"status": "defined"}, agent="frontend")
         hub.update_ui_page("home", {"status": "implemented"}, agent="frontend")
         self.assertEqual(hub.get_ui_pages()["home"]["status"], "defined")
@@ -50,9 +64,11 @@ class TestUiPages(unittest.TestCase):
         self.assertEqual(hub.get_ui_pages()["home"]["status"], "implemented")
 
     def test_stale_ui_page(self):
-        """Setting status=stale is reflected in get_ui_pages."""
-        hub = _hub()
-        hub.update_ui_page("dashboard", {"status": "stale"}, agent="projection")
+        """Setting status=stale is reflected in get_ui_pages. ``agent`` must be
+        in register_ui_page's allowed_set (A3 thin-delegate hits the role gate);
+        ``frontend`` owns ui_page registration."""
+        hub = self.workhub
+        hub.update_ui_page("dashboard", {"status": "stale"}, agent="frontend")
         pages = hub.get_ui_pages()
         self.assertEqual(pages["dashboard"]["status"], "stale")
 

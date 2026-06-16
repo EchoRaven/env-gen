@@ -78,12 +78,13 @@ class RegistryHub:
         self._seed_registrations = JsonStore(self.hub_dir / "registryhub_seed_registrations.json")
         self._table_breaking_changes = JsonStore(self.hub_dir / "registryhub_table_breaking_changes.json")
         self._mcp_registry = JsonStore(self.hub_dir / "registryhub_mcp_registry.json")
-        # ui_page contract layer (A1, 2026-06-12): the frontend's analog of the
-        # endpoint/table contract. A ui_page declares route + component +
+        # ui_page contract layer (A1→A3, 2026-06-12): the frontend's analog of
+        # the endpoint/table contract. A ui_page declares route + component +
         # apis_used + components; it lives HERE (registryhub = contracts), not in
-        # workhub (collaboration nodes: kickoff/retro/project). During phase A
-        # workhub shadow-writes these; A2 switches reads here; A3 makes workhub a
-        # thin delegate. Components are the API-owning layer pages roll up.
+        # workhub (collaboration nodes: kickoff/retro/project). As of A3 the
+        # RegistryHub is the SOLE OWNER: workhub.update_ui_page/get_ui_pages are
+        # thin delegates to these methods; workhub no longer stores ui_pages.
+        # Components are the API-owning layer pages roll up.
         self._ui_pages = JsonStore(self.hub_dir / "registryhub_ui_pages.json")
         self._ui_components = JsonStore(self.hub_dir / "registryhub_ui_components.json")
         # Pending consumer queue (Bug-3+6): agents declare consumer intent on
@@ -957,11 +958,13 @@ class RegistryHub:
         return self._tables.value().get(name)
 
     # ------------------------------------------------------------------
-    # ui_page contract surface (A1, 2026-06-12) — mirrors register_table.
+    # ui_page contract surface (A1→A3, 2026-06-12) — mirrors register_table.
     # Shape follows TABLE (name-keyed, defined→implemented, no breaking-change
     # machinery) not ENDPOINT (ui_page consumes endpoints; it isn't consumed).
-    # impl.page.<name> task cascade stays with workhub during phase A (double-
-    # write); it migrates here in A3 when workhub becomes a thin delegate.
+    # As of A3 the impl.page.<name> / impl.component.<name> task cascade lives
+    # HERE (register_ui_page/register_ui_component → sync_impl_page_completed /
+    # sync_impl_component_completed) — workhub is now a thin delegate that no
+    # longer stores ui_pages.
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -984,7 +987,17 @@ class RegistryHub:
             method_name="register_ui_page",
             agent=agent,
             provider=None,
-            allowed_set={"frontend", "orchestrator"},
+            # A3 (2026-06-12): widened from {frontend, orchestrator} when
+            # workhub.update_ui_page became a thin delegate to this method.
+            # The old workhub path was UNGATED and its shadow-write swallowed
+            # PermissionError, so EVERY agent holding the workhub_update_page
+            # tool (orchestrator/backend/frontend/verifier/debugger — see
+            # tool_bundles._bundle_workhub_tools grants) could write a ui_page.
+            # backend/verifier/debugger are added here to preserve that
+            # previously-succeeding behavior; the implemented→defined downgrade
+            # below still keeps lifecycle authority with the orchestrator audit.
+            allowed_set={"frontend", "orchestrator", "backend", "verifier",
+                         "debugger"},
             target_label="registryhub.register_ui_page",
             error_extra=(
                 "frontend lane owns ui_page registration; the kickoff "
@@ -1024,6 +1037,14 @@ class RegistryHub:
         self._emit("ui_page_registered", rec, recipients=[])
         if str(rec.get("status") or "").lower() == "implemented":
             self._emit("ui_page_implemented", rec, recipients=[], priority="normal")
+            # A3 (2026-06-12): RegistryHub now OWNS the impl.page.<name> task
+            # cascade (moved out of workhub when workhub became a thin
+            # delegate) — symmetric to register_table → sync_impl_table_completed.
+            if getattr(self, "_workhub", None) is not None:
+                try:
+                    self._workhub.sync_impl_page_completed(name, agent=actor)
+                except Exception:
+                    pass
         return rec
 
     def list_ui_pages(self) -> Dict[str, dict]:
@@ -1054,6 +1075,13 @@ class RegistryHub:
         self._ui_components.update(lambda m: m.set(name, rec, actor),
                                    change_info={"agent": actor})
         self._emit("ui_component_registered", rec, recipients=[])
+        # A3 (2026-06-12): RegistryHub now OWNS the impl.component.<name> task
+        # cascade (moved out of workhub when workhub became a thin delegate).
+        if str(rec.get("status") or "").lower() == "implemented" and getattr(self, "_workhub", None) is not None:
+            try:
+                self._workhub.sync_impl_component_completed(name, agent=actor)
+            except Exception:
+                pass
         return rec
 
     def list_ui_components(self) -> Dict[str, dict]:
@@ -1063,13 +1091,15 @@ class RegistryHub:
         return self._ui_components.value().get(name)
 
     def backfill_ui_pages_from_workhub(self) -> int:
-        """One-time migration (A2): import ui_page/ui_component records that
-        live in workhub but not yet here — the resume-of-a-pre-A1-run case (a
-        fresh run shadow-writes from the start, so this is a no-op there).
+        """One-time migration: import legacy ui_page/ui_component records that
+        live in a pre-A1 workhub_pages.json but not yet here — the
+        resume-of-a-pre-A1-run case. Post-A3 the RegistryHub is the sole owner
+        for fresh runs, so this is a no-op there; it survives only to recover
+        ui_pages from old on-disk snapshots on RESUME.
 
         Idempotent: only names ABSENT here are imported, so a re-run never
-        reverts a status the live double-write already advanced. Bypasses the
-        role gate (system migration, not an agent call)."""
+        reverts a status the live writes already advanced. Bypasses the role
+        gate (system migration, not an agent call)."""
         wh = getattr(self, "_workhub", None)
         if wh is None:
             return 0

@@ -34,17 +34,18 @@ _UI_PAGE_KIND_RE = re.compile(
 class UiPageConsumerInventoryTests(unittest.TestCase):
     """Freeze the set of files that discriminate kind=="ui_page" in real code.
 
-    OWNER (permanent): workhub/service.py — it IS the pages store.
-    MIGRATING (leave during phase A2 → registryhub.list_ui_pages): coverage_audit,
-    hub_pulse, workflow_policies.
+    A2 (2026-06-12) repointed coverage_audit, hub_pulse, and
+    workflow_policies at ``registryhub.list_ui_pages()`` (the registryhub
+    ui_pages store is purely ui_pages, so no ``kind`` filter is needed) —
+    they no longer discriminate ``kind`` and were removed from the WHITELIST.
+    A3 (2026-06-12) made the RegistryHub the SOLE OWNER: workhub/service.py's
+    update_ui_page/get_ui_pages became thin delegates to registryhub and no
+    longer carry a ``kind=="ui_page"`` filter — so the WHITELIST is now EMPTY.
+    A new direct ``kind=="ui_page"`` reader anywhere in the tree is a
+    regression (it should read ``registryhub.list_ui_pages()`` instead).
     """
 
-    WHITELIST = {
-        "multi_agent/runtime/hubs/workhub/service.py",   # owner — permanent
-        "multi_agent/runtime/coverage_audit.py",         # A2 → registryhub
-        "multi_agent/agents/runtime/hub_pulse.py",       # A2 → registryhub
-        "multi_agent/workflow_policies.py",              # A2 → registryhub
-    }
+    WHITELIST: set = set()
 
     def _scan(self):
         base = LLM_GEN / "multi_agent"
@@ -97,6 +98,31 @@ class UiPageContractSymmetryTests(unittest.TestCase):
                      "get_ui_component"):
             self.assertTrue(
                 hasattr(RegistryHub, meth), f"RegistryHub missing {meth}")
+
+
+class WorkHubUiPageDelegationTests(unittest.TestCase):
+    """A3 (2026-06-12): WorkHub's ui_page methods are pure delegates to the
+    RegistryHub (the sole owner) — they MUST reference ``self._registryhub`` and
+    MUST NOT resurrect a local pages-store write. This freezes the delegation so
+    a future edit that re-introduces dual storage turns this test RED."""
+
+    def _source(self, fn):
+        import inspect
+        return inspect.getsource(fn)
+
+    def test_workhub_ui_page_methods_are_pure_delegates(self):
+        from multi_agent.runtime.hubs.workhub.service import WorkHub
+        for meth in ("get_ui_pages", "get_ui_components",
+                     "update_ui_page", "update_ui_component"):
+            src = self._source(getattr(WorkHub, meth))
+            self.assertIn(
+                "self._registryhub", src,
+                f"WorkHub.{meth} must delegate to self._registryhub (A3)")
+            # No local dual-storage: a delegate must not write the pages store.
+            self.assertNotIn(
+                "self.stores.pages.update", src,
+                f"WorkHub.{meth} must NOT write stores.pages — that would "
+                f"resurrect dual ui_page storage (A3 made registryhub the owner)")
 
 
 if __name__ == "__main__":

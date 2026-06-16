@@ -18,10 +18,12 @@ class WorkHub:
         self.eventhub = eventhub
         self.stores = WorkHubStores.create(self.hub_dir)
         self.stores.ensure_documents()
-        # ui_page migration (A1, 2026-06-12): the contract layer for ui_pages
-        # moved to registryhub. WorkHub shadow-writes ui_page/ui_component
-        # upserts there during phase A (workhub stays the source of truth until
-        # A3). HubRegistry injects the handle right after both hubs construct.
+        # ui_page migration (A1→A3, 2026-06-12): the contract layer for
+        # ui_pages moved to registryhub, which is now the SOLE OWNER. WorkHub's
+        # update_ui_page/update_ui_component/get_ui_pages/get_ui_components are
+        # thin delegates to it (A3) — the handle is MANDATORY for those four
+        # methods (they raise RuntimeError if it is None). HubRegistry injects
+        # it right after both hubs construct.
         self._registryhub = None
         # PR 3 (hub-responsibility-split plan, rank 3) moved the
         # design / visual / retro / coverage gate methods OUT of
@@ -31,35 +33,13 @@ class WorkHub:
         # stays unified. No thin-delegate layer remains here.
 
     def attach_registryhub(self, registryhub) -> None:
-        """Reverse handle for the ui_page contract layer (A1). Symmetric to
-        ``registryhub.attach_workhub``; lets WorkHub shadow-write ui_page/
-        ui_component upserts into registryhub during phase A."""
+        """Reverse handle for the ui_page contract layer. As of A3 the
+        RegistryHub is the SOLE OWNER of ui_pages/ui_components, so this handle
+        is MANDATORY: ``update_ui_page``/``update_ui_component``/``get_ui_pages``
+        /``get_ui_components`` delegate to it and raise RuntimeError if it is
+        absent. Symmetric to ``registryhub.attach_workhub``; HubRegistry wires
+        both right after the hubs construct."""
         self._registryhub = registryhub
-
-    def _shadow_ui_page(self, kind: str, name: str, payload: dict, agent: str) -> None:
-        """Best-effort mirror of a ui_page/ui_component upsert into the
-        registryhub contract layer (A1 double-write). NEVER raises into the
-        workhub primary write — the registryhub is the shadow until A2/A3, so a
-        role-gate rejection or fault here must not break the existing path."""
-        reg = self._registryhub
-        if reg is None:
-            return
-        try:
-            if kind == "ui_page":
-                reg.register_ui_page(
-                    name, route=payload.get("route", ""),
-                    component=payload.get("component", ""),
-                    apis_used=payload.get("apis_used"),
-                    components=payload.get("components"),
-                    path=payload.get("path", ""),
-                    status=payload.get("status", "defined"), agent=agent)
-            else:
-                reg.register_ui_component(
-                    name, component=payload.get("component", ""),
-                    apis_used=payload.get("apis_used"),
-                    status=payload.get("status", "defined"), agent=agent)
-        except Exception:
-            pass
 
     def _emit(self, event_type: str, payload: dict, recipients: Optional[List[str]] = None, priority: str = "normal") -> None:
         if self.eventhub:
@@ -497,6 +477,46 @@ class WorkHub:
         except Exception:
             return None
         if isinstance(task, dict) and self._task_kind(task) == "implement_table":
+            return self._sync_complete_impl_task(task, agent)
+        return None
+
+    def sync_impl_page_completed(
+        self, name: str, agent: str,
+    ) -> Optional[dict]:
+        """When RegistryHub.register_ui_page flips a ui_page to
+        ``status='implemented'``, find the matching kickoff-created
+        ``implement_page`` task and drive it to ``completed``. A3 moved this
+        cascade out of the (now thin-delegate) workhub.update_ui_page into
+        RegistryHub, which calls this helper — symmetric to
+        ``sync_impl_table_completed``."""
+        name_s = (name or "").strip()
+        if not name_s:
+            return None
+        tid = f"impl.page.{name_s}"
+        try:
+            task = self.stores.tasks.get(tid)
+        except Exception:
+            return None
+        if isinstance(task, dict) and self._task_kind(task) == "implement_page":
+            return self._sync_complete_impl_task(task, agent)
+        return None
+
+    def sync_impl_component_completed(
+        self, name: str, agent: str,
+    ) -> Optional[dict]:
+        """When RegistryHub.register_ui_component flips a ui_component to
+        ``status='implemented'``, find the matching kickoff-created
+        ``implement_component`` task and drive it to ``completed``. A3 moved
+        this cascade out of workhub.update_ui_component into RegistryHub."""
+        name_s = (name or "").strip()
+        if not name_s:
+            return None
+        tid = f"impl.component.{name_s}"
+        try:
+            task = self.stores.tasks.get(tid)
+        except Exception:
+            return None
+        if isinstance(task, dict) and self._task_kind(task) == "implement_component":
             return self._sync_complete_impl_task(task, agent)
         return None
 
@@ -1315,110 +1335,62 @@ class WorkHub:
     # ------------------------------------------------------------------
 
     def update_ui_page(self, name: str, data: dict, agent: str = "") -> dict:
-        """Upsert a UI-page entry (kind='ui_page') keyed by name.
+        """Thin delegate to ``RegistryHub.register_ui_page`` (A3, 2026-06-12).
 
-        LIFECYCLE AUTHORITY (mechanism #54): ``status='implemented'`` is the
-        FRAMEWORK's verdict (code audit, actor='orchestrator'). An agent
-        claiming implemented on itself is downgraded to 'defined' — the audit
-        flips it when the code actually satisfies the declaration.
-
-        CASE-NORMALIZED IDs (round 38): ui_pages are DECLARED at kickoff with
-        snake_case ids; the framework audits them. A lane calling the legacy
-        workhub_update_page with the PascalCase COMPONENT name ('Login') used
-        to create a case-duplicate phantom ('Login' beside 'login'). Normalize
-        every name to snake_case so a PascalCase call MERGES onto the declared
-        page instead of forking a duplicate. (A genuinely new snake_case name
-        still creates a page — this only collapses the case-duplicate.)"""
-        actor = agent or "workhub"
-        import re as _re
-        if _re.search(r"[A-Z]", str(name or "")):
-            _snake = _re.sub(r"(?<!^)(?=[A-Z])", "_", str(name)).lower()
-            _snake = _re.sub(r"_+", "_", _snake).strip("_")
-            if _snake:
-                name = _snake
-        if (str((data or {}).get("status") or "").lower() == "implemented"
-                and actor != "orchestrator"):
-            data = {**data, "status": "defined"}
-        now = time.time()
-        page_id = f"page:ui:{name}"
-        existing = self.stores.pages.value().get(page_id) or {}
-        payload = {
-            **existing,
-            **data,
-            "id": page_id,
-            "title": name,
-            "kind": "ui_page",
-            "parent": existing.get("parent"),
-            "status": data.get("status") or existing.get("status") or "active",
-            "attendees": existing.get("attendees") or [],
-            "_updated_by": agent,
-            "_updated_at": now,
-        }
-        if not existing:
-            payload["created_by"] = agent
-            payload["created_at"] = now
-        self.stores.pages.update(lambda m: m.set(page_id, payload, actor), change_info={"agent": actor})
-        self._emit("ui_page_updated", payload, recipients=[])
-        # Mechanism #50: page lifecycle mirrors tables/endpoints — flipping a
-        # ui_page to ``implemented`` completes its impl.page.<name> task.
-        if str(payload.get("status") or "").lower() == "implemented":
-            try:
-                task = self.stores.tasks.get(f"impl.page.{name}")
-                if isinstance(task, dict) and self._task_kind(task) == "implement_page":
-                    self._sync_complete_impl_task(task, actor)
-            except Exception:
-                pass
-        self._shadow_ui_page("ui_page", name, payload, agent)
-        return payload
+        The RegistryHub is now the SOLE OWNER of ui_pages — workhub no longer
+        stores them. The snake-normalize, the implemented→defined lifecycle
+        downgrade (mechanism #54), the impl.page.<name> cascade (mechanism #50),
+        and the event emit all live in ``register_ui_page`` now. This method
+        just unpacks the flat ``data`` dict into that method's kwargs; any
+        remaining keys (e.g. ``reference_image``/``notes``) ride through as
+        ``**metadata`` onto the contract record."""
+        if self._registryhub is None:
+            raise RuntimeError(
+                "WorkHub.update_ui_page requires an attached RegistryHub")
+        data = dict(data or {})
+        return self._registryhub.register_ui_page(
+            name,
+            route=data.pop("route", ""),
+            component=data.pop("component", ""),
+            apis_used=data.pop("apis_used", None),
+            components=data.pop("components", None),
+            path=data.pop("path", ""),
+            status=data.pop("status", "defined"),
+            agent=agent,
+            **{k: v for k, v in data.items() if not str(k).startswith("_")},
+        )
 
     def update_ui_component(self, name: str, data: dict, agent: str = "") -> dict:
-        """Upsert a UI-component entry (kind='ui_component') keyed by name.
+        """Thin delegate to ``RegistryHub.register_ui_component`` (A3). The
+        RegistryHub owns ui_components; workhub no longer stores them.
         Mechanism #52 (user design): pages USE components, components CALL
         APIs — the component is the API-owning layer; the page rolls up."""
-        actor = agent or "workhub"
-        now = time.time()
-        comp_id = f"component:ui:{name}"
-        existing = self.stores.pages.value().get(comp_id) or {}
-        payload = {
-            **existing,
-            **data,
-            "id": comp_id,
-            "title": name,
-            "kind": "ui_component",
-            "status": data.get("status") or existing.get("status") or "defined",
-            "_updated_by": agent,
-            "_updated_at": now,
-        }
-        if not existing:
-            payload["created_by"] = agent
-            payload["created_at"] = now
-        self.stores.pages.update(lambda m: m.set(comp_id, payload, actor), change_info={"agent": actor})
-        self._emit("ui_component_updated", payload, recipients=[])
-        if str(payload.get("status") or "").lower() == "implemented":
-            try:
-                task = self.stores.tasks.get(f"impl.component.{name}")
-                if isinstance(task, dict) and self._task_kind(task) == "implement_component":
-                    self._sync_complete_impl_task(task, actor)
-            except Exception:
-                pass
-        self._shadow_ui_page("ui_component", name, payload, agent)
-        return payload
+        if self._registryhub is None:
+            raise RuntimeError(
+                "WorkHub.update_ui_component requires an attached RegistryHub")
+        data = dict(data or {})
+        return self._registryhub.register_ui_component(
+            name,
+            component=data.pop("component", ""),
+            apis_used=data.pop("apis_used", None),
+            status=data.pop("status", "defined"),
+            agent=agent,
+            **{k: v for k, v in data.items() if not str(k).startswith("_")},
+        )
 
     def get_ui_components(self) -> Dict[str, dict]:
-        result = {}
-        for page in self.stores.pages.value().values():
-            if page.get("kind") == "ui_component":
-                result[page.get("title") or page.get("id", "")] = page
-        return result
+        """Thin delegate to ``RegistryHub.list_ui_components`` (A3)."""
+        if self._registryhub is None:
+            raise RuntimeError(
+                "WorkHub.get_ui_components requires an attached RegistryHub")
+        return self._registryhub.list_ui_components()
 
     def get_ui_pages(self) -> Dict[str, dict]:
-        """Return all UI pages as a name-keyed dict (mirrors old get_pages())."""
-        result = {}
-        for page in self.stores.pages.value().values():
-            if page.get("kind") == "ui_page":
-                name = page.get("title") or page.get("id", "")
-                result[name] = page
-        return result
+        """Thin delegate to ``RegistryHub.list_ui_pages`` (A3)."""
+        if self._registryhub is None:
+            raise RuntimeError(
+                "WorkHub.get_ui_pages requires an attached RegistryHub")
+        return self._registryhub.list_ui_pages()
 
     # ------------------------------------------------------------------
     # Project helpers

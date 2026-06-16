@@ -2870,9 +2870,8 @@ volumes:
             milestone = getattr(self, "_current_milestone_version", "")
             if getattr(self, "_unwired_ui_pages_dispatched", None) == milestone:
                 return  # one dispatch per milestone — the gate recomputes every tick
-            wh = getattr(self.hubs, "workhub", None)
             try:
-                pages = (wh.get_ui_pages() if wh is not None else {}) or {}
+                pages = self.hubs.registryhub.list_ui_pages() or {}
             except Exception:
                 pages = {}
             # Build an actionable list: route → component, for the pages the
@@ -4242,7 +4241,7 @@ volumes:
         # hub topology checks
         endpoints = self.hubs.registryhub.get_endpoints() or {}
         tables = self.hubs.schema_hub.list_tables() or {}
-        pages = self.hubs.workhub.get_ui_pages() or {}
+        pages = self.hubs.registryhub.list_ui_pages() or {}
         projection_errors = {}  # file-coordination CRDT removed in Cutover 4 (replaced by git worktree)
         semantic_drift = {"errors": [], "warnings": []}  # vestigial — specs no longer exist as independent source.
 

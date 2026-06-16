@@ -396,30 +396,28 @@ def scan_dead_mcp_tools(hub_registry) -> List[dict]:
 
 
 def scan_pages_without_files(hub_registry, app_root) -> List[dict]:
-    """Return WorkHub ui_pages whose declared ``path`` does not point at
+    """Return RegistryHub ui_pages whose declared ``path`` does not point at
     an existing file under ``app_root``.
 
     A page registration without a corresponding source file is a lie —
-    typical when an agent calls ``workhub_update_page`` first and never
-    follows through on the implementation. Each returned entry carries
+    typical when an agent registers a ui_page first and never follows
+    through on the implementation. Each returned entry carries
     enough context for the caller to either fix the path or remove the
     page.
 
     Pages without a ``path`` field at all are silently ignored — the
     schema allows path-less placeholders during design phase.
     """
-    workhub = getattr(hub_registry, "workhub", None)
-    if workhub is None or not hasattr(workhub, "stores"):
+    registryhub = getattr(hub_registry, "registryhub", None)
+    if registryhub is None:
         return []
     app_root = Path(app_root)
     try:
-        pages = workhub.stores.pages.value() or {}
+        pages = registryhub.list_ui_pages() or {}
     except Exception:
         return []
     out: List[dict] = []
-    for page_id, page in pages.items():
-        if page.get("kind") != "ui_page":
-            continue
+    for page_key, page in pages.items():
         path = page.get("path")
         if not path:
             continue
@@ -442,8 +440,8 @@ def scan_pages_without_files(hub_registry, app_root) -> List[dict]:
         if found:
             continue
         out.append({
-            "page_id": page_id,
-            "title": page.get("title"),
+            "page_id": page.get("id") or page_key,
+            "title": page.get("name"),
             "declared_path": path,
             "owned_by": page.get("_updated_by") or page.get("created_by"),
         })
