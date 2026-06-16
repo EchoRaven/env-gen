@@ -1,12 +1,42 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .json_store import JsonStore
+
+
+def _events_retention_cap() -> int:
+    """Max number of events retained in the EventHub events store.
+
+    Event-store efficiency (#6): the events store is append-only and
+    JsonStore rewrites the WHOLE file on every publish, so unbounded
+    growth makes publishing O(n^2) (a partial youtube run hit 2316
+    events / 3.75 MB). We bound the store with a generous ring-buffer
+    cap: when publishing would exceed the cap, the oldest NON-pinned
+    events are evicted first. The cap is high enough never to harm
+    coordination (recent events / unread inbox items are what agents
+    actually read) but keeps the worst case bounded.
+
+    Configurable via ``ENVGEN_EVENTHUB_MAX_EVENTS`` (env var). A value
+    <= 0 disables eviction.
+    """
+    raw = os.environ.get("ENVGEN_EVENTHUB_MAX_EVENTS")
+    if raw is None or raw.strip() == "":
+        return EVENTHUB_DEFAULT_MAX_EVENTS
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return EVENTHUB_DEFAULT_MAX_EVENTS
+
+
+# Generous default: a few thousand events is far more than any healthy
+# coordination window needs, yet bounds the O(n^2) full-file rewrite.
+EVENTHUB_DEFAULT_MAX_EVENTS = 5000
 
 
 def _normalize_actor(value: Optional[str]) -> str:
@@ -230,7 +260,10 @@ class EventHub:
             "_updated_by": source_hub,
             "_updated_at": now,
         }
-        self._events.update(lambda m: m.set(event_id, event, actor), change_info={"agent": actor})
+        self._events.update(
+            lambda m: self._set_and_prune_events(m, event_id, event, actor),
+            change_info={"agent": actor},
+        )
         thread = self._threads.get(thread_id) or {
             "id": thread_id,
             "event_ids": [],
@@ -278,6 +311,42 @@ class EventHub:
                 pass  # best-effort: never let bridge errors block publish
 
         return event
+
+    @staticmethod
+    def _set_and_prune_events(view, event_id: str, event: dict, actor: str):
+        """Set the new event, then evict oldest NON-pinned events past the cap.
+
+        Event-store efficiency (#6): bounded ring-buffer retention applied
+        inside the same atomic JsonStore write that adds the event, so the
+        full-file rewrite never serializes more than ``cap`` events.
+        Eviction order is oldest-``created_at`` first; events flagged
+        ``pinned`` (or ``payload['pinned']``) are never evicted — coordination
+        anchors can opt out. A cap <= 0 disables eviction entirely.
+        """
+        view.set(event_id, event, actor)
+        cap = _events_retention_cap()
+        if cap <= 0:
+            return view
+        data = view.value()
+        if len(data) <= cap:
+            return view
+
+        def _is_pinned(ev: dict) -> bool:
+            if not isinstance(ev, dict):
+                return False
+            return bool(ev.get("pinned") or (ev.get("payload") or {}).get("pinned"))
+
+        evictable = [
+            (eid, ev) for eid, ev in data.items() if not _is_pinned(ev)
+        ]
+        # Oldest first; fall back to id for stable ordering on ties.
+        evictable.sort(key=lambda kv: (kv[1].get("created_at", 0) if isinstance(kv[1], dict) else 0, kv[0]))
+        overflow = len(data) - cap
+        for eid, _ev in evictable[:overflow]:
+            if eid == event_id:
+                continue  # never evict the event we just published
+            view.delete(eid, actor)
+        return view
 
     # ------------------------------------------------------------------
     # Phase 0.3 INERT anchor — Phase 2 frontend->backend handshake.

@@ -507,7 +507,14 @@ class RegistryHub:
             ),
         )
         now = time.time()
-        test_id = f"test:{endpoint_id}:{now}"
+        # Event-store efficiency (#4): upsert by a STABLE per-endpoint key
+        # (drop the timestamp) so re-recording the same endpoint overwrites
+        # the prior row instead of appending a new one every validation run.
+        # The endpoint's latest contract-test result is the only row callers
+        # need; history is not consumed. Readers filter by ``endpoint_id``
+        # (get_contract_test_results / list_contract_test_results_sorted) and
+        # still see exactly one current row per endpoint.
+        test_id = f"test:{endpoint_id}"
         result_dict = result or {}
         # Derive explicit top-level ``verdict`` ("pass"/"fail") from the
         # writer's result dict so the endpoint_contract resolver can do
@@ -542,11 +549,27 @@ class RegistryHub:
             "agent": agent, "created_at": now,
             "verdict": verdict,
         }
+        # Event-store efficiency (#4): only emit ``api_test_recorded`` when
+        # the verdict ACTUALLY CHANGED versus the last recorded result for
+        # this endpoint. An identical re-record (same verdict + same HTTP
+        # status_code) is a no-op for every consumer of the event stream, so
+        # we skip the emit (the youtube run re-recorded 35 endpoints 42×
+        # identically → 63% of all events). The store row is still upserted
+        # so the latest result/evidence/timestamp stay current.
+        prior = self._contract_tests.get(test_id)
+        prior_status = (prior or {}).get("result", {}).get("status_code") if prior else None
+        new_status = result_dict.get("status_code")
+        verdict_changed = (
+            prior is None
+            or prior.get("verdict") != verdict
+            or prior_status != new_status
+        )
         self._contract_tests.update(
             lambda m: m.set(test_id, test, agent),
             change_info={"agent": agent},
         )
-        self._emit("api_test_recorded", test, recipients=[])
+        if verdict_changed:
+            self._emit("api_test_recorded", test, recipients=[])
         return test
 
     def get_consumers(self, endpoint_id: str) -> List[dict]:

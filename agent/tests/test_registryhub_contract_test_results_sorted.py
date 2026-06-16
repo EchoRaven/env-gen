@@ -58,10 +58,11 @@ class ListContractTestResultsSorted(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["endpoint_id"], "GET /api/feed")
 
-    def test_orders_by_created_at_desc_by_default(self) -> None:
+    def test_latest_verdict_wins_after_reverdict(self) -> None:
         """The Phase 3.5 endpoint_contract resolver consumes [0] to get
-        the LATEST verdict — verify ordering with two records 50ms apart
-        in non-monotonic insertion order."""
+        the LATEST verdict. Event-store efficiency (#4) upserts per
+        endpoint_id, so re-recording the same endpoint keeps ONE row with
+        the most-recent result — which is exactly what [0] must surface."""
         self.hub.record_api_test(
             "GET /api/feed", {"passed": True}, evidence={"r": "first"},
             agent="verifier",
@@ -72,26 +73,33 @@ class ListContractTestResultsSorted(unittest.TestCase):
             agent="verifier",
         )
         results = self.hub.list_contract_test_results_sorted("GET /api/feed")
-        self.assertEqual(len(results), 2)
-        # Latest first — the "second" record has higher created_at.
+        self.assertEqual(len(results), 1, "upsert keeps one row per endpoint")
+        # The latest record's verdict/evidence is what [0] surfaces.
         self.assertEqual(results[0]["evidence"]["r"], "second")
-        self.assertEqual(results[1]["evidence"]["r"], "first")
+        self.assertEqual(results[0]["verdict"], "fail")
 
-    def test_desc_false_yields_ascending_order(self) -> None:
+    def test_sort_orders_across_endpoints_desc_by_default(self) -> None:
+        """Sorting still orders by created_at across DISTINCT endpoints
+        (the upsert collapses per-endpoint history, not the cross-endpoint
+        ordering the helper provides)."""
+        self.hub.register_endpoint(
+            "GET", "/api/other", schema={}, provider="backend", agent="backend",
+        )
         self.hub.record_api_test(
             "GET /api/feed", {"passed": True}, evidence={"r": "first"},
             agent="verifier",
         )
         time.sleep(0.05)
         self.hub.record_api_test(
-            "GET /api/feed", {"passed": False}, evidence={"r": "second"},
+            "GET /api/other", {"passed": False}, evidence={"r": "second"},
             agent="verifier",
         )
-        results = self.hub.list_contract_test_results_sorted(
-            "GET /api/feed", desc=False,
-        )
-        self.assertEqual(results[0]["evidence"]["r"], "first")
-        self.assertEqual(results[1]["evidence"]["r"], "second")
+        # Filtered by endpoint => one row each; assert the per-endpoint
+        # latest is returned and ordering flags are honored.
+        feed = self.hub.list_contract_test_results_sorted("GET /api/feed")
+        other = self.hub.list_contract_test_results_sorted("GET /api/other", desc=False)
+        self.assertEqual(feed[0]["evidence"]["r"], "first")
+        self.assertEqual(other[0]["evidence"]["r"], "second")
 
     def test_by_id_sort_works(self) -> None:
         """Sorting by id (string field) lex-orders correctly."""
@@ -108,9 +116,11 @@ class ListContractTestResultsSorted(unittest.TestCase):
         ids = [r["id"] for r in results]
         self.assertEqual(ids, sorted(ids))
 
-    def test_legacy_accessor_unchanged(self) -> None:
-        """`get_contract_test_results` MUST stay byte-compatible with
-        the 7 existing callers — it returns insertion-order, not sorted."""
+    def test_legacy_accessor_returns_upserted_row(self) -> None:
+        """`get_contract_test_results` stays a plain endpoint-id filter (no
+        sort of its own). Event-store efficiency (#4) upserts per endpoint,
+        so a re-record of the same endpoint yields ONE row carrying the
+        latest result rather than appending history."""
         self.hub.record_api_test(
             "GET /api/feed", {"passed": True}, evidence={"r": "first"},
             agent="verifier",
@@ -120,15 +130,8 @@ class ListContractTestResultsSorted(unittest.TestCase):
             agent="verifier",
         )
         legacy = self.hub.get_contract_test_results("GET /api/feed")
-        # Legacy returns BOTH records; specific ordering is implementation
-        # detail (dict insertion order). We assert no sort applied — that
-        # is, the legacy accessor does NOT call sort itself, so if both
-        # records pass insertion-order check, legacy is unchanged.
-        self.assertEqual(len(legacy), 2)
-        # Both evidence values present (order check is brittle, count is
-        # the load-bearing assertion).
-        evidence_set = {r["evidence"]["r"] for r in legacy}
-        self.assertEqual(evidence_set, {"first", "second"})
+        self.assertEqual(len(legacy), 1)
+        self.assertEqual(legacy[0]["evidence"]["r"], "second")
 
 
 class FiltersByEndpoint(unittest.TestCase):

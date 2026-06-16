@@ -4,6 +4,33 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
+def _summarize_step_trace(step_trace: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Reduce a full per-step trace to a small, bounded summary.
+
+    Event-store efficiency (#5): the agent_status heartbeat is an
+    append-only event; persisting the full ``step_trace`` (every stage's
+    payload/metadata) bloated the store for no consumer. This keeps only a
+    handful of scalar fields so the heartbeat stays tiny while still
+    surfacing useful liveness signal (step number, which stages ran, and
+    the most recent stage). Domain-agnostic — no app/stage specifics.
+    """
+    if not isinstance(step_trace, dict):
+        return {}
+    stages = step_trace.get("stages") or {}
+    if not isinstance(stages, dict):
+        stages = {}
+    executed = [name for name, info in stages.items()
+                if isinstance(info, dict) and info.get("executed")]
+    last_stage = next(reversed(stages), None) if stages else None
+    return {
+        "step": step_trace.get("step"),
+        "stage_count": len(stages),
+        "executed_stage_count": len(executed),
+        "last_stage": last_stage,
+        "mode_after": step_trace.get("mode_after"),
+    }
+
+
 class AgentStepHelperMixin:
     @staticmethod
     def _format_step_reminder_lines(value: Any, indent: str = "") -> List[str]:
@@ -149,7 +176,12 @@ class AgentStepHelperMixin:
                     "processing_state": str(getattr(self, "_processing_state", "")),
                     "files_created": list(dict.fromkeys(files_created))[-20:],
                     "files_modified": list(dict.fromkeys(files_modified))[-20:],
-                    "step_trace": step_trace,
+                    # Event-store efficiency (#5): persist only a SMALL summary
+                    # of the step trace, never the full trace. The heartbeat is
+                    # an append-only event; embedding the whole per-step trace
+                    # (largest seen: 45 KB, 99% trace) bloated the store with no
+                    # downstream consumer (nothing reads payload["step_trace"]).
+                    "step_trace_summary": _summarize_step_trace(step_trace),
                 },
             )
             synced["agent_status"] = True
