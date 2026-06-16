@@ -599,7 +599,11 @@ def test_registryhub_register_table(tmp_path):
         body={"name": "users", "schema": {"id": "int"}, "provider": "backend", "agent": "backend"},
     )
     assert result.get("name") == "users"
-    assert result.get("schema") == {"id": "int"}
+    # The write boundary normalizes the flat-map contract-tool schema
+    # (``{col: "type string"}``) to the ONE canonical ``{"columns":[…]}`` shape
+    # the projector understands, so every column survives re-registration
+    # (previously a flat-map table collapsed to id-only ORM/DDL).
+    assert result.get("schema") == {"columns": [{"name": "id", "type": "int"}]}
     assert result.get("provider") == "backend"
 
 

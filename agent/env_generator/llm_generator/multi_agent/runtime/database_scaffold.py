@@ -94,18 +94,103 @@ def _quote_ident(name: str) -> str:
     return '"' + str(name).replace('"', '""') + '"'
 
 
+# ── ONE canonical table-schema shape ────────────────────────────────────────
+# The contract tools advertise a FLAT-MAP table schema (``{column: "type
+# string"}`` — see hub_tools ``registryhub_register_table`` /
+# ``registryhub_update_table_schema``), while kickoff_declare_table /
+# finalize_kickoff emit ``{"columns": [{"name","type", …}]}``. Two shapes for
+# one concept means every reader had to handle both — and the flat map never
+# did (``_columns_of`` returned [] for it → an id-only ORM/DDL, silently
+# dropping every other column on any RE-registered table). Collapse the
+# variance to ONE canonical shape at the write boundary so the rest of the
+# system reads a single representation.
+#
+# A flat-map value carries the column's modifiers inline in the type string
+# (``"serial primary key"``, ``"integer references channels(id)"``,
+# ``"text not null"`` …). The DDL renderer (``_render_column`` →
+# ``_sql_type``/``_normalize_inline_fk``) already projects those verbatim, but
+# the ORM renderer (``backend_skeleton._render_column``) keys PRIMARY KEY /
+# UNIQUE / NOT NULL off STRUCTURED flags. So when flattening a flat-map column
+# we PROMOTE those inline modifiers to structured flags (reusing the same
+# parsing vocabulary the renderers already understand) — the column then
+# projects faithfully through BOTH renderers. Already-structured inputs pass
+# through untouched (idempotent — a ``{"columns":[…]}`` round-trips equal).
+_INLINE_PK_RE = re.compile(r"\bprimary\s+key\b", re.IGNORECASE)
+_INLINE_NOTNULL_RE = re.compile(r"\bnot\s+null\b", re.IGNORECASE)
+_INLINE_UNIQUE_RE = re.compile(r"\bunique\b", re.IGNORECASE)
+_INLINE_REFERENCES_RE = re.compile(
+    r"\breferences\s+(\w+)\s*(?:\(\s*(\w+)\s*\)|\.\s*(\w+))", re.IGNORECASE
+)
+
+
+def _column_from_flat(name: str, type_spec: Any) -> Dict[str, Any]:
+    """Build a canonical column dict from a flat-map ``name: "type string"``
+    entry, promoting inline modifiers (``primary key`` / ``not null`` /
+    ``unique`` / ``references x(y)``) to structured flags so the column
+    projects correctly through BOTH the DDL and ORM renderers. The full type
+    string (FK and all) is preserved verbatim as ``type`` for the DDL
+    renderer, which honours inline ``references`` directly."""
+    col: Dict[str, Any] = {"name": str(name), "type": str(type_spec or "").strip()}
+    spec = col["type"]
+    if _INLINE_PK_RE.search(spec):
+        col["primary_key"] = True
+    if _INLINE_NOTNULL_RE.search(spec):
+        col["not_null"] = True
+    if _INLINE_UNIQUE_RE.search(spec):
+        col["unique"] = True
+    m = _INLINE_REFERENCES_RE.search(spec)
+    if m:
+        col["references"] = "{}({})".format(m.group(1), m.group(2) or m.group(3))
+    return col
+
+
+def normalize_columns(schema: Any) -> List[Any]:
+    """Coerce ANY accepted table-schema shape to a canonical column LIST:
+      * a ``{"columns": [...]}`` dict           → its ``columns`` list (as-is)
+      * a bare ``[{"name","type"}, ...]`` list  → itself (as-is)
+      * a flat map ``{col: "type string"}``     → ``[{"name","type", …}]`` with
+        inline modifiers promoted to structured flags (see _column_from_flat)
+    Returns [] for anything unrecognized (an empty/None schema)."""
+    if isinstance(schema, list):
+        return schema
+    if isinstance(schema, dict):
+        cols = schema.get("columns")
+        if isinstance(cols, list):
+            return cols
+        # Flat map {column_name: "type string"} — the contract-tool shape.
+        return [_column_from_flat(k, v) for k, v in schema.items()]
+    return []
+
+
+def normalize_table_schema(schema: Any) -> Dict[str, Any]:
+    """Coerce ANY accepted table-schema shape to the ONE canonical container
+    ``{"columns": [{"name","type", …}]}`` — the shape ``kickoff_declare_table``
+    /``finalize_kickoff`` already produce and every reader (via ``_columns_of``)
+    already understands. Idempotent: a canonical ``{"columns":[…]}`` input is
+    returned structurally unchanged."""
+    if isinstance(schema, dict) and isinstance(schema.get("columns"), list):
+        return schema
+    return {"columns": normalize_columns(schema)}
+
+
 def _columns_of(table: Dict[str, Any]) -> List[Any]:
     """Extract the column list from a SchemaHub table record.
 
     Canonical shape: ``table["schema"]["columns"]`` (finalize_kickoff
     stores the contract table minus ``name`` under ``schema``). Tolerant
-    of a flattened ``table["columns"]`` — same data, alternate location,
-    not an invented default."""
+    of a flattened ``table["columns"]`` list AND of a raw flat-map
+    ``{column: "type string"}`` schema (defense in depth: a legacy/raw
+    store row still projects correctly), via ``normalize_columns`` — same
+    data, alternate location/shape, not an invented default."""
     schema = table.get("schema")
     if isinstance(schema, dict) and isinstance(schema.get("columns"), list):
         return schema["columns"]
     if isinstance(table.get("columns"), list):
         return table["columns"]
+    # Flat-map schema (or a bare list under ``schema``) — normalize so a row
+    # that bypassed the write-boundary normalizer still yields its columns.
+    if isinstance(schema, (dict, list)) and schema:
+        return normalize_columns(schema)
     return []
 
 
@@ -528,6 +613,8 @@ def write_database_scaffold(output_dir: Path, tables: Dict[str, Any]) -> Dict[st
 __all__ = [
     "render_schema_sql",
     "write_database_scaffold",
+    "normalize_table_schema",
+    "normalize_columns",
     "SPINE_TABLE_RECORDS",
     "_SPINE_OWNED_TABLES",
 ]

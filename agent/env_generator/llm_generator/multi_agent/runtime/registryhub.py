@@ -912,16 +912,25 @@ class RegistryHub:
         now = time.time()
         table_id = name
         existing = self._tables.value().get(table_id)
+        # NORMALIZE AT THE WRITE BOUNDARY: the contract tools advertise a
+        # FLAT-MAP schema (``{column: "type string"}``) while kickoff emits
+        # ``{"columns":[{name,type,…}]}``. Storing either verbatim meant the
+        # flat map never projected (``_columns_of`` returned [] → id-only ORM/
+        # DDL, every other column silently dropped on re-registered tables).
+        # Collapse to ONE canonical shape here so the store holds a single
+        # representation every downstream reader already understands.
+        if schema is not None:
+            from .database_scaffold import normalize_table_schema
+            stored_schema: Any = normalize_table_schema(schema)
+        else:
+            stored_schema = (existing or {}).get("schema") or {}
         table = {
             **(existing or {}),
             "id": table_id,
             "name": name,
             "status": status or (existing or {}).get("status") or "defined",
             "provider": provider or (existing or {}).get("provider"),
-            "schema": (
-                schema if schema is not None
-                else (existing or {}).get("schema") or {}
-            ),
+            "schema": stored_schema,
             "metadata": {
                 **((existing or {}).get("metadata") or {}),
                 **(metadata or {}),
@@ -1193,8 +1202,15 @@ class RegistryHub:
                 "hint": "Call registryhub_register_table first.",
             }
         if metadata and "expected_columns" in metadata:
+            # ``expected_columns`` is a flat ``{column: type}`` map (the
+            # consumer states the columns it reads). The stored schema is now
+            # the canonical ``{"columns":[…]}`` shape, so flatten it to the
+            # same ``{column: type}`` form before subset-checking — otherwise
+            # the check would look for the consumer's columns under the single
+            # ``"columns"`` key and always report them missing.
             mismatch = _schema_subset_check(
-                metadata["expected_columns"], table.get("schema", {}),
+                metadata["expected_columns"],
+                self._schema_as_col_map(table.get("schema", {})),
             )
             if mismatch:
                 return {
@@ -1282,11 +1298,29 @@ class RegistryHub:
     def list_seed_registrations(self) -> Dict[str, dict]:
         return dict(self._seed_registrations.value() or {})
 
+    @staticmethod
+    def _schema_as_col_map(schema: Any) -> Dict[str, str]:
+        """Flatten ANY accepted table-schema shape (flat map, ``{"columns":
+        [...]}``, or bare list) to a ``{column_name: type}`` map so the
+        breaking-change diff is shape-agnostic — it compares column NAMES and
+        TYPES, not the container shape. (Without this, a canonical stored
+        old-schema diffed against a flat-map new-schema would compare the
+        single key ``"columns"`` against the real column names.)"""
+        from .database_scaffold import normalize_columns
+        cols = normalize_columns(schema)
+        out: Dict[str, str] = {}
+        for c in cols:
+            if isinstance(c, dict):
+                cn = str(c.get("name") or "").strip()
+                if cn:
+                    out[cn] = str(c.get("type") or "")
+        return out
+
     def detect_table_breaking_change(
         self, old_schema: dict, new_schema: dict,
     ) -> dict:
-        old_schema = old_schema or {}
-        new_schema = new_schema or {}
+        old_schema = self._schema_as_col_map(old_schema or {})
+        new_schema = self._schema_as_col_map(new_schema or {})
         removed_columns: list = sorted(
             set(old_schema.keys()) - set(new_schema.keys())
         )
