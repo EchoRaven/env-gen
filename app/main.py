@@ -20,10 +20,12 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import hub_reader
+from . import chat_bridge, hub_reader
 from .auth import AuthContext, assert_env_access, current_admin, scope_query
 from .db import get_db, init_db, SessionLocal
-from .models import Environment, ChatMessage
+# NB: ChatMessage table is retained in models.py but no longer read/written here —
+# chat now sources truth from the live EventHub via chat_bridge.
+from .models import Environment
 
 ENVS_ROOT = Path(os.environ.get("ENVS_ROOT", str(Path(__file__).resolve().parents[1] / "generated")))
 
@@ -335,29 +337,35 @@ class ChatSend(BaseModel):
     thread_id: str = "main"
 
 
-def _chat_to_dict(m: ChatMessage) -> dict:
-    return {"id": m.id, "thread_id": m.thread_id, "sender": m.sender,
-            "recipients": [r for r in (m.recipients or "").split(",") if r],
-            "content": m.content, "created_at": m.created_at.isoformat() if m.created_at else ""}
-
-
 @app.get("/env-forge/environments/{env_id}/chat")
-def list_chat(env_id: str, db: Session = Depends(get_db),
+def list_chat(env_id: str, thread_id: str | None = None, db: Session = Depends(get_db),
               user: AuthContext = Depends(current_admin)) -> list[dict]:
-    _get_env(db, env_id, user)
-    msgs = db.scalars(select(ChatMessage).where(ChatMessage.env_id == env_id)).all()
-    return [_chat_to_dict(m) for m in sorted(msgs, key=lambda x: x.id)]
+    """Chat transcript — sourced from the LIVE generation's EventHub (human
+    messages + agent replies), not the local ChatMessage table. ``thread_id``
+    scopes to one conversation; omit it to flatten across every conversation."""
+    e = _get_env(db, env_id, user)
+    try:
+        return chat_bridge.list_messages(e.generated_dir, thread_id=thread_id,
+                                         default_user_id=user.user_id)
+    except chat_bridge.ChatBridgeError:
+        # No hub yet (generation not started) — nothing to show, not an error.
+        return []
 
 
 @app.post("/env-forge/environments/{env_id}/chat")
 def send_chat(env_id: str, body: ChatSend, db: Session = Depends(get_db),
               user: AuthContext = Depends(current_admin)) -> dict:
-    _get_env(db, env_id, user)
-    m = ChatMessage(env_id=env_id, thread_id=body.thread_id, sender="user",
-                    recipients=",".join(body.recipients), content=body.content)
-    db.add(m)
-    db.commit()
-    db.refresh(m)
-    # TODO: when the generation pipeline is live, dispatch this to the selected
-    # agents' chat mini-loop and persist their replies as sender=<agent_id>.
-    return _chat_to_dict(m)
+    """Dispatch a human message to the running agents via the env's EventHub
+    (HumanConsole). ``from_user`` is the authed admin's id so the 4.7 gate
+    accepts it and agents address replies to the right person."""
+    e = _get_env(db, env_id, user)
+    try:
+        return chat_bridge.send(
+            e.generated_dir,
+            content=body.content,
+            recipients=body.recipients,
+            thread_id=body.thread_id,
+            from_user=user.user_id,
+        )
+    except chat_bridge.ChatBridgeError as exc:
+        raise HTTPException(400, str(exc))
