@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -8,6 +9,39 @@ from utils.tool import ToolResult
 
 from ...tool_surface import summarize_tool_surface
 from ...tools import Workspace, assemble_tool_pool, create_tool_assembly_context
+
+
+# Common shell/search tool-name confusions agents reach for when the canonical
+# tool isn't obvious — mapped to the real tools, filtered at call time to only
+# those the agent actually has granted.
+_TOOL_INTENTS = (
+    (("bash", "shell", "command", "exec", "run", "cmd", "terminal"),
+     ("execute_bash", "execute_ipython", "local_bash")),
+    (("search", "grep", "find", "glob", "locate", "lookup"),
+     ("grep", "glob", "find_definition", "find_references",
+      "list_generated_files", "codehub_get_file_content")),
+)
+
+
+def suggest_tools(tool_name: str, available) -> list:
+    """Closest GRANTED tool names for an unknown ``tool_name``.
+
+    Agents otherwise burn rounds guessing variants (observed in the youtube run:
+    execute_command / local_bash / shell / run_command for execute_bash). Try a
+    fuzzy (typo) match against the agent's available tools first; if none, fall
+    back to an intent map (shell / file-search). Only ever returns tools the
+    agent actually has, so every suggestion is immediately callable."""
+    available = list(available)
+    hits = difflib.get_close_matches(tool_name, sorted(available), n=3, cutoff=0.6)
+    if hits:
+        return hits
+    low = tool_name.lower()
+    for keys, cands in _TOOL_INTENTS:
+        if any(k in low for k in keys):
+            avail_hits = [c for c in cands if c in available]
+            if avail_hits:
+                return avail_hits
+    return []
 
 
 class AgentTooling:
@@ -608,7 +642,10 @@ class AgentTooling:
                 return result
             except Exception as e:
                 return ToolResult(success=False, error_message=str(e))
-        return ToolResult(success=False, error_message=f"Unknown tool: {tool_name}")
+        hits = suggest_tools(tool_name, self._tool_instances.keys())
+        msg = f"Unknown tool: {tool_name}."
+        msg += f" Did you mean: {', '.join(hits)}?" if hits else " Call only tools listed in your tool schema."
+        return ToolResult(success=False, error_message=msg)
 
     def _log_tool_details(self, tool_name: str, tool_args: Dict) -> None:
         """Enhanced logging for tool calls with detailed content for important tools."""
