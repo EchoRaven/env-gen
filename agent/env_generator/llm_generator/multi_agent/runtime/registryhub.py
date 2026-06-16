@@ -990,7 +990,7 @@ class RegistryHub:
             # A3 (2026-06-12): widened from {frontend, orchestrator} when
             # workhub.update_ui_page became a thin delegate to this method.
             # The old workhub path was UNGATED and its shadow-write swallowed
-            # PermissionError, so EVERY agent holding the workhub_update_page
+            # PermissionError, so EVERY agent holding the workhub_register_ui_page
             # tool (orchestrator/backend/frontend/verifier/debugger — see
             # tool_bundles._bundle_workhub_tools grants) could write a ui_page.
             # backend/verifier/debugger are added here to preserve that

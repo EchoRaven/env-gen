@@ -582,8 +582,8 @@ def build_hub_pulse_prompt(pulse: Dict[str, Any]) -> Optional[str]:
             count = ui_drift.get("code_paths_count", 0)
             lines.append(
                 f"- You've written {count} page/component file(s) "
-                f"(e.g. {sample}) but WorkHub shows **0 ui_pages owned by you**. "
-                f"Call `workhub_update_page(...)` for each."
+                f"(e.g. {sample}) but RegistryHub shows **0 ui_pages owned by you**. "
+                f"Call `workhub_register_ui_page(...)` for each."
             )
 
     stale = pulse.get("stale_tasks") or []

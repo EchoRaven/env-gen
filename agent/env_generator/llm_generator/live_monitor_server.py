@@ -3724,7 +3724,7 @@ def workhub_set_priority_call(workspaces_root: Path, project_id: str, task_id: s
 
 
 def workhub_create_page_call(workspaces_root: Path, project_id: str, body: dict) -> dict:
-    """POST /api/projects/<id>/workhub/pages — create a WorkHub page."""
+    """POST /api/projects/<id>/workhub/pages — create a WorkHub coordination document."""
     reg, err = _resolve_hubs(workspaces_root, project_id)
     if err:
         return err

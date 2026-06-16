@@ -222,7 +222,7 @@ class HubPulseSelfAuditTests(unittest.TestCase):
         }
         self.assertTrue(should_render(pulse))
         prompt = build_hub_pulse_prompt(pulse)
-        self.assertIn("workhub_update_page", prompt)
+        self.assertIn("workhub_register_ui_page", prompt)
 
     def test_self_audit_silent_when_no_drift(self):
         pulse = {"self_audit": {}}

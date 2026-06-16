@@ -594,8 +594,12 @@ class CodeHubCreateReleaseTool(HubTool):
 
 
 class WorkHubCreatePageTool(HubTool):
-    NAME = "workhub_create_page"
-    DESCRIPTION = "Create a Notion-like WorkHub page."
+    NAME = "workhub_create_document"
+    DESCRIPTION = (
+        "Create a Notion-like WorkHub coordination document (kickoff/meeting/"
+        "retro/project/general notes). NOTE: this is NOT a UI page — UI pages "
+        "are registered via workhub_register_ui_page into RegistryHub."
+    )
     PARAMETERS = {"type": "object", "properties": {"title": {"type": "string"}, "parent": {"type": "string"}, "attendees": {"type": "array", "items": {"type": "string"}}}, "required": ["title"]}
 
     async def _run(self, title: str, parent: str = None, attendees: list = None) -> ToolResult:
@@ -603,9 +607,9 @@ class WorkHubCreatePageTool(HubTool):
 
 
 class WorkHubUpdatePageTool(HubTool):
-    NAME = "workhub_update_page"
+    NAME = "workhub_register_ui_page"
     DESCRIPTION = (
-        "Upsert a UI page entry on WorkHub (kind='ui_page'), keyed by ``name`` — "
+        "Register a UI page into RegistryHub (kind='ui_page'), keyed by ``name`` — "
         "the spec-to-file mapping (path/components/reference). NOTE: you cannot "
         "set status='implemented' — the FRAMEWORK audits the code (component "
         "exists + route wired + declared APIs called + controls bound) and flips "
@@ -814,8 +818,8 @@ class WorkHubGetPageTool(HubTool):
 
 
 class WorkHubListPagesTool(HubTool):
-    NAME = "workhub_list_pages"
-    DESCRIPTION = "List WorkHub pages, optionally filtered by kind or status."
+    NAME = "workhub_list_documents"
+    DESCRIPTION = "List WorkHub coordination documents, optionally filtered by kind or status."
     PARAMETERS = {"type": "object", "properties": {"kind": {"type": "string"}, "status": {"type": "string"}}}
 
     async def _run(self, kind: str = None, status: str = None) -> ToolResult:

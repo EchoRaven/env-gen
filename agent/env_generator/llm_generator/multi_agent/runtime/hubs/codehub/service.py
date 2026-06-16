@@ -312,7 +312,7 @@ class CodeHub:
                 return {
                     "error": "linked_pages_unknown",
                     "unknown": unknown_pages,
-                    "hint": "Create the WorkHub page first via workhub_create_page.",
+                    "hint": "Create the WorkHub document first via workhub_create_document.",
                 }
 
         # Gate 7: every linked_consumer must exist in RegistryHub consumers

@@ -615,8 +615,8 @@ class HubConsistencyPolicy(BaseWorkflowPolicy):
                 more = f" (+{len(relevant) - 3} more)" if len(relevant) > 3 else ""
                 return (
                     f"You wrote {len(relevant)} page file(s) [{sample}{more}] "
-                    f"but registered 0 ui_pages in WorkHub. Call "
-                    f"`workhub_update_page(name=..., path=..., "
+                    f"but registered 0 ui_pages as RegistryHub ui_pages. Call "
+                    f"`workhub_register_ui_page(name=..., path=..., "
                     f"status='implemented', components=[...])` for each."
                 )
             return None

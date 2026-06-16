@@ -1426,7 +1426,7 @@ class ContractShapeFloorRound38Tests(unittest.TestCase):
 
 
 class UiPageCaseNormalizeTests(unittest.TestCase):
-    """Round 38: frontend's legacy workhub_update_page with the PascalCase
+    """Round 38: frontend's legacy workhub_register_ui_page with the PascalCase
     component name ('Login') forked a case-duplicate phantom beside the
     declared 'login'. update_ui_page now snake_case-normalizes the name so a
     PascalCase call MERGES onto the declared page."""

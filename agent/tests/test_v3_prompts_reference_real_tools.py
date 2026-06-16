@@ -209,7 +209,7 @@ class RegisteredToolNameSetIsNonEmpty(unittest.TestCase):
         names = _enumerate_registered_tool_names()
         for required in [
             "registryhub_register_endpoint", "registryhub_register_table",
-            "workhub_task", "workhub_create_page",
+            "workhub_task", "workhub_create_document",
             "design_get_status", "check_inbox",
         ]:
             self.assertIn(required, names,

@@ -13,7 +13,7 @@ Fix #4 landed):
   ``action.py:_apply_hub_focus -> tooling.py:_stage_tool_names ->
    rank_tool_names(limit=10)`` was DROPPING
   ``workhub_add_meeting_decision`` from the per-step tool surface,
-  preferring semantically similar tools like ``workhub_update_page``
+  preferring semantically similar tools like ``workhub_register_ui_page``
   / ``workhub_task``. All 4 attendees called focus_hub("workhub") and
   saw 10 workhub WRITE tools — but the one tool their
   kickoff_response_prompt macro explicitly instructs them to call
@@ -22,7 +22,7 @@ Fix #4 landed):
   ``"Blocked in kickoff response: documented
   workhub_add_meeting_decision tool is not exposed in the current
   toolset after focusing WorkHub"``. The other 3 attendees showed
-  the same "called update_page/task instead" pattern.
+  the same "called register_ui_page/task instead" pattern.
 
 Fix #5 adds the three kickoff meeting primitives —
 ``workhub_create_meeting``, ``workhub_add_meeting_decision``,

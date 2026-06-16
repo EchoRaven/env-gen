@@ -244,7 +244,7 @@ profiles:
       "kickoff:action":
         - workhub_add_meeting_decision
         - workhub_get_page
-        - workhub_list_pages
+        - workhub_list_documents
         - workhub_comment
         - read
         - finish
@@ -253,7 +253,7 @@ profiles:
       # orchestrator spun 20min. Code+registration tools WERE available
       # (always-include) — the LLM chose to read/coordinate. This allowlist
       # forces the implementation action stages to code-producing tools and
-      # STRIPS the drift sinks (get_page/list_pages/comment/add_meeting_decision
+      # STRIPS the drift sinks (get_page/list_documents/comment/add_meeting_decision
       # /ask_agent/broadcast). Over-listing is harmless (intersected with the
       # agent's real tools); only an omission hurts, so it's deliberately
       # generous. (_active_phase="implementation" pinned in base.process_task.)
@@ -270,8 +270,8 @@ profiles:
         - report_progress
         - workhub_task
         - workhub_list_tasks
-        - workhub_update_page
-        - workhub_create_page
+        - workhub_register_ui_page
+        - workhub_create_document
         - workhub_share_implementation
         - workhub_fail_task
         - registryhub_register_endpoint
@@ -400,7 +400,7 @@ profiles:
       "kickoff:action":
         - workhub_add_meeting_decision
         - workhub_get_page
-        - workhub_list_pages
+        - workhub_list_documents
         - workhub_comment
         - read
         - finish
@@ -561,7 +561,7 @@ profiles:
       "kickoff:action":
         - workhub_add_meeting_decision
         - workhub_get_page
-        - workhub_list_pages
+        - workhub_list_documents
         - workhub_comment
         - read
         - finish
@@ -588,7 +588,7 @@ profiles:
         - workhub_list_tasks
         - workhub_cancel_task
         - workhub_get_page
-        - workhub_list_pages
+        - workhub_list_documents
         - registryhub_list_endpoints
         - registryhub_get_endpoint
         - registryhub_list_tables

@@ -2,7 +2,7 @@
 runtime hint, or workflow-policy gap message MUST exist as a real
 registered tool. This is the class of bug the user keeps catching
 ("``workhub_complete_task`` mentioned, doesn't exist"; "gap message
-says call ``workhub_update_page``, no such tool"). One test, one fence.
+says call ``workhub_register_ui_page``, no such tool"). One test, one fence.
 
 The scan:
   1. Walk every tool class in ``tools/`` and collect its ``NAME = "..."``.

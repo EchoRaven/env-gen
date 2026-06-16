@@ -56,6 +56,12 @@ class WorkHub:
 
     def create_page(self, title: str, parent: str = None, attendees: Optional[List[str]] = None, agent: str = "",
                     kind: str = "general", metadata: Optional[dict] = None) -> dict:
+        """Create a coordination document (kind=kickoff/meeting/retro/project/general).
+
+        NOTE: not a UI page — UI pages live in RegistryHub. (Method name kept
+        as ``create_page`` for snapshot/resume compat; the agent-facing tool is
+        ``workhub_create_document``.)
+        """
         actor = agent or "workhub"
         now = time.time()
         page_id = f"page_{uuid.uuid4().hex[:10]}"
@@ -1063,7 +1069,7 @@ class WorkHub:
         metadata: Optional[dict] = None,
         agent: str = "",
     ) -> dict:
-        """Create a meeting page (default kind='kickoff', status='open').
+        """Create a meeting document (default kind='kickoff', status='open').
 
         NOT a delegate of ``create_page``: meetings differ in three
         meeting-specific ways that justify the inline construction here
@@ -1229,7 +1235,7 @@ class WorkHub:
         agent: str = "",
         milestone_index: Optional[int] = None,
     ) -> dict:
-        """Close a meeting page: flip status to 'closed', record artifacts.
+        """Close a meeting document: flip status to 'closed', record artifacts.
 
         Symmetric to ``archive_page`` but specialized for meetings: stores
         the canonical list of artifacts the meeting produced (page ids,
@@ -1307,7 +1313,7 @@ class WorkHub:
         return page_after
 
     def record_decision(self, page_id: str, title: str, options: list, chosen: str, reason: str, agent: str = "") -> dict:
-        """Append a decision block to page_id and record in decisions store."""
+        """Append a decision block to the document (page_id) and record in decisions store."""
         if page_id not in self.stores.pages.value():
             return {"error": f"Page not found: {page_id}"}
         content = {"title": title, "options": options, "chosen": chosen, "reason": reason}

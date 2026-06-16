@@ -109,7 +109,7 @@ class EmptyMCPServerTests(unittest.TestCase):
 
 
 class PagesWithoutFilesTests(unittest.TestCase):
-    """workhub_update_page(path=...) should map to an actual file on
+    """workhub_register_ui_page(path=...) should map to an actual file on
     disk. A missing file means the agent registered a phantom page."""
 
     def setUp(self) -> None:

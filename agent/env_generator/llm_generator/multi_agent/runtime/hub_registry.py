@@ -5,7 +5,7 @@ Composes the four collaboration hubs:
   - registryhub   (RegistryHub)   — API contracts, tables
   - codehub  (CodeHub)  — git worktree, PR checks, diffs
   - eventhub (EventHub) — agent status, inbox, pub/sub bridge
-  - workhub  (WorkHub)  — tasks, plans, pages, decisions
+  - workhub  (WorkHub)  — tasks, plans, documents (kickoff/meeting/retro/project), decisions — UI pages live in RegistryHub
 
 Usage:
     hubs = HubRegistry(base_dir, message_bus=bus)
