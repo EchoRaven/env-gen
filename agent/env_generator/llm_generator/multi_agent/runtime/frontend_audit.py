@@ -40,6 +40,49 @@ def _page_dead_controls(text: str) -> bool:
     return interactive and not bound
 
 
+def _route_element(app_jsx: str, route: str) -> Optional[str]:
+    """The component identifier wired to ``route`` in App.jsx, or None.
+
+    e.g. ``<Route path="/" element={<Home />} />`` for route ``/`` → ``"Home"``.
+    The declared ui_page ``component`` is a LOGICAL name (``HomePage``); the lane
+    is free to render the route with any actual component file (``Home.jsx``).
+    The route→element wiring is the source of truth for *what renders this page*,
+    so the audit resolves the declared page to its real on-disk component THROUGH
+    the route element rather than insisting the file be named after the logical
+    component. Domain-agnostic; matches single- or double-quoted paths."""
+    if not route:
+        return None
+    for q in ('"', "'"):
+        # tolerate attribute order: scan from the path attr to the next element=
+        idx = app_jsx.find(f"path={q}{route}{q}")
+        while idx != -1:
+            # bound the search to this <Route ...> tag (up to the next '>')
+            end = app_jsx.find(">", idx)
+            segment = app_jsx[idx:end if end != -1 else idx + 400]
+            m = re.search(r"element=\{\s*<\s*([A-Za-z_]\w*)", segment)
+            if m:
+                return m.group(1)
+            idx = app_jsx.find(f"path={q}{route}{q}", idx + 1)
+    return None
+
+
+def _component_resolves(name: str, frontend_src: Path,
+                        src_cache: Mapping[str, str], all_src: str) -> bool:
+    """True iff a component identifier resolves to real source: an own file
+    (``pages/X.jsx`` / ``components/X.jsx`` / any file whose stem is ``X``) OR a
+    ``function X`` / ``const X`` definition anywhere. Purely static, layout- and
+    domain-agnostic."""
+    if not name:
+        return False
+    for kind_dir in ("pages", "components"):
+        if src_cache.get(str(frontend_src / kind_dir / f"{name}.jsx")) is not None:
+            return True
+    for fname in src_cache:
+        if Path(fname).stem == name:
+            return True
+    return bool(re.search(r"(function|const)\s+" + re.escape(name) + r"\b", all_src))
+
+
 def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
                   *, _src_cache: Optional[Dict[str, str]] = None,
                   ) -> Tuple[bool, List[str]]:
@@ -59,6 +102,7 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
                 continue
     all_src = "\n".join(_src_cache.values())
 
+    app_jsx = _src_cache.get(str(frontend_src / "App.jsx")) or ""
     comp_file_text = None
     if component:
         # CANONICAL LAYOUT (user decision 2026-06-11): declared structure maps
@@ -77,13 +121,41 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
                         f"`{component}` exists but NOT at the canonical path "
                         f"src/{kind_dir}/{component}.jsx — move it there")
                     break
-        if comp_file_text is None:
-            if not re.search(r"(function|const)\s+" + re.escape(component) + r"\b",
-                             all_src):
+        # `defined inline somewhere` (component name appears as a function/const
+        # definition) counts as resolved but yields NO own file text — keep
+        # comp_file_text None so the dead-controls / page-import checks (which
+        # must run on the component's OWN file, never the whole src) stay scoped.
+        resolved_inline = comp_file_text is None and bool(re.search(
+            r"(function|const)\s+" + re.escape(component) + r"\b", all_src))
+        if comp_file_text is None and not resolved_inline:
+            # ROUTE-ELEMENT RESOLUTION (fix 2026-06-16): the declared ``component``
+            # is a LOGICAL page name (e.g. ``HomePage``); the lane is free to render
+            # the route with a differently-named real file (``Home.jsx`` →
+            # ``element={<Home />}``). The route→element wiring is the source of
+            # truth for what renders the page, so resolve THROUGH it before
+            # declaring the component missing — otherwise a fully-built, wired,
+            # navigable page can never flip defined→implemented (component↔filename
+            # mismatch froze run #3's 5 real pages at ``defined`` → the navigable
+            # gate reported a blank shell). Domain-agnostic: no app specifics.
+            elem = _route_element(app_jsx, route) if not page.get("_is_component") else None
+            if elem and _component_resolves(elem, frontend_src, _src_cache, all_src):
+                # bind comp_file_text to the element's OWN file when it has one
+                # (so dead-controls / page-import still check real source); an
+                # inline-defined element resolves without file text, same as above.
+                for cand in (frontend_src / "pages" / f"{elem}.jsx",
+                             frontend_src / "components" / f"{elem}.jsx"):
+                    if _src_cache.get(str(cand)) is not None:
+                        comp_file_text = _src_cache[str(cand)]
+                        break
+                if comp_file_text is None:
+                    for fname, text in _src_cache.items():
+                        if Path(fname).stem == elem:
+                            comp_file_text = text
+                            break
+            else:
                 missing.append(f"component `{component}` not found — expected "
                                f"at src/{kind_dir}/{component}.jsx")
     if route:
-        app_jsx = _src_cache.get(str(frontend_src / "App.jsx")) or ""
         if f'path="{route}"' not in app_jsx and f"path='{route}'" not in app_jsx:
             missing.append(f"route `{route}` not wired in App.jsx")
     for api in apis:
