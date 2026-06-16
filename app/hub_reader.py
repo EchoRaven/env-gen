@@ -125,17 +125,26 @@ def _ui_pages(gen: Path, h: Path) -> list[dict]:
 
 
 def _ui_components(gen: Path, h: Path) -> list[dict]:
-    out = [{"id": v.get("id", ""), "name": v.get("name", v.get("component", "")),
-            "status": v.get("status", "defined"), "used_by": len(v.get("used_by") or [])}
-           for v in _records(_load(h / "registryhub_ui_components.json"))]
+    # The lane rarely fills a component's own ``used_by`` — but pages DO declare the
+    # components they compose, so derive the reverse mapping (component -> #pages).
+    usage: dict[str, int] = {}
+    for p in _records(_load(h / "registryhub_ui_pages.json")):
+        for c in (p.get("components") or []):
+            usage[str(c)] = usage.get(str(c), 0) + 1
+    out = []
+    for v in _records(_load(h / "registryhub_ui_components.json")):
+        comp = v.get("component") or v.get("name", "")
+        cid = v.get("id", "")
+        ub = v.get("used_by")
+        used = len(ub) if isinstance(ub, list) else (usage.get(comp) or usage.get(cid) or usage.get(v.get("name", "")) or 0)
+        out.append({"id": cid, "name": comp, "status": v.get("status", "defined"), "used_by": int(used)})
     if out:
         return out
-    # Registry empty (lane didn't register components) — surface the components that
-    # actually exist in the built frontend so the UI reflects reality, not a blank.
+    # Registry empty — surface the components that actually exist in the built frontend.
     comps_dir = gen / "app" / "frontend" / "src" / "components"
     if comps_dir.is_dir():
         for f in sorted(comps_dir.rglob("*.jsx")):
-            out.append({"id": f.stem, "name": f.stem, "status": "implemented", "used_by": 0})
+            out.append({"id": f.stem, "name": f.stem, "status": "implemented", "used_by": int(usage.get(f.stem, 0))})
     return out
 
 
@@ -154,10 +163,20 @@ def _contract_tests(h: Path) -> list[dict]:
 
 
 def _chains(h: Path) -> list[dict]:
-    return [{"name": v.get("name", k), "status": v.get("status", "unknown"),
-             "steps": len(v.get("steps") or [])}
-            for k, v in (_load(h / "registryhub_verification_chains.json")).items()
-            if k != "_meta" and isinstance(v, dict)]
+    out = []
+    for k, v in (_load(h / "registryhub_verification_chains.json")).items():
+        if k == "_meta" or not isinstance(v, dict):
+            continue
+        steps = v.get("steps") or []
+        lr = v.get("last_result")
+        last_result = _truncate_jsonable(lr) if isinstance(lr, (dict, list)) else (str(lr)[:600] if lr else None)
+        out.append({"name": v.get("name", k), "status": v.get("status", "unknown"),
+                    "steps": len(steps), "description": v.get("description", ""),
+                    "last_result": last_result,
+                    "step_detail": [{"method": str(s.get("method", "")), "path": str(s.get("path", "")),
+                                     "expect": s.get("expect")}
+                                    for s in steps if isinstance(s, dict)][:40]})
+    return out
 
 
 def _tasks(h: Path) -> list[dict]:
@@ -398,10 +417,14 @@ def _agents(h: Path) -> list[dict]:
 
 
 def _pages(h: Path) -> list[dict]:
+    # WorkHub's document model calls everything a "page", but ui_page / ui_component
+    # docs belong in RegistryHub (shown there) — exclude them so this is only the
+    # coordination docs (project / kickoff / retro / meeting notes).
     return [{"id": v.get("id", ""), "title": v.get("title", ""), "kind": v.get("kind", ""),
              "status": v.get("status", ""), "description": (v.get("description") or "")[:300],
              "attendees": [str(a) for a in (v.get("attendees") or [])]}
-            for v in _records(_load(h / "workhub_pages.json"))]
+            for v in _records(_load(h / "workhub_pages.json"))
+            if v.get("kind") not in ("ui_page", "ui_component")]
 
 
 def _milestones(h: Path) -> list[dict]:
@@ -464,6 +487,16 @@ def _gates(h: Path, ui_pages: list[dict], chains: list[dict]) -> list[dict]:
     if chains:
         gates.append({"name": "business_chain", "status": "fail" if failing else "pass",
                       "detail": f"{len(failing)} of {len(chains)} chains failing"})
+    # user-defined custom gates (managed from the UI; design/custom_gates.json)
+    cg_path = h.parent.parent / "design" / "custom_gates.json"
+    try:
+        custom = json.loads(cg_path.read_text(encoding="utf-8")) if cg_path.is_file() else []
+    except Exception:
+        custom = []
+    for g in custom if isinstance(custom, list) else []:
+        if isinstance(g, dict) and g.get("name"):
+            gates.append({"name": g["name"], "status": g.get("status", "manual"),
+                          "detail": g.get("detail", ""), "custom": True})
     return gates
 
 
