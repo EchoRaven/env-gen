@@ -3056,7 +3056,9 @@ volumes:
                 write_agent_notes(self.output_dir)
             except Exception:
                 pass
-            staged = stage_reference_docs(split["docs"], self.output_dir)
+            # stage BOTH docs and reference images into design/references/ so the
+            # env is self-contained (the Env Forge UI can serve/show the screenshots).
+            staged = stage_reference_docs(split["docs"] + split["images"], self.output_dir)
             if staged:
                 self._logger.info("Reference documents staged: %s", staged)
             spec = await compile_reference_spec(

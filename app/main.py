@@ -13,6 +13,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -197,6 +198,20 @@ def get_files(env_id: str, path: str = "", db: Session = Depends(get_db)) -> dic
             raise HTTPException(415, "not a text file")
         return {"file": str(target.relative_to(root)), "content": text}
     raise HTTPException(404, "not found")
+
+
+@app.get("/env-forge/environments/{env_id}/references/{name}")
+def get_reference_file(env_id: str, name: str, db: Session = Depends(get_db)):
+    """Serve a staged reference file (screenshot/doc) from the env's design/references."""
+    e = _get_env(db, env_id)
+    if not e.generated_dir:
+        raise HTTPException(404, "not found")
+    root = Path(e.generated_dir).resolve()
+    for sub in ("design/references", "design/reference_images"):
+        f = (root / sub / name).resolve()
+        if (f == root or root in f.parents) and f.is_file():
+            return FileResponse(str(f))
+    raise HTTPException(404, "reference not found")
 
 
 class ChatSend(BaseModel):
