@@ -8,6 +8,7 @@ a missing/partial store yields an empty section, never a crash. NO hardcoded dat
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,15 @@ def _iso(ts: Any) -> str:
 
 def _hubs(gen: Path) -> Path:
     return gen / "shared" / "hubs"
+
+
+def _hub_mtime(h: Path) -> float:
+    """Most-recent write across the hub stores — a liveness signal (the runtime
+    rewrites these JSON stores as agents work). 0.0 if none/unreadable."""
+    try:
+        return max((p.stat().st_mtime for p in h.glob("*.json")), default=0.0)
+    except OSError:
+        return 0.0
 
 
 # ── per-section readers ─────────────────────────────────────────────────────
@@ -85,22 +95,37 @@ def _wired_routes(gen: Path) -> str:
 
 def _ui_pages(gen: Path, h: Path) -> list[dict]:
     app_src = _wired_routes(gen)
+    # The registry frequently omits route/component (the lane registered names only);
+    # backfill the route from the compiled reference spec so the UI isn't blank.
+    ref_routes = {s.get("name"): s.get("route_hint", "")
+                  for s in (_load(gen / "design" / "reference_spec.json").get("screens") or [])
+                  if isinstance(s, dict) and s.get("name")}
     out = []
     for v in _records(_load(h / "registryhub_ui_pages.json")):
-        route = v.get("route") or v.get("path") or ""
+        name = v.get("name", "")
+        route = v.get("route") or v.get("path") or ref_routes.get(name, "")
         wired = bool(route) and (f'path="{route}"' in app_src or f"path='{route}'" in app_src
                                  or (route == "/" and "index" in app_src))
-        out.append({"id": v.get("id", v.get("name", "")), "name": v.get("name", ""),
+        out.append({"id": v.get("id", name), "name": name,
                     "route": route, "component": v.get("component", ""),
                     "status": v.get("status", "defined"),
                     "apis": len(v.get("apis_used") or []), "wired": wired})
     return out
 
 
-def _ui_components(h: Path) -> list[dict]:
-    return [{"id": v.get("id", ""), "name": v.get("name", v.get("component", "")),
-             "status": v.get("status", "defined"), "used_by": len(v.get("used_by") or [])}
-            for v in _records(_load(h / "registryhub_ui_components.json"))]
+def _ui_components(gen: Path, h: Path) -> list[dict]:
+    out = [{"id": v.get("id", ""), "name": v.get("name", v.get("component", "")),
+            "status": v.get("status", "defined"), "used_by": len(v.get("used_by") or [])}
+           for v in _records(_load(h / "registryhub_ui_components.json"))]
+    if out:
+        return out
+    # Registry empty (lane didn't register components) — surface the components that
+    # actually exist in the built frontend so the UI reflects reality, not a blank.
+    comps_dir = gen / "app" / "frontend" / "src" / "components"
+    if comps_dir.is_dir():
+        for f in sorted(comps_dir.rglob("*.jsx")):
+            out.append({"id": f.stem, "name": f.stem, "status": "implemented", "used_by": 0})
+    return out
 
 
 def _contract_tests(h: Path) -> list[dict]:
@@ -189,6 +214,48 @@ def _events(h: Path) -> list[dict]:
              "payload": e.get("payload") or {}, "created_at": _iso(e.get("created_at"))} for e in evs]
 
 
+# Approx USD per 1M tokens (input, output) — for an ESTIMATED cost when the runtime
+# didn't persist system_token_usage.json and we aggregate from the generation log.
+_MODEL_RATES = {
+    "gemini-3.1-pro": (1.25, 5.0), "gemini-2.5-pro": (1.25, 5.0), "gemini": (0.5, 1.5),
+    "gpt-5": (1.25, 10.0), "gpt": (1.0, 4.0),
+    "claude-opus": (15.0, 75.0), "claude-sonnet": (3.0, 15.0), "claude": (3.0, 15.0),
+}
+
+
+def _token_rate(model: str) -> tuple[float, float]:
+    m = (model or "").lower()
+    for key, rate in _MODEL_RATES.items():
+        if key in m:
+            return rate
+    return (1.0, 3.0)
+
+
+def _metrics_from_log(gen: Path) -> dict | None:
+    """Fallback when system_token_usage.json is absent: aggregate the per-call token
+    usage the runtime logs (``[LLM Response] prompt_tokens=.. completion_tokens=..``)
+    from the env's generation log, estimating cost via _MODEL_RATES. Counts are
+    exact; cost is an estimate."""
+    import re
+    logs = sorted((gen / "logs").glob("generation_*.log")) if (gen / "logs").is_dir() else []
+    if not logs:
+        return None
+    try:
+        text = logs[-1].read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+    ins = sum(int(x) for x in re.findall(r"prompt_tokens=(\d+)", text))
+    outs = sum(int(x) for x in re.findall(r"completion_tokens=(\d+)", text))
+    if ins == 0 and outs == 0:
+        return None
+    mm = re.search(r"model=([A-Za-z0-9.\-]+-[A-Za-z0-9.\-]+)", text)  # skip model=jwt etc.
+    model = mm.group(1) if mm else "?"
+    ri, ro = _token_rate(model)
+    cost = round(ins / 1e6 * ri + outs / 1e6 * ro, 2)
+    return {"total_input": ins, "total_output": outs, "total_cost": cost,
+            "by_model": [{"model": model, "input": ins, "output": outs, "cost": cost}]}
+
+
 def _metrics(h: Path) -> dict:
     data = _load(h / "system_token_usage.json")
     total_in = total_out = 0
@@ -205,6 +272,11 @@ def _metrics(h: Path) -> dict:
             slot["input"] += int(mu.get("input", 0) or 0)
             slot["output"] += int(mu.get("output", 0) or 0)
             slot["cost"] += float(mu.get("cost", 0.0) or 0.0)
+    if total_in == 0 and total_out == 0:
+        # the runtime didn't persist the usage store — aggregate from the log instead
+        fb = _metrics_from_log(h.parent.parent)  # h = <gen>/shared/hubs
+        if fb:
+            return fb
     return {"total_input": total_in, "total_output": total_out,
             "total_cost": round(cost, 2), "by_model": list(by_model.values())}
 
@@ -323,7 +395,7 @@ def read_state(gen_dir: str | Path) -> dict:
         "endpoints": _endpoints(h),
         "tables": _tables(h),
         "ui_pages": ui_pages,
-        "ui_components": _ui_components(h),
+        "ui_components": _ui_components(gen, h),
         "contract_tests": _contract_tests(h),
         "chains": chains,
         "tasks": tasks,
@@ -405,12 +477,27 @@ def _knowledge(gen: Path) -> list[dict]:
 
 
 def _references(gen: Path) -> list[dict]:
-    out = []
+    out: list[dict] = []
+    seen: set[str] = set()
+    # 1) the compiled reference spec — the structured screen list the run matches
+    #    against (name + route hint + must-have checklist). The richest source; the
+    #    raw screenshots usually live in the source --reference-dir, not the env.
+    spec = _load(gen / "design" / "reference_spec.json")
+    for s in (spec.get("screens") or []):
+        if isinstance(s, dict) and s.get("name"):
+            out.append({"name": s["name"], "screen": s["name"],
+                        "route": s.get("route_hint", ""),
+                        "must_have": s.get("must_have") or [], "url": ""})
+            seen.add(s["name"])
+    # 2) any actual reference image files staged into the env
     for sub in ("design/references", "design/reference_images"):
         d = gen / sub
         if d.is_dir():
             for f in sorted(list(d.glob("*.png")) + list(d.glob("*.jpg")) + list(d.glob("*.jpeg"))):
-                out.append({"name": f.name, "screen": f.stem, "url": ""})
+                if f.stem not in seen:
+                    out.append({"name": f.name, "screen": f.stem, "route": "",
+                                "must_have": [], "url": ""})
+                    seen.add(f.stem)
     return out
 
 
@@ -422,14 +509,20 @@ def env_summary(gen_dir: str | Path) -> dict:
     ui_pages = _ui_pages(gen, h)
     runs = _runs_raw(h)
     delivered = len(_records(_load(h / "codehub_releases.json"))) > 0
+    # Liveness: the runtime rewrites the hub stores continuously while it works, so
+    # a recent write means the env is still being generated — a failed VALIDATION
+    # pass mid-run is normal and must NOT be reported as the env having "failed".
+    active = (time.time() - _hub_mtime(h)) < 900  # touched within the last 15 min
     status = "generating"
     if delivered:
         status = "delivered"
+    elif active:
+        status = "generating"
     elif runs:
         last = sorted(runs, key=lambda r: r.get("started_at") or 0)[-1]
         st = str(last.get("status", "")).lower()
         if st in ("aborted", "failed", "error"):
-            status = "failed"
+            status = "failed"      # quiet + last run failed → genuinely dead
         elif st in ("completed", "finished", "ok", "passed"):
             status = "completed"
         else:
