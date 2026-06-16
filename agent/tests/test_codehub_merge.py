@@ -60,7 +60,7 @@ class TestMergePullRequestSquashHappy(unittest.TestCase):
             # No workhub attached -> task existence gate skipped; provide synthetic linked_tasks
             pr = hub.open_pull_request(
                 branch="agent/agent-feat",
-                target="master",
+                target="main",
                 author="agent-feat",
                 reviewers=["reviewer1"],
                 linked_tasks=["synthetic_task_1"],
@@ -93,10 +93,10 @@ class TestMergePullRequestConflict(unittest.TestCase):
         then open a PR from the feature branch into master.
 
         main: initial commit with shared.txt = 'base\n'
-        master branch: modifies shared.txt = 'from master\n'
+        main branch: modifies shared.txt = 'from main\n'
         feature branch: modifies shared.txt = 'from feature\n'
         """
-        # Step 1: initial commit on master with the shared file
+        # Step 1: initial commit on main with the shared file
         hub.git.add(".")
         # Write initial file in the main worktree
         shared_file = hub.repo_root / "shared.txt"
@@ -104,24 +104,24 @@ class TestMergePullRequestConflict(unittest.TestCase):
         hub.git.add("shared.txt")
         hub.git.commit("Initial commit with shared.txt")
 
-        # Step 2: create feature branch from master
+        # Step 2: create feature branch from main
         hub.git.checkout("feature-conflict", create=True)
         shared_file.write_text("from feature\n", encoding="utf-8")
         hub.git.add("shared.txt")
         hub.git.commit("Feature changes shared.txt")
 
-        # Step 3: go back to master and commit a conflicting change
-        hub.git.checkout("master")
-        shared_file.write_text("from master\n", encoding="utf-8")
+        # Step 3: go back to main and commit a conflicting change
+        hub.git.checkout("main")
+        shared_file.write_text("from main\n", encoding="utf-8")
         hub.git.add("shared.txt")
-        hub.git.commit("Master changes shared.txt")
+        hub.git.commit("Main changes shared.txt")
 
         # Register the feature branch in codehub so open_pull_request can find it
         hub.stores.branches.update(
             lambda m: m.set(
                 "main:feature-conflict",
                 {"id": "main:feature-conflict", "name": "feature-conflict", "repo_id": "main",
-                 "base": "master", "owner": "feat-agent", "status": "active"},
+                 "base": "main", "owner": "feat-agent", "status": "active"},
                 "test",
             )
         )
@@ -138,7 +138,7 @@ class TestMergePullRequestConflict(unittest.TestCase):
         # open_pull_request for a branch that exists in git
         pr = hub.open_pull_request(
             branch="feature-conflict",
-            target="master",
+            target="main",
             author="feat-agent",
             reviewers=["reviewer1"],
             linked_tasks=task_ids,
@@ -207,7 +207,7 @@ class TestMergePullRequestNotReady(unittest.TestCase):
             # No workhub attached -> task existence gate skipped; provide synthetic linked_tasks
             pr = hub.open_pull_request(
                 branch="agent/agent-blk",
-                target="master",
+                target="main",
                 author="agent-blk",
                 reviewers=["reviewer-alice", "reviewer-bob"],  # makes merge_state=blocked
                 linked_tasks=["synthetic_task_1"],
@@ -240,23 +240,23 @@ class TestResolveConflict(unittest.TestCase):
         hub.git.add("shared.txt")
         hub.git.commit("Resolve-feature changes shared.txt")
 
-        hub.git.checkout("master")
-        shared_file.write_text("from master resolve\n", encoding="utf-8")
+        hub.git.checkout("main")
+        shared_file.write_text("from main resolve\n", encoding="utf-8")
         hub.git.add("shared.txt")
-        hub.git.commit("Master changes shared.txt for resolve test")
+        hub.git.commit("Main changes shared.txt for resolve test")
 
         hub.stores.branches.update(
             lambda m: m.set(
                 "main:resolve-feature",
                 {"id": "main:resolve-feature", "name": "resolve-feature", "repo_id": "main",
-                 "base": "master", "owner": "resolve-agent", "status": "active"},
+                 "base": "main", "owner": "resolve-agent", "status": "active"},
                 "test",
             )
         )
         # No workhub attached -> task existence gate skipped; provide synthetic linked_tasks
         pr = hub.open_pull_request(
             branch="resolve-feature",
-            target="master",
+            target="main",
             author="resolve-agent",
             reviewers=["reviewer1"],
             linked_tasks=["synthetic_task_1"],

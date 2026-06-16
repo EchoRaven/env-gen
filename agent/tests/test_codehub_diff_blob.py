@@ -48,7 +48,7 @@ class TestCodeHubGetDiff(unittest.TestCase):
             # Open a PR for this branch (no workhub -> task existence gate skipped)
             pr = hub.open_pull_request(
                 branch="agent/agent-diff",
-                target="master",
+                target="main",
                 author="agent-diff",
                 reviewers=["reviewer1"],
                 linked_tasks=["synthetic_task_1"],
@@ -69,7 +69,7 @@ class TestCodeHubGetDiff(unittest.TestCase):
             sha = _setup_agent_with_commit(hub, "agent-trunc", "big.py", large_content)
             pr = hub.open_pull_request(
                 branch="agent/agent-trunc",
-                target="master",
+                target="main",
                 author="agent-trunc",
                 reviewers=["reviewer1"],
                 linked_tasks=["synthetic_task_1"],
@@ -110,7 +110,7 @@ class TestCodeHubGetBlob(unittest.TestCase):
             sha = _setup_agent_with_commit(hub, "agent-fc", "fc.py", "x = 99\n")
             pr = hub.open_pull_request(
                 branch="agent/agent-fc",
-                target="master",
+                target="main",
                 author="agent-fc",
                 reviewers=["reviewer1"],
                 linked_tasks=["synthetic_task_1"],
@@ -150,14 +150,14 @@ class TestCodeHubListPRs(unittest.TestCase):
         # No workhub attached -> task existence gate skipped; provide synthetic linked_tasks
         pr_alice = hub.open_pull_request(
             branch="agent/agent-alice",
-            target="master",
+            target="main",
             author="alice",
             reviewers=["reviewer1"],
             linked_tasks=["synthetic_task_1"],
         )
         pr_bob = hub.open_pull_request(
             branch="agent/agent-bob",
-            target="master",
+            target="main",
             author="bob",
             reviewers=["alice"],
             linked_tasks=["synthetic_task_2"],

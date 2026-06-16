@@ -474,6 +474,68 @@ def resolve_merge_conflict_via_strategy(
             main_branch=main_branch, agent_id=agent_id,
         )
 
+    # Dirty-tree handling BEFORE the ``checkout main_branch`` (Bug 1, youtube
+    # run, observed 6×). The agent left UNCOMMITTED edits in repo_root's
+    # working tree (e.g. ``app/backend/main.py``); ``git checkout main_branch``
+    # then aborts — "Your local changes to the following files would be
+    # overwritten by merge ... Please commit your changes or stash them" — so
+    # no conflict resolution ever runs.
+    #
+    # The regular path (``merge_agent_branch_to_main``) treats repo_root dirt
+    # as transient prior-merge residue and stashes-then-DROPS it. That is the
+    # wrong move HERE: this dirt is the AGENT's actual work, so dropping it
+    # would silently discard the agent's edits. Instead, COMMIT the dirt onto
+    # the AGENT branch (never onto main_branch) with the agent as author, so it
+    # becomes part of the very branch we are about to integrate. Mirrors the
+    # commit-WIP-before-integration shape used by ``pull_main_into_worktree``
+    # (which commits in-progress subtrees rather than stashing them).
+    rc_st, st_out, _err = _run_git(["status", "--porcelain"], cwd=repo)
+    tracked_dirty = [
+        line for line in (st_out or "").splitlines()
+        if rc_st == 0 and line.strip() and not line.startswith("??")
+    ]
+    if tracked_dirty:
+        # Determine the currently-checked-out branch deterministically.
+        rc_cur, cur_out, _ce = _run_git(["symbolic-ref", "--short", "HEAD"], cwd=repo)
+        current_branch = cur_out.strip() if rc_cur == 0 else ""
+        # The WIP belongs to the agent's work, so it must land on the AGENT
+        # branch — never on main_branch. If we are not already on the agent
+        # branch, switch to it; git carries the uncommitted edits across a
+        # checkout when they don't conflict. (If repo_root were dirty ON
+        # main_branch we must NOT commit there.)
+        if current_branch != agent_branch:
+            sc_a, _soa, se_a = _run_git(["checkout", agent_branch], cwd=repo)
+            if sc_a != 0:
+                # Could not move the WIP onto the agent branch (e.g. the dirty
+                # file also differs on agent_branch). Refuse to drop the
+                # agent's work — report so the operator can recover rather than
+                # losing edits or committing onto the wrong branch.
+                return False, (
+                    f"strategic merge blocked: uncommitted changes in repo_root "
+                    f"on {current_branch or '<detached>'} could not be moved onto "
+                    f"{agent_branch} before integrating ({se_a.strip()})"
+                )
+        wip_author = agent_id or agent_branch.split("/")[-1]
+        wip_email = f"{wip_author}@env-gen.local"
+        wip_env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": wip_author,
+            "GIT_AUTHOR_EMAIL": wip_email,
+            "GIT_COMMITTER_NAME": wip_author,
+            "GIT_COMMITTER_EMAIL": wip_email,
+        }
+        _run_git(["add", "-A"], cwd=repo)
+        try:
+            subprocess.run(
+                ["git", "commit", "--no-verify", "-qm",
+                 f"auto-commit uncommitted work on {agent_branch} "
+                 f"before strategic merge"],
+                cwd=str(repo), env=wip_env,
+                capture_output=True, text=True, timeout=_GIT_TIMEOUT,
+            )
+        except Exception as exc:
+            return False, f"auto-commit WIP before strategic merge raised: {exc}"
+
     sc, _so, se = _run_git(["checkout", main_branch], cwd=repo)
     if sc != 0:
         return False, f"checkout {main_branch} failed: {se.strip()}"
