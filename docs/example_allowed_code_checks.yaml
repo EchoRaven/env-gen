@@ -1,0 +1,54 @@
+# Example allowed_code_checks.yaml
+#
+# Where to put this file:
+#   This YAML MUST live OUTSIDE any agent-writable workspace -- typically
+#   under an operator-owned directory such as /etc/envgen/. Point the env
+#   variable ENVGEN_ALLOWED_CODE_CHECKS_FILE at its absolute path before
+#   starting the live monitor server, e.g.
+#
+#       export ENVGEN_ALLOWED_CODE_CHECKS_FILE=/etc/envgen/allowed_code_checks.yaml
+#
+#   The loader fails CLOSED (no checks runnable) if the env var is unset,
+#   if the path does not exist, or if the file is unreadable / malformed.
+#   The legacy <workspace>/.gates/allowed_code_checks.yaml location is NO
+#   LONGER read -- it lived inside the agent's writable tree, which an
+#   exploited agent could overwrite. A defense-in-depth routing entry now
+#   pins .gates/ read-only to all agents, but the load-bearing fix is that
+#   the YAML simply does not live in the workspace anymore.
+#
+# The code_check user_gate type runs only commands that are explicitly
+# allowlisted here. The gate's params.command field is a KEY into this map,
+# NOT a shell command line. An LLM agent (or any caller of the user_gates
+# API) can only reference keys that already exist in this file -- it cannot
+# smuggle a new shell command through the gate.
+#
+# Each entry MUST contain:
+#   command_argv: list[str]
+#     argv passed verbatim to subprocess.run(shell=False). Shell metacharacters
+#     ($(...), ;, |, backticks, redirection) are NOT interpreted -- they are
+#     passed as literal arguments.
+#   timeout_seconds: int in [1, 600]
+#     Wall-clock timeout. Treated as a hard kill.
+#
+# Optional:
+#   description: str
+#     Human note about what the check verifies (ignored by the runner).
+#   allowed_in_cwd_pattern: str
+#     Regex (reserved for future use).
+
+lint_py:
+  description: "py_compile every Python file in the workspace -- catches syntax errors."
+  command_argv: ["python", "-m", "compileall", "-q", "."]
+  timeout_seconds: 60
+
+pytest_smoke:
+  description: "Run the smoke tests (tests/smoke/) and fail on any error."
+  command_argv: ["python", "-m", "pytest", "tests/smoke", "-q", "--no-header"]
+  timeout_seconds: 300
+
+oauth_contract_slack:
+  description: "Bundled OAuth-contract test for the Slack env. Reads SLACK_API_URL from the entry's own env (set by the test harness, not by the gate)."
+  command_argv:
+    - "python3"
+    - "env_generator/llm_generator/multi_agent/bundled_tests/oauth_contract/test_slack.py"
+  timeout_seconds: 120

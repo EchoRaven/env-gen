@@ -1,0 +1,22 @@
+Compare these two web page screenshots:
+- Image 1: Reference design (what we want)
+- Image 2: Generated output (what we have)
+
+Analyze the differences and provide:
+1. Overall similarity score (0-100)
+2. Layout differences
+3. Color differences
+4. Component differences
+5. Specific fixes needed
+
+Respond in JSON:
+{
+  "similarity_score": 0-100,
+  "layout_matches": true/false,
+  "color_matches": true/false,
+  "differences": [
+    {"area": "header", "issue": "description", "fix": "how to fix"}
+  ],
+  "priority_fixes": ["most important fix first"]
+}
+

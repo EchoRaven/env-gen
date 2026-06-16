@@ -1,0 +1,8 @@
+{
+  "users": {
+    "admin": {
+      "password_sha256": "cdf3f6e2428cef3c6740e40779a59400dae8d4376f32a851da7116f12b819287",
+      "role": "admin"
+    }
+  }
+}

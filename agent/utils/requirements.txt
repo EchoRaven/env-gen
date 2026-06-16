@@ -1,0 +1,24 @@
+# AgentForge Utils Dependencies
+# Python >= 3.10 required
+
+# Configuration file support
+pyyaml>=6.0
+
+# LLM Providers (install as needed)
+openai>=1.0.0          # For OpenAI API
+anthropic>=0.18.0      # For Anthropic Claude API
+google-genai>=1.0.0        # For Google Gemini API (native SDK, supports Gemini 3)
+httpx>=0.24.0          # For local LLM (Ollama, vLLM)
+
+# Optional: Type checking
+# mypy>=1.0
+
+# Optional: Vector DB support (for semantic memory)
+# chromadb>=0.4.0
+# faiss-cpu>=1.7.0
+
+# Optional: Redis support (for distributed state)
+# redis>=4.5.0
+
+# Optional: Enhanced logging
+# structlog>=23.0.0

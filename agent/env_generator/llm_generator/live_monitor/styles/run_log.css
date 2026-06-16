@@ -1,0 +1,45 @@
+.run-log-modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.run-log-modal {
+  width: 80vw; max-width: 1200px;
+  height: 70vh;
+  background: var(--bg-primary); border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.run-log-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+}
+.run-log-title { font-family: monospace; color: var(--text-primary); font-size: 13px; }
+.run-log-state { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+.run-log-state.state-running { background: var(--accent-soft); color: var(--info); }
+.run-log-state.state-ok { background: var(--success-soft); color: var(--success); }
+.run-log-state.state-fail { background: var(--danger-soft); color: var(--danger); }
+.run-log-close {
+  margin-left: auto;
+  background: transparent; color: var(--text-secondary);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 4px 12px; font-size: 11px;
+  cursor: pointer;
+}
+.run-log-close:hover { color: var(--text-primary); border-color: var(--accent); }
+.run-log-error {
+  background: var(--danger-soft); color: var(--danger);
+  padding: 6px 14px; font-size: 12px;
+}
+.run-log-pre {
+  flex: 1; margin: 0;
+  background: var(--bg-primary); color: var(--text-primary);
+  font-family: monospace; font-size: 11px;
+  line-height: 1.4;
+  padding: 12px;
+  overflow-y: scroll;
+  white-space: pre-wrap; word-break: break-all;
+}

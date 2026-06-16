@@ -1,0 +1,76 @@
+hint_fields:
+  - domain
+  - domain_hint
+
+check_domain_map:
+  ui_smoke: frontend
+  ui_page_reachable: frontend
+  api_smoke: backend
+  api_health: backend
+  task: verifier
+  task_suite: verifier
+
+mode_domain_prior:
+  browser:
+    domain: frontend
+    weight: 2
+  api:
+    domain: backend
+    weight: 2
+
+domain_patterns:
+  frontend:
+    - frontend
+    - ui
+    - dom
+    - selector
+    - playwright
+    - browser_
+    - screenshot
+    - .tsx
+    - .jsx
+    - react
+    - vite
+    - button
+    - click
+  backend:
+    - backend
+    - api
+    - /api/
+    - endpoint
+    - http error
+    - connection refused
+    - timeout
+    - status
+    - .py
+    - fastapi
+    - flask
+    - express
+    - server
+  database:
+    - database
+    - db
+    - sql
+    - sqlite
+    - postgres
+    - mysql
+    - relation
+    - column
+    - table
+    - migration
+    - foreign key
+    - constraint
+    - .sql
+    - "re:\\bselect\\b"
+    - "re:\\binsert\\b"
+    - "re:\\bupdate\\b"
+    - "re:\\bdelete\\b"
+  verifier:
+    - task suite
+    - task_runner
+    - tasks/tasks.yaml
+    - action_space
+    - execute_task_suite
+    - validation
+    - validate_only
+    - "e_task_suite"

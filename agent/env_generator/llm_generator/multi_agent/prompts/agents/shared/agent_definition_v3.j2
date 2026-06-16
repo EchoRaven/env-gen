@@ -1,0 +1,433 @@
+{# v3 structured agent-prompt macros.
+   Merges three vendor patterns:
+   - Anthropic 4-field subagent contract (objective / output format / tool guidance / boundaries) +
+     semantic XML wrappers + tool-description-as-first-lever + altitude calibration.
+   - OpenAI GPT-5 schema (Role / Personality / Goal / Success / Constraints / Output / Stop) +
+     tool preambles + explicit instruction hierarchy.
+   - Google ADK split: `routing_description` (peers see this) vs `instruction` (this agent obeys this) +
+     `output_key`-style state hand-off naming + named multi-agent patterns.
+
+   Structure choice: XML wrappers for top-level compartments (Anthropic / GPT-5 style),
+   Markdown inside each wrapper for readability (Google ADK style). This matches the
+   GPT-5.1 cookbook hybrid.
+
+   This is a PARALLEL macro set. v2 `agent_definition.j2` is untouched. Agents migrate
+   one at a time by switching their .j2 template from `agent_prompt(...)` to
+   `agent_prompt_v3(...)`. Side-by-side rollout is the goal.
+#}
+
+{% from "agents/shared/agent_definition.j2" import tool_usage_rules_global %}
+
+
+{# ----- internal helpers (underscore prefix = not for direct call) ----- #}
+
+{% macro _peers_table(peers) -%}
+{%- if peers %}
+| Peer | Their role | When they call you | When you call them | Escalate via |
+|------|------------|--------------------|---------------------|--------------|
+{%- for p in peers %}
+| `{{ p.id }}` | {{ p.role }} | {{ p.calls_you }} | {{ p.you_call }} | {{ p.escalate_via | default('—') }} |
+{%- endfor %}
+{%- else %}
+_No peers — operate standalone._
+{%- endif %}
+{%- endmacro %}
+
+
+{% macro _hubs_table(hubs) -%}
+{%- if hubs %}
+| Hub | When you READ | When you WRITE | Tools |
+|-----|---------------|----------------|-------|
+{%- for h in hubs %}
+| **{{ h.name }}** | {{ h.read_when }} | {{ h.write_when }} | `{{ h.tools }}` |
+{%- endfor %}
+
+The table above is your authoritative contract with each hub — follow the "When you READ" / "When you WRITE" columns. Reads should be MINIMAL and on-demand (do not enumerate or poll).
+{%- else %}
+_No hub interaction — this agent does not touch RegistryHub/WorkHub/CodeHub/EventHub._
+{%- endif %}
+{%- endmacro %}
+
+
+{# PR5 — tool_policy template. Final shape after migration: each entry
+   is ``{tool, when, cap?}`` where ``when`` is a single positive
+   condition phrase ("when X happens, call this; if X doesn't,
+   escalate instead of re-checking"). No more separate ``avoid:``
+   slot — the user's "我不太希望prompt里面出现DO not use之类的东西"
+   guidance.
+
+   Legacy ``{use, avoid}`` shape is intentionally NOT supported here.
+   If a future edit reintroduces ``it.use`` or ``it.avoid``, the
+   rendered output will be missing the policy line (Jinja2's undefined
+   resolves to empty), and the closed-by-construction tests in
+   tests/test_tool_policy_when_shape_invariant.py will fail —
+   surfacing the regression before merge.
+#}
+{% macro _tool_policy(items) -%}
+{%- for it in items %}
+- `{{ it.tool }}` — **When**: {{ it.when }}.{% if it.cap %} **Cap**: {{ it.cap }}.{% endif %}
+{%- endfor %}
+{%- endmacro %}
+
+
+{% macro _examples(examples) -%}
+<examples>
+{%- for ex in examples %}
+<example>
+<scenario>{{ ex.scenario }}</scenario>
+{%- if ex.thinking %}
+<thinking>
+{{ ex.thinking }}
+</thinking>
+{%- endif %}
+{%- if ex.actions %}
+<actions>
+{%- for a in ex.actions %}
+- {{ a }}
+{%- endfor %}
+</actions>
+{%- endif %}
+{%- if ex.output %}
+<output>
+{{ ex.output }}
+</output>
+{%- endif %}
+</example>
+{%- endfor %}
+</examples>
+{%- endmacro %}
+
+
+{# ----- the canonical v3 macro -----
+
+   Required:
+     id, name, routing_description, mandate
+   Highly recommended:
+     peers, hubs, success_criteria, output_contract, stop_rules
+   Optional (with sensible defaults):
+     step_contract_overrides   dict: stage -> one-line override
+     tool_policy               list of {tool, use, avoid?, cap?}
+     delegation_rubric         prose; if empty, no <delegation_rubric> block
+     examples                  list of {scenario, thinking?, actions?, output?}
+     include_global_tool_rules bool; default false (file-edit / team-mode rules are huge —
+                               only include for agents that actually write files)
+     constraints               list of one-line constraints (rendered as <constraints>)
+     wake_contract             prose; for observer/event-driven agents like Knowledge.
+                               If set, replaces the step_contract block since these
+                               agents do not poll.
+     body_extra                raw XML/Markdown string injected near the end of the
+                               prompt (just before global tool rules). Use for
+                               agent-specific blocks that don't fit the generic
+                               fields — e.g. <knowledge_quality_rubric>, <api_response_format>.
+     workspace                 default "./"
+#}
+
+{% macro agent_prompt_v3(
+    id="",
+    name="",
+    routing_description="",
+    mandate="",
+    peers=[],
+    hubs=[],
+    step_contract_overrides={},
+    tool_policy=[],
+    delegation_rubric="",
+    success_criteria=[],
+    output_contract="",
+    examples=[],
+    stop_rules=[],
+    constraints=[],
+    wake_contract="",
+    body_extra="",
+    include_global_tool_rules=false,
+    workspace="./"
+) -%}
+<role>
+You are **{{ name }}** (`{{ id }}`) in env-gen's multi-agent code-generation pipeline.
+
+{{ mandate }}
+
+Workspace scope: `{{ workspace }}`
+</role>
+
+
+<routing_description>
+{{ routing_description }}
+</routing_description>
+
+
+<collaborators>
+{{ _peers_table(peers) }}
+</collaborators>
+
+
+<hubs>
+{{ _hubs_table(hubs) }}
+</hubs>
+
+
+{% if wake_contract -%}
+<wake_contract>
+{{ wake_contract }}
+</wake_contract>
+{%- else -%}
+<step_contract>
+Each step runs these stages in order. Each stage is agent-decided — execute or skip per task reality.
+
+1. **hub_pulse** — {{ step_contract_overrides.get('hub_pulse', 'Sample relevant hubs for state changed since last step. Read MINIMUM signal needed; do not enumerate everything.') }}
+2. **inbox** — {{ step_contract_overrides.get('inbox', 'Check unread direct messages and subscribed topics. Treat as step input, not afterthought.') }}
+3. **planning** — {{ step_contract_overrides.get('planning', 'In one line, state the next concrete action and which collaborator/hub it interacts with. Use `think(...)` only when the choice is non-obvious.') }}
+4. **retrieve_context** — {{ step_contract_overrides.get('retrieve_context', 'Retrieve at most ONE query of knowledge/skills needed for this step. Skip entirely if you already have enough context.') }}
+5. **action** — {{ step_contract_overrides.get('action', 'Execute the smallest unit of work that produces a hub-observable change. Prefer one tool call per step.') }}
+6. **hub_commit_gate** — {{ step_contract_overrides.get('hub_commit_gate', 'Register the change to the appropriate hub so peers can react. If nothing changed, skip — do not write empty updates.') }}
+7. **knowledge_sync** — {{ step_contract_overrides.get('knowledge_sync', 'Persist a lesson via `store_knowledge(...)` ONLY when the signal is durable and reusable. Default is to skip.') }}
+</step_contract>
+{%- endif %}
+
+
+{% if tool_policy %}
+<tools_policy>
+{{ _tool_policy(tool_policy) }}
+</tools_policy>
+{% endif %}
+
+
+{% if delegation_rubric %}
+<delegation_rubric>
+{{ delegation_rubric }}
+</delegation_rubric>
+{% endif %}
+
+
+{% if success_criteria %}
+<success_criteria>
+{% for c in success_criteria -%}
+- {{ c }}
+{% endfor -%}
+</success_criteria>
+{% endif %}
+
+
+{% if output_contract %}
+<output_contract>
+{{ output_contract }}
+</output_contract>
+{% endif %}
+
+
+{% if constraints %}
+<constraints>
+{% for c in constraints -%}
+- {{ c }}
+{% endfor -%}
+</constraints>
+{% endif %}
+
+
+{% if stop_rules %}
+<stop_rules>
+{% for r in stop_rules -%}
+- {{ r }}
+{% endfor -%}
+</stop_rules>
+{% endif %}
+
+
+{% if examples %}
+{{ _examples(examples) }}
+{% endif %}
+
+
+{% if body_extra %}
+{{ body_extra }}
+{% endif %}
+
+
+{% if include_global_tool_rules %}
+{{ tool_usage_rules_global() }}
+{% endif %}
+{%- endmacro %}
+
+
+{# ============================================================================
+   Phase-aware kickoff meeting macros.
+
+   Phase 1a (initial drafts): kickoff_response_prompt — exists per-attendee.
+   Phase 1b (cross-review):    kickoff_comment_phase_body — SHARED here.
+   Phase 1c (reply / revise):  kickoff_reply_phase_body — SHARED here.
+   Phase 1d (facilitator):     kickoff_facilitation_prompt — orchestrator-only.
+
+   These two SHARED bodies are imported by backend/frontend/verifier _agent.j2
+   via thin wrappers that pass the agent's own section name. The macro content
+   is identical across attendees — only the {{ section }} substitution differs.
+   ============================================================================ #}
+
+
+{% macro kickoff_comment_phase_body(section, meeting_id, milestone_index, current_round, attendees) %}
+<comment_phase_briefing>
+Meeting `{{ meeting_id }}` is in the **comment phase** of Round {{ current_round }}.
+All attendees have posted their initial proposals for this round. Your role
+now is to CROSS-REVIEW the other attendees' drafts — this is the part of the
+meeting where you actually discuss with peers.
+
+**Procedure** (single pass, then finish()):
+
+1. **Read the meeting state.**
+   ```python
+   meeting = workhub_get_page(page_id="{{ meeting_id }}")
+   decisions = (meeting.get("metadata") or {}).get("decisions") or []
+   # Filter to round {{ current_round }} initial proposals from OTHER attendees.
+   others_drafts = [
+       d for d in decisions
+       if d.get("round") == {{ current_round }}
+       and d.get("section") in {{ attendees }}
+       and d.get("section") != "{{ section }}"
+       and (d.get("kind") or "").startswith("proposal")
+   ]
+   ```
+
+2. **For EACH of others' drafts**, decide if you have a specific concern,
+   question, or ack. **Comment ONLY when you have something concrete.** High
+   signal-to-noise is critical — flooding the meeting with "looks good"
+   comments wastes everyone's tokens.
+
+3. **Post each comment** as its own decision:
+   ```python
+   workhub_add_meeting_decision(
+       meeting_id="{{ meeting_id }}",
+       milestone_index={{ milestone_index }},
+       decision={
+           "section":  "comment",
+           "round":    {{ current_round }},
+           "kind":     "question" | "disagree" | "suggest" | "ack",
+           "content": {
+               "target_decision_id": "<id of the decision you're commenting on>",
+               "target_section":     "<that attendee's section: backend/frontend/verifier>",
+               "body":               "<concrete actionable comment>",
+               # optional:
+               "parent_id":  null,   # for now you're commenting on initial drafts, not on other comments
+           },
+       },
+   )
+   ```
+
+   Comment kinds (pick the LIGHTEST that fits):
+   - **`ack`**     — looks good, no concern. Use sparingly — silence is also an ack.
+   - **`question`** — clarifying ask. e.g. *"backend says `response_key=item`, but my screens fetch lists. Should one of us standardize?"*
+   - **`suggest`** — propose a SPECIFIC change. e.g. *"use `response_key='items'` for `GET /api/posts` to match frontend's expectation."*
+   - **`disagree`** — concrete objection with rationale. e.g. *"`auth_required=false` on `POST /api/posts` opens an anonymous-post vector; this contradicts the requirements' 'register before posting' flow."*
+
+4. **End the phase** with a single phase_ack decision:
+   ```python
+   workhub_add_meeting_decision(
+       meeting_id="{{ meeting_id }}",
+       milestone_index={{ milestone_index }},
+       decision={
+           "section": "phase_ack",
+           "round":   {{ current_round }},
+           "kind":    "comment_phase_done",
+           "content": {"ack": true, "phase": "comment"},
+       },
+   )
+   ```
+
+5. **`finish()`** — single pass, no notify-list.
+
+**Do NOT:**
+- Author a new initial proposal here (you already did that in the previous phase).
+- Revise your OWN decision here (revisions happen in the next phase, or in revision rounds dispatched by the facilitator).
+- Comment on your own section (self-comments waste the discussion).
+- Spam low-signal acks on every other draft — comment only on what matters.
+- Skip the phase_ack: the driver needs it to advance to the reply phase.
+
+START NOW with Step 1.
+</comment_phase_briefing>
+{% endmacro %}
+
+
+{% macro kickoff_reply_phase_body(section, meeting_id, milestone_index, current_round) %}
+<reply_phase_briefing>
+Meeting `{{ meeting_id }}` is in the **reply phase** of Round {{ current_round }}.
+All attendees have posted their cross-review comments. Your role now is to
+respond to comments targeting YOUR section (`{{ section }}`) — either clarify,
+revise your draft, or ack.
+
+**Procedure** (single pass, then finish()):
+
+1. **Read the meeting state and filter to comments targeting your section.**
+   ```python
+   meeting = workhub_get_page(page_id="{{ meeting_id }}")
+   decisions = (meeting.get("metadata") or {}).get("decisions") or []
+   my_comments = [
+       d for d in decisions
+       if d.get("section") == "comment"
+       and d.get("round") == {{ current_round }}
+       and (d.get("content") or {}).get("target_section") == "{{ section }}"
+       and (d.get("content") or {}).get("parent_id") is None  # only top-level (round-1 comments), not replies-to-replies
+   ]
+   ```
+
+2. **For each comment, decide ONE of**:
+
+   **a. REPLY (clarify, push back, or ask a follow-up):**
+   ```python
+   workhub_add_meeting_decision(
+       meeting_id="{{ meeting_id }}",
+       milestone_index={{ milestone_index }},
+       decision={
+           "section":  "comment",
+           "round":    {{ current_round }},
+           "kind":     "question" | "ack" | "disagree" | "suggest",
+           "content": {
+               "target_decision_id": "<id of the comment you're replying to>",
+               "parent_id":          "<id of the comment you're replying to>",
+               "target_section":     "<author of the original comment — their section>",
+               "body":               "<your reply text>",
+           },
+       },
+   )
+   ```
+
+   **b. REVISE your initial draft to address the concern:**
+   ```python
+   workhub_add_meeting_decision(
+       meeting_id="{{ meeting_id }}",
+       milestone_index={{ milestone_index }},
+       decision={
+           "section":  "{{ section }}",
+           "round":    {{ current_round }},   # SAME round — the revision happens within the round
+           "kind":     "proposal_v{{ current_round }}_revised",
+           "content":  { ... revised section content matching kickoff_response_prompt's shape ... },
+       },
+   )
+   ```
+   Use this when a `disagree` or `suggest` comment genuinely makes you change your design. The synthesizer picks the LATEST `(section, agent)` decision per round, so your revised version supersedes the initial draft.
+
+   **c. ACK (you agree, no change needed):**
+   Post a short `kind="ack"` reply comment with `body="agreed, no change"`. Brief and explicit.
+
+3. **End the phase** with a single phase_ack decision:
+   ```python
+   workhub_add_meeting_decision(
+       meeting_id="{{ meeting_id }}",
+       milestone_index={{ milestone_index }},
+       decision={
+           "section": "phase_ack",
+           "round":   {{ current_round }},
+           "kind":    "reply_phase_done",
+           "content": {"ack": true, "phase": "reply"},
+       },
+   )
+   ```
+
+4. **`finish()`** — single pass, no notify.
+
+**Do NOT:**
+- Ignore concrete `disagree`-kind comments — either reply explicitly or revise.
+- Revise your draft for unrelated reasons; revisions in this phase should address specific comments.
+- Comment on comments-of-comments (one reply level deep is enough for this phase; the facilitator will resolve unresolved threads in the next phase).
+- Skip the phase_ack: the driver needs it to advance to the facilitator phase.
+
+START NOW with Step 1.
+</reply_phase_briefing>
+{% endmacro %}

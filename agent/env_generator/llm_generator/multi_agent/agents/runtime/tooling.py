@@ -1,0 +1,837 @@
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
+
+from utils.tool import ToolResult
+
+from ...tool_surface import summarize_tool_surface
+from ...tools import Workspace, assemble_tool_pool, create_tool_assembly_context
+
+
+class AgentTooling:
+    def _register_env_gen_tools(self):
+        """Register environment generation tools based on allowed_tool_categories."""
+        include_browser = "browser" in self.allowed_tool_categories
+        include_docker = "docker" in self.allowed_tool_categories
+        include_vision = self._include_vision or ("vision" in self.allowed_tool_categories)
+        # Phase 0: when the agent has a registered worktree (resolved
+        # later by ``set_hubs``), build tools against a
+        # ``PathRoutedWorkspace`` so ``app/*`` writes go to the agent's
+        # OWN worktree while ``design/*``, ``shared/*`` and ``.memory/*``
+        # stay rooted at the shared project base. Without a worktree
+        # (early init, or stub agents in tests), fall back to the
+        # shared base-dir Workspace.
+        worktree = getattr(self, "_worktree_dir", None)
+        if worktree is not None and self.workspace and hasattr(self.workspace, "base_dir"):
+            from ...runtime.path_routed_workspace import PathRoutedWorkspace
+            # attempt-6 R1 Residual 1 fix (2026-05-29): pass agent_id
+            # EXPLICITLY rather than letting PathRoutedWorkspace infer
+            # it from the code_root path string. Inference only works
+            # when code_root literally lives at
+            # ``<base_root>/worktrees/<agent_id>``; under any
+            # non-standard layout the inference falls back to ``None``
+            # and the cross-worktree gate previously failed OPEN (see
+            # ``_sibling_worktree_owner`` — now also fail-closed when
+            # self_agent is None, defense-in-depth).
+            workspace_for_tools = PathRoutedWorkspace(
+                base_root=self.workspace.base_dir,
+                code_root=worktree,
+                agent_id=self.agent_id,
+            )
+        elif self.workspace:
+            workspace_for_tools = Workspace(str(self.workspace.base_dir))
+        else:
+            workspace_for_tools = Workspace(Path.cwd())
+        # Re-audit (2026-05-29): _enforce_write_permissions used to
+        # consult ``self.workspace`` (the WorkspaceManager, which has
+        # no ``is_write_allowed``) so the role-gate was DEAD — every
+        # write was silently allowed because ``hasattr(...,
+        # "is_write_allowed")`` was always False. The actual
+        # routing/permission decision lives on ``workspace_for_tools``
+        # (the PathRoutedWorkspace whose ROUTING_TABLE the docstring
+        # already refers to). Pin it on the agent so the gate can
+        # find it. Fallback to ``self.workspace`` when the routed
+        # workspace isn't built yet (early init / stub agents) —
+        # ``_enforce_write_permissions`` still returns None there
+        # because ``WorkspaceManager.is_write_allowed`` is absent.
+        self._routed_workspace = workspace_for_tools
+
+        agent_type_for_tools = getattr(
+            self,
+            "_tool_profile_agent_type",
+            getattr(self, "_config_key", self.agent_id),
+        )
+        tool_context = create_tool_assembly_context(
+            agent_type=agent_type_for_tools,
+            agent_id=self.agent_id,
+            workspace=workspace_for_tools,
+            include_browser=include_browser,
+            include_docker=include_docker,
+            include_vision=include_vision,
+            llm_client=self.llm,
+            allowed_tool_categories=self.allowed_tool_categories,
+            allow_tools=list(getattr(self, "_allow_tools", []) or []),
+            deny_tools=list(getattr(self, "_deny_tools", []) or []),
+            assembly_mode="agent",
+            tool_profile_id=agent_type_for_tools,
+            tool_bundle_ids=list(getattr(self, "_tool_bundle_ids", []) or []),
+        )
+        agent_tools = assemble_tool_pool(tool_context)
+
+        if not agent_tools:
+            self._logger.warning(f"[{self.agent_id}] No tools returned from get_agent_tools")
+
+        for tool_instance in agent_tools:
+            try:
+                if hasattr(tool_instance, "set_agent"):
+                    tool_instance.set_agent(self)
+                self._tool_instances[tool_instance.NAME] = tool_instance
+                self._tools.register(tool_instance)
+            except Exception as e:
+                name = getattr(tool_instance, "NAME", "<unknown>")
+                self._logger.warning(f"Tool {name} init failed: {e}")
+        self._log_tool_surface_summary(source="register")
+        self._validate_stage_allowlists_against_pool()
+
+    def _validate_stage_allowlists_against_pool(self) -> None:
+        """TOOL-系统 startup cross-validator (2026-06-12): warn on every
+        stage_tool_allowlist entry the assembled pool does not grant. Dead
+        entries read like granted capabilities ("deliberately generous"
+        allowlists) and masked real breakages for weeks — the verifier's
+        bug_create (TOOL-C1) and its whole browser toolset among them. Warn,
+        don't raise: the agent still runs with the tools it has; the paired
+        structural test (test_tool_allowlist_cross_validator) is what keeps
+        the shipped config at zero violations."""
+        try:
+            from ...tool_surface import validate_stage_allowlists
+            problems = validate_stage_allowlists(
+                getattr(self, "_tool_profile_agent_type",
+                        getattr(self, "agent_id", "?")),
+                stage_tool_allowlist=getattr(self, "_stage_tool_allowlist", {}) or {},
+                granted_tool_names=set(getattr(self, "_tool_instances", {}) or {}),
+            )
+            for problem in problems:
+                self._logger.warning("%s", problem)
+        except Exception as exc:  # never block agent startup on the audit
+            self._logger.debug("stage-allowlist validation skipped: %s", exc)
+
+    def _log_tool_surface_summary(self, *, source: str) -> None:
+        summary = summarize_tool_surface(getattr(self, "_tool_instances", {}))
+        preview = ", ".join(summary["names"][:12])
+        self._logger.info(
+            "[%s] Tool surface (%s): %s tools; categories=%s; preview=%s",
+            self.agent_id,
+            source,
+            summary["count"],
+            summary["by_category"],
+            preview,
+        )
+
+    def get_tools_for_llm(self) -> List[Dict]:
+        """Get tool definitions formatted for LLM."""
+        if not hasattr(self._tools, "to_openai_tools"):
+            raise RuntimeError(f"[{self.agent_id}] ToolRegistry missing to_openai_tools method")
+        return self._tools.to_openai_tools()
+
+    def set_hubs(self, hubs) -> None:
+        """Set hub registry handle (HubRegistry) for observation-driven coordination."""
+        self._hubs = hubs
+
+        # Phase 0: now that CodeHub is reachable, register this agent's
+        # git worktree and re-build the tool pool against a
+        # ``PathRoutedWorkspace``. Tools assembled in ``__init__``
+        # before hubs were available used the bare shared base; the
+        # rebuild routes ``app/*`` writes into the agent's own
+        # worktree.
+        #
+        # Phase 0.2 attempt-5 FIX B (R1 round-4 hole B, 2026-05-29):
+        # Registration MUST fail-closed. Previously a registration
+        # error (``register_agent_worktree`` raising, or — in legacy
+        # call sites — returning ``None``) only logged WARNING and
+        # left the tool pool bound to the bare ``Workspace`` built in
+        # ``__init__``. That bare workspace does NOT carry the
+        # ``ROUTING_TABLE``-driven per-route write gate, so any
+        # registration hiccup silently re-opened arbitrary host writes
+        # via the same path that ``GenerateSeedSQL`` (see
+        # ``data_engine_tools.py:810``: ``self.workspace.root /
+        # output_file`` with absolute-path pass-through, NO
+        # ``workspace.resolve()`` call) and the other
+        # FULLY_AGENT_CONTROLLED tools depend on the
+        # ``PathRoutedWorkspace`` containment to lock down.
+        #
+        # The fix: registration failure raises ``RuntimeError`` so
+        # the agent never enters its action loop on a permissive bare
+        # ``Workspace``. The whole Phase 0.2 path-containment
+        # guarantee depends on the agent running INSIDE
+        # ``PathRoutedWorkspace`` — silent degrade is the security
+        # regression R1 round-4 hole B flagged.
+        # Phase 0.2 attempt-6 HARDENING A (R1 round-5 FIX B residual,
+        # 2026-05-29): the previous predicate ``hasattr(hubs, "codehub")``
+        # silently SKIPPED registration when hubs lacked a ``codehub``
+        # attribute — re-opening exactly the same silent-degrade hole
+        # the attempt-5 fix-closed contract was meant to seal. A hubs
+        # object without ``codehub`` cannot register the worktree, and
+        # proceeding leaves the agent on the bare permissive
+        # ``Workspace`` (no ``PathRoutedWorkspace`` containment, R1
+        # round-4 hole B regression). Raise instead.
+        if hubs is not None and getattr(self, "_worktree_dir", None) is None:
+            if not hasattr(hubs, "codehub"):
+                try:
+                    self._logger.error(
+                        "[%s] Hubs object has no 'codehub' attribute. "
+                        "Refusing to build tool pool with bare Workspace — "
+                        "that would bypass PathRoutedWorkspace containment "
+                        "and re-open arbitrary host write (R1 round-5 FIX B "
+                        "residual: the hasattr-gated codehub check silently "
+                        "skipped registration). Aborting agent.",
+                        self.agent_id,
+                    )
+                except Exception:
+                    pass
+                raise RuntimeError(
+                    f"hubs registry missing 'codehub' attribute for "
+                    f"{self.agent_id}; refusing to fall back to "
+                    f"permissive bare Workspace (R1 round-5 FIX B "
+                    f"residual fail-closed)"
+                )
+            try:
+                wt = hubs.codehub.register_agent_worktree(self.agent_id)
+            except Exception as _wt_err:
+                try:
+                    self._logger.error(
+                        "[%s] Agent worktree registration FAILED: %s. "
+                        "Refusing to build tool pool with bare Workspace — "
+                        "that would bypass PathRoutedWorkspace containment "
+                        "and re-open arbitrary host write (R1 round-4 "
+                        "hole B). Aborting agent. Operator must investigate "
+                        "registration failure.",
+                        self.agent_id,
+                        _wt_err,
+                    )
+                except Exception:
+                    pass
+                raise RuntimeError(
+                    f"agent worktree registration failed for {self.agent_id}; "
+                    f"refusing to fall back to permissive bare Workspace "
+                    f"(R1 round-4 hole B fail-closed): {_wt_err}"
+                ) from _wt_err
+            if wt is None:
+                try:
+                    self._logger.error(
+                        "[%s] Agent worktree registration returned None. "
+                        "Refusing to build tool pool with bare Workspace — "
+                        "that would bypass PathRoutedWorkspace containment "
+                        "and re-open arbitrary host write (R1 round-4 "
+                        "hole B). Aborting agent. Operator must investigate "
+                        "registration failure.",
+                        self.agent_id,
+                    )
+                except Exception:
+                    pass
+                raise RuntimeError(
+                    f"agent worktree registration failed for {self.agent_id}; "
+                    "refusing to fall back to permissive bare Workspace "
+                    "(R1 round-4 hole B fail-closed): register_agent_worktree "
+                    "returned None"
+                )
+            self._worktree_dir = Path(wt)
+            # Rebuild the tool pool with the worktree-aware workspace.
+            # Clears _tool_instances and the public registry first so the
+            # new generation replaces the old. A rebuild failure is
+            # ALSO fail-closed — the new generation half-replaced the
+            # old, and continuing on a permissive bare Workspace is
+            # the same R1 round-4 hole B regression.
+            try:
+                self._tool_instances = {}
+                if hasattr(self._tools, "_tools"):
+                    # ToolRegistry exposes ``_tools`` dict; clear it.
+                    self._tools._tools.clear()
+                self._register_env_gen_tools()
+            except Exception as _rebuild_err:
+                try:
+                    self._logger.error(
+                        "[%s] Tool pool rebuild on PathRoutedWorkspace "
+                        "FAILED: %s. Refusing to proceed on bare Workspace "
+                        "(R1 round-4 hole B fail-closed).",
+                        self.agent_id,
+                        _rebuild_err,
+                    )
+                except Exception:
+                    pass
+                raise RuntimeError(
+                    f"tool pool rebuild failed for {self.agent_id}; "
+                    f"refusing to fall back to permissive bare Workspace "
+                    f"(R1 round-4 hole B fail-closed): {_rebuild_err}"
+                ) from _rebuild_err
+
+        for tool in self._tool_instances.values():
+            try:
+                if hasattr(tool, "set_agent"):
+                    tool.set_agent(self)
+                else:
+                    setattr(tool, "_agent_id", self.agent_id)
+                if hasattr(tool, "_hubs"):
+                    setattr(tool, "_hubs", hubs)
+                # Tools that hold the registry as `hub_registry` (coverage, seed,
+                # visual_review, mcp_registry, deliverability, retro) are built with
+                # hub_registry=None at assembly time (context.hub_workspace is never
+                # set) and have no set_agent/_hubs hook — bind the real registry here.
+                if hasattr(tool, "hub_registry"):
+                    setattr(tool, "hub_registry", hubs)
+            except Exception as e:
+                self._logger.debug(
+                    f"[{self.agent_id}] Failed to inject hubs into {getattr(tool, 'NAME', type(tool).__name__)}: {e}"
+                )
+
+        self._logger.info(f"[{self.agent_id}] Hubs attached")
+
+    def set_team_protocols(
+        self,
+        agent_manager=None,
+        persona_catalog=None,
+        plan_decision=None,
+        parallel_reasoning=None,
+        practice_store=None,
+    ) -> None:
+        """Set team protocols for advanced collaboration."""
+        self._agent_manager = agent_manager
+        self._persona_catalog = persona_catalog
+        self._plan_decision = plan_decision
+        self._parallel_reasoning = parallel_reasoning
+        self._practice_store = practice_store
+
+        from ...tools import TEAM_TOOLS_AVAILABLE, inject_team_protocols_to_tools
+
+        if TEAM_TOOLS_AVAILABLE and self._tool_instances:
+            inject_team_protocols_to_tools(
+                tools=list(self._tool_instances.values()),
+                agent_id=self.agent_id,
+                agent_manager=agent_manager,
+                persona_catalog=persona_catalog,
+                plan_decision=plan_decision,
+                parallel_reasoning=parallel_reasoning,
+                practice_store=practice_store,
+            )
+
+        if any([agent_manager, persona_catalog, plan_decision, parallel_reasoning, practice_store]):
+            self._logger.info(f"[{self.agent_id}] Team protocols configured")
+
+
+    def _enforce_write_permissions(self, tool_name: str, tool_args: Dict) -> Optional[ToolResult]:
+        """Enforce per-route write scopes via the routed workspace.
+
+        Step 4 FOLD (docs/workspace_root_redesign.md): the
+        ``ROUTING_TABLE`` in ``path_routed_workspace.py`` is now the
+        single source of truth for which agent may write which prefix.
+        Plain ``Workspace`` (test / orchestrator early-init) returns
+        ``True`` from ``is_write_allowed`` — no role gate before the
+        worktree exists.
+
+        Re-audit fix (2026-05-29): consult
+        ``self._routed_workspace`` (the ``PathRoutedWorkspace`` built
+        in ``_register_env_gen_tools``) FIRST. The historical code
+        read ``self.workspace`` — but that's the bare
+        ``WorkspaceManager`` (only owns base_dir + init dirs; has no
+        ``is_write_allowed`` method), so ``hasattr(...)`` returned
+        False and the gate silently no-op'd every call. Backend
+        could write to ``design/``, "read-only" lanes could write
+        ``screenshots/`` / ``shared/`` — the entire role-gate was
+        landed-but-dead. Fallback to ``self.workspace`` is preserved
+        so early-init / stub-agent code paths still degrade to
+        "no gate" rather than raising.
+        """
+        ws = (
+            getattr(self, "_routed_workspace", None)
+            if hasattr(self, "_routed_workspace")
+              and getattr(self, "_routed_workspace", None) is not None
+            else None
+        )
+        if ws is None:
+            ws = self.workspace
+        if ws is None or not hasattr(ws, "is_write_allowed"):
+            return None
+
+        # Effective agent id: a spawned worker may inherit the
+        # permission identity of the agent that spawned it (e.g. backend
+        # ↔ a backend-flavoured worker). Match the old resolution path.
+        effective_agent_id = self.agent_id
+        permission_parent_id = getattr(self, "_permission_parent_id", None)
+        config_key = getattr(self, "_config_key", None)
+        if permission_parent_id:
+            effective_agent_id = permission_parent_id
+        elif config_key:
+            effective_agent_id = config_key
+
+        write_targets: List[str] = []
+        # ``update_json_path`` / ``update_yaml_path`` belong in the
+        # gated set: both tools call ``_resolve_workspace_path``
+        # (containment only) then ``_atomic_write_text``, bypassing
+        # the role-write gate without this gate. A non-owner could
+        # otherwise mutate a routed-write file (e.g. ``shared/*.json``)
+        # through them. Their write target lives in the ``path``
+        # argument (same shape as ``write``/``edit``), so the existing
+        # ``file_path``-or-``path`` extraction below covers them
+        # without further plumbing. The structural invariant test
+        # in ``tests/test_write_gate_invariant.py`` recognises this set
+        # as ``GATED_TOOL_NAMES`` and will now turn green for these
+        # two tools.
+        #
+        # Phase 0.2 attempt-4 PHASE 2 FIX A (2026-05-29): add three
+        # ``output_path``-class tools that PHASE 1 AUDIT A confirmed
+        # are FULLY_AGENT_CONTROLLED writes:
+        #   * ``generate_seed_sql`` — the HIGH-severity finding;
+        #     ``data_engine_tools.py:810-813`` bypasses
+        #     ``workspace.resolve()`` entirely (raw
+        #     ``self.workspace.root / output_file`` with absolute-path
+        #     pass-through). A traversal-class write equivalent to the
+        #     Phase 0.2 RCE — needs the role gate now. Its write
+        #     parameter is ``output_file`` (not ``file_path``/``path``),
+        #     so add it to the extraction below.
+        #   * ``save_image`` — MEDIUM (role-confusion only since
+        #     ``workspace.resolve()`` contains escape, but no per-agent
+        #     gate). Param is ``path``.
+        #   * ``capture_webpage`` — MEDIUM (same shape as save_image).
+        #     Param is ``path`` (optional; absent path means the tool
+        #     uses a sanitised ``screenshots/<domain>.png`` fallback,
+        #     which the gate will still evaluate against the route
+        #     once the leaf is extracted — see fallback handling
+        #     below).
+        if tool_name in {
+            "write",
+            "delete_file",
+            "edit",
+            "apply_patch",
+            "update_json_path",
+            "update_yaml_path",
+            "generate_seed_sql",
+            "save_image",
+            "capture_webpage",
+        }:
+            path = (
+                tool_args.get("file_path")
+                or tool_args.get("path")
+                or tool_args.get("output_file")
+            )
+            if path:
+                write_targets.append(path)
+            if tool_name == "apply_patch":
+                patch_text = tool_args.get("patch", "")
+                if isinstance(patch_text, str):
+                    for line in patch_text.splitlines():
+                        if line.startswith("*** Add File: ") or line.startswith("*** Update File: "):
+                            patch_path = line.split(": ", 1)[1].strip()
+                            if patch_path:
+                                write_targets.append(patch_path)
+            elif tool_name == "capture_webpage" and not path:
+                # CaptureWebpageTool's fallback writes to
+                # ``screenshots/<sanitised_domain>.png`` (see
+                # image_search_tools.py:698). ``screenshots/`` is a
+                # READ-ONLY route in ROUTING_TABLE — so any agent
+                # invocation without an explicit ``path`` lands on a
+                # universally-denied prefix. Surface that as a write
+                # target so the gate fires the correct deny.
+                write_targets.append("screenshots/")
+        elif tool_name == "copy_reference_image":
+            dest = tool_args.get("destination")
+            if dest:
+                write_targets.append(dest)
+
+        if not write_targets:
+            return None
+
+        denied = [p for p in write_targets if not ws.is_write_allowed(p, effective_agent_id)]
+        if denied:
+            return ToolResult(
+                success=False,
+                error_message=(
+                    f"Write permission denied for {self.agent_id}: {denied}. "
+                    f"Check ROUTING_TABLE in multi_agent/runtime/path_routed_workspace.py "
+                    f"for the route's allowed_writers."
+                ),
+            )
+        return None
+
+    def _enter_team_mode(self, reason: str = "") -> None:
+        if self._execution_mode == "team":
+            return
+        self._execution_mode = "team"
+        self._logger.info(
+            f"[{self.agent_id}] Execution mode -> team{f' ({reason})' if reason else ''}"
+        )
+
+    def _exit_team_mode(self, reason: str = "") -> None:
+        if self._execution_mode == "direct":
+            return
+        self._execution_mode = "direct"
+        self._logger.info(
+            f"[{self.agent_id}] Execution mode -> direct{f' ({reason})' if reason else ''}"
+        )
+
+    def _enforce_stage_preconditions(
+        self, tool_name: str, tool_args: Dict
+    ) -> Optional[ToolResult]:
+        """PR3.2 — per-(stage, tool) precondition guard.
+
+        Replaces "do not call X until Y" prompt prose with engine-side
+        enforcement. The agent yaml may declare
+        ``stage_tool_preconditions.<stage>.<tool>: <precondition_id>``;
+        ``ConfigurableAgent.__init__`` validates ids against the
+        registry (fail-closed at construction), so by the time we get
+        here every id is resolvable.
+
+        Returning a ``ToolResult`` blocks the call; returning ``None``
+        lets it proceed. The block message surfaces to the LLM as a
+        normal tool failure, naming the corrective action.
+        """
+        preconds = getattr(self, "_stage_tool_preconditions", None)
+        if not preconds:
+            return None
+        stage = getattr(self, "_active_stage", None)
+        if not stage:
+            return None
+        # Lookup chain (in priority order):
+        #   1. ``"<phase>:<stage>"``  — composite phase-keyed (PR3.1.2 /
+        #      Loop B ⑧). Used when ``_active_phase`` is pinned, e.g.
+        #      ``"kickoff:action"`` during the orchestrator's kickoff
+        #      handlers.
+        #   2. ``"<stage>"``           — bare stage name. Matches the
+        #      outer pipeline stages (hub_pulse / action / etc.) and
+        #      the internal action sub-stages (communicate / edit_code
+        #      / run_checks / delegate_team / deliver) when the yaml
+        #      keys on them explicitly.
+        #   3. ``"action"``            — Smoke #30 (2026-06-04) wedge
+        #      cause. When ``finish`` is called from inside the action
+        #      loop, ``_active_stage`` is the INTERNAL sub-stage
+        #      (``deliver`` typically), not the outer ``action``. A
+        #      yaml that keys ``stage_tool_preconditions.action.finish``
+        #      would miss without this fallback — backend's 4
+        #      'defined' endpoints stayed unprotected. Fall back to
+        #      the outer ``action`` whenever the current stage is one
+        #      of the action internal sub-stages.
+        # Each level is tried in order; the FIRST match wins. Falsy
+        # results (empty dict from yaml) fall through to the next
+        # level.
+        phase = getattr(self, "_active_phase", None)
+        action_inner = set(getattr(self, "ACTION_INTERNAL_STAGES", ()) or ())
+        stage_map = None
+        if phase:
+            stage_map = preconds.get(f"{phase}:{stage}") or None
+        if not stage_map:
+            stage_map = preconds.get(stage) or None
+        if not stage_map and stage in action_inner:
+            # Sub-stage of the action loop — fall back to the outer
+            # "action" key so a single yaml entry covers all five
+            # internal sub-stages.
+            if phase:
+                stage_map = preconds.get(f"{phase}:action") or None
+            if not stage_map:
+                stage_map = preconds.get("action") or None
+        if not stage_map:
+            return None
+        pre_id = stage_map.get(tool_name)
+        if not pre_id:
+            return None
+        from .preconditions import resolve_precondition
+        checker = resolve_precondition(pre_id)
+        if checker is None:
+            # By construction (ConfigurableAgent validates ids at init)
+            # this is unreachable. If it ever fires, an external caller
+            # bypassed ConfigurableAgent — surface as a hard error
+            # rather than a silent fallthrough.
+            raise RuntimeError(
+                f"unknown stage_tool_precondition id '{pre_id}' "
+                f"reached dispatch for agent={self.agent_id} stage={stage} "
+                f"tool={tool_name}"
+            )
+        err_msg = checker(self, tool_name, tool_args)
+        if err_msg is None:
+            return None
+        return ToolResult(success=False, error_message=err_msg)
+
+    def _enforce_execution_mode(self, tool_name: str) -> Optional[ToolResult]:
+        """Enforce execution mode boundaries."""
+        if getattr(self, "_active_stage", "action") != "action":
+            return None
+
+        is_team_tool = tool_name in self.TEAM_TOOL_NAMES
+        if self._execution_mode == "direct":
+            if is_team_tool:
+                self._enter_team_mode(reason=f"tool={tool_name}")
+            return None
+
+        if is_team_tool or tool_name in self.TEAM_MODE_SUPPORT_TOOLS:
+            return None
+
+        return ToolResult(
+            success=False,
+            error_message=(
+                f"Tool '{tool_name}' is blocked in team mode. "
+                "In team mode, only team orchestration/coordination actions are allowed. "
+                "Terminate team work first to return to direct mode."
+            ),
+        )
+
+    async def _execute_tool(self, tool_name: str, tool_args: Dict) -> ToolResult:
+        """Execute a tool and log it."""
+        if tool_name in self._tool_instances:
+            try:
+                mode_error = self._enforce_execution_mode(tool_name)
+                if mode_error is not None:
+                    self.log_tool_call(tool_name, tool_args, mode_error)
+                    return mode_error
+
+                permission_error = self._enforce_write_permissions(tool_name, tool_args)
+                if permission_error is not None:
+                    self.log_tool_call(tool_name, tool_args, permission_error)
+                    return permission_error
+
+                precondition_error = self._enforce_stage_preconditions(tool_name, tool_args)
+                if precondition_error is not None:
+                    self.log_tool_call(tool_name, tool_args, precondition_error)
+                    return precondition_error
+
+                exec_fn = self._tool_instances[tool_name].execute
+                if asyncio.iscoroutinefunction(exec_fn):
+                    result = await exec_fn(**tool_args)
+                else:
+                    result = await asyncio.to_thread(exec_fn, **tool_args)
+
+                if getattr(result, "success", False) and self._execution_mode == "team":
+                    if tool_name in {"terminate_agent_team", "parallel_execute", "finish"}:
+                        self._exit_team_mode(reason=f"tool={tool_name}")
+
+                self.log_tool_call(tool_name, tool_args, result)
+                from .skill_consult import record_skill_consult
+                record_skill_consult(self, tool_name, tool_args, result)
+                return result
+            except Exception as e:
+                return ToolResult(success=False, error_message=str(e))
+        return ToolResult(success=False, error_message=f"Unknown tool: {tool_name}")
+
+    def _log_tool_details(self, tool_name: str, tool_args: Dict) -> None:
+        """Enhanced logging for tool calls with detailed content for important tools."""
+
+        def truncate(s: str, max_len: int = 200) -> str:
+            s = str(s)
+            return s[:max_len] + "..." if len(s) > max_len else s
+
+        if tool_name == "plan":
+            action = tool_args.get("action", "create")
+            items = tool_args.get("items", [])
+            item_text = tool_args.get("item_text", "")
+            item_index = tool_args.get("item_index")
+            if action == "create":
+                self._logger.info(f"[{self.agent_id}] 📋 PLAN CREATE ({len(items)} items):")
+                for i, item in enumerate(items[:10]):
+                    self._logger.info(f"    [{i}] {truncate(item, 100)}")
+                if len(items) > 10:
+                    self._logger.info(f"    ... and {len(items) - 10} more items")
+            elif action == "add":
+                self._logger.info(f"[{self.agent_id}] 📋 PLAN ADD: {items}")
+            elif action == "complete":
+                self._logger.info(f"[{self.agent_id}] ✅ PLAN COMPLETE: item #{item_index}")
+            elif action == "update":
+                self._logger.info(f"[{self.agent_id}] 📝 PLAN UPDATE #{item_index}: {truncate(item_text, 100)}")
+            elif action == "remove":
+                self._logger.info(f"[{self.agent_id}] ❌ PLAN REMOVE: item #{item_index}")
+            elif action == "clear":
+                self._logger.info(f"[{self.agent_id}] 🗑️ PLAN CLEAR")
+            else:
+                self._logger.info(f"[{self.agent_id}] 📋 PLAN {action}: {tool_args}")
+        elif tool_name == "send_message":
+            self._logger.info(
+                f"[{self.agent_id}] 📤 SEND_MESSAGE to={tool_args.get('to_agent', '?')} "
+                f"type={tool_args.get('msg_type', 'update')} priority={tool_args.get('priority', 'normal')}"
+            )
+            self._logger.info(f"    Content: {truncate(tool_args.get('content', ''), 200)}")
+        elif tool_name == "broadcast":
+            self._logger.info(f"[{self.agent_id}] 📢 BROADCAST: {truncate(tool_args.get('message', ''), 200)}")
+        elif tool_name == "ask_agent":
+            self._logger.info(
+                f"[{self.agent_id}] ❓ ASK_AGENT to={tool_args.get('agent_id', '?')}: "
+                f"{truncate(tool_args.get('question', ''), 200)}"
+            )
+        elif tool_name == "check_inbox":
+            filters = {k: v for k, v in tool_args.items() if v}
+            self._logger.info(f"[{self.agent_id}] 📥 CHECK_INBOX filters={filters if filters else 'none'}")
+        elif tool_name == "report_issue":
+            self._logger.info(
+                f"[{self.agent_id}] 🐛 REPORT_ISSUE to={tool_args.get('assign_to', '?')} "
+                f"severity={tool_args.get('severity', 'error')}"
+            )
+            self._logger.info(f"    Issue: {truncate(tool_args.get('issue', ''), 200)}")
+        elif tool_name == "finish":
+            self._logger.info(f"[{self.agent_id}] 🏁 FINISH notify={tool_args.get('notify', [])}")
+            self._logger.info(f"    Message: {truncate(tool_args.get('message', ''), 200)}")
+        elif tool_name == "deliver_project":
+            self._logger.info(f"[{self.agent_id}] 🚀 DELIVER_PROJECT: {truncate(tool_args.get('delivery_summary', ''), 200)}")
+        elif tool_name == "write":
+            path = tool_args.get("file_path", "?")
+            self._logger.info(f"[{self.agent_id}] 📝 WRITE: {path} ({len(tool_args.get('content', ''))} chars)")
+        elif tool_name == "read":
+            self._logger.info(f"[{self.agent_id}] 👁️ READ: {tool_args.get('file_path', '?')}")
+        elif tool_name == "edit":
+            self._logger.info(f"[{self.agent_id}] ✏️ EDIT: {tool_args.get('file_path', '?')}")
+        elif tool_name == "apply_patch":
+            self._logger.info(f"[{self.agent_id}] 🩹 APPLY_PATCH")
+        elif tool_name == "delete_file":
+            self._logger.info(f"[{self.agent_id}] 🗑️ DELETE_FILE: {tool_args.get('file_path', '?')}")
+        elif tool_name == "glob":
+            self._logger.info(
+                f"[{self.agent_id}] 🧭 GLOB: pattern={tool_args.get('pattern', '?')} "
+                f"scope={tool_args.get('path', '.')}"
+            )
+        elif tool_name == "grep":
+            self._logger.info(
+                f"[{self.agent_id}] 🔎 GREP: pattern={truncate(tool_args.get('pattern', ''), 120)} "
+                f"scope={tool_args.get('path', '.')} include={tool_args.get('include', '*')}"
+            )
+        elif tool_name == "lint":
+            self._logger.info(f"[{self.agent_id}] 🔍 LINT: {tool_args.get('path', '?')}")
+        elif tool_name in ["docker_build", "docker_up", "docker_down", "docker_logs", "docker_validate"]:
+            self._logger.info(
+                f"[{self.agent_id}] 🐳 {tool_name.upper()}: service={tool_args.get('service', 'all')} args={tool_args}"
+            )
+        elif tool_name == "wait":
+            self._logger.info(
+                f"[{self.agent_id}] ⏳ WAIT: {tool_args.get('seconds', 0)}s - {tool_args.get('reason', '')}"
+            )
+        elif tool_name == "get_time":
+            self._logger.info(f"[{self.agent_id}] 🕐 GET_TIME")
+        elif tool_name in {"analyze_image", "view_image"}:
+            self._logger.info(
+                f"[{self.agent_id}] 🖼️ {tool_name.upper()}: "
+                f"{tool_args.get('image_path', tool_args.get('path', '?'))}"
+            )
+        else:
+            self._logger.info(f"[{self.agent_id}] 🔧 {tool_name}: args={list(tool_args.keys())}")
+
+    def _log_tool_result(self, tool_name: str, result: ToolResult, duration_ms: int) -> None:
+        """Log tool execution result with appropriate detail level."""
+
+        def truncate(s: str, max_len: int = 150) -> str:
+            s = str(s)
+            return s[:max_len] + "..." if len(s) > max_len else s
+
+        status = "✅" if result.success else "❌"
+        verbose_result_tools = {
+            "check_inbox", "get_time", "db_schema", "list_reference_images"
+        }
+        quiet_tools = {"write", "read", "edit", "apply_patch", "lint", "wait"}
+
+        if not result.success:
+            self._logger.warning(
+                f"[{self.agent_id}] {status} {tool_name} FAILED ({duration_ms}ms): "
+                f"{truncate(result.error_message or '', 300)}"
+            )
+        elif tool_name in verbose_result_tools:
+            result_preview = truncate(str(result.data), 300) if result.data else "empty"
+            self._logger.info(f"[{self.agent_id}] {status} {tool_name} ({duration_ms}ms): {result_preview}")
+        elif tool_name == "check_inbox":
+            data = result.data
+            if isinstance(data, dict):
+                msg_count = data.get("count", 0)
+                messages = data.get("messages", [])
+                if msg_count > 0:
+                    self._logger.info(f"[{self.agent_id}] {status} check_inbox ({duration_ms}ms): {msg_count} messages")
+                    for msg in messages[:5]:
+                        self._logger.info(
+                            f"    📩 from={msg.get('from', '?')} type={msg.get('type', '?')}: "
+                            f"{truncate(msg.get('content', ''), 100)}"
+                        )
+                else:
+                    self._logger.info(f"[{self.agent_id}] {status} check_inbox ({duration_ms}ms): inbox empty")
+            else:
+                self._logger.info(f"[{self.agent_id}] {status} check_inbox ({duration_ms}ms): {truncate(str(data), 100)}")
+        elif tool_name == "plan":
+            if isinstance(result.data, dict) and "plan" in result.data:
+                plan_items = result.data.get("plan", [])
+                completed = sum(1 for p in plan_items if p.get("completed", False))
+                self._logger.info(f"[{self.agent_id}] {status} plan ({duration_ms}ms): {completed}/{len(plan_items)} items complete")
+        elif tool_name in quiet_tools:
+            self._logger.debug(f"[{self.agent_id}] {status} {tool_name} ({duration_ms}ms)")
+        else:
+            self._logger.info(f"[{self.agent_id}] {status} {tool_name} ({duration_ms}ms)")
+
+    async def _apply_finish_policies(
+        self,
+        *,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        tool_call: Any,
+        tool_call_id: str,
+        messages: List[Any],
+        files_created: List[str],
+        files_modified: List[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Two-pass finish-policy dispatch (PR 2.5-fix-2, 2026-05-29).
+
+        Pass 1 — BOOKKEEPING: every policy whose ``always_runs()``
+        returns True is invoked unconditionally; its return value is
+        expected to be ``None``. If a bookkeeping policy ever returns
+        a non-None outcome, this dispatcher logs an ERROR and
+        discards the outcome — preserving the gate-bookkeeping
+        separation invariant without crashing a running finish.
+        This guarantees the ``LaneIdleCircuitBreakerPolicy`` idle
+        counter advances on every finish call regardless of YAML order
+        or peer gate outcomes — the structural fix for the recurring
+        starvation bug that the previous single-pass first-match-wins
+        loop kept silently re-opening every time a new gate landed
+        before the breaker.
+
+        Pass 2 — GATES: standard first-match-wins loop, skipping
+        already-invoked bookkeeping policies so they aren't double-
+        called. The first policy returning a non-None outcome wins.
+
+        Exception handling: a bookkeeping policy that raises is
+        logged at WARNING and skipped — a buggy observer must never
+        block a finish. A gate that raises is allowed to propagate.
+        """
+        policies = list(getattr(self, "_workflow_policies", []) or [])
+        kwargs = dict(
+            tool_name=tool_name,
+            tool_args=tool_args,
+            tool_call=tool_call,
+            tool_call_id=tool_call_id,
+            messages=messages,
+            files_created=files_created,
+            files_modified=files_modified,
+        )
+        bookkept_ids: set = set()
+        for policy in policies:
+            if not policy.always_runs():
+                continue
+            bookkept_ids.add(id(policy))
+            try:
+                outcome = await policy.handle_finish(self, **kwargs)
+            except Exception as exc:
+                try:
+                    self._logger.warning(
+                        f"[{getattr(self, 'agent_id', '?')}] bookkeeping "
+                        f"policy {type(policy).__name__} raised: {exc} — "
+                        "continuing finish dispatch"
+                    )
+                except Exception:
+                    pass
+                continue
+            if outcome is not None:
+                try:
+                    self._logger.error(
+                        f"[{getattr(self, 'agent_id', '?')}] policy "
+                        f"{type(policy).__name__} declares always_runs() "
+                        f"but returned a gate outcome {outcome!r}; the "
+                        "bookkeeping invariant is broken — outcome will "
+                        "be DISCARDED. Either return None or set "
+                        "always_runs() -> False."
+                    )
+                except Exception:
+                    pass
+        for policy in policies:
+            if id(policy) in bookkept_ids:
+                continue
+            outcome = await policy.handle_finish(self, **kwargs)
+            if outcome is not None:
+                return outcome
+        return None

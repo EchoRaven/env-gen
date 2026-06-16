@@ -1,0 +1,99 @@
+/* Cutover 41: base.css slimmed — design-tokens.css now owns the reset + tokens.
+ * This file keeps legacy v0-* compatibility aliases and the .mono/.pill/.status-badge widgets.
+ */
+
+:root {
+  /* v0-* aliases for legacy components; resolved against design tokens. */
+  --v0-bg: var(--bg-primary);
+  --v0-panel: var(--bg-primary);
+  --v0-muted: var(--text-muted);
+  --v0-border: var(--border);
+  --v0-text: var(--text-primary);
+  --v0-code-bg: var(--bg-primary);
+  --v0-code-text: var(--text-primary);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  overscroll-behavior-x: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
+.status-badge.running {
+  color: var(--accent);
+}
+
+.status-badge.success {
+  color: var(--success);
+}
+
+.status-badge.failed {
+  color: var(--danger);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pill.subtle {
+  color: var(--text-muted);
+}
+
+.eyebrow {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

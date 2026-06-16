@@ -1,0 +1,947 @@
+# Agent Configuration
+# Each agent is just: prompt template + tools + settings
+# No custom class needed - all loaded via ConfigurableAgent
+#
+# Prompt templates are in prompts/v2/ - structured format with:
+#   - Identity (role, expertise, responsibilities)
+#   - Environment (workspace, inputs, outputs)
+#   - Collaboration (upstream/downstream dependencies)
+#   - Team (all members with relationships)
+#   - Goal (primary objective, success criteria)
+#   - Workflow (step-by-step process)
+#
+# HubRegistry provides observation-driven coordination (Cutover 5):
+#   - RegistryHub: database tables, API endpoints
+#   - WorkHub: UI pages, tasks, plans
+#   - EventHub: agent status, inbox events
+#   - CodeHub: git worktrees, PR checks
+
+execution_pipeline_defaults:
+  # Stage order for each step.
+  # hub_pulse (start) and hub_commit_gate (end) are engine-forced and
+  # cannot be disabled via yaml; the step_runner injects them regardless.
+  stages:
+    - hub_pulse
+    - runtime_team_status
+    - planning
+    - retrieve_context
+    - action
+    - hub_commit_gate
+    - knowledge_sync
+  # Optional stages may be skipped by the model.
+  optional_stages:
+    - retrieve_context
+    - knowledge_sync
+  # Per-stage tool-call cap; omit a stage to keep default behavior.
+  # hub_pulse + hub_commit_gate collect data via hub method calls (not LLM tools).
+  max_tool_calls_per_stage:
+    hub_pulse: 0
+    planning: 1
+    retrieve_context: 2
+    hub_commit_gate: 0
+    knowledge_sync: 1
+  # hub_commit_gate thresholds (step counts after which loose ends become "stale").
+  commit_gate:
+    enabled: true
+    stale_task_steps: 5
+    stale_review_steps: 3
+    stale_pr_steps: 10
+  # Max action rounds inside one step before forcing the step to end.
+  max_action_rounds_per_step: 15
+  # Optional pinned reminders injected at the start of every step.
+  # Each item may be a string or {title, content}.
+  step_reminders:
+    - title: "Memory policy"
+      content:
+        - "Use read_memory_bank(mode='digest') in retrieve_context when prior focus, blockers, decisions, or progress may affect this step."
+        - "Use update_memory_bank near meaningful milestones to record completed work, blockers, next steps, decisions, and durable tech notes."
+        - "Do not store transient chain-of-thought; keep Memory Bank entries concise and useful for future steps."
+
+# OpenClaw-style skill allowlists.
+# - `skill_defaults` applies when a profile omits `skills`
+# - a profile's `skills: []` means no skills
+# - a non-empty profile `skills` list is the final set for that profile
+skill_defaults: []
+
+profiles:
+  orchestrator:
+    name: "Orchestrator Agent"
+    reasoning_effort: "high"  # coordinator role requires high reasoning for tick decisions + delivery gate composition + silent-lane detection. Tunable live.
+    description: "Global orchestrator - planning, cross-team coordination, and delivery control"
+    tool_categories: ["reasoning", "file", "progress", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "observability", "coverage", "visual_review", "seed", "delivery", "mcp_registry", "team_spawn", "team_lifecycle", "team_reasoning", "team_planning", "runtime", "api", "docker", "logs", "database", "browser", "verification", "web", "codehub", "workhub", "registryhub", "eventhub", "run", "hub"]
+    include_vision: false
+    timeout: 7200
+    prompts:
+      # coordinator role formalized. Orchestrator IS the
+      # lane that polls (resident_coordination_tick on idle, BY DESIGN —
+      # inverse of worker agents which are task_ready-triggered and
+      # forbidden from polling). v3 restructures the top of the prompt
+      # using the v3 macro (peers/hubs/tool_policy/stop_rules/examples)
+      # while PRESERVING all v2 cutover discipline blocks verbatim via
+      # body_extra import (Cutovers 10/11/13/14/16/19/20/21/23/24).
+      # task_macros.full re-exports v2's full_workflow_prompt unchanged —
+      # the v3 changes concentrate in the system prompt body.
+      template: "v3/orchestrator_agent.j2"
+      system_macro: "lead_system_prompt"
+      task_macros:
+        full: "full_workflow_prompt"
+      context_vars: ["api_port", "ui_port"]
+    flags:
+      coordinator: true
+      can_deliver: true
+      team_lead: true  # Can approve plans and coordinate other agents
+    skills: ["release-readiness", "new-env-bootstrap", "verification-before-completion"]
+    tool_bundles:
+      - reasoning_tools
+      - project_tools
+      - analysis_tools
+      - knowledge_read_tools
+      - knowledge_write_tools
+      - team_spawn_tools
+      - team_lifecycle_tools
+      - team_reasoning_tools
+      - team_planning_tools
+      - api_test
+      - runtime_full
+      - orchestrator_delivery
+      - mcp_client_tools
+      - docker_core
+      - docker_restart
+      - database_tools
+      - log_tools
+      - browser_tools
+      - verification_tools
+      - web_tools
+      - codehub_tools
+      - codehub_admin_tools
+      - workhub_tools
+      - meeting_tools  # Round-8g Fix #E: orchestrator chairs the kickoff meeting and the facilitator turn must call workhub_add_meeting_decision (Round-8d Fix #6 added this to backend/frontend/verifier but missed orchestrator — meeting_tools is intentionally a separate bundle from workhub_tools, see tool_bundles._bundle_meeting_tools docstring).
+      - registryhub_tools
+      - eventhub_tools
+      - run_tools
+      - retro_tools
+      - observability_tools
+      - coverage_tools
+      - visual_review_tools
+      - seed_tools
+      - deliverability_tools
+      - mcp_registry_tools
+    deny_tools:
+      - pause_agent_team
+      - resume_agent_team
+      - terminate_agent_team
+    # skill-trigger L2: orchestrator must consult release-readiness before
+    # delivering (engine-enforced; reuses the precondition lever).
+    stage_tool_preconditions:
+      action:
+        deliver_project: release_readiness_consulted
+        report_completion: release_readiness_consulted
+        # FIX #28: bound ask_agent so the orchestrator can't interrogate the
+        # lanes into a no-progress ping-pong that derails their implementation
+        # (instagram-core froze after 28 questions). Self-resets on real progress.
+        ask_agent: orchestrator_ask_cap
+    workflow_policies:
+      - kind: finish_continue
+        tool_name: finish
+        followup_message: "Downstream agents notified. Continue monitoring with check_inbox() and respond to questions. When all agents complete and testing passes, use deliver_project() to end."
+      # Memory-redesign #2: gate deliver_project / report_completion on
+      # at least one submit_retro call. Otherwise retros stay at 0 forever
+      # since the run ends right when the LLM might have called them.
+      - kind: retro_before_deliver
+    execution_pipeline:
+      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      max_tool_calls_per_stage:
+        planning: 1
+        retrieve_context: 3
+        hub_commit_gate: 0
+        knowledge_sync: 2
+
+  # ``design`` and ``database`` profiles retired — design merged into
+  # ``frontend``, database merged into ``backend``.
+
+  backend:
+    name: "Backend Lead Agent"
+    reasoning_effort: "high"  # Backend owns API+DB contract — the most reasoning-heavy contract-authoring role. Tunable live via live_monitor.
+    description: "Backend team lead (v3): task_ready triggered, single-pass claim->read->plan->implement->register->finish. No polling, no wait."
+    # "progress": report_progress is an always-include base tool registered
+    # under the "progress" category (tools.py) and treated as ALWAYS_INCLUDE by
+    # the stage ranker, but the category filter dropped it for the backend.
+    tool_categories: ["file", "reasoning", "vision", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "mcp_registry", "team_spawn", "team_reasoning", "runtime", "api", "api_contract", "database", "dependency", "reference", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "design", "progress"]
+    # Backend reads the reference images too: every visible datum implies a
+    # column, every actionable control implies an endpoint — the contract is
+    # derived from the screens, not just the requirements text.
+    include_vision: true
+    timeout: 3600
+    prompts:
+      # event-triggered, no `wait(seconds=30)` poll-loop.
+      # v2 pathology: backend reached 0 tool calls across opus/gpt-5.4/haiku
+      # pilot runs — workflow + task_prompt instructed "Wait for database
+      # first" + `wait(seconds=30)` polling pattern, leaving the agent in
+      # broadcast-then-wait state instead of claiming + implementing. v3
+      # replaces with task_ready trigger + explicit claim flow + hard
+      # finish() requirement.
+      template: "v3/backend_agent.j2"
+      system_macro: "backend_system_prompt"
+      task_macro: "backend_task_prompt"
+      context_vars: ["api_port", "db_port", "backend_internal_port"]
+    skills: ["api-contract-guard", "env-oauth-blueprint", "multi-tenancy-pattern", "mcp-server-bootstrap", "test-driven-development", "verification-before-completion"]
+    tool_bundles:
+      - reasoning_tools
+      - project_tools
+      - analysis_tools
+      - knowledge_read_tools
+      - knowledge_write_tools
+      - team_spawn_tools
+      - team_reasoning_tools
+      - runtime_full
+      - api_test
+      - backend_api_contract_tools
+      - reference_images
+      - mcp_server_tools
+      - database_tools
+      - dependency_tools
+      - web_tools
+      - codehub_tools
+      - workhub_tools
+      - meeting_tools  # Round-8d Fix #6: kickoff_response_prompt calls workhub_add_meeting_decision; meeting_tools is intentionally a separate bundle from workhub_tools (Round-8g Fix #E rationale).
+      - registryhub_tools
+      - eventhub_tools
+      - design_tools
+      - mcp_registry_tools
+    deny_tools:
+      - codehub_force_merge
+      - wait
+      - wait_for_process
+    # PR3.2 — engine-enforced sequence check. Replaces v2's "DO NOT
+    # call finish until every endpoint is implemented" prompt prose.
+    # The kickoff_endpoints_implemented checker reads RegistryHub and blocks
+    # finish with a directed error when any endpoint is still at
+    # status != 'implemented'. Smoke #28 reproduced the wedge this
+    # guard closes: backend wrote 8 correct files but called finish
+    # with 4 endpoints stuck at 'defined', so the WorkHub task closer
+    # never fired.
+    stage_tool_preconditions:
+      action:
+        # FIX #23 (Instagram run #6): the backend gamed kickoff_endpoints_
+        # implemented by calling registryhub_register_endpoint(status='implemented')
+        # 58x with ZERO code writes — all 38 endpoints 'implemented', 0 business
+        # routes, app non-functional. endpoints_implemented_with_code adds a
+        # code-presence layer ON TOP of the status gate: finish stays blocked
+        # until each owned endpoint's route actually exists in the source.
+        finish: endpoints_implemented_with_code
+        # skill-trigger L2: backend must consult api-contract-guard before
+        # opening a PR (engine-enforced; reuses the precondition lever).
+        codehub_open_pr: api_contract_guard_consulted
+    # PR1.3 — kickoff stage allowlist. Same shape as verifier — the
+    # legitimate backend kickoff toolbox is the meeting write + page
+    # peek + read + finish + think. registryhub_register_endpoint /
+    # registryhub_register_table are EXCLUDED because the kickoff
+    # coordinator (orchestrator) synthesizes and registers contracts
+    # via finalize_kickoff — backend calling them at kickoff time
+    # double-registers and bypasses cross-check. Polling
+    # workhub_get_meeting and wait/sleep are also excluded.
+    stage_tool_allowlist:
+      "kickoff:action":
+        - workhub_add_meeting_decision
+        - workhub_get_page
+        - workhub_list_pages
+        - workhub_comment
+        - read
+        - finish
+      # Smoke #4 (2026-06-06): backend entered edit_code 38x but called
+      # workhub_get_page/read (NOT write/register), 0 endpoints implemented ->
+      # orchestrator spun 20min. Code+registration tools WERE available
+      # (always-include) — the LLM chose to read/coordinate. This allowlist
+      # forces the implementation action stages to code-producing tools and
+      # STRIPS the drift sinks (get_page/list_pages/comment/add_meeting_decision
+      # /ask_agent/broadcast). Over-listing is harmless (intersected with the
+      # agent's real tools); only an omission hurts, so it's deliberately
+      # generous. (_active_phase="implementation" pinned in base.process_task.)
+      "implementation:action":
+        - read
+        - write
+        - edit
+        - apply_patch
+        - lint
+        - plan
+        - finish
+        - check_inbox
+        - send_message
+        - report_progress
+        - workhub_task
+        - workhub_list_tasks
+        - workhub_update_page
+        - workhub_create_page
+        - workhub_share_implementation
+        - workhub_fail_task
+        - registryhub_register_endpoint
+        - registryhub_register_table
+        - registryhub_register_consumer
+        - registryhub_update_schema
+        - registryhub_get_endpoint
+        - registryhub_list_endpoints
+        - registryhub_get_table_breaking_changes
+        - registryhub_list_tables
+        - codehub_commit
+        - codehub_resolve_conflict
+        - codehub_resolve_merge_conflict
+        - test_api
+    workflow_policies:
+      # Breaker first — see ordering note on ``design`` profile.
+      - kind: lane_idle_circuit_breaker
+        warn_after_idle_steps: 3
+        failforward_after_idle_steps: 6
+        halt_after_idle_steps: 10
+      # replaced ``implementation_bootstrap``
+      # — the legacy kind required filesystem ``design/spec.{api,database,
+      # ui}.json`` files written by the (retired) design agent. Post
+      #
+      # writer remained, and the gate deadlocked every smoke (#18 /
+      # #19 / #20 all wedged on it). The new ``kickoff_bootstrap_gate``
+      # uses WorkHub task assignments — the signal ``finalize_kickoff``
+      # already produces structurally — as the bootstrap-eligibility
+      # check. See docs/pipeline_post_kickoff_architecture.md §4
+      # Stage 1.
+      - kind: kickoff_bootstrap_gate
+        allowed_starters: [orchestrator]
+      # B2 (2026-06-05): backend ROUTINELY shipped only src/ (no
+      # Dockerfile/package.json) across smokes #38-49, so compose's
+      # `build: ../app/backend` failed. Gate finish on the build-critical
+      # files the prompt's Output footprint explicitly names. NOT
+      # app/database/* — the runtime owns that (orchestrator._generate_database).
+      # Before auto_commit so an incomplete tree never reaches integration.
+      - kind: required_files
+        paths:
+          - "app/backend/Dockerfile"
+          - "app/backend/pyproject.toml"
+          - "app/backend/main.py"
+      - kind: auto_commit_on_finish
+      - kind: hub_consistency_gate
+        expect_hub_kinds: [registryhub_endpoints, codehub_commits]
+        # Any source under the backend's domain. Catches flat Django /
+        # FastAPI layouts (models.py, views.py, services/), Express
+        # routes/controllers/handlers/middleware, plus the canonical
+        # ``src/api/`` and ``app/backend/`` roots. Tests / configs /
+        # docs are excluded automatically by the policy.
+        file_patterns:
+          - "app/backend/"
+          - "/backend/"
+          - "routes/"
+          - "controllers/"
+          - "handlers/"
+          - "middleware/"
+          - "services/"
+          - "src/api/"
+          - "views.py"
+          - "urls.py"
+        min_modifications_for_codehub: 5
+      - kind: claim_assigned_tasks
+    execution_pipeline:
+      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      max_tool_calls_per_stage:
+        planning: 1
+        retrieve_context: 2
+        hub_commit_gate: 0
+        knowledge_sync: 1
+
+  frontend:
+    name: "Frontend Lead Agent"
+    reasoning_effort: "high"  # frontend owns design specs + UI implementation + flow coverage; reasoning-heavy.
+    description: "Frontend team lead (v3): task_ready triggered, two-phase (static UI when Design ready, API integration when Backend ready). No polling, no wait."
+    tool_categories: ["file", "reasoning", "runtime", "vision", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "visual_review", "mcp_registry", "team_spawn", "api_contract", "dependency", "reference", "image_search", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "design"]
+    include_vision: true
+    timeout: 3600
+    prompts:
+      # task_ready triggered, two-phase (Phase A static UI
+      # / Phase B API integration). v2 pathology: contradictory
+      # instructions — "Parallel Development Strategy" said "don't wait"
+      # but workflow + task_prompt said "Wait for backend first" + had
+      # `poll registryhub_list_endpoints with wait()` sample. v3 resolves to
+      # phase model: pick the deepest reachable phase per wake, finish().
+      template: "v3/frontend_agent.j2"
+      system_macro: "frontend_system_prompt"
+      task_macro: "frontend_task_prompt"
+      context_vars: ["backend_internal_port"]
+    skills: ["ui-ux-review", "ui-bootstrap", "frontend-design", "test-driven-development", "verification-before-completion"]
+    tool_bundles:
+      - reasoning_tools
+      - project_tools
+      - analysis_tools
+      - knowledge_read_tools
+      - knowledge_write_tools
+      - team_spawn_tools
+      - runtime_bash_only
+      - frontend_api_contract_tools
+      - reference_images
+      - image_search_tools
+      - dependency_tools
+      - vision_tools
+      - web_tools
+      - codehub_tools
+      - workhub_tools
+      - meeting_tools  # Round-8d Fix #6: kickoff_response_prompt calls workhub_add_meeting_decision; meeting_tools is intentionally a separate bundle from workhub_tools (Round-8g Fix #E rationale).
+      - registryhub_tools
+      - eventhub_tools
+      - design_tools
+      - visual_review_tools
+      - mcp_registry_tools
+    deny_tools:
+      - codehub_force_merge
+      - wait
+      - wait_for_process
+    # PR1.3 — kickoff stage allowlist. Same shape as backend/verifier.
+    # Frontend's kickoff role is to record screen/api_call/user_flow
+    # declarations (NOT to register endpoints — orchestrator does that
+    # at finalize_kickoff — and NOT to write any code, which is Phase A
+    # AFTER kickoff_complete). `write`/`edit`/`apply_patch` are
+    # therefore EXCLUDED here, which engine-enforces the "no frontend
+    # code during kickoff" rule that v3 prose used to carry.
+    stage_tool_allowlist:
+      "kickoff:action":
+        - workhub_add_meeting_decision
+        - workhub_get_page
+        - workhub_list_pages
+        - workhub_comment
+        - read
+        - finish
+    workflow_policies:
+      # Breaker first — see ordering note on ``design`` profile.
+      - kind: lane_idle_circuit_breaker
+        warn_after_idle_steps: 3
+        failforward_after_idle_steps: 6
+        halt_after_idle_steps: 10
+      # replaced ``implementation_bootstrap``
+      # — the legacy kind required filesystem ``design/spec.{api,database,
+      # ui}.json`` files written by the (retired) design agent. Post
+      #
+      # writer remained, and the gate deadlocked every smoke (#18 /
+      # #19 / #20 all wedged on it). The new ``kickoff_bootstrap_gate``
+      # uses WorkHub task assignments — the signal ``finalize_kickoff``
+      # already produces structurally — as the bootstrap-eligibility
+      # check. See docs/pipeline_post_kickoff_architecture.md §4
+      # Stage 1.
+      - kind: kickoff_bootstrap_gate
+        allowed_starters: [orchestrator]
+      # B2 (2026-06-05): frontend sometimes shipped only src/ (no
+      # Dockerfile/package.json), breaking compose's `build: ../app/frontend`.
+      # ⚠1 fix (2026-06-05): the inverse also happened — only Dockerfile +
+      # package.json with NO src, so `npm run build` produced an empty SPA.
+      # Gate finish on the full build-critical + completeness set: the serving
+      # files (index.html/nginx.conf.template/start.sh) as exact paths, and a
+      # real entry/App/api.js + the mandatory LoginPage/TenantPicker via any_of
+      # (so jsx≠tsx doesn't false-block). Before auto_commit so an incomplete
+      # tree never reaches integration.
+      - kind: required_files
+        paths:
+          - "app/frontend/Dockerfile"
+          - "app/frontend/package.json"
+          - "app/frontend/index.html"
+          - "app/frontend/nginx.conf.template"
+          - "app/frontend/start.sh"
+        any_of:
+          # Vite/CRA entry (whatever the toolchain names it)
+          - ["app/frontend/src/main.jsx", "app/frontend/src/main.tsx", "app/frontend/src/index.jsx", "app/frontend/src/index.tsx", "app/frontend/src/main.js"]
+          # root app component
+          - ["app/frontend/src/App.jsx", "app/frontend/src/App.tsx"]
+          # the API service layer (the 1:1 contract mirror)
+          - ["app/frontend/src/services/api.js", "app/frontend/src/services/api.ts"]
+          # mandatory auth/tenancy UI (login_tenant_template)
+          - ["app/frontend/src/components/LoginPage.jsx", "app/frontend/src/components/LoginPage.tsx", "app/frontend/src/pages/LoginPage.jsx"]
+          - ["app/frontend/src/components/TenantPicker.jsx", "app/frontend/src/components/TenantPicker.tsx"]
+      - kind: auto_commit_on_finish
+      - kind: hub_consistency_gate
+        expect_hub_kinds: [workhub_pages, codehub_commits]
+        # Any source under the frontend's domain. Tests / configs /
+        # docs are excluded automatically by the policy.
+        file_patterns:
+          - "app/frontend/"
+          - "/frontend/"
+          - ".jsx"
+          - ".tsx"
+          - ".vue"
+          - "pages/"
+          - "components/"
+          - "hooks/"
+          - "stores/"
+          - "src/api/"
+        min_modifications_for_codehub: 5
+      - kind: claim_assigned_tasks
+    execution_pipeline:
+      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      max_tool_calls_per_stage:
+        planning: 1
+        retrieve_context: 2
+        hub_commit_gate: 0
+        knowledge_sync: 1
+
+  # ``architect_reviewer`` and
+  # ``visual_reviewer`` profiles RETIRED. The architect-review and
+  # visual-review responsibilities folded into the verifier lane:
+  # verifier now owns design challenge-pass (≥3 challenges per
+  # design approval) AND visual fidelity (SSIM>=0.75 on
+  # critical). Splitting them into separate resident
+  # lanes consumed roster slots that the v3 pipeline didn't need —
+  # the verifier's cross-section-coverage discipline subsumes both.
+  # See docs/pipeline_post_kickoff_architecture.md §4 Stage 5.
+
+  verifier:
+    name: "Verifier Agent"
+    reasoning_effort: "high"  # Verifier owns predicate coverage across all critical flows + cross-team alignment via comment phase; both are reasoning-heavy. Tunable live.
+    description: "Validation lead - designs verification coverage, recruits test workers, executes checks, and reports outcomes"
+    # "bug": TOOL-C1 — bug_create is the verifier's canonical failure-routing
+    # channel (verifier_agent.j2); it was allowlisted but never granted, so
+    # detected failures went nowhere. "progress": report_progress is an
+    # always-include base tool registered under the "progress" category
+    # (tools.py) and treated as ALWAYS_INCLUDE by the stage ranker, but the
+    # category filter dropped it for the verifier — restored here.
+    tool_categories: ["browser", "docker", "api", "reasoning", "file", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "seed", "team_spawn", "team_lifecycle", "verification", "task_definition", "runtime", "logs", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "bug", "progress"]
+    include_vision: true
+    timeout: 3600
+    prompts:
+      # task_ready triggered, single-pass. v2 opened
+      # workflow with "Wait for implementation readiness via CRDT checks"
+      # which on weaker models could collapse to a poll loop. v3 codifies
+      # the structured check contract (build:docker, build:frontend,
+      # validation:api_smoke, validation:ui_smoke, validation:ui_flow:<name>,
+      # validation:release_readiness) +detect-only boundary
+      # (bug_create, NEVER workhub_create_task for remediation).
+      template: "v3/verifier_agent.j2"
+      system_macro: "verifier_system_prompt"
+      task_macro: "verifier_task_prompt"
+      context_vars: ["api_port", "ui_port"]
+    flags:
+      depends_on: [frontend, backend]
+    skills: ["release-readiness", "api-contract-guard", "verification-before-completion", "systematic-debugging"]
+    tool_bundles:
+      - reasoning_tools
+      - project_tools
+      - analysis_tools
+      - knowledge_read_tools
+      - knowledge_write_tools
+      - team_spawn_tools
+      - team_lifecycle_tools
+      - api_test
+      - runtime_full
+      - task_definition_tools
+      - execute_task_suite
+      - verification_tools
+      - log_tools
+      - docker_core
+      - browser_tools
+      - web_tools
+      - codehub_tools
+      - workhub_tools
+      - meeting_tools  # Round-8d Fix #6: verifier kickoff_response_prompt calls workhub_add_meeting_decision; meeting_tools is intentionally a separate bundle from workhub_tools (Round-8g Fix #E rationale).
+      - registryhub_tools
+      - verifier_contract_tools
+      - eventhub_tools
+      - bug_tools  # TOOL-C1: grants bug_create — the prompt's canonical failure-routing channel (was allowlisted but never granted)
+      - seed_tools
+    deny_tools:
+      - codehub_force_merge
+      - wait
+      - wait_for_process
+      # workhub_task is NO LONGER denied: orchestrator dispatches an
+      # assignee="verifier" P0 chain-authoring task (orchestrator.py) and tells
+      # the verifier to CLAIM it, but the blanket deny also blocked claim/
+      # complete, deadlocking that remediation. The detect-only boundary
+      # (no action=create for remediation) is now content-discipline in
+      # verifier_agent.j2 — bug_create→EventHub→Debugger remains the routing path.
+      - workhub_set_priority
+    # PR3.1.3 — kickoff stage allowlist (Loop B ⑧ unblocked by PR3.1.2's
+    # phase plumbing). During the kickoff phase, only the listed tools
+    # surface to the LLM. Replaces 5+ prose "DO NOT call X during kickoff"
+    # rules in verifier_agent.j2 with engine enforcement. Tools the
+    # verifier legitimately needs in kickoff: read the meeting page +
+    # cross-team pages, optionally leave a comment, record the section
+    # decision, finish. Everything else (registryhub registrations,
+    # bug_create, test_api / browser / docker, ask_agent, finish() blocked
+    # messages, hallucinated workhub_get_meeting polling) is hidden.
+    stage_tool_allowlist:
+      "kickoff:action":
+        - workhub_add_meeting_decision
+        - workhub_get_page
+        - workhub_list_pages
+        - workhub_comment
+        - read
+        - finish
+      # Smoke #6 (2026-06-06): backend implemented 12 endpoints but the verifier
+      # never validated (0 run_validation) — it suppressed 118 wakeups and, when
+      # it DID run, finished "Required RegistryHub readiness read tools were
+      # unavailable" — the per-round ranker (10 of ~154) didn't offer
+      # registryhub_list_endpoints/run_validation/workhub_task(claim). This allowlist
+      # guarantees the verifier's validation action-stage rounds are filled with
+      # the validation toolset (run_validation IS the api_smoke; claim + registryhub
+      # read + record + docker + browser for ui_flow). Generous on purpose —
+      # intersected with the agent's real tools, so an extra name is a no-op and
+      # only an omission hurts. (_active_phase="implementation" pinned in
+      # base.process_task.)
+      "implementation:action":
+        - read
+        - finish
+        - plan
+        - check_inbox
+        - send_message
+        - report_progress
+        - broadcast
+        - workhub_task
+        - workhub_list_tasks
+        - workhub_cancel_task
+        - workhub_get_page
+        - workhub_list_pages
+        - registryhub_list_endpoints
+        - registryhub_get_endpoint
+        - registryhub_list_tables
+        - registryhub_get_table_breaking_changes
+        - registryhub_record_contract_test
+        - registryhub_register_verification_chain
+        - run_validation
+        - docker_up
+        - docker_status
+        - docker_logs
+        - docker_build
+        - docker_validate
+        - test_api
+        - bug_create
+        - browser_navigate
+        - browser_screenshot
+        - browser_click
+        - browser_fill
+        - browser_console
+        - browser_network_errors
+        - codehub_get_diff
+        - codehub_get_file_content
+        - submit_learning
+    workflow_policies:
+      - kind: verifier_validation_trigger
+        allowed_sender: orchestrator
+        accepted_tags: [validation_phase, trigger_task_authoring, validation, release, retest, frontend-handoff, backend]
+        accepted_phases: [validation, test]
+        # Broad — the from_agent check already restricts to the
+        # orchestrator, so any orchestrator-authored task_ready that
+        # mentions validation work in natural language should pass.
+        # Smoke #42 wedged because the orchestrator wrote "execute
+        # validation" (natural LLM phrasing) but the keyword set
+        # required the literal substring "validation phase".
+        payload_keywords:
+          - validation
+          - validate
+          - execute_task_suite
+          - run task suite
+          - api_smoke
+          - ui_smoke
+          - ui_flow
+          - retest
+          - revalidate
+          - blocker
+        # ⚠2 fix (Theme C robustness): besides an explicit orchestrator
+        # trigger, self-trigger validation once EVERY impl lane below has sent
+        # its finish-notify — so a missing/late orchestrator trigger can no
+        # longer stall a finished build. Gating on ALL of them (not the first)
+        # means docker never runs on a half-built tree.
+        impl_completion_senders: [backend, frontend]
+      # Verifier naturally idles while waiting for backend / frontend
+      # to ship. Looser thresholds avoid noisy escalations during
+      # expected wait windows; tightening only fires when verifier is
+      # actively blocked rather than legitimately idle.
+      - kind: lane_idle_circuit_breaker
+        warn_after_idle_steps: 5
+        failforward_after_idle_steps: 9
+        halt_after_idle_steps: 14
+    execution_pipeline:
+      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      max_tool_calls_per_stage:
+        planning: 1
+        retrieve_context: 2
+        hub_commit_gate: 0
+        knowledge_sync: 1
+
+  debugger:
+    name: "Debugger Agent"
+    reasoning_effort: "high"  # root-cause analysis is reasoning-heavy. Tunable live.
+    description: "Bug-level orchestrator. Receives bug events from Verifier/RunHub, runs root-cause analysis, assigns remediation tasks to the owning agent (backend/frontend). Never modifies code directly."
+    # renamed from
+    # ``bug_triage_orchestrator``. The new ``debugger`` lane is the
+    # consolidated bug-triage role — samedetect→triage→fix
+    # boundary, same tool surface, but the runtime / live_monitor /
+    # agent_subscriptions DEFAULT_SUBSCRIPTIONS all reference
+    # ``debugger``. The old name is dead code.
+    tool_categories: ["reasoning", "communication", "memory", "knowledge_read", "knowledge_write", "analysis", "workhub", "registryhub", "codehub", "eventhub", "hub", "bug"]
+    include_vision: false
+    timeout: 3600
+    prompts:
+      # detect-vs-triage-vs-fix split
+      # codified. NEVER writes code; root_cause hypothesis mandatory
+      # before bug_triage(assignee=...); broadcast bug_triaged on
+      # assignment; bug_escalate ONLY after 3 failed fix attempts.
+      template: "v3/debugger_agent.j2"
+      system_macro: "debugger_system_prompt"
+      task_macro: "debugger_task_prompt"
+      context_vars: []
+    flags:
+      coordinator: true       # may wake other lanes via send_message
+      can_deliver: false      # only orchestrator delivers
+      team_lead: false
+    skills: ["systematic-debugging"]
+    tool_bundles:
+      - reasoning_tools
+      - analysis_tools
+      - knowledge_read_tools
+      - knowledge_write_tools
+      - workhub_tools
+      - registryhub_tools
+      - codehub_tools
+      - eventhub_tools
+      - bug_tools
+    deny_tools:
+      - codehub_force_merge
+      - wait
+      - wait_for_process
+    execution_pipeline:
+      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      max_tool_calls_per_stage:
+        planning: 1
+        retrieve_context: 3
+        action: 6                 # bug triage needs: read inbox + lookup owner + bug_triage + broadcast + finish
+        hub_commit_gate: 0
+        knowledge_sync: 2
+
+  knowledge:
+    name: "Knowledge Agent"
+    reasoning_effort: "low"  # Knowledge curator is event-driven, single-action-per-wake; low effort sufficient.
+    description: "Wake-driven cross-project knowledge curator (v3): single trigger -> single action -> finish()."
+    tool_categories: ["file", "reasoning", "communication", "memory", "knowledge_read", "knowledge_write", "knowledge_skill", "knowledge"]
+    include_vision: false
+    timeout: 7200
+    prompts:
+      template: "v3/knowledge_agent.j2"
+      system_macro: "knowledge_system_prompt"
+      task_macro: "knowledge_task_prompt"
+      context_vars: []
+    flags:
+      # event-driven, not always-awake.
+      # Pre-v3 pathology: v3 pilot run showed Knowledge Agent reaching 19+ steps in
+      # a 2000-step main loop while Backend Lead reached 0 — observer-tick + v2's
+      # "do NOT call finish()" prompt trained it into an unbounded retrieval loop.
+      # See prompts/v3/knowledge_agent.j2 + research findings under MEMORY.md.
+      observer: true
+      auto_start: false        # was: true. Prevents eager spawn at pipeline init; configurable_agent.py:456 short-circuits the observer tick on this flag.
+      listen_all: true         # kept; v3 prompt filters by trigger-match in <wake_contract>.
+      observer_handler: knowledge_curator
+      observer_tick_interval_s: 30   # no-op while auto_start=false; kept for future re-enablement.
+      # Hard ceiling on task_ready agentic loops. Val #3 (2026-05-31)
+      # showed haiku-4-5 Knowledge Agent chained 11 steps in a single wake
+      # despite v3 wake_contract mandating single-action. The system prompt
+      # was correct; the runtime ceiling was the missing belt-and-suspenders.
+      # 5 leaves room for: check_inbox + ONE retrieve/store + finish, with
+      # 2 spare steps for unexpected step-pipeline overhead, but caps the
+      # 11-step regression at <=5.
+      max_steps_per_task_ready: 5
+    skills: []
+    tool_bundles:
+      - reasoning_tools
+      - knowledge_read_tools
+      - knowledge_write_tools
+      - knowledge_skill_tools
+      - structured_knowledge_tools
+    deny_tools:
+      - codehub_force_merge
+      - wait
+      - wait_for_process
+    execution_pipeline:
+      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      max_tool_calls_per_stage:
+        planning: 1
+        retrieve_context: 3
+        hub_commit_gate: 0
+        knowledge_sync: 3
+
+  # ===========================================
+  # TASK-SCOPED WORKER PROFILES (spawned at runtime)
+  # These remain ordinary profiles, but are typically used for ephemeral workers.
+  # ===========================================
+
+  analysis_worker:
+    name: "Analysis Worker"
+    description: "Task-scoped worker for candidate analysis and evidence gathering"
+    tool_categories: ["file", "reasoning", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "runtime", "api", "dependency", "logs", "verification", "web"]
+    include_vision: false
+    timeout: 1800
+    prompts:
+      # task-scoped candidate analysis.
+      # Objective evidence gathering (supporting AND refuting). Cited
+      # file:line / log timestamp / trace_id mandatory. NEVER spawns.
+      template: "v3/analysis_worker_agent.j2"
+      system_macro: "analysis_worker_system_prompt"
+      task_macro: "analysis_worker_task_prompt"
+      context_vars: []
+    flags:
+      dynamic: true  # Indicates this is a dynamic agent type
+      can_spawn: false  # Task-scoped workers cannot spawn more agents (prevent recursion)
+    skills: []
+    tool_bundles:
+      - reasoning_tools
+      - project_tools
+      - analysis_tools
+      - knowledge_read_tools
+      - knowledge_write_tools
+      - runtime_full
+      - api_test
+      - dependency_tools
+      - log_tools
+      - verification_tools
+      - web_tools
+    deny_tools:
+      - store_knowledge
+      - codehub_force_merge
+      - wait
+      - wait_for_process
+    execution_pipeline:
+      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      max_tool_calls_per_stage:
+        planning: 1
+        retrieve_context: 2
+        hub_commit_gate: 0
+        knowledge_sync: 1
+
+  review_worker:
+    name: "Review Worker"
+    description: "Task-scoped worker for multi-angle quality analysis"
+    tool_categories: ["file", "reasoning", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "runtime", "api", "dependency", "logs", "verification", "browser", "docker", "web"]
+    include_vision: false
+    timeout: 1800
+    prompts:
+      # task-scoped quality review
+      # review-quality contract (inline_comments + considered_alternatives
+      # for state='approve'). Stays in focus lane (risk / performance /
+      # quality). NEVER edits code; NEVER spawns.
+      template: "v3/review_worker_agent.j2"
+      system_macro: "review_worker_system_prompt"
+      task_macro: "review_worker_task_prompt"
+      context_vars: []
+    flags:
+      dynamic: true
+      can_spawn: false
+    skills: ["api-contract-guard", "release-readiness", "ui-ux-review"]
+    tool_bundles:
+      - reasoning_tools
+      - project_tools
+      - analysis_tools
+      - knowledge_read_tools
+      - knowledge_write_tools
+      - runtime_full
+      - api_test
+      - dependency_tools
+      - log_tools
+      - verification_tools
+      - docker_core
+      - browser_tools
+      - web_tools
+    deny_tools:
+      - store_knowledge
+      - codehub_force_merge
+      - wait
+      - wait_for_process
+    execution_pipeline:
+      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      max_tool_calls_per_stage:
+        planning: 1
+        retrieve_context: 2
+        hub_commit_gate: 0
+        knowledge_sync: 1
+
+  worker:
+    name: "Worker"
+    description: "Generic task-scoped worker for parallel work"
+    tool_categories: ["file", "reasoning", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "runtime", "api", "dependency", "logs", "verification", "web"]
+    include_vision: false
+    timeout: 1800
+    prompts:
+      # generic task-scoped worker. Stays within
+      # owned_files; forbidden_files FORBIDDEN; lint clean per file; ask
+      # parent on scope conflict; NEVER spawns.
+      template: "v3/worker_agent.j2"
+      system_macro: "worker_system_prompt"
+      task_macro: "worker_task_prompt"
+      context_vars: []
+    flags:
+      dynamic: true
+      can_spawn: false
+    skills: []
+    tool_bundles:
+      - reasoning_tools
+      - project_tools
+      - analysis_tools
+      - knowledge_read_tools
+      - knowledge_write_tools
+      - runtime_full
+      - api_test
+      - dependency_tools
+      - log_tools
+      - verification_tools
+    deny_tools:
+      - store_knowledge
+      - codehub_force_merge
+      - wait
+      - wait_for_process
+    execution_pipeline:
+      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      max_tool_calls_per_stage:
+        planning: 1
+        hub_commit_gate: 0
+        knowledge_sync: 1
+
+resident_lanes:
+  # roster aligned to the 6-lane
+  # reality. Retired: design (merged into frontend),
+  # database (merged into backend), architect_reviewer + visual_reviewer
+  # (subsumed by verifier's expanded responsibilities), and
+  # bug_triage_orchestrator (replaced by ``debugger``). The 6 lanes
+  # below match agent_subscriptions.DEFAULT_SUBSCRIPTIONS + the v3
+  # prompt graph in prompts/v3/*.j2. See
+  # docs/pipeline_post_kickoff_architecture.md §4 Stage 5.
+  orchestrator:
+    profile: orchestrator
+    resident: true
+    description: "Resident global orchestration lane"
+  backend:
+    profile: backend
+    resident: true
+    description: "Resident backend team-lead lane (owns API + DB schema)"
+  frontend:
+    profile: frontend
+    resident: true
+    description: "Resident frontend team-lead lane (owns UI + design specs)"
+  verifier:
+    profile: verifier
+    resident: true
+    description: "Resident verification + validation lane (subsumes architect_reviewer + visual_reviewer)"
+  debugger:
+    profile: debugger
+    resident: true
+    description: "Resident bug-triage lane (root-cause analysis + assigns remediation to owning agent; replaces bug_triage_orchestrator)"
+  knowledge:
+    profile: knowledge
+    resident: true
+    description: "Resident knowledge observer lane"
+
+# Resident lane dispatch graph - which resident lane notifies which downstream lane.
+# Agents use HubRegistry (RegistryHub, WorkHub, CodeHub, EventHub) for observation-driven coordination.
+# MessageBus remains the explicit notification channel.
+resident_workflow:
+  # graph re-derived for the 6-lane
+  # roster. Edges through retired design/database
+  # collapsed into backend (which now owns both API + schema) and
+  # frontend (which now owns UI design). Verifier fans out to
+  # debugger (new bug-triage lane) instead of the retired
+  # bug_triage_orchestrator.
+  orchestrator:
+    notifies: [backend, frontend, verifier]
+  backend:
+    notifies: [frontend, verifier]
+  frontend:
+    notifies: [verifier]
+  verifier:
+    notifies: [orchestrator, backend, frontend, debugger]
+  debugger:
+    notifies: [backend, frontend, orchestrator]

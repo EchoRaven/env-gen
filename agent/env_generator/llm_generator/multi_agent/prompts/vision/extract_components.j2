@@ -1,0 +1,22 @@
+Analyze this screenshot and extract detailed specifications for the {{ component_type }} component(s).
+
+For each {{ component_type }} found, provide:
+{
+  "components": [
+    {
+      "type": "{{ component_type }}",
+      "position": "where in the page",
+      "dimensions": {"width": "...", "height": "..."},
+      "colors": {"background": "#hex", "text": "#hex", "border": "#hex"},
+      "typography": {"font": "...", "size": "...", "weight": "..."},
+      "spacing": {"padding": "...", "margin": "..."},
+      "children": ["list of child elements"],
+      "interactions": ["hover states", "click behavior"],
+      "css_suggestions": "suggested CSS/Tailwind classes",
+      "react_structure": "suggested React component structure"
+    }
+  ]
+}
+
+Be very specific - this will be used to generate actual code.
+

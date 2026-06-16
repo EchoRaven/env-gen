@@ -1,0 +1,275 @@
+<mxfile host="app.diagrams.net" agent="claude-code" version="24.0.0">
+
+  <!-- ============================================================= -->
+  <!-- PAGE 1 : OVERVIEW                                             -->
+  <!-- ============================================================= -->
+  <diagram id="overview" name="0 · Overview">
+    <mxGraphModel dx="1100" dy="850" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="980" pageHeight="1320" math="0" shadow="0" background="#f8fafc">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="t" value="env-gen&#10;Multi-Model Environment Generation — End-to-End Pipeline" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=17;fontColor=#ffffff;align=center;verticalAlign=middle;fillColor=#0f172a;strokeColor=#0f172a;" vertex="1" parent="1">
+          <mxGeometry x="130" y="30" width="560" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="tsub" value="User configures in the Live Monitor  →  Orchestrator drives specialized agents across 6 shared hubs  →  a complete, tested project is delivered" style="text;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#64748b;align=center;" vertex="1" parent="1">
+          <mxGeometry x="90" y="94" width="640" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="o_user" value="👤  USER&#10;Creates a project in the Live Monitor&#10;name · requirements · model + provider · reference images · delivery gates" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#1e3a8a;align=center;verticalAlign=middle;fillColor=#dbeafe;strokeColor=#2563eb;" vertex="1" parent="1">
+          <mxGeometry x="130" y="140" width="560" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="o_orch" value="🎛  ORCHESTRATOR  (controller)&#10;Initializes HubRegistry + MessageBus, spawns agents, dispatches phases" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#312e81;align=center;verticalAlign=middle;fillColor=#e0e7ff;strokeColor=#4f46e5;" vertex="1" parent="1">
+          <mxGeometry x="130" y="244" width="560" height="58" as="geometry" />
+        </mxCell>
+
+        <mxCell id="o_p2" value="①  DESIGN  (sequential)&#10;Generate database / API / UI specifications" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#14532d;align=center;verticalAlign=middle;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="130" y="342" width="560" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="o_p3" value="②  PARALLEL DEVELOPMENT&#10;Database / Backend / Frontend agents work simultaneously" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#14532d;align=center;verticalAlign=middle;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="130" y="438" width="560" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="o_p4" value="③  VERIFY &amp; FIX  (loop ×3–5)&#10;Docker build + tests → route failures back to the owning agent" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#14532d;align=center;verticalAlign=middle;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="130" y="534" width="560" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="o_p5" value="④  DELIVER&#10;Contract checks + delivery gates → status = completed → “View App”" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#713f12;align=center;verticalAlign=middle;fillColor=#fef9c3;strokeColor=#ca8a04;" vertex="1" parent="1">
+          <mxGeometry x="130" y="630" width="560" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="o_done" value="✅  COMPLETE RUNNABLE PROJECT — generated/&lt;name&gt;/&#10;design · app (frontend / backend / database) · env (OpenEnv) · docker · tasks" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#14532d;align=center;verticalAlign=middle;fillColor=#bbf7d0;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="130" y="726" width="560" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- side: hubs -->
+        <mxCell id="o_hub" value="🗂  6 COLLABORATION HUBS&#10;(shared state)&#10;&#10;CodeHub · APIHub · WorkHub&#10;EventHub · RunHub&#10;HumanConsole&#10;&#10;Agents in every phase&#10;collaborate by reading /&#10;writing through the hubs&#10;&#10;▸ see Page 5" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=11;fontColor=#78350f;align=center;verticalAlign=middle;fillColor=#fef3c7;strokeColor=#d97706;" vertex="1" parent="1">
+          <mxGeometry x="740" y="342" width="190" height="344" as="geometry" />
+        </mxCell>
+        <!-- side: dashboard -->
+        <mxCell id="o_dash" value="📊  LIVE DASHBOARD&#10;Real-time via SSE + polling:&#10;agent status / phases / logs&#10;&#10;▸ see Page 5" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;dashed=1;fontFamily=Helvetica;fontSize=11;fontColor=#1e3a8a;align=center;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#2563eb;" vertex="1" parent="1">
+          <mxGeometry x="740" y="140" width="190" height="162" as="geometry" />
+        </mxCell>
+
+        <!-- main flow edges -->
+        <mxCell id="oe1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=2;fontFamily=Helvetica;" edge="1" parent="1" source="o_user" target="o_orch"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="oe2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=2;fontFamily=Helvetica;" edge="1" parent="1" source="o_orch" target="o_p2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="oe3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=2;fontFamily=Helvetica;" edge="1" parent="1" source="o_p2" target="o_p3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="oe4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=2;fontFamily=Helvetica;" edge="1" parent="1" source="o_p3" target="o_p4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="oe5" value="all pass" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#16a34a;strokeWidth=2;fontFamily=Helvetica;fontColor=#16a34a;fontSize=10;" edge="1" parent="1" source="o_p4" target="o_p5"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="oe6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=2;fontFamily=Helvetica;" edge="1" parent="1" source="o_p5" target="o_done"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <!-- fix loop -->
+        <mxCell id="oe_loop" value="fix loop" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#dc2626;strokeWidth=2;dashed=1;fontFamily=Helvetica;fontColor=#dc2626;fontSize=10;exitX=0;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="o_p4" target="o_p3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <!-- hub link -->
+        <mxCell id="oe_hub" value="collaborate" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;startArrow=open;strokeColor=#d97706;dashed=1;fontFamily=Helvetica;fontColor=#d97706;fontSize=10;" edge="1" parent="1" source="o_hub" target="o_p3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <!-- dashboard feedback -->
+        <mxCell id="oe_dash" value="stream" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;startArrow=none;strokeColor=#2563eb;dashed=1;fontFamily=Helvetica;fontColor=#2563eb;fontSize=10;" edge="1" parent="1" source="o_hub" target="o_dash"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="oe_dash2" value="watch" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#2563eb;dashed=1;fontFamily=Helvetica;fontColor=#2563eb;fontSize=10;" edge="1" parent="1" source="o_dash" target="o_user"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================================= -->
+  <!-- PAGE 2 : CONFIG & INIT                                        -->
+  <!-- ============================================================= -->
+  <diagram id="config" name="1 · Config &amp; Init">
+    <mxGraphModel dx="1100" dy="850" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="920" pageHeight="920" math="0" shadow="0" background="#f8fafc">
+      <root>
+        <mxCell id="0" /><mxCell id="1" parent="0" />
+        <mxCell id="c_t" value="Page 1 · User Configuration → Orchestration Kickoff" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=15;fontColor=#ffffff;align=center;verticalAlign=middle;fillColor=#2563eb;strokeColor=#1d4ed8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="30" width="800" height="46" as="geometry"/></mxCell>
+
+        <mxCell id="c_user" value="👤  User" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#1e3a8a;align=center;verticalAlign=middle;fillColor=#dbeafe;strokeColor=#2563eb;" vertex="1" parent="1">
+          <mxGeometry x="80" y="120" width="130" height="56" as="geometry"/></mxCell>
+        <mxCell id="c_form" value="🖥  Live Monitor — New Project page  (/projects/new · React SPA)&#10;&#10;Form fields:&#10;•  name  +  generation prompt (description)  — required&#10;•  model  +  provider  (OpenAI / Anthropic / Google / Azure / OpenRouter / local)&#10;•  API key  (optional)&#10;•  max wall-clock (min)  +  max coordination ticks&#10;•  reference images / docs  (≤ 10 MB)&#10;•  delivery gates  (custom typed checks)" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#1e3a8a;align=left;verticalAlign=top;spacing=10;fillColor=#dbeafe;strokeColor=#2563eb;" vertex="1" parent="1">
+          <mxGeometry x="270" y="110" width="560" height="200" as="geometry"/></mxCell>
+
+        <mxCell id="c_post" value="POST /api/runs  →  live_monitor_server.py  (ThreadingHTTPServer)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#1e3a8a;align=center;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#2563eb;" vertex="1" parent="1">
+          <mxGeometry x="270" y="340" width="560" height="44" as="geometry"/></mxCell>
+
+        <mxCell id="c_srv" value="Server-side handling:&#10;•  create workspace  generated/&lt;id&gt;/&#10;•  register project via HubRegistry  (appears in UI list immediately)&#10;•  persist run → .runs.json  (crash recovery)" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#312e81;align=left;verticalAlign=top;spacing=10;fillColor=#e0e7ff;strokeColor=#4f46e5;" vertex="1" parent="1">
+          <mxGeometry x="270" y="416" width="560" height="100" as="geometry"/></mxCell>
+
+        <mxCell id="c_spawn" value="Spawn orchestrator subprocess:&#10;python -m env_generator.llm_generator.main&#10;--name --model --provider --description --reference-images" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#312e81;align=left;verticalAlign=top;spacing=10;fillColor=#e0e7ff;strokeColor=#4f46e5;" vertex="1" parent="1">
+          <mxGeometry x="270" y="548" width="560" height="80" as="geometry"/></mxCell>
+
+        <mxCell id="c_orch" value="🎛  Orchestrator.run()&#10;•  initialize HubRegistry (6 hubs) + MessageBus&#10;•  spawn resident agent lanes: Orchestrator / Design / Database / Backend / Frontend / Verifier / Knowledge&#10;•  enter phase-based dispatch" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#312e81;align=left;verticalAlign=top;spacing=10;fillColor=#e0e7ff;strokeColor=#4f46e5;" vertex="1" parent="1">
+          <mxGeometry x="270" y="660" width="560" height="100" as="geometry"/></mxCell>
+
+        <mxCell id="c_step" value="Per-step pipeline, enforced in code for every agent step:&#10;hub_pulse  →  runtime_team_status  →  planning  →  retrieve_context&#10;→  action (≤ 15 tool rounds)  →  hub_commit_gate  →  knowledge_sync" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;dashed=1;fontFamily=Helvetica;fontSize=12;fontColor=#4338ca;align=left;verticalAlign=top;spacing=10;fillColor=#eef2ff;strokeColor=#6366f1;" vertex="1" parent="1">
+          <mxGeometry x="270" y="792" width="560" height="80" as="geometry"/></mxCell>
+
+        <mxCell id="ce1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="c_user" target="c_form"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ce2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="c_form" target="c_post"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ce3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="c_post" target="c_srv"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ce4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="c_srv" target="c_spawn"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ce5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="c_spawn" target="c_orch"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ce6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="c_orch" target="c_step"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================================= -->
+  <!-- PAGE 3 : DESIGN + PARALLEL DEV (AGENTS, MULTI-MODEL)          -->
+  <!-- ============================================================= -->
+  <diagram id="agents" name="2 · Design + Dev">
+    <mxGraphModel dx="1100" dy="850" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1020" pageHeight="1000" math="0" shadow="0" background="#f8fafc">
+      <root>
+        <mxCell id="0" /><mxCell id="1" parent="0" />
+        <mxCell id="a_t" value="Page 2 · Design (sequential) → Parallel Development (multi-model agents)" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=15;fontColor=#ffffff;align=center;verticalAlign=middle;fillColor=#16a34a;strokeColor=#15803d;" vertex="1" parent="1">
+          <mxGeometry x="60" y="30" width="900" height="46" as="geometry"/></mxCell>
+
+        <!-- multi-model note -->
+        <mxCell id="a_mm" value="🧠  Multi-Model:  every agent is independently configured with its own provider/model.  Visual Reviewer uses a vision model.  temp = 0.7,  30-min per-call timeout." style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#7f1d1d;align=left;verticalAlign=middle;spacing=10;fillColor=#fee2e2;strokeColor=#dc2626;" vertex="1" parent="1">
+          <mxGeometry x="60" y="96" width="900" height="48" as="geometry"/></mxCell>
+
+        <!-- DESIGN stage -->
+        <mxCell id="a_dgrp" value="①  DESIGN  (sequential)" style="rounded=1;arcSize=4;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#15803d;verticalAlign=top;align=left;spacing=8;fillColor=#f0fdf4;strokeColor=#16a34a;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="164" width="900" height="220" as="geometry"/></mxCell>
+        <mxCell id="a_design" value="🤖  Design Agent&#10;analyze requirements&#10;+ reference images" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#14532d;align=left;verticalAlign=top;spacing=8;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="90" y="212" width="250" height="72" as="geometry"/></mxCell>
+        <mxCell id="a_arch" value="🤖  Architect Reviewer&#10;async spec review&#10;before implementation" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#14532d;align=left;verticalAlign=top;spacing=8;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="90" y="300" width="250" height="64" as="geometry"/></mxCell>
+        <mxCell id="a_specs" value="Produces 3 design specs  ▸  design/&#10;&#10;•  spec.database.json  — PostgreSQL schema&#10;•  spec.api.json  — REST endpoint contracts&#10;•  spec.ui.json  — pages / forms / components&#10;&#10;→  tables &amp; endpoints written to APIHub&#10;→  pages &amp; design tasks written to WorkHub" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#14532d;align=left;verticalAlign=top;spacing=8;fillColor=#ecfdf5;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="380" y="212" width="560" height="152" as="geometry"/></mxCell>
+        <mxCell id="ae1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="a_design" target="a_arch"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="a_design" target="a_specs"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- PARALLEL DEV stage -->
+        <mxCell id="a_pgrp" value="②  PARALLEL DEVELOPMENT  (three agents work simultaneously after design sign-off)" style="rounded=1;arcSize=4;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#15803d;verticalAlign=top;align=left;spacing=8;fillColor=#f0fdf4;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="60" y="412" width="900" height="296" as="geometry"/></mxCell>
+        <mxCell id="apar" value="∥  parallel" style="text;html=1;fontFamily=Helvetica;fontStyle=2;fontColor=#16a34a;align=center;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="90" y="448" width="250" height="18" as="geometry"/></mxCell>
+        <mxCell id="a_db" value="🤖  Database Agent&#10;PostgreSQL schema + seed&#10;(+ DataEngine: real HuggingFace datasets)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#14532d;align=left;verticalAlign=top;spacing=8;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="90" y="470" width="280" height="76" as="geometry"/></mxCell>
+        <mxCell id="a_be" value="🤖  Backend Agent&#10;Express.js routes / models / controllers&#10;middleware (auth, error handling)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#14532d;align=left;verticalAlign=top;spacing=8;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="90" y="558" width="280" height="72" as="geometry"/></mxCell>
+        <mxCell id="a_fe" value="🤖  Frontend Agent&#10;React + Vite pages / components / hooks + axios clients" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#14532d;align=left;verticalAlign=top;spacing=8;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="90" y="642" width="280" height="56" as="geometry"/></mxCell>
+        <mxCell id="a_vis" value="🤖  Visual Reviewer  (vision model)&#10;compare generated UI vs reference images" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#14532d;align=left;verticalAlign=top;spacing=8;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="400" y="642" width="250" height="56" as="geometry"/></mxCell>
+        <mxCell id="a_collab" value="Collaboration during development  (all through hubs):&#10;&#10;•  CodeHub — commits + PRs (≥ 2 reviewers incl. orchestrator; each PR links a WorkHub task), inline reviews, merge gate&#10;•  APIHub — register endpoints / tables; frontend registers as consumer; record contract tests&#10;•  WorkHub — claim ready tasks, track status / dependencies&#10;•  EventHub — broadcast PR-opened / task-completed / schema-breaking-change" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#14532d;align=left;verticalAlign=top;spacing=8;fillColor=#ecfdf5;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="400" y="470" width="540" height="156" as="geometry"/></mxCell>
+        <mxCell id="ae_be_fe" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="a_fe" target="a_vis"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="a_next" value="▸  continue to Page 3 · Verify &amp; Fix" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#713f12;align=center;verticalAlign=middle;fillColor=#fef9c3;strokeColor=#ca8a04;" vertex="1" parent="1">
+          <mxGeometry x="380" y="734" width="280" height="44" as="geometry"/></mxCell>
+        <mxCell id="ae_d_p" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=2;" edge="1" parent="1" source="a_specs" target="a_db"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ae_p_n" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=2;" edge="1" parent="1" source="a_collab" target="a_next"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================================= -->
+  <!-- PAGE 4 : VERIFY & FIX                                         -->
+  <!-- ============================================================= -->
+  <diagram id="verify" name="3 · Verify &amp; Fix">
+    <mxGraphModel dx="1100" dy="850" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="920" pageHeight="760" math="0" shadow="0" background="#f8fafc">
+      <root>
+        <mxCell id="0" /><mxCell id="1" parent="0" />
+        <mxCell id="v_t" value="Page 3 · Verify &amp; Fix Loop  (max 3–5 iterations)" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=15;fontColor=#ffffff;align=center;verticalAlign=middle;fillColor=#16a34a;strokeColor=#15803d;" vertex="1" parent="1">
+          <mxGeometry x="60" y="30" width="800" height="46" as="geometry"/></mxCell>
+
+        <mxCell id="v_in" value="Development output  (from Page 2)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#14532d;align=center;verticalAlign=middle;fillColor=#bbf7d0;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="70" y="120" width="220" height="44" as="geometry"/></mxCell>
+
+        <mxCell id="v_verifier" value="🤖  Verifier Agent&#10;•  Docker build  db / backend / frontend&#10;•  smoke + API + browser (Playwright) tests&#10;•  contract tests  →  recorded in RunHub" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#14532d;align=left;verticalAlign=top;spacing=10;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="70" y="200" width="380" height="120" as="geometry"/></mxCell>
+
+        <mxCell id="v_pass" value="All&#10;pass?" style="rhombus;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#78350f;align=center;verticalAlign=middle;fillColor=#fef3c7;strokeColor=#d97706;" vertex="1" parent="1">
+          <mxGeometry x="170" y="370" width="170" height="100" as="geometry"/></mxCell>
+
+        <mxCell id="v_triage" value="🤖  Bug Triage&#10;root-cause analysis + dispatch fixes" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#14532d;align=left;verticalAlign=top;spacing=10;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="70" y="520" width="210" height="64" as="geometry"/></mxCell>
+
+        <mxCell id="v_route" value="Failure routing — back to the owning agent:&#10;&#10;•  API failure       →  Backend Agent&#10;•  UI failure         →  Frontend Agent&#10;•  Schema failure  →  Database Agent&#10;•  Architectural    →  Orchestrator" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#7f1d1d;align=left;verticalAlign=top;spacing=10;fillColor=#fee2e2;strokeColor=#dc2626;" vertex="1" parent="1">
+          <mxGeometry x="340" y="500" width="380" height="124" as="geometry"/></mxCell>
+
+        <mxCell id="v_def" value="Schema-alignment defense (3 layers):&#10;&#10;L1  write-time   — register_consumer subset check&#10;L2  merge gate   — CodeHub contract tests&#10;L3  step-time    — hub_pulse surfaces breaking changes" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;dashed=1;fontFamily=Helvetica;fontSize=12;fontColor=#78350f;align=left;verticalAlign=top;spacing=10;fillColor=#fffbeb;strokeColor=#d97706;" vertex="1" parent="1">
+          <mxGeometry x="500" y="200" width="360" height="120" as="geometry"/></mxCell>
+
+        <mxCell id="v_out" value="▸  continue to Page 4 · Deliver" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#713f12;align=center;verticalAlign=middle;fillColor=#fef9c3;strokeColor=#ca8a04;" vertex="1" parent="1">
+          <mxGeometry x="450" y="390" width="220" height="50" as="geometry"/></mxCell>
+
+        <mxCell id="ve1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="v_in" target="v_verifier"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ve2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="v_verifier" target="v_pass"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ve3" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#dc2626;strokeWidth=1.5;fontColor=#dc2626;fontSize=11;fontStyle=1;" edge="1" parent="1" source="v_pass" target="v_triage"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ve4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#dc2626;strokeWidth=1.5;" edge="1" parent="1" source="v_triage" target="v_route"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ve5" value="re-test after fix" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#dc2626;strokeWidth=1.5;dashed=1;fontColor=#dc2626;fontSize=10;exitX=0.5;exitY=0;entryX=1;entryY=0.5;" edge="1" parent="1" source="v_route" target="v_verifier"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ve6" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#16a34a;strokeWidth=1.5;fontColor=#16a34a;fontSize=11;fontStyle=1;" edge="1" parent="1" source="v_pass" target="v_out"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================================= -->
+  <!-- PAGE 5 : DELIVERY                                             -->
+  <!-- ============================================================= -->
+  <diagram id="deliver" name="4 · Delivery">
+    <mxGraphModel dx="1100" dy="850" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="920" pageHeight="800" math="0" shadow="0" background="#f8fafc">
+      <root>
+        <mxCell id="0" /><mxCell id="1" parent="0" />
+        <mxCell id="d_t" value="Page 4 · Delivery" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=15;fontColor=#ffffff;align=center;verticalAlign=middle;fillColor=#ca8a04;strokeColor=#a16207;" vertex="1" parent="1">
+          <mxGeometry x="60" y="30" width="800" height="46" as="geometry"/></mxCell>
+
+        <mxCell id="d_final" value="🎛  Orchestrator — finalize&#10;•  contract extraction:  spec vs generated comparison&#10;•  assemble artifacts + OpenEnv adapter&#10;•  generate README / STRUCTURE" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#713f12;align=left;verticalAlign=top;spacing=10;fillColor=#fef9c3;strokeColor=#ca8a04;" vertex="1" parent="1">
+          <mxGeometry x="70" y="120" width="370" height="110" as="geometry"/></mxCell>
+
+        <mxCell id="d_gate" value="Deliverability report + evaluate user-defined delivery gates&#10;POST /api/projects/&lt;id&gt;/deliver&#10;User clicks Deliver  (may force with a reason if blocked)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#713f12;align=left;verticalAlign=top;spacing=10;fillColor=#fef9c3;strokeColor=#ca8a04;" vertex="1" parent="1">
+          <mxGeometry x="70" y="260" width="370" height="90" as="geometry"/></mxCell>
+
+        <mxCell id="d_done" value="✅  status = completed&#10;→  global SSE  →  Monitor shows “View App” preview URL / code browser / download" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#14532d;align=left;verticalAlign=top;spacing=10;fillColor=#bbf7d0;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="70" y="380" width="370" height="80" as="geometry"/></mxCell>
+
+        <mxCell id="d_art" value="📦  Delivered artifacts — generated/&lt;name&gt;/&#10;&#10;design/             design specs (api / database / ui)&#10;app/backend     Express.js&#10;app/frontend    React + Vite&#10;app/database   PostgreSQL DDL + seed&#10;env/                 OpenEnv adapter (models / client / server)&#10;docker/            docker-compose.yml&#10;tasks/              BrowserGym task definitions (for RL training)" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#713f12;align=left;verticalAlign=top;spacing=10;fillColor=#fefce8;strokeColor=#ca8a04;" vertex="1" parent="1">
+          <mxGeometry x="490" y="120" width="370" height="240" as="geometry"/></mxCell>
+
+        <mxCell id="de1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="d_final" target="d_gate"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="de2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="d_gate" target="d_done"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="de3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#334155;strokeWidth=1.5;" edge="1" parent="1" source="d_final" target="d_art"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================================= -->
+  <!-- PAGE 6 : HUBS & MONITOR                                       -->
+  <!-- ============================================================= -->
+  <diagram id="hubs" name="5 · Hubs &amp; Monitor">
+    <mxGraphModel dx="1100" dy="850" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1020" pageHeight="780" math="0" shadow="0" background="#f8fafc">
+      <root>
+        <mxCell id="0" /><mxCell id="1" parent="0" />
+        <mxCell id="h_t" value="Page 5 · The 6 Collaboration Hubs (shared state) &amp; Live Monitoring" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=15;fontColor=#ffffff;align=center;verticalAlign=middle;fillColor=#d97706;strokeColor=#b45309;" vertex="1" parent="1">
+          <mxGeometry x="60" y="30" width="900" height="46" as="geometry"/></mxCell>
+
+        <mxCell id="h_agents" value="🤖  ALL AGENTS&#10;&#10;Orchestrator / Design / Database&#10;Backend / Frontend / Verifier&#10;Knowledge&#10;+ dynamic workers" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#14532d;align=center;verticalAlign=middle;fillColor=#dcfce7;strokeColor=#16a34a;" vertex="1" parent="1">
+          <mxGeometry x="50" y="280" width="200" height="170" as="geometry"/></mxCell>
+
+        <mxCell id="h_pool" value="🗂  Collaboration Hubs — shared persistent state  (shared/hubs/*.json)" style="rounded=1;arcSize=4;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#78350f;verticalAlign=top;align=center;spacing=8;fillColor=#fffbeb;strokeColor=#d97706;" vertex="1" parent="1">
+          <mxGeometry x="330" y="100" width="390" height="568" as="geometry"/></mxCell>
+        <mxCell id="h_code" value="CodeHub — branches, commits, PRs, reviews, releases, checks  (git worktrees)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#78350f;align=left;verticalAlign=middle;spacing=8;fillColor=#fde68a;strokeColor=#d97706;" vertex="1" parent="1">
+          <mxGeometry x="350" y="142" width="350" height="68" as="geometry"/></mxCell>
+        <mxCell id="h_api" value="APIHub — endpoints, tables, consumers, contract tests, schema versions / breaking changes" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#78350f;align=left;verticalAlign=middle;spacing=8;fillColor=#fde68a;strokeColor=#d97706;" vertex="1" parent="1">
+          <mxGeometry x="350" y="222" width="350" height="68" as="geometry"/></mxCell>
+        <mxCell id="h_work" value="WorkHub — pages, plans, tasks, dependencies, decisions, comments" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#78350f;align=left;verticalAlign=middle;spacing=8;fillColor=#fde68a;strokeColor=#d97706;" vertex="1" parent="1">
+          <mxGeometry x="350" y="302" width="350" height="60" as="geometry"/></mxCell>
+        <mxCell id="h_event" value="EventHub — agent status, events, inboxes, subscriptions, MessageBus bridge" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#78350f;align=left;verticalAlign=middle;spacing=8;fillColor=#fde68a;strokeColor=#d97706;" vertex="1" parent="1">
+          <mxGeometry x="350" y="374" width="350" height="68" as="geometry"/></mxCell>
+        <mxCell id="h_run" value="RunHub — execution / test runs, results, logs, status" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#78350f;align=left;verticalAlign=middle;spacing=8;fillColor=#fde68a;strokeColor=#d97706;" vertex="1" parent="1">
+          <mxGeometry x="350" y="454" width="350" height="60" as="geometry"/></mxCell>
+        <mxCell id="h_console" value="HumanConsole — human-in-the-loop threads / chat with agents" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#78350f;align=left;verticalAlign=middle;spacing=8;fillColor=#fde68a;strokeColor=#d97706;" vertex="1" parent="1">
+          <mxGeometry x="350" y="526" width="350" height="60" as="geometry"/></mxCell>
+        <mxCell id="h_gate" value="Tool-surface gating:  hub READ tools always available;  WRITE tools require focus_hub first." style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;dashed=1;fontFamily=Helvetica;fontSize=11;fontColor=#92400e;align=left;verticalAlign=middle;spacing=8;fillColor=#fef3c7;strokeColor=#d97706;" vertex="1" parent="1">
+          <mxGeometry x="350" y="598" width="350" height="56" as="geometry"/></mxCell>
+
+        <mxCell id="h_mon" value="📊  Live Monitor&#10;&#10;reads HubRegistry.snapshot()&#10;SSE /api/projects/&lt;id&gt;/events&#10;+ state polling (1.8s / 30s)&#10;&#10;Shows:  agent status, phase&#10;timeline, plan completion %,&#10;tool calls, hub stats,&#10;artifacts, logs, mailboxes" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontStyle=1;fontSize=12;fontColor=#1e3a8a;align=left;verticalAlign=top;spacing=10;fillColor=#dbeafe;strokeColor=#2563eb;" vertex="1" parent="1">
+          <mxGeometry x="780" y="150" width="220" height="290" as="geometry"/></mxCell>
+
+        <mxCell id="h_user" value="👤  User&#10;watches + intervenes / adjusts budget via HumanConsole" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;shadow=1;fontFamily=Helvetica;fontSize=12;fontColor=#1e3a8a;align=center;verticalAlign=middle;fillColor=#dbeafe;strokeColor=#2563eb;" vertex="1" parent="1">
+          <mxGeometry x="780" y="500" width="220" height="80" as="geometry"/></mxCell>
+
+        <!-- edges -->
+        <mxCell id="he1" value="read via hub_pulse  /  write via hub_commit_gate" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;startArrow=open;strokeColor=#d97706;strokeWidth=1.5;fontFamily=Helvetica;fontColor=#b45309;fontSize=10;" edge="1" parent="1" source="h_agents" target="h_pool"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="he2" value="snapshot + SSE" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#2563eb;strokeWidth=1.5;dashed=1;fontFamily=Helvetica;fontColor=#2563eb;fontSize=10;" edge="1" parent="1" source="h_pool" target="h_mon"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="he3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#2563eb;strokeWidth=1.5;dashed=1;" edge="1" parent="1" source="h_mon" target="h_user"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="he4" value="chat / steer" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;startArrow=open;strokeColor=#2563eb;strokeWidth=1.5;dashed=1;fontFamily=Helvetica;fontColor=#2563eb;fontSize=10;" edge="1" parent="1" source="h_user" target="h_console"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+</mxfile>

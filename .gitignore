@@ -15,6 +15,13 @@ runs_archive/
 logs/
 *.log
 
+# Generation-engine run artifacts (written under agent/ at runtime)
+agent/**/generated/
+agent/**/.agent_logs/
+agent/tmp/
+agent/**/.worktrees/
+.worktrees/
+
 # OS / editor
 .DS_Store
 .idea/

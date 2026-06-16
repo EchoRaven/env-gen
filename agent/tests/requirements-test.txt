@@ -1,0 +1,15 @@
+# Test-only dependencies for agent/ test suite.
+#
+# Runtime deps live in agent/utils/requirements.txt. This file covers
+# what the test suite needs ON TOP of runtime — chosen narrowly to
+# avoid pulling unnecessary surface into production images.
+#
+# Why each is here:
+#   aiohttp — agent/tests/test_image_search_ssrf.py imports aiohttp
+#             directly. Without this, 4 SSRF-guard tests silently
+#             ImportError-skip → zero SSRF coverage. Reviewer R1
+#             explicitly called this out as "test dep that must be
+#             pinned" so the SSRF guard tests run on every CI invocation.
+
+aiohttp>=3.8.0
+pytest>=7.0,<9.0

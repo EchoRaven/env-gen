@@ -1,0 +1,553 @@
+"""Per-agent workspace with a DATA-DRIVEN routing + write-scope table.
+
+Each ``resolve(relpath)`` decision consults a single declarative
+table (``ROUTING_TABLE`` below). Each table entry says:
+
+  * which root the path lives under (``"code"`` per-worktree or
+    ``"base"`` shared project root), AND
+  * who is allowed to write there (``allowed_writers``).
+
+Defaults for unmatched paths: ``"code"`` root, no write gate (safe
+local — files created by an agent without a declared prefix stay
+in its own worktree).
+
+To add or change a route, edit ``ROUTING_TABLE`` and add a test in
+``tests/test_workspace_routing.py``. There is no other place to
+hide a routing decision OR a write-scope decision.
+
+Quacks like ``workspace.Workspace`` for the file-tool surface — same
+``root``, ``resolve(path)``, ``relative(path)``, ``contains(path)``,
+``is_write_allowed(path, agent)`` interface — so existing tools
+accept it without changes.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import FrozenSet, Iterable, List, Optional, Tuple, Union
+
+
+# Agents whose writes are not role-gated. ``orchestrator`` is the
+# admin/coordinator and can repair any branch. ``worker``,
+# ``analysis_worker``, ``review_worker`` are short-lived broad-scope
+# agents that have always had unrestricted write access by design.
+_BROAD_WRITERS: FrozenSet[str] = frozenset(
+    {"orchestrator", "worker", "analysis_worker", "review_worker"}
+)
+
+
+def _writers(*extra: str) -> FrozenSet[str]:
+    """Return a writer set = broad writers ∪ the given role-specific ids."""
+    return _BROAD_WRITERS | frozenset(extra)
+
+
+# (prefix, target, allowed_writers, notes)
+# target ∈ {"code", "base"}.
+# allowed_writers:
+#   * ``None``           → ungated; anyone with the workspace can write.
+#   * ``FrozenSet[str]`` → only the listed agent ids may write.
+#   * ``frozenset()``    → READ-ONLY for everyone (an attempt is an error).
+#
+# Order matters — first match wins. Put longer / more specific
+# prefixes FIRST so they shadow broader ones. E.g. ``app/backend/``
+# must precede ``app/``.
+ROUTING_TABLE: Tuple[Tuple[str, str, Optional[FrozenSet[str]], str], ...] = (
+    # ------ base-root control files — READ-ONLY to ALL agents ------
+    # attempt-6 R1 round-5 BLOCKER fix (2026-05-29): the base-root
+    # default writer set was ``None`` (ungated), so ANY relative path
+    # at the project base that didn't match a named route was silently
+    # writable by any agent. PoC: an agent writes
+    # ``base/run_budget.json`` with ``{"caps": {"unlimited": true}}``
+    # and on the next tick the orchestrator's
+    # ``_load_run_budget_caps`` re-reads it (orchestrator.py:614),
+    # defeating the kill-switch and re-opening unbounded LLM spend.
+    # Same hole exposed ``.checkpoint.json`` (session checkpoint),
+    # ``project.json`` (project metadata), ``team_practices.json``
+    # (team practices) and ``logs/`` (orchestrator logs). The
+    # orchestrator writes these via raw ``Path(...).write_text`` (see
+    # orchestrator.py:1349 ``_write_run_budget``), NOT through the
+    # PathRoutedWorkspace, so locking them down to ``frozenset()``
+    # blocks agents without breaking the operator/orchestrator path.
+    # MUST appear at the top of the table so it shadows any later
+    # entry; first-match-wins.
+    # attempt-6 had 5 brittle named control-file routes here. R1 round-6
+    # caught that ".team_practices.json" (real file has leading dot,
+    # orchestrator.py:198) and ".checkpoint.json.bak" (CheckpointManager
+    # backup, checkpoint.py:177) were not covered, and the entire CLASS of
+    # other base files (foo.json, secrets/x.txt) was still open via
+    # _DEFAULT_WRITERS = None. attempt-7 replaces all 5 with a structural
+    # fail-closed default for base paths (see _DEFAULT_BASE_WRITERS
+    # below). The 5 names are NOT removed for "we don't need them anymore" —
+    # they were the wrong tool. A named-route denylist always misses the
+    # leading-dot / .bak / new-control-file class. The fail-closed default
+    # catches them by construction.
+    # ------ operator-only, READ-ONLY to ALL agents ------
+    # MUST be first so it shadows any later route. The actual allowlist
+    # file does NOT live inside the workspace at all (loaded via the
+    # ENVGEN_ALLOWED_CODE_CHECKS_FILE env var, see user_gates.py); this
+    # routing entry is defense-in-depth so that even if an operator copies
+    # a YAML into the workspace tree, no agent can write to it.
+    (".gates/",       "base", frozenset(),           "code_check allowlist — operator-only, read-only to agents"),
+    # ------ per-agent code (role-gated) ------
+    ("app/backend/",  "code", _writers("backend"),   "backend implements API; per-worktree"),
+    ("app/frontend/", "code", _writers("frontend"),  "frontend implements UI; per-worktree"),
+    ("app/database/", "code", _writers("database"),  "database implements schema/seed; per-worktree"),
+    ("app/",          "code", _BROAD_WRITERS,        "app/* catch-all — broad writers only"),
+    # ------ shared (project root), role-gated ------
+    # design/ holds README.md + the kickoff-coordinator-authored
+    # reference image manifest. RegistryHub / WorkHub are the source of
+    # truth for the contract — these on-disk artifacts are
+    # supplementary.
+    ("design/",       "base", _writers("backend", "frontend"),
+                                                     "supplementary artifacts (README.md + reference images)"),
+    ("docker/",       "base", _writers("backend", "frontend", "database", "verifier"),
+                                                     "compose / runtime files (any infra-aware agent)"),
+    ("scripts/",      "base", _writers("verifier"),  "verification scripts"),
+    ("tasks/",        "base", _writers("verifier"),  "task definitions / suites"),
+    # Kickoff briefings/milestones/roadmap. orchestrator.py authors via
+    # raw Path.write_text (bypasses routing); agents are read-only.
+    ("docs/",         "base", frozenset(),           "kickoff-authored briefings/milestones/roadmap — orchestrator-owned, read-only to agents"),
+    # ------ shared (project root), per-agent file, ungated ------
+    # Knowledge/memory bank lives at the project base (one file per
+    # agent, e.g. .memory/<agent>.knowledge.jsonl). Anchored at base so
+    # it is co-located and survives worktree cleanup, matching the
+    # memory module which writes via base_dir directly. MUST stay
+    # "base" — routing it to "code" splits it from the memory module.
+    (".memory/",      "base", None,                  "per-agent knowledge / memory bank — shared base, each writes own file"),
+    # ------ shared (project root), READ-ONLY ------
+    ("screenshots/",  "base", frozenset(),           "reference screenshots — read-only"),
+    ("references/",   "base", frozenset(),           "UI-uploaded refs — read-only"),
+    ("mockups/",      "base", frozenset(),           "design mockups — read-only"),
+    ("images/",       "base", frozenset(),           "shared image assets — read-only"),
+    ("shared/",       "base", frozenset(),           "hub state — canonical writes via HubRegistry only"),
+)
+# attempt-7 R1 round-7 correction: _DEFAULT_TARGET STAYS "code" —
+# reverting an attempt-7-initial over-reach. The security fix lives
+# in _DEFAULT_BASE_WRITERS = frozenset() below; flipping the target
+# was unnecessary for security AND broke the agent-owns-its-worktree
+# model (README.md, STRUCTURE.md, scratch.txt, .gitignore at worktree
+# root are non-routed but legitimate writes — the generated project
+# actually puts README.md + STRUCTURE.md there).
+#
+# Why the security fix doesn't need the target flip: the base-poisoning
+# exploit goes through ABSOLUTE paths landing in base_root. The
+# _route_of_resolved branch sees the resolved path under base_root,
+# matches no prefix, and falls through to _DEFAULT_BASE_WRITERS =
+# frozenset() — exploit blocked. _DEFAULT_TARGET only governs UNMATCHED
+# RELATIVE routing, and a relative path can't reach actual base control
+# files (it resolves into the agent's own worktree). So target="code"
+# preserves the agent-owns-worktree model with zero security cost.
+_DEFAULT_TARGET: str = "code"
+# attempt-7 (R1 round-6 structural fix): split the default-writers
+# constant into two roots. Code remains ungated (agent owns its own
+# worktree, no need to enumerate writable files there). Base goes
+# FAIL-CLOSED — any unrouted base path is read-only for all agents.
+# This catches the entire CLASS of "agent writes a base-root file
+# it shouldn't" instead of trying to hand-list every such file
+# (attempt-6 tried and missed .team_practices.json + .checkpoint.json.bak
+# + the open class). Legitimate per-agent base writes go through the
+# explicit .memory/ route below.
+_DEFAULT_CODE_WRITERS: Optional[FrozenSet[str]] = None  # ungated (agent owns worktree)
+_DEFAULT_BASE_WRITERS: Optional[FrozenSet[str]] = frozenset()  # fail-closed (read-only to all agents)
+# Back-compat alias: _DEFAULT_WRITERS still resolves to the code default
+# for any caller that historically read it (the only path that hit the
+# alias was _match_route's relative-path fallback, which is code-targeted).
+_DEFAULT_WRITERS: Optional[FrozenSet[str]] = _DEFAULT_CODE_WRITERS
+
+
+def _normalize_prefix(p: str) -> str:
+    s = str(p).strip().lstrip("/")
+    if s and not s.endswith("/"):
+        s = s + "/"
+    return s
+
+
+class PathRoutedWorkspace:
+    """``resolve(path)`` consults ``ROUTING_TABLE`` to decide whether a
+    relative path lives under ``code_root`` (the agent's worktree) or
+    ``base_root`` (the shared project root)."""
+
+    def __init__(
+        self,
+        *,
+        base_root: Union[str, Path],
+        code_root: Union[str, Path],
+        agent_id: Optional[str] = None,
+        # Test-time override — production callers should NEVER pass this.
+        # Add to ROUTING_TABLE instead.
+        routing_table: Iterable[Tuple[str, str, Optional[FrozenSet[str]], str]] = ROUTING_TABLE,
+    ):
+        self._base = Path(base_root).resolve()
+        self._code = Path(code_root).resolve()
+        # Per-worktree isolation (attempt-5 Fix A / R1 round-4 hole A):
+        # Identify which agent OWNS this workspace so we can reject
+        # absolute / resolved paths that land in a sibling worktree's
+        # tree (base_root/worktrees/<other_agent>/...). The relative
+        # ``../<other_agent>/...`` spelling is already blocked by
+        # per-route containment (fix #3), but the absolute spelling
+        # of the same target previously slipped through the absolute
+        # branch of ``resolve()`` because it landed in base_root and
+        # had no explicit ``worktrees/`` route in the table.
+        #
+        # If the caller didn't pass an explicit agent_id, infer it
+        # from the code_root layout: when code_root lives at
+        # ``<base_root>/worktrees/<X>``, ``X`` is the self agent id.
+        # Otherwise self_agent stays None and the cross-worktree
+        # check is a no-op (e.g. non-worktree code_root geometries).
+        self._self_agent: Optional[str] = agent_id
+        if self._self_agent is None:
+            try:
+                rel = self._code.relative_to(self._base / "worktrees")
+                # First path component under worktrees/ is the agent id.
+                parts = rel.parts
+                if parts:
+                    self._self_agent = parts[0]
+            except ValueError:
+                self._self_agent = None
+        normalized: List[Tuple[str, str, Optional[FrozenSet[str]]]] = []
+        for entry in routing_table:
+            prefix = _normalize_prefix(entry[0])
+            target = str(entry[1]).lower()
+            writers = entry[2] if len(entry) > 2 else None
+            if not prefix:
+                continue
+            if target not in ("code", "base"):
+                raise ValueError(
+                    f"PathRoutedWorkspace: invalid route target {target!r} for "
+                    f"prefix {entry[0]!r}; expected 'code' or 'base'"
+                )
+            if writers is not None and not isinstance(writers, frozenset):
+                writers = frozenset(writers)
+            normalized.append((prefix, target, writers))
+        self._routes: Tuple[Tuple[str, str, Optional[FrozenSet[str]]], ...] = tuple(normalized)
+        # Back-compat: keep the legacy ``_code_prefixes`` so any old
+        # diagnostic code that pokes at this attribute still gets the
+        # per-agent prefix list.
+        self._code_prefixes: Tuple[str, ...] = tuple(
+            p for p, t, _w in self._routes if t == "code"
+        )
+        self._base.mkdir(parents=True, exist_ok=True)
+        self._code.mkdir(parents=True, exist_ok=True)
+
+    # ------ Workspace-compat surface -------------------------------
+
+    @property
+    def root(self) -> Path:
+        """Tree-traversal root. Returns the agent's CODE root because
+        most tree-walking tools (Glob, project_structure) care about
+        the agent's own changeable files, not the shared base."""
+        return self._code
+
+    @property
+    def name(self) -> str:
+        return self._code.name
+
+    @property
+    def base_root(self) -> Path:
+        return self._base
+
+    @property
+    def code_root(self) -> Path:
+        return self._code
+
+    @property
+    def agent_id(self) -> Optional[str]:
+        """The owning agent id this workspace is built for.
+
+        PR2.3.1 / Smoke #34: ``ensure_workspace_home`` reads
+        ``workspace.agent_id`` to pick the per-agent sandbox HOME path
+        ``<base_root>/.agent_homes/<agent_id>/`` (sibling of
+        ``worktrees/``, NOT inside any worktree). Without this property
+        the helper saw ``None`` and fell back to the legacy
+        ``<code_root>/.agent_home/`` layout — which dirtied the
+        worktree on every subprocess call, the very wedge PR2.3.1 was
+        meant to close.
+        """
+        return self._self_agent
+
+    def _sibling_worktree_owner(self, resolved: Path) -> Optional[str]:
+        """If ``resolved`` lives under ``<base_root>/worktrees/<X>`` and
+        ``X`` is NOT this workspace's owner, return ``X``. Otherwise None.
+
+        Used to plug attempt-5 Fix A (R1 round-4 hole A) — the absolute
+        spelling of a peer-worktree path landed under base_root with no
+        named ``worktrees/`` route in the table, so it fell through to
+        the ungated base default. This helper lets the absolute-branch
+        of ``resolve()`` and the resolved-route lookup reject those
+        landings explicitly with a clear cross-worktree message.
+
+        attempt-6 R1 Residual 1 fix (2026-05-29): when ``self_agent`` is
+        ``None`` (production caller did not pass ``agent_id`` AND the
+        code_root layout does not match ``base/worktrees/<X>`` so the
+        inference fallback also fails), the previous behaviour was to
+        return ``None`` ("no cross-worktree violation detected") — this
+        FAILED OPEN. A workspace with unknown owner could resolve into
+        ANY sibling worktree because the gate had nothing to compare
+        against. Now we FAIL CLOSED: if the resolved path lands under
+        ``worktrees/<owner>`` and we don't know our own identity, we
+        return that owner so the absolute-branch of ``resolve()`` and
+        ``_route_of_resolved()`` both refuse the access with a clear
+        error rather than silently letting it through the ungated base
+        default.
+        """
+        base = self._base.resolve()
+        worktrees_dir = (base / "worktrees").resolve()
+        try:
+            rel = resolved.relative_to(worktrees_dir)
+        except ValueError:
+            return None
+        parts = rel.parts
+        if not parts:
+            return None
+        owner = parts[0]
+        if self._self_agent is None:
+            # No self identity known — fail closed. Returning the owner
+            # forces the caller's cross-worktree check to refuse the
+            # access; the alternative (returning None) silently allows
+            # arbitrary sibling-worktree reach for any workspace built
+            # without agent_id and with non-standard code_root.
+            return owner
+        if owner == self._self_agent:
+            return None
+        return owner
+
+    def _match_route(
+        self, path: Union[str, Path, None]
+    ) -> Tuple[str, str, Optional[FrozenSet[str]]]:
+        """Find the matching route entry for ``path``.
+
+        Returns ``(normalized_path, target, allowed_writers)``.
+        Unmatched paths default to ``(path, _DEFAULT_TARGET, _DEFAULT_WRITERS)``.
+        Absolute paths bypass the table — they return target='' to
+        signal "no route lookup; caller handles".
+        """
+        if path is None or path == "":
+            return ("", "code", None)
+        p = Path(str(path))
+        if p.is_absolute():
+            return (str(p), "", None)
+        as_str = str(p).replace("\\", "/").lstrip("/")
+        for prefix, route_target, writers in self._routes:
+            if as_str == prefix.rstrip("/") or as_str.startswith(prefix):
+                return (as_str, route_target, writers)
+        return (as_str, _DEFAULT_TARGET, _DEFAULT_WRITERS)
+
+    def _is_contained(self, resolved: Path, route_target: str) -> bool:
+        """Return True iff ``resolved`` lives under the ROOT for its
+        assigned route — NOT the OR of both roots.
+
+        Under production geometry the per-agent ``code_root`` may be
+        nested inside ``base_root`` (e.g. ``base/worktrees/<agent>``).
+        A ``..``-escape from ``code_root`` then lands back inside
+        ``base_root``; the old OR-of-both check would silently treat
+        that as "contained" and let an agent reach ``shared/``,
+        ``design/``, ``.gates/``, sibling worktrees, etc.
+
+        Per-route containment closes the gap:
+          * ``"code"`` route → MUST be inside ``code_root``.
+          * ``"base"`` route → MUST be inside ``base_root``.
+          * unknown / unrouted target → fail-closed.
+        """
+        if route_target == "code":
+            return resolved.is_relative_to(self._code.resolve())
+        if route_target == "base":
+            return resolved.is_relative_to(self._base.resolve())
+        # Unknown / unset route — fail closed.
+        return False
+
+    def _route_of_resolved(
+        self, resolved: Path
+    ) -> Tuple[str, str, Optional[FrozenSet[str]]]:
+        """Determine the routing entry the RESOLVED path lives under.
+
+        Used by ``is_write_allowed`` to re-derive the write-scope gate
+        from the path's TRUE location, not the raw input string prefix
+        (a raw-prefix lookup of ``"../screenshots/x"`` finds no
+        read-only route and would silently allow the write, even though
+        the resolved path lands inside the read-only ``screenshots/``
+        route — that gap is what this helper closes).
+
+        Returns ``(route_label, target, writers)`` where:
+          * ``route_label == "code:<prefix>"`` → resolved is in code_root
+                                                AND matched a code-routed
+                                                table prefix (e.g. role-gated
+                                                ``app/backend/``).
+          * ``route_label == "code"``        → in code_root, no prefix matched
+                                                (agent's own worktree scratch).
+          * ``route_label == "base:<prefix>"`` → resolved matched a
+                                                base-routed table prefix.
+          * ``route_label == "base"``        → in base_root, no prefix matched.
+          * ``route_label == "outside"``     → not in either root (caller rejects).
+
+        Writers are re-derived from the FIRST matching table entry whose
+        target matches the resolved location's root — so an attempted write
+        to ``app/backend/x`` via a ``..``-escape (when permitted by the route
+        geometry) still hits the role-gated writer set.
+        """
+        code = self._code.resolve()
+        base = self._base.resolve()
+        # attempt-5 Fix A (R1 round-4 hole A): defense-in-depth. If a
+        # resolved path lands in a SIBLING worktree, return the closed
+        # "outside" label so the write-gate fail-closes. ``resolve()``
+        # already raises for this case, but routing should also refuse
+        # to derive an ungated base default for a cross-worktree path.
+        if self._sibling_worktree_owner(resolved) is not None:
+            return ("outside", "", None)
+        if resolved.is_relative_to(code):
+            rel = resolved.relative_to(code)
+            rel_str = str(rel).replace("\\", "/")
+            for prefix, target, writers in self._routes:
+                if target != "code":
+                    continue
+                if rel_str == prefix.rstrip("/") or rel_str.startswith(prefix):
+                    return (f"code:{prefix}", "code", writers)
+            # In code_root but no specific prefix — ungated default
+            # (agent's own scratch space).
+            return ("code", "code", _DEFAULT_CODE_WRITERS)
+        if not resolved.is_relative_to(base):
+            return ("outside", "", None)
+        rel = resolved.relative_to(base)
+        rel_str = str(rel).replace("\\", "/")
+        for prefix, target, writers in self._routes:
+            if target != "base":
+                continue
+            if rel_str == prefix.rstrip("/") or rel_str.startswith(prefix):
+                return (f"base:{prefix}", "base", writers)
+        # In base_root but no specific prefix — FAIL-CLOSED default
+        # (attempt-7 R1 round-6: the entire CLASS of unrouted base paths
+        # is read-only for agents. Legitimate per-agent base writes go
+        # through .memory/ which has its own explicit route above).
+        return ("base", "base", _DEFAULT_BASE_WRITERS)
+
+    def resolve(self, path: Union[str, Path, None]) -> Path:
+        """Resolve a user-provided path to an absolute file location.
+
+        Walks ``ROUTING_TABLE`` top-to-bottom for the first prefix that
+        matches. Unmatched paths fall through to ``_DEFAULT_TARGET``
+        (``code`` — safe local default).
+
+        Containment is enforced PER-ROUTE: a code-route input MUST
+        resolve inside ``code_root``; a base-route input MUST resolve
+        inside ``base_root``. ``..`` traversal from a code-route input
+        that lands back inside ``base_root`` (possible under nested
+        production geometry) is therefore rejected — the agent must
+        reach base assets via the named route (e.g. ``shared/...``),
+        not by escaping out of its worktree.
+        """
+        if path is None or path == "":
+            return self._code
+        # ``Path`` itself will raise ``ValueError`` on embedded NUL
+        # ("\x00"); let that propagate as the containment failure.
+        as_str, target, _writers = self._match_route(path)
+        if target == "":
+            # Absolute path — resolve symlinks, then enforce containment
+            # against whichever root the absolute path claims to live in.
+            resolved = Path(as_str).resolve()
+            code = self._code.resolve()
+            base = self._base.resolve()
+            # attempt-5 Fix A (R1 round-4 hole A): the relative
+            # ``../<other_agent>/...`` spelling is already blocked by
+            # per-route containment (a code-route input must resolve
+            # inside code_root). But the absolute spelling lands in
+            # base_root with no named ``worktrees/`` route, so it
+            # previously fell through to the ungated base default.
+            # Reject cross-worktree landings explicitly BEFORE the
+            # base-containment branch allows them through.
+            sibling = self._sibling_worktree_owner(resolved)
+            if sibling is not None:
+                raise ValueError(
+                    f"PathRoutedWorkspace: cross-worktree access forbidden "
+                    f"— own worktree {self._self_agent!r} vs target {sibling!r} "
+                    f"(path={str(path)!r}, resolved={resolved})"
+                )
+            if resolved.is_relative_to(code):
+                inferred = "code"
+            elif resolved.is_relative_to(base):
+                inferred = "base"
+            else:
+                inferred = ""  # outside — _is_contained will reject
+            if not self._is_contained(resolved, inferred):
+                raise ValueError(
+                    f"PathRoutedWorkspace: path {str(path)!r} escapes "
+                    f"workspace roots (base={self._base}, code={self._code}); "
+                    f"resolved to {resolved}"
+                )
+            return resolved
+        root = self._code if target == "code" else self._base
+        resolved = (root / as_str).resolve()
+        if not self._is_contained(resolved, target):
+            raise ValueError(
+                f"PathRoutedWorkspace: path {str(path)!r} escapes "
+                f"its route's root (route={target!r}, "
+                f"base={self._base}, code={self._code}); "
+                f"resolved to {resolved}"
+            )
+        return resolved
+
+    def is_write_allowed(
+        self, path: Union[str, Path], agent_id: Optional[str]
+    ) -> bool:
+        """Check whether ``agent_id`` may write to ``path`` per
+        ``ROUTING_TABLE``'s ``allowed_writers`` column.
+
+        IMPORTANT: the gate is evaluated on the RESOLVED path's route,
+        re-derived from the real resolved location — NOT on the raw
+        input string prefix. Otherwise a path like
+        ``"../screenshots/foo"`` would have no raw-prefix match and
+        be silently allowed, despite resolving into the read-only
+        ``screenshots/`` route.
+
+        Rules (post-resolve):
+          * Resolved escapes workspace      → False.
+          * Resolved in ``code_root``       → True (agent owns its worktree).
+          * Resolved matches a base prefix:
+              - ``writers is None``         → True (ungated).
+              - ``writers == frozenset()``  → False (READ-ONLY).
+              - ``agent_id in writers``     → True; else False.
+              - ``agent_id is None`` and writers non-empty → False
+                (writer-gated route needs an identity).
+          * Resolved in base_root, no prefix match → True (ungated default).
+        """
+        try:
+            resolved = self.resolve(path)
+        except (ValueError, OSError):
+            return False
+        route_label, _target, writers = self._route_of_resolved(resolved)
+        if route_label == "outside":
+            return False
+        # Code- and base-routed entries both consult ROUTING_TABLE's
+        # writer column from the RESOLVED path's matching prefix. A
+        # raw-prefix lookup against the input string would let
+        # ``"../screenshots/x"`` slip past the read-only gate.
+        if writers is None:
+            return True
+        if not writers:
+            return False  # explicit read-only route
+        if agent_id is None:
+            return False
+        return agent_id in writers
+
+    def relative(self, path: Union[str, Path]) -> str:
+        """Path relative to whichever root contains it (for display)."""
+        ap = Path(str(path)).resolve()
+        try:
+            return str(ap.relative_to(self._code))
+        except ValueError:
+            pass
+        try:
+            return str(ap.relative_to(self._base))
+        except ValueError:
+            return str(ap)
+
+    def contains(self, path: Union[str, Path]) -> bool:
+        ap = Path(str(path)).resolve()
+        try:
+            ap.relative_to(self._code)
+            return True
+        except ValueError:
+            pass
+        try:
+            ap.relative_to(self._base)
+            return True
+        except ValueError:
+            return False

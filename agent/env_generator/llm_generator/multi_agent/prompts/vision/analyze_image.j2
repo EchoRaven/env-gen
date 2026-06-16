@@ -1,0 +1,34 @@
+Analyze this web page screenshot/mockup and extract design information.
+{% if focus_area %}Focus especially on the {{ focus_area }} area.{% endif %}
+
+Output ONLY the JSON below (no explanation, no markdown, keep it CONCISE):
+{
+  "layout_type": "sidebar|dashboard|landing|blog|ecommerce|app|other",
+  "sections": [
+    {"name": "header", "position": "top", "desc": "Brief description"}
+  ],
+  "colors": {
+    "primary": "#hex",
+    "secondary": "#hex",
+    "background": "#hex",
+    "text": "#hex",
+    "accents": ["#hex"]
+  },
+  "typography": {
+    "heading_font": "font-family",
+    "body_font": "font-family",
+    "sizes": {"h1": "size", "body": "size"}
+  },
+  "components": [
+    {"type": "navbar|sidebar|card|button|form|table|modal", "desc": "Brief description", "position": "location"}
+  ],
+  "style": "Brief overall style description (max 50 words)",
+  "design_system": "material|fluent|atlassian|bootstrap|tailwind|custom"
+}
+
+RULES:
+- Output JSON ONLY, no explanation
+- Limit sections to 5 max
+- Limit components to 10 max
+- Keep descriptions under 20 words each
+- Use hex codes for colors

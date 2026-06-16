@@ -1,0 +1,165 @@
+"""Default EventHub subscriptions per agent profile (Cutover 12).
+
+`ensure_default_subscriptions(hubs, agent_id)` is called at the top of
+`collect_hub_pulse` to install (idempotently) the subscriptions an agent
+needs to receive cross-hub events. EventHub.subscribe is keyed by
+`(agent, source_hub, event_type)` so calling this every step is cheap.
+"""
+
+from __future__ import annotations
+
+from typing import Dict, List, Tuple
+
+# (source_hub, event_type, priority_floor)
+#
+# These wire core agents to push-events they previously could only see
+# by polling. ``publish_event`` already fans out by subscription, so an
+# event whose explicit ``recipients=[]`` (e.g. ``endpoint_defined`` from
+# a brand-new endpoint with no consumers) still lands in subscribed
+# agents' inboxes — fixing the "frontend finishes but backend never
+# wakes" gap.
+DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
+    "orchestrator": [
+        # Stuck merges + failed agent tasks must reach orchestrator.
+        ("codehub", "merge_conflict", "high"),
+        ("workhub", "task_failed", "high"),
+        # COMPLETION DISCIPLINE (2026-06-11, user policy): every
+        # cancellation must reach the orchestrator — a creator cancelling
+        # its own task is legitimate but never silent.
+        ("workhub", "task_cancelled", "high"),
+        ("workhub", "task_completed", "normal"),
+        ("workhub", "task_stale", "high"),
+        ("runhub", "run_completed", "normal"),
+        ("runhub", "run_failed", "high"),
+        ("registryhub", "endpoint_implemented", "normal"),
+        # Generic comment/mention surfacing so the orchestrator sees
+        # cross-agent escalation comments.
+        ("workhub", "comment_created", "normal"),
+        # Kickoff loop — when an attendee records a decision the
+        # orchestrator wakes, runs try_synthesize, and either finalizes
+        # or sends a single round of revision asks.
+        ("workhub", "meeting_decision_added", "normal"),
+        # Round-8f.1 facilitator: the kickoff driver
+        # (``runtime/kickoff/facilitate.py:request_facilitation``)
+        # fires this event after ``try_synthesize`` returns
+        # ``ready``/``conflict``, asking the orchestrator's LLM
+        # to chair the meeting (read attendee decisions, author
+        # ONE ``facilitator_note`` decision declaring consensus /
+        # request_revision / escalate). Handled by
+        # ``_handle_kickoff_facilitate_request`` in messaging.py.
+        ("orchestrator", "kickoff_facilitate_request", "high"),
+        # Step B circuit-breaker escalation. Use "*" for source_hub
+        # because each lane publishes from its own agent_id.
+        ("*", "lane_idle_warning", "normal"),
+        ("*", "lane_stuck_failforward", "high"),
+        ("*", "lane_halted_human", "urgent"),
+        # Tier-3 deterministic action: the breaker auto-failed the
+        # lane's in-progress task and emits this so the orchestrator
+        # can re-evaluate downstream depends_on and decide on retry.
+        ("*", "lane_task_auto_failed", "urgent"),
+    ],
+    "backend": [
+        # Wake up when an endpoint is defined OR when a consumed
+        # endpoint's status changes. Backend owns DB + API.
+        ("registryhub", "endpoint_defined", "normal"),
+        ("registryhub", "endpoint_implemented", "normal"),
+        ("registryhub", "endpoint_schema_changed", "high"),
+        ("registryhub", "table_defined", "normal"),
+        ("registryhub", "table_implemented", "normal"),
+        ("workhub", "task_created", "high"),
+        ("codehub", "review_requested", "high"),
+        # Kickoff loop.
+        ("orchestrator", "kickoff_request", "high"),
+        # Round-8f.1 facilitator-driven revision: backend is flagged
+        # by the facilitator_note when its draft section needs changes
+        # for consensus. Handled by
+        # ``_handle_kickoff_revision_request`` in messaging.py.
+        ("orchestrator", "kickoff_revision_request", "high"),
+        # Round-8g phase-aware meeting: comment + reply phases.
+        ("orchestrator", "kickoff_comment_phase_request", "high"),
+        ("orchestrator", "kickoff_reply_phase_request", "high"),
+        ("orchestrator", "kickoff_complete", "high"),
+    ],
+    "frontend": [
+        # Same wakeup pattern as backend, plus UI-page updates.
+        ("registryhub", "endpoint_defined", "normal"),
+        ("registryhub", "endpoint_implemented", "normal"),
+        ("registryhub", "endpoint_schema_changed", "high"),
+        ("workhub", "ui_page_updated", "normal"),
+        ("workhub", "task_created", "high"),
+        ("codehub", "review_requested", "high"),
+        # Kickoff loop.
+        ("orchestrator", "kickoff_request", "high"),
+        # Round-8f.1 facilitator-driven revision (see backend).
+        ("orchestrator", "kickoff_revision_request", "high"),
+        # Round-8g phase-aware meeting: comment + reply phases.
+        ("orchestrator", "kickoff_comment_phase_request", "high"),
+        ("orchestrator", "kickoff_reply_phase_request", "high"),
+        ("orchestrator", "kickoff_complete", "high"),
+    ],
+    "verifier": [
+        # Once an endpoint is implemented, verifier can plan a contract
+        # test; once a PR opens, verifier reviews.
+        ("registryhub", "endpoint_implemented", "normal"),
+        ("codehub", "pr_opened", "high"),
+        ("runhub", "run_completed", "normal"),
+        ("runhub", "run_failed", "high"),
+        # Kickoff loop — verifier authors the predicate set draft.
+        ("orchestrator", "kickoff_request", "high"),
+        # Round-8f.1 facilitator-driven revision (see backend).
+        ("orchestrator", "kickoff_revision_request", "high"),
+        # Round-8g phase-aware meeting: comment + reply phases.
+        ("orchestrator", "kickoff_comment_phase_request", "high"),
+        ("orchestrator", "kickoff_reply_phase_request", "high"),
+        ("orchestrator", "kickoff_complete", "high"),
+    ],
+    "debugger": [
+        # Bug-level orchestrator. Wakes on verifier bug_found + runhub
+        # failures; analyzes root cause, assigns remediation tasks.
+        ("verifier", "bug_found", "low"),
+        ("runhub", "run_failed", "low"),
+        ("runhub", "run_completed", "normal"),
+        # Kickoff_complete is informational — debugger learns which
+        # tasks were spawned so root-cause assignment downstream is
+        # aware of the milestone's task_tree.
+        ("orchestrator", "kickoff_complete", "high"),
+    ],
+    "knowledge": [
+        # Knowledge curator is otherwise event-driven on store/retrieve
+        # ops; subscribing to kickoff_complete lets it snapshot the
+        # milestone contract for cross-project lessons.
+        ("orchestrator", "kickoff_complete", "high"),
+    ],
+}
+
+
+def ensure_default_subscriptions(hubs, agent_id: str) -> None:
+    """Idempotently register the agent's default subscriptions.
+
+    Wrapped in try/except so a subscription failure can never break the
+    pulse. EventHub.subscribe is idempotent by (agent, source, type).
+    """
+    subs = DEFAULT_SUBSCRIPTIONS.get(agent_id)
+    if not subs:
+        return
+    eventhub = getattr(hubs, "eventhub", None)
+    if eventhub is None or not hasattr(eventhub, "subscribe"):
+        return
+    for source_hub, event_type, priority_floor in subs:
+        try:
+            # O14/Phase 4.1: agent subscribing on its own behalf at
+            # bootstrap — self-mutation, gate falls through.
+            eventhub.subscribe(
+                agent=agent_id,
+                source_hub=source_hub,
+                event_type=event_type,
+                priority_floor=priority_floor,
+                delivery="live",
+                caller=agent_id,
+            )
+        except Exception:
+            # never let a subscription failure break the caller
+            pass
+
+
+__all__ = ["DEFAULT_SUBSCRIPTIONS", "ensure_default_subscriptions"]

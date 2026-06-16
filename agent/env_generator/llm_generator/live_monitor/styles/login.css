@@ -1,0 +1,37 @@
+.login-screen {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.login-card {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: 8px; padding: 28px;
+  width: 320px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.login-card h1 { margin: 0; font-size: 18px; }
+.login-hint { margin: 0 0 8px; color: var(--text-secondary); font-size: 12px; }
+.login-card label {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 12px; color: var(--text-secondary);
+}
+.login-card input {
+  background: var(--bg-primary); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 8px 10px; font-family: inherit;
+}
+.login-card input:focus { outline: 1px solid var(--accent); }
+.login-card button {
+  background: var(--accent); color: var(--text-primary);
+  border: none; border-radius: 4px;
+  padding: 10px; font-weight: 600;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.login-card button:disabled { background: var(--border); cursor: wait; }
+.login-error {
+  background: var(--danger-soft); color: var(--danger);
+  border: 1px solid var(--danger); border-radius: 4px;
+  padding: 8px; font-size: 12px;
+}

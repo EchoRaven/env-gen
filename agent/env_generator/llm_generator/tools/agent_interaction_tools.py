@@ -1,0 +1,744 @@
+"""
+Agent Interaction Tools - Tools for memory access and task completion
+
+Provides:
+- ReadMemoryBankTool: Read project context from Memory Bank
+- UpdateMemoryBankTool: Structured updates to the project Memory Bank
+- FinishTool: Signal task completion
+- DeliverProjectTool: Signal final delivery (coordinating lane only)
+
+For inter-agent communication, use communication_tools.py instead:
+- SendMessageTool, AskAgentTool, BroadcastTool, CheckInboxTool, etc.
+"""
+
+from pathlib import Path
+from typing import TYPE_CHECKING, List, Optional
+
+from ._base import (
+    BaseTool,
+    ToolResult,
+    ToolCategory,
+    create_tool_param,
+    Workspace,
+)
+
+if TYPE_CHECKING:
+    from multi_agent.agents.base import EnvGenAgent
+
+# Import PlanTool for finish verification (avoid circular import by using late import)
+
+
+# ============================================================================
+# Read Memory Bank Tool
+# ============================================================================
+
+class ReadMemoryBankTool(BaseTool):
+    """
+    Read project context from Memory Bank.
+    
+    Memory Bank contains structured project knowledge:
+    - project_brief: Core requirements and goals
+    - tech_context: Technologies and constraints
+    - system_patterns: Architecture and design patterns
+    - active_context: Current work focus
+    - progress: Completed features and known issues
+    """
+    
+    NAME = "read_memory_bank"
+    
+    DESCRIPTION = """Read project context from the Memory Bank.
+
+Memory Bank contains persistent project knowledge:
+- project_brief: Core requirements, goals, scope
+- tech_context: Tech stack, dependencies, setup
+- system_patterns: Architecture, design patterns, decisions
+- active_context: Current focus, recent changes, next steps
+- progress: Completed features, in-progress, known issues
+
+Use this in retrieve_context when you need your own project-local memory.
+Prefer mode="digest" for normal steps. Use mode="full" only when editing or repairing a specific memory file.
+
+Examples:
+    read_memory_bank()                    # Read all memory files
+    read_memory_bank(file="progress")     # Read specific file
+    read_memory_bank(file="active_context")
+"""
+    
+    def __init__(self, workspace: Workspace = None, agent_id: Optional[str] = None):
+        super().__init__(name=self.NAME, category=ToolCategory.AGENT)
+        self.workspace = workspace
+        self.agent_id = agent_id
+    
+    @property
+    def tool_definition(self):
+        return self.get_tool_param()
+    
+    def get_tool_param(self):
+        return create_tool_param(
+            name=self.NAME,
+            description=self.DESCRIPTION,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "enum": ["all", "project_brief", "tech_context", "system_patterns", "active_context", "progress"],
+                        "description": "Which memory file to read (default: all)"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["digest", "full"],
+                        "description": "digest (default) returns a concise summary; full returns complete file contents"
+                    }
+                },
+                "required": []
+            }
+        )
+    
+    def execute(self, file: str = "all", mode: str = "digest") -> ToolResult:
+        if not self.workspace:
+            return ToolResult(
+                success=False,
+                error_message="Workspace not configured for ReadMemoryBankTool"
+            )
+        
+        memory_dir = self._resolve_memory_dir()
+        file_map = {
+            "project_brief": "project_brief.md",
+            "tech_context": "tech_context.md",
+            "system_patterns": "system_patterns.md",
+            "active_context": "active_context.md",
+            "progress": "progress.md",
+        }
+
+        if not memory_dir.exists():
+            try:
+                from memory.memory_bank import MemoryBank
+
+                mb = MemoryBank(root_dir=self.workspace.code_root, memory_dir=memory_dir)
+                mb.initialize(
+                    {
+                        "name": self.workspace.name,
+                        "description": "",
+                    }
+                )
+            except Exception:
+                if file == "all":
+                    return ToolResult(
+                        success=True,
+                        data={
+                            "files_read": list(file_map.keys()),
+                            "mode": mode,
+                            "content": "",
+                            "info": "Memory bank not initialized yet.",
+                        },
+                    )
+                return ToolResult(
+                    success=True,
+                    data={
+                        "file": file,
+                        "mode": mode,
+                        "content": "",
+                        "info": f"Memory bank file '{file}' is not initialized yet.",
+                    },
+                )
+        
+        if file == "all":
+            if mode == "full":
+                contents = {}
+                for key, filename in file_map.items():
+                    file_path = memory_dir / filename
+                    if file_path.exists():
+                        contents[key] = file_path.read_text(encoding="utf-8")
+                    else:
+                        contents[key] = "(file not found)"
+
+                sections = []
+                for key, content in contents.items():
+                    sections.append(f"=== {key.upper()} ===\n{content}")
+
+                content_out = "\n\n".join(sections)
+            else:
+                # Digest mode: use MemoryBank's digest to avoid dumping huge context.
+                try:
+                    from memory.memory_bank import MemoryBank
+                    mb = MemoryBank(root_dir=self.workspace.code_root, memory_dir=memory_dir)
+                    content_out = mb.get_digest()
+                except Exception:
+                    # Fallback to active_context + progress only
+                    ac = (memory_dir / file_map["active_context"]).read_text(encoding="utf-8") if (memory_dir / file_map["active_context"]).exists() else ""
+                    prog = (memory_dir / file_map["progress"]).read_text(encoding="utf-8") if (memory_dir / file_map["progress"]).exists() else ""
+                    content_out = f"=== ACTIVE_CONTEXT ===\n{ac}\n\n=== PROGRESS ===\n{prog}"
+
+            return ToolResult(
+                success=True,
+                data={
+                    "files_read": list(file_map.keys()),
+                    "mode": mode,
+                    "content": content_out,
+                    "info": f"Read memory bank ({mode})."
+                }
+            )
+        
+        elif file in file_map:
+            file_path = memory_dir / file_map[file]
+            if file_path.exists():
+                content = file_path.read_text(encoding="utf-8")
+                return ToolResult(
+                    success=True,
+                    data={
+                        "file": file,
+                        "mode": "full",
+                        "content": content,
+                        "info": f"Read memory bank file: {file}"
+                    }
+                )
+            else:
+                return ToolResult(
+                    success=True,
+                    data={
+                        "file": file,
+                        "mode": "full",
+                        "content": "",
+                        "info": f"Memory bank file '{file}' is not initialized yet."
+                    }
+                )
+        
+        else:
+            return ToolResult(
+                success=False,
+                error_message=f"Unknown file '{file}'. Valid options: all, project_brief, tech_context, system_patterns, active_context, progress"
+            )
+
+    def _resolve_memory_dir(self) -> Path:
+        """Resolve this agent's memory-bank directory.
+
+        Current runs store memory under memory-bank/<agent_id>/. Older runs may
+        have a shared memory-bank/ or .memory/<agent_id>/memory-bank/.
+        """
+        root = self.workspace.code_root
+        if self.agent_id:
+            agent_dir = root / "memory-bank" / self.agent_id
+            if agent_dir.exists():
+                return agent_dir
+            legacy_agent_dir = root / ".memory" / self.agent_id / "memory-bank"
+            if legacy_agent_dir.exists():
+                return legacy_agent_dir
+            return agent_dir
+
+        shared_dir = root / "memory-bank"
+        if (shared_dir / "project_brief.md").exists():
+            return shared_dir
+
+        return shared_dir
+
+
+# ============================================================================
+# Update Memory Bank Tool
+# ============================================================================
+
+class UpdateMemoryBankTool(BaseTool):
+    """
+    Structured updates for the agent's project Memory Bank.
+    """
+
+    NAME = "update_memory_bank"
+    DESCRIPTION = """Update your agent-local Memory Bank with structured project context.
+
+Use this near the end of a meaningful step or milestone. Keep entries concise and durable:
+- focus: what you are currently working on
+- next_step: the next concrete action
+- completed: completed milestones or artifacts
+- issues: blockers, validation failures, or unresolved risks
+- decisions: design/API/schema/implementation decisions with rationale
+- tech_notes: durable setup, dependency, command, port, or architecture notes
+
+Do not use this for transient chain-of-thought. Store only information that should help your future steps.
+"""
+
+    def __init__(self):
+        super().__init__(name=self.NAME, category=ToolCategory.AGENT)
+        self.agent = None
+
+    def set_agent(self, agent):
+        self.agent = agent
+
+    @property
+    def tool_definition(self):
+        return self.get_tool_param()
+
+    def get_tool_param(self):
+        return create_tool_param(
+            name=self.NAME,
+            description=self.DESCRIPTION,
+            parameters={
+                "focus": {
+                    "type": "string",
+                    "description": "Current durable work focus. Example: 'Working on backend API contract alignment'",
+                },
+                "next_step": {
+                    "type": "string",
+                    "description": "Next concrete action to take.",
+                },
+                "recent_change": {
+                    "type": "string",
+                    "description": "Recent meaningful change or observation.",
+                },
+                "completed": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Completed milestones or artifacts.",
+                },
+                "issues": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Current blockers, bugs, or validation failures.",
+                },
+                "decisions": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Durable design/API/schema/implementation decisions.",
+                },
+                "tech_notes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Durable technical notes such as commands, ports, dependencies, or setup constraints.",
+                },
+            },
+            required=[],
+        )
+
+    def execute(
+        self,
+        focus: str = None,
+        next_step: str = None,
+        recent_change: str = None,
+        completed: List[str] = None,
+        issues: List[str] = None,
+        decisions: List[str] = None,
+        tech_notes: List[str] = None,
+    ) -> ToolResult:
+        memory_bank = getattr(self.agent, "memory_bank", None) if self.agent else None
+        if not memory_bank:
+            return ToolResult(success=False, error_message="Agent Memory Bank is not available")
+
+        updated = []
+        try:
+            if focus or next_step or recent_change:
+                memory_bank.update_active_context(
+                    focus=focus,
+                    recent_change=recent_change,
+                    next_step=next_step,
+                )
+                updated.append("active_context")
+
+            for item in completed or []:
+                memory_bank.append_to_progress(item, category="completed")
+            if completed:
+                updated.append("progress.completed")
+
+            for item in issues or []:
+                memory_bank.append_to_progress(item, category="issues")
+            if issues:
+                updated.append("progress.issues")
+
+            for item in decisions or []:
+                memory_bank.append_decision(item)
+            if decisions:
+                updated.append("system_patterns.decisions")
+
+            for item in tech_notes or []:
+                memory_bank.append_tech_note(item)
+            if tech_notes:
+                updated.append("tech_context.notes")
+
+            if not updated:
+                return ToolResult(
+                    success=True,
+                    data={"updated": [], "info": "No memory updates were provided."},
+                )
+
+            return ToolResult(
+                success=True,
+                data={
+                    "updated": updated,
+                    "memory_dir": str(getattr(memory_bank, "memory_dir", "")),
+                    "info": "Memory Bank updated.",
+                },
+            )
+        except Exception as e:
+            return ToolResult(success=False, error_message=f"Failed to update Memory Bank: {e}")
+
+
+# ============================================================================
+# Finish Tool
+# ============================================================================
+
+class FinishTool(BaseTool):
+    """
+    Signal that agent's current task is complete.
+    
+    Key features:
+    - Can automatically notify downstream agents to start their work
+    - Ends the current agentic loop
+    - Agent remains available for new tasks/issues
+    """
+    
+    NAME = "finish"
+    
+    DESCRIPTION = """Signal your current task is complete.
+
+## Basic Usage
+```
+finish(message="Completed database schema and seed data")
+```
+
+## Notify Downstream Agents (RECOMMENDED!)
+Use `notify` to automatically push your work to downstream agents.
+Live resident lanes: orchestrator, design, backend, frontend, verifier,
+debugger, knowledge. Backend owns DB + API; verifier owns visual review.
+
+```
+# Orchestrator notifies backend + frontend after kickoff finalizes
+finish(
+    message="Kickoff contract published — RegistryHub + WorkHub have the canonical endpoint/table/page set.",
+    notify=["backend", "frontend"],
+    notify_content="Contract registered. Backend: implement the API + schema from registryhub_list_endpoints/registryhub_list_tables. Frontend: build Phase A from the kickoff section + reference images."
+)
+
+# Backend notifies frontend after registering endpoints
+finish(
+    message="API + schema complete with 12 endpoints, 4 tables",
+    notify=["frontend"],
+    notify_content="API ready at :8000. Endpoints: /auth/*, /flights/*, /bookings/*. See RegistryHub for response_keys. Schema tables registered."
+)
+
+# Frontend notifies verifier after wiring api.js + critical flows
+finish(
+    message="UI implementation complete; critical flows wired",
+    notify=["verifier"],
+    notify_content="Frontend ready. registryhub_register_consumer called per consumed endpoint. Critical flows ready for ui_flow validation."
+)
+```
+
+The notify feature:
+- Sends HIGH priority messages to specified agents
+- Automatically tags with ["task_ready", "from_<your_agent>"]
+- Receivers can filter for these with check_inbox(tags=["task_ready"])
+
+## After finish()
+- Current task loop ends
+- You remain available for issues/questions from other agents
+- If you receive an issue, you'll automatically start working on it
+"""
+    
+    def __init__(self, agent_id: str = None, agent: "EnvGenAgent" = None):
+        super().__init__(name=self.NAME, category=ToolCategory.AGENT)
+        self.agent_id = agent_id or "default"
+        self.agent = agent
+    
+    def set_agent(self, agent: "EnvGenAgent"):
+        """Inject agent reference for message sending."""
+        self.agent = agent
+        self.agent_id = agent.agent_id
+    
+    @property
+    def tool_definition(self):
+        return self.get_tool_param()
+    
+    def get_tool_param(self):
+        return create_tool_param(
+            name=self.NAME,
+            description=self.DESCRIPTION,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Summary of completed work"
+                    },
+                    "notify": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Agents to notify (e.g., ['frontend', 'backend'])"
+                    },
+                    "notify_content": {
+                        "type": "string",
+                        "description": "Message content for notified agents (defaults to your message)"
+                    },
+                    "outputs": {
+                        "type": "object",
+                        "description": "Any output data"
+                    }
+                },
+                "required": ["message"]
+            }
+        )
+    
+    def execute(
+        self, 
+        message: str, 
+        notify: list = None,
+        notify_content: str = None,
+        outputs: dict = None
+    ) -> ToolResult:
+        from .reasoning_tools import PlanTool
+        
+        plan_tool = PlanTool.get_instance(self.agent_id)
+        plan_status = plan_tool.get_plan_status()
+        
+        warnings = []
+        notifications_sent = []
+        
+        # Warning 1: Check if there's an incomplete plan (warning only, not blocking)
+        if plan_status["has_plan"] and not plan_status["all_complete"]:
+            incomplete_count = len(plan_status["incomplete"])
+            warnings.append(f"Note: You have {incomplete_count} incomplete plan items.")
+        
+        # Send notifications to downstream agents
+        # NOTE: This is synchronous - notifications will be sent after this method returns
+        # by storing them for the agent to process
+        if notify and self.agent:
+            from uuid import uuid4
+            from utils.message import MessageHeader, MessageType, MessagePriority, BaseMessage
+            
+            bus = getattr(self.agent, "_external_bus", None) or getattr(self.agent, "_message_bus", None)
+            
+            if bus:
+                content = notify_content or f"[{self.agent_id.upper()}] Task complete: {message}"
+                tags = ["task_ready", f"from_{self.agent_id}"]
+                
+                # Store pending notifications on agent for async delivery
+                pending = getattr(self.agent, "_pending_notifications", None)
+                if pending is None:
+                    self.agent._pending_notifications = []
+                    pending = self.agent._pending_notifications
+                
+                for target in notify:
+                    try:
+                        if str(target).strip() == str(self.agent_id).strip():
+                            warnings.append(f"Skipped self-notify target '{target}'.")
+                            continue
+                        header = MessageHeader(
+                            message_id=str(uuid4()),
+                            source_agent_id=self.agent_id,
+                            target_agent_id=target,
+                            priority=MessagePriority.HIGH,
+                        )
+                        msg = BaseMessage(
+                            header=header,
+                            message_type=MessageType.STATUS,
+                            payload=content,
+                            metadata={
+                                "msg_type": "task_ready",
+                                "tags": tags,
+                                "persist": False,
+                                "read": False,
+                            }
+                        )
+                        # Store for async delivery instead of create_task (thread-safe)
+                        pending.append((bus, msg))
+                        notifications_sent.append(target)
+                    except Exception as e:
+                        warnings.append(f"Failed to notify {target}: {e}")
+        
+        # Build response info
+        info = f"Task completed: {message}"
+        if notifications_sent:
+            info += f"\nNotified agents: {', '.join(notifications_sent)}"
+        if warnings:
+            info += "\n\nNotes:\n" + "\n".join(f"  - {w}" for w in warnings)
+        
+        return ToolResult(
+            success=True,
+            data={
+                "outputs": outputs or {}, 
+                "finished": True,
+                "notified": notifications_sent,
+                "info": info
+            }
+        )
+
+
+# ============================================================================
+# Deliver Project Tool (coordinating lane only)
+# ============================================================================
+
+class DeliverProjectTool(BaseTool):
+    """
+    Signal that the project is ready for delivery to the user.
+    
+    This tool is ONLY for the coordinating lane (typically `orchestrator`) and
+    triggers the overall shutdown.
+    - Only call this when ALL criteria are met (no bugs, fully functional, etc.)
+    - This is different from finish() which just ends the current task
+    - deliver_project() ends the entire generation process
+    """
+    
+    NAME = "deliver_project"
+    
+    DESCRIPTION = """Signal that the project is complete and ready for delivery.
+
+CRITICAL: This tool triggers the END of the entire generation process!
+
+Only call this when ALL of these are true:
+1. NO outstanding bugs or issues
+2. ALL project requirements are satisfied
+3. Application is FULLY functional and usable
+4. Docker setup is correct and containers run successfully
+5. Application is ready for end-users
+
+This is NOT the same as finish()!
+- finish() = end current task, stay available for more work
+- deliver_project() = generation complete, shutdown all agents
+
+Args:
+    confirmation: Must be exactly "CONFIRMED" to proceed
+    delivery_summary: Summary of what's being delivered
+    checklist: Dict with verification results
+"""
+    
+    def __init__(self, agent: "EnvGenAgent" = None):
+        super().__init__(name=self.NAME, category=ToolCategory.AGENT)
+        self.agent = agent
+        self._delivered = False
+    
+    def set_agent(self, agent: "EnvGenAgent"):
+        """Set the agent that will use this tool."""
+        self.agent = agent
+    
+    @property
+    def tool_definition(self):
+        return self.get_tool_param()
+    
+    def get_tool_param(self):
+        return create_tool_param(
+            name=self.NAME,
+            description=self.DESCRIPTION,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "confirmation": {
+                        "type": "string",
+                        "description": "Must be exactly 'CONFIRMED' to proceed with delivery"
+                    },
+                    "delivery_summary": {
+                        "type": "string",
+                        "description": "Summary of what is being delivered"
+                    },
+                    "checklist": {
+                        "type": "object",
+                        "description": "Verification checklist: {no_bugs: bool, requirements_met: bool, fully_functional: bool, docker_ok: bool}",
+                        "properties": {
+                            "no_bugs": {"type": "boolean"},
+                            "requirements_met": {"type": "boolean"},
+                            "fully_functional": {"type": "boolean"},
+                            "docker_ok": {"type": "boolean"}
+                        }
+                    },
+                    "force_deliver": {
+                        "type": "boolean",
+                        "description": (
+                            "Orchestrator-only audited bypass of the coverage "
+                            "gate. Use when dead artifacts exist but shipping "
+                            "anyway is intentional. Logs a dead_code_bypass "
+                            "EventHub event."
+                        )
+                    }
+                },
+                "required": ["confirmation", "delivery_summary", "checklist"]
+            }
+        )
+
+    def execute(self, confirmation: str, delivery_summary: str,
+                checklist: dict = None, force_deliver: bool = False) -> ToolResult:
+        # PR 6 review (2026-05-30) deleted five gate blocks that
+        # used to live here (retro / coverage / visual / seed /
+        # runhub-since-session). All five were dead-on-production:
+        # they read ``getattr(self.agent, "hub_registry", None)``
+        # but production agents expose hubs as ``self._hubs`` — the
+        # ``hub_registry`` attribute was never set anywhere outside
+        # test MagicMocks. ``if registry is not None`` short-
+        # circuited every block on the agent-driven deliver path.
+        #
+        # Enforcement that remains intact AFTER deletion:
+        #   * retro — RetroBeforeDeliverPolicy fires through
+        #     _apply_finish_policies on tool_name='deliver_project'
+        #     (PR 2.5-fix-2 wired this; LIVE).
+        #   * coverage / visual / seed / runhub — enforced on the
+        #     UI-driven deliver path (``deliver_project_call`` in
+        #     live_monitor_server, which calls
+        #     ``compute_deliverability``). NOT enforced on the
+        #     agent-driven deliver path post-deletion; the dead
+        #     code wasn't enforcing it either.
+        #
+        # If the agent-driven deliver path SHOULD enforce
+        # coverage/visual/seed/runhub, that's a separate wire-fix
+        # (replace dead ``self.agent.hub_registry`` reads with the
+        # live ``self.agent._hubs``) — flagged as follow-up. The
+        # current commit is a pure correctness-neutral deletion of
+        # never-executed code, not a behavior change.
+        #
+        # Lint guard pin lives in
+        # ``tests/test_deliver_project_tool_no_dead_hub_registry_reads.py``.
+
+        # Verify confirmation
+        if confirmation != "CONFIRMED":
+            return ToolResult(
+                success=False,
+                error_message=f"Confirmation must be exactly 'CONFIRMED', got '{confirmation}'. "
+                              "This is to prevent accidental project delivery."
+            )
+        
+        # Verify checklist
+        checklist = checklist or {}
+        required_checks = ["no_bugs", "requirements_met", "fully_functional", "docker_ok"]
+        failed_checks = []
+        
+        for check in required_checks:
+            if not checklist.get(check, False):
+                failed_checks.append(check)
+        
+        if failed_checks:
+            return ToolResult(
+                success=False,
+                error_message=f"Cannot deliver project. Failed checks: {failed_checks}. "
+                              "Please ensure all criteria are met before delivery."
+            )
+        
+        # Set delivered flag
+        self._delivered = True
+        
+        # Also set on agent if available - this triggers shutdown
+        if self.agent:
+            self.agent._project_delivered = True
+            # Set the event that orchestrator is waiting for
+            if hasattr(self.agent, '_project_delivered_event'):
+                self.agent._project_delivered_event.set()
+        
+        return ToolResult(
+            success=True,
+            data={
+                "delivered": True,
+                "summary": delivery_summary,
+                "checklist": checklist,
+                "info": "Project successfully delivered! Generation process will now shutdown."
+            }
+        )
+    
+    def is_delivered(self) -> bool:
+        """Check if project has been delivered."""
+        return self._delivered
+
+
+# ============================================================================
+# Exports
+# ============================================================================
+
+__all__ = [
+    "ReadMemoryBankTool",
+    "UpdateMemoryBankTool",
+    "FinishTool",
+    "DeliverProjectTool",
+]
+

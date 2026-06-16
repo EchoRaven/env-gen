@@ -21,7 +21,7 @@ from . import hub_reader
 from .db import get_db, init_db, SessionLocal
 from .models import Environment, ChatMessage
 
-ENVS_ROOT = Path(os.environ.get("ENVS_ROOT", "/data/common/haibotong/env-gen/generated"))
+ENVS_ROOT = Path(os.environ.get("ENVS_ROOT", str(Path(__file__).resolve().parents[1] / "generated")))
 
 app = FastAPI(title="forgingground-gen", version="0.1.0")
 app.add_middleware(
