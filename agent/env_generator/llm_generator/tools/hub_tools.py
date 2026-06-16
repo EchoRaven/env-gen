@@ -229,11 +229,12 @@ class CodeHubOpenPRTool(HubTool):
             "linked_pages": {"type": "array", "items": {"type": "string"}, "description": "WorkHub page IDs related to this PR."},
             "linked_consumers": {"type": "array", "items": {"type": "string"}, "description": "RegistryHub consumer keys (file:agent pairs) referenced by this PR."},
             "title": {"type": "string"},
+            "description": {"type": "string", "description": "Optional PR body (summary of what changed and why)."},
         },
         "required": ["branch", "linked_tasks"],
     }
 
-    async def _run(self, branch: str, linked_tasks: list, target: str = "main", reviewers: list = None, linked_apis: list = None, linked_pages: list = None, linked_consumers: list = None, title: str = "") -> ToolResult:
+    async def _run(self, branch: str, linked_tasks: list, target: str = "main", reviewers: list = None, linked_apis: list = None, linked_pages: list = None, linked_consumers: list = None, title: str = "", description: str = "") -> ToolResult:
         result = self._hubs.codehub.open_pull_request(
             branch, target=target,
             reviewers=reviewers or [],
@@ -241,7 +242,7 @@ class CodeHubOpenPRTool(HubTool):
             linked_apis=linked_apis or [],
             linked_pages=linked_pages or [],
             linked_consumers=linked_consumers or [],
-            title=title, author=self._agent_id,
+            title=title, description=description, author=self._agent_id,
         )
         if "error" in result:
             return ToolResult(success=False, error_message=result["error"], data=result)
