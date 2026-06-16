@@ -733,35 +733,51 @@ class ClaimAssignedTasksPolicy(BaseWorkflowPolicy):
     to "claim" a dep-blocked task is a guaranteed-fail loop. The
     rejection text tells them which option is actually available.
 
-    PR 2.5-fix (2026-05-28, reviewer feedback): a retry cap auto-
-    cancels the offending tasks after
-    ``_MAX_CONSECUTIVE_BLOCKS`` rounds with the SAME blocking set
-    and no progress. Reason: faster recovery — the breaker fires at
-    ~10 idle steps, this fires at ~3 same-set blocks. Once tasks
-    are auto-cancelled, the next finish proceeds. Auto-cancel
-    reason is recorded on each task so post-mortem reviews can see
-    why.
+    Retry cap (escape hatch): after ``_MAX_CONSECUTIVE_BLOCKS``
+    consecutive blocks the gate STOPS enforcing and lets finish
+    proceed, leaving any remaining tasks PENDING (NOT auto-cancelled
+    — the by-construction contract-sync completes them later; see the
+    "no auto-cancel" note at the retry-cap branch). This bounds the
+    cost of the gate so a lane can never be trapped forever.
 
-    (Previously this docstring also framed the retry cap as
-    "defence in depth in case the breaker ordering ever gets
-    inverted again". PR 2.5-fix-2 made the dispatcher two-pass,
-    which means the breaker is now structurally guaranteed to fire
-    in pass 1 regardless of YAML order or peer outcomes — so the
-    cap is purely a recovery-speed concern, not a backup against
-    ordering bugs.)
+    SHRINK-TOLERANT counting (youtube-run fix): the escape-hatch
+    counter must count claim PROGRESS toward the escape, not reset on
+    it. Claiming a task REMOVES it from the unclaimed set, so the set
+    SHRINKS. The original logic reset the counter on ANY set change,
+    which meant an agent that claims its tasks one-by-one kept
+    resetting its own escape hatch and was forced to claim EVERY task
+    (the real run made 46 individual ``claim`` round-trips, then
+    logged that it was "trapped"). The fix: a shrinking-or-equal set
+    (subset of the previous block set) KEEPS counting toward the
+    escape; ONLY a genuinely NEW unclaimed task (the set grows / new
+    ids appear) resets the counter. Combined with the ``claim_all``
+    bulk action on ``workhub_task``, an agent can now clear its whole
+    claimable queue in one call, and even an agent that claims one at
+    a time still reaches the escape after ``_MAX_CONSECUTIVE_BLOCKS``
+    blocks and finishes with any leftover (e.g. dep-blocked) tasks
+    left pending.
+
+    (Earlier this docstring framed the retry cap as "defence in depth
+    in case the breaker ordering ever gets inverted again". PR
+    2.5-fix-2 made the dispatcher two-pass, which means the breaker is
+    now structurally guaranteed to fire in pass 1 regardless of YAML
+    order or peer outcomes — so the cap is purely a recovery-speed
+    concern, not a backup against ordering bugs.)
     """
 
     # Cap the list to keep the rejection message readable when an
     # agent has dozens of assigned tasks — the agent only needs to
     # see a few examples + the count.
     _MAX_LISTED = 8
-    # Same blocking set, this many consecutive rounds → escalate
-    # by auto-cancelling. Tuned for fast recovery: the breaker's
-    # tier-3 fires at ~10 idle steps, this fires at ~3 same-set
-    # blocks, so an agent that just keeps re-finishing without
-    # acting on the rejection text is unstuck in <1/3 the wall
-    # time. High enough that genuine work has multiple shots to
-    # make progress.
+    # This many consecutive blocks with a same-or-shrinking blocking
+    # set → release the gate (let finish through; leave any remaining
+    # tasks pending — no auto-cancel). Tuned for fast recovery: the
+    # breaker's tier-3 fires at ~10 idle steps, this fires at ~3
+    # blocks, so a lane that can't make further progress is unstuck in
+    # <1/3 the wall time. High enough that genuine work has multiple
+    # shots to make progress. SHRINK-TOLERANT (see class docstring):
+    # claiming a task shrinks the set but still counts toward the
+    # escape — only a NEW unclaimed task resets the counter.
     _MAX_CONSECUTIVE_BLOCKS = 3
 
     def __init__(self):
@@ -801,19 +817,41 @@ class ClaimAssignedTasksPolicy(BaseWorkflowPolicy):
             self._last_blocking_set.pop(agent.agent_id, None)
             return None
 
-        # Retry-cap bookkeeping: only count "same blocking set" as
-        # a repeat. If even one task entered or left the set, the
-        # agent is making progress (claimed one, cancelled one,
-        # got a new assignment) — reset the counter.
+        # Retry-cap bookkeeping — SHRINK-TOLERANT counting.
+        #
+        # The escape hatch (``_MAX_CONSECUTIVE_BLOCKS`` consecutive
+        # blocks → let finish through) must NOT be reset by the agent's
+        # own claim progress. The youtube run exposed the bug: the old
+        # logic reset the counter on ANY set change, but claiming a task
+        # REMOVES it from the unclaimed set (the set shrinks), so an
+        # agent that dutifully claims its tasks one-by-one kept resetting
+        # its own escape hatch and was forced to claim ALL of them (46
+        # individual ``claim`` round-trips, then logged "trapped").
+        #
+        # Correct rule: a SHRINKING-or-equal set means the agent is
+        # making claim progress (or standing still) — keep counting
+        # toward the escape. ONLY a genuinely NEW unclaimed task (the set
+        # grows with an id we hadn't seen) means new work entered the
+        # queue, which resets the counter. Subset (``current <= last``)
+        # captures both "shrank" and "unchanged"; anything else is a
+        # superset or a disjoint-with-new-ids change → reset.
         current_set = frozenset(t.get("id") for t in unclaimed if t.get("id"))
         last_set = self._last_blocking_set.get(agent.agent_id)
-        if last_set == current_set:
+        if last_set is not None and current_set <= last_set:
+            # Same or shrinking blocking set → claim progress (or no
+            # change): the agent is working its queue down, so keep
+            # advancing toward the escape hatch.
             self._consecutive_blocks[agent.agent_id] = (
                 self._consecutive_blocks.get(agent.agent_id, 0) + 1
             )
         else:
+            # First block this episode, or a genuinely new unclaimed
+            # task entered the queue (set grew / new ids appeared) →
+            # reset: the agent now has fresh work to act on.
             self._consecutive_blocks[agent.agent_id] = 1
-            self._last_blocking_set[agent.agent_id] = current_set
+        # Always record the latest blocking set so the next round
+        # compares against what the agent currently sees.
+        self._last_blocking_set[agent.agent_id] = current_set
 
         # Retry cap — STOP ENFORCING and let finish proceed, but KEEP the
         # tasks pending. They used to be auto-cancelled here, which raced the
@@ -870,23 +908,22 @@ class ClaimAssignedTasksPolicy(BaseWorkflowPolicy):
             lines.append(f"- {tid} [{sev}] {title}{tag}")
         bullet = "\n".join(lines)
         more = f"\n  (+{remainder} more not shown)" if remainder > 0 else ""
-        # Retry-cap warning fires exactly on the LAST blocking
-        # round — the next call with the same set will auto-cancel.
-        # PR 2.5-fix-2 (2026-05-29): the previous gate fired one
-        # round too early (``attempt_n >= cap - 1`` made the warning
-        # appear on round cap-1 even though the actual escalation
-        # was on round cap+1, not cap). Now fires only on round cap
-        # itself; on round cap+1 we never reach this branch (the
-        # auto-cancel above returned).
+        # Retry-cap warning fires exactly on the LAST blocking round —
+        # the next block with a same-or-shrinking set will RELEASE the
+        # gate (finish allowed, remaining tasks left pending; no
+        # auto-cancel — see the retry-cap branch above). Fires on round
+        # cap itself; on round cap+1 we never reach this branch (the
+        # release above returned).
         attempt_n = self._consecutive_blocks[agent.agent_id]
         warn = ""
         if attempt_n >= self._MAX_CONSECUTIVE_BLOCKS:
             warn = (
                 f"\n\n⚠️ This is the LAST block attempt "
-                f"({attempt_n}/{self._MAX_CONSECUTIVE_BLOCKS}). On "
-                "the next call with the same task set, these tasks "
-                "will be AUTO-CANCELLED and finish will be allowed "
-                "through."
+                f"({attempt_n}/{self._MAX_CONSECUTIVE_BLOCKS}). On the "
+                "next block, finish will be ALLOWED through and any "
+                "remaining tasks are left pending (not cancelled). "
+                "Claiming a task does NOT reset this counter, so you "
+                "can keep claiming and still reach this release."
             )
         # PR 2.5-fix-2 (2026-05-29): branch the rejection text when
         # ALL unclaimed are dep-blocked. The previous text always
@@ -899,7 +936,9 @@ class ClaimAssignedTasksPolicy(BaseWorkflowPolicy):
                 "Before calling finish() you must, for EACH listed task:\n"
                 "  (a) for tasks tagged ``[claimable]``: call "
                 "``workhub_task(action='claim', task_id=...)`` and do "
-                "the work, OR\n"
+                "the work — or claim ALL of your claimable tasks at once "
+                "with a single ``workhub_task(action='claim_all')`` "
+                "call, OR\n"
                 "  (b) for tasks tagged ``[dep-blocked: only cancel "
                 "works]`` (and for any claimable task you genuinely "
                 "want to drop): call ``workhub_cancel_task("

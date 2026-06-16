@@ -650,8 +650,8 @@ class WorkHubUpdatePageTool(HubTool):
 
 class WorkHubTaskTool(HubTool):
     NAME = "workhub_task"
-    DESCRIPTION = "Create, claim, complete, fail, or cancel a WorkHub task."
-    PARAMETERS = {"type": "object", "properties": {"action": {"type": "string", "enum": ["create", "claim", "complete", "fail", "cancel"]}, "task_id": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"}, "assignee": {"type": "string"}, "result": {"type": "object"}, "evidence": {"type": "object"}, "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"], "default": "P2", "description": "Task priority (P0=urgent, P3=nice-to-have); used only when action=create"}, "reason": {"type": "string", "description": "Why the task failed/was cancelled (action=fail|cancel)"}}, "required": ["action"]}
+    DESCRIPTION = "Create, claim, claim_all, complete, fail, or cancel a WorkHub task."
+    PARAMETERS = {"type": "object", "properties": {"action": {"type": "string", "enum": ["create", "claim", "claim_all", "complete", "fail", "cancel"], "description": "claim_all = claim EVERY pending unclaimed task assigned to you in one call (dep-blocked tasks are skipped automatically); no task_id needed."}, "task_id": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"}, "assignee": {"type": "string"}, "result": {"type": "object"}, "evidence": {"type": "object"}, "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"], "default": "P2", "description": "Task priority (P0=urgent, P3=nice-to-have); used only when action=create"}, "reason": {"type": "string", "description": "Why the task failed/was cancelled (action=fail|cancel)"}}, "required": ["action"]}
 
     # Round 8h+ (Instagram run #4): real LLMs frequently call this single
     # workhub_task tool with action="fail"/"cancel" + a ``reason`` kwarg
@@ -667,6 +667,8 @@ class WorkHubTaskTool(HubTool):
             hub_result = self._hubs.workhub.claim_task(task_id, self._agent_id)
             _attach_plantool_after_claim(self._agent_id, task_id, hub_result)
             return ToolResult(data=hub_result)
+        if action == "claim_all":
+            return self._claim_all()
         if action == "complete":
             hub_result = self._hubs.workhub.complete_task(task_id, self._agent_id, result=result or {}, evidence=evidence or {})
             _detach_plantool_on_terminal(self._agent_id, hub_result)
@@ -679,7 +681,118 @@ class WorkHubTaskTool(HubTool):
             hub_result = self._hubs.workhub.cancel_task(task_id, self._agent_id, reason=reason or "")
             _detach_plantool_on_terminal(self._agent_id, hub_result)
             return ToolResult(data=hub_result)
-        return ToolResult(success=False, error_message=f"Unknown workhub_task action: {action!r}. Valid: create|claim|complete|fail|cancel")
+        return ToolResult(success=False, error_message=f"Unknown workhub_task action: {action!r}. Valid: create|claim|claim_all|complete|fail|cancel")
+
+    def _claim_all(self) -> ToolResult:
+        """Claim EVERY pending, unclaimed task assigned to this agent in a
+        single call, skipping dep-blocked ones.
+
+        Why this exists: ``ClaimAssignedTasksPolicy`` blocks ``finish()`` while
+        the agent has unclaimed assigned tasks. There was no bulk-claim, so an
+        agent with N assigned tasks had to make N individual
+        ``workhub_task(action='claim')`` round-trips (the youtube run made 46).
+        This collapses them into one.
+
+        Enumeration + dep-blocked filtering MIRROR ``ClaimAssignedTasksPolicy``
+        exactly (``_collect_unclaimed_assigned`` / ``_split_dep_blocked``) so the
+        tool and the gate agree on what's claimable. Dep-blocked tasks are
+        skipped because ``claim_task`` hard-rejects them (service.py:494-503) —
+        attempting them is a guaranteed-fail loop. Claiming uses the same path
+        the single ``claim`` action uses (``workhub.claim_task`` +
+        PlanTool attach).
+
+        Returns a compact summary:
+            {"claimed": [ids...], "skipped_dep_blocked": [ids...],
+             "failed": [{"task_id":..., "error":...}], "claimed_count": N}
+        """
+        workhub = getattr(self._hubs, "workhub", None) if self._hubs else None
+        if workhub is None:
+            return ToolResult(success=False, error_message="No workhub available for claim_all")
+        unclaimed = self._collect_unclaimed_assigned(workhub, self._agent_id)
+        actionable, dep_blocked = self._split_dep_blocked(workhub, unclaimed)
+        claimed: list = []
+        failed: list = []
+        for task in actionable:
+            tid = task.get("id")
+            if not tid:
+                continue
+            hub_result = workhub.claim_task(tid, self._agent_id)
+            if isinstance(hub_result, dict) and hub_result.get("error"):
+                failed.append({"task_id": tid, "error": hub_result.get("error")})
+                continue
+            _attach_plantool_after_claim(self._agent_id, tid, hub_result)
+            claimed.append(tid)
+        return ToolResult(data={
+            "claimed": claimed,
+            "skipped_dep_blocked": [t.get("id") for t in dep_blocked if t.get("id")],
+            "failed": failed,
+            "claimed_count": len(claimed),
+        })
+
+    @staticmethod
+    def _collect_unclaimed_assigned(workhub: Any, agent_id: str) -> list:
+        """Pending tasks where assignee==agent_id and claimed_by is empty.
+
+        Mirrors ``ClaimAssignedTasksPolicy._collect_unclaimed_assigned`` (read
+        the same ``workhub.stores.tasks`` store; tolerate shape variations and
+        return [] on any error)."""
+        try:
+            stores = getattr(workhub, "stores", None)
+            store = getattr(stores, "tasks", None) if stores else None
+            if store is None:
+                return []
+            value = store.value() if hasattr(store, "value") else store
+        except Exception:
+            return []
+        if not isinstance(value, dict):
+            return []
+        out: list = []
+        for task in value.values():
+            if not isinstance(task, dict):
+                continue
+            if task.get("assignee") != agent_id:
+                continue
+            if task.get("status") != "pending":
+                continue
+            if task.get("claimed_by"):
+                continue
+            out.append(task)
+        order = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+
+        def _key(t: dict):
+            meta = t.get("metadata") or {}
+            prio = meta.get("priority") or meta.get("severity") or "P2"
+            return (order.get(prio, 99), t.get("created_at", 0.0))
+
+        out.sort(key=_key)
+        return out
+
+    @staticmethod
+    def _split_dep_blocked(workhub: Any, tasks: list):
+        """Partition ``tasks`` into (actionable, dep_blocked).
+
+        A task is dep-blocked if any of its ``depends_on`` tasks has status
+        != 'completed' — matching ``claim_task``'s rejection (service.py:
+        494-503) and ``ClaimAssignedTasksPolicy._split_dep_blocked`` exactly."""
+        try:
+            store = workhub.stores.tasks
+            value = store.value() if hasattr(store, "value") else store
+        except Exception:
+            value = {}
+        if not isinstance(value, dict):
+            value = {}
+        actionable: list = []
+        dep_blocked: list = []
+        for t in tasks:
+            deps = t.get("depends_on") or []
+            blocked = False
+            for dep_id in deps:
+                dep = value.get(dep_id)
+                if dep is None or (isinstance(dep, dict) and dep.get("status") != "completed"):
+                    blocked = True
+                    break
+            (dep_blocked if blocked else actionable).append(t)
+        return actionable, dep_blocked
 
 
 class WorkHubFailTaskTool(HubTool):
