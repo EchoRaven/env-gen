@@ -1209,10 +1209,25 @@ class WorkhubAddMeetingDecisionTool(HubTool):
                        "backend": "{'endpoints': [<ONE endpoint>]}",
                        "verifier": "{'predicates': [<ONE predicate>]}"}.get(
                            _sec, "{'ui_pages': [<ONE page>]}")
+                # Mangle detection: a recognized key present as a SCALAR (e.g.
+                # endpoints=-128) means Gemini truncated a large inline payload in
+                # transit — NOT an empty draft. Flag it so the model switches to the
+                # small, mangle-proof dedicated tools instead of resending the blob.
+                _recognized = {"frontend": ("ui_pages", "screens", "user_flows", "ui_components"),
+                               "backend": ("endpoints", "data_model"),
+                               "verifier": ("predicates",)}.get(_sec, ())
+                _mangled = [k for k in _recognized
+                            if k in _content and not isinstance(_content.get(k), (list, dict, str))]
+                _mangle_note = (
+                    f" ⚠ MANGLED PAYLOAD: {_mangled} arrived as a non-list scalar "
+                    f"(e.g. {_content.get(_mangled[0])!r}) — your large inline JSON was "
+                    "TRUNCATED in transit. Do NOT resend the big blob: use the dedicated "
+                    "kickoff_declare_* tools (ONE small item per call), which never mangle."
+                    if _mangled else "")
                 return ToolResult.fail(
                     f"decision for section '{_sec}' has NO non-empty content in any "
-                    f"recognized key ({_keys}) — every recognized list was empty/null. "
-                    "If a large inline payload got truncated, SUBMIT IN PARTS: call "
+                    f"recognized key ({_keys}) — every recognized list was empty/null." + _mangle_note +
+                    " If a large inline payload got truncated, SUBMIT IN PARTS: call "
                     "this tool SEVERAL times, each with a SMALL piece (e.g. decision="
                     f"{{'section': '{_sec}', 'content': {_eg}}}); the meeting MERGES "
                     "your pieces. Prefer the dedicated kickoff_declare_* tools (one "
