@@ -30,6 +30,7 @@ import jwt
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import false
 
 logger = logging.getLogger(__name__)
 
@@ -207,8 +208,14 @@ def require_admin(auth: AuthContext) -> None:
 
 
 async def current_admin(user: AuthContext = Depends(get_current_user)) -> AuthContext:
-    """Dependency for every /env-forge endpoint: authenticate + enforce admin."""
+    """Dependency for every /env-forge endpoint: authenticate + enforce admin.
+
+    Also fail closed on a tenantless token: a credential with no ``tenant_id``
+    can't be scoped to a tenant, so (under real auth) it is rejected outright
+    rather than risk matching the empty-tenant ("") rows of unowned envs."""
     require_admin(user)
+    if AUTH_ENABLED and not user.tenant_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No tenant in credentials")
     return user
 
 
@@ -217,17 +224,30 @@ async def current_admin(user: AuthContext = Depends(get_current_user)) -> AuthCo
 
 def scope_query(stmt, column, auth: AuthContext):
     """Restrict a SELECT to the caller's tenant. No admin bypass: each admin
-    only sees their own tenant's rows. Disabled-auth (dev) sees everything."""
+    only sees their own tenant's rows. Disabled-auth (dev) sees everything.
+
+    A tenantless caller (empty ``tenant_id``) matches nothing — never the ""
+    rows of orphan/unowned environments."""
     if not AUTH_ENABLED:
         return stmt
+    if not auth.tenant_id:
+        return stmt.where(false())
     return stmt.where(column == auth.tenant_id)
 
 
 def owns(env, auth: AuthContext) -> bool:
-    """True if ``env`` belongs to the caller's tenant (or auth is off)."""
+    """True if ``env`` belongs to the caller's tenant (or auth is off).
+
+    Both a tenantless caller and an unowned (empty-tenant) env match nothing,
+    so orphan environments are never visible across — or without — a tenant."""
     if not AUTH_ENABLED:
         return True
-    return (getattr(env, "tenant_id", "") or "") == auth.tenant_id
+    if env is None:
+        return False
+    env_tenant = getattr(env, "tenant_id", "") or ""
+    if not auth.tenant_id or not env_tenant:
+        return False
+    return env_tenant == auth.tenant_id
 
 
 def assert_env_access(env, auth: AuthContext):

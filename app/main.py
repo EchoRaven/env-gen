@@ -27,6 +27,10 @@ from .models import Environment, ChatMessage
 
 ENVS_ROOT = Path(os.environ.get("ENVS_ROOT", str(Path(__file__).resolve().parents[1] / "generated")))
 
+# Env names double as the on-disk directory + PK + URL segment — keep them to a
+# strict slug so they can never traverse paths or collide with route parsing.
+_SAFE_ENV_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
 app = FastAPI(title="forgingground-gen", version="0.1.0")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
@@ -47,6 +51,14 @@ class EnvCreate(BaseModel):
 
 class RefUpload(BaseModel):
     files: list[dict] = []  # [{filename, content_b64}]
+
+
+def _within_envs_root(p: Path) -> bool:
+    """Defence in depth: a resolved path must live inside ENVS_ROOT before we
+    ever read/serve from it, regardless of what generated_dir was stored."""
+    root = ENVS_ROOT.resolve()
+    p = p.resolve()
+    return p == root or root in p.parents
 
 
 def _is_env_dir(p: Path) -> bool:
@@ -106,15 +118,23 @@ def list_environments(db: Session = Depends(get_db),
 @app.post("/env-forge/environments")
 def create_environment(body: EnvCreate, db: Session = Depends(get_db),
                        user: AuthContext = Depends(current_admin)) -> dict:
-    if db.get(Environment, body.name):
-        raise HTTPException(409, f"environment '{body.name}' already exists")
+    # The name is the PK *and* the on-disk directory name — sanitize hard so it
+    # can never become a path-traversal vector (e.g. '../other-tenant-env').
+    name = (body.name or "").strip()
+    if not _SAFE_ENV_NAME.match(name):
+        raise HTTPException(400, "invalid environment name: use letters, digits, '-' or '_' "
+                                 "(1-64 chars, must start alphanumeric, no path separators)")
+    gen = (ENVS_ROOT / name).resolve()
+    if gen != ENVS_ROOT.resolve() and ENVS_ROOT.resolve() not in gen.parents:
+        raise HTTPException(400, "invalid environment name")
+    if db.get(Environment, name):
+        raise HTTPException(409, f"environment '{name}' already exists")
     import json as _json
-    gen = ENVS_ROOT / body.name
-    e = Environment(id=body.name, name=body.name, reference=body.reference,
+    e = Environment(id=name, name=name, reference=body.reference,
                     model=body.model, provider=body.provider, scope=body.scope or "",
                     requirements=body.requirements or "", max_wallclock_min=body.max_wallclock_min,
                     max_ticks=body.max_ticks, gates_json=_json.dumps(body.gates or []),
-                    status="generating", generated_dir=str(gen.resolve()),
+                    status="generating", generated_dir=str(gen),
                     tenant_id=user.tenant_id, created_by=user.user_id)
     db.add(e)
     db.commit()
@@ -188,6 +208,8 @@ def get_files(env_id: str, path: str = "", db: Session = Depends(get_db),
     if not e.generated_dir or not Path(e.generated_dir).is_dir():
         raise HTTPException(404, "generated tree not found")
     root = Path(e.generated_dir).resolve()
+    if not _within_envs_root(root):
+        raise HTTPException(404, "generated tree not found")
     target = (root / path).resolve()
     if target != root and root not in target.parents:
         raise HTTPException(400, "path outside environment")
@@ -219,9 +241,11 @@ def get_reference_file(env_id: str, name: str, db: Session = Depends(get_db),
     if not e.generated_dir:
         raise HTTPException(404, "not found")
     root = Path(e.generated_dir).resolve()
+    if not _within_envs_root(root):
+        raise HTTPException(404, "not found")
     for sub in ("design/references", "design/reference_images"):
         f = (root / sub / name).resolve()
-        if (f == root or root in f.parents) and f.is_file():
+        if root in f.parents and f.is_file():
             return FileResponse(str(f))
     raise HTTPException(404, "reference not found")
 
