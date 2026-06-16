@@ -188,6 +188,16 @@ PY
 
 FWVAL_FAST_CAP = 6           # fast (every-tick) validation attempts before slowdown
 FWVAL_SLOW_INTERVAL_S = 300  # past the cap, retry at most once per this interval
+# RESILIENCE (stuck-loop breaker): once the FAST cap is exhausted on an UNCHANGING
+# failure set with NO lane progress, the orchestrator was re-running the SAME
+# validation cycle (merge → regen skeleton → regen DDL → run_validation → fail)
+# every ~60s indefinitely (observed: 36 identical cycles, zero agent activity).
+# These bound the escalation: after the cap is spent on a stable failure set we
+# RE-DISPATCH the owning lane (FWVAL_STUCK_REDISPATCH_AFTER), then if STILL no
+# progress we surface a terminal "stuck on <blocker>" signal (FWVAL_STUCK_TERMINAL_AFTER)
+# instead of churning to wall-clock.
+FWVAL_STUCK_REDISPATCH_AFTER = 2   # validations on the same failure set (past cap) → re-dispatch owner
+FWVAL_STUCK_TERMINAL_AFTER = 4     # validations on the same failure set (past cap) → surface stuck signal
 VISUAL_DEFERRAL_ESCAPE_S = 900   # max wall-clock a milestone may defer on visuals
 VISUAL_TOTAL_JUDGMENTS_CAP = 10  # per-milestone hard cap on real visual judgments
 
@@ -203,6 +213,39 @@ def _fwval_should_attempt(attempts: int, last_attempt_ts: float, now: float,
     if attempts < cap:
         return True
     return (now - (last_attempt_ts or 0.0)) >= slow_interval
+
+
+def _fwval_failure_set(data) -> frozenset:
+    """The set of FAILING check ids from a run_validation result — the stable
+    signal of the app's *functional* state, driven by lane progress (NOT by the
+    orchestrator's own idempotent heal/skeleton regeneration, which churns the
+    file-content signature every cycle without changing what's failing). Keyed on
+    the check NAME only (details carry transient docker/boot noise). Domain-agnostic."""
+    checks = (data or {}).get("checks") or []
+    return frozenset(
+        str(c.get("name"))
+        for c in checks
+        if isinstance(c, dict) and c.get("status") == "fail" and c.get("name")
+    )
+
+
+def _fwval_stuck_decision(stuck_count: int, *,
+                          redispatch_after: int = FWVAL_STUCK_REDISPATCH_AFTER,
+                          terminal_after: int = FWVAL_STUCK_TERMINAL_AFTER) -> str:
+    """Escalation stage for a failure set that has persisted (with NO lane
+    progress) across ``stuck_count`` post-cap validations. Returns:
+      * ``"wait"``      — still inside the fast budget / early; keep iterating.
+      * ``"redispatch"``— re-wake the lane that owns the failing dimension.
+      * ``"terminal"``  — re-dispatch did not help; surface a clear "stuck" signal
+                          (so the run stops churning to wall-clock and the UI shows
+                          the real blocker) instead of spinning the same cycle.
+    Pure + side-effect-free so the escalation ladder is unit-tested without the
+    docker/dispatch machinery."""
+    if stuck_count >= terminal_after:
+        return "terminal"
+    if stuck_count >= redispatch_after:
+        return "redispatch"
+    return "wait"
 
 
 def _visual_release_decision(deferred_since, attempts: int, total_judgments: int,
@@ -861,6 +904,12 @@ class Orchestrator:
                         self._framework_validation_attempts = 0
                         self._fwval_last_attempt_ts = 0.0  # PIPE-C2: fresh slow-retry clock
                         self._fwval_healed_sig = None
+                        # RESILIENCE (stuck-loop breaker): fresh failure-set / stuck
+                        # tracking per milestone — a new milestone's failures are
+                        # genuinely new work, not a continuation of the prior stall.
+                        self._fwval_failure_set = None
+                        self._fwval_stuck_count = 0
+                        self._fwval_stuck_blocker = None
                         self._silent_lane_nudges = {}
                         try:
                             _orch_lane = self._agents.get("orchestrator")
@@ -2528,17 +2577,19 @@ volumes:
                 self._repair_ddl_from_orm()
                 self._repair_handler_fk_aliases()
                 self._repair_psycopg_dsn()
-                # Reset the validation budget ONLY when the post-heal AUTHORITATIVE app
-                # actually changed (a contract change → a different skeleton), NOT when
-                # the lane merely churned backend files the skeleton just overwrote
-                # back to the SAME bytes. Otherwise the lane's continuous backend
-                # rewrites re-fire this heal and reset the attempt counter EVERY tick,
-                # so validation stays at attempt 1/6 forever and never completes — the
-                # instagram M1 validation STALL ("attempt 1/6" ×15, app never stable).
-                _post_heal_sig = self._compute_app_source_signature()
-                if _post_heal_sig != getattr(self, "_fwval_healed_sig", None):
-                    self._framework_validation_attempts = 0  # authoritative app changed → fresh budget
-                self._fwval_healed_sig = _post_heal_sig
+                # RESILIENCE (stuck-loop breaker): record the post-heal signature so
+                # the heal-gate (line above) only re-heals when the *integrated source*
+                # changed — but DO NOT reset the validation budget on that delta. The
+                # heal/skeleton/DDL regeneration is the orchestrator's OWN output and is
+                # not byte-stable across cycles (subprocess ORM introspection ordering,
+                # write churn), so a post-heal-signature reset re-granted a fresh fast
+                # budget EVERY cycle → the FAST cap never tripped → the SAME failing
+                # validation cycle (merge → regen → run_validation → fail) spun every
+                # ~60s forever with zero agent activity (observed: 36 identical cycles).
+                # The fast budget is now reset ONLY on genuine LANE progress: a rising
+                # implemented-endpoint count (below) or a CHANGED failure set (after the
+                # validation result is known) — never on self-induced signature churn.
+                self._fwval_healed_sig = self._compute_app_source_signature()
             # FIX #26: fire when the contract is implemented by registryhub registration
             # OR by route code present in the integrated source (registration lags
             # the actual code). api_smoke is the real arbiter downstream.
@@ -2628,6 +2679,81 @@ volumes:
                     self._framework_validation_attempts, str(_summ)[:200],
                     _failed or "(no checks returned)",
                 )
+                # RESILIENCE (stuck-loop breaker): track the FAILURE SET (the set of
+                # failing check ids) across validations. A CHANGED failure set is
+                # genuine lane-driven progress (a check now passes, or a new one
+                # fails) → grant a fresh fast budget and reset the stuck counter, so a
+                # converging app is never slowed. An UNCHANGING failure set means the
+                # last fast-cap of validations achieved nothing — the lanes are idle
+                # and the orchestrator is re-running the identical cycle (the 36-cycle
+                # spin). The self-induced heal/skeleton churn no longer resets the
+                # budget (above), so the fast cap now actually trips; once it does on a
+                # stable failure set we ESCALATE rather than spin to wall-clock.
+                _fset = _fwval_failure_set(data)
+                _prev_fset = getattr(self, "_fwval_failure_set", None)
+                if _prev_fset is None or _fset != _prev_fset:
+                    # New/changed failure set → real progress (or first observation).
+                    self._fwval_failure_set = _fset
+                    self._fwval_stuck_count = 0
+                    if _prev_fset is not None:
+                        # An actual change (not the first sight) → fresh fast budget,
+                        # exactly like a rising endpoint count (FIX #31).
+                        self._framework_validation_attempts = 0
+                        # Re-arm the per-milestone owner-dispatch guards so the
+                        # next-failure feedback can fire afresh for the new failure set.
+                        self._fwval_rearm_owner_dispatch()
+                else:
+                    # Same failure set as last validation → no functional progress.
+                    self._fwval_stuck_count = getattr(self, "_fwval_stuck_count", 0) + 1
+                    # Only escalate once the FAST budget is spent (the converging
+                    # window is over); below the cap we are still in the normal
+                    # fast-retry phase and must not interfere with a healthy run.
+                    if _attempts >= FWVAL_FAST_CAP:
+                        _stage = _fwval_stuck_decision(self._fwval_stuck_count)
+                        if _stage == "redispatch":
+                            # Re-wake the lane(s) that own the failing dimension: the
+                            # existing per-milestone _dispatch_* guards have gone quiet
+                            # (one dispatch per milestone), so re-arm them — the
+                            # _dispatch_* calls below will then re-fire the owner task +
+                            # urgent wake for this specific, persisting failure set.
+                            self._fwval_rearm_owner_dispatch()
+                            self._logger.warning(
+                                "STUCK-LOOP ESCALATION: framework validation has failed "
+                                "on the SAME failure set %s for %s post-cap cycles with no "
+                                "lane progress — re-dispatching the owning lane(s).",
+                                sorted(_fset) or "(none)", self._fwval_stuck_count,
+                            )
+                        elif _stage == "terminal":
+                            # Re-dispatch did not break the stall → surface a clear,
+                            # terminal "stuck on <blocker>" signal so the run stops
+                            # churning to wall-clock and the UI/monitor shows the real
+                            # blocker (instead of looking dead with idle lanes + a
+                            # spinning orchestrator). We do NOT hard-kill here — the run
+                            # budget cap is the terminator; this downshifts the cadence
+                            # (attempts pinned at the cap → slow interval) and makes the
+                            # blocker visible exactly once.
+                            _blocker = ", ".join(sorted(_fset)) or (str(_summ)[:120] or "unknown")
+                            if getattr(self, "_fwval_stuck_blocker", None) != _blocker:
+                                self._fwval_stuck_blocker = _blocker
+                                self._logger.error(
+                                    "STUCK: framework validation is wedged on %s — the "
+                                    "same failure set has persisted for %s post-cap "
+                                    "cycles with no lane progress AND re-dispatch did not "
+                                    "help. Downshifting to the slow re-validation "
+                                    "interval; the run will end on its budget cap unless "
+                                    "a lane makes progress. Real blocker: %s",
+                                    _blocker, self._fwval_stuck_count, str(_summ)[:200],
+                                )
+                                try:
+                                    self.progress.emit(
+                                        EventType.PHASE_ERROR,
+                                        "Framework Validation",
+                                        {"error": f"stuck on {_blocker}",
+                                         "failure_set": sorted(_fset),
+                                         "cycles": self._fwval_stuck_count},
+                                    )
+                                except Exception:
+                                    pass
                 # GATE-C1 feedback loop: a business_endpoints_implemented FAIL
                 # (registered-implemented endpoint answering 404/405) routes to
                 # the backend lane — a hard gate with no exit deadlocks the run.
@@ -2718,6 +2844,27 @@ volumes:
                             "chain-authoring dispatch failed: %s", _cd_exc)
         except Exception as exc:  # never break the coordination loop
             self._logger.error("framework validation raised (non-fatal): %s", exc)
+
+    def _fwval_rearm_owner_dispatch(self) -> None:
+        """RESILIENCE: clear the per-milestone owner-dispatch guards so the existing
+        ``_dispatch_*`` feedback helpers (business_endpoints → backend,
+        frontend_navigable / unwired_ui_pages → frontend, business_chain → verifier)
+        re-fire their P0 task + urgent wake for a failure set that has either CHANGED
+        (genuine progress — the new gap deserves a fresh dispatch) or PERSISTED past
+        the fast cap (stuck — re-wake the owner that's gone quiet). Reuses the
+        existing dispatch machinery; invents no new control flow. Clearing the guard
+        is safe — each ``_dispatch_*`` is idempotent within a milestone (it re-sets
+        its own guard) and only acts when its specific check is still failing."""
+        for _guard in (
+            "_unimpl_routes_dispatched",
+            "_frontend_navigable_dispatched",
+            "_unwired_ui_pages_dispatched",
+            "_chain_task_dispatched",
+        ):
+            try:
+                setattr(self, _guard, None)
+            except Exception:
+                pass
 
     async def _dispatch_unimplemented_routes(self, data) -> None:
         """GATE-C1 feedback loop: a ``business_endpoints_implemented`` FAIL (an
