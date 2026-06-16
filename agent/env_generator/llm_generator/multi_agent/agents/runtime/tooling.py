@@ -629,6 +629,20 @@ class AgentTooling:
                     self.log_tool_call(tool_name, tool_args, precondition_error)
                     return precondition_error
 
+                # Human-in-the-loop approval gate: in `ask` mode this PAUSES gated
+                # structural actions (task/gate creation) until a human approves in
+                # Env Forge; a rejection returns the reviewer's feedback so the agent
+                # revises. No-op in `auto` mode (default) — zero overhead otherwise.
+                try:
+                    from ...runtime.approval import enforce as _enforce_approval
+                    approval_block = await _enforce_approval(
+                        getattr(self, "_hubs", None), self.agent_id, tool_name, tool_args)
+                    if approval_block is not None:
+                        self.log_tool_call(tool_name, tool_args, approval_block)
+                        return approval_block
+                except Exception:
+                    pass  # approval is best-effort — never wedge the pipeline on it
+
                 exec_fn = self._tool_instances[tool_name].execute
                 if asyncio.iscoroutinefunction(exec_fn):
                     result = await exec_fn(**tool_args)
