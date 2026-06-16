@@ -164,6 +164,41 @@ def get_state(env_id: str, db: Session = Depends(get_db)) -> dict:
     return hub_reader.read_state(e.generated_dir)
 
 
+_FILE_SKIP = {"node_modules", "__pycache__", ".git", ".agent_logs", "dist",
+              ".pytest_cache", "worktrees", ".venv", "logs"}
+
+
+@app.get("/env-forge/environments/{env_id}/files")
+def get_files(env_id: str, path: str = "", db: Session = Depends(get_db)) -> dict:
+    """Browse the generated env's source tree: list a directory, or return a text
+    file's content. Path-traversal-guarded to the env's generated_dir."""
+    e = _get_env(db, env_id)
+    if not e.generated_dir or not Path(e.generated_dir).is_dir():
+        raise HTTPException(404, "generated tree not found")
+    root = Path(e.generated_dir).resolve()
+    target = (root / path).resolve()
+    if target != root and root not in target.parents:
+        raise HTTPException(400, "path outside environment")
+    if target.is_dir():
+        entries = []
+        for p in sorted(target.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+            if p.name in _FILE_SKIP or p.name.startswith("."):
+                continue
+            entries.append({"name": p.name, "path": str(p.relative_to(root)),
+                            "is_dir": p.is_dir(),
+                            "size": p.stat().st_size if p.is_file() else 0})
+        return {"dir": "" if target == root else str(target.relative_to(root)), "entries": entries}
+    if target.is_file():
+        if target.stat().st_size > 400_000:
+            raise HTTPException(413, "file too large to preview")
+        try:
+            text = target.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            raise HTTPException(415, "not a text file")
+        return {"file": str(target.relative_to(root)), "content": text}
+    raise HTTPException(404, "not found")
+
+
 class ChatSend(BaseModel):
     content: str
     recipients: list[str] = []
