@@ -7,7 +7,9 @@ a missing/partial store yields an empty section, never a crash. NO hardcoded dat
 """
 from __future__ import annotations
 
+import ast
 import json
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -103,13 +105,22 @@ def _ui_pages(gen: Path, h: Path) -> list[dict]:
     out = []
     for v in _records(_load(h / "registryhub_ui_pages.json")):
         name = v.get("name", "")
-        route = v.get("route") or v.get("path") or ref_routes.get(name, "")
+        # NB: v["path"] is a FILE path (an audit artifact), NOT a URL route — never
+        # surface it as the route. Backfill the real route from the reference spec.
+        route = v.get("route") or ref_routes.get(name, "")
+        component = v.get("component", "")
+        # Drop audit-detected file entries that aren't real pages — main.jsx (infra),
+        # a component's source file, or a page's bare .jsx — they carry neither a
+        # route nor a declared component. A real declared page always has one.
+        if not route and not component:
+            continue
         wired = bool(route) and (f'path="{route}"' in app_src or f"path='{route}'" in app_src
                                  or (route == "/" and "index" in app_src))
         out.append({"id": v.get("id", name), "name": name,
-                    "route": route, "component": v.get("component", ""),
+                    "route": route, "component": component,
                     "status": v.get("status", "defined"),
-                    "apis": len(v.get("apis_used") or []), "wired": wired})
+                    "apis": len(v.get("apis_used") or []), "wired": wired,
+                    "components": v.get("components") or []})
     return out
 
 
@@ -281,31 +292,108 @@ def _metrics(h: Path) -> dict:
             "total_cost": round(cost, 2), "by_model": list(by_model.values())}
 
 
+def _truncate_jsonable(v, maxlen: int = 300):
+    """Bound a literal-eval'd value so the (3s-polled) payload stays small."""
+    if isinstance(v, str):
+        return v if len(v) <= maxlen else v[:maxlen] + "…"
+    if isinstance(v, dict):
+        return {str(k): _truncate_jsonable(x, maxlen) for k, x in list(v.items())[:40]}
+    if isinstance(v, (list, tuple)):
+        return [_truncate_jsonable(x, maxlen) for x in list(v)[:40]]
+    if isinstance(v, (int, float, bool)) or v is None:
+        return v
+    return str(v)[:maxlen]
+
+
+def _parse_action_entry(e: dict) -> dict:
+    """Parse one .agent_logs jsonl line into a structured action for the UI:
+    ``{at, type, tool, args, args_obj, result, content}``. ``content`` is usually
+    ``toolName({...})``; ``metadata`` carries the tool result (a dict or a
+    Python-repr string). ``args_obj`` is the parsed argument object so the UI can
+    render it as JSON instead of a raw string."""
+    content = str(e.get("content") or "")
+    m = re.match(r"\s*([A-Za-z_]\w*)\s*\((.*)\)\s*$", content, re.S)
+    tool = m.group(1) if m else ""
+    args = m.group(2).strip() if m else ""
+    args_obj = None
+    if args:
+        try:
+            parsed_args = ast.literal_eval(args)  # the call is toolName({...}) — a literal
+            if isinstance(parsed_args, (dict, list)):
+                args_obj = _truncate_jsonable(parsed_args)
+        except Exception:
+            args_obj = None
+    md = e.get("metadata")
+    result = ""
+    if isinstance(md, dict):
+        result = str(md.get("result", md))
+    elif isinstance(md, str) and md.strip():
+        s = md.strip()
+        if s.startswith("{"):
+            try:
+                parsed = ast.literal_eval(s)
+                result = str(parsed.get("result", s)) if isinstance(parsed, dict) else s
+            except Exception:
+                result = s
+        else:
+            result = s
+    return {"at": str(e.get("timestamp", "")), "type": str(e.get("event_type", "")),
+            "tool": tool, "args": args[:400], "args_obj": args_obj,
+            "result": result[:400], "content": content[:400]}
+
+
+def _agent_log_activity(gen: Path, role: str):
+    """(last_action, mtime, recent_actions[]) from ``.agent_logs/<role> Agent/*.jsonl``
+    — the reliable signal for whether an agent is actually working + its action
+    history. Eventhub events are hub-scoped and rarely attributed per-agent, so they
+    under-report activity (every agent looked idle)."""
+    d = gen / ".agent_logs" / f"{role} Agent"
+    if not d.is_dir():
+        return None
+    files = list(d.glob("*.jsonl"))
+    if not files:
+        return None
+    newest = max(files, key=lambda f: f.stat().st_mtime)
+    try:
+        lines = [ln for ln in newest.read_text(encoding="utf-8", errors="ignore").splitlines() if ln.strip()]
+    except OSError:
+        return None
+    acts = []
+    for ln in lines[-25:]:
+        try:
+            e = json.loads(ln)
+        except Exception:
+            continue
+        acts.append(_parse_action_entry(e))
+    if not acts:
+        return None
+    last = acts[-1]
+    # Overview shows this as a compact label — keep it to the clean tool/action
+    # name only (the full args/result live in the agent drawer's action history).
+    label = (last["tool"] or last["type"] or "—")[:80]
+    return (label, newest.stat().st_mtime, list(reversed(acts)))
+
+
 def _agents(h: Path) -> list[dict]:
-    evs = sorted(_records(_load(h / "eventhub_events.json")),
-                 key=lambda e: e.get("created_at") or 0)
-    ids = {a for a, _ in CORE_AGENTS}
-    last: dict[str, dict] = {}
-    for e in evs:
-        p = e.get("payload") or {}
-        aid = (p.get("agent_id") or p.get("assignee") or p.get("claimed_by")
-               or p.get("author") or e.get("_updated_by"))
-        if aid not in ids and e.get("source_hub") in ids:
-            aid = e.get("source_hub")
-        if aid in ids:
-            last[aid] = {"action": e.get("event_type", ""), "at": e.get("created_at") or 0,
-                         "status": p.get("status")}
+    """Per-agent status + action history from the AUTHORITATIVE source: each agent's
+    own ``.agent_logs/<role> Agent/*.jsonl`` step log. eventhub is deliberately NOT
+    used — it is a hub-scoped coordination log (records which HUB emitted an event,
+    not which agent), so it cannot attribute activity to an agent. An agent with no
+    log is reported idle with no history (honest 'no data', never a guess)."""
+    gen = h.parent.parent  # h == <gen>/shared/hubs
     now = datetime.now(timezone.utc).timestamp()
     out = []
     for aid, role in CORE_AGENTS:
-        rec = last.get(aid)
-        if rec:
-            recent = (now - float(rec["at"])) < 180
-            status = rec.get("status") or ("active" if recent else "idle")
-            out.append({"id": aid, "role": role, "status": status,
-                        "last_action": rec["action"] or "—", "last_active_at": _iso(rec["at"])})
+        act = _agent_log_activity(gen, role)
+        if act:
+            label, mtime, recent = act
+            out.append({"id": aid, "role": role,
+                        "status": "active" if (now - mtime) < 180 else "idle",
+                        "last_action": label or "—", "last_active_at": _iso(mtime),
+                        "recent_actions": recent})
         else:
-            out.append({"id": aid, "role": role, "status": "idle", "last_action": "—", "last_active_at": ""})
+            out.append({"id": aid, "role": role, "status": "idle",
+                        "last_action": "—", "last_active_at": "", "recent_actions": []})
     return out
 
 
@@ -441,12 +529,15 @@ def _skills(gen: Path) -> list[dict]:
                 continue
             md = sk / "SKILL.md"
             desc = ""
+            body = ""
             if md.is_file():
                 try:
-                    desc = _skill_desc(md.read_text(encoding="utf-8", errors="ignore"))
+                    txt = md.read_text(encoding="utf-8", errors="ignore")
+                    desc = _skill_desc(txt)
+                    body = txt[:12000]  # full SKILL.md content (capped) for the detail view
                 except Exception:
                     pass
-            out.append({"name": sk.name, "description": desc})
+            out.append({"name": sk.name, "description": desc, "body": body})
     return out
 
 
