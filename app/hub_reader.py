@@ -416,12 +416,55 @@ def _agents(h: Path) -> list[dict]:
     return out
 
 
+def _doc_body(v: dict) -> str:
+    """Readable body for a coordination document (kickoff / meeting / retro /
+    project). The content lives in ``metadata`` (agenda / requirements /
+    decisions / produced_artifacts), not a top-level ``description`` — so a bare
+    read showed "No content recorded". Compose the real content here.
+    Domain-agnostic: only reads generic metadata keys, gracefully skips absent ones."""
+    desc = str(v.get("description") or "").strip()
+    if desc:
+        return desc[:4000]
+    md = v.get("metadata") or {}
+    if not isinstance(md, dict):
+        return ""
+    parts: list[str] = []
+    agenda = md.get("agenda")
+    if agenda:
+        parts.append(str(agenda).strip())
+    reqs = md.get("requirements")
+    if reqs:
+        body = "\n".join(f"- {str(r).strip()}" for r in reqs[:30]) if isinstance(reqs, list) else str(reqs).strip()
+        parts.append("Requirements:\n" + body)
+    decisions = md.get("decisions")
+    if isinstance(decisions, list) and decisions:
+        lines = []
+        for d in decisions[:30]:
+            if not isinstance(d, dict):
+                continue
+            label = d.get("section") or d.get("kind") or "decision"
+            body = d.get("decision") if isinstance(d.get("decision"), dict) else d.get("content")
+            summ = ""
+            if isinstance(body, dict):
+                summ = body.get("summary") or body.get("title") or body.get("chosen") or body.get("rationale") or ""
+            elif isinstance(body, str):
+                summ = body
+            lines.append(f"- {label}" + (f": {str(summ)[:200]}" if summ else ""))
+        if lines:
+            parts.append(f"Decisions ({len(decisions)}):\n" + "\n".join(lines))
+    artifacts = md.get("produced_artifacts")
+    if artifacts:
+        arts = artifacts if isinstance(artifacts, list) else [artifacts]
+        parts.append("Produced artifacts: " + ", ".join(str(a) for a in arts))
+    return "\n\n".join(parts)[:4000]
+
+
 def _pages(h: Path) -> list[dict]:
     # WorkHub's document model calls everything a "page", but ui_page / ui_component
     # docs belong in RegistryHub (shown there) — exclude them so this is only the
-    # coordination docs (project / kickoff / retro / meeting notes).
+    # coordination documents (project / kickoff / retro / meeting notes).
     return [{"id": v.get("id", ""), "title": v.get("title", ""), "kind": v.get("kind", ""),
-             "status": v.get("status", ""), "description": (v.get("description") or "")[:300],
+             "status": v.get("status", ""), "description": _doc_body(v),
              "attendees": [str(a) for a in (v.get("attendees") or [])]}
             for v in _records(_load(h / "workhub_pages.json"))
             if v.get("kind") not in ("ui_page", "ui_component")]
