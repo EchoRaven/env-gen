@@ -81,3 +81,20 @@ def test_negative_envelope_lesson_preserved():
     low = _text().lower()
     assert "never read" in low
     assert "data.posts" in low  # kept ONLY as a "don't do this" example
+
+
+def test_component_decomposition_is_mandatory():
+    """Regression (youtube run 2026-06-15): the lane declared 16 ui_pages but ZERO
+    ui_components (built pages as monoliths) because kickoff_declare_ui_component
+    read as optional. The FINAL PROTOCOL must frame decomposition as REQUIRED with
+    the list/grid/feed -> item-component rule."""
+    text = _text()
+    i = text.rfind("FINAL PROTOCOL")
+    assert i != -1
+    block = text[i:i + 1800]
+    assert "REQUIRED" in block, "component declaration must be marked REQUIRED"
+    assert "ZERO ui_components" in block or "monolith" in block, \
+        "must warn against pages-without-components (monolith)"
+    low = block.lower()
+    assert "list" in low and ("grid" in low or "feed" in low), \
+        "must state the list/grid/feed -> item-component rule"
