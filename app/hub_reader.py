@@ -154,10 +154,18 @@ def _contract_tests(h: Path) -> list[dict]:
 
 
 def _chains(h: Path) -> list[dict]:
-    return [{"name": v.get("name", k), "status": v.get("status", "unknown"),
-             "steps": len(v.get("steps") or [])}
-            for k, v in (_load(h / "registryhub_verification_chains.json")).items()
-            if k != "_meta" and isinstance(v, dict)]
+    out = []
+    for k, v in (_load(h / "registryhub_verification_chains.json")).items():
+        if k == "_meta" or not isinstance(v, dict):
+            continue
+        steps = v.get("steps") or []
+        out.append({"name": v.get("name", k), "status": v.get("status", "unknown"),
+                    "steps": len(steps), "description": v.get("description", ""),
+                    "last_result": str(v.get("last_result", ""))[:600],
+                    "step_detail": [{"method": str(s.get("method", "")), "path": str(s.get("path", "")),
+                                     "expect": s.get("expect")}
+                                    for s in steps if isinstance(s, dict)][:40]})
+    return out
 
 
 def _tasks(h: Path) -> list[dict]:
