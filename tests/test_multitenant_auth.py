@@ -5,9 +5,11 @@ read at import time, so we enable auth before importing the app. Run with:
 
     cd forgingground-gen && pytest tests/test_multitenant_auth.py
 """
+import base64
 import os
 import tempfile
 import time
+from pathlib import Path
 
 # ── enable real auth before importing the app (constants are import-time) ─────
 _DB = tempfile.mktemp(suffix=".db")
@@ -117,6 +119,28 @@ def test_created_env_dir_stays_in_envs_root(client):
         e = db.get(Environment, "safe-slug_9")
         envs_root = os.path.realpath(os.environ["ENVS_ROOT"])
         assert os.path.realpath(e.generated_dir).startswith(envs_root)
+
+
+def test_upload_references_cannot_escape_env_dir(client):
+    envs_root = Path(os.environ["ENVS_ROOT"])
+    assert client.post("/env-forge/environments", headers=hdr(tenant="tenantA"),
+                       json={"name": "upl", "reference": "", "model": "m", "provider": "p"}).status_code == 200
+    blob = base64.b64encode(b"x").decode()
+    files = [
+        {"filename": "ok.png", "content_b64": blob},
+        {"filename": "../../../../escape.txt", "content_b64": blob},     # try to climb out of ENVS_ROOT
+        {"filename": "../../sibling/evil.txt", "content_b64": blob},     # try to write into a sibling env
+    ]
+    r = client.post("/env-forge/environments/upl/references", headers=hdr(tenant="tenantA"),
+                    json={"files": files})
+    assert r.status_code == 200
+    refs = (envs_root / "upl" / "design" / "references").resolve()
+    # the benign file landed; NOTHING escaped the references dir
+    assert (refs / "ok.png").is_file()
+    assert not (envs_root / "escape.txt").exists()
+    assert not (envs_root / "sibling").exists()
+    for s in r.json()["saved"]:
+        assert (refs / s).resolve().parent == refs  # every saved file is a basename inside refs
 
 
 def test_every_envforge_route_is_admin_gated():

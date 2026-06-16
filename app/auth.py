@@ -48,6 +48,12 @@ if AUTH_ENABLED and not JWT_SECRET:
     logger.warning(
         "AGENTSUITE_JWT_SECRET is not set — JWT auth disabled, only API key auth is available"
     )
+if not AUTH_ENABLED:
+    logger.warning(
+        "AGENTSUITE_AUTH_ENABLED is OFF — Env Forge runs with NO auth and NO tenant "
+        "isolation (dev mode): every caller is treated as admin and sees ALL "
+        "environments. Set AGENTSUITE_AUTH_ENABLED=true + AGENTSUITE_JWT_SECRET in production."
+    )
 
 security = HTTPBearer(auto_error=False)
 

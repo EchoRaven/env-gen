@@ -31,9 +31,13 @@ ENVS_ROOT = Path(os.environ.get("ENVS_ROOT", str(Path(__file__).resolve().parent
 # strict slug so they can never traverse paths or collide with route parsing.
 _SAFE_ENV_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
+# CORS origins are configurable so prod can restrict to the known UI origin(s);
+# default "*" for local dev. (Auth is header-based, so this is defence in depth.)
+_CORS_ORIGINS = [o.strip() for o in os.environ.get("AGENTSUITE_CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
+
 app = FastAPI(title="forgingground-gen", version="0.1.0")
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+    CORSMiddleware, allow_origins=_CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"],
 )
 
 
@@ -153,15 +157,26 @@ def upload_references(env_id: str, body: RefUpload, db: Session = Depends(get_db
     dest = Path(e.generated_dir) / "design" / "references"
     dest.mkdir(parents=True, exist_ok=True)
     saved = []
+    dest_root = dest.resolve()
     for f in body.files:
         name = str(f.get("filename") or "").strip()
         b64 = f.get("content_b64") or ""
         if not name or not b64:
             continue
+        # NEVER trust the supplied filename as a path: a value like
+        # '../../other-tenant-env/x' would escape into a sibling env (a
+        # cross-tenant write). Use the basename only, then clamp the resolved
+        # destination inside the references dir as defence in depth.
+        safe = Path(name).name
+        if not safe or safe in (".", ".."):
+            continue
+        out = (dest / safe).resolve()
+        if out.parent != dest_root:
+            continue
         try:
             raw = b64.split(",", 1)[1] if "," in b64 else b64  # strip data: prefix
-            (dest / name).write_bytes(base64.b64decode(raw))
-            saved.append(name)
+            out.write_bytes(base64.b64decode(raw))
+            saved.append(safe)
         except Exception:
             continue
     return {"saved": saved, "dir": str(dest)}
