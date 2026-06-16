@@ -21,14 +21,23 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import hub_reader
+from .auth import AuthContext, assert_env_access, current_admin, scope_query
 from .db import get_db, init_db, SessionLocal
 from .models import Environment, ChatMessage
 
 ENVS_ROOT = Path(os.environ.get("ENVS_ROOT", str(Path(__file__).resolve().parents[1] / "generated")))
 
+# Env names double as the on-disk directory + PK + URL segment — keep them to a
+# strict slug so they can never traverse paths or collide with route parsing.
+_SAFE_ENV_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
+# CORS origins are configurable so prod can restrict to the known UI origin(s);
+# default "*" for local dev. (Auth is header-based, so this is defence in depth.)
+_CORS_ORIGINS = [o.strip() for o in os.environ.get("AGENTSUITE_CORS_ORIGINS", "*").split(",") if o.strip()] or ["*"]
+
 app = FastAPI(title="forgingground-gen", version="0.1.0")
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+    CORSMiddleware, allow_origins=_CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"],
 )
 
 
@@ -46,6 +55,14 @@ class EnvCreate(BaseModel):
 
 class RefUpload(BaseModel):
     files: list[dict] = []  # [{filename, content_b64}]
+
+
+def _within_envs_root(p: Path) -> bool:
+    """Defence in depth: a resolved path must live inside ENVS_ROOT before we
+    ever read/serve from it, regardless of what generated_dir was stored."""
+    root = ENVS_ROOT.resolve()
+    p = p.resolve()
+    return p == root or root in p.parents
 
 
 def _is_env_dir(p: Path) -> bool:
@@ -94,23 +111,35 @@ def health() -> dict:
 
 
 @app.get("/env-forge/environments")
-def list_environments(db: Session = Depends(get_db)) -> list[dict]:
+def list_environments(db: Session = Depends(get_db),
+                      user: AuthContext = Depends(current_admin)) -> list[dict]:
     _sync_envs(db)
-    envs = db.scalars(select(Environment)).all()
+    stmt = scope_query(select(Environment), Environment.tenant_id, user)
+    envs = db.scalars(stmt).all()
     return sorted((_env_to_dict(e) for e in envs), key=lambda x: x["updated_at"], reverse=True)
 
 
 @app.post("/env-forge/environments")
-def create_environment(body: EnvCreate, db: Session = Depends(get_db)) -> dict:
-    if db.get(Environment, body.name):
-        raise HTTPException(409, f"environment '{body.name}' already exists")
+def create_environment(body: EnvCreate, db: Session = Depends(get_db),
+                       user: AuthContext = Depends(current_admin)) -> dict:
+    # The name is the PK *and* the on-disk directory name — sanitize hard so it
+    # can never become a path-traversal vector (e.g. '../other-tenant-env').
+    name = (body.name or "").strip()
+    if not _SAFE_ENV_NAME.match(name):
+        raise HTTPException(400, "invalid environment name: use letters, digits, '-' or '_' "
+                                 "(1-64 chars, must start alphanumeric, no path separators)")
+    gen = (ENVS_ROOT / name).resolve()
+    if gen != ENVS_ROOT.resolve() and ENVS_ROOT.resolve() not in gen.parents:
+        raise HTTPException(400, "invalid environment name")
+    if db.get(Environment, name):
+        raise HTTPException(409, f"environment '{name}' already exists")
     import json as _json
-    gen = ENVS_ROOT / body.name
-    e = Environment(id=body.name, name=body.name, reference=body.reference,
+    e = Environment(id=name, name=name, reference=body.reference,
                     model=body.model, provider=body.provider, scope=body.scope or "",
                     requirements=body.requirements or "", max_wallclock_min=body.max_wallclock_min,
                     max_ticks=body.max_ticks, gates_json=_json.dumps(body.gates or []),
-                    status="generating", generated_dir=str(gen.resolve()))
+                    status="generating", generated_dir=str(gen),
+                    tenant_id=user.tenant_id, created_by=user.user_id)
     db.add(e)
     db.commit()
     # TODO: kick off the generation pipeline (forgingground-gen run) as a job here,
@@ -119,49 +148,63 @@ def create_environment(body: EnvCreate, db: Session = Depends(get_db)) -> dict:
 
 
 @app.post("/env-forge/environments/{env_id}/references")
-def upload_references(env_id: str, body: RefUpload, db: Session = Depends(get_db)) -> dict:
+def upload_references(env_id: str, body: RefUpload, db: Session = Depends(get_db),
+                      user: AuthContext = Depends(current_admin)) -> dict:
     """Stage reference images/docs into the env's design/references dir (created if
     absent) so the generation picks them up. Best-effort base64 decode."""
     import base64
-    e = _get_env(db, env_id)
+    e = _get_env(db, env_id, user)
     dest = Path(e.generated_dir) / "design" / "references"
     dest.mkdir(parents=True, exist_ok=True)
     saved = []
+    dest_root = dest.resolve()
     for f in body.files:
         name = str(f.get("filename") or "").strip()
         b64 = f.get("content_b64") or ""
         if not name or not b64:
             continue
+        # NEVER trust the supplied filename as a path: a value like
+        # '../../other-tenant-env/x' would escape into a sibling env (a
+        # cross-tenant write). Use the basename only, then clamp the resolved
+        # destination inside the references dir as defence in depth.
+        safe = Path(name).name
+        if not safe or safe in (".", ".."):
+            continue
+        out = (dest / safe).resolve()
+        if out.parent != dest_root:
+            continue
         try:
             raw = b64.split(",", 1)[1] if "," in b64 else b64  # strip data: prefix
-            (dest / name).write_bytes(base64.b64decode(raw))
-            saved.append(name)
+            out.write_bytes(base64.b64decode(raw))
+            saved.append(safe)
         except Exception:
             continue
     return {"saved": saved, "dir": str(dest)}
 
 
-def _get_env(db: Session, env_id: str) -> Environment:
-    e = db.get(Environment, env_id)
-    if not e:
-        raise HTTPException(404, f"environment '{env_id}' not found")
-    return e
+def _get_env(db: Session, env_id: str, auth: AuthContext) -> Environment:
+    """Fetch an env, enforcing tenant ownership (404 on missing or cross-tenant
+    so we never reveal that another tenant's environment exists)."""
+    return assert_env_access(db.get(Environment, env_id), auth)
 
 
 @app.get("/env-forge/environments/{env_id}")
-def get_environment(env_id: str, db: Session = Depends(get_db)) -> dict:
-    return _env_to_dict(_get_env(db, env_id))
+def get_environment(env_id: str, db: Session = Depends(get_db),
+                    user: AuthContext = Depends(current_admin)) -> dict:
+    return _env_to_dict(_get_env(db, env_id, user))
 
 
 @app.get("/env-forge/environments/{env_id}/runs")
-def get_runs(env_id: str, db: Session = Depends(get_db)) -> list[dict]:
-    e = _get_env(db, env_id)
+def get_runs(env_id: str, db: Session = Depends(get_db),
+             user: AuthContext = Depends(current_admin)) -> list[dict]:
+    e = _get_env(db, env_id, user)
     return hub_reader.list_runs(e.generated_dir, env_id) if e.generated_dir else []
 
 
 @app.get("/env-forge/environments/{env_id}/state")
-def get_state(env_id: str, db: Session = Depends(get_db)) -> dict:
-    e = _get_env(db, env_id)
+def get_state(env_id: str, db: Session = Depends(get_db),
+              user: AuthContext = Depends(current_admin)) -> dict:
+    e = _get_env(db, env_id, user)
     if not e.generated_dir or not Path(e.generated_dir).is_dir():
         raise HTTPException(404, "generated tree not found for this environment")
     return hub_reader.read_state(e.generated_dir)
@@ -172,13 +215,16 @@ _FILE_SKIP = {"node_modules", "__pycache__", ".git", ".agent_logs", "dist",
 
 
 @app.get("/env-forge/environments/{env_id}/files")
-def get_files(env_id: str, path: str = "", db: Session = Depends(get_db)) -> dict:
+def get_files(env_id: str, path: str = "", db: Session = Depends(get_db),
+              user: AuthContext = Depends(current_admin)) -> dict:
     """Browse the generated env's source tree: list a directory, or return a text
     file's content. Path-traversal-guarded to the env's generated_dir."""
-    e = _get_env(db, env_id)
+    e = _get_env(db, env_id, user)
     if not e.generated_dir or not Path(e.generated_dir).is_dir():
         raise HTTPException(404, "generated tree not found")
     root = Path(e.generated_dir).resolve()
+    if not _within_envs_root(root):
+        raise HTTPException(404, "generated tree not found")
     target = (root / path).resolve()
     if target != root and root not in target.parents:
         raise HTTPException(400, "path outside environment")
@@ -203,15 +249,18 @@ def get_files(env_id: str, path: str = "", db: Session = Depends(get_db)) -> dic
 
 
 @app.get("/env-forge/environments/{env_id}/references/{name}")
-def get_reference_file(env_id: str, name: str, db: Session = Depends(get_db)):
+def get_reference_file(env_id: str, name: str, db: Session = Depends(get_db),
+                       user: AuthContext = Depends(current_admin)):
     """Serve a staged reference file (screenshot/doc) from the env's design/references."""
-    e = _get_env(db, env_id)
+    e = _get_env(db, env_id, user)
     if not e.generated_dir:
         raise HTTPException(404, "not found")
     root = Path(e.generated_dir).resolve()
+    if not _within_envs_root(root):
+        raise HTTPException(404, "not found")
     for sub in ("design/references", "design/reference_images"):
         f = (root / sub / name).resolve()
-        if (f == root or root in f.parents) and f.is_file():
+        if root in f.parents and f.is_file():
             return FileResponse(str(f))
     raise HTTPException(404, "reference not found")
 
@@ -222,9 +271,10 @@ class SkillCreate(BaseModel):
 
 
 @app.post("/env-forge/environments/{env_id}/skills")
-def add_skill(env_id: str, body: SkillCreate, db: Session = Depends(get_db)) -> dict:
+def add_skill(env_id: str, body: SkillCreate, db: Session = Depends(get_db),
+              user: AuthContext = Depends(current_admin)) -> dict:
     """Create a skill: write .agents/skills/<name>/SKILL.md so the runtime + UI see it."""
-    e = _get_env(db, env_id)
+    e = _get_env(db, env_id, user)
     if not e.generated_dir:
         raise HTTPException(404, "not found")
     safe = re.sub(r"[^a-z0-9_-]", "-", body.name.strip().lower()).strip("-")[:60] or "skill"
@@ -253,9 +303,10 @@ def _read_custom_gates(p: Path) -> list:
 
 
 @app.post("/env-forge/environments/{env_id}/gates")
-def add_gate(env_id: str, body: GateCreate, db: Session = Depends(get_db)) -> dict:
+def add_gate(env_id: str, body: GateCreate, db: Session = Depends(get_db),
+             user: AuthContext = Depends(current_admin)) -> dict:
     """Create/update a user-defined custom gate (design/custom_gates.json)."""
-    e = _get_env(db, env_id)
+    e = _get_env(db, env_id, user)
     if not e.generated_dir:
         raise HTTPException(404, "not found")
     p = _custom_gates_file(e.generated_dir)
@@ -267,8 +318,9 @@ def add_gate(env_id: str, body: GateCreate, db: Session = Depends(get_db)) -> di
 
 
 @app.delete("/env-forge/environments/{env_id}/gates/{name}")
-def delete_gate(env_id: str, name: str, db: Session = Depends(get_db)) -> dict:
-    e = _get_env(db, env_id)
+def delete_gate(env_id: str, name: str, db: Session = Depends(get_db),
+                user: AuthContext = Depends(current_admin)) -> dict:
+    e = _get_env(db, env_id, user)
     if not e.generated_dir:
         raise HTTPException(404, "not found")
     p = _custom_gates_file(e.generated_dir)
@@ -290,15 +342,17 @@ def _chat_to_dict(m: ChatMessage) -> dict:
 
 
 @app.get("/env-forge/environments/{env_id}/chat")
-def list_chat(env_id: str, db: Session = Depends(get_db)) -> list[dict]:
-    _get_env(db, env_id)
+def list_chat(env_id: str, db: Session = Depends(get_db),
+              user: AuthContext = Depends(current_admin)) -> list[dict]:
+    _get_env(db, env_id, user)
     msgs = db.scalars(select(ChatMessage).where(ChatMessage.env_id == env_id)).all()
     return [_chat_to_dict(m) for m in sorted(msgs, key=lambda x: x.id)]
 
 
 @app.post("/env-forge/environments/{env_id}/chat")
-def send_chat(env_id: str, body: ChatSend, db: Session = Depends(get_db)) -> dict:
-    _get_env(db, env_id)
+def send_chat(env_id: str, body: ChatSend, db: Session = Depends(get_db),
+              user: AuthContext = Depends(current_admin)) -> dict:
+    _get_env(db, env_id, user)
     m = ChatMessage(env_id=env_id, thread_id=body.thread_id, sender="user",
                     recipients=",".join(body.recipients), content=body.content)
     db.add(m)

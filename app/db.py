@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./forgingground_gen.db")
@@ -23,6 +23,27 @@ class Base(DeclarativeBase):
 def init_db() -> None:
     from . import models  # noqa: F401 — register mappers
     Base.metadata.create_all(engine)
+    _ensure_tenant_columns()
+
+
+def _ensure_tenant_columns() -> None:
+    """Lightweight migration: add the multi-tenancy columns to a pre-existing
+    ``environments`` table (``create_all`` never ALTERs existing tables).
+    Idempotent and dialect-agnostic (SQLite + Postgres)."""
+    insp = inspect(engine)
+    if "environments" not in insp.get_table_names():
+        return
+    have = {c["name"] for c in insp.get_columns("environments")}
+    adds = []
+    if "tenant_id" not in have:
+        adds.append("ADD COLUMN tenant_id VARCHAR DEFAULT ''")
+    if "created_by" not in have:
+        adds.append("ADD COLUMN created_by VARCHAR DEFAULT ''")
+    if not adds:
+        return
+    with engine.begin() as conn:
+        for clause in adds:
+            conn.execute(text(f"ALTER TABLE environments {clause}"))
 
 
 def get_db() -> Iterator[Session]:
