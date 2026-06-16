@@ -159,9 +159,11 @@ def _chains(h: Path) -> list[dict]:
         if k == "_meta" or not isinstance(v, dict):
             continue
         steps = v.get("steps") or []
+        lr = v.get("last_result")
+        last_result = _truncate_jsonable(lr) if isinstance(lr, (dict, list)) else (str(lr)[:600] if lr else None)
         out.append({"name": v.get("name", k), "status": v.get("status", "unknown"),
                     "steps": len(steps), "description": v.get("description", ""),
-                    "last_result": str(v.get("last_result", ""))[:600],
+                    "last_result": last_result,
                     "step_detail": [{"method": str(s.get("method", "")), "path": str(s.get("path", "")),
                                      "expect": s.get("expect")}
                                     for s in steps if isinstance(s, dict)][:40]})
