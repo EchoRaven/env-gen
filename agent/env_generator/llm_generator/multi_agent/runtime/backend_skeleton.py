@@ -385,6 +385,29 @@ Pydantic response models are not required for the standard-CRUD skeleton."""
 '''
 
 
+def write_backend_build_infra(output_dir: Any) -> Dict[str, Any]:
+    """Write ONLY the STATIC, contract-independent backend build infra
+    (Dockerfile / pyproject.toml / reset.sh).
+
+    These are what `docker build` needs and they do NOT depend on the ORM /
+    handlers, so they can be emitted UPFRONT (alongside docker-compose) — long
+    before the full contract exists. Without this the backend build context is
+    empty when validation first runs, and agents improvise a BROKEN Dockerfile
+    (run #6: the orchestrator hand-wrote a `pip install poetry` Dockerfile →
+    docker build exit 2, even though the project is uv/pyproject). The full
+    `write_backend_skeleton` later re-asserts these byte-identically and adds
+    models/handlers. Idempotent."""
+    be = Path(output_dir) / "app" / "backend"
+    be.mkdir(parents=True, exist_ok=True)
+    written: Dict[str, str] = {}
+    for name, content in (("pyproject.toml", _PYPROJECT),
+                          ("Dockerfile", _DOCKERFILE),
+                          ("reset.sh", _RESET_SH)):
+        (be / name).write_text(content, encoding="utf-8")
+        written[name] = str(be / name)
+    return {"written": list(written), "backend_dir": str(be)}
+
+
 def write_backend_skeleton(
     output_dir: Any,
     endpoints: List[Mapping[str, Any]],

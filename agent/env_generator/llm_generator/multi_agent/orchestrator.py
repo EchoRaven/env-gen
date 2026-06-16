@@ -809,6 +809,29 @@ class Orchestrator:
                 # adjust host mappings if validation discovers conflicts.
                 await self._generate_docker()
 
+                # Emit the STATIC backend build infra (uv Dockerfile + pyproject +
+                # reset.sh) upfront too — contract-independent, so it can land now.
+                # Without it the backend build context is empty when validation
+                # first runs, and an agent improvises a BROKEN Dockerfile (run #6:
+                # the orchestrator hand-wrote `pip install poetry` → docker build
+                # exit 2, though the project is uv/pyproject). The full skeleton
+                # later re-asserts these byte-identically + adds models/handlers.
+                try:
+                    from .runtime.backend_skeleton import write_backend_build_infra
+                    res = write_backend_build_infra(self.output_dir)
+                    self._logger.info("backend build infra emitted upfront: %s", res.get("written"))
+                except Exception as _bi_err:
+                    self._logger.warning("upfront backend build infra failed: %s", _bi_err)
+                # Same for the frontend: the verifier saw BOTH backend AND frontend
+                # build contexts missing Dockerfiles at first validation. The
+                # frontend baseline is infra-only + never clobbers lane files, so
+                # emitting it upfront gives docker a buildable frontend context from
+                # the start (the lane's real UI merges over it later).
+                try:
+                    self._scaffold_frontend_baseline()
+                except Exception as _fb_err:
+                    self._logger.warning("upfront frontend baseline failed: %s", _fb_err)
+
                 # §4 D4.1 (2026-06-05): register the FIXED contract surface
                 # (spine tables + the embedded-AS /auth/oauth + tenant/health
                 # control plane, kind-tagged) BEFORE the kickoff meeting opens.
