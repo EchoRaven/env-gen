@@ -214,8 +214,8 @@ class EnvGenAgent(
         "registryhub_register_endpoint",
         "registryhub_register_table",
         "registryhub_register_consumer",
-        "workhub_update_page",
-        "workhub_create_page",
+        "workhub_register_ui_page",
+        "workhub_create_document",
         "workhub_share_implementation",
         "workhub_task",       # create/claim/complete — only way to mark task done
         "workhub_fail_task",  # creator/orchestrator-only since 2026-06-10; lanes get a guidance error
@@ -224,14 +224,14 @@ class EnvGenAgent(
         # class as the original _HUB_REGISTRATION rationale — the LLM
         # ranker (action.py:_apply_hub_focus → tooling.py:_stage_tool_names
         # → rank_tool_names, limit=10) was dropping these as semantically
-        # similar to workhub_update_page / workhub_task, so attendees
+        # similar to workhub_register_ui_page / workhub_task, so attendees
         # following the kickoff_response_prompt macro's "call
         # workhub_add_meeting_decision" instruction could not find the
         # tool in their per-step surface and finished blocked. Live
         # smoke run 2026-06-02 20:11 (post-Fix-2bis): all 4 attendees
         # entered LLM turns, all 4 called focus_hub("workhub"), but
         # none could find workhub_add_meeting_decision because the
-        # ranker chose update_page/task instead. Pinning these to
+        # ranker chose register_ui_page/task instead. Pinning these to
         # always-include means the kickoff response macro's primary
         # tool is always reachable, the same way registryhub_register_*
         # tools are always reachable for design's section authoring.
@@ -242,11 +242,11 @@ class EnvGenAgent(
         # the meeting page (other attendees' drafts, comments targeting
         # your section) during comment + reply phases. Smoke #9-bis
         # 2026-06-02 23:40 caught backend finishing reply phase early
-        # with "Blocked: workhub_get_page tool is not available in
+        # with "Blocked: workhub_get_document tool is not available in
         # current toolset" — same ranker-drops-it pattern as Fix #5.
         # Pin so multi-round meeting always has read access to the
         # meeting state.
-        "workhub_get_page",
+        "workhub_get_document",
     }
     # Claim-flow primitives that must always reach the LLM's per-step
     # surface: focus_hub (meta — needed to unlock hub WRITE tools),
@@ -660,9 +660,9 @@ class EnvGenAgent(
         
         # Pin the implementation phase so a profile's ``implementation:*``
         # stage_tool_allowlist applies (kickoff handlers pin "kickoff"; outside
-        # them _active_phase is None and lanes drift into get_page/coordination
+        # them _active_phase is None and lanes drift into get_document/coordination
         # instead of writing code — smoke #4: backend entered edit_code 38× yet
-        # called workhub_get_page/read, never write/register, 0 endpoints). Only
+        # called workhub_get_document/read, never write/register, 0 endpoints). Only
         # affects allowlist lookup (tooling.py:493, step_pipeline/tooling.py:112);
         # profiles without an ``implementation:*`` entry are unaffected.
         _prev_phase = getattr(self, "_active_phase", None)

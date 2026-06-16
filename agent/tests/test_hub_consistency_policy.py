@@ -244,7 +244,7 @@ class TestApihubTablesAndPagesGates(unittest.TestCase):
                 files_modified=[],
             ))
             self.assertEqual(outcome, {"action": "continue"})
-            self.assertIn("workhub_update_page", str(messages[1].content))
+            self.assertIn("workhub_register_ui_page", str(messages[1].content))
 
 
 class TestCodehubCommitsGate(unittest.TestCase):

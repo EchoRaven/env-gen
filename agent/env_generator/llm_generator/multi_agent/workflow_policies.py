@@ -615,8 +615,8 @@ class HubConsistencyPolicy(BaseWorkflowPolicy):
                 more = f" (+{len(relevant) - 3} more)" if len(relevant) > 3 else ""
                 return (
                     f"You wrote {len(relevant)} page file(s) [{sample}{more}] "
-                    f"but registered 0 ui_pages in WorkHub. Call "
-                    f"`workhub_update_page(name=..., path=..., "
+                    f"but registered 0 ui_pages as RegistryHub ui_pages. Call "
+                    f"`workhub_register_ui_page(name=..., path=..., "
                     f"status='implemented', components=[...])` for each."
                 )
             return None
@@ -665,17 +665,15 @@ class HubConsistencyPolicy(BaseWorkflowPolicy):
 
     @staticmethod
     def _count_owned_pages(hubs: Any, agent_id: str) -> int:
-        """Count WorkHub ui_pages owned by this agent (created or last
+        """Count RegistryHub ui_pages owned by this agent (created or last
         updated). Accepts both ``_updated_by`` and ``created_by`` since
         the page can be touched by multiple agents."""
         try:
-            stores = getattr(getattr(hubs, "workhub", None), "stores", None)
-            store = getattr(stores, "pages", None) if stores else None
+            store = getattr(hubs.registryhub, "_ui_pages", None)
             value = store.value() if store and hasattr(store, "value") else {}
             return sum(
                 1 for p in value.values()
                 if isinstance(p, dict)
-                and p.get("kind") == "ui_page"
                 and (p.get("_updated_by") == agent_id or p.get("created_by") == agent_id)
             )
         except Exception:

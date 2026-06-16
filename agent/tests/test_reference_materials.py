@@ -1426,7 +1426,7 @@ class ContractShapeFloorRound38Tests(unittest.TestCase):
 
 
 class UiPageCaseNormalizeTests(unittest.TestCase):
-    """Round 38: frontend's legacy workhub_update_page with the PascalCase
+    """Round 38: frontend's legacy workhub_register_ui_page with the PascalCase
     component name ('Login') forked a case-duplicate phantom beside the
     declared 'login'. update_ui_page now snake_case-normalizes the name so a
     PascalCase call MERGES onto the declared page."""
@@ -1441,7 +1441,10 @@ class UiPageCaseNormalizeTests(unittest.TestCase):
         wh.update_ui_page("login", {"status": "defined", "component": "LoginPage"},
                           agent="orchestrator")
         wh.update_ui_page("Login", {"path": "x.jsx"}, agent="frontend")
-        pages = [v["title"] for v in wh.stores.pages.value().values()
+        # A3 (2026-06-12): ui_pages live in registryhub now (sole owner) — read
+        # them through the get_ui_pages delegate instead of wh.stores.pages.
+        pages = [v.get("name") or v.get("title")
+                 for v in wh.get_ui_pages().values()
                  if isinstance(v, dict) and v.get("kind") == "ui_page"]
         self.assertEqual(pages, ["login"])  # no case-duplicate phantom
 

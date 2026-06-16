@@ -54,8 +54,8 @@ def _derive_ui_spec_from_hub(hub_registry) -> Optional[dict]:
       1. Frontend's kickoff section ``user_flows[]`` with ``critical=True``.
       2. Frontend's kickoff section ``ui_pages[]`` (carries the
          ``critical`` flag for the page-derived fallback).
-      3. WorkHub-registered UI pages from ``get_ui_pages()`` as a final
-         fallback for runs that registered pages directly without a
+      3. RegistryHub-registered UI pages from ``list_ui_pages()`` as a
+         final fallback for runs that registered pages directly without a
          kickoff section.
     """
     if hub_registry is None:
@@ -63,6 +63,7 @@ def _derive_ui_spec_from_hub(hub_registry) -> Optional[dict]:
     workhub = getattr(hub_registry, "workhub", None)
     if workhub is None:
         return None
+    registryhub = getattr(hub_registry, "registryhub", None)
 
     critical_flows: List[dict] = []
     pages: List[dict] = []
@@ -99,7 +100,7 @@ def _derive_ui_spec_from_hub(hub_registry) -> Optional[dict]:
 
     if not pages:
         try:
-            registered = workhub.get_ui_pages() or {}
+            registered = registryhub.list_ui_pages() or {} if registryhub is not None else {}
         except Exception:
             registered = {}
         for name, page in registered.items():

@@ -331,7 +331,7 @@ check_inbox()
 # Check readiness snapshots from HubRegistry (RegistryHub, WorkHub)
 tables = registryhub_list_tables()
 endpoints = registryhub_list_endpoints(status="implemented")
-pages = workhub_list_pages()
+pages = workhub_list_documents()
 validation = deliverability_summary()
 ```
 
@@ -580,7 +580,7 @@ The old `checklist` kwarg is deprecated but still accepted. Stop using it - `del
 
     hubs=[
         {"name": "RegistryHub",   "read_when": "hub_snapshot + registryhub_list_endpoints + registryhub_list_tables to monitor implementation progress. registryhub_record_contract_test via verifier (you don't write these).",                                                                                                                       "write_when": "Rarely — orchestrator does not author endpoints/tables. Use registryhub tools READ-ONLY for monitoring.",                                                                                                                                                                                                                                                                                                                                                                              "tools": "registryhub_list_endpoints, registryhub_list_tables, registryhub_get_breaking_changes"},
-        {"name": "WorkHub",  "read_when": "workhub_list_pages, workhub_list_tasks, workhub_list_ready, workhub_list_blocked to monitor plan progress. workhub_get_task to inspect a task's per-task plan at ``task.plan``.",                                                                                                  "write_when": "workhub_task(action='create', ...) with priority + depends_on. workhub_set_priority to escalate/de-escalate. workhub_cancel_task / workhub_fail_task during lane_halted_human handling. There is no standalone workhub_create_task / workhub_claim_task / workhub_complete_task — these are all actions on the single workhub_task tool.",                                                                                                                                                                                                                                                                                                                                                                                                                                "tools": "workhub_task, workhub_set_priority, workhub_cancel_task, workhub_fail_task, workhub_list_tasks, workhub_list_ready, workhub_list_blocked, workhub_list_pages, workhub_get_task"},
+        {"name": "WorkHub",  "read_when": "workhub_list_documents, workhub_list_tasks, workhub_list_ready, workhub_list_blocked to monitor plan progress. workhub_get_task to inspect a task's per-task plan at ``task.plan``.",                                                                                                  "write_when": "workhub_task(action='create', ...) with priority + depends_on. workhub_set_priority to escalate/de-escalate. workhub_cancel_task / workhub_fail_task during lane_halted_human handling. There is no standalone workhub_create_task / workhub_claim_task / workhub_complete_task — these are all actions on the single workhub_task tool.",                                                                                                                                                                                                                                                                                                                                                                                                                                "tools": "workhub_task, workhub_set_priority, workhub_cancel_task, workhub_fail_task, workhub_list_tasks, workhub_list_ready, workhub_list_blocked, workhub_list_documents, workhub_get_task"},
         {"name": "CodeHub",  "read_when": "codehub_list_prs to see PR queue. codehub_get_diff to inspect landed changes when debugging.",                                                                                                                                       "write_when": "codehub_resolve_merge_conflict / codehub_resolve_conflict on merge_conflict events. There is NO PR review/merge workflow — delivery goes through the integration merge + validation gates.",                                                                                                                                                                                                                                                                                                                                                              "tools": "codehub_list_prs, codehub_get_diff, codehub_get_file_content, codehub_list_inline_comments, codehub_resolve_merge_conflict, codehub_resolve_conflict"},
         {"name": "EventHub", "read_when": "eventhub_inbox at each coord_tick. Watches for: verifier/bug_found events (informational — Debugger handles them), runhub/run_failed events (informational — Debugger handles them), merge_conflict events (orchestrator handles), lane_idle_warning + lane_stuck_failforward + lane_halted_human escalations, kickoff_complete + meeting_decision_added events for active milestones.",      "write_when": "EventHub is mostly READ-ONLY for orchestrator; event production happens automatically from your task/plan writes.",                                                                                                                                                                                                                                                                                                                                                              "tools": "eventhub_inbox, eventhub_get_thread, eventhub_subscribe"}
     ],
@@ -977,7 +977,7 @@ events to revisers after reading your decision.
 **Step 1 — Read the meeting state**
 
 ```
-page = workhub_get_page(page_id="{{ meeting_id }}")
+page = workhub_get_document(page_id="{{ meeting_id }}")
 decisions = (page.get("metadata") or {}).get("decisions") or []
 ```
 
@@ -1128,7 +1128,7 @@ lands it advances:
   payload carries the canonical `meeting_id / current_round /
   max_rounds / revision_focus / acks_consensus_on / open_questions`
   shape that revisers' handlers expect.
-- Do **NOT** loop — no `wait()`, no second `workhub_get_page` poll, no
+- Do **NOT** loop — no `wait()`, no second `workhub_get_document` poll, no
   re-read of the meeting waiting for a new decision. Single turn,
   single decision, `finish()`.
 - Do **NOT** request revision from a reviser whose section had only

@@ -119,15 +119,14 @@ def _pulse_self_audit(hubs: Any, agent_id: str) -> Dict[str, Any]:
     # UI drift — any page/component file but workhub has no ui_pages owned by this agent.
     ui_paths = [p for p in code_paths if any(s in p for s in ("/pages/", ".jsx", ".tsx", ".vue"))]
     if ui_paths:
-        wh = getattr(hubs, "workhub", None)
+        rh = getattr(hubs, "registryhub", None)
         owned_pages = 0
-        if wh is not None and hasattr(wh, "stores"):
+        if rh is not None and hasattr(rh, "list_ui_pages"):
             try:
-                pages = wh.stores.pages.value()
+                pages = rh.list_ui_pages()
                 owned_pages = sum(
                     1 for p in pages.values()
-                    if p.get("kind") == "ui_page"
-                    and (p.get("_updated_by") == agent_id or p.get("created_by") == agent_id)
+                    if (p.get("_updated_by") == agent_id or p.get("created_by") == agent_id)
                 )
             except Exception:
                 owned_pages = 0
@@ -583,8 +582,8 @@ def build_hub_pulse_prompt(pulse: Dict[str, Any]) -> Optional[str]:
             count = ui_drift.get("code_paths_count", 0)
             lines.append(
                 f"- You've written {count} page/component file(s) "
-                f"(e.g. {sample}) but WorkHub shows **0 ui_pages owned by you**. "
-                f"Call `workhub_update_page(...)` for each."
+                f"(e.g. {sample}) but RegistryHub shows **0 ui_pages owned by you**. "
+                f"Call `workhub_register_ui_page(...)` for each."
             )
 
     stale = pulse.get("stale_tasks") or []

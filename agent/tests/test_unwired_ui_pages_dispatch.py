@@ -43,16 +43,24 @@ def _run(coro):
 
 
 class _FakeWorkHub:
-    def __init__(self, pages):
-        self._pages = pages
+    def __init__(self):
         self.tasks = []
-
-    def get_ui_pages(self):
-        return self._pages
 
     def create_task(self, **kw):
         self.tasks.append(kw)
         return {"id": f"task_{len(self.tasks)}"}
+
+
+class _FakeRegistryHub:
+    """A2: the unwired-pages dispatch now reads ui_pages from RegistryHub
+    (``list_ui_pages()``), not WorkHub. RegistryHub owns create_task? No —
+    tasks still land on WorkHub. This fake only supplies the page registry."""
+
+    def __init__(self, pages):
+        self._pages = pages
+
+    def list_ui_pages(self):
+        return self._pages
 
 
 class _FakeBus:
@@ -65,7 +73,10 @@ class _FakeBus:
 
 def _stub(pages, milestone="1.0.0"):
     return types.SimpleNamespace(
-        hubs=types.SimpleNamespace(workhub=_FakeWorkHub(pages)),
+        hubs=types.SimpleNamespace(
+            workhub=_FakeWorkHub(),
+            registryhub=_FakeRegistryHub(pages),
+        ),
         message_bus=_FakeBus(),
         _logger=logging.getLogger("test_unwired_ui_pages_dispatch"),
         _current_milestone_version=milestone,

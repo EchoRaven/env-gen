@@ -160,8 +160,8 @@ class ToolNamesRemainStableAcrossRetirement(unittest.TestCase):
     def test_critical_workhub_tool_names_remain_stable(self):
         text = HUB_TOOLS_PATH.read_text()
         for stable_name in (
-            "workhub_create_page",
-            "workhub_update_page",
+            "workhub_create_document",
+            "workhub_register_ui_page",
             "workhub_task",
         ):
             with self.subTest(name=stable_name):

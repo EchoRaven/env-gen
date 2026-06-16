@@ -1,12 +1,12 @@
 """Reviewer re-audit (2026-05-29) HIGH #3:
 HubConsistencyPolicy's workhub_pages gap message tells the agent
-to call ``workhub_update_page(name=..., ...)`` to satisfy the
+to call ``workhub_register_ui_page(name=..., ...)`` to satisfy the
 gate. But the ``workhub_tools`` bundle only included
-``workhub_create_page`` — not ``workhub_update_page``. Worse:
+``workhub_create_document`` — not ``workhub_register_ui_page``. Worse:
 ``_count_owned_pages`` specifically requires ``kind=="ui_page"``,
-and only ``workhub_update_page`` writes that kind, so the agent
+and only ``workhub_register_ui_page`` writes that kind, so the agent
 couldn't satisfy the gate even by aggressively calling
-``workhub_create_page``. Result: soft-lock for frontend/design at
+``workhub_create_document``. Result: soft-lock for frontend/design at
 ``finish()`` — gate fires, suggests a tool the agent doesn't have,
 infinite loop until tier-3 (or now the claim-gate retry cap).
 
@@ -237,9 +237,9 @@ class GateDemandedToolsAreInEveryDemandingProfile(unittest.TestCase):
     History of why this test exists:
       * Earlier round caught ``frontend`` was wired to
         ``workhub_pages`` but its bundle only had
-        ``workhub_create_page`` — gate demanded
-        ``workhub_update_page``, agent couldn't call it. Fix:
-        added ``workhub_update_page`` to the bundle.
+        ``workhub_create_document`` — gate demanded
+        ``workhub_register_ui_page``, agent couldn't call it. Fix:
+        added ``workhub_register_ui_page`` to the bundle.
       * PR 6 review caught the SAME shape on ``database``: gate
         wired to ``registryhub_tables`` but the profile had no registryhub
         bundle and couldn't call ``registryhub_register_table``.
