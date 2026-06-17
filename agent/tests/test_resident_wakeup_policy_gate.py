@@ -422,6 +422,87 @@ class SchedulerConsultsHookBeforeEnqueueing(unittest.TestCase):
             str(a) for call in stub._logger.info.call_args_list for a in call.args)
         self.assertIn("suppressing resident wakeup", joined)
 
+    # --- Defect C (youtube run #12): idle resident lane must wake on interrupts -
+    # task_ready/issue/question/answer were UNCONDITIONALLY excluded from
+    # resident-wakeup scheduling and delegated SOLELY to the priority-queue
+    # urgent-drain. Once a resident lane finish()ed and went idle, that drain
+    # stopped consuming → a task_ready (frontend) / question (orchestrator) sat
+    # queued forever → verifier dead-waited → the whole run idle-spun. Fix: route
+    # these through the (still policy-gated) wakeup path too, giving an idle
+    # resident lane a second, independent way to wake + drain. NOT a policy
+    # bypass — the verifier-gating / depends-on gates must still hold.
+
+    def test_task_ready_wakes_idle_resident_lane(self):
+        from multi_agent.workflow_policies import BaseWorkflowPolicy
+
+        class _NoOpinion(BaseWorkflowPolicy):
+            pass
+
+        stub, BaseMessage, MessageHeader, MessagePriority = (
+            self._build_messaging_stub([_NoOpinion()])
+        )
+        header = MessageHeader(source_agent_id="orchestrator",
+                               target_agent_id="frontend",
+                               priority=MessagePriority.HIGH)
+        msg = BaseMessage(header=header, payload="task ready")
+        inbox_msg = {"from": "orchestrator", "type": "task_ready",
+                     "id": "m1", "tags": []}
+        asyncio.run(stub._maybe_schedule_resident_message_wakeup(msg, inbox_msg))
+        self.assertTrue(
+            stub._resident_wakeup_task_pending,
+            "task_ready to an idle resident lane MUST schedule a wakeup — the "
+            "urgent-drain alone stops consuming once the lane is idle (run #12 "
+            "frontend wedge).",
+        )
+
+    def test_question_wakes_idle_resident_lane(self):
+        # symmetric to the orchestrator's unconsumed `question from frontend`.
+        from multi_agent.workflow_policies import BaseWorkflowPolicy
+
+        class _NoOpinion(BaseWorkflowPolicy):
+            pass
+
+        stub, BaseMessage, MessageHeader, MessagePriority = (
+            self._build_messaging_stub([_NoOpinion()])
+        )
+        stub.agent_id = "orchestrator"
+        header = MessageHeader(source_agent_id="frontend",
+                               target_agent_id="orchestrator",
+                               priority=MessagePriority.HIGH)
+        msg = BaseMessage(header=header, payload="which db name?")
+        inbox_msg = {"from": "frontend", "type": "question",
+                     "id": "m2", "tags": []}
+        asyncio.run(stub._maybe_schedule_resident_message_wakeup(msg, inbox_msg))
+        self.assertTrue(
+            stub._resident_wakeup_task_pending,
+            "question to an idle resident lane MUST schedule a wakeup so it "
+            "answers instead of staying silent (run #12 orchestrator wedge).",
+        )
+
+    def test_task_ready_still_policy_gated(self):
+        """Routing task_ready through the wakeup path must NOT bypass the policy
+        gate: a verifier that isn't in a validation trigger must still be
+        suppressed (else the very bug test_resident_wakeup_policy_gate guards
+        against returns)."""
+        from multi_agent.workflow_policies import VerifierValidationTriggerPolicy
+        stub, BaseMessage, MessageHeader, MessagePriority = (
+            self._build_messaging_stub([VerifierValidationTriggerPolicy(
+                allowed_sender="orchestrator", accepted_tags=["validate"],
+                accepted_phases=["validation"], payload_keywords=["validate"],
+            )])
+        )
+        stub.agent_id = "verifier"
+        header = MessageHeader(source_agent_id="knowledge",
+                               target_agent_id="verifier",
+                               priority=MessagePriority.HIGH)
+        msg = BaseMessage(header=header, payload="")
+        msg.metadata = {"tags": [], "phase": "", "validation_phase": False}
+        inbox_msg = {"from": "knowledge", "type": "task_ready",
+                     "id": "m3", "tags": []}
+        asyncio.run(stub._maybe_schedule_resident_message_wakeup(msg, inbox_msg))
+        stub._message_queue.put.assert_not_called()
+        self.assertFalse(stub._resident_wakeup_task_pending)
+
 
 if __name__ == "__main__":
     unittest.main()
