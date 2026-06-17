@@ -1526,7 +1526,51 @@ class Orchestrator:
         
         for agent_id in ["database", "backend", "frontend"]:
             self._agents[agent_id].set_design_docs(docs)
-    
+
+    def _finalize_kickoff_and_author(
+        self,
+        kickoff_handle: Dict[str, Any],
+        synthesis: Dict[str, Any],
+        *,
+        poll_count: int,
+        elapsed: float,
+    ) -> Dict[str, Any]:
+        """Register a READY synthesis (finalize_kickoff) + author the
+        milestone/roadmap/briefing docs, returning the finalize receipt.
+
+        Shared by the two finalize sites in ``_drive_kickoff_to_completion``:
+        the deterministic synth=ready fast-path and the LLM-facilitator
+        ``consensus`` branch. finalize_kickoff is a pure §8 function — it is
+        the single writer of the registered contract + task_ready dispatch —
+        so a ready synthesis NEVER needs the LLM to bless it; centralizing the
+        finalize keeps both paths byte-identical. Doc authoring failures are
+        non-fatal (the contract has already shipped).
+        """
+        from .runtime.kickoff import run_kickoff
+        receipt = run_kickoff.finalize_kickoff(
+            hubs=self.hubs,
+            kickoff_handle=kickoff_handle,
+            synthesis=synthesis,
+            agent="orchestrator",
+        )
+        self._logger.info(
+            "Kickoff finalize receipt: phase=%s endpoints=%d tables=%d "
+            "tasks=%d predicates=%d failures=%d",
+            receipt.get("phase"),
+            receipt.get("endpoints_registered", 0),
+            receipt.get("tables_registered", 0),
+            receipt.get("tasks_created", 0),
+            receipt.get("predicates_persisted", 0),
+            len(receipt.get("failures") or []),
+        )
+        try:
+            self._author_kickoff_docs(synthesis)
+        except Exception as _auth_err:
+            self._logger.warning(
+                "kickoff authoring failed (non-fatal): %s", _auth_err,
+            )
+        return receipt
+
     async def _drive_kickoff_to_completion(
         self,
         kickoff_handle: Dict[str, Any],
@@ -1677,8 +1721,42 @@ class Orchestrator:
                 continue
 
             if phase == "facilitator":
-                # Reply phase done — fire kickoff_facilitate_request once,
-                # then wait for orchestrator's facilitator_note.
+                # synth=ready is TERMINAL — finalize deterministically rather
+                # than waiting for the LLM facilitator to record a "consensus"
+                # note. The facilitation pass exists only to RESOLVE non-ready
+                # statuses (conflict / validation_failed); an already-ready
+                # synthesis has cleared every gate (quorum + cross-checks +
+                # roadmap validation), so gating its finalize on the
+                # orchestrator-LLM behaving is pure fragility. youtube run #12
+                # (2026-06-16): synthesis reached ready but the orchestrator-
+                # facilitator was handed backend implementation context, never
+                # recorded a consensus note, and a fully-ready kickoff polled to
+                # its 1200s timeout with the lanes stuck in kickoff:action stage.
+                # Finalize here; the LLM only sees facilitation when there is an
+                # actual conflict to adjudicate (the consensus branch below
+                # remains for the after-revisions-became-ready case).
+                try:
+                    ready_synth = run_kickoff.try_synthesize(
+                        self.hubs, kickoff_handle,
+                    )
+                except Exception as exc:
+                    self._logger.error(
+                        "try_synthesize raised at facilitator ready-check "
+                        "(round %d, poll %s): %s", cur_round, poll_count, exc,
+                    )
+                    ready_synth = {"status": "unknown"}
+                if ready_synth.get("status") == "ready":
+                    self._logger.info(
+                        "synth=ready at facilitator phase — finalizing "
+                        "deterministically (poll %s, %.0fs); no LLM consensus "
+                        "required.", poll_count, elapsed,
+                    )
+                    return self._finalize_kickoff_and_author(
+                        kickoff_handle, ready_synth,
+                        poll_count=poll_count, elapsed=elapsed,
+                    )
+                # Not ready — fire kickoff_facilitate_request once, then wait
+                # for orchestrator's facilitator_note to resolve the conflict.
                 key = (cur_round, "facilitator")
                 if key not in broadcasts_fired:
                     try:
@@ -1758,39 +1836,10 @@ class Orchestrator:
                         "%.0fs); finalizing.",
                         poll_count, elapsed,
                     )
-                    receipt = run_kickoff.finalize_kickoff(
-                        hubs=self.hubs,
-                        kickoff_handle=kickoff_handle,
-                        synthesis=synthesis,
-                        agent="orchestrator",
+                    return self._finalize_kickoff_and_author(
+                        kickoff_handle, synthesis,
+                        poll_count=poll_count, elapsed=elapsed,
                     )
-                    self._logger.info(
-                        "Kickoff finalize receipt: phase=%s "
-                        "endpoints=%d tables=%d tasks=%d predicates=%d "
-                        "failures=%d",
-                        receipt.get("phase"),
-                        receipt.get("endpoints_registered", 0),
-                        receipt.get("tables_registered", 0),
-                        receipt.get("tasks_created", 0),
-                        receipt.get("predicates_persisted", 0),
-                        len(receipt.get("failures") or []),
-                    )
-                    # Round 8f.2: author MILESTONE/ROADMAP/BRIEFING
-                    # docs from the synthesis_result right after a
-                    # clean finalize. Pure-Python, deterministic
-                    # rendering — see runtime/kickoff/authoring.py.
-                    # Failures here MUST NOT taint the finalize
-                    # receipt (the contract has already shipped); a
-                    # missing doc set is a documentation bug, not a
-                    # kickoff bug.
-                    try:
-                        self._author_kickoff_docs(synthesis)
-                    except Exception as _auth_err:
-                        self._logger.warning(
-                            "kickoff authoring failed (non-fatal): %s",
-                            _auth_err,
-                        )
-                    return receipt
                 self._logger.warning(
                     "Facilitator declared consensus but try_synthesize "
                     "still %r; attempting reconcile before fallback.",
