@@ -504,8 +504,22 @@ class NormalizeAuthShapeTests(unittest.TestCase):
         out = normalize_auth_shape({"model": "jwt"}, [])
         self.assertEqual(out["required"], True)
 
-    def test_empty_auth_passes_through_empty(self):
-        self.assertEqual(normalize_auth_shape({}, []), {})
+    def test_empty_auth_floored_to_framework_jwt(self):
+        # FRAMEWORK-OWNED AUTH FLOOR (youtube 2026-06-16): an empty auth block
+        # is floored to model="jwt", required=True — NOT returned empty.
+        # roadmap_validator HARD-REQUIRES a non-empty contract.auth.model + bool
+        # required; lanes declaring endpoints via kickoff_declare_* carry no auth
+        # block, so the old "return {}" made every synthesis validation_failed →
+        # the kickoff looped to its 1200s timeout. The stack always embeds a JWT
+        # AS, so flooring is correct, not invented.
+        self.assertEqual(
+            normalize_auth_shape({}, []), {"model": "jwt", "required": True})
+
+    def test_empty_auth_required_inferred_from_endpoints(self):
+        # required stays a bool regardless of endpoint auth flags.
+        out = normalize_auth_shape({}, [{"auth_required": True}])
+        self.assertEqual(out["model"], "jwt")
+        self.assertIsInstance(out["required"], bool)
 
 
 class NormalizeTaskEntriesTests(unittest.TestCase):
