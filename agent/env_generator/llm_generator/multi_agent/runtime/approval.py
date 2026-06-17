@@ -180,68 +180,85 @@ def record_decision(store: Path, req_id: str, *, approve: bool,
 
 
 # ── the engine-side gate ─────────────────────────────────────────────────────
-async def enforce(hubs: Any, agent_id: str, tool_name: str, tool_args: Dict[str, Any],
-                  *, poll_sec: float = _POLL_SEC,
-                  sleep: Callable[[float], Any] = asyncio.sleep) -> Optional[Any]:
-    """Gate a tool call in `ask` mode. Returns:
+async def request_decision(hubs: Any, agent_id: str, action_type: str, summary: str,
+                           args: Optional[Dict[str, Any]] = None, *,
+                           tool: str = "", poll_sec: float = _POLL_SEC,
+                           sleep: Callable[[float], Any] = asyncio.sleep) -> Dict[str, Any]:
+    """Request a human decision for a gated action and BLOCK until it lands.
 
-      - ``None``  → proceed (auto mode, not a gated action, approved, or
-                    auto-approved on timeout);
-      - ToolResult(success=False, ...) → REJECTED — the message carries the
-        reviewer's feedback so the agent revises and retries.
-
-    Best-effort: any store error falls through to ``None`` (never blocks the
-    pipeline on an approval-store glitch). ``sleep`` is injectable for tests.
-    """
+    Returns ``{"approved": bool, "feedback": str, "auto": bool}``. Shared by the
+    tool gate (``enforce``) and the orchestrator's milestone hook (milestones
+    aren't a tool). In ``auto`` mode — or on any store error, or on timeout — it
+    returns approved=True so the pipeline never wedges on the approval layer.
+    ``sleep`` is injectable for tests."""
     store = hub_dir(hubs)
     if read_mode(store) != "ask":
-        return None
-    action_type = classify(tool_name, tool_args)
-    if not action_type:
-        return None
+        return {"approved": True, "feedback": "", "auto": True}
 
-    req_id = "appr_" + uuid.uuid4().hex[:12]
     rec = {
-        "id": req_id,
+        "id": "appr_" + uuid.uuid4().hex[:12],
         "action_type": action_type,
-        "tool": tool_name,
+        "tool": tool,
         "agent": agent_id,
-        "summary": _summary(action_type, tool_name, tool_args),
-        "args": tool_args,
+        "summary": summary,
+        "args": args or {},
         "status": _PENDING,
         "created_at": time.time(),
     }
     try:
         _write_request(store, rec)
     except Exception:
-        return None  # store unwritable → don't wedge; proceed
+        return {"approved": True, "feedback": "", "auto": True}
 
     timeout = float(read_config(store).get("timeout_sec") or _DEFAULT_TIMEOUT_SEC)
     waited = 0.0
     while waited < timeout:
         await sleep(poll_sec)
         waited += poll_sec
-        cur = _read_request(store, req_id) or rec
+        cur = _read_request(store, rec["id"]) or rec
         st = cur.get("status")
         if st == _APPROVED:
-            return None
+            return {"approved": True, "feedback": cur.get("feedback", ""), "auto": False}
         if st == _REJECTED:
-            from utils.tool import ToolResult
-            fb = (cur.get("feedback") or "").strip()
-            return ToolResult(
-                success=False,
-                error_message=(
-                    f"'{action_type}' action REJECTED by the human reviewer"
-                    + (f": {fb}" if fb else ".")
-                    + " Revise per the feedback and try again (or proceed differently)."),
-            )
+            return {"approved": False, "feedback": cur.get("feedback", ""), "auto": False}
     # Timeout → auto-approve so an unattended run never wedges; leave a record.
     try:
-        cur = _read_request(store, req_id) or rec
+        cur = _read_request(store, rec["id"]) or rec
         if cur.get("status") == _PENDING:
             cur["status"] = _AUTO
             cur["decided_at"] = time.time()
             _write_request(store, cur)
     except Exception:
         pass
-    return None
+    return {"approved": True, "feedback": "", "auto": True}
+
+
+async def enforce(hubs: Any, agent_id: str, tool_name: str, tool_args: Dict[str, Any],
+                  *, poll_sec: float = _POLL_SEC,
+                  sleep: Callable[[float], Any] = asyncio.sleep) -> Optional[Any]:
+    """Gate a TOOL call in `ask` mode. Returns:
+
+      - ``None``  → proceed (auto mode, not a gated action, approved, or
+                    auto-approved on timeout);
+      - ToolResult(success=False, ...) → REJECTED — the message carries the
+        reviewer's feedback so the agent revises and retries.
+
+    Best-effort: never blocks the pipeline on an approval-store glitch.
+    """
+    action_type = classify(tool_name, tool_args)
+    if not action_type:
+        return None
+    decision = await request_decision(
+        hubs, agent_id, action_type, _summary(action_type, tool_name, tool_args),
+        tool_args, tool=tool_name, poll_sec=poll_sec, sleep=sleep)
+    if decision["approved"]:
+        return None
+    from utils.tool import ToolResult
+    fb = (decision.get("feedback") or "").strip()
+    return ToolResult(
+        success=False,
+        error_message=(
+            f"'{action_type}' action REJECTED by the human reviewer"
+            + (f": {fb}" if fb else ".")
+            + " Revise per the feedback and try again (or proceed differently)."),
+    )

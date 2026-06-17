@@ -121,5 +121,45 @@ class EnforceTests(unittest.TestCase):
         self.assertTrue(A.list_requests(self.store, status="auto_approved"))
 
 
+class RequestDecisionTests(unittest.TestCase):
+    """The reusable decision call used by the orchestrator's MILESTONE hook
+    (milestones aren't a tool, so they bypass classify and call this directly)."""
+    def setUp(self):
+        self.store = Path(tempfile.mkdtemp(prefix="appr_"))
+        self.hubs = _hubs(self.store)
+
+    def test_auto_mode_approves_immediately(self):
+        d = _run(A.request_decision(self.hubs, "orchestrator", "milestone", "Start M1"))
+        self.assertTrue(d["approved"] and d["auto"])
+        self.assertEqual(A.list_requests(self.store), [])  # nothing written in auto
+
+    def test_ask_mode_milestone_approve(self):
+        A.write_config(self.store, mode="ask")
+
+        async def fake_sleep(_):
+            pend = A.list_requests(self.store, status="pending")
+            if pend:
+                A.record_decision(self.store, pend[0]["id"], approve=True, decided_by="alice")
+
+        d = _run(A.request_decision(self.hubs, "orchestrator", "milestone",
+                                    "Start milestone 1/2: Core @ 1.0.0", sleep=fake_sleep))
+        self.assertTrue(d["approved"] and not d["auto"])
+        rec = A.list_requests(self.store, status="approved")[0]
+        self.assertEqual(rec["action_type"], "milestone")  # shows up as a milestone request in the UI
+
+    def test_ask_mode_milestone_reject_with_feedback(self):
+        A.write_config(self.store, mode="ask")
+
+        async def fake_sleep(_):
+            pend = A.list_requests(self.store, status="pending")
+            if pend:
+                A.record_decision(self.store, pend[0]["id"], approve=False, feedback="defer studio to M2")
+
+        d = _run(A.request_decision(self.hubs, "orchestrator", "milestone",
+                                    "Start milestone 2/2: Studio @ 1.1.0", sleep=fake_sleep))
+        self.assertFalse(d["approved"])
+        self.assertEqual(d["feedback"], "defer studio to M2")
+
+
 if __name__ == "__main__":
     unittest.main()

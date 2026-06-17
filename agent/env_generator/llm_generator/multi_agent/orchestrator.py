@@ -880,6 +880,28 @@ class Orchestrator:
                             "Milestone planning unavailable — single milestone.")
 
                 for _m_idx, _milestone in enumerate(milestones, start=1):
+                    # Human-in-the-loop approval (ask mode): pause before STARTING
+                    # each milestone so the user can verify it (after seeing the
+                    # prior milestone land). Milestones aren't a tool, so this is
+                    # the milestone analog of the tool-level approval gate. Reject
+                    # → skip this milestone (feedback logged). No-op in auto mode.
+                    try:
+                        from .runtime.approval import request_decision as _appr_decision
+                        _m_dec = await _appr_decision(
+                            self.hubs, "orchestrator", "milestone",
+                            f"Start milestone {_m_idx}/{len(milestones)}: "
+                            f"{_milestone.get('name', '?')} @ {_milestone.get('version', '?')}",
+                            {"index": _m_idx, "name": _milestone.get("name"),
+                             "version": _milestone.get("version"),
+                             "description": _milestone.get("description", "")})
+                        if not _m_dec.get("approved"):
+                            self._logger.warning(
+                                "milestone %d (%s) REJECTED by reviewer — skipping. feedback: %s",
+                                _m_idx, _milestone.get("name"), _m_dec.get("feedback") or "(none)")
+                            continue
+                    except Exception as _m_appr_err:
+                        self._logger.warning(
+                            "milestone approval gate error (proceeding): %s", _m_appr_err)
                     # Pin a fresh session-start epoch for THIS milestone so its
                     # api_smoke gate cannot be satisfied by a prior milestone's
                     # RunHub run (see _validate_delivery_gate / compute_deliverability).
