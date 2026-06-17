@@ -1195,7 +1195,7 @@ class WorkhubAddMeetingDecisionTool(HubTool):
         # Failing HERE puts the guidance in the model's face immediately.
         try:
             from multi_agent.runtime.kickoff.section_substance import (
-                decision_has_substance)
+                decision_has_substance, non_contract_keys)
             _c = coerced or {}
             _sec = _c.get("section") or (_c.get("content") or {}).get("section")
             _content = _c.get("content") if isinstance(_c.get("content"), dict) else _c
@@ -1209,6 +1209,22 @@ class WorkhubAddMeetingDecisionTool(HubTool):
                        "backend": "{'endpoints': [<ONE endpoint>]}",
                        "verifier": "{'predicates': [<ONE predicate>]}"}.get(
                            _sec, "{'ui_pages': [<ONE page>]}")
+                # WRONG-KEYS (youtube run #13): the lane submitted ONLY non-contract
+                # keys (e.g. {'auth_model': 'jwt'} — auth is framework-owned, NOT a
+                # section field). The generic "truncated → SUBMIT IN PARTS" guidance
+                # below made the backend resend the same auth blob 22×. Steer it to
+                # the right keys + tell it auth is framework-owned, instead of
+                # implying truncation, so it stops looping.
+                _wrong = non_contract_keys(_content, _sec)
+                if _wrong:
+                    return ToolResult.fail(
+                        f"decision for section '{_sec}' carried only NON-CONTRACT "
+                        f"keys {_wrong} — these are not part of your kickoff section. "
+                        "Auth is FRAMEWORK-OWNED (the generated stack embeds an "
+                        "OAuth2 AS minting JWTs) — do NOT declare auth_model/auth; "
+                        "the framework supplies it. Declare your real contract "
+                        f"({_keys}) via the dedicated kickoff_declare_* tools (e.g. "
+                        f"{_eg}). Do NOT re-submit this decision.")
                 # Mangle detection: a recognized key present as a SCALAR (e.g.
                 # endpoints=-128) means Gemini truncated a large inline payload in
                 # transit — NOT an empty draft. Flag it so the model switches to the

@@ -20,8 +20,40 @@ sys.path.insert(0, str(AGENT_DIR))
 sys.path.insert(0, str(AGENT_DIR / "env_generator" / "llm_generator"))
 
 from multi_agent.runtime.kickoff.section_substance import (  # noqa: E402
-    section_has_substance, decision_has_substance,
+    section_has_substance, decision_has_substance, non_contract_keys,
 )
+
+
+class NonContractKeysTests(unittest.TestCase):
+    """youtube run #13: the backend re-submitted {auth_model:'jwt'} 22× because
+    the substance rejection's "SUBMIT IN PARTS" guidance implied a truncated
+    payload. non_contract_keys() lets the caller detect "submitted the wrong
+    thing" (auth is framework-owned, not a backend contract key) and steer
+    instead of implying truncation."""
+
+    def test_auth_only_backend_decision_is_wrong_keys(self):
+        self.assertEqual(non_contract_keys({"auth_model": "jwt"}, "backend"),
+                         ["auth_model"])
+        self.assertEqual(non_contract_keys({"auth": {"model": "jwt"}}, "backend"),
+                         ["auth"])
+
+    def test_recognized_key_present_is_not_wrong_keys(self):
+        # endpoints present (even if also auth_model) → empty/partial, not wrong-keys.
+        self.assertEqual(
+            non_contract_keys({"endpoints": [], "auth_model": "jwt"}, "backend"), [])
+        self.assertEqual(
+            non_contract_keys({"data_model": {"tables": []}}, "backend"), [])
+
+    def test_meta_only_is_not_wrong_keys(self):
+        # bare meta (no real content) → empty payload, not wrong-keys.
+        self.assertEqual(
+            non_contract_keys({"section": "backend", "milestone_index": 1}, "backend"),
+            [])
+
+    def test_frontend_metadata_only_is_wrong_keys(self):
+        self.assertEqual(
+            sorted(non_contract_keys({"auth_model": "jwt", "done_def": ["x"]}, "frontend")),
+            ["auth_model", "done_def"])
 
 
 class FrontendSubstanceTests(unittest.TestCase):

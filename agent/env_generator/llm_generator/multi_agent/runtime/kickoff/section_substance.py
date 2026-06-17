@@ -15,6 +15,38 @@ from typing import Any, Mapping
 _META_KEYS = ("section", "kind", "recorded_by", "agent", "recorded_at",
               "milestone_index", "round")
 
+# The contract keys each section legitimately declares. ``data_model``/``tables``
+# both appear because the backend nests tables under data_model. Used to tell a
+# "submitted the wrong thing" payload (only non-contract keys, e.g. the
+# framework-owned auth_model) apart from a truncated/empty one — see
+# ``non_contract_keys``.
+_RECOGNIZED_KEYS = {
+    "frontend": ("ui_pages", "screens", "user_flows", "ui_components"),
+    "backend": ("endpoints", "data_model", "tables"),
+    "verifier": ("predicates",),
+}
+
+
+def non_contract_keys(content: Any, section: str) -> list:
+    """Return the sorted non-meta keys a decision carried that are NOT part of
+    this section's kickoff contract — but ONLY when no recognized key is present
+    at all.
+
+    Distinguishes "the lane submitted the wrong thing" (e.g. ``{auth_model:
+    'jwt'}`` — auth is framework-owned, not a section-contract field) from a
+    truncated/empty payload of the right keys. youtube run #13: the backend
+    re-submitted ``{auth_model: 'jwt'}`` 22× because the generic "no recognized
+    content → SUBMIT IN PARTS" guidance implied truncation and told it to resend.
+    Returns [] when ANY recognized key is present (then it's empty/partial, not
+    wrong-keys) or when there is no real extra content."""
+    if not isinstance(content, Mapping):
+        return []
+    recognized = set(_RECOGNIZED_KEYS.get(section, ()))
+    present = {k for k in content if k not in _META_KEYS}
+    if not present or (present & recognized):
+        return []
+    return sorted(present)
+
 
 def real_items(seq: Any) -> int:
     """Count NON-EMPTY items — mappings OR non-empty strings.
