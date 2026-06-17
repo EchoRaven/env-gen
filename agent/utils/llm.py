@@ -1738,6 +1738,24 @@ class GoogleClient(BaseLLMClient):
                 system_instruction=system_instruction,
                 tools=google_tools,
             )
+            # MALFORMED_FUNCTION_CALL mitigation (google-genai 1.61 + gemini-3.x):
+            # ask Gemini to VALIDATE generated tool calls against the declared
+            # schema. MALFORMED stems from the model emitting tool-call codegen that
+            # doesn't parse; VALIDATED mode constrains it to the schema and sharply
+            # cuts the malformed rate — a source-level fix vs. our re-roll
+            # perturbation (which only breaks streaks after the fact). Self-disables
+            # for the session if the model/tool-surface ever rejects it (see
+            # _do_call). Toggle via ENVGEN_GEMINI_VALIDATED_FC=0.
+            if (google_tools
+                    and not getattr(self, "_validated_fc_disabled", False)
+                    and os.environ.get("ENVGEN_GEMINI_VALIDATED_FC", "1").lower()
+                        not in ("0", "false", "no", "off")):
+                try:
+                    cfg.tool_config = types.ToolConfig(
+                        function_calling_config=types.FunctionCallingConfig(
+                            mode=types.FunctionCallingConfigMode.VALIDATED))
+                except Exception:
+                    pass  # older SDK without VALIDATED → skip silently
             if stop:
                 cfg.stop_sequences = stop
             return cfg
@@ -1758,11 +1776,30 @@ class GoogleClient(BaseLLMClient):
             call_start = datetime.now()
             
             def _do_call():
-                return client.models.generate_content(
-                    model=self.config.model_name,
-                    contents=contents,
-                    config=_make_gen_config(),
-                )
+                try:
+                    return client.models.generate_content(
+                        model=self.config.model_name,
+                        contents=contents,
+                        config=_make_gen_config(),
+                    )
+                except Exception as _e:
+                    # If the model/tool-surface rejects the VALIDATED function-calling
+                    # config, disable it for this client and retry once WITHOUT it, so
+                    # the MALFORMED mitigation can never wedge a run.
+                    _m = str(_e).lower()
+                    if (not getattr(self, "_validated_fc_disabled", False)
+                            and ("function_calling_config" in _m or "tool_config" in _m
+                                 or "validated" in _m or "function calling mode" in _m)):
+                        self._validated_fc_disabled = True
+                        self._logger.warning(
+                            "Gemini rejected VALIDATED function-calling config (%s); "
+                            "disabling it for this client and retrying without it.", str(_e)[:120])
+                        return client.models.generate_content(
+                            model=self.config.model_name,
+                            contents=contents,
+                            config=_make_gen_config(),
+                        )
+                    raise
             
             # Run sync call in thread pool
             task = asyncio.get_event_loop().run_in_executor(None, _do_call)
