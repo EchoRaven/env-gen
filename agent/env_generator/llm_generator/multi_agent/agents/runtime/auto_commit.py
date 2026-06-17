@@ -981,3 +981,39 @@ def commit_worktree(
     rc, out, _err = _run_git(["rev-parse", "--short", "HEAD"], cwd=wt)
     sha = out.strip() if rc == 0 else "?"
     return True, sha
+
+
+def flush_worktree(
+    *,
+    worktree_dir: Union[str, Path],
+    branch: str,
+    author: str,
+    message: str = "flush: capture uncommitted lane work before merge",
+) -> Tuple[bool, str]:
+    """Stage + commit any uncommitted/untracked APP work in a lane's worktree so
+    it reaches its agent branch (and thus integration on the next merge).
+
+    Why: files an agent WROTE but no commit-gate captured (e.g. pages the
+    frontend authored but never finish-committed) are invisible to the squash
+    merge ('nothing to merge') → integration ships a blank shell
+    (``frontend_navigable: 0``), which idle-wedges the run. This flush is the
+    safety net the merge needs. Scoped to deliverable dirs (``app``/``mcp_server``
+    /``docker``) and excludes build junk (node_modules / dist / __pycache__ /
+    .venv). Best-effort; 'nothing to commit' is fine; never raises."""
+    wt = Path(worktree_dir).resolve()
+    if not (wt / ".git").exists() and not (wt.parent / ".git").exists():
+        return True, "not a git worktree; skipping"
+    subs = [s for s in ("app", "mcp_server", "docker") if (wt / s).exists()]
+    if not subs:
+        return True, "no deliverable dirs to flush"
+    try:
+        rc, _o, err = _run_git(
+            ["add", "-A", "--", *subs,
+             ":(exclude)**/node_modules/**", ":(exclude)**/__pycache__/**",
+             ":(exclude)**/*.py[cod]", ":(exclude)**/dist/**", ":(exclude)**/.venv/**"],
+            cwd=wt)
+    except Exception as exc:
+        return False, f"git add -A raised: {exc}"
+    if rc != 0:
+        return False, f"git add -A exit {rc}: {err.strip()}"
+    return commit_worktree(worktree_dir=wt, branch=branch, author=author, message=message)

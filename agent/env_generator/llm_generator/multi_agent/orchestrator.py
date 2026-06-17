@@ -1195,6 +1195,18 @@ class Orchestrator:
                     nudge_interval_sec = float(
                         os.environ.get("ENVGEN_NUDGE_INTERVAL_SEC", "60")
                     )
+                    # Defect B (coordination-tick decouple, YOUTUBE_RUN_STALL_REVIEW):
+                    # the tick re-dispatch was gated SOLELY on
+                    # ``orchestrator_task_done_event.is_set()``, which stays False
+                    # forever when the resident orchestrator's tick #1 LLM-loops
+                    # without finishing (smoke #19 decoupled the NUDGE this way but
+                    # missed the tick). Wall-clock fallback so the orchestrator is
+                    # re-woken to escalate/deliver even when that event is stuck —
+                    # bounded to one extra tick per stuck window (no flood).
+                    last_coordination_tick_at = 0.0
+                    coordination_tick_stuck_sec = float(
+                        os.environ.get("ENVGEN_COORD_TICK_STUCK_SEC", "300")
+                    )
                     # Run budget: initial caps come from env (the UI sets them on spawn);
                     # thereafter we re-read run_budget.json each tick so the UI can raise
                     # the cap live, and we write usage there so the UI can show progress.
@@ -1303,7 +1315,14 @@ class Orchestrator:
                             except Exception:
                                 pass
 
-                        if orchestrator_task_done_event.is_set():
+                        _now_tick = time.time()
+                        if self._coordination_tick_due(
+                            event_set=orchestrator_task_done_event.is_set(),
+                            now=_now_tick,
+                            last_tick_at=last_coordination_tick_at,
+                            loop_start=loop_start,
+                            stuck_sec=coordination_tick_stuck_sec,
+                        ):
                             # MILESTONE-ADVANCE GUARD (2026-06-10, live M3→M4 hang):
                             # the framework deliver above can set the delivered
                             # flag in THIS iteration — scheduling another
@@ -1316,6 +1335,7 @@ class Orchestrator:
                                 break
                             tick_count += 1
                             idle_tick_count += 1
+                            last_coordination_tick_at = _now_tick  # reset cadence (Defect B decouple)
                             stalled = idle_tick_count >= 3
                             gate = self._validate_delivery_gate()
                             gate_report = self._format_delivery_gate_report(gate)
@@ -1923,6 +1943,30 @@ class Orchestrator:
             last_synthesis=last_synthesis,
             agent="orchestrator",
         )
+
+    @staticmethod
+    def _coordination_tick_due(
+        *,
+        event_set: bool,
+        now: float,
+        last_tick_at: float,
+        loop_start: float,
+        stuck_sec: float,
+    ) -> bool:
+        """Pure gate for the resident coordination-tick re-dispatch (Defect B,
+        YOUTUBE_RUN_STALL_REVIEW).
+
+        Fires when EITHER the lane's done-event is set (a clean tick finish) OR a
+        wall-clock ``stuck_sec`` window has elapsed since the last tick. The latter
+        is the decouple: the done-event stays False forever when the resident
+        orchestrator's tick LLM-loops without finishing, which wedged the run
+        (smoke #19 fixed this for the nudge but missed the tick). Bounded to one
+        tick per stuck window (no flood). ``max(last_tick_at, loop_start)`` makes
+        the first tick fire within ``stuck_sec`` even if the event never sets.
+        Kept pure so the cadence is testable in isolation."""
+        if event_set:
+            return True
+        return (now - max(last_tick_at, loop_start)) >= stuck_sec
 
     @staticmethod
     def _should_attempt_silent_lane_nudge(
@@ -3933,13 +3977,28 @@ volumes:
         (merge_agent_branch_to_main aborts on conflict). Never raises into the loop.
         """
         try:
-            from .agents.runtime.auto_commit import merge_agent_branch_to_main
+            from .agents.runtime.auto_commit import merge_agent_branch_to_main, flush_worktree
         except Exception:
             return
         repo = getattr(self, "output_dir", None)
         if repo is None:
             return
+        from pathlib import Path as _P
         for lane in ("backend", "database", "frontend"):
+            # FLUSH FIRST: commit any uncommitted/untracked app work in the lane's
+            # worktree so it's part of agent/<lane> before we merge. Without this,
+            # files the lane WROTE but never finish-committed (e.g. the frontend's
+            # pages authored after its last commit) are invisible to the squash
+            # merge → integration ships a blank shell (frontend_navigable: 0) and
+            # the run idle-wedges. This is the root fix for that recurring stall.
+            try:
+                _wt = _P(repo) / "worktrees" / lane
+                if _wt.exists():
+                    fok, finfo = flush_worktree(worktree_dir=_wt, branch=f"agent/{lane}", author=lane)
+                    if fok and all(s not in str(finfo) for s in ("nothing to commit", "no deliverable", "not a git")):
+                        self._logger.warning("🧹 flushed uncommitted %s worktree before merge → %s", lane, finfo)
+            except Exception:
+                pass
             try:
                 ok, info = merge_agent_branch_to_main(
                     repo_root=repo,
