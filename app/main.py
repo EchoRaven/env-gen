@@ -87,6 +87,10 @@ def _sync_envs(db: Session) -> None:
 
 def _env_to_dict(e: Environment) -> dict:
     summ = hub_reader.env_summary(e.generated_dir) if e.generated_dir else {}
+    try:  # cheap glob of the approvals store so the env LIST can flag a paused agent
+        pending = len(approval_bridge.list_requests(e.generated_dir, "pending")) if e.generated_dir else 0
+    except Exception:
+        pending = 0
     return {
         "id": e.id, "name": e.name, "reference": e.reference, "model": e.model,
         "requirements": e.requirements or "",
@@ -95,6 +99,7 @@ def _env_to_dict(e: Environment) -> dict:
         "visual_score": summ.get("visual_score"),
         "delivered": summ.get("delivered", e.delivered),
         "run_count": summ.get("run_count", 0),
+        "pending_approvals": pending,
         "created_at": e.created_at.isoformat() if e.created_at else "",
         "updated_at": e.updated_at.isoformat() if e.updated_at else "",
     }
