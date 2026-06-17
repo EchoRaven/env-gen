@@ -1144,6 +1144,13 @@ class Orchestrator:
                     # launches it as a subprocess; no agent worktree imports it.
                     await self._generate_mcp()
 
+                    # Frontend analogue of the backend skeleton / _generate_database:
+                    # project a page stub per registered ui_page + wire React-Router
+                    # routes, so the frontend lane FILLS pages instead of authoring N
+                    # from scratch (run #13 build-asymmetry root) and the app is
+                    # navigable-by-construction. Lane-owned once it drops the marker.
+                    self._scaffold_frontend_pages()
+
                     # §4 D4.3 / §5-entry (2026-06-05): kickoff finalized + the runtime
                     # construct (DDL/AS/MCP) is in place + the task tree is assigned —
                     # deterministically hand the implementation phase to the lanes
@@ -3889,6 +3896,44 @@ volumes:
                     "Frontend build tooling pinned to known-good: %s", pin.get("changed"))
         except Exception as exc:
             self._logger.debug("frontend baseline scaffold skipped: %s", exc)
+
+    def _scaffold_frontend_pages(self) -> None:
+        """Project a page-component STUB per registered ui_page + wire React-Router
+        routes — the frontend analogue of the deterministic backend skeleton
+        (_generate_database / backend models from the contract).
+
+        Closes the build-asymmetry root cause (youtube run #13): the backend is
+        framework-scaffolded so it completes reliably; the frontend had to
+        hand-author every page + routing from scratch → built 1 page, left the
+        rest in_progress, declared a hallucinated done (blank shell). Run once
+        after finalize: the lane then FILLS page bodies (write/edit) instead of
+        authoring from nothing, and the app is navigable-by-construction. Stubs
+        are written only-if-missing; App.jsx only (re)written while it carries the
+        @framework-managed-routes marker (the lane deletes it to take over). Also
+        replaces the social-shaped baseline App.jsx (login/feed) with a generic
+        router → domain-agnostic. Best-effort; never raises."""
+        try:
+            out_dir = getattr(self, "output_dir", None)
+            if not out_dir:
+                return
+            ui_pages = []
+            registryhub = getattr(self.hubs, "registryhub", None)
+            if registryhub is not None and hasattr(registryhub, "list_ui_pages"):
+                ui_pages = list((registryhub.list_ui_pages() or {}).values())
+            if not ui_pages:
+                return
+            from .runtime.frontend_scaffold import scaffold_pages_from_contract
+            from pathlib import Path as _P
+            fe = _P(out_dir) / "app" / "frontend"
+            rep = scaffold_pages_from_contract(fe, ui_pages)
+            if rep.get("scaffolded") or rep.get("app_wired"):
+                self._logger.info(
+                    "Frontend pages projected from contract: %d stub(s), "
+                    "%d route(s) wired (app_wired=%s)",
+                    len(rep.get("scaffolded") or []), rep.get("routes", 0),
+                    rep.get("app_wired"))
+        except Exception as exc:
+            self._logger.debug("frontend page projection skipped: %s", exc)
 
     def _repair_frontend_api(self) -> None:
         """FIX #37: reconcile frontend api.js exports with component imports on the

@@ -17,7 +17,7 @@ app that won't build at all).
 
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 _EXPORT_RE = re.compile(
     r"export\s+(?:async\s+)?(?:function|const|let|var)\s+([A-Za-z0-9_$]+)"
@@ -211,6 +211,123 @@ def scaffold_missing_local_pages(frontend_dir) -> Dict[str, object]:
         return {"scaffolded": [], "error": f"{type(exc).__name__}: {exc}"}
 
 
+def _pascal_case(name: str) -> str:
+    """snake/kebab/space → PascalCase component name. ``youtube_home`` →
+    ``YoutubeHome``; falls back to ``Page`` for empty input."""
+    parts = re.split(r"[^A-Za-z0-9]+", str(name or ""))
+    out = "".join(p[:1].upper() + p[1:] for p in parts if p)
+    return out or "Page"
+
+
+def _page_component_name(page: Dict[str, Any]) -> str:
+    comp = str((page or {}).get("component") or "").strip()
+    if comp and re.match(r"^[A-Za-z_$][A-Za-z0-9_$]*$", comp):
+        return comp
+    return _pascal_case((page or {}).get("name"))
+
+
+def _render_routed_app(entries: List[tuple]) -> str:
+    """Generic React-Router App over the declared pages. DOMAIN-AGNOSTIC — no
+    feed/login assumptions (unlike the social-shaped _BASELINE_APP_JSX it
+    replaces). ``entries``: list of (component, route)."""
+    imports = "\n".join(f"import {c} from './pages/{c}.jsx';" for c, _ in entries)
+    routes = "\n".join(
+        f'          <Route path="{r}" element={{<{c} />}} />' for c, r in entries)
+    return (
+        f"{_ROUTES_MARKER}\n"
+        "// The orchestrator projects these routes from the registered ui_pages\n"
+        "// contract so the app is navigable by construction. Filling page bodies?\n"
+        "// Edit the files in ./pages/. Taking over routing yourself? Delete the\n"
+        "// marker line above and this file becomes yours (never overwritten).\n"
+        "import { BrowserRouter, Routes, Route } from 'react-router-dom';\n"
+        f"{imports}\n\n"
+        "export default function App() {\n"
+        "  return (\n"
+        "    <BrowserRouter>\n"
+        "      <Routes>\n"
+        f"{routes}\n"
+        "      </Routes>\n"
+        "    </BrowserRouter>\n"
+        "  );\n"
+        "}\n"
+    )
+
+
+def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -> Dict[str, object]:
+    """Project one page-component STUB per registered ui_page + wire React-Router
+    routes in App.jsx — the frontend analogue of the deterministic backend
+    skeleton (models/db/schemas/main from the endpoint+table contract).
+
+    Closes the build-asymmetry root cause (youtube run #13): the backend is
+    framework-scaffolded from its contract so it completes reliably, but the
+    frontend had to hand-author all N pages + routing from scratch — it built 1
+    page, left 15 in_progress, and declared a hallucinated 'done' (blank shell →
+    frontend_navigable gate = 0). With the contract projected to stubs + routes,
+    the lane FILLS page bodies (write/edit) instead of authoring from nothing, and
+    the app is navigable-by-construction the moment kickoff finalizes.
+
+    Safety: page stubs are written ONLY when missing (never clobber a real page).
+    App.jsx is (re)written ONLY when missing/empty or it still carries the
+    ``@framework-managed-routes`` marker (the social-shaped baseline shell carries
+    it; a lane that takes over routing deletes the marker → never overwritten).
+    Idempotent + domain-agnostic. Best-effort; never raises."""
+    try:
+        frontend_dir = Path(frontend_dir)
+        src = frontend_dir / "src"
+        if not src.exists():
+            return {"scaffolded": [], "routes": 0, "app_wired": False,
+                    "skipped": "no src/ (baseline not scaffolded yet)"}
+        pages_dir = src / "pages"
+        pages_dir.mkdir(parents=True, exist_ok=True)
+
+        scaffolded: List[str] = []
+        entries: List[tuple] = []
+        seen_components: Set[str] = set()
+        used_routes: Set[str] = set()
+        for i, page in enumerate(ui_pages or []):
+            if not isinstance(page, dict):
+                continue
+            comp = _page_component_name(page)
+            if comp in seen_components:
+                continue
+            seen_components.add(comp)
+            route = str(page.get("route") or "").strip()
+            if not route:
+                nm = re.sub(r"[^a-z0-9]+", "-",
+                            str(page.get("name") or comp).lower()).strip("-")
+                route = "/" if not entries else f"/{nm or comp.lower()}"
+            # de-dup routes so React-Router doesn't get two identical paths
+            base_route, n = route, 2
+            while route in used_routes:
+                route = f"{base_route.rstrip('/')}/{n}"
+                n += 1
+            used_routes.add(route)
+            entries.append((comp, route))
+
+            target = pages_dir / f"{comp}.jsx"
+            if not target.exists():
+                target.write_text(_stub_page_component(comp), encoding="utf-8")
+                scaffolded.append(str(target.relative_to(frontend_dir)))
+
+        app_wired = False
+        if entries:
+            app = src / "App.jsx"
+            existing = ""
+            if app.exists():
+                try:
+                    existing = app.read_text(encoding="utf-8")
+                except Exception:
+                    existing = ""
+            if (not existing.strip()) or (_ROUTES_MARKER in existing):
+                app.write_text(_render_routed_app(entries), encoding="utf-8")
+                app_wired = True
+        return {"scaffolded": sorted(scaffolded), "routes": len(entries),
+                "app_wired": app_wired}
+    except Exception as exc:  # never raise into the orchestrator
+        return {"scaffolded": [], "routes": 0, "app_wired": False,
+                "error": str(exc)}
+
+
 # FIX #40: framework-owned frontend BASELINE. The frontend lane is the least
 # reliable lane — it variably produces nothing (empty app/frontend/, no
 # Dockerfile → docker build can't even start → docker_up FAIL → no delivery).
@@ -357,7 +474,10 @@ export async function getFeed() {
 export function logout() { localStorage.removeItem('token') }
 """
 
-_BASELINE_APP_JSX = """import React, { useState, useEffect } from 'react'
+_ROUTES_MARKER = "// @framework-managed-routes"
+
+_BASELINE_APP_JSX = """// @framework-managed-routes
+import React, { useState, useEffect } from 'react'
 import { register, login, getFeed, logout } from './services/api.js'
 
 export default function App() {
