@@ -1,7 +1,36 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
+
+
+def scrub_workspace_paths(text: Any, roots: Iterable[str]) -> Any:
+    """Relativize absolute workspace/env root prefixes in agent-facing text.
+
+    Agents must perceive their workspace as ROOT. When a tool result or error
+    echoes the absolute host path (e.g. the env root
+    ``/data/common/.../generated/<env>`` or a lane worktree
+    ``.../generated/<env>/worktrees/<lane>``), the model LEARNS that path and
+    then writes scripts / reads against the host filesystem outside its
+    sandbox — youtube run #13: the orchestrator wrote a ``script.py`` that
+    walked ``/data/common/haibotong/forgingground-gen/generated/youtube``
+    after a ``read`` error echoed that absolute path. Stripping the known
+    roots makes every path read workspace-relative (``app/...``,
+    ``shared/...``, ``registryhub_endpoints.json``).
+
+    Pure + domain-agnostic: ``roots`` are the caller's absolute dir paths.
+    Longest root is stripped first so a worktree root (nested under the env
+    root) wins over the env root, yielding the tightest relative path. A bare
+    root with no trailing component renders as ``.``. Non-str input passes
+    through unchanged (callers stringify before display)."""
+    if not isinstance(text, str) or not text:
+        return text
+    out = text
+    for r in sorted({str(x).rstrip("/") for x in roots if x}, key=len, reverse=True):
+        if not r or r == ".":
+            continue
+        out = out.replace(r + "/", "").replace(r, ".")
+    return out
 
 
 def _summarize_step_trace(step_trace: Optional[Dict[str, Any]]) -> Dict[str, Any]:
