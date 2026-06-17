@@ -287,6 +287,14 @@ profiles:
         - registryhub_list_endpoints
         - registryhub_get_table_breaking_changes
         - registryhub_list_tables
+        # MCP registration: backend_agent.j2 says it MUST register the MCP server
+        # + each tool (Cutover-22 dead-code gate) when it implements one. The
+        # framework also registers MCP deterministically (_generate_mcp), so these
+        # are idempotent — but without them the lane is told to register yet
+        # physically can't, burning rounds on a blocked tool.
+        - mcp_registry_register_server
+        - mcp_registry_register_tool
+        - mcp_registry_register_consumer
         - codehub_commit
         - codehub_resolve_conflict
         - codehub_resolve_merge_conflict
@@ -637,6 +645,16 @@ profiles:
         - browser_network_errors
         - codehub_get_diff
         - codehub_get_file_content
+        # verifier_agent.j2 tells the verifier to make the build:docker /
+        # build:frontend / validation:* check records "present and PASSED", but
+        # codehub_record_check is the ONLY tool that emits them (no tool
+        # auto-records build:/validation: checks; helpers.py only auto-records
+        # artifact:* ). Without it the verifier is told to record yet can't.
+        # Not delivery-fatal — the gate waives build:* when functionally_validated
+        # (a passing run_validation RunHub run, which the verifier already has) —
+        # but it makes the documented build-checklist fallback path actually
+        # usable and removes a prompt↔allowlist mismatch.
+        - codehub_record_check
         - submit_learning
     workflow_policies:
       - kind: verifier_validation_trigger
