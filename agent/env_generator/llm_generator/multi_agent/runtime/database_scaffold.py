@@ -370,22 +370,53 @@ print(json.dumps(out))
 """
 
 
-def _ddl_type_from_introspect(col: Dict[str, Any]) -> str:
+def _ddl_base_type(t_upper: str) -> str:
+    """Coarse postgres BASE type (no default clause) from an uppercased ORM type
+    string — used both for plain columns and for FK/PK referential type-matching."""
+    if "INT" in t_upper:
+        return "integer"
+    if "BOOL" in t_upper:
+        return "boolean"
+    if "DATE" in t_upper or "TIME" in t_upper:
+        return "timestamptz"
+    if "FLOAT" in t_upper or "NUMERIC" in t_upper or "DECIMAL" in t_upper or "REAL" in t_upper:
+        return "numeric"
+    if "UUID" in t_upper:
+        return "uuid"
+    return "text"
+
+
+def _ddl_type_from_introspect(col: Dict[str, Any],
+                              pk_types: Optional[Dict[str, str]] = None) -> str:
+    """Render a column's DDL type from the ORM introspection (PROPOSAL #3, L3
+    backstop). Two bugs fixed so the DDL is always self-consistent + bootable:
+
+    Bug 1 — a PRIMARY KEY whose type isn't integer used to lose its `primary key`
+    clause (the old `if pk and "INT" in t` fell through to `text`), so a text/uuid
+    PK rendered as a plain non-PK column. Now: emit `primary key` for ANY pk type
+    (`serial` only when integer).
+
+    Bug 2 — an FK column used to ALWAYS render `integer references …`, regardless
+    of the referenced PK's real type — so an FK to a text PK was mis-typed integer
+    (youtube run #16: `videos.channel_id integer` → `channels.id` (which the ORM
+    had as text) → incompatible-types → CREATE TABLE aborts → postgres exit 3).
+    Now the FK column inherits the referenced table's PK base type via the
+    ``pk_types`` map (``{table_lower: base_type}``) built by the caller; falls back
+    to integer (the surrogate-id convention) when the target PK is unknown."""
     t = str(col.get("type") or "").upper()
-    if col.get("pk") and "INT" in t:
-        return "serial primary key"
+    base = _ddl_base_type(t)
+    if col.get("pk"):
+        return "serial primary key" if base == "integer" else base + " primary key"
     if col.get("fk"):
         tbl, _, tcol = str(col["fk"]).partition(".")
-        return "integer references {}({}) on delete cascade".format(tbl, tcol or "id")
-    if "INT" in t:
-        return "integer"
-    if "BOOL" in t:
+        ref_base = (pk_types or {}).get(tbl.strip().lower(), "integer")
+        return "{} references {}({}) on delete cascade".format(
+            ref_base, tbl, tcol or "id")
+    if base == "boolean":
         return "boolean default false"
-    if "DATE" in t or "TIME" in t:
+    if base == "timestamptz":
         return "timestamptz default now()"
-    if "FLOAT" in t or "NUMERIC" in t or "DECIMAL" in t or "REAL" in t:
-        return "numeric"
-    return "text"
+    return base  # integer / numeric / uuid / text
 
 
 def introspect_orm_schema(backend_dir) -> Optional[Dict[str, Any]]:
@@ -409,6 +440,18 @@ def introspect_orm_schema(backend_dir) -> Optional[Dict[str, Any]]:
         raw = json.loads(proc.stdout.strip().splitlines()[-1])
     except Exception:
         return None
+    # L3 pre-pass (PROPOSAL #3): map each table → its PK column's base type so an
+    # FK column renders with the SAME type as the PK it references (referential
+    # type-consistency). Without this, every FK was hard-coded `integer`.
+    pk_types: Dict[str, str] = {}
+    for t in raw:
+        tn = str(t.get("name") or "").strip().lower()
+        if not tn:
+            continue
+        for c in t.get("columns") or []:
+            if c.get("pk"):
+                pk_types[tn] = _ddl_base_type(str(c.get("type") or "").upper())
+                break
     tables: Dict[str, Any] = {}
     for t in raw:
         name = str(t.get("name") or "").strip()
@@ -419,7 +462,7 @@ def introspect_orm_schema(backend_dir) -> Optional[Dict[str, Any]]:
             cname = str(c.get("name") or "").strip()
             if not cname:
                 continue
-            cols.append({"name": cname, "type": _ddl_type_from_introspect(c),
+            cols.append({"name": cname, "type": _ddl_type_from_introspect(c, pk_types),
                          "unique": bool(c.get("unique"))})
         for uc in t.get("composite_unique") or []:
             cols.append({"name": "unique({})".format(",".join(uc)), "type": "constraint"})
