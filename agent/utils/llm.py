@@ -229,6 +229,7 @@ class LLMResponse:
     tool_calls: Optional[list] = None
     raw_response: Optional[Any] = None
     latency: float = 0.0  # seconds
+    reasoning: Optional[str] = None  # model thinking summary (Gemini include_thoughts), for observability
     
     @property
     def prompt_tokens(self) -> int:
@@ -1756,6 +1757,16 @@ class GoogleClient(BaseLLMClient):
                             mode=types.FunctionCallingConfigMode.VALIDATED))
                 except Exception:
                     pass  # older SDK without VALIDATED → skip silently
+            # OBSERVABILITY: surface Gemini's thinking (it's a thinking model and
+            # reasons regardless; include_thoughts just RETURNS the summary). Lets us
+            # see WHY an agent did something (e.g. called run_validation early) instead
+            # of a black box. Captured + logged separately from response content/tool
+            # args (see the part loop). Toggle via ENVGEN_GEMINI_INCLUDE_THOUGHTS=0.
+            if os.environ.get("ENVGEN_GEMINI_INCLUDE_THOUGHTS", "1").lower() not in ("0", "false", "no", "off"):
+                try:
+                    cfg.thinking_config = types.ThinkingConfig(include_thoughts=True)
+                except Exception:
+                    pass
             if stop:
                 cfg.stop_sequences = stop
             return cfg
@@ -1852,7 +1863,8 @@ class GoogleClient(BaseLLMClient):
         content = ""
         tool_calls = []
         finish_reason = "stop"
-        
+        thinking = ""
+
         if response.candidates:
             candidate = response.candidates[0]
             finish_reason = str(candidate.finish_reason) if candidate.finish_reason else "stop"
@@ -1866,7 +1878,11 @@ class GoogleClient(BaseLLMClient):
                       if (candidate.content is not None
                           and candidate.content.parts is not None) else [])
             for part in _parts:
-                if hasattr(part, 'text') and part.text:
+                if getattr(part, 'thought', False):
+                    # Gemini thinking summary — capture for visibility; NEVER fold it
+                    # into response content or tool args (it would corrupt both).
+                    thinking += getattr(part, 'text', '') or ''
+                elif hasattr(part, 'text') and part.text:
                     content += part.text
                 elif hasattr(part, 'function_call') and part.function_call:
                     fc = part.function_call
@@ -1893,9 +1909,16 @@ class GoogleClient(BaseLLMClient):
         has_tool_calls = bool(tool_calls)
         if has_tool_calls:
             finish_reason = "tool_calls"
-        
+
+        # Surface the model's reasoning so it isn't a black box (e.g. WHY a tool
+        # was chosen). Logged under the agent's own logger → greppable per-agent in
+        # the run log, alongside the action it led to.
+        _thinking = thinking.strip()
+        if _thinking:
+            self._logger.info(f"[LLM thinking] {_thinking[:1500]}")
+
         self._logger.info(f"[LLM Response] latency={latency:.1f}s, prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={finish_reason}")
-        
+
         return LLMResponse(
             content=content,
             model=self.config.model_name,
@@ -1908,6 +1931,7 @@ class GoogleClient(BaseLLMClient):
             tool_calls=tool_calls if tool_calls else None,
             raw_response=response,
             latency=latency,
+            reasoning=_thinking or None,
         )
     
     async def chat_stream(

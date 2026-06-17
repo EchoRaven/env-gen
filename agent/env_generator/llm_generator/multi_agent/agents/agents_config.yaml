@@ -242,6 +242,11 @@ profiles:
     # workhub_get_meeting and wait/sleep are also excluded.
     stage_tool_allowlist:
       "kickoff:action":
+        # Dedicated flat-param declare tools FIRST — one item per call, can't
+        # null out (the generic add_meeting_decision's nested arrays get nulled
+        # by Gemini → ui_pages:[null,null,...] / -128 mangles → rejected + looped).
+        - kickoff_declare_endpoint
+        - kickoff_declare_table
         - workhub_add_meeting_decision
         - workhub_get_document
         - workhub_list_documents
@@ -408,6 +413,13 @@ profiles:
     # code during kickoff" rule that v3 prose used to carry.
     stage_tool_allowlist:
       "kickoff:action":
+        # Dedicated flat-param declare tools FIRST — one page/component/flow per
+        # call, can't null out. The generic add_meeting_decision's nested ui_pages
+        # array gets nulled by Gemini (ui_pages:[null,null,...] → rejected + looped);
+        # the flat tools take explicit id/route/purpose scalars instead.
+        - kickoff_declare_ui_page
+        - kickoff_declare_ui_component
+        - kickoff_declare_user_flow
         - workhub_add_meeting_decision
         - workhub_get_document
         - workhub_list_documents
@@ -569,6 +581,10 @@ profiles:
     # messages, hallucinated workhub_get_meeting polling) is hidden.
     stage_tool_allowlist:
       "kickoff:action":
+        # Dedicated flat-param declare tool FIRST — one predicate per call, can't
+        # null out (the generic add_meeting_decision's nested predicates array gets
+        # nulled/mangled by Gemini → rejected + looped).
+        - kickoff_declare_predicate
         - workhub_add_meeting_decision
         - workhub_get_document
         - workhub_list_documents
