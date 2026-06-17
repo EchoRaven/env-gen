@@ -369,86 +369,10 @@ def frontend_canonical_root(
         return None
 
 
-_TASK_TERMINAL_STATUSES = frozenset({"completed", "cancelled"})
-
-
-def frontend_pages_implemented(
-    agent: Any,
-    tool_name: str,
-    tool_args: Dict[str, Any],
-) -> Optional[str]:
-    """``finish`` gate: the frontend must not declare done while its declared
-    page work is incomplete.
-
-    Layer 1 reuses :func:`frontend_canonical_root` (wrong-root check). Layer 2
-    closes the FALSE-COMPLETION loophole (youtube run #13): the framework creates
-    one ``impl.page.<name>`` task per declared ui_page; the lane built 1 page,
-    left 15 of 16 page tasks ``in_progress``, then messaged "All tasks claimed and
-    completed. Ready to proceed with Phase A/B" — a hallucinated done that would
-    ship a blank shell (frontend_navigable delivery gate = 0). Block ``finish``
-    while any ``impl.page.*`` task assigned to the frontend is non-terminal.
-    Anti-gaming (mirrors ``endpoints_implemented_with_code``): if every page task
-    is marked terminal but ZERO page files exist under ``app/frontend/src/pages``,
-    the lane marked-done without authoring — block that too. Vacuous-pass when
-    tasks / worktree can't be read (never wedge a correct finish; the lane-idle
-    circuit breaker is the ultimate escape)."""
-    root_block = frontend_canonical_root(agent, tool_name, tool_args)
-    if root_block is not None:
-        return root_block
-
-    if _agent_owning_lane(agent) != "frontend":
-        return None
-    hubs = getattr(agent, "_hubs", None)
-    workhub = getattr(hubs, "workhub", None) if hubs is not None else None
-    if workhub is None or not hasattr(workhub, "list_tasks"):
-        return None
-    try:
-        tasks = workhub.list_tasks(assignee="frontend") or []
-    except Exception:
-        return None
-    page_tasks = [t for t in tasks
-                  if isinstance(t, dict) and str(t.get("id", "")).startswith("impl.page.")]
-    if not page_tasks:
-        return None
-
-    incomplete = [t for t in page_tasks
-                  if t.get("status") not in _TASK_TERMINAL_STATUSES]
-    if incomplete:
-        names = sorted(str(t.get("id", ""))[len("impl.page."):] for t in incomplete)
-        shown = names[:8]
-        more = "" if len(names) <= 8 else f" (+{len(names) - 8} more)"
-        return (
-            f"finish blocked: {len(incomplete)} of {len(page_tasks)} declared page(s) "
-            f"are NOT complete: {shown}{more}. Each declared ui_page needs a real "
-            f"component authored UNDER app/frontend/src/pages/ (use write/edit with "
-            f"paths starting `app/frontend/src/`), wired into App.jsx routes, then mark "
-            f"its impl.page.* task complete. Do NOT declare completion until every page "
-            f"is built — a blank shell fails the frontend_navigable delivery gate."
-        )
-
-    # All page tasks terminal — anti-gaming: there must be real page files.
-    wt = getattr(agent, "_worktree_dir", None)
-    if not wt:
-        return None
-    pages_dir = _Path(wt) / "app" / "frontend" / "src" / "pages"
-    built = 0
-    if pages_dir.is_dir():
-        built = len(list(pages_dir.glob("*.jsx")) + list(pages_dir.glob("*.tsx")))
-    if built == 0:
-        return (
-            f"finish blocked: all {len(page_tasks)} page tasks are marked complete but "
-            f"ZERO page components exist under app/frontend/src/pages/ — you marked "
-            f"pages done WITHOUT authoring them. Author each page there (write/edit) "
-            f"before finishing; a blank shell fails the frontend_navigable gate."
-        )
-    return None
-
-
 PRECONDITION_REGISTRY: Dict[str, PreconditionFn] = {
     "kickoff_endpoints_implemented": kickoff_endpoints_implemented,
     "endpoints_implemented_with_code": endpoints_implemented_with_code,
     "frontend_canonical_root": frontend_canonical_root,
-    "frontend_pages_implemented": frontend_pages_implemented,
     "orchestrator_ask_cap": orchestrator_ask_cap,
     "release_readiness_consulted": release_readiness_consulted,
     "api_contract_guard_consulted": api_contract_guard_consulted,

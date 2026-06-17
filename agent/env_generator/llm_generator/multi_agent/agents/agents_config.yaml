@@ -402,19 +402,23 @@ profiles:
       - codehub_force_merge
       - wait
       - wait_for_process
-    # Frontend finish-gate. frontend_pages_implemented composes two layers:
-    #   L1 (frontend_canonical_root, run #5): blocks finish on WRONG-ROOT — pages
-    #      authored at repo-root ./src instead of app/frontend/src (bash heredocs
-    #      bypass write-tool path routing → blank canonical tree, untracked pages).
-    #   L2 (run #13 false-completion): blocks finish while any impl.page.* task is
-    #      non-terminal, or all are "complete" but ZERO page files exist (marked
-    #      done without authoring). The lane built 1 page, left 15/16 in_progress,
-    #      and messaged "All tasks claimed and completed" — which would ship a
-    #      blank shell. Both layers are tight (never wedge a correctly-built lane;
-    #      the lane-idle circuit breaker is the ultimate escape).
+    # Frontend finish-gate = frontend_canonical_root (run #5): blocks finish on
+    # WRONG-ROOT — pages authored at repo-root ./src instead of app/frontend/src
+    # (bash heredocs bypass write-tool path routing → blank canonical tree).
+    # NOTE: the run #13 false-completion ("declared done with a blank shell") is
+    # now prevented STRUCTURALLY by the deterministic page-scaffold
+    # (_scaffold_frontend_pages projects a stub per ui_page at finalize, so the
+    # app is navigable-by-construction) + the delivery gate's frontend_navigable.
+    # A task-status finish-gate (the reverted frontend_pages_implemented) was
+    # redundant with that AND wedged: impl.page.* tasks depend on impl.component.*
+    # tasks, so a frontend with all 16 pages BUILT but the page tasks still
+    # dependency-blocked (un-claimable, un-cancellable) could never reach a
+    # terminal task state → finish blocked forever (run #14, api_smoke already
+    # PASSED). File/contract coverage belongs to the projection + delivery gate,
+    # not a no-escape task-status precondition.
     stage_tool_preconditions:
       action:
-        finish: frontend_pages_implemented
+        finish: frontend_canonical_root
     # PR1.3 — kickoff stage allowlist. Same shape as backend/verifier.
     # Frontend's kickoff role is to record screen/api_call/user_flow
     # declarations (NOT to register endpoints — orchestrator does that
