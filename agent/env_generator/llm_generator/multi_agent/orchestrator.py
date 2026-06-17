@@ -2674,6 +2674,17 @@ volumes:
         except Exception as exc:  # never block the run on a contract publish
             self._logger.warning("MCP registration failed: %s", exc)
 
+    @staticmethod
+    def _verifier_trigger_due(impl_epoch: int, last_triggered_epoch: int) -> bool:
+        """Re-armable guard for the orchestrator→verifier validation trigger
+        (Design A). Fire when the current implemented-endpoint epoch differs from
+        the epoch we last triggered on — so the verifier is triggered ONCE per
+        impl epoch (no wakeup storm) yet RE-ARMS when the impl lanes implement
+        more endpoints (i.e. after they fix the bugs the verifier filed). A
+        permanent boolean would validate once and never again after a fix — the
+        trap this avoids. Pure → unit-tested in test_verifier_validation_trigger."""
+        return impl_epoch != last_triggered_epoch
+
     async def _maybe_run_framework_validation(self) -> None:
         """Deterministically run api_smoke + record the RunHub run when the
         contract is fully implemented and no gate-passing run exists yet.
@@ -2796,6 +2807,53 @@ volumes:
             tool._hubs = self.hubs
             tool._agent_id = "orchestrator"
             res = await tool.execute()
+            # ── Verifier self-trigger (Design A — PROPOSAL #2, reviewed_version:2 PASS) ──
+            # The deterministic driver (NOT the orchestrator LLM) wakes the verifier to run its
+            # validation pass whenever api_smoke is ATTEMPTED on a bootable impl (we reach here
+            # only past the route-code floor at :2751-2753), independent of the canonical
+            # `validation_ready` signal — which needs ALL endpoints `implemented` and did NOT
+            # fire in run #15 (validation_ready count=0), leaving the verifier idle
+            # `awaiting ['frontend']` forever because the frontend finished notify=[] (Defect C).
+            # Re-armable, keyed to the impl epoch (`_fwval_last_impl_count`, updated at :2777-78):
+            # one guarded message per epoch (no storm); re-fires after the impl lanes implement
+            # MORE endpoints — i.e. after they fix the bugs the verifier filed. Placed AFTER
+            # tool.execute() so the verifier validates a SETTLED docker stack (no contention with
+            # the framework's own api_smoke boot), but fired UNCONDITIONALLY (not gated on the
+            # api_smoke result). Do NOT move this above the passing-run early-return at :2756-58:
+            # once a clean run exists this function returns first and the canonical
+            # `validation_ready` (all-implemented) path owns the verifier — this driver trigger is
+            # the failing/pre-pass regime only. DEPENDS ON a3aea89: task_ready must wake an IDLE
+            # resident lane (allow_resident_wakeup → allow_task_ready); if reverted this silently
+            # no-ops (guarded by tests/test_verifier_validation_trigger.py).
+            try:
+                _epoch = getattr(self, "_fwval_last_impl_count", -1)
+                if self._verifier_trigger_due(
+                        _epoch, getattr(self, "_verifier_triggered_impl_count", -1)):
+                    from tools.communication_tools import _create_message
+                    _vmsg = _create_message(
+                        source_agent_id="orchestrator", target_agent_id="verifier",
+                        content=(
+                            "Implementation is bootable and api_smoke is being validated — run "
+                            "your validation pass now: docker_up -> the 5 check categories "
+                            "(build:docker / build:frontend / validation:api_smoke / "
+                            "validation:ui_smoke / validation:ui_flow:<name>) -> bug_create per "
+                            "failure -> route summary -> finish."
+                        ),
+                        msg_type="task_ready", priority="urgent", persist=True,
+                    )
+                    # _create_message has NO metadata kwarg; inject the explicit-trigger key
+                    # post-construction. validation_phase=True alone satisfies
+                    # VerifierValidationTriggerPolicy.explicit_trigger (workflow_policies.py:327),
+                    # with zero dependence on env-configured accepted_tags/phases/keywords.
+                    _vmsg.metadata["validation_phase"] = True
+                    await self.message_bus.send(_vmsg)
+                    self._verifier_triggered_impl_count = _epoch
+                    self._logger.info(
+                        "Orchestrator triggered verifier validation pass (impl epoch=%s; "
+                        "validation_ready not required).", _epoch,
+                    )
+            except Exception as _vte:
+                self._logger.debug("verifier validation trigger skipped: %s", _vte)
             data = getattr(res, "data", None) if res is not None else None
             # CHAINS-BLOCKED early-exit (round 39 deadlock): RunValidationTool
             # refuses to run until chains are registered, returning a fail with
