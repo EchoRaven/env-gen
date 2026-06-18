@@ -82,3 +82,42 @@ def test_backfill_creates_one_task_per_env_and_is_idempotent():
         assert e.current_task_id == t.task_id
         # cleanup
         db.delete(t); db.delete(e); db.commit()
+
+
+# --- Task 4: server creates a GenerationTask when an env is created -------------
+import os
+import time
+
+import jwt
+from fastapi.testclient import TestClient
+import app.main as m
+
+_SECRET = os.environ["AGENTSUITE_JWT_SECRET"]
+
+
+def _hdr(sub="u", tenant="t"):
+    p = {"sub": sub, "is_admin": True, "tenant_id": tenant, "exp": int(time.time()) + 3600}
+    return {"Authorization": "Bearer " + jwt.encode(p, _SECRET, algorithm="HS256")}
+
+
+@pytest.fixture()
+def client():
+    with TestClient(m.app) as c:
+        yield c
+
+
+def test_create_env_also_creates_generation_task(client):
+    r = client.post("/env-forge/environments",
+                    json={"name": "wired-env", "reference": "", "model": "gemini",
+                          "provider": "google", "requirements": "build X"},
+                    headers=_hdr())
+    assert r.status_code in (200, 201), r.text
+    with SessionLocal() as db:
+        tasks = [t for t in db.query(GenerationTask).all() if t.name == "wired-env"]
+        assert len(tasks) == 1
+        t = tasks[0]
+        assert t.status == "generating"
+        assert t.state_path.endswith("/.checkpoint")
+        assert t.model == "gemini" and t.provider == "google"
+        e = db.get(Environment, "wired-env")
+        assert e.current_task_id == t.task_id
