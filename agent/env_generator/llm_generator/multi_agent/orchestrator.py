@@ -1150,17 +1150,26 @@ class Orchestrator:
                     nudge_interval_sec = float(
                         os.environ.get("ENVGEN_NUDGE_INTERVAL_SEC", "60")
                     )
-                    # Defect B (coordination-tick decouple, YOUTUBE_RUN_STALL_REVIEW):
-                    # the tick re-dispatch was gated SOLELY on
-                    # ``orchestrator_task_done_event.is_set()``, which stays False
-                    # forever when the resident orchestrator's tick #1 LLM-loops
-                    # without finishing (smoke #19 decoupled the NUDGE this way but
-                    # missed the tick). Wall-clock fallback so the orchestrator is
-                    # re-woken to escalate/deliver even when that event is stuck —
-                    # bounded to one extra tick per stuck window (no flood).
+                    # Coordination-tick dispatch (Defect B + PROPOSAL #17 fix). The
+                    # resident orchestrator lane is a SERIAL queue-consumer: a tick
+                    # dispatched while a prior one is still in flight cannot be
+                    # consumed, so the lane's message queue floods and the dispatch
+                    # send_task BLOCKS — the observed repeated 900s hangs (youtube run
+                    # 2026-06-18). Defect B's wall-clock "re-dispatch a fresh tick when
+                    # the done-event is stuck" was the very thing piling ticks onto the
+                    # wedged lane. PROPOSAL #17: dispatch ONLY when the lane is FREE
+                    # (done-event set → one tick in flight) and bound the dispatch await
+                    # to a tunable timeout (was a hard-coded 900s, 3x this stuck cadence).
+                    # While a tick is in flight or wedged, the deterministic drivers above
+                    # (_maybe_run_framework_validation / _maybe_framework_deliver, every
+                    # ~60s) carry the run — they, not a re-dispatched LLM tick, are the
+                    # reliable recovery from a stuck orchestrator lane.
                     last_coordination_tick_at = 0.0
                     coordination_tick_stuck_sec = float(
                         os.environ.get("ENVGEN_COORD_TICK_STUCK_SEC", "300")
+                    )
+                    coordination_tick_dispatch_timeout_s = float(
+                        os.environ.get("ENVGEN_COORD_TICK_DISPATCH_TIMEOUT_S", "180")
                     )
                     # Run budget: initial caps come from env (the UI sets them on spawn);
                     # thereafter we re-read run_budget.json each tick so the UI can raise
@@ -1290,8 +1299,15 @@ class Orchestrator:
                                 pass
 
                         _now_tick = time.time()
-                        if self._coordination_tick_due(
-                            event_set=orchestrator_task_done_event.is_set(),
+                        # PROPOSAL #17 busy-guard: dispatch a coordination tick ONLY
+                        # when the lane is FREE (its prior tick completed → done-event
+                        # set). Never pile a tick onto a busy/wedged serial-consumer
+                        # lane — that floods its queue and blocks send_task (the 900s
+                        # hang). While a tick is in flight the deterministic drivers
+                        # above carry the run.
+                        _lane_free = orchestrator_task_done_event.is_set()
+                        if _lane_free and self._coordination_tick_due(
+                            event_set=_lane_free,
                             now=_now_tick,
                             last_tick_at=last_coordination_tick_at,
                             loop_start=loop_start,
@@ -1347,11 +1363,13 @@ class Orchestrator:
                                         if stalled else ""
                                     )
                                 ),
-                                }), timeout=900.0)
+                                }), timeout=coordination_tick_dispatch_timeout_s)
                             except asyncio.TimeoutError:
                                 self._logger.error(
-                                    "coordination-tick dispatch timed out (900s) — "
-                                    "lane wedged; looping to re-check delivered/budget.")
+                                    "coordination-tick dispatch timed out (%.0fs) — "
+                                    "lane busy/wedged; looping to re-check delivered/budget "
+                                    "(deterministic drivers continue).",
+                                    coordination_tick_dispatch_timeout_s)
                                 continue
                     if orchestrator_lane._project_delivered_event.is_set():
                         self._write_run_budget(caps, loop_start, time.time() - loop_start, tick_count, "delivered")
