@@ -24,6 +24,14 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
+# Single source of truth for "the same route" — shared with the BACKEND route
+# audit (backend_audit.py uses the same two helpers via _norm_route). The
+# frontend route-wiring check MUST normalize the same way the backend does, or a
+# declared `/channel/:handle` reads as "unwired" against a wired
+# `/channel/:channelId` (PROPOSAL #18: the frontend route check was the last
+# brittle byte-equality match in an otherwise param-tolerant pipeline).
+from .route_projector import _express_to_fastapi, _norm_path
+
 _HANDLER_TOKENS = ("onSubmit", "onClick", "fetch(", "apiGet", "apiPost",
                    "apiPut", "apiDelete", "axios")
 
@@ -64,6 +72,48 @@ def _route_element(app_jsx: str, route: str) -> Optional[str]:
                 return m.group(1)
             idx = app_jsx.find(f"path={q}{route}{q}", idx + 1)
     return None
+
+
+def _canon_route(route: str) -> str:
+    """Canonical comparable form of a declared/wired route: Express ``:param`` →
+    ``{param}`` (``_express_to_fastapi``) → every param collapsed to ``{}``
+    (``_norm_path``), trailing slash trimmed. So ``/channel/:handle`` ==
+    ``/channel/:channelId`` == ``/channel/{id}`` — identical to the BACKEND's
+    ``_norm_route`` rule, the single source of truth for route identity."""
+    c = _norm_path(_express_to_fastapi(str(route or "").strip()))
+    return c[:-1] if len(c) > 1 and c.endswith("/") else c
+
+
+def _wired_route_set(app_jsx: str) -> set:
+    """The SET of canonicalised route paths actually wired in App.jsx — parsed
+    from every ``path="..."`` / ``path='...'``. A SET, compared by equality (NOT
+    a substring scan), so ``/watch`` never spuriously satisfies ``/watchlist``
+    and ``/feed`` never satisfies ``/feed/library`` (the old byte-substring check
+    risked exactly those false positives)."""
+    return {_canon_route(m.group(1))
+            for m in re.finditer(r"""path\s*=\s*["']([^"']+)["']""", app_jsx)}
+
+
+def _route_is_wired(route: str, app_jsx: str) -> bool:
+    """Declared ``route`` is wired iff its canonical form is in the wired SET, OR
+    — FALLBACK ONLY — it ends in a TRAILING path param that, dropped, matches a
+    wired route exactly (a declared ``/watch/:id`` is satisfied by a wired
+    ``/watch``: path-param vs query-param/state convention). The fallback drops
+    ONLY a trailing ``{}`` segment and requires an EXACT set match of the base,
+    so it never over-matches a longer wired route (``/watch/{}/edit``) nor an
+    unrelated static route, and never fires for a route whose last segment is
+    static (``/feed/library`` stays unwired — correct, it is a genuine
+    divergence, not param drift)."""
+    canon = _canon_route(route)
+    if not canon:
+        return True
+    wired = _wired_route_set(app_jsx)
+    if canon in wired:
+        return True
+    if canon.endswith("/{}"):
+        base = canon[: -len("/{}")] or "/"
+        return base in wired
+    return False
 
 
 def _component_resolves(name: str, frontend_src: Path,
@@ -156,7 +206,12 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
                 missing.append(f"component `{component}` not found — expected "
                                f"at src/{kind_dir}/{component}.jsx")
     if route:
-        if f'path="{route}"' not in app_jsx and f"path='{route}'" not in app_jsx:
+        # PROPOSAL #18: normalized SET match (param-name-agnostic, trailing-param
+        # fallback) instead of byte-substring — the frontend twin of the backend's
+        # _norm_route. Clears cosmetic route drift (`/watch/:id`≡`/watch`,
+        # `/channel/:handle`≡`/channel/:channelId`) while still hard-flagging a
+        # genuinely-absent route (`/feed/library` with no matching wired path).
+        if not _route_is_wired(route, app_jsx):
             missing.append(f"route `{route}` not wired in App.jsx")
     for api in apis:
         # loose: the path literal (or its parametrized prefix) appears anywhere
