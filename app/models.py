@@ -5,7 +5,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, Integer, String, Boolean
+import json as _json
+
+from sqlalchemy import DateTime, Float, Index, Integer, String, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -60,3 +62,54 @@ class ChatMessage(Base):
     recipients: Mapped[str] = mapped_column(String, default="")     # csv of agent ids
     content: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+TASK_STATUSES = ("queued", "generating", "delivered", "failed", "killed", "resumable")
+
+
+class GenerationTask(Base):
+    """One row per generation ATTEMPT (PK ``task_id``); many per env name. The
+    rich, durable record: owner, output + resumable-state paths, lifecycle,
+    config snapshot, resources, result. Heavy state stays in the generated tree;
+    this stores pointers + metadata (registry-of-pointers principle)."""
+    __tablename__ = "generation_tasks"
+
+    task_id: Mapped[str] = mapped_column(String, primary_key=True)
+    env_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String, default="", index=True)
+    created_by: Mapped[str] = mapped_column(String, default="", index=True)
+    name: Mapped[str] = mapped_column(String, default="")
+    project_path: Mapped[str] = mapped_column(String, default="")
+    state_path: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String, default="queued", index=True)
+    status_history_json: Mapped[str] = mapped_column(String, default="[]")
+    error: Mapped[str | None] = mapped_column(String, nullable=True)
+    failure_phase: Mapped[str | None] = mapped_column(String, nullable=True)
+    reference: Mapped[str] = mapped_column(String, default="")
+    model: Mapped[str] = mapped_column(String, default="")
+    provider: Mapped[str] = mapped_column(String, default="")
+    scope: Mapped[str] = mapped_column(String, default="")
+    requirements: Mapped[str] = mapped_column(String, default="")
+    gates_json: Mapped[str] = mapped_column(String, default="[]")
+    max_wallclock_min: Mapped[int] = mapped_column(Integer, default=120)
+    max_ticks: Mapped[int] = mapped_column(Integer, default=240)
+    coordination_ticks: Mapped[int] = mapped_column(Integer, default=0)
+    wallclock_sec: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    tokens: Mapped[int] = mapped_column(Integer, default=0)
+    delivered: Mapped[bool] = mapped_column(Boolean, default=False)
+    release_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+    __table_args__ = (Index("ix_gentask_tenant_status", "tenant_id", "status"),)
+
+
+def record_status(task: GenerationTask, status: str, reason: str = "") -> None:
+    """Set ``task.status`` and append a {status, at, reason} entry to history."""
+    hist = _json.loads(task.status_history_json or "[]")
+    hist.append({"status": status, "at": _now().isoformat(), "reason": reason})
+    task.status_history_json = _json.dumps(hist)
+    task.status = status
