@@ -1270,12 +1270,27 @@ class AutoCommitOnFinishPolicy(BaseWorkflowPolicy):
         if repo_root is None:
             return None
 
+        _superseded: list = []  # PROPOSAL #26 N2
         merge_ok, merge_info = merge_agent_branch_to_main(
             repo_root=repo_root,
             agent_branch=f"agent/{agent.agent_id}",
             main_branch="integration",
             agent_id=str(agent.agent_id),
+            superseded_out=_superseded,
         )
+        if merge_ok and _superseded and hubs is not None:
+            # PROPOSAL #26 N2: the framework superseded this lane's edit(s) to
+            # framework-owned file(s) while resolving the merge conflict. Tell the
+            # lane (inbox_only → surfaced at its next pulse, NO wakeup) so it stops
+            # re-editing them → re-conflict.
+            try:
+                from .runtime.framework_notice import emit_framework_decision
+                emit_framework_decision(
+                    getattr(hubs, "eventhub", None),
+                    lane=str(agent.agent_id), kind="conflict_resolved",
+                    paths=_superseded)
+            except Exception:
+                pass
         if not merge_ok:
             # Conflict (or git error). Emit a structured event so the
             # orchestrator / humans can route resolution. Never block

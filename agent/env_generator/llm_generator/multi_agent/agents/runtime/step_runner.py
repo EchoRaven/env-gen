@@ -271,9 +271,25 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                             wt = getattr(self, "_worktree_dir", None)
                             if wt is not None:
                                 from .auto_commit import pull_main_into_worktree
+                                _superseded: list = []  # PROPOSAL #26 N2
                                 pulled_ok, pulled_info = pull_main_into_worktree(
                                     worktree_dir=wt, main_branch="integration",
+                                    superseded_out=_superseded,
                                 )
+                                if pulled_ok and _superseded:
+                                    # PROPOSAL #26 N2: the framework superseded the
+                                    # lane's edit(s) to framework-owned file(s) while
+                                    # resolving the pull conflict. Tell THIS lane (emit
+                                    # to self, inbox_only → surfaced at next pulse, NO
+                                    # wakeup) so it stops re-editing them → re-conflict.
+                                    try:
+                                        from ...runtime.framework_notice import emit_framework_decision
+                                        emit_framework_decision(
+                                            getattr(self._hubs, "eventhub", None),
+                                            lane=self.agent_id, kind="conflict_resolved",
+                                            paths=_superseded)  # caller defaults to registryhub (==source_hub, gate-admitted)
+                                    except Exception:
+                                        pass
                                 if pulled_ok:
                                     # CLOSURE BY CONSTRUCTION (round 32): a
                                     # successful pull IS the resolution of any

@@ -143,19 +143,33 @@ DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
 }
 
 
+# PROPOSAL #26 — INBOX-ONLY subscriptions. These are delivered ``delivery="inbox_only"``:
+# the event lands in the agent's inbox (surfaced at its next hub_pulse) but the bridge
+# EXCLUDES inbox_only-subscribed agents from live WAKEUP targets, so it NEVER triggers a
+# resident wakeup. This is the ONLY no-wakeup lever (priority does not gate the wakeup —
+# #25 reviewer's blocking finding), so framework-decision notices that must NOT churn the
+# lanes (#24) live HERE and ONLY here. ``framework_decision`` must never appear in
+# DEFAULT_SUBSCRIPTIONS (a live sub would reintroduce the wakeup it exists to avoid).
+INBOX_ONLY_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
+    "backend": [
+        ("registryhub", "framework_decision", "normal"),
+    ],
+    "frontend": [
+        ("registryhub", "framework_decision", "normal"),
+    ],
+}
+
+
 def ensure_default_subscriptions(hubs, agent_id: str) -> None:
     """Idempotently register the agent's default subscriptions.
 
     Wrapped in try/except so a subscription failure can never break the
     pulse. EventHub.subscribe is idempotent by (agent, source, type).
     """
-    subs = DEFAULT_SUBSCRIPTIONS.get(agent_id)
-    if not subs:
-        return
     eventhub = getattr(hubs, "eventhub", None)
     if eventhub is None or not hasattr(eventhub, "subscribe"):
         return
-    for source_hub, event_type, priority_floor in subs:
+    for source_hub, event_type, priority_floor in (DEFAULT_SUBSCRIPTIONS.get(agent_id) or []):
         try:
             # O14/Phase 4.1: agent subscribing on its own behalf at
             # bootstrap — self-mutation, gate falls through.
@@ -170,6 +184,20 @@ def ensure_default_subscriptions(hubs, agent_id: str) -> None:
         except Exception:
             # never let a subscription failure break the caller
             pass
+    # PROPOSAL #26: inbox_only subscriptions — no-wakeup framework-decision notices.
+    for source_hub, event_type, priority_floor in (INBOX_ONLY_SUBSCRIPTIONS.get(agent_id) or []):
+        try:
+            eventhub.subscribe(
+                agent=agent_id,
+                source_hub=source_hub,
+                event_type=event_type,
+                priority_floor=priority_floor,
+                delivery="inbox_only",
+                caller=agent_id,
+            )
+        except Exception:
+            pass
 
 
-__all__ = ["DEFAULT_SUBSCRIPTIONS", "ensure_default_subscriptions"]
+__all__ = ["DEFAULT_SUBSCRIPTIONS", "INBOX_ONLY_SUBSCRIPTIONS",
+           "ensure_default_subscriptions"]

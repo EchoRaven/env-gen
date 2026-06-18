@@ -277,7 +277,8 @@ def _lane_of_worktree(wt: Path) -> str:
 
 
 def _resolve_conflict_by_ownership(repo: Path, *, lane: str,
-                                   framework_side: str) -> Tuple[bool, str]:
+                                   framework_side: str,
+                                   superseded_out: Optional[List[str]] = None) -> Tuple[bool, str]:
     """PROPOSAL #22/#23 — deterministically resolve a framework-owned-file merge/pull
     conflict by per-path OWNERSHIP, so the framework's regenerated files and the lane's
     authored files both survive and the conflict stops blocking delivery. SHARED by both
@@ -316,16 +317,25 @@ def _resolve_conflict_by_ownership(repo: Path, *, lane: str,
                 return False, f"checkout {side} {p} failed: {ec.strip()}"
             _run_git(["add", "--", p], cwd=repo)
             resolved.append(f"{p}→{who}")
+            # PROPOSAL #26 N2: surface the paths where the LANE's edit was SUPERSEDED
+            # by the framework (framework-owned paths kept the framework's version) so
+            # the hub-holding caller can notify the lane (it would otherwise re-edit
+            # these → re-conflict). Lane-owned paths kept the lane's version → not a
+            # supersede. auto_commit stays hub-free: we only populate the caller's list.
+            if who == "framework" and superseded_out is not None:
+                superseded_out.append(p)
         return True, "resolved by ownership: " + ", ".join(resolved)
     except Exception as exc:  # never raise into the merge/coordination loop
         return False, f"ownership-resolve raised: {type(exc).__name__}: {exc}"
 
 
-def _resolve_backend_conflict_by_ownership(repo: Path) -> Tuple[bool, str]:
+def _resolve_backend_conflict_by_ownership(
+        repo: Path, superseded_out: Optional[List[str]] = None) -> Tuple[bool, str]:
     """PROPOSAL #22 — backend MERGE path (integration checked out → framework=--ours).
     Thin wrapper over the shared direction-aware resolver so the two git paths share one
     ownership source-of-truth and cannot drift."""
-    return _resolve_conflict_by_ownership(repo, lane="backend", framework_side="--ours")
+    return _resolve_conflict_by_ownership(
+        repo, lane="backend", framework_side="--ours", superseded_out=superseded_out)
 
 
 def merge_agent_branch_to_main(
@@ -334,6 +344,7 @@ def merge_agent_branch_to_main(
     agent_branch: str,
     main_branch: str = "integration",
     agent_id: str = "",
+    superseded_out: Optional[List[str]] = None,
 ) -> Tuple[bool, str]:
     """Merge ``agent_branch`` (e.g. ``agent/backend``) into ``main_branch``
     (default ``agent``) via squash-merge. Triggered after each agent's
@@ -484,9 +495,11 @@ def merge_agent_branch_to_main(
         # abort+event behavior so a lane that legitimately owns its tree is never
         # corrupted.
         if agent_branch == "agent/backend":
-            res_ok, res_info = _resolve_backend_conflict_by_ownership(repo)
+            res_ok, res_info = _resolve_backend_conflict_by_ownership(repo, superseded_out)
             if res_ok:
                 # conflicts resolved + staged → fall through to Step 4 (commit).
+                # superseded_out (if passed) now carries the framework-superseded
+                # paths for the caller to notify the lane (PROPOSAL #26 N2).
                 pass
             else:
                 _run_git(["merge", "--abort"], cwd=repo)
@@ -788,6 +801,7 @@ def pull_main_into_worktree(
     *,
     worktree_dir: Union[str, Path],
     main_branch: str = "integration",
+    superseded_out: Optional[List[str]] = None,
 ) -> Tuple[bool, str]:
     """Pull ``main_branch`` into the agent's worktree so the agent sees
     OTHER agents' committed-and-merged work at the start of its step.
@@ -917,7 +931,8 @@ def pull_main_into_worktree(
         if conflict_files:
             _lane = _lane_of_worktree(wt)
             _res_ok, _res_info = _resolve_conflict_by_ownership(
-                wt, lane=_lane, framework_side="--theirs")
+                wt, lane=_lane, framework_side="--theirs",
+                superseded_out=superseded_out)  # PROPOSAL #26 N2
             if _res_ok:
                 rc_ci, _ci, _ec = _run_git(["commit", "--no-edit"], cwd=wt)
                 _pull_resolved = (rc_ci == 0)

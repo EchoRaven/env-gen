@@ -491,10 +491,23 @@ def _pulse_eventhub(hubs: Any, agent_id: str) -> Dict[str, Any]:
             "resource_id": e.get("resource_id"),
         })
     subs = eh.get_subscriptions(agent=agent_id) if hasattr(eh, "get_subscriptions") else []
+    # PROPOSAL #26 N2: surface framework_decision notices addressed to THIS lane (the
+    # message body, not just the event_type) so the lane actually sees "the framework
+    # superseded your edit to X; don't re-edit it". Filter by payload.lane so a lane
+    # never sees another lane's note (both lanes subscribe inbox_only → fan-out reaches
+    # both inboxes).
+    framework_notices: List[str] = []
+    for e in unread:
+        if e.get("event_type") != "framework_decision":
+            continue
+        pl = e.get("payload") or {}
+        if pl.get("lane") in (None, agent_id) and pl.get("message"):
+            framework_notices.append(pl["message"])
     return {
         "unread_count_by_priority": counts,
         "top_unread": top,
         "active_subscriptions": len(subs),
+        "framework_notices": framework_notices,
     }
 
 
@@ -557,15 +570,30 @@ def _build_phase_lines(pulse: Dict[str, Any]) -> List[str]:
     return out
 
 
+def _framework_notice_lines(pulse: Dict[str, Any]) -> List[str]:
+    """PROPOSAL #26 N2 — render framework-decision notices (the framework superseded
+    this lane's file / regenerated it) prominently so the lane stops fighting it."""
+    notices = ((pulse.get("eventhub") or {}).get("framework_notices")) or []
+    if not notices:
+        return []
+    out = ["### ⚙ FRAMEWORK NOTICES (act on these — do not fight the framework)"]
+    for msg in notices[:4]:
+        out.append(f"  - {msg}")
+    out.append("")
+    return out
+
+
 def build_hub_pulse_prompt(pulse: Dict[str, Any]) -> Optional[str]:
     """Render the pulse dict as a markdown block. Returns None if all sections empty.
 
     The phase block (#25 A2/A3) renders even on an otherwise-empty pulse so a quiet
     step still orients the agent — it is prepended ahead of the should_render gate."""
-    phase_lines = _build_phase_lines(pulse)
+    # Always-render prefix (#25 A2/A3 phase + #26 N2 framework notices): these must
+    # surface even on an otherwise-empty pulse, so they precede the should_render gate.
+    prefix = _build_phase_lines(pulse) + _framework_notice_lines(pulse)
     if not should_render(pulse):
-        return "\n".join(phase_lines).rstrip() if phase_lines else None
-    lines: List[str] = list(phase_lines)
+        return "\n".join(prefix).rstrip() if prefix else None
+    lines: List[str] = list(prefix)
     lines.append("### HUB PULSE")
 
     ch = pulse.get("codehub") or {}

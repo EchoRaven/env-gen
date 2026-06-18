@@ -491,15 +491,29 @@ class HealPipeline:
                         orch._logger.warning("🧹 flushed uncommitted %s worktree before merge → %s", lane, finfo)
             except Exception:
                 pass
+            _superseded: list = []  # PROPOSAL #26 N2
             try:
                 ok, info = merge_agent_branch_to_main(
                     repo_root=repo,
                     agent_branch=f"agent/{lane}",
                     main_branch="integration",
                     agent_id=lane,
+                    superseded_out=_superseded,
                 )
             except Exception:
                 continue
+            if ok and _superseded:
+                # PROPOSAL #26 N2: the heal merge superseded the lane's edit(s) to
+                # framework-owned file(s). Notify the lane (inbox_only → next pulse,
+                # NO wakeup) so it stops re-editing them → re-conflict.
+                try:
+                    from .framework_notice import emit_framework_decision
+                    _hubs = getattr(orch, "_hubs", None) or getattr(orch, "hubs", None)
+                    emit_framework_decision(
+                        getattr(_hubs, "eventhub", None),
+                        lane=lane, kind="conflict_resolved", paths=_superseded)
+                except Exception:
+                    pass
             if ok and info and "nothing to merge" not in str(info):
                 orch._logger.warning(
                     "🔀 Pre-validation merge agent/%s → integration: %s "
