@@ -15,6 +15,7 @@ class constructed with (output_dir, hubs, logger) + the 3 cross-group callbacks
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 
@@ -240,4 +241,230 @@ def format_delivery_gate_report(gate: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["format_delivery_gate_report", "delivery_gate_suggestions"]
+def incomplete_required_tasks(hubs) -> List[Dict[str, Any]]:
+    """GATE-C2/C3: kickoff-synthesized STRUCTURAL tasks that are still
+    pending/in_progress AND not satisfied by registry evidence.
+
+    The delivery gate is an "evidence exists" model — it never checked
+    whether the assigned work is DONE, so dozens of per-endpoint
+    ``validate_api_smoke`` tasks (and any ``implement_*`` task) could linger
+    pending while a release cut anyway (the user's "task not finished, why
+    release" root cause).
+
+    This is COVERAGE-AWARE, not status-naive — verified on the released
+    generated/instagram round47: 24 ``validate_api_smoke`` tasks sat pending
+    only because the verifier ran one ``run_validation()`` covering every
+    endpoint instead of closing each per-endpoint task. Blocking on raw
+    pending status would falsely block that good release. So a pending task
+    blocks ONLY when its registry evidence is missing:
+
+      * ``implement_endpoint``  → endpoint not registered implemented/tested
+      * ``implement_table``     → table not registered implemented/tested
+      * ``validate_api_smoke``  → endpoint has no passing contract-test record
+
+    Ad-hoc ``task_*`` (visual / breaking-change / merge-conflict / chain-
+    authoring remediation) are NOT structural kickoff kinds — they are
+    governed by their own gates (visual deferral, deliverability) and are
+    deliberately excluded here so this gate never double-blocks them.
+    """
+    wh = getattr(hubs, "workhub", None)
+    if wh is None or not hasattr(wh, "list_tasks"):
+        return []
+    rh = getattr(hubs, "registryhub", None)
+    sh = getattr(hubs, "schema_hub", None)
+    try:
+        tasks = wh.list_tasks() or []
+    except Exception:
+        return []
+
+    def _norm(s: Any) -> str:
+        return re.sub(r"[^a-z0-9]", "", str(s or "").lower())
+
+    # Registry endpoint identity → (clean_id, implemented?) keyed by the
+    # normalized form so a task's metadata.endpoint OR its munged id both map.
+    endpoints: Dict[str, Any] = {}
+    try:
+        endpoints = (rh.get_endpoints() if rh is not None else {}) or {}
+    except Exception:
+        endpoints = {}
+    reg_clean: Dict[str, str] = {}
+    impl_ep: set = set()
+    for k, v in endpoints.items():
+        if k == "_meta" or not isinstance(v, dict):
+            continue
+        clean = (
+            f"{(v.get('method') or '').upper()} {v.get('path') or ''}".strip()
+            if v.get("method") else str(k)
+        )
+        nk = _norm(clean)
+        reg_clean[nk] = clean
+        if v.get("status") in {"implemented", "tested"}:
+            impl_ep.add(nk)
+
+    tables: Dict[str, Any] = {}
+    try:
+        tables = (sh.list_tables() if sh is not None else {}) or {}
+    except Exception:
+        tables = {}
+    impl_tbl: set = {
+        _norm(v.get("name") or k)
+        for k, v in tables.items()
+        if k != "_meta" and isinstance(v, dict)
+        and v.get("status") in {"implemented", "tested"}
+    }
+
+    _METHODS = {"get", "post", "put", "patch", "delete", "head", "options"}
+
+    def _endpoint_norm(t: Dict[str, Any]) -> str:
+        ep = (t.get("metadata") or {}).get("endpoint") or t.get("endpoint")
+        if isinstance(ep, dict) and ep.get("path"):
+            return _norm(f"{(ep.get('method') or '').upper()} {ep['path']}")
+        parts = str(t.get("id") or "").split(".")
+        for i, p in enumerate(parts):
+            if p.lower() in _METHODS and i + 1 < len(parts):
+                return _norm(p + " " + ".".join(parts[i + 1:]))
+        return _norm(t.get("id"))
+
+    def _table_norm(t: Dict[str, Any]) -> str:
+        name = (t.get("metadata") or {}).get("table") or t.get("table")
+        if name:
+            return _norm(name)
+        tid = str(t.get("id") or "")
+        return _norm(tid[len("impl.table."):] if tid.startswith("impl.table.") else tid)
+
+    def _endpoint_validated(nk: str) -> bool:
+        if rh is None:
+            return False
+        clean = reg_clean.get(nk)
+        if not clean:  # endpoint not even registered → cannot be validated
+            return False
+        try:
+            recs = rh.get_contract_test_results(clean) or []
+        except Exception:
+            return False
+        return any(
+            isinstance(r, dict)
+            and ((r.get("result") or {}).get("passed") is True
+                 or (r.get("result") or {}).get("verdict") == "pass")
+            for r in recs
+        )
+
+    incomplete: List[Dict[str, Any]] = []
+    for t in tasks:
+        if not isinstance(t, dict):
+            continue
+        if t.get("status") not in {"pending", "in_progress"}:
+            continue
+        kind = (t.get("metadata") or {}).get("kind") or t.get("kind")
+        if kind == "implement_endpoint":
+            if _endpoint_norm(t) in impl_ep:
+                continue
+            reason = "endpoint not implemented in registry"
+        elif kind == "implement_table":
+            if _table_norm(t) in impl_tbl:
+                continue
+            reason = "table not implemented in registry"
+        elif kind == "validate_api_smoke":
+            if _endpoint_validated(_endpoint_norm(t)):
+                continue
+            reason = "endpoint has no passing contract-test record"
+        else:
+            continue  # not a structural kickoff task — governed elsewhere
+        incomplete.append({
+            "id": t.get("id"),
+            "kind": kind,
+            "status": t.get("status"),
+            "assignee": t.get("assignee"),
+            "reason": reason,
+        })
+    return incomplete
+
+
+def noncanonical_business_response_keys(hubs) -> List[Dict[str, Any]]:
+    """PROMPT-C1 (response_key by-construction): a route_projector-projected
+    business endpoint MUST declare a response_key inside the canonical envelope
+    the projector actually emits — ``items`` (collection) or ``item`` (single).
+    The projector hardcodes that envelope and IGNORES any other key, so a
+    registered ``response_key='games'`` leaves the frontend reading
+    ``data.games`` against a ``{"items": [...]}`` body → the single biggest
+    blank-page source. Flag the non-canonical key at build time instead.
+
+    Only the KEY VOCABULARY is enforced ({items, item}); WHICH of the two an
+    endpoint should use (single vs collection) is the runtime
+    ``business_endpoints_correct_shape`` gate's job — and is deliberately NOT
+    re-derived here, because the method/path heuristic mis-classifies legit
+    single-object GETs that don't end in ``/me`` or ``/{id}`` (round47's
+    ``GET /api/.../insights`` / ``/limit`` / ``/business_discovery`` correctly
+    return ``item``; demanding ``items`` for them would be a false positive).
+
+    Scope = projector-owned BUSINESS endpoints only. Control-plane / infra /
+    auth / oauth / spine endpoints carry a ``metadata.kind`` and ship their own
+    handlers (e.g. ``{"message": ...}``) — NOT projected, frontend already skips
+    them, exempt (round47's 3 ``message`` keys are all ``kind=infra``).
+    custom_routes are hand-authored, exempt. An ABSENT response_key is a
+    separate "lane forgot to set it" concern, not a wrong-key blank page, so it
+    is not flagged here."""
+    rh = getattr(hubs, "registryhub", None)
+    if rh is None:
+        return []
+    try:
+        endpoints = rh.get_endpoints() or {}
+    except Exception:
+        return []
+    _CANONICAL = {"items", "item"}
+    _EXEMPT_KINDS = {"auth", "oauth", "infra", "spine", "control_plane", "custom"}
+    bad: List[Dict[str, Any]] = []
+    for k, v in endpoints.items():
+        if k == "_meta" or not isinstance(v, dict):
+            continue
+        md = v.get("metadata") or {}
+        if str(md.get("kind") or "").strip().lower() in _EXEMPT_KINDS:
+            continue  # not projector-owned (orchestrator/spine/custom handlers)
+        if md.get("custom") or md.get("custom_route"):
+            continue  # custom_routes are hand-authored, not projected
+        rk = md.get("response_key") or (v.get("schema") or {}).get("response_key")
+        if rk is None or rk in _CANONICAL:
+            continue
+        bad.append({
+            "endpoint": k,
+            "response_key": rk,
+            "reason": (
+                f"projected business endpoint declares non-canonical "
+                f"response_key={rk!r} — the projector emits {{items/item}}, so the "
+                f"frontend reading data.{rk} renders blank. Use 'items' or 'item'."
+            ),
+        })
+    return bad
+
+
+def extract_spec_tables(spec: Dict[str, Any]) -> Dict[str, set]:
+    tables = spec.get("tables", {})
+    out: Dict[str, set] = {}
+    if isinstance(tables, dict):
+        iterable = tables.items()
+    elif isinstance(tables, list):
+        iterable = ((t.get("name"), t) for t in tables if isinstance(t, dict))
+    else:
+        iterable = []
+    for raw_name, table in iterable:
+        name = str(raw_name or "").strip()
+        if not name or not isinstance(table, dict):
+            continue
+        columns = table.get("columns", {})
+        if isinstance(columns, dict):
+            out[name] = {str(c) for c in columns.keys()}
+        elif isinstance(columns, list):
+            out[name] = {
+                str(c.get("name"))
+                for c in columns
+                if isinstance(c, dict) and c.get("name")
+            }
+    return out
+
+# Contract extraction lives in multi_agent/delivery/contract_extract.py. It is
+# now STACK-PLUGGABLE (FastAPI + Express auto-detected) — see that module.
+
+
+__all__ = ["format_delivery_gate_report", "delivery_gate_suggestions",
+           "incomplete_required_tasks", "noncanonical_business_response_keys",
+           "extract_spec_tables"]
