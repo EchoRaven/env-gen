@@ -36,20 +36,11 @@ class Environment(Base):
     status: Mapped[str] = mapped_column(String, default="generating")
     delivered: Mapped[bool] = mapped_column(Boolean, default=False)
     generated_dir: Mapped[str] = mapped_column(String, default="")
+    # the GenerationTask currently served as this env's live/delivered version
+    current_task_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
-
-
-class Run(Base):
-    __tablename__ = "runs"
-
-    run_id: Mapped[str] = mapped_column(String, primary_key=True)
-    env_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
-    status: Mapped[str] = mapped_column(String, default="generating")
-    milestone: Mapped[str | None] = mapped_column(String, nullable=True)
-    coordination_ticks: Mapped[int] = mapped_column(Integer, default=0)
-    wallclock_sec: Mapped[float] = mapped_column(Float, default=0.0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class ChatMessage(Base):

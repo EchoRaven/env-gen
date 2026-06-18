@@ -40,3 +40,22 @@ def test_record_status_appends_history_and_sets_status():
     hist = json.loads(t.status_history_json)
     assert [h["status"] for h in hist] == ["generating", "delivered"]
     assert hist[0]["reason"] == "spawned" and "at" in hist[0]
+
+
+def test_environment_has_current_task_and_archived():
+    with SessionLocal() as db:
+        e = Environment(id="e-cols", name="e-cols", tenant_id="ten", created_by="u",
+                        generated_dir="/x/e-cols", status="generating",
+                        current_task_id="t-x", archived=False)
+        db.add(e)
+        db.commit()
+        got = db.get(Environment, "e-cols")
+        assert got.current_task_id == "t-x"
+        assert got.archived is False
+        db.delete(got)
+        db.commit()
+
+
+def test_run_table_removed():
+    import app.models as mm
+    assert not hasattr(mm, "Run")

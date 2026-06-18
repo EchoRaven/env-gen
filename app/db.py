@@ -24,6 +24,7 @@ def init_db() -> None:
     from . import models  # noqa: F401 — register mappers
     Base.metadata.create_all(engine)
     _ensure_tenant_columns()
+    _ensure_environment_columns()
 
 
 def _ensure_tenant_columns() -> None:
@@ -39,6 +40,25 @@ def _ensure_tenant_columns() -> None:
         adds.append("ADD COLUMN tenant_id VARCHAR DEFAULT ''")
     if "created_by" not in have:
         adds.append("ADD COLUMN created_by VARCHAR DEFAULT ''")
+    if not adds:
+        return
+    with engine.begin() as conn:
+        for clause in adds:
+            conn.execute(text(f"ALTER TABLE environments {clause}"))
+
+
+def _ensure_environment_columns() -> None:
+    """Idempotent ALTER: add current_task_id + archived to a pre-existing
+    ``environments`` table (create_all never ALTERs). SQLite + Postgres."""
+    insp = inspect(engine)
+    if "environments" not in insp.get_table_names():
+        return
+    have = {c["name"] for c in insp.get_columns("environments")}
+    adds = []
+    if "current_task_id" not in have:
+        adds.append("ADD COLUMN current_task_id VARCHAR")
+    if "archived" not in have:
+        adds.append("ADD COLUMN archived BOOLEAN DEFAULT 0")
     if not adds:
         return
     with engine.begin() as conn:
