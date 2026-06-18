@@ -3916,6 +3916,25 @@ volumes:
                     "endpoint(s) it never coded — projected working handlers from "
                     "the ORM so the contract is complete (no 404 on declared "
                     "routes): %s", len(projected), projected)
+            # PROPOSAL #13: with the skeleton + projection done, audit the registry
+            # against CODE TRUTH — flip an endpoint `implemented` only when its route
+            # is actually on the SERVED surface (main.py `@app` + the `include_router`
+            # chain), and regress phantom-"implemented" routes to `defined`. Hooked
+            # HERE — after projection (so projector-filled routes count) and after the
+            # merge that always precedes projection (1484→1503 / 4417→4435) — so it
+            # audits what actually ships, NOT inside _generate_backend_skeleton which
+            # runs pre-projection. The backend twin of frontend_audit. Honest flags →
+            # api_smoke stops failing "status=implemented but 404" contract lies.
+            try:
+                from .runtime.backend_audit import sync_endpoint_statuses
+                _ea = sync_endpoint_statuses(out_dir, registryhub)
+                if _ea.get("implemented") or _ea.get("regressed"):
+                    self._logger.warning(
+                        "ENDPOINT LIFECYCLE (code-truth): implemented=%s regressed=%s "
+                        "pending=%s", _ea.get("implemented"), _ea.get("regressed"),
+                        _ea.get("pending"))
+            except Exception:
+                pass
         except Exception as exc:
             self._logger.debug("route projection skipped: %s", exc)
 
