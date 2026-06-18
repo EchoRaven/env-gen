@@ -252,6 +252,12 @@ profiles:
         - workhub_list_documents
         - workhub_comment
         - read
+        # File-search (PROPOSAL #6): granted by category but narrowed out here, so
+        # a lane could only `read` a GUESSED path. Read-only — let it locate
+        # reference/seed/existing files before reading instead of guessing.
+        - glob
+        - grep
+        - list_generated_files
         - finish
       # Smoke #4 (2026-06-06): backend entered edit_code 38x but called
       # workhub_get_document/read (NOT write/register), 0 endpoints implemented ->
@@ -299,6 +305,19 @@ profiles:
         - codehub_resolve_conflict
         - codehub_resolve_merge_conflict
         - test_api
+        # File-search / symbol lookup (PROPOSAL #6). The backend authors
+        # models/schemas/main/routes across many files that reference each other;
+        # without these it could only `read` a GUESSED path. NOTE re Smoke #4:
+        # that gap stripped the COORDINATION/read drift sinks (get_document/
+        # list_documents/comment) because the LLM chose them OVER coding. These
+        # are a DIFFERENT tool-CLASS — read-only file *discovery* that feeds code
+        # production (find the file → edit it), not coordination — and they add
+        # no write/contract authority, with the finish-gates still guarding drift.
+        # So this does NOT re-open the deliberately-narrow impl allowlist.
+        - glob
+        - grep
+        - list_generated_files
+        - find_definition
     workflow_policies:
       # Breaker first — see ordering note on ``design`` profile.
       - kind: lane_idle_circuit_breaker
@@ -440,6 +459,11 @@ profiles:
         - workhub_list_documents
         - workhub_comment
         - read
+        # File-search (PROPOSAL #6): read-only; locate reference/seed/existing
+        # files before reading instead of guessing paths.
+        - glob
+        - grep
+        - list_generated_files
         - finish
     workflow_policies:
       # Breaker first — see ordering note on ``design`` profile.
@@ -605,6 +629,11 @@ profiles:
         - workhub_list_documents
         - workhub_comment
         - read
+        # File-search (PROPOSAL #6): read-only; locate cross-team / reference files
+        # before reading instead of guessing paths.
+        - glob
+        - grep
+        - list_generated_files
         - finish
       # Smoke #6 (2026-06-06): backend implemented 12 endpoints but the verifier
       # never validated (0 run_validation) — it suppressed 118 wakeups and, when
@@ -663,6 +692,13 @@ profiles:
         # usable and removes a prompt↔allowlist mismatch.
         - codehub_record_check
         - submit_learning
+        # File-search (PROPOSAL #6): the verifier inspects the generated app to
+        # route/write tests + diagnose failures; it had codehub_get_file_content
+        # but no way to LOCATE files, so it could only read GUESSED paths.
+        # Read-only — adds no validation/contract authority.
+        - glob
+        - grep
+        - list_generated_files
     workflow_policies:
       - kind: verifier_validation_trigger
         allowed_sender: orchestrator

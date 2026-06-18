@@ -95,6 +95,37 @@ class StageToolAllowlistGapTests(unittest.TestCase):
         ):
             self.assertIn(tool, allow)
 
+    def test_lanes_can_search_files_in_restrictive_stages(self):
+        # PROPOSAL #6 (path-guessing root): glob/grep/list_generated_files are
+        # granted to these profiles BY CATEGORY (file/analysis/project) but were
+        # NARROWED OUT of every restrictive stage — leaving the lane only `read`,
+        # so it could only read a path it GUESSED (the orchestrator guessing
+        # app/docker-compose.yml when it lives at docker/docker-compose.yml).
+        # Every stage that AUTHORS or INSPECTS files must expose the file-search
+        # tools so the lane can locate-before-read instead of guessing.
+        # Read-only tools: distinct tool-CLASS from the authoring/mutation surface
+        # — adding them does not widen write/contract authority, and the
+        # finish-gates still guard contract drift (so this does not re-open the
+        # deliberately-narrow impl allowlist; resolves the Smoke #4 tension).
+        search = {"glob", "grep", "list_generated_files"}
+        for profile, stage in (
+            ("backend", "kickoff:action"),
+            ("backend", "implementation:action"),
+            ("frontend", "kickoff:action"),
+            ("verifier", "kickoff:action"),
+            ("verifier", "implementation:action"),
+        ):
+            allow = set(_allowlist(profile, stage))
+            self.assertTrue(
+                search <= allow,
+                f"{profile} {stage} cannot search files: missing {search - allow}",
+            )
+        # The backend authors code across many files that reference each other,
+        # so it also needs symbol lookup (find_definition) in implementation.
+        self.assertIn(
+            "find_definition", set(_allowlist("backend", "implementation:action"))
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

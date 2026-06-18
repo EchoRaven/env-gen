@@ -1472,9 +1472,14 @@ Examples:
         )
     
     def execute(self, pattern: str, path: str = None) -> ToolResult:
+        # An empty/absent path searches the workspace ROOT (".") — matching this
+        # tool's own docstring (`glob "*.py"  # ... in current dir`). Previously
+        # `path or ""` failed the resolver's "path is required" guard, so an
+        # agent following the docs got an error and fell back to guessing paths.
+        # An EXPLICIT non-existent path still errors (with the not-found hint).
         search_path, err = _resolve_workspace_path(
             self.workspace,
-            path or "",
+            path or ".",
             op_name="glob",
             must_exist=True,
             expect_file=False,
