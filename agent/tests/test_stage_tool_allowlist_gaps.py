@@ -95,24 +95,15 @@ class StageToolAllowlistGapTests(unittest.TestCase):
         ):
             self.assertIn(tool, allow)
 
-    def test_lanes_can_search_files_in_restrictive_stages(self):
-        # PROPOSAL #6 (path-guessing root): glob/grep/list_generated_files are
-        # granted to these profiles BY CATEGORY (file/analysis/project) but were
-        # NARROWED OUT of every restrictive stage — leaving the lane only `read`,
-        # so it could only read a path it GUESSED (the orchestrator guessing
-        # app/docker-compose.yml when it lives at docker/docker-compose.yml).
-        # Every stage that AUTHORS or INSPECTS files must expose the file-search
-        # tools so the lane can locate-before-read instead of guessing.
-        # Read-only tools: distinct tool-CLASS from the authoring/mutation surface
-        # — adding them does not widen write/contract authority, and the
-        # finish-gates still guard contract drift (so this does not re-open the
-        # deliberately-narrow impl allowlist; resolves the Smoke #4 tension).
+    def test_search_tools_in_implementation_not_kickoff(self):
+        # PROPOSAL #6 → #9: file-search tools (glob/grep/list_generated_files) belong
+        # only in stages that AUTHOR or INSPECT files — the IMPLEMENTATION stages,
+        # where a lane writes code referencing other files (locate-before-read instead
+        # of guessing a path; the orchestrator once guessed app/docker-compose.yml when
+        # it lives at docker/docker-compose.yml).
         search = {"glob", "grep", "list_generated_files"}
         for profile, stage in (
-            ("backend", "kickoff:action"),
             ("backend", "implementation:action"),
-            ("frontend", "kickoff:action"),
-            ("verifier", "kickoff:action"),
             ("verifier", "implementation:action"),
         ):
             allow = set(_allowlist(profile, stage))
@@ -125,6 +116,16 @@ class StageToolAllowlistGapTests(unittest.TestCase):
         self.assertIn(
             "find_definition", set(_allowlist("backend", "implementation:action"))
         )
+        # PROPOSAL #9: NOT in kickoff — nothing is built yet (the lane only DECLARES
+        # its contract slice), so search tools have no use there and only widen the
+        # surface that kickoff is deliberately minimized to keep declare-focused.
+        for profile in ("backend", "frontend", "verifier"):
+            allow = set(_allowlist(profile, "kickoff:action"))
+            leaked = search & allow
+            self.assertFalse(
+                leaked,
+                f"{profile} kickoff:action must NOT expose search tools, found {leaked}",
+            )
 
 
 if __name__ == "__main__":

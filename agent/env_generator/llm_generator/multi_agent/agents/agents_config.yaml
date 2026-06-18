@@ -252,12 +252,11 @@ profiles:
         - workhub_list_documents
         - workhub_comment
         - read
-        # File-search (PROPOSAL #6): granted by category but narrowed out here, so
-        # a lane could only `read` a GUESSED path. Read-only — let it locate
-        # reference/seed/existing files before reading instead of guessing.
-        - glob
-        - grep
-        - list_generated_files
+        # PROPOSAL #9: file-search tools (glob/grep/list_generated_files) are NOT
+        # exposed in kickoff — nothing is built yet (the lane only DECLARES its
+        # contract slice), so they have no use here and only widen the surface that
+        # kickoff is deliberately minimized to keep declare-focused. They remain in
+        # implementation:action (where code is authored + files need locating).
         - finish
       # Smoke #4 (2026-06-06): backend entered edit_code 38x but called
       # workhub_get_document/read (NOT write/register), 0 endpoints implemented ->
@@ -459,11 +458,8 @@ profiles:
         - workhub_list_documents
         - workhub_comment
         - read
-        # File-search (PROPOSAL #6): read-only; locate reference/seed/existing
-        # files before reading instead of guessing paths.
-        - glob
-        - grep
-        - list_generated_files
+        # PROPOSAL #9: no file-search in kickoff (nothing built yet; declare-only).
+        # The search tools live in implementation:action, not here.
         - finish
     workflow_policies:
       # Breaker first — see ordering note on ``design`` profile.
@@ -629,11 +625,8 @@ profiles:
         - workhub_list_documents
         - workhub_comment
         - read
-        # File-search (PROPOSAL #6): read-only; locate cross-team / reference files
-        # before reading instead of guessing paths.
-        - glob
-        - grep
-        - list_generated_files
+        # PROPOSAL #9: no file-search in kickoff (nothing built yet; declare-only).
+        # The search tools live in implementation:action, not here.
         - finish
       # Smoke #6 (2026-06-06): backend implemented 12 endpoints but the verifier
       # never validated (0 run_validation) — it suppressed 118 wakeups and, when
