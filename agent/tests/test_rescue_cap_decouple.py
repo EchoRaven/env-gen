@@ -36,7 +36,7 @@ from multi_agent.orchestrator import (  # noqa: E402
     Orchestrator, _fwval_should_attempt, _visual_release_decision,
     _fwval_failure_set, _fwval_stuck_decision,
     FWVAL_FAST_CAP, FWVAL_SLOW_INTERVAL_S, FWVAL_STUCK_REDISPATCH_AFTER,
-    FWVAL_STUCK_TERMINAL_AFTER, VISUAL_DEFERRAL_ESCAPE_S,
+    FWVAL_STUCK_TERMINAL_AFTER, FWVAL_STUCK_ABORT_AFTER, VISUAL_DEFERRAL_ESCAPE_S,
     VISUAL_TOTAL_JUDGMENTS_CAP)
 
 
@@ -210,9 +210,13 @@ def test_stuck_decision_ladder():
     assert _fwval_stuck_decision(FWVAL_STUCK_TERMINAL_AFTER - 1) == "redispatch"
     # at the terminal threshold: re-dispatch didn't help → surface "stuck"
     assert _fwval_stuck_decision(FWVAL_STUCK_TERMINAL_AFTER) == "terminal"
-    assert _fwval_stuck_decision(FWVAL_STUCK_TERMINAL_AFTER + 5) == "terminal"
-    # ordering is sane: terminal threshold strictly past re-dispatch
-    assert FWVAL_STUCK_TERMINAL_AFTER > FWVAL_STUCK_REDISPATCH_AFTER
+    assert _fwval_stuck_decision(FWVAL_STUCK_ABORT_AFTER - 1) == "terminal"
+    # PROPOSAL #5: terminal-surface didn't help either → FAIL FAST (abort) instead of
+    # limping to the wall-clock cap.
+    assert _fwval_stuck_decision(FWVAL_STUCK_ABORT_AFTER) == "abort"
+    assert _fwval_stuck_decision(FWVAL_STUCK_ABORT_AFTER + 5) == "abort"
+    # ordering is sane: redispatch < terminal < abort
+    assert FWVAL_STUCK_REDISPATCH_AFTER < FWVAL_STUCK_TERMINAL_AFTER < FWVAL_STUCK_ABORT_AFTER
 
 
 def _fwval_stub(*, run_data, attempts=0, healed_sig="SIG_A", impl_count=2):

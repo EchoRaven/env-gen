@@ -198,6 +198,11 @@ FWVAL_SLOW_INTERVAL_S = 300  # past the cap, retry at most once per this interva
 # instead of churning to wall-clock.
 FWVAL_STUCK_REDISPATCH_AFTER = 2   # validations on the same failure set (past cap) → re-dispatch owner
 FWVAL_STUCK_TERMINAL_AFTER = 4     # validations on the same failure set (past cap) → surface stuck signal
+FWVAL_STUCK_ABORT_AFTER = 7        # …then FAIL FAST: redispatch+terminal didn't help on an
+#   unchanged failure set with no lane progress → abort early with the root surfaced, instead
+#   of limping to the wall-clock cap (PROPOSAL #5). ~1 slow-retry interval past the cap (~11 min)
+#   vs the 2h budget. Paced by the post-cap slow interval, not the 60s tick — tune against
+#   FWVAL_SLOW_INTERVAL_S, not the tick.
 VISUAL_DEFERRAL_ESCAPE_S = 900   # max wall-clock a milestone may defer on visuals
 VISUAL_TOTAL_JUDGMENTS_CAP = 10  # per-milestone hard cap on real visual judgments
 
@@ -231,7 +236,8 @@ def _fwval_failure_set(data) -> frozenset:
 
 def _fwval_stuck_decision(stuck_count: int, *,
                           redispatch_after: int = FWVAL_STUCK_REDISPATCH_AFTER,
-                          terminal_after: int = FWVAL_STUCK_TERMINAL_AFTER) -> str:
+                          terminal_after: int = FWVAL_STUCK_TERMINAL_AFTER,
+                          abort_after: int = FWVAL_STUCK_ABORT_AFTER) -> str:
     """Escalation stage for a failure set that has persisted (with NO lane
     progress) across ``stuck_count`` post-cap validations. Returns:
       * ``"wait"``      — still inside the fast budget / early; keep iterating.
@@ -239,8 +245,14 @@ def _fwval_stuck_decision(stuck_count: int, *,
       * ``"terminal"``  — re-dispatch did not help; surface a clear "stuck" signal
                           (so the run stops churning to wall-clock and the UI shows
                           the real blocker) instead of spinning the same cycle.
+      * ``"abort"``     — terminal-surface ALSO did not help; FAIL FAST — abort the
+                          run with the root surfaced, instead of limping to the
+                          wall-clock cap (PROPOSAL #5: the unrecoverable
+                          framework-generation-bug case the in-run agents can't fix).
     Pure + side-effect-free so the escalation ladder is unit-tested without the
     docker/dispatch machinery."""
+    if stuck_count >= abort_after:
+        return "abort"
     if stuck_count >= terminal_after:
         return "terminal"
     if stuck_count >= redispatch_after:
@@ -1225,6 +1237,11 @@ class Orchestrator:
                     caps = self._load_run_budget_caps(env_caps)
                     self._write_run_budget(caps, loop_start, 0.0, 0, "running")
                     budget_exceeded: Optional[str] = None
+                    # PROPOSAL #5: a STUCK abort is kept SEPARATE from budget_exceeded so its
+                    # raise surfaces the real root (framework-gen bug) instead of the
+                    # budget-flavored "Adjust ENVGEN_MAX_*" message (which is the opposite of
+                    # the action needed). Set from self._fwval_abort_reason after validation.
+                    stuck_abort_reason: Optional[str] = None
                     while not orchestrator_lane._project_delivered_event.is_set():
                         try:
                             await asyncio.wait_for(
@@ -1302,6 +1319,20 @@ class Orchestrator:
                         # behaviour. Internally guarded (skips once a passing run exists;
                         # attempt-capped) so it's cheap after the first success.
                         await self._maybe_run_framework_validation()
+                        # PROPOSAL #5 — FAIL FAST on an unrecoverable stuck: the validation
+                        # above sets _fwval_abort_reason once its stuck ladder reaches `abort`
+                        # (same failure set, no lane progress, redispatch+terminal didn't help).
+                        # Break out HERE with a SEPARATE reason (not budget_exceeded) so the
+                        # post-loop raise surfaces the real root instead of "raise the budget".
+                        _abort = getattr(self, "_fwval_abort_reason", None)
+                        if _abort and not getattr(self, "_project_delivered", False):
+                            stuck_abort_reason = _abort
+                            self._logger.error(
+                                "FAIL-FAST: aborting the run early — %s", _abort)
+                            self._write_run_budget(
+                                caps, loop_start, time.time() - loop_start, tick_count,
+                                "stuck_abort")
+                            break
                         # Deterministic delivery: the orchestrator LLM drifts — it
                         # checks deliverability repeatedly without ever firing
                         # deliver_project (smoke #19: 30x deliverability_check, 0
@@ -1388,6 +1419,18 @@ class Orchestrator:
                                 continue
                     if orchestrator_lane._project_delivered_event.is_set():
                         self._write_run_budget(caps, loop_start, time.time() - loop_start, tick_count, "delivered")
+                    # PROPOSAL #5 — a STUCK abort raises its OWN root-surfacing message
+                    # (NOT the budget message, which would misleadingly tell the dev to raise
+                    # ENVGEN_MAX_* — the opposite of fixing the regenerated-every-cycle root).
+                    if stuck_abort_reason and not orchestrator_lane._project_delivered_event.is_set():
+                        raise RuntimeError(
+                            f"STUCK — generation aborted without delivery after {tick_count} "
+                            f"coordination ticks: {stuck_abort_reason} This is very likely an "
+                            f"UNRECOVERABLE framework-generation bug that the in-run agents "
+                            f"cannot self-heal (the framework regenerates the same artifact "
+                            f"every cycle), so raising ENVGEN_MAX_* will NOT help — fix the "
+                            f"root shown above, then re-run."
+                        )
                     # Deterministic failure when the run budget was hit before delivery.
                     if budget_exceeded and not orchestrator_lane._project_delivered_event.is_set():
                         raise RuntimeError(
@@ -2788,6 +2831,11 @@ volumes:
             if _cur_impl > getattr(self, "_fwval_last_impl_count", -1):
                 self._fwval_last_impl_count = _cur_impl
                 self._framework_validation_attempts = 0
+                # PROPOSAL #5: a rising implemented-endpoint count is REAL progress on the
+                # second stable axis — reset the stuck counter too (today it resets only on a
+                # failure-set change below), so an app still landing endpoints never counts
+                # toward the fail-fast abort.
+                self._fwval_stuck_count = 0
             # PIPE-C2: cap the FAST (every-tick) retries to stop docker churn, but
             # past the cap DOWNSHIFT to a slow retry instead of hard-stopping — a
             # sig-stable app failing on transient docker contention must still
@@ -2967,6 +3015,40 @@ volumes:
                                     )
                                 except Exception:
                                     pass
+                        elif _stage == "abort":
+                            # PROPOSAL #5 — terminal-surface ALSO did not help: redispatch +
+                            # the terminal warning have run and the SAME failure set still
+                            # persists with no lane progress. This is an unrecoverable
+                            # framework-generation bug the in-run agents cannot fix (the
+                            # framework regenerates the same artifact every cycle). FAIL FAST:
+                            # record the abort reason WITH the real root — the failing checks'
+                            # detail, which now carries the S1 crashed-container logs (PROPOSAL
+                            # #3) — so the delivery-wait loop terminates and raises a
+                            # root-surfacing message instead of limping to the wall-clock.
+                            _blocker = ", ".join(sorted(_fset)) or (str(_summ)[:120] or "unknown")
+                            _root_detail = "; ".join(
+                                "{}: {}".format(c.get("name"), str(c.get("detail"))[:400])
+                                for c in ((data or {}).get("checks") or [])
+                                if isinstance(c, dict) and c.get("status") == "fail"
+                                and c.get("detail")
+                            )[:1500] or (str(_summ)[:400] or "(no detail)")
+                            self._fwval_last_fail_detail = _root_detail
+                            self._fwval_abort_reason = (
+                                "framework validation wedged on [{}] for {} post-cap cycles "
+                                "with no lane progress (re-dispatch + terminal escalation did "
+                                "not help). Real blocker: {}".format(
+                                    _blocker, self._fwval_stuck_count, _root_detail)
+                            )
+                            self._logger.error("STUCK-ABORT: %s", self._fwval_abort_reason)
+                            try:
+                                self.progress.emit(
+                                    EventType.PHASE_ERROR, "Framework Validation",
+                                    {"error": "stuck-abort: {}".format(_blocker),
+                                     "failure_set": sorted(_fset),
+                                     "cycles": self._fwval_stuck_count, "abort": True},
+                                )
+                            except Exception:
+                                pass
                 # GATE-C1 feedback loop: a business_endpoints_implemented FAIL
                 # (registered-implemented endpoint answering 404/405) routes to
                 # the backend lane — a hard gate with no exit deadlocks the run.
