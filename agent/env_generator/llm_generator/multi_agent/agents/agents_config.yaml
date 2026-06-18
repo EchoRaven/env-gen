@@ -68,7 +68,11 @@ profiles:
     name: "Orchestrator Agent"
     reasoning_effort: "high"  # coordinator role requires high reasoning for tick decisions + delivery gate composition + silent-lane detection. Tunable live.
     description: "Global orchestrator - planning, cross-team coordination, and delivery control"
-    tool_categories: ["reasoning", "file", "progress", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "observability", "coverage", "visual_review", "seed", "delivery", "mcp_registry", "team_spawn", "team_lifecycle", "team_reasoning", "team_planning", "runtime", "api", "docker", "logs", "database", "browser", "verification", "web", "codehub", "workhub", "registryhub", "eventhub", "run", "hub"]
+    # knowledge_skill (get_skill) is REQUIRED here: the orchestrator's deliver_project /
+    # report_completion are gated on release_readiness_consulted (stage_tool_preconditions
+    # below), which instructs the agent to call get_skill — so the tool MUST be granted or
+    # the gate is unsatisfiable (run #21: 14× deliver_project loop = BUG#5 / PROPOSAL #14).
+    tool_categories: ["reasoning", "file", "progress", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "knowledge_skill", "observability", "coverage", "visual_review", "seed", "delivery", "mcp_registry", "team_spawn", "team_lifecycle", "team_reasoning", "team_planning", "runtime", "api", "docker", "logs", "database", "browser", "verification", "web", "codehub", "workhub", "registryhub", "eventhub", "run", "hub"]
     include_vision: false
     timeout: 7200
     prompts:
@@ -103,6 +107,7 @@ profiles:
       - analysis_tools
       - knowledge_read_tools
       - knowledge_write_tools
+      - knowledge_skill_tools   # PROPOSAL #14: grants get_skill (release_readiness gate needs it)
       - team_spawn_tools
       - team_lifecycle_tools
       - team_reasoning_tools
@@ -172,7 +177,11 @@ profiles:
     # "progress": report_progress is an always-include base tool registered
     # under the "progress" category (tools.py) and treated as ALWAYS_INCLUDE by
     # the stage ranker, but the category filter dropped it for the backend.
-    tool_categories: ["file", "reasoning", "vision", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "mcp_registry", "team_spawn", "team_reasoning", "runtime", "api", "api_contract", "database", "dependency", "reference", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "design", "progress"]
+    # knowledge_skill (get_skill) is REQUIRED here: backend's codehub_open_pr is gated on
+    # api_contract_guard_consulted (stage_tool_preconditions below), which instructs the
+    # agent to call get_skill — so the tool MUST be granted or the gate is unsatisfiable
+    # (same class as the orchestrator release_readiness gate / PROPOSAL #14).
+    tool_categories: ["file", "reasoning", "vision", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "knowledge_skill", "mcp_registry", "team_spawn", "team_reasoning", "runtime", "api", "api_contract", "database", "dependency", "reference", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "design", "progress"]
     # Backend reads the reference images too: every visible datum implies a
     # column, every actionable control implies an endpoint — the contract is
     # derived from the screens, not just the requirements text.
@@ -197,6 +206,7 @@ profiles:
       - analysis_tools
       - knowledge_read_tools
       - knowledge_write_tools
+      - knowledge_skill_tools   # PROPOSAL #14: grants get_skill (api_contract_guard gate needs it)
       - team_spawn_tools
       - team_reasoning_tools
       - runtime_full

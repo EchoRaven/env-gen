@@ -142,12 +142,23 @@ class AgentTooling:
         structural test (test_tool_allowlist_cross_validator) is what keeps
         the shipped config at zero violations."""
         try:
-            from ...tool_surface import validate_stage_allowlists
+            from ...tool_surface import (
+                validate_stage_allowlists, validate_skill_consult_preconditions)
+            _profile_id = getattr(self, "_tool_profile_agent_type",
+                                  getattr(self, "agent_id", "?"))
+            _granted = set(getattr(self, "_tool_instances", {}) or {})
             problems = validate_stage_allowlists(
-                getattr(self, "_tool_profile_agent_type",
-                        getattr(self, "agent_id", "?")),
+                _profile_id,
                 stage_tool_allowlist=getattr(self, "_stage_tool_allowlist", {}) or {},
-                granted_tool_names=set(getattr(self, "_tool_instances", {}) or {}),
+                granted_tool_names=_granted,
+            )
+            # SYS-1 (PROPOSAL #14): a *_consulted precondition instructs the agent to
+            # call get_skill — so the profile MUST grant it, else the gate is
+            # unsatisfiable and the gated tool loops forever (run #21 / BUG#5).
+            problems += validate_skill_consult_preconditions(
+                _profile_id,
+                stage_tool_preconditions=getattr(self, "_stage_tool_preconditions", {}) or {},
+                granted_tool_names=_granted,
             )
             for problem in problems:
                 self._logger.warning("%s", problem)
