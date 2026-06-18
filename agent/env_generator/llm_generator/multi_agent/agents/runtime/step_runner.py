@@ -407,7 +407,7 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                         from .hub_pulse import collect_hub_pulse, build_hub_pulse_prompt
                         hubs = getattr(self, "_hubs", None)
                         if hubs is not None:
-                            pulse = collect_hub_pulse(hubs, self.agent_id, step_num=step)
+                            pulse = collect_hub_pulse(hubs, self.agent_id, step_num=step, agent=self)
                             hub_pulse_prompt = build_hub_pulse_prompt(pulse)
                             if hub_pulse_prompt:
                                 messages.append(Message.user(hub_pulse_prompt))

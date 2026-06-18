@@ -64,7 +64,12 @@ DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
         ("registryhub", "endpoint_defined", "normal"),
         ("registryhub", "endpoint_implemented", "normal"),
         ("registryhub", "endpoint_schema_changed", "high"),
-        ("registryhub", "table_defined", "normal"),
+        # PROPOSAL #25 B1: RegistryHub emits ``table_registered`` (registryhub.py
+        # register_table), NEVER ``table_defined`` — the old line was a DEAD
+        # subscription, so the backend was never told its tables were registered
+        # (only the later ``table_implemented``). Subscribe to the name actually
+        # emitted so the owning backend hears the initial table registration.
+        ("registryhub", "table_registered", "normal"),
         ("registryhub", "table_implemented", "normal"),
         ("workhub", "task_created", "high"),
         ("codehub", "review_requested", "high"),

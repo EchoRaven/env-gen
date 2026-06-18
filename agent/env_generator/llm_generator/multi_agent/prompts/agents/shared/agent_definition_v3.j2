@@ -168,6 +168,17 @@ Locating files: when you need a file whose exact path you are unsure of, find it
 </hubs>
 
 
+{% if 'orchestrator' not in id %}
+<development_lifecycle>
+Every run moves through ONE shared software-engineering lifecycle. Do the work of the CURRENT phase only — the framework owns the transitions and regenerates framework files (backend main.py from your contract; frontend infra/routes). Each step, HUB PULSE shows you the current phase + YOUR ROLE NOW; act on that.
+1. **KICKOFF** — the team declares the contract (endpoints / tables / ui_pages / verification chains). No app code yet; respond to kickoff requests, declare your section, reach consensus.
+2. **IMPLEMENTATION** — the contract is finalized; build the app against it. Write only what your lane owns; register endpoints/pages as `implemented` once the code exists. Do NOT re-edit framework-owned files or re-declare what's already registered.
+3. **VALIDATION** — every business endpoint is implemented; the framework validates + delivers automatically. Answer the verifier and fix the failing-checks dispatched to you; don't start new features.
+When a phase changes you'll see a ▶ PHASE TRANSITION banner — re-orient to the new phase's job.
+</development_lifecycle>
+{% endif %}
+
+
 {% if wake_contract -%}
 <wake_contract>
 {{ wake_contract }}

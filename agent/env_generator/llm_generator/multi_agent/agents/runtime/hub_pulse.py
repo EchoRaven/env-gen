@@ -5,7 +5,119 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 
-def collect_hub_pulse(hubs: Any, agent_id: str, step_num: int = 0) -> Dict[str, Any]:
+# PROPOSAL #25 A1 — run lifecycle phases, DISPLAY ONLY. Surfaced to agents via
+# hub_pulse so they have a communicated model of where the run is + their role.
+# These names are for orientation; the #24 GATES stay on their own raw predicates.
+_PHASE_ORDER = {"KICKOFF": 0, "IMPLEMENTATION": 1, "VALIDATION": 2}
+
+# One-line meaning of each phase (shown to every lane).
+_PHASE_MEANING = {
+    "KICKOFF": "the team is DECLARING the contract (endpoints/tables/ui_pages/chains). No code yet.",
+    "IMPLEMENTATION": "the contract is finalized; lanes are WRITING the app against it.",
+    "VALIDATION": "every business endpoint is implemented; the framework is validating + delivering.",
+}
+
+# Per-(lane, phase) role text — the agent's job RIGHT NOW. Keyed by lane keyword
+# (matched against agent_id) so spawned workers (backend_worker_xyz) resolve too.
+_PHASE_ROLE = {
+    ("backend", "KICKOFF"): "respond to kickoff_request: declare your DB tables + API endpoints in the meeting; do NOT write code yet.",
+    ("backend", "IMPLEMENTATION"): "write the FastAPI routes + DB logic for endpoints you own in your worktree, then registryhub_register_endpoint(status='implemented'). Put logic in custom_routes.py; the framework owns main.py.",
+    ("backend", "VALIDATION"): "answer the verifier's contract questions + fix any failing-check the orchestrator dispatches to you; do not start new features.",
+    ("frontend", "KICKOFF"): "respond to kickoff_request: declare your ui_pages + the endpoints they consume; do NOT build pages yet.",
+    ("frontend", "IMPLEMENTATION"): "build each declared ui_page (real component, not a stub) + wire its route in App.jsx against the registered endpoints.",
+    ("frontend", "VALIDATION"): "fix navigation/dead-control failing-checks the orchestrator dispatches; keep pages faithful to the declared ui_page identity.",
+    ("verifier", "KICKOFF"): "wait — verification starts after implementation. Participate in kickoff only if asked.",
+    ("verifier", "IMPLEMENTATION"): "wait for the validation-phase trigger; do not start chains until endpoints are implemented.",
+    ("verifier", "VALIDATION"): "register + run the verification chains; report failing checks to their owning lane.",
+    ("debugger", "KICKOFF"): "stand by — there is no code to debug during kickoff.",
+    ("debugger", "IMPLEMENTATION"): "stand by until a real validation run completes; do not file bugs against an empty/partial build.",
+    ("debugger", "VALIDATION"): "triage real failing validation runs to the owning lane.",
+    ("orchestrator", "KICKOFF"): "chair the kickoff meeting; drive every lane to declare its contract section + reach finalize_kickoff. Do NOT validate/deliver yet.",
+    ("orchestrator", "IMPLEMENTATION"): "monitor the lanes, answer questions, keep work flowing; the framework validates/delivers automatically once endpoints are implemented.",
+    ("orchestrator", "VALIDATION"): "compose the delivery gate; dispatch failing checks to owners; deliver once green.",
+}
+
+
+def _lane_keyword(agent_id: str) -> str:
+    """Map a (possibly worker-suffixed) agent_id to its lane keyword."""
+    aid = str(agent_id or "").lower()
+    for lane in ("orchestrator", "backend", "frontend", "verifier", "debugger", "knowledge"):
+        if lane in aid:
+            return lane
+    return aid
+
+
+def current_run_phase(hubs: Any, agent: Any = None) -> str:
+    """Return the run lifecycle phase: KICKOFF | IMPLEMENTATION | VALIDATION.
+
+    DISPLAY ONLY — the #24 gates (preconditions.kickoff_finalized /
+    validation_phase_reached) MUST NOT import or call this. The gates stay on
+    their own sticky predicates so a transient hub re-read here can never invert
+    a gate decision (#24 reviewer's subtlety-1 ruling). This is a fresh read that
+    MIRRORS the gate SIGNALS for orientation:
+      - KICKOFF→IMPL: KickoffBootstrapGate's signal — any RegistryHub endpoint OR
+        any WorkHub task. Prefer the agent's STICKY ``_kickoff_bootstrapped`` flag
+        when an agent is in scope (so display matches the gate exactly); fall back
+        to the hub read otherwise.
+      - IMPL→VALIDATION: ``all_business_endpoints_implemented`` (the same predicate
+        validation_phase_reached + the delivery driver use).
+    Never raises; degrades to KICKOFF on any read error."""
+    try:
+        bootstrapped = bool(getattr(agent, "_kickoff_bootstrapped", False)) if agent is not None else False
+        if not bootstrapped:
+            rh = getattr(hubs, "registryhub", None)
+            has_ep = False
+            try:
+                if rh is not None and hasattr(rh, "_endpoints"):
+                    has_ep = bool(rh._endpoints.value())
+                elif rh is not None and hasattr(rh, "get_endpoints"):
+                    has_ep = bool(rh.get_endpoints())
+            except Exception:
+                has_ep = False
+            has_task = False
+            try:
+                wh = getattr(hubs, "workhub", None)
+                if wh is not None and hasattr(wh, "list_tasks"):
+                    has_task = bool(wh.list_tasks())
+            except Exception:
+                has_task = False
+            if not has_ep and not has_task:
+                return "KICKOFF"
+        # bootstrapped (or hub shows endpoints/tasks) → IMPL unless validation-ready
+        rh = getattr(hubs, "registryhub", None)
+        eps = rh.get_endpoints() if (rh is not None and hasattr(rh, "get_endpoints")) else {}
+        if eps:
+            from ...runtime.lifecycle import all_business_endpoints_implemented
+            if all_business_endpoints_implemented(eps):
+                return "VALIDATION"
+        return "IMPLEMENTATION"
+    except Exception:
+        return "KICKOFF"
+
+
+def _pulse_phase(hubs: Any, agent_id: str, agent: Any) -> Dict[str, Any]:
+    """Phase block for the pulse: current phase (monotonic display), the
+    once-per-transition source, the meaning line, and this lane's role NOW."""
+    phase = current_run_phase(hubs, agent=agent)
+    transition_from = None
+    if agent is not None:
+        last = getattr(agent, "_last_shown_phase", None)
+        # Monotonic display: never visibly regress (guards a transiently-empty read).
+        if last and _PHASE_ORDER.get(phase, 0) < _PHASE_ORDER.get(last, 0):
+            phase = last
+        if last and last != phase:
+            transition_from = last
+        agent._last_shown_phase = phase
+    lane = _lane_keyword(agent_id)
+    return {
+        "phase": phase,
+        "transition_from": transition_from,
+        "meaning": _PHASE_MEANING.get(phase, ""),
+        "role": _PHASE_ROLE.get((lane, phase), ""),
+    }
+
+
+def collect_hub_pulse(hubs: Any, agent_id: str, step_num: int = 0, agent: Any = None) -> Dict[str, Any]:
     """Collect the agent's view across 4 hubs. Top-K bounded to control token usage."""
     # Cutover 12: install default subscriptions for this agent (idempotent).
     try:
@@ -36,6 +148,7 @@ def collect_hub_pulse(hubs: Any, agent_id: str, step_num: int = 0) -> Dict[str, 
     report["latest_run"] = _pulse_latest_run(hubs, agent_id)
     report["self_audit"] = _pulse_self_audit(hubs, agent_id)
     report["stale_tasks"] = _pulse_stale_tasks(hubs, agent_id)
+    report["phase"] = _pulse_phase(hubs, agent_id, agent)  # PROPOSAL #25 A2/A3
     return report
 
 
@@ -424,11 +537,36 @@ def should_render(pulse: Dict[str, Any]) -> bool:
     return False
 
 
+def _build_phase_lines(pulse: Dict[str, Any]) -> List[str]:
+    """PROPOSAL #25 A2/A3 — the phase block: a once-per-transition banner (if the
+    phase just changed) + the always-on current phase + this lane's role NOW."""
+    ph = pulse.get("phase") or {}
+    phase = ph.get("phase")
+    if not phase:
+        return []
+    out: List[str] = []
+    tr = ph.get("transition_from")
+    if tr:
+        out.append(f"### ▶ PHASE TRANSITION: {tr} → {phase}")
+        out.append(f"The run just moved to **{phase}**. {ph.get('meaning', '')}")
+    out.append(f"### 📍 PHASE: {phase} — {ph.get('meaning', '')}")
+    role = ph.get("role")
+    if role:
+        out.append(f"**YOUR ROLE NOW:** {role}")
+    out.append("")
+    return out
+
+
 def build_hub_pulse_prompt(pulse: Dict[str, Any]) -> Optional[str]:
-    """Render the pulse dict as a markdown block. Returns None if all sections empty."""
+    """Render the pulse dict as a markdown block. Returns None if all sections empty.
+
+    The phase block (#25 A2/A3) renders even on an otherwise-empty pulse so a quiet
+    step still orients the agent — it is prepended ahead of the should_render gate."""
+    phase_lines = _build_phase_lines(pulse)
     if not should_render(pulse):
-        return None
-    lines: List[str] = ["### HUB PULSE"]
+        return "\n".join(phase_lines).rstrip() if phase_lines else None
+    lines: List[str] = list(phase_lines)
+    lines.append("### HUB PULSE")
 
     ch = pulse.get("codehub") or {}
     bs = ch.get("branch_status") or {}
