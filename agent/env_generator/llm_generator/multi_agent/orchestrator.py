@@ -938,8 +938,7 @@ class Orchestrator:
                     # Per-milestone visual state: anchor the deferral clock and the
                     # total-judgment backstop to THIS milestone (PIPE-C3 — within a
                     # milestone neither is reset by lane churn).
-                    self._vf_deferred_since = None
-                    self._vf_total_judgments = 0
+                    self._vf_gate.reset_for_milestone()
                     # This milestone's requirement slice → kickoff input. When
                     # milestones were NOT explicitly supplied, the single
                     # synthesized M1 MUST receive the exact legacy ``raw_req``
@@ -3504,106 +3503,23 @@ volumes:
             self._reference_spec_summary = res.spec_summary
         return res.requirements
 
+    @property
+    def _vf_gate(self):
+        """Lazily-created visual-fidelity gate (PROPOSAL #8 — VisualFidelity
+        slice B). Owns the per-source judging budget + the per-milestone
+        deferral counters that used to live as inline ``_vf_*`` attrs; created
+        on first access so partially-constructed orchestrators stay cheap."""
+        g = self.__dict__.get("_vf_gate_instance")
+        if g is None:
+            from .runtime.visual_fidelity import VisualFidelityGate
+            g = VisualFidelityGate(self)
+            self.__dict__["_vf_gate_instance"] = g
+        return g
+
     async def _maybe_run_visual_fidelity(self) -> None:
-        """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the
-        running frontend on the routes the reference images depict, has the
-        vision model compare each pair, and on failure files an ACTIONABLE
-        remediation task for the frontend lane (concrete per-screen deviations).
-        Visual design stays the lane's job; this is the enforcement loop that
-        makes the app converge to the references instead of to whatever the
-        lane happened to ship. Bounded: 3 judged runs per app-source signature
-        (each is N vision calls); a pass latches until the source changes.
-        Best-effort — never raises into the coordination loop."""
-        try:
-            refs = list(getattr(self, "_reference_images", None) or [])
-            if not refs:
-                return
-            sig = self._compute_app_source_signature()
-            if sig != getattr(self, "_vf_sig", None):
-                self._vf_sig = sig
-                self._vf_attempts = 0   # fresh per-source judging budget (new pixels deserve a verdict)
-                self._vf_passed = False
-                # PIPE-C3: do NOT reset _vf_deferred_since here. The deferral
-                # wall-clock is anchored to the milestone's FIRST defer (set in
-                # _maybe_framework_deliver, zeroed only at milestone start) — a
-                # frontend lane that churns files on every visual-fail must NOT be
-                # able to keep rewinding the 900s escape clock (the livelock that
-                # left delivery deferred until the run's budget died).
-            if getattr(self, "_vf_passed", False):
-                return
-            if getattr(self, "_vf_attempts", 0) >= 3:
-                return  # budget spent on this source state — wait for lane changes
-            self._vf_attempts = getattr(self, "_vf_attempts", 0) + 1
-            from .runtime.visual_fidelity import run_visual_fidelity, remediation_text
-            if sig is not None and sig == getattr(self, "_vf_last_judged_sig", None):
-                # JUDGE-ON-CHANGE: identical source ⇒ identical pixels — re-
-                # judging burns 7 vision calls to learn nothing (round 30:
-                # 3 attempts on one source, scores just noise-wiggled). The
-                # attempt budget now counts DISTINCT source versions.
-                return
-            result = await run_visual_fidelity(self.output_dir, refs, self.llm)
-            if result.get("capture_unavailable") or result.get("auth_unavailable"):
-                # Not a judgment — the app wasn't reachable (mid-rebuild) or
-                # the authed session was rejected wholesale (token mint failed
-                # / every auth route bounced to /login — round 31 judged the
-                # LOGIN PAGE against feed/profile references, 0.2s across the
-                # board). Refund so the budget only counts REAL verdicts.
-                self._vf_attempts = max(0, getattr(self, "_vf_attempts", 1) - 1)
-                self._logger.warning(
-                    "Visual fidelity: %s — attempt refunded, will retry next tick.",
-                    result.get("summary") or "capture/auth unavailable")
-                return
-            screens = result.get("screens") or []
-            self._vf_last_result = result
-            self._vf_last_judged_sig = sig
-            # PIPE-C3: per-milestone real-judgment counter (NOT reset on sig
-            # change — only at milestone start). A vision-cost backstop escape so a
-            # churning lane that keeps flipping the source signature can't drive
-            # unbounded judging even before the 900s wall-clock escape fires.
-            self._vf_total_judgments = getattr(self, "_vf_total_judgments", 0) + 1
-            if result.get("passed"):
-                self._vf_passed = True
-                self._logger.warning(
-                    "Visual fidelity PASSED (%s): %s",
-                    ", ".join(f"{s['name']}={s['similarity']:.2f}" for s in screens),
-                    result.get("summary"))
-                return
-            self._logger.warning(
-                "Visual fidelity attempt %s/3 FAILED — %s",
-                self._vf_attempts, result.get("summary"))
-            try:
-                _vt = self.hubs.workhub.create_task(
-                    title=f"UI does not match reference designs (visual gate, attempt {self._vf_attempts})",
-                    description=remediation_text(result),
-                    assignee="frontend",
-                    agent="orchestrator",
-                    priority="P1",
-                )
-                # Wake the frontend NOW — milestone work is done at this
-                # point and the lane otherwise idles through the deferral.
-                try:
-                    from tools.communication_tools import _create_message
-                    _msg = _create_message(
-                        source_agent_id="orchestrator",
-                        target_agent_id="frontend",
-                        content=(
-                            "Visual-fidelity remediation task assigned "
-                            f"(task_id={(_vt or {}).get('id')}). Claim it and "
-                            "fix the listed per-screen deviations NOW — the "
-                            "milestone release is DEFERRED until the UI "
-                            "matches the references (or attempts exhaust)."),
-                        msg_type="task_ready",
-                        priority="urgent",
-                        persist=True,
-                        tags=["visual_fidelity", "remediation"],
-                    )
-                    await self.message_bus.send(_msg)
-                except Exception:
-                    pass
-            except Exception as exc:
-                self._logger.error("visual-fidelity task creation failed: %s", exc)
-        except Exception as exc:
-            self._logger.error("visual fidelity gate raised (non-fatal): %s", exc)
+        """Run the bounded visual-fidelity judge-and-remediate loop (delegates to
+        the extracted VisualFidelityGate)."""
+        await self._vf_gate.maybe_run()
 
     def _all_business_endpoints_have_route_code(self) -> bool:
         """Code-reality complement to ``all_business_endpoints_implemented``
@@ -4360,14 +4276,14 @@ volumes:
                     and getattr(self, "_is_final_milestone", True)
                     and os.environ.get("ENVGEN_VISUAL_BLOCKING", "1").lower()
                         not in ("0", "false", "no", "off")
-                    and not getattr(self, "_vf_passed", False)):
-                if getattr(self, "_vf_deferred_since", None) is None:
-                    self._vf_deferred_since = time.time()  # anchor: milestone's FIRST defer
+                    and not self._vf_gate.passed):
+                if self._vf_gate.deferred_since is None:
+                    self._vf_gate.deferred_since = time.time()  # anchor: milestone's FIRST defer
                 _now = time.time()
                 _vf_decision = _visual_release_decision(
-                    self._vf_deferred_since,
-                    getattr(self, "_vf_attempts", 0),
-                    getattr(self, "_vf_total_judgments", 0),
+                    self._vf_gate.deferred_since,
+                    self._vf_gate.attempts,
+                    self._vf_gate.total_judgments,
                     _now,
                 )
                 if _vf_decision == "defer":
@@ -4376,9 +4292,9 @@ volumes:
                         "%s/3 on current source, %ss deferred, %s judged) — re-"
                         "judging now; waiting for the frontend to digest the "
                         "remediation task before cutting this milestone's release.",
-                        getattr(self, "_vf_attempts", 0),
-                        int(_now - self._vf_deferred_since),
-                        getattr(self, "_vf_total_judgments", 0))
+                        self._vf_gate.attempts,
+                        int(_now - self._vf_gate.deferred_since),
+                        self._vf_gate.total_judgments)
                     # DRIVE the re-judge from here (the validation-success branch
                     # SKIPS once a gate-passing run exists). _maybe_run_visual_fidelity
                     # self-guards (pass latch + per-source attempt cap); the deferral
@@ -4393,9 +4309,9 @@ volumes:
                     "Visual fidelity deferral RELEASED (escape after %ss deferred / "
                     "%s attempts / %s total judged) — delivering anyway "
                     "(recorded as below-threshold).",
-                    int(_now - self._vf_deferred_since),
-                    getattr(self, "_vf_attempts", 0),
-                    getattr(self, "_vf_total_judgments", 0))
+                    int(_now - self._vf_gate.deferred_since),
+                    self._vf_gate.attempts,
+                    self._vf_gate.total_judgments)
             # Flush any committed-but-unmerged lane work into integration BEFORE
             # snapshotting the release. Observed (instagram MM, 2026-06-08): the
             # backend committed the final milestone's routes to agent/backend 11s

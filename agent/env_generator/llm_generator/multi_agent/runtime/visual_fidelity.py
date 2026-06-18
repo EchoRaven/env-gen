@@ -606,3 +606,136 @@ def remediation_text(result: Mapping[str, Any]) -> str:
     lines.append("\nReference images: use list_reference_images / view_image. "
                  "Your screenshots from the last gate run are in design/visual_gate/.")
     return "\n".join(lines)
+
+
+class VisualFidelityGate:
+    """Stateful visual-fidelity gate extracted from the Orchestrator (PROPOSAL
+    #8 — VisualFidelity slice B). Owns the per-source judging budget + pass
+    latch and the per-milestone deferral counters (the seven ``_vf_*`` fields
+    the orchestrator used to carry inline) and runs the bounded
+    judge-and-remediate loop. It borrows the orchestrator for I/O collaborators
+    (the app-source signature, the run's LLM / output_dir / logger, the workhub
+    and message bus) — this gate is a decomposed PART of the orchestrator, not a
+    general utility.
+
+    The blocking RELEASE decision stays in the orchestrator's deliver flow
+    (``_visual_release_decision``); it reads + anchors this gate's counters
+    (``passed`` / ``deferred_since`` / ``attempts`` / ``total_judgments``).
+    """
+
+    def __init__(self, orch: Any) -> None:
+        self._orch = orch
+        self.sig = None                # current app-source signature
+        self.attempts = 0              # judged runs on the CURRENT source (cap 3)
+        self.passed = False            # latched pass for the current source
+        self.deferred_since = None     # wall-clock anchor of the milestone's FIRST defer
+        self.total_judgments = 0       # per-milestone real-verdict count (backstop)
+        self.last_result = None
+        self.last_judged_sig = None
+
+    def reset_for_milestone(self) -> None:
+        """Anchor the deferral clock + total-judgment backstop to a NEW milestone
+        (PIPE-C3: within a milestone neither is reset by lane churn)."""
+        self.deferred_since = None
+        self.total_judgments = 0
+
+    async def maybe_run(self) -> None:
+        """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the
+        running frontend on the routes the reference images depict, has the
+        vision model compare each pair, and on failure files an ACTIONABLE
+        remediation task for the frontend lane (concrete per-screen deviations).
+        Visual design stays the lane's job; this is the enforcement loop that
+        makes the app converge to the references instead of to whatever the
+        lane happened to ship. Bounded: 3 judged runs per app-source signature
+        (each is N vision calls); a pass latches until the source changes.
+        Best-effort — never raises into the coordination loop."""
+        orch = self._orch
+        try:
+            refs = list(getattr(orch, "_reference_images", None) or [])
+            if not refs:
+                return
+            sig = orch._compute_app_source_signature()
+            if sig != self.sig:
+                self.sig = sig
+                self.attempts = 0   # fresh per-source judging budget (new pixels deserve a verdict)
+                self.passed = False
+                # PIPE-C3: do NOT reset deferred_since here. The deferral
+                # wall-clock is anchored to the milestone's FIRST defer (set in
+                # _maybe_framework_deliver, zeroed only at milestone start) — a
+                # frontend lane that churns files on every visual-fail must NOT be
+                # able to keep rewinding the 900s escape clock (the livelock that
+                # left delivery deferred until the run's budget died).
+            if self.passed:
+                return
+            if self.attempts >= 3:
+                return  # budget spent on this source state — wait for lane changes
+            self.attempts = self.attempts + 1
+            if sig is not None and sig == self.last_judged_sig:
+                # JUDGE-ON-CHANGE: identical source ⇒ identical pixels — re-
+                # judging burns 7 vision calls to learn nothing (round 30:
+                # 3 attempts on one source, scores just noise-wiggled). The
+                # attempt budget now counts DISTINCT source versions.
+                return
+            result = await run_visual_fidelity(orch.output_dir, refs, orch.llm)
+            if result.get("capture_unavailable") or result.get("auth_unavailable"):
+                # Not a judgment — the app wasn't reachable (mid-rebuild) or
+                # the authed session was rejected wholesale (token mint failed
+                # / every auth route bounced to /login — round 31 judged the
+                # LOGIN PAGE against feed/profile references, 0.2s across the
+                # board). Refund so the budget only counts REAL verdicts.
+                self.attempts = max(0, self.attempts - 1)
+                orch._logger.warning(
+                    "Visual fidelity: %s — attempt refunded, will retry next tick.",
+                    result.get("summary") or "capture/auth unavailable")
+                return
+            screens = result.get("screens") or []
+            self.last_result = result
+            self.last_judged_sig = sig
+            # PIPE-C3: per-milestone real-judgment counter (NOT reset on sig
+            # change — only at milestone start). A vision-cost backstop escape so a
+            # churning lane that keeps flipping the source signature can't drive
+            # unbounded judging even before the 900s wall-clock escape fires.
+            self.total_judgments = self.total_judgments + 1
+            if result.get("passed"):
+                self.passed = True
+                orch._logger.warning(
+                    "Visual fidelity PASSED (%s): %s",
+                    ", ".join(f"{s['name']}={s['similarity']:.2f}" for s in screens),
+                    result.get("summary"))
+                return
+            orch._logger.warning(
+                "Visual fidelity attempt %s/3 FAILED — %s",
+                self.attempts, result.get("summary"))
+            try:
+                _vt = orch.hubs.workhub.create_task(
+                    title=f"UI does not match reference designs (visual gate, attempt {self.attempts})",
+                    description=remediation_text(result),
+                    assignee="frontend",
+                    agent="orchestrator",
+                    priority="P1",
+                )
+                # Wake the frontend NOW — milestone work is done at this
+                # point and the lane otherwise idles through the deferral.
+                try:
+                    from tools.communication_tools import _create_message
+                    _msg = _create_message(
+                        source_agent_id="orchestrator",
+                        target_agent_id="frontend",
+                        content=(
+                            "Visual-fidelity remediation task assigned "
+                            f"(task_id={(_vt or {}).get('id')}). Claim it and "
+                            "fix the listed per-screen deviations NOW — the "
+                            "milestone release is DEFERRED until the UI "
+                            "matches the references (or attempts exhaust)."),
+                        msg_type="task_ready",
+                        priority="urgent",
+                        persist=True,
+                        tags=["visual_fidelity", "remediation"],
+                    )
+                    await orch.message_bus.send(_msg)
+                except Exception:
+                    pass
+            except Exception as exc:
+                orch._logger.error("visual-fidelity task creation failed: %s", exc)
+        except Exception as exc:
+            orch._logger.error("visual fidelity gate raised (non-fatal): %s", exc)
