@@ -18,6 +18,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List
 
+from .. import delivery as _contract
+
 
 def delivery_gate_suggestions(gate: Dict[str, Any]) -> List[str]:
     """Map gate failures to concrete remediation suggestions."""
@@ -465,6 +467,118 @@ def extract_spec_tables(spec: Dict[str, Any]) -> Dict[str, set]:
 # now STACK-PLUGGABLE (FastAPI + Express auto-detected) — see that module.
 
 
+def validate_contract_alignment(output_dir, hubs) -> Dict[str, Any]:
+    """Run lightweight static checks for design/DB/backend/API drift."""
+    errors: List[str] = []
+    warnings: List[str] = []
+
+    # Sources of truth: RegistryHub for endpoints, SchemaHub for tables.
+    hub_endpoints = hubs.registryhub.get_endpoints() or {}
+    hub_tables = hubs.schema_hub.list_tables() or {}
+    api_spec = {
+        "endpoints": [
+            {"method": ep.get("method"), "path": ep.get("path")}
+            for ep in hub_endpoints.values()
+            if isinstance(ep, dict) and ep.get("status") != "deprecated"
+        ],
+    }
+    db_spec = {"tables": list(hub_tables.values())}
+
+    expected_tables = extract_spec_tables(db_spec)
+    sql_tables = _contract.extract_sql_tables(output_dir / "app/database")
+    backend_sql_refs = _contract.extract_backend_sql_refs(output_dir / "app/backend")
+
+    from .database_scaffold import _SPINE_OWNED_TABLES
+    for table, expected_columns in sorted(expected_tables.items()):
+        if str(table).lower() in _SPINE_OWNED_TABLES:
+            # tenants/users/oauth_* are owned deterministically by the
+            # tenancy spine (database_scaffold), not the contract — skip
+            # column alignment so a contract-declared users table (which
+            # the spine intentionally replaces) doesn't false-error.
+            continue
+        if not expected_columns:
+            # Hub knows of the table but hasn't registered columns
+            # yet (early/minimal state). Skip column-level alignment.
+            continue
+        actual_columns = sql_tables.get(table)
+        if actual_columns is None:
+            errors.append(f"SQL schema missing registered table: {table}")
+            continue
+        missing_columns = sorted(expected_columns - actual_columns)
+        if missing_columns:
+            errors.append(f"SQL table `{table}` missing registered columns: {', '.join(missing_columns[:8])}")
+
+    for table, referenced_columns in sorted(backend_sql_refs.items()):
+        actual_columns = sql_tables.get(table)
+        if not actual_columns:
+            warnings.append(f"Backend references table `{table}` but SQL schema did not define it.")
+            continue
+        missing_columns = sorted(referenced_columns - actual_columns)
+        if missing_columns:
+            errors.append(f"Backend references missing SQL columns on `{table}`: {', '.join(missing_columns[:8])}")
+
+    declared_endpoints = _contract.extract_api_endpoints(api_spec)
+    implemented_endpoints = _contract.extract_backend_routes(output_dir / "app/backend")
+    # Param-agnostic match so {id}/:id/${id} + stack differences don't false-flag.
+    declared_keys = {_contract.param_agnostic(e): e for e in declared_endpoints}
+    impl_keys = {_contract.param_agnostic(r) for r in implemented_endpoints}
+    if declared_endpoints and implemented_endpoints:
+        missing_endpoints = sorted(e for k, e in declared_keys.items() if k not in impl_keys)
+        if missing_endpoints:
+            warnings.append(
+                "Backend route coverage missing declared endpoints: "
+                + ", ".join(missing_endpoints[:10])
+            )
+
+    # Code-derived consumer gate (P0, contract_enforcement_and_lifecycle_design §A2):
+    # every BUSINESS API call in the generated frontend MUST hit a registered
+    # endpoint. Phase 3b.6: the auth/oauth surface (oauth_scaffold), the spine
+    # tables (database_scaffold) and the tenant/health control plane
+    # (control_plane) are now REGISTERED in RegistryHub by _register_contract_surface
+    # — so a frontend call to /auth/login or /api/v1/reset matches a real
+    # declared endpoint and needs no hardcoded path exemption (consistency-by-
+    # construction replaces the old _INFRA prefix list). The only residual
+    # exemption is the EXTERNAL central IdP (/idp) used by the google-idp env
+    # variant — it is a foreign service, never an endpoint of THIS env.
+    frontend_calls = _contract.extract_frontend_calls(output_dir / "app/frontend")
+    _EXTERNAL = ("/idp",)
+    # Match on PATH (param-agnostic), METHOD-tolerant. A static scan can't
+    # reliably tell a fetch's method from a React-Router route path (a `/auth/
+    # login` *page* route looks like `GET /auth/login`), so requiring a
+    # method-exact match false-flags registered endpoints as "unregistered".
+    # The api_smoke gate (authoritative — it boots the app and probes every
+    # registered endpoint with its real method) already validated the surface,
+    # so here flag only a call whose PATH has NO registered endpoint at all —
+    # that is the genuine frontend↔contract drift this gate exists to catch.
+    def _pa_path(mp: str) -> str:
+        pa = _contract.param_agnostic(mp)
+        return pa.split(" ", 1)[1] if " " in pa else pa
+    declared_path_keys = {_pa_path(e) for e in declared_endpoints}
+    unregistered_calls = []
+    for call in sorted(frontend_calls):
+        path = call.split(" ", 1)[1] if " " in call else call
+        if any(path == pre or path.startswith(pre + "/") for pre in _EXTERNAL):
+            continue
+        if declared_path_keys and _pa_path(call) not in declared_path_keys:
+            unregistered_calls.append(call)
+    if unregistered_calls:
+        errors.append(
+            "Frontend calls unregistered endpoint(s) (register in RegistryHub): "
+            + ", ".join(unregistered_calls[:10])
+        )
+
+    return {
+        "errors": errors[:20],
+        "warnings": warnings[:20],
+        "expected_tables": len(expected_tables),
+        "sql_tables": len(sql_tables),
+        "declared_endpoints": len(declared_endpoints),
+        "implemented_endpoints": len(implemented_endpoints),
+        "frontend_calls": len(frontend_calls),
+        "frontend_call_unregistered": len(unregistered_calls),
+    }
+
+
 __all__ = ["format_delivery_gate_report", "delivery_gate_suggestions",
            "incomplete_required_tasks", "noncanonical_business_response_keys",
-           "extract_spec_tables"]
+           "extract_spec_tables", "validate_contract_alignment"]
