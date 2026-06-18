@@ -59,3 +59,26 @@ def test_environment_has_current_task_and_archived():
 def test_run_table_removed():
     import app.models as mm
     assert not hasattr(mm, "Run")
+
+
+def test_backfill_creates_one_task_per_env_and_is_idempotent():
+    import app.db as dbmod
+    with SessionLocal() as db:
+        db.add(Environment(id="bf-env", name="bf-env", tenant_id="ten", created_by="u",
+                           generated_dir="/envs/bf-env", status="completed",
+                           model="gemini", provider="google", delivered=True))
+        db.commit()
+    dbmod._backfill_generation_tasks()
+    dbmod._backfill_generation_tasks()  # second run must not duplicate
+    with SessionLocal() as db:
+        tasks = [t for t in db.query(GenerationTask).all() if t.env_id == "bf-env"]
+        assert len(tasks) == 1
+        t = tasks[0]
+        assert t.project_path == "/envs/bf-env"
+        assert t.state_path == "/envs/bf-env/.checkpoint"
+        assert t.status == "delivered" and t.delivered is True
+        assert t.model == "gemini" and t.provider == "google"
+        e = db.get(Environment, "bf-env")
+        assert e.current_task_id == t.task_id
+        # cleanup
+        db.delete(t); db.delete(e); db.commit()

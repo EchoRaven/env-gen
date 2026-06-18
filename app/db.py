@@ -25,6 +25,7 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
     _ensure_tenant_columns()
     _ensure_environment_columns()
+    _backfill_generation_tasks()
 
 
 def _ensure_tenant_columns() -> None:
@@ -64,6 +65,44 @@ def _ensure_environment_columns() -> None:
     with engine.begin() as conn:
         for clause in adds:
             conn.execute(text(f"ALTER TABLE environments {clause}"))
+
+
+def _backfill_generation_tasks() -> None:
+    """One-shot, idempotent: ensure every Environment has at least one
+    GenerationTask (the legacy registry had no per-attempt rows). Maps the env's
+    status/config onto the task; points current_task_id at it iff delivered.
+    Safe to re-run (skips envs that already have a task)."""
+    from . import models  # local import avoids a models<->db import cycle
+    with SessionLocal() as db:
+        envs = db.query(models.Environment).all()
+        have = {row[0] for row in db.query(models.GenerationTask.env_id).all()}
+        made = False
+        for e in envs:
+            if e.id in have:
+                continue
+            if e.delivered or e.status in ("completed", "delivered"):
+                status = "delivered"
+            elif e.status == "failed":
+                status = "failed"
+            else:
+                status = e.status or "queued"
+            gd = e.generated_dir or ""
+            t = models.GenerationTask(
+                task_id=f"{e.id}:backfill", env_id=e.id, tenant_id=e.tenant_id,
+                created_by=e.created_by, name=e.name, project_path=gd,
+                state_path=(gd + "/.checkpoint") if gd else "",
+                status=status, reference=e.reference, model=e.model,
+                provider=e.provider, scope=e.scope, requirements=e.requirements,
+                gates_json=e.gates_json, max_wallclock_min=e.max_wallclock_min,
+                max_ticks=e.max_ticks, delivered=bool(e.delivered),
+            )
+            models.record_status(t, status, "backfill")
+            db.add(t)
+            if status == "delivered":
+                e.current_task_id = t.task_id
+            made = True
+        if made:
+            db.commit()
 
 
 def get_db() -> Iterator[Session]:
