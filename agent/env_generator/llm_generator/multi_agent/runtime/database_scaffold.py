@@ -545,11 +545,9 @@ INSERT INTO tenants (id, name) VALUES ('default', 'Default Tenant') ON CONFLICT 
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     email TEXT NOT NULL,
-    -- FIX #35: spine display-name column is NOT essential to the AS (it keys on
-    -- email/password_hash/id). Apps routinely carry their OWN display column
-    -- (full_name, display_name, …) and their backend register never sets the
-    -- spine `name`, which previously hit NotNullViolation → register 500 → no
-    -- delivery. Default it so an insert that omits `name` still succeeds.
+    -- display-name column. The embedded OAuth AS keys on email/password_hash/id,
+    -- and an app's register flow may not set `name`, so default it to keep an
+    -- insert that omits `name` working.
     name TEXT NOT NULL DEFAULT '',
     password_hash TEXT NOT NULL,
     tenant_id TEXT NOT NULL DEFAULT 'default' REFERENCES tenants(id) ON DELETE CASCADE,
@@ -664,7 +662,7 @@ def render_schema_sql(tables: Dict[str, Any]) -> str:
                 alters = _spine_extra_column_alters(
                     name, _columns_of(table), _SPINE_USERS_COLUMNS)
                 if alters:
-                    lines.append("-- app-extended columns on the spine `users` table (FIX #34)")
+                    lines.append("-- app-extended columns on the spine `users` table")
                     lines.extend(alters)
                     lines.append("")
             continue  # spine owns the base table; extras merged above

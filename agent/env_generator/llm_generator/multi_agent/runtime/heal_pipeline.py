@@ -400,7 +400,7 @@ class HealPipeline:
                 return
             wiring = [
                 "",
-                "# FIX #39: wire the framework OAuth2 AS (provides /oauth/*,",
+                "# wire the framework OAuth2 AS (provides /oauth/*,",
                 "# /.well-known/*, and the standard /auth/register + /auth/login).",
                 "try:",
                 "    from oauth_store import OAuthStore as _ASStore",
@@ -443,9 +443,8 @@ class HealPipeline:
             if not _re.search(r"^\s*app\s*=", src, _re.M):
                 return  # no module-level `app` to serve
             entry = (
-                "\n\n# FIX #38: ensure `python main.py` actually serves (the lane "
-                "omitted the\n# entrypoint, so the container exited(0) without "
-                "starting uvicorn).\n"
+                "\n\n# ensure `python main.py` actually serves (a missing "
+                "entrypoint makes the\n# container exit(0) without starting uvicorn).\n"
                 'if __name__ == "__main__":\n'
                 "    import os\n"
                 "    import uvicorn\n"

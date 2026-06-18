@@ -118,7 +118,7 @@ def repair_frontend_api_exports(frontend_dir) -> Dict[str, object]:
         if not missing:
             return {"repaired": False, "missing": []}
 
-        lines = ["", "// FIX #37: auto-reconciled api.js exports (component import/export drift)."]
+        lines = ["", "// auto-reconciled api.js exports (component import/export drift)."]
         aliased, stubbed = [], []
         for name in missing:
             match = _best_match(name, exported)
