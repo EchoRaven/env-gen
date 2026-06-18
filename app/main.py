@@ -25,7 +25,7 @@ from .auth import AuthContext, assert_env_access, current_admin, scope_query
 from .db import get_db, init_db, SessionLocal
 # NB: ChatMessage table is retained in models.py but no longer read/written here —
 # chat now sources truth from the live EventHub via chat_bridge.
-from .models import Environment
+from .models import Environment, GenerationTask, record_status
 
 ENVS_ROOT = Path(os.environ.get("ENVS_ROOT", str(Path(__file__).resolve().parents[1] / "generated")))
 
@@ -148,6 +148,21 @@ def create_environment(body: EnvCreate, db: Session = Depends(get_db),
                     status="generating", generated_dir=str(gen),
                     tenant_id=user.tenant_id, created_by=user.user_id)
     db.add(e)
+    # Record this generation as a GenerationTask (the per-attempt registry row).
+    # NOTE: still one dir per name today; the per-task-dir cutover is a follow-up
+    # (see docs/superpowers/specs/2026-06-17-generation-task-db-redesign.md).
+    import uuid as _uuid
+    task = GenerationTask(
+        task_id=str(_uuid.uuid4()), env_id=e.id, tenant_id=e.tenant_id,
+        created_by=e.created_by, name=e.name, project_path=str(gen),
+        state_path=str(gen) + "/.checkpoint", status="generating",
+        reference=e.reference, model=e.model, provider=e.provider,
+        scope=e.scope, requirements=e.requirements, gates_json=e.gates_json,
+        max_wallclock_min=e.max_wallclock_min, max_ticks=e.max_ticks,
+    )
+    record_status(task, "generating", "env created")
+    db.add(task)
+    e.current_task_id = task.task_id
     db.commit()
     # TODO: kick off the generation pipeline (forgingground-gen run) as a job here,
     # honoring requirements / model / provider / budget / gates / staged references.
