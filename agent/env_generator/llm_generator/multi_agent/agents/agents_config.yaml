@@ -83,9 +83,15 @@ profiles:
       # the v3 changes concentrate in the system prompt body.
       template: "v3/orchestrator_agent.j2"
       system_macro: "lead_system_prompt"
+      # PROPOSAL #10: default task macro for goal-less resident wakes
+      # (resident_message_wakeup carries no raw_requirements → without this the
+      # orchestrator woke with "Complete your assigned task." and had to rediscover
+      # the goal from memory_bank). resident_task_prompt renders a SHORT current-project
+      # header (name + truncated goal) so it always knows what it's coordinating.
+      task_macro: "resident_task_prompt"
       task_macros:
         full: "full_workflow_prompt"
-      context_vars: ["api_port", "ui_port"]
+      context_vars: ["api_port", "ui_port", "name", "description"]
     flags:
       coordinator: true
       can_deliver: true
@@ -242,11 +248,21 @@ profiles:
     # workhub_get_meeting and wait/sleep are also excluded.
     stage_tool_allowlist:
       "kickoff:action":
+        # Dedicated flat-param declare tools FIRST — one item per call, can't
+        # null out (the generic add_meeting_decision's nested arrays get nulled
+        # by Gemini → ui_pages:[null,null,...] / -128 mangles → rejected + looped).
+        - kickoff_declare_endpoint
+        - kickoff_declare_table
         - workhub_add_meeting_decision
         - workhub_get_document
         - workhub_list_documents
         - workhub_comment
         - read
+        # PROPOSAL #9: file-search tools (glob/grep/list_generated_files) are NOT
+        # exposed in kickoff — nothing is built yet (the lane only DECLARES its
+        # contract slice), so they have no use here and only widen the surface that
+        # kickoff is deliberately minimized to keep declare-focused. They remain in
+        # implementation:action (where code is authored + files need locating).
         - finish
       # Smoke #4 (2026-06-06): backend entered edit_code 38x but called
       # workhub_get_document/read (NOT write/register), 0 endpoints implemented ->
@@ -282,10 +298,31 @@ profiles:
         - registryhub_list_endpoints
         - registryhub_get_table_breaking_changes
         - registryhub_list_tables
+        # MCP registration: backend_agent.j2 says it MUST register the MCP server
+        # + each tool (Cutover-22 dead-code gate) when it implements one. The
+        # framework also registers MCP deterministically (_generate_mcp), so these
+        # are idempotent — but without them the lane is told to register yet
+        # physically can't, burning rounds on a blocked tool.
+        - mcp_registry_register_server
+        - mcp_registry_register_tool
+        - mcp_registry_register_consumer
         - codehub_commit
         - codehub_resolve_conflict
         - codehub_resolve_merge_conflict
         - test_api
+        # File-search / symbol lookup (PROPOSAL #6). The backend authors
+        # models/schemas/main/routes across many files that reference each other;
+        # without these it could only `read` a GUESSED path. NOTE re Smoke #4:
+        # that gap stripped the COORDINATION/read drift sinks (get_document/
+        # list_documents/comment) because the LLM chose them OVER coding. These
+        # are a DIFFERENT tool-CLASS — read-only file *discovery* that feeds code
+        # production (find the file → edit it), not coordination — and they add
+        # no write/contract authority, with the finish-gates still guarding drift.
+        # So this does NOT re-open the deliberately-narrow impl allowlist.
+        - glob
+        - grep
+        - list_generated_files
+        - find_definition
     workflow_policies:
       # Breaker first — see ordering note on ``design`` profile.
       - kind: lane_idle_circuit_breaker
@@ -389,6 +426,23 @@ profiles:
       - codehub_force_merge
       - wait
       - wait_for_process
+    # Frontend finish-gate = frontend_canonical_root (run #5): blocks finish on
+    # WRONG-ROOT — pages authored at repo-root ./src instead of app/frontend/src
+    # (bash heredocs bypass write-tool path routing → blank canonical tree).
+    # NOTE: the run #13 false-completion ("declared done with a blank shell") is
+    # now prevented STRUCTURALLY by the deterministic page-scaffold
+    # (_scaffold_frontend_pages projects a stub per ui_page at finalize, so the
+    # app is navigable-by-construction) + the delivery gate's frontend_navigable.
+    # A task-status finish-gate (the reverted frontend_pages_implemented) was
+    # redundant with that AND wedged: impl.page.* tasks depend on impl.component.*
+    # tasks, so a frontend with all 16 pages BUILT but the page tasks still
+    # dependency-blocked (un-claimable, un-cancellable) could never reach a
+    # terminal task state → finish blocked forever (run #14, api_smoke already
+    # PASSED). File/contract coverage belongs to the projection + delivery gate,
+    # not a no-escape task-status precondition.
+    stage_tool_preconditions:
+      action:
+        finish: frontend_canonical_root
     # PR1.3 — kickoff stage allowlist. Same shape as backend/verifier.
     # Frontend's kickoff role is to record screen/api_call/user_flow
     # declarations (NOT to register endpoints — orchestrator does that
@@ -398,11 +452,29 @@ profiles:
     # code during kickoff" rule that v3 prose used to carry.
     stage_tool_allowlist:
       "kickoff:action":
+        # Dedicated flat-param declare tools FIRST — one page/component/flow per
+        # call, can't null out. The generic add_meeting_decision's nested ui_pages
+        # array gets nulled by Gemini (ui_pages:[null,null,...] → rejected + looped);
+        # the flat tools take explicit id/route/purpose scalars instead.
+        - kickoff_declare_ui_page
+        - kickoff_declare_ui_component
+        - kickoff_declare_user_flow
         - workhub_add_meeting_decision
         - workhub_get_document
         - workhub_list_documents
         - workhub_comment
         - read
+        # PROPOSAL #12: the frontend MUST inspect reference screenshots during Phase A
+        # design (frontend_agent.j2: "list_reference_images ONCE in Phase A, then
+        # view_image() for every path — never guess the UI from memory"). These were
+        # missing here, so the lane couldn't see the references it was told to use and
+        # pleaded with the orchestrator instead. Unlike #9's glob/grep (no kickoff use),
+        # these have a clear, prompt-mandated kickoff use → keep them. copy_reference_image
+        # is NOT added (its use is bundled-library images, not pre-staged screenshots).
+        - list_reference_images
+        - view_image
+        # PROPOSAL #9: no file-search in kickoff (nothing built yet; declare-only).
+        # The search tools live in implementation:action, not here.
         - finish
     workflow_policies:
       # Breaker first — see ordering note on ``design`` profile.
@@ -559,11 +631,17 @@ profiles:
     # messages, hallucinated workhub_get_meeting polling) is hidden.
     stage_tool_allowlist:
       "kickoff:action":
+        # Dedicated flat-param declare tool FIRST — one predicate per call, can't
+        # null out (the generic add_meeting_decision's nested predicates array gets
+        # nulled/mangled by Gemini → rejected + looped).
+        - kickoff_declare_predicate
         - workhub_add_meeting_decision
         - workhub_get_document
         - workhub_list_documents
         - workhub_comment
         - read
+        # PROPOSAL #9: no file-search in kickoff (nothing built yet; declare-only).
+        # The search tools live in implementation:action, not here.
         - finish
       # Smoke #6 (2026-06-06): backend implemented 12 endpoints but the verifier
       # never validated (0 run_validation) — it suppressed 118 wakeups and, when
@@ -611,7 +689,24 @@ profiles:
         - browser_network_errors
         - codehub_get_diff
         - codehub_get_file_content
+        # verifier_agent.j2 tells the verifier to make the build:docker /
+        # build:frontend / validation:* check records "present and PASSED", but
+        # codehub_record_check is the ONLY tool that emits them (no tool
+        # auto-records build:/validation: checks; helpers.py only auto-records
+        # artifact:* ). Without it the verifier is told to record yet can't.
+        # Not delivery-fatal — the gate waives build:* when functionally_validated
+        # (a passing run_validation RunHub run, which the verifier already has) —
+        # but it makes the documented build-checklist fallback path actually
+        # usable and removes a prompt↔allowlist mismatch.
+        - codehub_record_check
         - submit_learning
+        # File-search (PROPOSAL #6): the verifier inspects the generated app to
+        # route/write tests + diagnose failures; it had codehub_get_file_content
+        # but no way to LOCATE files, so it could only read GUESSED paths.
+        # Read-only — adds no validation/contract authority.
+        - glob
+        - grep
+        - list_generated_files
     workflow_policies:
       - kind: verifier_validation_trigger
         allowed_sender: orchestrator

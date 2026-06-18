@@ -7,16 +7,12 @@ read at import time, so we enable auth before importing the app. Run with:
 """
 import base64
 import os
-import tempfile
 import time
 from pathlib import Path
 
-# ── enable real auth before importing the app (constants are import-time) ─────
-_DB = tempfile.mktemp(suffix=".db")
-os.environ["AGENTSUITE_AUTH_ENABLED"] = "true"
-os.environ["AGENTSUITE_JWT_SECRET"] = "guard-test-secret"
-os.environ["DATABASE_URL"] = f"sqlite:///{_DB}"
-os.environ["ENVS_ROOT"] = tempfile.mkdtemp()  # empty → no disk envs get synced
+# Auth/DB/ENVS_ROOT env is set centrally in conftest.py BEFORE app import (the
+# app binds it at import time), so the combined `pytest tests/` run is
+# order-independent. We just read the resulting secret below.
 
 import jwt
 import pytest

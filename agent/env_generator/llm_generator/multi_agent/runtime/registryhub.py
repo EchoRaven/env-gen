@@ -507,7 +507,14 @@ class RegistryHub:
             ),
         )
         now = time.time()
-        test_id = f"test:{endpoint_id}:{now}"
+        # Event-store efficiency (#4): upsert by a STABLE per-endpoint key
+        # (drop the timestamp) so re-recording the same endpoint overwrites
+        # the prior row instead of appending a new one every validation run.
+        # The endpoint's latest contract-test result is the only row callers
+        # need; history is not consumed. Readers filter by ``endpoint_id``
+        # (get_contract_test_results / list_contract_test_results_sorted) and
+        # still see exactly one current row per endpoint.
+        test_id = f"test:{endpoint_id}"
         result_dict = result or {}
         # Derive explicit top-level ``verdict`` ("pass"/"fail") from the
         # writer's result dict so the endpoint_contract resolver can do
@@ -542,11 +549,27 @@ class RegistryHub:
             "agent": agent, "created_at": now,
             "verdict": verdict,
         }
+        # Event-store efficiency (#4): only emit ``api_test_recorded`` when
+        # the verdict ACTUALLY CHANGED versus the last recorded result for
+        # this endpoint. An identical re-record (same verdict + same HTTP
+        # status_code) is a no-op for every consumer of the event stream, so
+        # we skip the emit (the youtube run re-recorded 35 endpoints 42×
+        # identically → 63% of all events). The store row is still upserted
+        # so the latest result/evidence/timestamp stay current.
+        prior = self._contract_tests.get(test_id)
+        prior_status = (prior or {}).get("result", {}).get("status_code") if prior else None
+        new_status = result_dict.get("status_code")
+        verdict_changed = (
+            prior is None
+            or prior.get("verdict") != verdict
+            or prior_status != new_status
+        )
         self._contract_tests.update(
             lambda m: m.set(test_id, test, agent),
             change_info={"agent": agent},
         )
-        self._emit("api_test_recorded", test, recipients=[])
+        if verdict_changed:
+            self._emit("api_test_recorded", test, recipients=[])
         return test
 
     def get_consumers(self, endpoint_id: str) -> List[dict]:
@@ -912,16 +935,25 @@ class RegistryHub:
         now = time.time()
         table_id = name
         existing = self._tables.value().get(table_id)
+        # NORMALIZE AT THE WRITE BOUNDARY: the contract tools advertise a
+        # FLAT-MAP schema (``{column: "type string"}``) while kickoff emits
+        # ``{"columns":[{name,type,…}]}``. Storing either verbatim meant the
+        # flat map never projected (``_columns_of`` returned [] → id-only ORM/
+        # DDL, every other column silently dropped on re-registered tables).
+        # Collapse to ONE canonical shape here so the store holds a single
+        # representation every downstream reader already understands.
+        if schema is not None:
+            from .database_scaffold import normalize_table_schema
+            stored_schema: Any = normalize_table_schema(schema)
+        else:
+            stored_schema = (existing or {}).get("schema") or {}
         table = {
             **(existing or {}),
             "id": table_id,
             "name": name,
             "status": status or (existing or {}).get("status") or "defined",
             "provider": provider or (existing or {}).get("provider"),
-            "schema": (
-                schema if schema is not None
-                else (existing or {}).get("schema") or {}
-            ),
+            "schema": stored_schema,
             "metadata": {
                 **((existing or {}).get("metadata") or {}),
                 **(metadata or {}),
@@ -1193,8 +1225,15 @@ class RegistryHub:
                 "hint": "Call registryhub_register_table first.",
             }
         if metadata and "expected_columns" in metadata:
+            # ``expected_columns`` is a flat ``{column: type}`` map (the
+            # consumer states the columns it reads). The stored schema is now
+            # the canonical ``{"columns":[…]}`` shape, so flatten it to the
+            # same ``{column: type}`` form before subset-checking — otherwise
+            # the check would look for the consumer's columns under the single
+            # ``"columns"`` key and always report them missing.
             mismatch = _schema_subset_check(
-                metadata["expected_columns"], table.get("schema", {}),
+                metadata["expected_columns"],
+                self._schema_as_col_map(table.get("schema", {})),
             )
             if mismatch:
                 return {
@@ -1282,11 +1321,29 @@ class RegistryHub:
     def list_seed_registrations(self) -> Dict[str, dict]:
         return dict(self._seed_registrations.value() or {})
 
+    @staticmethod
+    def _schema_as_col_map(schema: Any) -> Dict[str, str]:
+        """Flatten ANY accepted table-schema shape (flat map, ``{"columns":
+        [...]}``, or bare list) to a ``{column_name: type}`` map so the
+        breaking-change diff is shape-agnostic — it compares column NAMES and
+        TYPES, not the container shape. (Without this, a canonical stored
+        old-schema diffed against a flat-map new-schema would compare the
+        single key ``"columns"`` against the real column names.)"""
+        from .database_scaffold import normalize_columns
+        cols = normalize_columns(schema)
+        out: Dict[str, str] = {}
+        for c in cols:
+            if isinstance(c, dict):
+                cn = str(c.get("name") or "").strip()
+                if cn:
+                    out[cn] = str(c.get("type") or "")
+        return out
+
     def detect_table_breaking_change(
         self, old_schema: dict, new_schema: dict,
     ) -> dict:
-        old_schema = old_schema or {}
-        new_schema = new_schema or {}
+        old_schema = self._schema_as_col_map(old_schema or {})
+        new_schema = self._schema_as_col_map(new_schema or {})
         removed_columns: list = sorted(
             set(old_schema.keys()) - set(new_schema.keys())
         )

@@ -229,11 +229,12 @@ class CodeHubOpenPRTool(HubTool):
             "linked_pages": {"type": "array", "items": {"type": "string"}, "description": "WorkHub page IDs related to this PR."},
             "linked_consumers": {"type": "array", "items": {"type": "string"}, "description": "RegistryHub consumer keys (file:agent pairs) referenced by this PR."},
             "title": {"type": "string"},
+            "description": {"type": "string", "description": "Optional PR body (summary of what changed and why)."},
         },
         "required": ["branch", "linked_tasks"],
     }
 
-    async def _run(self, branch: str, linked_tasks: list, target: str = "main", reviewers: list = None, linked_apis: list = None, linked_pages: list = None, linked_consumers: list = None, title: str = "") -> ToolResult:
+    async def _run(self, branch: str, linked_tasks: list, target: str = "main", reviewers: list = None, linked_apis: list = None, linked_pages: list = None, linked_consumers: list = None, title: str = "", description: str = "") -> ToolResult:
         result = self._hubs.codehub.open_pull_request(
             branch, target=target,
             reviewers=reviewers or [],
@@ -241,7 +242,7 @@ class CodeHubOpenPRTool(HubTool):
             linked_apis=linked_apis or [],
             linked_pages=linked_pages or [],
             linked_consumers=linked_consumers or [],
-            title=title, author=self._agent_id,
+            title=title, description=description, author=self._agent_id,
         )
         if "error" in result:
             return ToolResult(success=False, error_message=result["error"], data=result)
@@ -1194,23 +1195,60 @@ class WorkhubAddMeetingDecisionTool(HubTool):
         # Failing HERE puts the guidance in the model's face immediately.
         try:
             from multi_agent.runtime.kickoff.section_substance import (
-                decision_has_substance)
+                decision_has_substance, non_contract_keys)
             _c = coerced or {}
             _sec = _c.get("section") or (_c.get("content") or {}).get("section")
             _content = _c.get("content") if isinstance(_c.get("content"), dict) else _c
             if (_sec in ("frontend", "backend", "verifier")
                     and not _content.get("deferred")
                     and not decision_has_substance(_c, _sec)):
+                _keys = {"frontend": "ui_pages / screens / user_flows / ui_components",
+                         "backend": "endpoints / data_model.tables",
+                         "verifier": "predicates"}.get(_sec, "ui_pages / endpoints / predicates")
+                _eg = {"frontend": "{'user_flows': [<ONE flow>]}",
+                       "backend": "{'endpoints': [<ONE endpoint>]}",
+                       "verifier": "{'predicates': [<ONE predicate>]}"}.get(
+                           _sec, "{'ui_pages': [<ONE page>]}")
+                # WRONG-KEYS (youtube run #13): the lane submitted ONLY non-contract
+                # keys (e.g. {'auth_model': 'jwt'} — auth is framework-owned, NOT a
+                # section field). The generic "truncated → SUBMIT IN PARTS" guidance
+                # below made the backend resend the same auth blob 22×. Steer it to
+                # the right keys + tell it auth is framework-owned, instead of
+                # implying truncation, so it stops looping.
+                _wrong = non_contract_keys(_content, _sec)
+                if _wrong:
+                    return ToolResult.fail(
+                        f"decision for section '{_sec}' carried only NON-CONTRACT "
+                        f"keys {_wrong} — these are not part of your kickoff section. "
+                        "Auth is FRAMEWORK-OWNED (the generated stack embeds an "
+                        "OAuth2 AS minting JWTs) — do NOT declare auth_model/auth; "
+                        "the framework supplies it. Declare your real contract "
+                        f"({_keys}) via the dedicated kickoff_declare_* tools (e.g. "
+                        f"{_eg}). Do NOT re-submit this decision.")
+                # Mangle detection: a recognized key present as a SCALAR (e.g.
+                # endpoints=-128) means Gemini truncated a large inline payload in
+                # transit — NOT an empty draft. Flag it so the model switches to the
+                # small, mangle-proof dedicated tools instead of resending the blob.
+                _recognized = {"frontend": ("ui_pages", "screens", "user_flows", "ui_components"),
+                               "backend": ("endpoints", "data_model"),
+                               "verifier": ("predicates",)}.get(_sec, ())
+                _mangled = [k for k in _recognized
+                            if k in _content and not isinstance(_content.get(k), (list, dict, str))]
+                _mangle_note = (
+                    f" ⚠ MANGLED PAYLOAD: {_mangled} arrived as a non-list scalar "
+                    f"(e.g. {_content.get(_mangled[0])!r}) — your large inline JSON was "
+                    "TRUNCATED in transit. Do NOT resend the big blob: use the dedicated "
+                    "kickoff_declare_* tools (ONE small item per call), which never mangle."
+                    if _mangled else "")
                 return ToolResult.fail(
-                    f"decision for section '{_sec}' has NO substantive content "
-                    "(empty/null ui_pages/endpoints/predicates). Long payloads "
-                    "get mangled — SUBMIT IN PARTS instead: call this tool "
-                    "SEVERAL times, each with a SMALL piece (e.g. decision="
-                    f"{{'section': '{_sec}', 'content': {{'ui_pages': [<ONE "
-                    "page>]}}}}); the meeting MERGES your pieces into one "
-                    "section. Or write the full JSON to "
-                    f"design/kickoff_{_sec}_section.json (several small "
-                    "write/edit calls) and pass decision_file=...")
+                    f"decision for section '{_sec}' has NO non-empty content in any "
+                    f"recognized key ({_keys}) — every recognized list was empty/null." + _mangle_note +
+                    " If a large inline payload got truncated, SUBMIT IN PARTS: call "
+                    "this tool SEVERAL times, each with a SMALL piece (e.g. decision="
+                    f"{{'section': '{_sec}', 'content': {_eg}}}); the meeting MERGES "
+                    "your pieces. Prefer the dedicated kickoff_declare_* tools (one "
+                    "item per call). Or write the full JSON to "
+                    f"design/kickoff_{_sec}_section.json and pass decision_file=...")
         except ImportError:
             pass
         try:
@@ -1644,14 +1682,25 @@ class RegistryHubRegisterTableTool(HubTool):
 
 class RegistryHubListTablesTool(HubTool):
     NAME = "registryhub_list_tables"
-    DESCRIPTION = "List registered tables, optionally filtered by provider."
+    DESCRIPTION = "List registered tables, optionally filtered by provider or status."
     PARAMETERS = {
         "type": "object",
-        "properties": {"provider": {"type": "string"}},
+        "properties": {
+            "provider": {"type": "string"},
+            # `status` mirrors registryhub_list_endpoints — the model reasonably
+            # assumes the two list tools take the same filters, and called
+            # list_tables(status=...) → crash. Accept + apply it (tables carry a
+            # status the skeleton flips to 'implemented').
+            "status": {"type": "string", "description": "Optional status filter, e.g. 'implemented' / 'defined'."},
+        },
     }
 
-    async def _run(self, provider: str = None) -> ToolResult:
-        return ToolResult(data={"tables": self._hubs.schema_hub.list_tables(provider=provider)})
+    async def _run(self, provider: str = None, status: str = None) -> ToolResult:
+        tables = self._hubs.schema_hub.list_tables(provider=provider)
+        if status and isinstance(tables, dict):
+            tables = {k: v for k, v in tables.items()
+                      if isinstance(v, dict) and v.get("status") == status}
+        return ToolResult(data={"tables": tables})
 
 
 class RegistryHubRegisterTableConsumerTool(HubTool):

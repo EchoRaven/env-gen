@@ -59,7 +59,7 @@ def _create_conflicting_pr(hub: CodeHub, author: str = "resolve-agent") -> dict:
     """Set up a PR in 'conflict' state and return its dict.
 
     The shape is the same as ``TestResolveConflict._create_conflicting_pr``
-    in test_codehub_merge.py: divergent commits on ``master`` and
+    in test_codehub_merge.py: divergent commits on ``main`` and
     ``resolve-feature``, then ``merge_pull_request`` runs and lands in
     conflict.
     """
@@ -73,16 +73,16 @@ def _create_conflicting_pr(hub: CodeHub, author: str = "resolve-agent") -> dict:
     hub.git.add("shared.txt")
     hub.git.commit("Feature changes shared.txt")
 
-    hub.git.checkout("master")
-    shared_file.write_text("from master\n", encoding="utf-8")
+    hub.git.checkout("main")
+    shared_file.write_text("from main\n", encoding="utf-8")
     hub.git.add("shared.txt")
-    hub.git.commit("Master changes shared.txt for resolve test")
+    hub.git.commit("Main changes shared.txt for resolve test")
 
     hub.stores.branches.update(
         lambda m: m.set(
             "main:resolve-feature",
             {"id": "main:resolve-feature", "name": "resolve-feature",
-             "repo_id": "main", "base": "master", "owner": author,
+             "repo_id": "main", "base": "main", "owner": author,
              "status": "active"},
             "test",
         )
@@ -90,7 +90,7 @@ def _create_conflicting_pr(hub: CodeHub, author: str = "resolve-agent") -> dict:
 
     pr = hub.open_pull_request(
         branch="resolve-feature",
-        target="master",
+        target="main",
         author=author,
         reviewers=["reviewer1"],
         linked_tasks=["synthetic_task_1"],

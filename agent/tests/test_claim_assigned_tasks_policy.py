@@ -33,6 +33,9 @@ from multi_agent.runtime.hub_registry import HubRegistry  # noqa: E402
 from multi_agent.workflow_policies import ClaimAssignedTasksPolicy  # noqa: E402
 
 
+_MISSING = object()  # sentinel: do not set _active_phase on the stub at all
+
+
 def _reset_event_loop():
     try:
         asyncio.set_event_loop(asyncio.new_event_loop())
@@ -232,6 +235,60 @@ class TestPolicyFiresOnUnclaimedAssigned(unittest.TestCase):
             blob = " ".join(getattr(m, "content", "") or "" for m in msgs)
             self.assertIn("12 task", blob)
             self.assertIn("more not shown", blob)
+
+
+class TestKickoffPhaseSkip(unittest.TestCase):
+    """PROPOSAL #11: the gate is an IMPLEMENTATION-phase concern. During kickoff the
+    lane only declares its contract slice and has neither workhub_task (claim) nor
+    workhub_cancel_task in its allowlist, so the gate would be unsatisfiable. It must
+    skip when _active_phase == 'kickoff'; it must still fire in implementation."""
+
+    def tearDown(self):
+        _reset_event_loop()
+
+    def _run(self, agent):
+        return asyncio.run(ClaimAssignedTasksPolicy().handle_finish(
+            agent,
+            tool_name="finish",
+            tool_args={"message": "done"},
+            tool_call=_StubToolCall(),
+            tool_call_id="call-1",
+            messages=[],
+            files_created=[],
+            files_modified=[],
+        ))
+
+    def _agent_with_unclaimed(self, tmp, phase):
+        reg = HubRegistry(Path(tmp), project_id="p", project_name="P")
+        reg.workhub.create_task(
+            title="Implement /api/posts", description="add the routes",
+            agent="orchestrator", assignee="backend",
+        )
+        agent = _StubAgent("backend", reg)
+        if phase is not _MISSING:
+            agent._active_phase = phase
+        return agent
+
+    def test_kickoff_phase_skips_gate(self):
+        # _active_phase == 'kickoff' + an unclaimed assigned task → NO block.
+        with tempfile.TemporaryDirectory() as tmp:
+            agent = self._agent_with_unclaimed(tmp, "kickoff")
+            self.assertIsNone(self._run(agent))
+
+    def test_implementation_phase_still_blocks(self):
+        # _active_phase == 'implementation' + unclaimed task → STILL blocks (unchanged).
+        with tempfile.TemporaryDirectory() as tmp:
+            agent = self._agent_with_unclaimed(tmp, "implementation")
+            outcome = self._run(agent)
+            self.assertIsNotNone(outcome)
+            self.assertEqual(outcome.get("action"), "continue")
+
+    def test_no_active_phase_attr_still_blocks(self):
+        # Defensive getattr: a stub without _active_phase → None != 'kickoff' → fires.
+        with tempfile.TemporaryDirectory() as tmp:
+            agent = self._agent_with_unclaimed(tmp, _MISSING)
+            self.assertFalse(hasattr(agent, "_active_phase"))
+            self.assertIsNotNone(self._run(agent))
 
 
 class TestPriorityOrdering(unittest.TestCase):

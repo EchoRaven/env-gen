@@ -154,6 +154,19 @@ _DEFAULT_BASE_WRITERS: Optional[FrozenSet[str]] = frozenset()  # fail-closed (re
 # alias was _match_route's relative-path fallback, which is code-targeted).
 _DEFAULT_WRITERS: Optional[FrozenSet[str]] = _DEFAULT_CODE_WRITERS
 
+# Frontend-lane redirect: bare Vite-app paths the frontend authors at the repo
+# root belong under ``app/frontend/`` (the build + delivery root). Dir prefixes
+# and top-level files that constitute a Vite app — extend if a new standard
+# Vite/React file shows up. (Routing happens only for the frontend lane and only
+# for paths NOT already under ``app/``.)
+_FRONTEND_APP_DIRS: Tuple[str, ...] = ("src/", "public/", "pages/", "components/")
+_FRONTEND_APP_FILES: FrozenSet[str] = frozenset({
+    "package.json", "package-lock.json", "index.html",
+    "vite.config.js", "vite.config.ts", "tailwind.config.js", "tailwind.config.ts",
+    "postcss.config.js", "eslint.config.js", "tsconfig.json", "tsconfig.node.json",
+    "Dockerfile", "start.sh", "nginx.conf.template",
+})
+
 
 def _normalize_prefix(p: str) -> str:
     s = str(p).strip().lstrip("/")
@@ -311,6 +324,29 @@ class PathRoutedWorkspace:
             return None
         return owner
 
+    def _frontend_app_redirect(self, as_str: str) -> str:
+        """Redirect the frontend lane's BARE Vite-app paths under ``app/frontend/``.
+
+        The frontend agent perceives its root as ``.`` and naturally authors a
+        Vite app at the repo root (``src/App.jsx``, ``package.json``, …). Those
+        bare paths fall to the worktree-root default, but the docker build and the
+        delivery gate use ONLY ``app/frontend/`` — so the real app was invisible
+        (blank-shell ``frontend_navigable``) and, worse, the wrong-root
+        ``src/App.jsx`` collided with integration's as an unresolvable add/add
+        merge conflict that WEDGED the whole run in idle ticks (run #7). Routing
+        these to ``app/frontend/`` at the resolution boundary makes the lane build
+        in the right place from the start — reads and writes stay consistent
+        because both flow through here. Paths already under ``app/`` (or
+        ``shared/``/``design/``/dotfiles) are untouched; only the frontend lane is
+        affected."""
+        if not (self._self_agent and self._self_agent.startswith("frontend")):
+            return as_str
+        if as_str.startswith("app/") or as_str.startswith("."):
+            return as_str
+        if as_str.startswith(_FRONTEND_APP_DIRS) or as_str in _FRONTEND_APP_FILES:
+            return "app/frontend/" + as_str
+        return as_str
+
     def _match_route(
         self, path: Union[str, Path, None]
     ) -> Tuple[str, str, Optional[FrozenSet[str]]]:
@@ -327,6 +363,7 @@ class PathRoutedWorkspace:
         if p.is_absolute():
             return (str(p), "", None)
         as_str = str(p).replace("\\", "/").lstrip("/")
+        as_str = self._frontend_app_redirect(as_str)
         for prefix, route_target, writers in self._routes:
             if as_str == prefix.rstrip("/") or as_str.startswith(prefix):
                 return (as_str, route_target, writers)

@@ -94,12 +94,17 @@ class RegistryHubAccessorsTests(unittest.TestCase):
             hub.register_endpoint("GET", "/api/feed", schema={}, provider="backend", agent="backend")
             hub.register_endpoint("GET", "/api/users", schema={}, provider="backend", agent="backend")
             hub.record_api_test("GET /api/feed", {"passed": True}, evidence={"trace": "ok1"}, agent="verifier")
+            # Event-store efficiency (#4): re-recording the SAME endpoint
+            # upserts by endpoint_id (no longer appends a new row per call),
+            # so the latest result wins and there is exactly ONE feed row.
             hub.record_api_test("GET /api/feed", {"passed": False}, evidence={"trace": "fail"}, agent="verifier")
             hub.record_api_test("GET /api/users", {"passed": True}, evidence={"trace": "ok2"}, agent="verifier")
 
             feed_tests = hub.get_contract_test_results("GET /api/feed")
-            self.assertEqual(len(feed_tests), 2)
+            self.assertEqual(len(feed_tests), 1)
             self.assertEqual({t["endpoint_id"] for t in feed_tests}, {"GET /api/feed"})
+            # Latest verdict wins (the upsert kept the most recent result).
+            self.assertEqual(feed_tests[0]["verdict"], "fail")
 
     def test_get_contract_test_results_empty_for_unknown_endpoint(self):
         with tempfile.TemporaryDirectory() as td:

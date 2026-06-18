@@ -362,7 +362,16 @@ class BaseAgent(ABC):
             self._debug_logger.log(
                 "tool_call",
                 f"{tool_name}({args})",
-                {"result": str(result)[:500]}
+                {
+                    "result": str(result)[:500],
+                    # Persist the AUTHORITATIVE success flag. ToolResult.__str__ drops it
+                    # (success -> str(data), which may itself contain words like "errors"),
+                    # so without this, downstream readers (hub_reader/Env Forge drawer,
+                    # live_monitor) must guess pass/fail from the result text — yielding a
+                    # false ✗ on e.g. a passing lint whose data is {"errors": [], ...}.
+                    "ok": bool(getattr(result, "success", True)),
+                    "error": getattr(result, "error_message", None),
+                },
             )
         self._metrics.tool_calls += 1
         

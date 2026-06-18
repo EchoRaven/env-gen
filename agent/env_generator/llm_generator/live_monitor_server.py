@@ -386,7 +386,8 @@ def _load_recent_tool_calls(log_path: Optional[Path], agent_id: str, limit: Opti
                 if entry.get("event_type") != "tool_call":
                     continue
                 parsed = _parse_tool_call_content(str(entry.get("content", "")))
-                result_raw = entry.get("metadata", {}).get("result")
+                _md = entry.get("metadata", {}) or {}
+                result_raw = _md.get("result")
                 result_value = _json_safe(_normalize_tool_result(parsed.get("toolName", ""), result_raw))
                 records.append(
                     {
@@ -398,6 +399,10 @@ def _load_recent_tool_calls(log_path: Optional[Path], agent_id: str, limit: Opti
                         "args": _json_safe(parsed.get("args")),
                         "argsText": parsed.get("argsText", ""),
                         "result": result_value,
+                        # Authoritative tool-success flag persisted by base_agent.log_tool_call
+                        # (None for logs that predate it → consumers fall back). Lets the
+                        # monitor show true pass/fail instead of guessing from result shape.
+                        "ok": _md.get("ok"),
                         "resultKind": _tool_result_kind(parsed.get("toolName", ""), result_value),
                         "resultText": result_raw if isinstance(result_raw, str) else json.dumps(result_raw, ensure_ascii=False, default=str),
                         "rawContent": entry.get("content", ""),

@@ -1,7 +1,8 @@
 """
 Tests for GitOps subprocess wrapper (Task 2).
 
-Uses real git (git 2.25.1 on Linux). Default branch is 'master'.
+Uses real git (git 2.25.1 on Linux). ``GitOps.init`` pins the unborn
+default branch to ``main`` (Bug 2 fix) regardless of host config.
 All tests operate in isolated temporary directories.
 """
 from __future__ import annotations
@@ -26,6 +27,24 @@ class TestGitOpsInit(unittest.TestCase):
             ops = GitOps(Path(td))
             ops.init()
             self.assertTrue((Path(td) / ".git").is_dir())
+
+    def test_init_pins_default_branch_to_main(self):
+        """Bug 2 PRIMARY guard: a freshly init()-ed repo's first commit
+        lands on branch ``main`` regardless of the host's
+        ``init.defaultBranch`` (which is ``master`` on git 2.25.1). Without
+        the ``symbolic-ref HEAD refs/heads/main`` pin, the integration
+        branch ``main`` would never exist and ``merge_pull_request`` /
+        ``force_merge_pull_request`` would fail with
+        ``pathspec 'main' did not match any file(s) known to git``."""
+        with tempfile.TemporaryDirectory() as td:
+            ops = GitOps(Path(td))
+            ops.init()
+            (Path(td) / "f.txt").write_text("x\n")
+            ops.add("f.txt")
+            ops.commit("first")
+            self.assertEqual(ops.current_branch(), "main")
+            # And ``main`` is a resolvable ref.
+            self.assertEqual(len(ops.rev_parse_branch("main")), 40)
 
 
 class TestGitOpsCommit(unittest.TestCase):

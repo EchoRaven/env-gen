@@ -42,6 +42,29 @@ def _auto_stage(agent, file_path: str, *, action: str) -> None:
 
 
 class AgentStepToolingMixin:
+    def _scrub_workspace_paths(self, text: Any) -> Any:
+        """Relativize absolute env/worktree roots in agent-facing tool output
+        (PATH FIREWALL — see helpers.scrub_workspace_paths). Gathers this lane's
+        known absolute roots (its worktree, the env base_dir, the workspace
+        root) so the model only ever sees workspace-relative paths."""
+        from .helpers import scrub_workspace_paths
+        roots = []
+        for attr in ("_worktree_dir",):
+            v = getattr(self, attr, None)
+            if v:
+                roots.append(str(v))
+        hubs = getattr(self, "_hubs", None)
+        base = getattr(hubs, "base_dir", None) if hubs is not None else None
+        if base:
+            roots.append(str(base))
+        ws = getattr(self, "workspace", None)
+        ws_root = getattr(ws, "root", None) if ws is not None else None
+        if ws_root:
+            roots.append(str(ws_root))
+        if not roots:
+            return text
+        return scrub_workspace_paths(text, roots)
+
     def _build_tool_schema_map(self) -> Dict[str, Dict[str, Any]]:
         tool_schemas_all = self.get_tools_for_llm()
         tool_schema_map: Dict[str, Dict[str, Any]] = {}
@@ -458,9 +481,10 @@ class AgentStepToolingMixin:
                     )
 
             if result.success:
-                self.record_observation(str(result.data)[:200] if result.data else "OK")
+                self.record_observation(
+                    self._scrub_workspace_paths(str(result.data)[:200]) if result.data else "OK")
             else:
-                self.record_error(result.error_message or "")
+                self.record_error(self._scrub_workspace_paths(result.error_message or ""))
                 if hasattr(self, "memory"):
                     self.memory.record_error(result.error_message or "", context=f"tool={tool_name}")
 
@@ -486,6 +510,10 @@ class AgentStepToolingMixin:
                 result_str = result_str[:max_result_len] + (
                     f"\n<response clipped><NOTE>Output truncated. {len(result_str) - max_result_len} chars omitted.</NOTE>"
                 )
+            # PATH FIREWALL: relativize absolute env/worktree roots before the
+            # result reaches the model, so it perceives its workspace as root and
+            # never learns the host path to script against (run #13 leak).
+            result_str = self._scrub_workspace_paths(result_str)
             messages.append(Message.tool(result_str, tool_call_id))
             if _mm_image is not None:
                 _img_label = ""

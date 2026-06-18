@@ -301,7 +301,23 @@ def run_smoke_validation(
         _compose(compose_file, "down", "-v", "--remove-orphans", cwd=cwd, timeout=120)
         up = _compose(compose_file, "up", "-d", "--build", "--remove-orphans", cwd=cwd, timeout=up_timeout)
         if up.returncode != 0:
-            _add("docker_up", False, (up.stderr or up.stdout)[-800:])
+            # S1 (PROPOSAL #3): `docker compose up`'s OWN stderr is often just a
+            # benign warning (e.g. "attribute `version` is obsolete") while the REAL
+            # failure is a container that crashed during init — e.g. postgres exit 3
+            # on a malformed DDL (youtube run #16: the truncated up-stderr surfaced
+            # ONLY the version warning and HID the exit-3 crash for many rounds).
+            # Also capture the per-container logs (mirrors backend_health at the
+            # /health-timeout branch) so the failure detail shows the ROOT, not the
+            # warning. Service-agnostic: `logs` with no service = every container.
+            _up_detail = (up.stderr or up.stdout or "")[-400:]
+            try:
+                _clogs = _compose(compose_file, "logs", "--tail", "40", cwd=cwd, timeout=30)
+                _ctail = (_clogs.stdout or _clogs.stderr or "")[-1500:]
+            except Exception:
+                _ctail = ""
+            _detail = _up_detail + (
+                "\n--- container logs (tail) ---\n" + _ctail if _ctail else "")
+            _add("docker_up", False, _detail)
             return _finalize(checks, backend_port, endpoint_results)
         _add("docker_up", True)
 

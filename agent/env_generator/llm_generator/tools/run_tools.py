@@ -34,7 +34,8 @@ class RunStartTool(HubTool):
             "branch": {"type": "string", "description": "git branch being verified"},
             "generated_dir": {
                 "type": "string",
-                "description": "directory containing docker-compose.yml",
+                "description": "Optional — directory containing docker-compose.yml. "
+                               "Auto-derived from the env root if omitted.",
             },
             "base_url": {
                 "type": "string",
@@ -42,12 +43,18 @@ class RunStartTool(HubTool):
                 "default": "http://localhost:8000",
             },
         },
-        "required": ["branch", "generated_dir"],
+        "required": ["branch"],
     }
 
-    async def _run(self, *, branch: str, generated_dir: str,
+    async def _run(self, *, branch: str, generated_dir: str = "",
                    base_url: str = "http://localhost:8000") -> ToolResult:
         try:
+            # generated_dir is framework CONTEXT (the env root holding
+            # docker-compose.yml), not something the model can know — auto-derive
+            # from the shared hub registry's base_dir when omitted (the model
+            # called run_start with branch+base_url only → missing-arg crash).
+            if not generated_dir:
+                generated_dir = str(getattr(self._hubs, "base_dir", "") or "")
             run = self._hubs.runhub.start_run(
                 branch=branch,
                 generated_dir=generated_dir,

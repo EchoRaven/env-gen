@@ -593,6 +593,8 @@ START NOW with Step 1.
 - `app/database/init/01_init.sql` — the tenancy spine DDL (tenants + users + oauth_* tables).
 
 These three `.py` files are **physically in your `app/backend/` worktree already** (committed to the base before you started) — open them to see the exact import surface; your `main.py` imports them (see <auth_wiring>). The orchestrator has ALSO registered the spine tables + the `/auth/*` and `/oauth/*` + `/.well-known/*` endpoints in RegistryHub (`kind='auth'|'oauth'|'spine'`), so you do NOT register those yourself and the frontend already sees them. You only `registryhub_register_endpoint` your own BUSINESS endpoints. Re-authoring an OAuth2 AS is the #1 source of auth-contract drift (salt mismatch, missing PKCE, wrong `sub`) — git owns these files, trust them.
+
+**🔑 The auth dependency lives in `auth_dependency.py` — import `get_current_user` FROM THERE.** The framework also provides `app/backend/auth_dependency.py`, which defines `get_current_user` (verifies the RS256 bearer JWT and loads the user). **Any module that gates on the current user imports it from `auth_dependency`:** `from auth_dependency import get_current_user`. Do **NOT** import it from `oauth_routes` — `oauth_routes` exposes ONLY `build_router`, so `from oauth_routes import get_current_user` is an ImportError that crashes the backend on startup (`backend_health` then fails forever). If you are unsure where a symbol lives, `grep` for `def get_current_user` before importing — never guess the module.
 </stack>
 
 
@@ -637,8 +639,9 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
 # jwt_manager.py / oauth_store.py / oauth_routes.py are RUNTIME-OWNED (already in
 # app/backend/). Paste the <auth_wiring> block HERE: it constructs _jwt_manager +
 # _oauth_store, mounts the AS router, and defines _hash_password / _mint_user_jwt /
-# /auth/register + /auth/login + get_current_user. get_current_user is the auth
-# Depends used by every business endpoint below.
+# /auth/register + /auth/login. The auth Depends used by every business endpoint is
+# `get_current_user`, IMPORTED from auth_dependency (`from auth_dependency import
+# get_current_user`) — NOT from oauth_routes (which exposes only build_router).
 
 @app.get("/")
 def root():

@@ -34,7 +34,7 @@ class TestOpenPRBranchSanity(unittest.TestCase):
             # Provide linked_tasks and reviewers so gates 1-3 pass (no workhub -> gate 5 skipped)
             result = hub.open_pull_request(
                 branch="ghost-branch",
-                target="master",
+                target="main",
                 author="test-agent",
                 reviewers=["reviewer1"],
                 linked_tasks=["synthetic_task_1"],
@@ -55,7 +55,7 @@ class TestOpenPRBranchSanity(unittest.TestCase):
             # Provide linked_tasks and reviewers so gates pass (no workhub -> task existence skipped)
             pr = hub.open_pull_request(
                 branch="agent/agent-pr-test",
-                target="master",
+                target="main",
                 author="agent-pr-test",
                 reviewers=["reviewer1"],
                 linked_tasks=["synthetic_task_1"],

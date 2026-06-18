@@ -135,6 +135,86 @@ def _merge_cols(base: List[Dict[str, Any]], extra: List[Dict[str, Any]]) -> List
     return out
 
 
+def _fk_type_category(raw: Any) -> str:
+    """Coarse FK-consistency category for a column type string
+    (integer / text / uuid / numeric / boolean / timestamp)."""
+    s = re.sub(r"\(.*?\)", "", str(raw or "").strip().lower())
+    s = re.sub(r"\breferences\b.*$", "", s, flags=re.IGNORECASE).strip()
+    s = re.sub(r"\b(primary key|not null|unique|default.*)\b.*$", "", s,
+               flags=re.IGNORECASE).strip()
+    head = s.split()[0] if s.split() else "text"
+    if "int" in head or "serial" in head:
+        return "integer"
+    if "uuid" in head:
+        return "uuid"
+    if any(k in head for k in ("char", "text", "string", "clob")):
+        return "text"
+    return head  # bool / date / numeric / ...
+
+
+def _set_col_base_category(col: Dict[str, Any], category: str) -> None:
+    """Set a column's base type to ``category`` while PRESERVING an inline
+    ``references …`` clause when the FK lives in the type string (structured
+    ``fk``/``references`` fields carry the target separately, so the bare type is
+    safe to overwrite)."""
+    cur = str(col.get("type") or "")
+    m = _FK_RE.search(cur)
+    if m and not (col.get("fk") or col.get("references")):
+        col["type"] = "{} references {}({})".format(
+            category, m.group(1), m.group(2) or m.group(3))
+    else:
+        col["type"] = category
+
+
+def _reconcile_fk_types_in_map(by_name: Dict[str, List[Dict[str, Any]]]) -> None:
+    """Enforce FK referential TYPE-consistency across the contract's business
+    tables, in place (PROPOSAL #3, L1 — the runtime-truth fix; the DDL is later
+    introspected FROM these models, so making the model consistent makes the DDL
+    consistent too).
+
+    Invariant: for every column an FK targets, the target PK's type must equal the
+    type of every FK column referencing it. On a CONFLICT, resolve toward the type
+    the MAJORITY of referencing FKs use (surrogate ids are integer by convention)
+    and ensure the target is a primary key. A target whose type ALREADY matches all
+    its referencing FKs is left untouched — so a uniform text/uuid PK is never
+    coerced. FKs that target a SPINE table (users/tenants — not in this app-table
+    map) are skipped, so the framework ``tenants.id TEXT PRIMARY KEY`` exemption
+    holds BY CONSTRUCTION (no special-casing). Domain-agnostic.
+
+    youtube run #16: ``channels.id`` was text while every ``*.channel_id`` FK was
+    integer → CREATE TABLE videos aborted (incompatible types) → postgres exit 3 →
+    docker_up FAIL. This coerces ``channels.id`` → integer (the FK majority)."""
+    from collections import Counter
+    refs: Dict[tuple, List[Dict[str, Any]]] = {}
+    for cols in by_name.values():
+        for c in cols:
+            tgt = _fk_target(c)
+            if not tgt:
+                continue
+            tt, _, tc = tgt.partition(".")
+            tt = tt.strip().lower()
+            tc = (tc or "id").strip().lower()
+            if tt not in by_name:  # spine/external target → skip (tenants/users exempt)
+                continue
+            refs.setdefault((tt, tc), []).append(c)
+    for (tt, tc), refcols in refs.items():
+        tgtcol = next((c for c in by_name[tt]
+                       if str(c.get("name", "")).strip().lower() == tc), None)
+        if tgtcol is not None and not (tgtcol.get("primary_key") or tgtcol.get("pk")):
+            tgtcol["primary_key"] = True
+        ref_cats = [_fk_type_category(c.get("type")) for c in refcols]
+        cats = set(ref_cats) | (
+            {_fk_type_category(tgtcol.get("type"))} if tgtcol is not None else set())
+        if len(cats) <= 1:
+            continue  # already consistent (incl. a uniform non-integer PK)
+        canon = Counter(ref_cats).most_common(1)[0][0] if ref_cats else "integer"
+        if tgtcol is not None and _fk_type_category(tgtcol.get("type")) != canon:
+            _set_col_base_category(tgtcol, canon)
+        for c in refcols:
+            if _fk_type_category(c.get("type")) != canon:
+                _set_col_base_category(c, canon)
+
+
 def render_models(tables: Dict[str, Any]) -> str:
     """Render ``models.py`` (SQLAlchemy ORM) from the SchemaHub ``tables`` contract.
     Always emits the spine ``User``/``Tenant``; app tables generate one model each."""
@@ -142,6 +222,10 @@ def render_models(tables: Dict[str, Any]) -> str:
     for name, table in (tables or {}).items():
         if isinstance(table, dict):
             by_name[str(name).lower()] = _columns_of(table)
+    # PROPOSAL #3 (L1): make FK column types agree with the PK they reference BEFORE
+    # rendering the ORM, so the models — and the DDL introspected from them — never
+    # carry an unbootable integer→text FK (run #16 channels.id).
+    _reconcile_fk_types_in_map(by_name)
 
     blocks: List[str] = []
 
@@ -383,6 +467,29 @@ PY
 _SCHEMAS_PY = '''"""Framework-generated placeholder. The projected handlers return plain dicts;
 Pydantic response models are not required for the standard-CRUD skeleton."""
 '''
+
+
+def write_backend_build_infra(output_dir: Any) -> Dict[str, Any]:
+    """Write ONLY the STATIC, contract-independent backend build infra
+    (Dockerfile / pyproject.toml / reset.sh).
+
+    These are what `docker build` needs and they do NOT depend on the ORM /
+    handlers, so they can be emitted UPFRONT (alongside docker-compose) — long
+    before the full contract exists. Without this the backend build context is
+    empty when validation first runs, and agents improvise a BROKEN Dockerfile
+    (run #6: the orchestrator hand-wrote a `pip install poetry` Dockerfile →
+    docker build exit 2, even though the project is uv/pyproject). The full
+    `write_backend_skeleton` later re-asserts these byte-identically and adds
+    models/handlers. Idempotent."""
+    be = Path(output_dir) / "app" / "backend"
+    be.mkdir(parents=True, exist_ok=True)
+    written: Dict[str, str] = {}
+    for name, content in (("pyproject.toml", _PYPROJECT),
+                          ("Dockerfile", _DOCKERFILE),
+                          ("reset.sh", _RESET_SH)):
+        (be / name).write_text(content, encoding="utf-8")
+        written[name] = str(be / name)
+    return {"written": list(written), "backend_dir": str(be)}
 
 
 def write_backend_skeleton(

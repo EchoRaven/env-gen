@@ -87,6 +87,55 @@ def _normalize_inline_fk(text: str) -> str:
     return _FK_DOTTED_REF.sub(r'references \1(\2)', text)
 
 
+# A column can carry its FK INLINE in the type string (``"integer references
+# channels(id)"`` — handled by ``_normalize_inline_fk`` above) OR as a STRUCTURED
+# field, which is what kickoff_declare_table / the normalizer / re-registered
+# flat-map tables produce: ``references`` / ``fk`` keyed off the column dict, in
+# any of ``"table(col)"`` / ``"table.col"`` / ``{"table":...,"column":...}`` form.
+# The ORM renderer (backend_skeleton._fk_target) already reads these; the DDL
+# renderer did NOT, so structured FKs were silently dropped from CREATE TABLE
+# (no referential integrity). This helper extracts (ref_table, ref_column) from
+# the structured field regardless of shape — domain-agnostic, no name special-casing.
+_FK_INLINE_IN_TYPE_RE = re.compile(r"\breferences\b", re.IGNORECASE)
+# ``table(col)`` / ``table.col`` parser for a structured string FK value.
+_STRUCT_FK_STR_RE = re.compile(
+    r'^\s*"?(\w+)"?\s*(?:\(\s*"?(\w+)"?\s*\)|\.\s*"?(\w+)"?)\s*$'
+)
+
+
+def _structured_fk_ref(col: Dict[str, Any]) -> Optional[tuple]:
+    """Return ``(ref_table, ref_column)`` from a column's STRUCTURED FK field
+    (``references`` / ``fk``), or None when there is no structured FK.
+
+    Accepts every shape the contract/normalizer emits:
+      * ``"users(id)"`` / ``"users.id"`` (string)
+      * ``{"table": "users", "column": "id"}`` (nested dict)
+      * a bare ``"users"`` (string with no column → defaults to ``id``)
+    A FK written INLINE in the ``type`` string is NOT a structured FK and is
+    intentionally ignored here (the inline path / ``_normalize_inline_fk``
+    already renders it) so the two sources can't double-emit."""
+    raw = col.get("references")
+    if raw is None:
+        raw = col.get("fk")
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        tbl = str(raw.get("table") or raw.get("ref_table") or "").strip()
+        rcol = str(raw.get("column") or raw.get("col") or raw.get("ref_column") or "").strip()
+        if tbl:
+            return (tbl, rcol or "id")
+        return None
+    if isinstance(raw, str) and raw.strip():
+        m = _STRUCT_FK_STR_RE.match(raw)
+        if m:
+            return (m.group(1), m.group(2) or m.group(3) or "id")
+        # Bare ``"users"`` with no column part → FK to its primary key ``id``.
+        bare = raw.strip().strip('"')
+        if re.fullmatch(r"\w+", bare):
+            return (bare, "id")
+    return None
+
+
 def _quote_ident(name: str) -> str:
     """Double-quote an identifier (protects reserved words like ``user`` /
     ``order``). Lowercase snake_case names round-trip unchanged for
@@ -94,18 +143,103 @@ def _quote_ident(name: str) -> str:
     return '"' + str(name).replace('"', '""') + '"'
 
 
+# ── ONE canonical table-schema shape ────────────────────────────────────────
+# The contract tools advertise a FLAT-MAP table schema (``{column: "type
+# string"}`` — see hub_tools ``registryhub_register_table`` /
+# ``registryhub_update_table_schema``), while kickoff_declare_table /
+# finalize_kickoff emit ``{"columns": [{"name","type", …}]}``. Two shapes for
+# one concept means every reader had to handle both — and the flat map never
+# did (``_columns_of`` returned [] for it → an id-only ORM/DDL, silently
+# dropping every other column on any RE-registered table). Collapse the
+# variance to ONE canonical shape at the write boundary so the rest of the
+# system reads a single representation.
+#
+# A flat-map value carries the column's modifiers inline in the type string
+# (``"serial primary key"``, ``"integer references channels(id)"``,
+# ``"text not null"`` …). The DDL renderer (``_render_column`` →
+# ``_sql_type``/``_normalize_inline_fk``) already projects those verbatim, but
+# the ORM renderer (``backend_skeleton._render_column``) keys PRIMARY KEY /
+# UNIQUE / NOT NULL off STRUCTURED flags. So when flattening a flat-map column
+# we PROMOTE those inline modifiers to structured flags (reusing the same
+# parsing vocabulary the renderers already understand) — the column then
+# projects faithfully through BOTH renderers. Already-structured inputs pass
+# through untouched (idempotent — a ``{"columns":[…]}`` round-trips equal).
+_INLINE_PK_RE = re.compile(r"\bprimary\s+key\b", re.IGNORECASE)
+_INLINE_NOTNULL_RE = re.compile(r"\bnot\s+null\b", re.IGNORECASE)
+_INLINE_UNIQUE_RE = re.compile(r"\bunique\b", re.IGNORECASE)
+_INLINE_REFERENCES_RE = re.compile(
+    r"\breferences\s+(\w+)\s*(?:\(\s*(\w+)\s*\)|\.\s*(\w+))", re.IGNORECASE
+)
+
+
+def _column_from_flat(name: str, type_spec: Any) -> Dict[str, Any]:
+    """Build a canonical column dict from a flat-map ``name: "type string"``
+    entry, promoting inline modifiers (``primary key`` / ``not null`` /
+    ``unique`` / ``references x(y)``) to structured flags so the column
+    projects correctly through BOTH the DDL and ORM renderers. The full type
+    string (FK and all) is preserved verbatim as ``type`` for the DDL
+    renderer, which honours inline ``references`` directly."""
+    col: Dict[str, Any] = {"name": str(name), "type": str(type_spec or "").strip()}
+    spec = col["type"]
+    if _INLINE_PK_RE.search(spec):
+        col["primary_key"] = True
+    if _INLINE_NOTNULL_RE.search(spec):
+        col["not_null"] = True
+    if _INLINE_UNIQUE_RE.search(spec):
+        col["unique"] = True
+    m = _INLINE_REFERENCES_RE.search(spec)
+    if m:
+        col["references"] = "{}({})".format(m.group(1), m.group(2) or m.group(3))
+    return col
+
+
+def normalize_columns(schema: Any) -> List[Any]:
+    """Coerce ANY accepted table-schema shape to a canonical column LIST:
+      * a ``{"columns": [...]}`` dict           → its ``columns`` list (as-is)
+      * a bare ``[{"name","type"}, ...]`` list  → itself (as-is)
+      * a flat map ``{col: "type string"}``     → ``[{"name","type", …}]`` with
+        inline modifiers promoted to structured flags (see _column_from_flat)
+    Returns [] for anything unrecognized (an empty/None schema)."""
+    if isinstance(schema, list):
+        return schema
+    if isinstance(schema, dict):
+        cols = schema.get("columns")
+        if isinstance(cols, list):
+            return cols
+        # Flat map {column_name: "type string"} — the contract-tool shape.
+        return [_column_from_flat(k, v) for k, v in schema.items()]
+    return []
+
+
+def normalize_table_schema(schema: Any) -> Dict[str, Any]:
+    """Coerce ANY accepted table-schema shape to the ONE canonical container
+    ``{"columns": [{"name","type", …}]}`` — the shape ``kickoff_declare_table``
+    /``finalize_kickoff`` already produce and every reader (via ``_columns_of``)
+    already understands. Idempotent: a canonical ``{"columns":[…]}`` input is
+    returned structurally unchanged."""
+    if isinstance(schema, dict) and isinstance(schema.get("columns"), list):
+        return schema
+    return {"columns": normalize_columns(schema)}
+
+
 def _columns_of(table: Dict[str, Any]) -> List[Any]:
     """Extract the column list from a SchemaHub table record.
 
     Canonical shape: ``table["schema"]["columns"]`` (finalize_kickoff
     stores the contract table minus ``name`` under ``schema``). Tolerant
-    of a flattened ``table["columns"]`` — same data, alternate location,
-    not an invented default."""
+    of a flattened ``table["columns"]`` list AND of a raw flat-map
+    ``{column: "type string"}`` schema (defense in depth: a legacy/raw
+    store row still projects correctly), via ``normalize_columns`` — same
+    data, alternate location/shape, not an invented default."""
     schema = table.get("schema")
     if isinstance(schema, dict) and isinstance(schema.get("columns"), list):
         return schema["columns"]
     if isinstance(table.get("columns"), list):
         return table["columns"]
+    # Flat-map schema (or a bare list under ``schema``) — normalize so a row
+    # that bypassed the write-boundary normalizer still yields its columns.
+    if isinstance(schema, (dict, list)) and schema:
+        return normalize_columns(schema)
     return []
 
 
@@ -133,6 +267,14 @@ def _render_column(table_name: str, col: Any) -> str:
     default = col.get("default")
     if default is not None:
         parts.append(f"DEFAULT {default}")
+    # Emit a STRUCTURED FK (``references``/``fk`` field) the same way the inline
+    # form is rendered — but ONLY when the type string doesn't already carry an
+    # inline ``references`` (which the passthrough above renders), so the two
+    # sources never double-emit a duplicate REFERENCES clause.
+    if not _FK_INLINE_IN_TYPE_RE.search(ctype):
+        fk = _structured_fk_ref(col)
+        if fk:
+            parts.append(f"REFERENCES {_quote_ident(fk[0])} ({_quote_ident(fk[1])})")
     # Fix dotted inline FKs (`references users.id` → `references users(id)`)
     # wherever they landed — contracts cram them into the `type` passthrough.
     return "    " + _normalize_inline_fk(" ".join(parts))
@@ -228,22 +370,53 @@ print(json.dumps(out))
 """
 
 
-def _ddl_type_from_introspect(col: Dict[str, Any]) -> str:
+def _ddl_base_type(t_upper: str) -> str:
+    """Coarse postgres BASE type (no default clause) from an uppercased ORM type
+    string — used both for plain columns and for FK/PK referential type-matching."""
+    if "INT" in t_upper:
+        return "integer"
+    if "BOOL" in t_upper:
+        return "boolean"
+    if "DATE" in t_upper or "TIME" in t_upper:
+        return "timestamptz"
+    if "FLOAT" in t_upper or "NUMERIC" in t_upper or "DECIMAL" in t_upper or "REAL" in t_upper:
+        return "numeric"
+    if "UUID" in t_upper:
+        return "uuid"
+    return "text"
+
+
+def _ddl_type_from_introspect(col: Dict[str, Any],
+                              pk_types: Optional[Dict[str, str]] = None) -> str:
+    """Render a column's DDL type from the ORM introspection (PROPOSAL #3, L3
+    backstop). Two bugs fixed so the DDL is always self-consistent + bootable:
+
+    Bug 1 — a PRIMARY KEY whose type isn't integer used to lose its `primary key`
+    clause (the old `if pk and "INT" in t` fell through to `text`), so a text/uuid
+    PK rendered as a plain non-PK column. Now: emit `primary key` for ANY pk type
+    (`serial` only when integer).
+
+    Bug 2 — an FK column used to ALWAYS render `integer references …`, regardless
+    of the referenced PK's real type — so an FK to a text PK was mis-typed integer
+    (youtube run #16: `videos.channel_id integer` → `channels.id` (which the ORM
+    had as text) → incompatible-types → CREATE TABLE aborts → postgres exit 3).
+    Now the FK column inherits the referenced table's PK base type via the
+    ``pk_types`` map (``{table_lower: base_type}``) built by the caller; falls back
+    to integer (the surrogate-id convention) when the target PK is unknown."""
     t = str(col.get("type") or "").upper()
-    if col.get("pk") and "INT" in t:
-        return "serial primary key"
+    base = _ddl_base_type(t)
+    if col.get("pk"):
+        return "serial primary key" if base == "integer" else base + " primary key"
     if col.get("fk"):
         tbl, _, tcol = str(col["fk"]).partition(".")
-        return "integer references {}({}) on delete cascade".format(tbl, tcol or "id")
-    if "INT" in t:
-        return "integer"
-    if "BOOL" in t:
+        ref_base = (pk_types or {}).get(tbl.strip().lower(), "integer")
+        return "{} references {}({}) on delete cascade".format(
+            ref_base, tbl, tcol or "id")
+    if base == "boolean":
         return "boolean default false"
-    if "DATE" in t or "TIME" in t:
+    if base == "timestamptz":
         return "timestamptz default now()"
-    if "FLOAT" in t or "NUMERIC" in t or "DECIMAL" in t or "REAL" in t:
-        return "numeric"
-    return "text"
+    return base  # integer / numeric / uuid / text
 
 
 def introspect_orm_schema(backend_dir) -> Optional[Dict[str, Any]]:
@@ -267,6 +440,18 @@ def introspect_orm_schema(backend_dir) -> Optional[Dict[str, Any]]:
         raw = json.loads(proc.stdout.strip().splitlines()[-1])
     except Exception:
         return None
+    # L3 pre-pass (PROPOSAL #3): map each table → its PK column's base type so an
+    # FK column renders with the SAME type as the PK it references (referential
+    # type-consistency). Without this, every FK was hard-coded `integer`.
+    pk_types: Dict[str, str] = {}
+    for t in raw:
+        tn = str(t.get("name") or "").strip().lower()
+        if not tn:
+            continue
+        for c in t.get("columns") or []:
+            if c.get("pk"):
+                pk_types[tn] = _ddl_base_type(str(c.get("type") or "").upper())
+                break
     tables: Dict[str, Any] = {}
     for t in raw:
         name = str(t.get("name") or "").strip()
@@ -277,7 +462,7 @@ def introspect_orm_schema(backend_dir) -> Optional[Dict[str, Any]]:
             cname = str(c.get("name") or "").strip()
             if not cname:
                 continue
-            cols.append({"name": cname, "type": _ddl_type_from_introspect(c),
+            cols.append({"name": cname, "type": _ddl_type_from_introspect(c, pk_types),
                          "unique": bool(c.get("unique"))})
         for uc in t.get("composite_unique") or []:
             cols.append({"name": "unique({})".format(",".join(uc)), "type": "constraint"})
@@ -313,6 +498,12 @@ def _spine_extra_column_alters(
             parts.append(f"DEFAULT {default}")
             if col.get("nullable") is False or col.get("not_null"):
                 parts.append("NOT NULL")
+        # Structured FK on an app-extended column — render it the same way as a
+        # top-level column (don't double-emit when the type already carries one).
+        if not _FK_INLINE_IN_TYPE_RE.search(ctype):
+            fk = _structured_fk_ref(col)
+            if fk:
+                parts.append(f"REFERENCES {_quote_ident(fk[0])} ({_quote_ident(fk[1])})")
         clause = _normalize_inline_fk(" ".join(parts))
         out.append(
             f"ALTER TABLE {_quote_ident(table_name)} "
@@ -528,6 +719,8 @@ def write_database_scaffold(output_dir: Path, tables: Dict[str, Any]) -> Dict[st
 __all__ = [
     "render_schema_sql",
     "write_database_scaffold",
+    "normalize_table_schema",
+    "normalize_columns",
     "SPINE_TABLE_RECORDS",
     "_SPINE_OWNED_TABLES",
 ]

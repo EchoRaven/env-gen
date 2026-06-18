@@ -126,6 +126,17 @@ class _StubOrchestrator:
         self._attempt_reconciled_finalize = (
             Orchestrator._attempt_reconciled_finalize.__get__(self)
         )
+        # Bind the shared finalize+author helper the driver delegates both
+        # its ready fast-path and its consensus branch to.
+        self._finalize_kickoff_and_author = (
+            Orchestrator._finalize_kickoff_and_author.__get__(self)
+        )
+
+    def _author_kickoff_docs(self, synthesis: Any) -> None:
+        # Doc authoring is non-essential to driver control-flow tests; the
+        # real method renders files. Stub it to a no-op (the helper wraps it
+        # in try/except, but stubbing keeps the tests filesystem-free).
+        return None
 
 
 def _make_handle(started_at: float | None = None) -> Dict[str, Any]:
@@ -224,6 +235,69 @@ def test_driver_happy_path_finalizes_on_first_ready(monkeypatch):
     assert len(finalize_calls) == 1
     assert finalize_calls[0]["agent"] == "orchestrator"
     assert finalize_calls[0]["synthesis"] is ready_synthesis
+
+
+def test_driver_finalizes_deterministically_on_ready_at_facilitator_phase(monkeypatch):
+    """youtube run #12 regression: synth=ready at phase=facilitator MUST finalize
+    deterministically, without firing an LLM facilitation request or waiting for
+    a 'consensus' facilitator note.
+
+    Run #12 reached synth=ready but the orchestrator-LLM facilitator was handed
+    backend-implementation context, never recorded the consensus note, and a
+    fully-ready kickoff polled to its 1200s timeout with the lanes wedged in
+    kickoff:action stage. A ready synthesis has cleared every gate (quorum +
+    cross-checks + roadmap validation), so finalize must not depend on the LLM.
+    """
+    ready_synthesis = {
+        "status": "ready", "contract": {"endpoints": []},
+        "task_tree": [], "predicates": [], "milestone_index": 1,
+    }
+    finalize_calls: List[Dict[str, Any]] = []
+    facilitation_requests: List[Any] = []
+
+    monkeypatch.setattr(
+        run_kickoff, "try_synthesize",
+        lambda hubs, handle, reconcile=False: ready_synthesis,
+    )
+
+    def fake_finalize_kickoff(*, hubs, kickoff_handle, synthesis, agent):
+        finalize_calls.append({"synthesis": synthesis, "agent": agent})
+        return {
+            "phase": "finalized", "endpoints_registered": 0,
+            "tables_registered": 0, "tasks_created": 0,
+            "predicates_persisted": 0, "failures": [],
+            "meeting_id": "mtg-1", "milestone_index": 1,
+        }
+
+    monkeypatch.setattr(run_kickoff, "finalize_kickoff", fake_finalize_kickoff)
+    monkeypatch.setattr(
+        facilitate, "current_phase",
+        lambda hubs, meeting_id, attendees: "facilitator",
+    )
+    monkeypatch.setattr(
+        facilitate, "current_round", lambda hubs, meeting_id: 1,
+    )
+    monkeypatch.setattr(
+        facilitate, "request_facilitation",
+        lambda hubs, handle, synthesis: facilitation_requests.append(synthesis),
+    )
+
+    def _must_not_read(hubs, handle):
+        raise AssertionError(
+            "read_facilitator_decision must NOT be called when synth=ready — "
+            "finalize must be deterministic"
+        )
+
+    monkeypatch.setattr(facilitate, "read_facilitator_decision", _must_not_read)
+
+    stub = _StubOrchestrator(hubs=MagicMock())
+    receipt = _run(_drive_method()(stub, _make_handle()))
+
+    assert receipt["phase"] == "finalized"
+    assert len(finalize_calls) == 1
+    assert finalize_calls[0]["synthesis"] is ready_synthesis
+    # The decisive assertion: NO LLM facilitation was requested.
+    assert facilitation_requests == []
 
 
 # ---------------------------------------------------------------------------

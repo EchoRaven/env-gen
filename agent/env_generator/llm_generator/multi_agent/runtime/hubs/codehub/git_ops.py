@@ -56,9 +56,24 @@ class GitOps:
     # ------------------------------------------------------------------
 
     def init(self) -> Path:
-        """Initialise a bare repository at repo_root; set local user config."""
+        """Initialise a repository at repo_root; set local user config.
+
+        The unborn HEAD is deterministically pinned to ``main`` via
+        ``git symbolic-ref HEAD refs/heads/main`` so the FIRST commit lands
+        on ``main`` regardless of the host's ``init.defaultBranch`` setting.
+        Older git (< 2.28) and any system whose default branch is ``master``
+        would otherwise never create the integration branch ``main`` that
+        ``merge_pull_request`` / ``force_merge_pull_request`` check out —
+        observed in the youtube run as ``codehub_force_merge`` failing with
+        ``pathspec 'main' did not match any file(s) known to git``. ``init()``
+        only runs on a fresh repo (``ensure_repo`` calls it only when ``.git``
+        is absent), so HEAD is unborn here and re-pointing it is safe.
+        """
         self.repo_root.mkdir(parents=True, exist_ok=True)
         self._run("init", cwd=self.repo_root)
+        # Pin the unborn default branch to ``main`` (portable across git
+        # versions — no -b/--initial-branch flag, which 2.25 lacks).
+        self._run("symbolic-ref", "HEAD", "refs/heads/main", cwd=self.repo_root)
         # Ensure commits succeed even without global user config
         self._run("config", "user.name", "GitOps Bot")
         self._run("config", "user.email", "gitops@codehub.local")

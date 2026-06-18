@@ -312,9 +312,67 @@ def api_contract_guard_consulted(agent: Any, tool_name: str, tool_args: Dict[str
     return _require_skill_consulted("api-contract-guard", tool_name, agent)
 
 
+def frontend_canonical_root(
+    agent: Any,
+    tool_name: str,
+    tool_args: Dict[str, Any],
+) -> Optional[str]:
+    """Block ``finish`` when the frontend built its app at the WRONG ROOT
+    (repo-root ``./src``) instead of the canonical ``app/frontend/src`` that the
+    docker build (``build: ../app/frontend``) and the delivery gate use.
+
+    Live (run #5): the lane authored its pages via ``execute_bash`` heredocs to
+    cwd-relative ``src/pages`` — bash bypasses the write-tool path routing — so
+    ``app/frontend/src/pages`` stayed an empty shell AND most pages were left
+    untracked (lost at merge). The delivery-time relocator only catches the
+    committed subset at ``output_dir``; enforcing HERE puts the fix in the
+    model's face immediately (mirrors the backend's
+    ``endpoints_implemented_with_code`` gate).
+
+    Tight trigger — the exact heuristic the delivery relocator uses: fires ONLY
+    when the repo-root tree is MATERIALLY richer than the canonical one
+    (>= 2 pages and strictly more). A frontend that built correctly under
+    ``app/frontend/`` has an empty/absent ``./src`` → passes straight through,
+    so this never wedges a correct finish. Best-effort; never raises.
+    """
+    try:
+        ws = getattr(agent, "workspace", None)
+        base = getattr(ws, "base_dir", None)
+        if not base:
+            return None
+        from pathlib import Path as _P
+        base = _P(base)
+
+        def _pages(p: "_P") -> int:
+            d = p / "pages"
+            if not d.is_dir():
+                return 0
+            return len(list(d.glob("*.jsx")) + list(d.glob("*.tsx")))
+
+        root_pages = _pages(base / "src")
+        canon_pages = _pages(base / "app" / "frontend" / "src")
+        if root_pages >= 2 and root_pages > canon_pages:
+            return (
+                f"finish blocked: your frontend pages are at the REPO ROOT "
+                f"(./src/pages = {root_pages} page(s)) but docker builds and the "
+                f"delivery gate use ONLY app/frontend/src (currently {canon_pages} "
+                f"page(s) — a blank shell), so your app is INVISIBLE to delivery. "
+                f"Re-create each page UNDER app/frontend/ with the `write`/`edit` "
+                f"tools, using paths that START WITH `app/frontend/src/` (e.g. "
+                f"write app/frontend/src/pages/Home.jsx, app/frontend/src/App.jsx). "
+                f"Do NOT use execute_bash heredocs to ./src — bash writes bypass "
+                f"path routing (wrong root) and leave files untracked (lost at "
+                f"merge). Then delete the stray repo-root ./src tree."
+            )
+        return None
+    except Exception:
+        return None
+
+
 PRECONDITION_REGISTRY: Dict[str, PreconditionFn] = {
     "kickoff_endpoints_implemented": kickoff_endpoints_implemented,
     "endpoints_implemented_with_code": endpoints_implemented_with_code,
+    "frontend_canonical_root": frontend_canonical_root,
     "orchestrator_ask_cap": orchestrator_ask_cap,
     "release_readiness_consulted": release_readiness_consulted,
     "api_contract_guard_consulted": api_contract_guard_consulted,

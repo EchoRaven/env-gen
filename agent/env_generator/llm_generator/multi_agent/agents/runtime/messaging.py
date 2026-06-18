@@ -118,8 +118,24 @@ class AgentMessaging:
         msg_type = str(inbox_msg.get("type") or "").lower()
         if msg_type in {"ack", "status", "shutdown"}:
             return
-        if msg_type in {"task_ready", "issue", "question", "answer"}:
-            return
+        # task_ready / issue / question / answer are DIRECT work-for-this-lane
+        # signals. They used to be UNCONDITIONALLY excluded here and delegated
+        # SOLELY to the priority-queue urgent-drain (run_loop). youtube run #12
+        # (Defect C): once a resident lane finish()ed and went idle, that drain
+        # stopped consuming — a task_ready (frontend) / question (orchestrator)
+        # sat queued forever, the verifier dead-waited on the frontend, and the
+        # whole run idle-spun to its wall-clock budget. We now let these flow
+        # through the SAME policy-gated wakeup path as other inbox messages,
+        # giving an idle resident lane a second, INDEPENDENT way to wake and
+        # drain (via the _main_loop task path, which we know reaches idle
+        # residents because dispatched tasks do). This is additive and
+        # self-deduping: if the urgent-drain still works it pops the message
+        # first and the woken step finds nothing; if it wedged, this wakes the
+        # lane to drain. It is NOT a policy bypass — the allow_resident_wakeup
+        # gate below (VerifierValidationTriggerPolicy / DependsOnPolicy) still
+        # decides whether the lane should actually wake, so the gating those
+        # policies enforce on task_ready is preserved. Unifies with Defect B:
+        # all "new work for a resident lane" now reaches it through _main_loop.
         tags = {str(tag).strip().lower() for tag in (inbox_msg.get("tags") or [])}
         if (
             not getattr(self, "_kickoff_bootstrapped", True)

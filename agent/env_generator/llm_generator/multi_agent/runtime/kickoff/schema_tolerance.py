@@ -826,11 +826,25 @@ def normalize_auth_shape(
                                   else True (conservative default for
                                   any auth block that named a model)
 
-    Returns an empty dict unchanged (no model named ⇒ no auth required).
+    FRAMEWORK-OWNED AUTH FLOOR (youtube 2026-06-16): an empty/model-less
+    auth block is floored to ``model="jwt"`` rather than returned empty.
+    The generated stack ALWAYS embeds an OAuth2 AS minting JWTs (target
+    arch), so a missing auth declaration is descriptive drift, not a real
+    "no auth" signal — and ``roadmap_validator`` HARD-REQUIRES a non-empty
+    ``contract.auth.model`` + bool ``required``. The old "return empty {}
+    unchanged" behavior directly contradicted that gate: lanes that declared
+    endpoints via the typed ``kickoff_declare_*`` tools (which carry no auth
+    block) left ``contract.auth = {}`` → validate_roadmap failed every
+    synthesis → kickoff looped to its 1200s timeout with zero recovery
+    (the frontend-draft backstop only runs on the reconcile path, not the
+    polling-synthesis path that ``_build_contract`` drives). Flooring here —
+    the single point every contract flows through — makes the contract.auth
+    shape valid by construction on BOTH paths. ``none`` is not used as the
+    default because the framework provides JWT auth regardless of the spec.
     """
     out: Dict[str, Any] = dict(auth) if isinstance(auth, Mapping) else {}
-    if not out:
-        return out
+    if not (isinstance(out.get("model"), str) and out["model"].strip()):
+        out["model"] = "jwt"
     req = out.get("required")
     if isinstance(req, bool):
         return out

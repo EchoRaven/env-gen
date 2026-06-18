@@ -229,6 +229,7 @@ class LLMResponse:
     tool_calls: Optional[list] = None
     raw_response: Optional[Any] = None
     latency: float = 0.0  # seconds
+    reasoning: Optional[str] = None  # model thinking summary (Gemini include_thoughts), for observability
     
     @property
     def prompt_tokens(self) -> int:
@@ -1574,7 +1575,31 @@ class GoogleClient(BaseLLMClient):
         messages = _mask_old_observations(messages)  # bound per-call input growth
         system_instruction = None
         contents = []
-        
+
+        # Gemini pairs function_call<->function_response BY NAME (unlike OpenAI's
+        # tool_call_id and Anthropic's tool_use_id, which pair by id). Our Message
+        # tool results only carry `tool_call_id`, never `.name`, so every result
+        # used to be sent named "tool" -> name mismatch on every turn ->
+        # MALFORMED_FUNCTION_CALL and the model echoing literal tokens like
+        # `tool_error`/`get_skill` as tool names (youtube run). Build a
+        # {tool_call_id: function_name} map from the assistant tool_calls so each
+        # response is paired with the REAL function name of its originating call.
+        tool_call_names: dict[str, str] = {}
+        for msg in messages:
+            if getattr(msg, "role", "") != "assistant" or not msg.tool_calls:
+                continue
+            for tc in msg.tool_calls:
+                if hasattr(tc, "function"):
+                    tc_id = getattr(tc, "id", None)
+                    fn_name = getattr(tc.function, "name", None)
+                elif isinstance(tc, dict):
+                    tc_id = tc.get("id")
+                    fn_name = (tc.get("function") or {}).get("name")
+                else:
+                    tc_id = fn_name = None
+                if tc_id and fn_name:
+                    tool_call_names[tc_id] = fn_name
+
         for msg in messages:
             if msg.role == "system":
                 system_instruction = msg.content if isinstance(msg.content, str) else str(msg.content)
@@ -1645,11 +1670,19 @@ class GoogleClient(BaseLLMClient):
                 if parts:
                     contents.append(types.Content(role="model", parts=parts))
             elif msg.role == "tool":
-                # Tool response
+                # Tool response: pair with the REAL originating function name so
+                # Gemini's name-based call<->response matching succeeds. Prefer the
+                # name resolved from this turn's tool_calls (by tool_call_id), then
+                # any explicit msg.name, falling back to "tool" only if truly unknown.
+                resolved_name = (
+                    tool_call_names.get(msg.tool_call_id)
+                    or msg.name
+                    or "tool"
+                )
                 contents.append(types.Content(
                     role="user",
                     parts=[types.Part.from_function_response(
-                        name=msg.name or "tool",
+                        name=resolved_name,
                         response={"result": msg.content}
                     )]
                 ))
@@ -1706,6 +1739,34 @@ class GoogleClient(BaseLLMClient):
                 system_instruction=system_instruction,
                 tools=google_tools,
             )
+            # MALFORMED_FUNCTION_CALL mitigation (google-genai 1.61 + gemini-3.x):
+            # ask Gemini to VALIDATE generated tool calls against the declared
+            # schema. MALFORMED stems from the model emitting tool-call codegen that
+            # doesn't parse; VALIDATED mode constrains it to the schema and sharply
+            # cuts the malformed rate — a source-level fix vs. our re-roll
+            # perturbation (which only breaks streaks after the fact). Self-disables
+            # for the session if the model/tool-surface ever rejects it (see
+            # _do_call). Toggle via ENVGEN_GEMINI_VALIDATED_FC=0.
+            if (google_tools
+                    and not getattr(self, "_validated_fc_disabled", False)
+                    and os.environ.get("ENVGEN_GEMINI_VALIDATED_FC", "1").lower()
+                        not in ("0", "false", "no", "off")):
+                try:
+                    cfg.tool_config = types.ToolConfig(
+                        function_calling_config=types.FunctionCallingConfig(
+                            mode=types.FunctionCallingConfigMode.VALIDATED))
+                except Exception:
+                    pass  # older SDK without VALIDATED → skip silently
+            # OBSERVABILITY: surface Gemini's thinking (it's a thinking model and
+            # reasons regardless; include_thoughts just RETURNS the summary). Lets us
+            # see WHY an agent did something (e.g. called run_validation early) instead
+            # of a black box. Captured + logged separately from response content/tool
+            # args (see the part loop). Toggle via ENVGEN_GEMINI_INCLUDE_THOUGHTS=0.
+            if os.environ.get("ENVGEN_GEMINI_INCLUDE_THOUGHTS", "1").lower() not in ("0", "false", "no", "off"):
+                try:
+                    cfg.thinking_config = types.ThinkingConfig(include_thoughts=True)
+                except Exception:
+                    pass
             if stop:
                 cfg.stop_sequences = stop
             return cfg
@@ -1726,11 +1787,30 @@ class GoogleClient(BaseLLMClient):
             call_start = datetime.now()
             
             def _do_call():
-                return client.models.generate_content(
-                    model=self.config.model_name,
-                    contents=contents,
-                    config=_make_gen_config(),
-                )
+                try:
+                    return client.models.generate_content(
+                        model=self.config.model_name,
+                        contents=contents,
+                        config=_make_gen_config(),
+                    )
+                except Exception as _e:
+                    # If the model/tool-surface rejects the VALIDATED function-calling
+                    # config, disable it for this client and retry once WITHOUT it, so
+                    # the MALFORMED mitigation can never wedge a run.
+                    _m = str(_e).lower()
+                    if (not getattr(self, "_validated_fc_disabled", False)
+                            and ("function_calling_config" in _m or "tool_config" in _m
+                                 or "validated" in _m or "function calling mode" in _m)):
+                        self._validated_fc_disabled = True
+                        self._logger.warning(
+                            "Gemini rejected VALIDATED function-calling config (%s); "
+                            "disabling it for this client and retrying without it.", str(_e)[:120])
+                        return client.models.generate_content(
+                            model=self.config.model_name,
+                            contents=contents,
+                            config=_make_gen_config(),
+                        )
+                    raise
             
             # Run sync call in thread pool
             task = asyncio.get_event_loop().run_in_executor(None, _do_call)
@@ -1783,7 +1863,8 @@ class GoogleClient(BaseLLMClient):
         content = ""
         tool_calls = []
         finish_reason = "stop"
-        
+        thinking = ""
+
         if response.candidates:
             candidate = response.candidates[0]
             finish_reason = str(candidate.finish_reason) if candidate.finish_reason else "stop"
@@ -1797,7 +1878,11 @@ class GoogleClient(BaseLLMClient):
                       if (candidate.content is not None
                           and candidate.content.parts is not None) else [])
             for part in _parts:
-                if hasattr(part, 'text') and part.text:
+                if getattr(part, 'thought', False):
+                    # Gemini thinking summary — capture for visibility; NEVER fold it
+                    # into response content or tool args (it would corrupt both).
+                    thinking += getattr(part, 'text', '') or ''
+                elif hasattr(part, 'text') and part.text:
                     content += part.text
                 elif hasattr(part, 'function_call') and part.function_call:
                     fc = part.function_call
@@ -1824,9 +1909,16 @@ class GoogleClient(BaseLLMClient):
         has_tool_calls = bool(tool_calls)
         if has_tool_calls:
             finish_reason = "tool_calls"
-        
+
+        # Surface the model's reasoning so it isn't a black box (e.g. WHY a tool
+        # was chosen). Logged under the agent's own logger → greppable per-agent in
+        # the run log, alongside the action it led to.
+        _thinking = thinking.strip()
+        if _thinking:
+            self._logger.info(f"[LLM thinking] {_thinking[:1500]}")
+
         self._logger.info(f"[LLM Response] latency={latency:.1f}s, prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={finish_reason}")
-        
+
         return LLMResponse(
             content=content,
             model=self.config.model_name,
@@ -1839,6 +1931,7 @@ class GoogleClient(BaseLLMClient):
             tool_calls=tool_calls if tool_calls else None,
             raw_response=response,
             latency=latency,
+            reasoning=_thinking or None,
         )
     
     async def chat_stream(

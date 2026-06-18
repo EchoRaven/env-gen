@@ -240,6 +240,7 @@ class CodeHub:
         linked_pages: Optional[List[str]] = None,
         linked_consumers: Optional[List[str]] = None,
         title: str = "",
+        description: str = "",
         author: str = "",
         repo_id: str = "main",
         checks_authorized: Optional[List[str]] = None,
@@ -355,6 +356,7 @@ class CodeHub:
             "id": pr_id,
             "repo_id": repo_id,
             "title": title or f"Merge {branch} into {target}",
+            "description": description,
             "source_branch": branch,
             "target_branch": target,
             "author": author,
@@ -711,11 +713,35 @@ class CodeHub:
         source = pr.get("source_branch", "")
         target = pr.get("target_branch", "main")
 
-        # Checkout target branch in main worktree
-        try:
-            self.git.checkout(target)
-        except Exception as exc:
-            return {"error": f"Failed to checkout target branch '{target}': {exc}"}
+        # Checkout target branch in main worktree.
+        #
+        # DEFENSE (Bug 2, youtube run): the integration branch may never
+        # have been created — e.g. a repo `init`-ed before the `git_ops.init`
+        # default-branch fix, where the host's `init.defaultBranch` was
+        # `master`, so `main` does not exist and the checkout fails with
+        # `pathspec 'main' did not match any file(s) known to git`. Mirror
+        # the `rev-parse --verify`→bootstrap pattern in auto_commit's
+        # strategic-merge path: if the target branch is genuinely absent,
+        # plant it at the current HEAD and check it out instead of erroring.
+        # Any OTHER checkout failure (dirty tree, etc.) still returns an error.
+        if not self.git.branch_exists(target):
+            try:
+                # Plant `target` at HEAD (the base commit every agent branch
+                # was cut from) without disturbing other refs, then switch.
+                self.git.create_branch_at(target, start_point="HEAD", force=False)
+                self.git.checkout(target)
+            except Exception as exc:
+                return {
+                    "error": (
+                        f"Failed to bootstrap missing target branch "
+                        f"'{target}': {exc}"
+                    )
+                }
+        else:
+            try:
+                self.git.checkout(target)
+            except Exception as exc:
+                return {"error": f"Failed to checkout target branch '{target}': {exc}"}
 
         # Run the merge
         if strategy == "squash":

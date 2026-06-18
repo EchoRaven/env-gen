@@ -176,6 +176,89 @@ def repair_backend_auth_dependency(backend_dir) -> Dict[str, object]:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+# Runtime-owned auth infra — the framework writes these; never rewrite their imports.
+_AUTH_INFRA_FILES = (
+    "auth_dependency.py", "jwt_manager.py", "oauth_store.py", "oauth_routes.py",
+)
+
+
+def _normalize_auth_imports_in_src(src: str) -> str:
+    """FIX #48 (AST-precise): repoint any ``from <X> import ... get_current_user ...``
+    where ``X != auth_dependency`` to import ``get_current_user`` from
+    ``auth_dependency`` (the module the framework actually scaffolds it into).
+    Co-imported names stay on the original module; an alias is preserved. Idempotent
+    (a canonical import is a no-op); no-op on a syntax error. Replaces ONLY the affected
+    import statement's line range, so the rest of the file's formatting is untouched."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return src
+    edits = []  # (start_idx, end_idx_exclusive, [new_lines])
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        # Already canonical → leave it (idempotent).
+        if node.level == 0 and node.module == "auth_dependency":
+            continue
+        gcu = [a for a in node.names if a.name == "get_current_user"]
+        if not gcu:
+            continue
+        alias = gcu[0].asname
+        gcu_line = "from auth_dependency import get_current_user" + (
+            f" as {alias}" if alias else "")
+        others = [a for a in node.names if a.name != "get_current_user"]
+        start = node.lineno - 1
+        end = getattr(node, "end_lineno", node.lineno)  # 1-based inclusive → slice end
+        new_lines = []
+        if others:
+            mod = ("." * node.level) + (node.module or "")
+            parts = ", ".join(
+                a.name + (f" as {a.asname}" if a.asname else "") for a in others)
+            new_lines.append(f"from {mod} import {parts}")
+        new_lines.append(gcu_line)
+        edits.append((start, end, new_lines))
+    if not edits:
+        return src
+    lines = src.splitlines()
+    for start, end, new_lines in sorted(edits, reverse=True):  # bottom-up: indices stable
+        lines[start:end] = new_lines
+    return "\n".join(lines) + ("\n" if src.endswith("\n") else "")
+
+
+def repair_auth_import_paths(backend_dir) -> Dict[str, object]:
+    """FIX #48: lanes import the canonical auth dependency from the WRONG module —
+    ``from oauth_routes import get_current_user`` (oauth_routes only exposes
+    ``build_router``) — so the backend crashes on startup (ImportError) and
+    backend_health fails forever (run #12 / run #18). The framework scaffolds the real
+    ``get_current_user`` in ``auth_dependency.py``; repoint every wrong-module import at
+    it. Unlike ``repair_backend_auth_dependency`` (which only rewrites a placeholder
+    DEFINITION), this normalizes IMPORT statements, so it fixes the run #18 case where
+    the route files only import (wrong) and define nothing. Best-effort, idempotent.
+
+    Note: ``get_current_user_id`` (a different local helper some lanes invent) is OUT of
+    scope — it is a local def with its own signature, not an ImportError; leave it."""
+    try:
+        be = Path(backend_dir)
+        # The canonical home must exist (the skeleton writes it). Without it there is no
+        # safe target to repoint to — guard rather than create a divergent one here.
+        if not (be / "auth_dependency.py").exists():
+            return {"repaired": False, "reason": "no auth_dependency.py"}
+        rewritten: List[str] = []
+        for p in be.glob("*.py"):
+            if p.name in _AUTH_INFRA_FILES:
+                continue
+            src = p.read_text(encoding="utf-8", errors="ignore")
+            if "get_current_user" not in src:
+                continue
+            new = _normalize_auth_imports_in_src(src)
+            if new != src:
+                p.write_text(new, encoding="utf-8")
+                rewritten.append(p.name)
+        return {"repaired": bool(rewritten), "rewritten": rewritten}
+    except Exception as exc:
+        return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
 # A handler that fake-parses a ``user:<id>`` token instead of decoding the JWT.
 _FAKE_PARTS_MARKER = '!= "user"'
 _FAKE_SPLIT_RE = re.compile(r'parts\s*=\s*(\w+)\.split\(\s*":"\s*(?:,\s*1\s*)?\)')
@@ -379,4 +462,5 @@ def repair_backend_packaging(backend_dir) -> Dict[str, object]:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
-__all__ = ["repair_backend_auth_dependency", "repair_backend_packaging"]
+__all__ = ["repair_backend_auth_dependency", "repair_auth_import_paths",
+           "repair_backend_packaging"]

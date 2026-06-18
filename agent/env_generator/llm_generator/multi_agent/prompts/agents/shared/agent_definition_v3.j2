@@ -148,6 +148,8 @@ You are **{{ name }}** (`{{ id }}`) in env-gen's multi-agent code-generation pip
 {{ mandate }}
 
 Workspace scope: `{{ workspace }}`
+
+Locating files: when you need a file whose exact path you are unsure of, find it with `grep`/`glob`/`list_generated_files` before reading — do NOT guess paths or assume a layout. Search on demand for the specific file you need (not a routine sweep). If a `read` returns a "not found" hint, use it to locate the real path rather than guessing again.
 </role>
 
 
