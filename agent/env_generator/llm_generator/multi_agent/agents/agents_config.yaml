@@ -151,6 +151,19 @@ profiles:
         # lanes into a no-progress ping-pong that derails their implementation
         # (instagram-core froze after 28 questions). Self-resets on real progress.
         ask_agent: orchestrator_ask_cap
+        # PROPOSAL #24: the orchestrator's prompt calls deliverability_check "the
+        # critical first step", so its resident-loop LLM fires these delivery/
+        # validation tools DURING kickoff (smoke-notes run #3: deliverability_check
+        # ×10 / run_start ×8 before any contract existed), each emitting a
+        # meaningless run_completed that woke the debugger into spurious bugs.
+        # kickoff_finalized blocks them while `not _kickoff_bootstrapped` — the same
+        # hub signal KickoffBootstrapGate flips. Keyed on the bare `action` stage so
+        # it bites in the resident loop where _active_phase is None (an allowlist
+        # would not — review §5). The deterministic framework validate/deliver
+        # drivers run on a separate run()-loop path and never call these tools.
+        deliverability_check: kickoff_finalized
+        run_start: kickoff_finalized
+        run_validation: kickoff_finalized
     workflow_policies:
       - kind: finish_continue
         tool_name: finish
@@ -802,6 +815,27 @@ profiles:
       - codehub_force_merge
       - wait
       - wait_for_process
+    # PROPOSAL #24 — give the debugger the SAME hub-derived phase gates the impl
+    # lanes already have, so it stops doing out-of-stage work. The debugger had NO
+    # workflow_policies and NO stage_tool_preconditions, so it woke on the
+    # orchestrator's premature run_completed during kickoff and filed spurious bugs
+    # (smoke-notes run #3: bug_create ×6 / bug_triage ×4 before any code existed).
+    workflow_policies:
+      # KickoffBootstrapGate makes _has_kickoff_bootstrap_gate() true, so
+      # messaging.py suppresses the debugger's resident run_completed WAKEUP until
+      # kickoff finalizes (RegistryHub has an endpoint OR WorkHub has a task) —
+      # exactly as it already does for the impl lanes. Closes the LOGGED case.
+      - kind: kickoff_bootstrap_gate
+        allowed_starters: [orchestrator]
+    stage_tool_preconditions:
+      action:
+        # Additionally block the bug TOOLS until the IMPL→VALIDATION boundary, so a
+        # run_completed fired during early IMPLEMENTATION (post-finalize, pre-impl)
+        # is also caught: there is no working app to debug until every business
+        # endpoint is implemented (the same predicate the framework validate/deliver
+        # drivers use). A genuine failing validation run then opens these.
+        bug_create: validation_phase_reached
+        bug_triage: validation_phase_reached
     execution_pipeline:
       stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:

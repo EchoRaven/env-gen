@@ -369,6 +369,77 @@ def frontend_canonical_root(
         return None
 
 
+def kickoff_finalized(agent: Any, tool_name: str, tool_args: Dict[str, Any]) -> Optional[str]:
+    """PROPOSAL #24 — block premature delivery/validation tools during KICKOFF.
+
+    The orchestrator's prompt calls ``deliverability_check`` "the critical first
+    step", so its resident-loop LLM fires ``deliverability_check`` / ``run_start``
+    / ``run_validation`` immediately — DURING kickoff, before any contract is
+    declared or code exists (smoke-notes run #3 kickoff window: deliverability_check
+    ×10, run_start ×8, each returning a meaningless "no successful run / dead
+    artifacts" and emitting ``run_completed`` that woke the debugger into spurious
+    ``bug_create`` ×6). These actions are meaningless until kickoff is finalized.
+
+    KICKOFF = ``not agent._kickoff_bootstrapped`` — the SAME hub-derived signal
+    ``KickoffBootstrapGate`` flips (RegistryHub gains an endpoint OR WorkHub gains a
+    task; workflow_policies KickoffBootstrapGate). Sticky/monotonic once flipped, so
+    this never re-blocks legitimate post-kickoff work. Keyed under the bare ``action``
+    stage so it fires in the orchestrator's RESIDENT coordination loop where
+    ``_active_phase`` is ``None`` (an allowlist keyed on ``kickoff:action`` would NOT
+    bite there — review §5/condition 2). The deterministic framework validation/deliver
+    drivers run on a SEPARATE run()-loop path and never call these LLM tools, so they
+    are unaffected (review §7 / Q5). Never raises."""
+    if getattr(agent, "_kickoff_bootstrapped", False):
+        return None
+    return (
+        f"{tool_name} is unavailable during KICKOFF: kickoff is not finalized "
+        f"(no endpoints declared / no tasks assigned yet), so there is nothing to "
+        f"validate or deliver — a run now returns a meaningless 'no successful run' "
+        f"and wakes the debugger into spurious bugs. During kickoff your job is to "
+        f"chair the meeting and drive the lanes to declare the full contract "
+        f"(endpoints/tables/ui_pages/chains) and reach finalize_kickoff. The framework "
+        f"runs validation + delivery AUTOMATICALLY once endpoints are implemented — you "
+        f"do not call {tool_name} to trigger it."
+    )
+
+
+def validation_phase_reached(agent: Any, tool_name: str, tool_args: Dict[str, Any]) -> Optional[str]:
+    """PROPOSAL #24 — block the debugger filing/triaging bugs before VALIDATION.
+
+    The debugger wakes on ``run_completed``. When the orchestrator fires a premature
+    run during kickoff/early-implementation (see :func:`kickoff_finalized`), the
+    resulting ``run_completed`` wakes the debugger, which files ``bug_create`` /
+    ``bug_triage`` about an empty validation — there is no implemented code to debug
+    yet (smoke-notes run #3 kickoff window: bug_create ×6, bug_triage ×4).
+    ``KickoffBootstrapGate`` on the debugger suppresses the pre-finalize WAKEUP; this
+    gate additionally blocks the bug TOOLS until the IMPL→VALIDATION boundary the
+    deterministic drivers use, so a ``run_completed`` fired during early
+    IMPLEMENTATION (post-finalize, pre-impl) is also caught (review condition 1).
+
+    VALIDATION = ``all_business_endpoints_implemented(registryhub.get_endpoints())``
+    — the SAME predicate ``framework_validation`` and the delivery driver gate on
+    (review Q2). Once a real validation run can occur, a genuine failing run
+    legitimately wakes the debugger and these tools open. Hub-derived; never raises."""
+    try:
+        registryhub = getattr(getattr(agent, "_hubs", None), "registryhub", None)
+        if registryhub is None or not hasattr(registryhub, "get_endpoints"):
+            return None  # can't determine phase → don't block
+        from ...runtime.lifecycle import all_business_endpoints_implemented
+        eps = registryhub.get_endpoints() or {}
+        if eps and all_business_endpoints_implemented(eps):
+            return None
+        return (
+            f"{tool_name} is unavailable before VALIDATION: not all business "
+            f"endpoints are implemented yet, so there is no working app to debug — a "
+            f"run that completes now reflects an empty/partial build, not a real "
+            f"defect. The framework validates automatically once every endpoint is "
+            f"implemented; a genuine failing validation run will then wake you and "
+            f"{tool_name} will be available. Until then, monitor via check_inbox."
+        )
+    except Exception:
+        return None
+
+
 PRECONDITION_REGISTRY: Dict[str, PreconditionFn] = {
     "kickoff_endpoints_implemented": kickoff_endpoints_implemented,
     "endpoints_implemented_with_code": endpoints_implemented_with_code,
@@ -376,6 +447,9 @@ PRECONDITION_REGISTRY: Dict[str, PreconditionFn] = {
     "orchestrator_ask_cap": orchestrator_ask_cap,
     "release_readiness_consulted": release_readiness_consulted,
     "api_contract_guard_consulted": api_contract_guard_consulted,
+    # PROPOSAL #24 — run-phase hygiene (EXTEND existing hub-derived gates):
+    "kickoff_finalized": kickoff_finalized,
+    "validation_phase_reached": validation_phase_reached,
 }
 
 
