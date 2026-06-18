@@ -3755,14 +3755,25 @@ volumes:
                 return
             from pathlib import Path as _P
             from .runtime.backend_scaffold import (
-                repair_backend_auth_dependency, repair_inline_token_auth,
-                repair_auth_enforcement_middleware)
+                repair_backend_auth_dependency, repair_auth_import_paths,
+                repair_inline_token_auth, repair_auth_enforcement_middleware)
             be_dir = _P(out_dir) / "app" / "backend"
             rep = repair_backend_auth_dependency(be_dir)
             if rep.get("repaired"):
                 self._logger.warning(
                     "Backend auth dependency installed (FIX #45, real JWT auth): "
                     "rewrote %s", rep.get("rewritten"))
+            # FIX #48 (run #12 / #18): lanes import get_current_user from the WRONG module
+            # (`from oauth_routes import get_current_user` — oauth_routes only exposes
+            # build_router) → ImportError → backend crashes on startup → backend_health
+            # fails forever. Repoint every wrong-module import at the scaffolded
+            # auth_dependency. AST-precise; complements FIX #45 (which fixes placeholder
+            # DEFS, not wrong IMPORTS).
+            imp = repair_auth_import_paths(be_dir)
+            if imp.get("repaired"):
+                self._logger.warning(
+                    "Backend auth imports normalized (FIX #48): repointed "
+                    "get_current_user to auth_dependency in %s", imp.get("rewritten"))
             # FIX #46 (run #12): handlers that fake-parse a ``user:<id>`` token INLINE
             # (no shared get_current_user to rewrite) → rewrite the fake split to decode
             # the real RS256 JWT, so authed endpoints stop 401'ing 'invalid token'.
