@@ -3483,54 +3483,26 @@ volumes:
             self._logger.error("misplaced-frontend-root dispatch failed: %s", exc)
 
     async def _compile_reference_materials(self, raw_req: str) -> str:
-        """Classify reference materials, stage documents into the workspace,
-        compile the REFERENCE SPEC with the run's selected model, persist it,
-        derive deliverability gates from it, and return the requirements text
-        extended with the spec summary. Best-effort: on any failure the run
-        proceeds with the original requirements."""
-        try:
-            from .runtime.reference_materials import (
-                classify_references, compile_reference_spec, gates_from_spec,
-                merge_user_gates, spec_summary_for_requirements,
-                stage_reference_docs)
-            split = classify_references(getattr(self, "_reference_images", None) or [])
-            self._reference_images = split["images"]
-            self._reference_docs = split["docs"]
-            if not split["images"] and not split["docs"]:
-                return raw_req
-            try:
-                from .runtime.reference_materials import write_agent_notes
-                write_agent_notes(self.output_dir)
-            except Exception:
-                pass
-            # stage BOTH docs and reference images into design/references/ so the
-            # env is self-contained (the Env Forge UI can serve/show the screenshots).
-            staged = stage_reference_docs(split["docs"] + split["images"], self.output_dir)
-            if staged:
-                self._logger.info("Reference documents staged: %s", staged)
-            spec = await compile_reference_spec(
-                self.llm, split["images"], split["docs"], raw_req)
-            if not spec or not any(spec.get(k) for k in
-                                   ("screens", "endpoints", "entities", "mcp_tools")):
-                self._logger.info("Reference spec compile produced nothing usable — continuing without.")
-                return raw_req
-            spec_path = Path(self.output_dir) / "design" / "reference_spec.json"
-            spec_path.parent.mkdir(parents=True, exist_ok=True)
-            spec_path.write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
-            gates = gates_from_spec(spec)
-            n = merge_user_gates(self.output_dir, gates) if gates else 0
-            self._reference_spec = spec
-            self._reference_spec_summary = spec_summary_for_requirements(spec)
-            self._logger.warning(
-                "REFERENCE SPEC compiled: %d screens, %d endpoints, %d entities, "
-                "%d mcp tools → %d deliverability gates registered; spec at %s",
-                len(spec.get("screens") or []), len(spec.get("endpoints") or []),
-                len(spec.get("entities") or []), len(spec.get("mcp_tools") or []),
-                n, spec_path)
-            return raw_req + spec_summary_for_requirements(spec)
-        except Exception as exc:
-            self._logger.error("reference material compile failed (non-fatal): %s", exc)
-            return raw_req
+        """Compile reference materials into a spec + deliverability gates and
+        return the spec-extended requirements (delegates to
+        ``runtime.reference_materials.compile_reference_materials``). Records the
+        reference image/doc/spec state only for what this run actually produced,
+        so a best-effort failure leaves prior state untouched."""
+        from .runtime.reference_materials import compile_reference_materials
+        res = await compile_reference_materials(
+            raw_req,
+            output_dir=self.output_dir,
+            llm=self.llm,
+            logger=self._logger,
+            reference_images=getattr(self, "_reference_images", None),
+        )
+        if res.classified:
+            self._reference_images = res.images
+            self._reference_docs = res.docs
+        if res.spec is not None:
+            self._reference_spec = res.spec
+            self._reference_spec_summary = res.spec_summary
+        return res.requirements
 
     async def _maybe_run_visual_fidelity(self) -> None:
         """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the

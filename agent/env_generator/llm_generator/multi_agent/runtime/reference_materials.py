@@ -25,6 +25,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
@@ -478,3 +479,80 @@ async def plan_milestones(llm: Any, raw_requirements: str,
         return out
     except Exception:
         return None
+
+
+@dataclass
+class ReferenceCompileResult:
+    """Outcome of :func:`compile_reference_materials`. ``requirements`` is the
+    (possibly spec-extended) requirements text to use downstream. The remaining
+    fields are the state the orchestrator records ONLY when this run actually
+    produced them — ``classified`` gates the images/docs writes (so a classify
+    failure leaves the orchestrator's prior values untouched), and ``spec`` is
+    None unless a usable reference spec compiled.
+    """
+    requirements: str
+    classified: bool = False
+    images: Optional[List[str]] = None
+    docs: Optional[List[str]] = None
+    spec: Optional[Dict[str, Any]] = None
+    spec_summary: Optional[str] = None
+
+
+async def compile_reference_materials(
+    raw_req: str,
+    *,
+    output_dir: Any,
+    llm: Any,
+    logger: Any,
+    reference_images: Optional[List[Any]] = None,
+) -> ReferenceCompileResult:
+    """Classify reference materials, stage documents into the workspace,
+    compile the REFERENCE SPEC with the run's selected model, persist it,
+    derive deliverability gates from it, and return the requirements text
+    extended with the spec summary. Best-effort: on any failure the run
+    proceeds with the original requirements (``classified=False`` ⇒ the
+    caller leaves its reference-image/-doc state as-is).
+    """
+    images: Optional[List[str]] = None
+    docs: Optional[List[str]] = None
+    try:
+        split = classify_references(reference_images or [])
+        images = split["images"]
+        docs = split["docs"]
+        if not images and not docs:
+            return ReferenceCompileResult(raw_req, classified=True,
+                                          images=images, docs=docs)
+        try:
+            write_agent_notes(output_dir)
+        except Exception:
+            pass
+        # stage BOTH docs and reference images into design/references/ so the
+        # env is self-contained (the Env Forge UI can serve/show the screenshots).
+        staged = stage_reference_docs(docs + images, output_dir)
+        if staged:
+            logger.info("Reference documents staged: %s", staged)
+        spec = await compile_reference_spec(llm, images, docs, raw_req)
+        if not spec or not any(spec.get(k) for k in
+                               ("screens", "endpoints", "entities", "mcp_tools")):
+            logger.info("Reference spec compile produced nothing usable — continuing without.")
+            return ReferenceCompileResult(raw_req, classified=True,
+                                          images=images, docs=docs)
+        spec_path = Path(output_dir) / "design" / "reference_spec.json"
+        spec_path.parent.mkdir(parents=True, exist_ok=True)
+        spec_path.write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
+        gates = gates_from_spec(spec)
+        n = merge_user_gates(output_dir, gates) if gates else 0
+        summary = spec_summary_for_requirements(spec)
+        logger.warning(
+            "REFERENCE SPEC compiled: %d screens, %d endpoints, %d entities, "
+            "%d mcp tools → %d deliverability gates registered; spec at %s",
+            len(spec.get("screens") or []), len(spec.get("endpoints") or []),
+            len(spec.get("entities") or []), len(spec.get("mcp_tools") or []),
+            n, spec_path)
+        return ReferenceCompileResult(raw_req + summary, classified=True,
+                                      images=images, docs=docs,
+                                      spec=spec, spec_summary=summary)
+    except Exception as exc:
+        logger.error("reference material compile failed (non-fatal): %s", exc)
+        return ReferenceCompileResult(raw_req, classified=(images is not None),
+                                      images=images, docs=docs)
