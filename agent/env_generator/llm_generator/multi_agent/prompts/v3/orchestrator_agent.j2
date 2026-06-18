@@ -825,6 +825,25 @@ If delivery gate fails, assign remediation tasks based on the gate report and re
 {% endmacro %}
 
 
+{# PROPOSAL #10 — default task macro for goal-less resident wakes
+   (resident_message_wakeup carries no raw_requirements). Renders a SHORT
+   current-project header (name + truncated goal) so the orchestrator wakes
+   knowing WHAT it coordinates instead of rediscovering it from memory_bank.
+   Keep the goal line short — it's an orientation header, not the full spec
+   (the full spec rides the `full` macro on a raw_requirements task). #}
+{% macro resident_task_prompt(name="", description="") %}
+## Current project
+{% if name or description -%}
+{{ name }}{% if name and description %} — {% endif %}{{ description[:160] | trim }}{% if description and description | length > 160 %}…{% endif %}
+{%- else -%}
+(see memory_bank for the project goal)
+{%- endif %}
+
+## This wake
+You are the resident orchestrator coordinating this run. Check your inbox + hub/runtime state, monitor lane progress, handle remediation/blocker events, and call `deliver_project()` once the delivery gate passes. The kickoff coordinator drives the M{n} contract + task tree to completion before your first tick — do NOT re-dispatch the kickoff task tree. Call `finish()` when this wake's work is done.
+{% endmacro %}
+
+
 {# Kickoff synthesis prompt — run when the orchestrator lane wakes on
    a workhub.meeting_decision_added event for the active kickoff
    meeting, or when the coord_tick loop notices the inbox carried a

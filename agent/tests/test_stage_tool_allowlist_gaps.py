@@ -127,6 +127,20 @@ class StageToolAllowlistGapTests(unittest.TestCase):
                 f"{profile} kickoff:action must NOT expose search tools, found {leaked}",
             )
 
+    def test_frontend_kickoff_has_reference_image_tools(self):
+        # PROPOSAL #12: the frontend's Phase A design REQUIRES inspecting the staged
+        # reference screenshots (frontend_agent.j2: list_reference_images then view_image
+        # for every path — "never guess the UI from memory"). They must be in the
+        # frontend kickoff allowlist or the lane can't see the references it's told to use.
+        allow = set(_allowlist("frontend", "kickoff:action"))
+        for tool in ("list_reference_images", "view_image"):
+            self.assertIn(
+                tool, allow,
+                f"frontend kickoff:action must expose {tool} (Phase A design input)",
+            )
+        # copy_reference_image deliberately NOT required (bundled-library use, not the
+        # pre-staged screenshots) — reviewer's binding scope cut on #12.
+
 
 if __name__ == "__main__":
     unittest.main()

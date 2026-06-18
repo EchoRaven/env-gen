@@ -83,9 +83,15 @@ profiles:
       # the v3 changes concentrate in the system prompt body.
       template: "v3/orchestrator_agent.j2"
       system_macro: "lead_system_prompt"
+      # PROPOSAL #10: default task macro for goal-less resident wakes
+      # (resident_message_wakeup carries no raw_requirements → without this the
+      # orchestrator woke with "Complete your assigned task." and had to rediscover
+      # the goal from memory_bank). resident_task_prompt renders a SHORT current-project
+      # header (name + truncated goal) so it always knows what it's coordinating.
+      task_macro: "resident_task_prompt"
       task_macros:
         full: "full_workflow_prompt"
-      context_vars: ["api_port", "ui_port"]
+      context_vars: ["api_port", "ui_port", "name", "description"]
     flags:
       coordinator: true
       can_deliver: true
@@ -458,6 +464,15 @@ profiles:
         - workhub_list_documents
         - workhub_comment
         - read
+        # PROPOSAL #12: the frontend MUST inspect reference screenshots during Phase A
+        # design (frontend_agent.j2: "list_reference_images ONCE in Phase A, then
+        # view_image() for every path — never guess the UI from memory"). These were
+        # missing here, so the lane couldn't see the references it was told to use and
+        # pleaded with the orchestrator instead. Unlike #9's glob/grep (no kickoff use),
+        # these have a clear, prompt-mandated kickoff use → keep them. copy_reference_image
+        # is NOT added (its use is bundled-library images, not pre-staged screenshots).
+        - list_reference_images
+        - view_image
         # PROPOSAL #9: no file-search in kickoff (nothing built yet; declare-only).
         # The search tools live in implementation:action, not here.
         - finish
