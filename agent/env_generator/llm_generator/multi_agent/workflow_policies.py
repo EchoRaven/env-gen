@@ -801,6 +801,16 @@ class ClaimAssignedTasksPolicy(BaseWorkflowPolicy):
     ) -> Optional[Dict[str, Any]]:
         if tool_name != "finish":
             return None
+        # PROPOSAL #11: claim-assigned-tasks is an IMPLEMENTATION-phase gate. During
+        # kickoff the lane only DECLARES its contract slice; workhub_task (claim) /
+        # workhub_cancel_task are intentionally absent from the kickoff allowlist, so
+        # this gate would demand an action the lane physically cannot perform — it
+        # thrashes to the retry cap and leaves the task PENDING (run #20: backend
+        # "Cannot claim ... workhub_task not in the kickoff allowlist"). Skip in
+        # kickoff; the gate applies post-kickoff (impl), where the claim tool +
+        # assigned tasks exist.
+        if getattr(agent, "_active_phase", None) == "kickoff":
+            return None
         hubs = getattr(agent, "_hubs", None)
         workhub = getattr(hubs, "workhub", None) if hubs is not None else None
         if workhub is None:
