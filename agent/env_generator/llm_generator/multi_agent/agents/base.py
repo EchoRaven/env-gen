@@ -296,6 +296,11 @@ class EnvGenAgent(
         "run_validation",  # §6 deterministic one-call api_smoke — MUST be force-offered
         "test_api",
         "registryhub_record_contract_test",
+        # run_validation BLOCKS until chains are registered, so the register tool MUST
+        # be force-offered too — without it the verifier sees run_validation (which
+        # errors "no chains registered") but the ranker never surfaces the register
+        # tool, so it reports it "missing" and the run never validates → never delivers.
+        "registryhub_register_verification_chain",
         # UI smoke + flow
         "browser_navigate",
         "browser_screenshot",

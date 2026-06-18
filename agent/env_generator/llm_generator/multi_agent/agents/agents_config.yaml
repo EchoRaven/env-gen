@@ -449,6 +449,17 @@ profiles:
       - codehub_force_merge
       - wait
       - wait_for_process
+      # PROPOSAL #27: deny the backend/database-owned registryhub WRITE tools the
+      # frontend is role-gated out of (register_endpoint/table etc.) so they stop
+      # surfacing as dead actor-error calls. CRITICAL — do NOT deny
+      # registryhub_register_consumer (frontend_agent.j2 mandates declaring early
+      # consumption) NOR the ui_page register tool (its hub_consistency_gate blocks
+      # finish on 0 owned ui_pages and names that tool in the remediation).
+      - registryhub_register_endpoint
+      - registryhub_register_table
+      - registryhub_register_table_consumer
+      - registryhub_update_table_schema
+      - registryhub_deprecate_endpoint
     # Frontend finish-gate = frontend_canonical_root (run #5): blocks finish on
     # WRONG-ROOT — pages authored at repo-root ./src instead of app/frontend/src
     # (bash heredocs bypass write-tool path routing → blank canonical tree).
@@ -636,6 +647,20 @@ profiles:
       - codehub_force_merge
       - wait
       - wait_for_process
+      # PROPOSAL #27: the broad registryhub_tools bundle grants the verifier the
+      # backend/database-owned WRITE tools, which it is role-gated OUT of
+      # (registryhub.py register_endpoint→{backend,orchestrator} etc.) — so the LLM
+      # surfaces + calls them and burns a turn on a "restricted to ['backend',...]"
+      # error. The verifier reads the contract + records contract tests + registers
+      # verification chains; it never authors the endpoint/table surface. Deny the
+      # owner-only writes (KEEP the reads + record_contract_test + the ungated
+      # register_verification_chain — all verifier-owned and in its impl:action allowlist).
+      - registryhub_register_endpoint
+      - registryhub_register_table
+      - registryhub_register_table_consumer
+      - registryhub_update_table_schema
+      - registryhub_update_schema
+      - registryhub_deprecate_endpoint
       # workhub_task is NO LONGER denied: orchestrator dispatches an
       # assignee="verifier" P0 chain-authoring task (orchestrator.py) and tells
       # the verifier to CLAIM it, but the blanket deny also blocked claim/
@@ -815,6 +840,17 @@ profiles:
       - codehub_force_merge
       - wait
       - wait_for_process
+      # PROPOSAL #27: the debugger is READ-ONLY by charter (triages, never authors
+      # contract/pages). Deny every registryhub WRITE + the ui_page register tool so
+      # they stop surfacing as dead actor-error calls. KEEPS all reads + hub_snapshot.
+      - registryhub_register_endpoint
+      - registryhub_register_table
+      - registryhub_register_consumer
+      - registryhub_register_table_consumer
+      - registryhub_update_schema
+      - registryhub_update_table_schema
+      - registryhub_deprecate_endpoint
+      - workhub_register_ui_page
     # PROPOSAL #24 — give the debugger the SAME hub-derived phase gates the impl
     # lanes already have, so it stops doing out-of-stage work. The debugger had NO
     # workflow_policies and NO stage_tool_preconditions, so it woke on the
