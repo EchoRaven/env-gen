@@ -302,7 +302,13 @@ class Orchestrator:
         # Output
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
+
+        # PROPOSAL #8 Tier-1b: run_budget.json ownership lives in RunBudget; the
+        # _run_budget_path/_load_run_budget_caps/_write_run_budget methods below are
+        # thin shims delegating here (callers in run() stay unchanged).
+        from .runtime.run_budget import RunBudget
+        self._budget = RunBudget(self.output_dir, self._logger)
+
         self._reference_images = list(reference_images or [])
         # Merge in any reference images the UI (or a prior step) already dropped
         # into <workspace>/references/ — that is the store the monitor's
@@ -5196,44 +5202,18 @@ volumes:
         return _contract.extract_backend_routes(backend_dir)
 
     # ---- Run budget (surfaced in the UI) ----------------------------------
+    # PROPOSAL #8 Tier-1b: extracted to runtime/run_budget.py (RunBudget). These
+    # thin shims preserve the in-file call surface (run() calls them ~6×) byte-for-byte.
     def _run_budget_path(self) -> Path:
-        return self.output_dir / "run_budget.json"
+        return self._budget.path()
 
     def _load_run_budget_caps(self, env_defaults: Dict[str, Any]) -> Dict[str, Any]:
-        """Caps from run_budget.json if present (UI can raise them live), else env."""
-        try:
-            data = json.loads(self._run_budget_path().read_text(encoding="utf-8"))
-            caps = data.get("caps") or {}
-            return {
-                "max_wall_sec": float(caps.get("max_wall_sec", env_defaults["max_wall_sec"])),
-                "max_ticks": int(caps.get("max_ticks", env_defaults["max_ticks"])),
-                "unlimited": bool(caps.get("unlimited", env_defaults.get("unlimited", False))),
-            }
-        except Exception:
-            return dict(env_defaults)
+        return self._budget.load_caps(env_defaults)
 
     def _write_run_budget(self, caps: Dict[str, Any], started_at: float,
                           elapsed: float, ticks: int, status: str) -> None:
-        """Persist caps + usage so the live monitor can show budget progress."""
-        try:
-            payload = {
-                "caps": {"max_wall_sec": float(caps["max_wall_sec"]), "max_ticks": int(caps["max_ticks"]),
-                         "unlimited": bool(caps.get("unlimited", False))},
-                "usage": {
-                    "started_at": started_at,
-                    "elapsed_sec": round(float(elapsed), 1),
-                    "ticks": int(ticks),
-                    "status": status,
-                    "updated_at": time.time(),
-                },
-            }
-            path = self._run_budget_path()
-            tmp = path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            os.replace(tmp, path)
-        except Exception as e:
-            self._logger.debug("run_budget write failed: %s", e)
-    
+        self._budget.write(caps, started_at, elapsed, ticks, status)
+
     def _format_delivery_gate_report(self, gate: Dict[str, Any]) -> str:
         """Format delivery gate result as a readable report."""
         if gate.get("ok", False):
