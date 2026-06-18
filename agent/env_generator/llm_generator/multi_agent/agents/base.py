@@ -352,7 +352,18 @@ class EnvGenAgent(
         "deliver": {"finish", "deliver_project", "report_completion", "submit_retro", "deliverability_check"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW,
         "action": {"finish", "submit_retro", "deliverability_check"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW,
     }
-    
+
+    # PROPOSAL #28 F2 — validation/delivery tools that are MEANINGLESS during KICKOFF
+    # (the kickoff_finalized precondition blocks them anyway, so force-offering them
+    # only wastes a round: the orchestrator attempts run_validation/deliverability_check
+    # then gets blocked). step_pipeline.tooling subtracts these from the action-stage
+    # always-include while ``not kickoff_finalized_signal`` — a STRICT no-op post-kickoff
+    # (the signal is monotonic), so the smoke #9/#41 delivery-gate crowd-out fix stays
+    # intact once the contract exists.
+    _KICKOFF_DEFER_TOOLS = _VALIDATION_FLOW | {
+        "deliver_project", "report_completion", "submit_retro",
+    }
+
     def __init__(
         self,
         config: AgentConfig,

@@ -116,6 +116,11 @@ class KickoffDriver:
         # restarts mid-meeting (it doesn't today), we'd have to persist
         # this in workhub but for now in-process is fine.
         broadcasts_fired: set = set()
+        # PROPOSAL #28 (C-recovery): track substantive-section progress while the
+        # meeting is stuck in phase=initial, so a lane that can never emit a clean
+        # section doesn't pin the run for the full 1200s timeout.
+        _initial_fewest_missing: Optional[int] = None
+        _initial_progress_poll = 0
 
         while True:
             poll_count += 1
@@ -152,10 +157,40 @@ class KickoffDriver:
                 # was broadcast by start_kickoff for round 1; revisions
                 # are dispatched via kickoff_revision_request when a
                 # facilitator says request_revision).
+                # PROPOSAL #28 (C-recovery): measure substantive-section progress via
+                # try_synthesize's ``missing`` (attendees lacking a substantive
+                # decision). A SHRINKING missing-set = progress; if it stops shrinking
+                # for KICKOFF_INITIAL_STALL_POLLS while in initial (past the grace
+                # window), a lane is stuck (e.g. Gemini re-mangling its draft) — stop
+                # waiting for the full 1200s and finalize via the existing fallback,
+                # which synthesizes/reconciles from whatever WAS recorded.
+                try:
+                    _synth = run_kickoff.try_synthesize(self._orch.hubs, kickoff_handle)
+                except Exception:
+                    _synth = {"status": "unknown", "missing": list(expected_attendees)}
+                _missing = len(_synth.get("missing") or [])
+                if _initial_fewest_missing is None or _missing < _initial_fewest_missing:
+                    _initial_fewest_missing = _missing
+                    _initial_progress_poll = poll_count
+                stalled_polls = poll_count - _initial_progress_poll
+                if (elapsed >= run_kickoff.KICKOFF_INITIAL_STALL_MIN_SEC
+                        and stalled_polls >= run_kickoff.KICKOFF_INITIAL_STALL_POLLS):
+                    self._orch._logger.error(
+                        "Kickoff STALLED in phase=initial (round %d, poll %s, %.0fs): "
+                        "no new substantive section for %s polls (%s attendee(s) still "
+                        "missing). Finalizing early via deterministic reconcile instead "
+                        "of waiting for the %.0fs timeout.",
+                        cur_round, poll_count, elapsed, stalled_polls,
+                        _initial_fewest_missing, run_kickoff.KICKOFF_TIMEOUT_SEC,
+                    )
+                    return self._orch._kickoff_fallback_or_reconcile(
+                        kickoff_handle, _synth, "initial_stall",
+                    )
                 self._orch._logger.info(
                     "Kickoff phase=initial (round %d, poll %s, %.0fs); "
-                    "waiting for attendees to record initial proposals.",
-                    cur_round, poll_count, elapsed,
+                    "waiting for attendees to record initial proposals "
+                    "(%s missing, %s polls since progress).",
+                    cur_round, poll_count, elapsed, _missing, stalled_polls,
                 )
                 await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
                 continue

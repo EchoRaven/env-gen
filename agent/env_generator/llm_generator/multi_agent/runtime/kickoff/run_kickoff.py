@@ -114,6 +114,16 @@ __all__ = [
 # without touching orchestrator.py.
 KICKOFF_POLL_INTERVAL_SEC: float = 5.0
 KICKOFF_TIMEOUT_SEC: float = 1200.0
+# PROPOSAL #28 (C-recovery): a FAST stall escape so a lane that can never emit a
+# clean section (e.g. Gemini re-mangling its draft to {auth:-1}) does not pin the
+# whole run in phase=initial for the full 1200s. When NO new attendee records a
+# substantive section for KICKOFF_INITIAL_STALL_POLLS consecutive polls AND at
+# least KICKOFF_INITIAL_STALL_MIN_SEC has elapsed, the driver finalizes via the
+# EXISTING _kickoff_fallback_or_reconcile (which synthesizes from whatever WAS
+# recorded). Grace before the first stall-check leaves honest-but-slow kickoffs
+# alone; the no-progress window distinguishes "stuck" from "still trickling in".
+KICKOFF_INITIAL_STALL_MIN_SEC: float = 240.0
+KICKOFF_INITIAL_STALL_POLLS: int = 24  # × 5s poll = 120s of no new substantive section
 
 
 # v2 vocabulary (round 8e.1) — every kickoff meeting expects ONE

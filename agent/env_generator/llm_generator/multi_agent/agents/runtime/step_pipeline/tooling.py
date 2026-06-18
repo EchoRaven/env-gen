@@ -164,6 +164,20 @@ class AgentStepToolingMixin:
         always_include = self.ACTION_STAGE_ALWAYS_INCLUDE.get(stage_name, set())
         if stage_allow:
             always_include = set(always_include) & stage_allow_set
+        # PROPOSAL #28 F2: during KICKOFF, do NOT force-offer the validation/delivery
+        # tools — they're blocked by kickoff_finalized anyway, so surfacing them just
+        # wastes a round (the orchestrator, which has no kickoff allowlist, otherwise
+        # attempts run_validation/deliverability_check every kickoff round). Strictly
+        # gated on the MONOTONIC kickoff signal → a no-op post-kickoff (delivery tools
+        # stay force-offered, so the smoke #9/#41 retro-gate crowd-out fix is preserved).
+        defer = getattr(self, "_KICKOFF_DEFER_TOOLS", None)
+        if defer and always_include:
+            try:
+                from ..preconditions import kickoff_finalized_signal
+                if not kickoff_finalized_signal(getattr(self, "_hubs", None), self):
+                    always_include = set(always_include) - defer
+            except Exception:
+                pass
         # FIX #29: when a per-stage allowlist is configured, it already IS the
         # curated set of tools this workflow stage needs — so OFFER ALL OF THEM
         # rather than ranking down to the global top-k (~10). The 10-cap was

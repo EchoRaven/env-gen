@@ -369,6 +369,40 @@ def frontend_canonical_root(
         return None
 
 
+def kickoff_finalized_signal(hubs: Any, agent: Any = None) -> bool:
+    """PROPOSAL #28 (F0) — GATE-SAFE "has kickoff finalized?" predicate.
+
+    True once kickoff has produced contract surface, from the SAME signals
+    ``KickoffBootstrapGate`` uses: the agent's sticky ``_kickoff_bootstrapped`` flag,
+    OR RegistryHub has any endpoint, OR WorkHub has any task. The flag ALONE is
+    insufficient for the ORCHESTRATOR, which has no KickoffBootstrapGate (its flag is
+    never set) — #24's flag-only check therefore mis-classified the orchestrator as
+    "in KICKOFF" forever (a latent permanent over-block). The hub read fixes that.
+
+    Gate-safe — unlike the DISPLAY-only ``hub_pulse.current_run_phase`` (which gates
+    must NOT call): the hub stores are append-only within a run (``deprecate_endpoint``
+    does a status ``.set()``, not a delete), so this signal is MONOTONIC and cannot
+    invert a gate decision once True (the #24/#25 subtlety-1 concern that forbade the
+    display helper does not apply to a fresh predicate over these monotonic signals)."""
+    if getattr(agent, "_kickoff_bootstrapped", False):
+        return True
+    try:
+        rh = getattr(hubs, "registryhub", None)
+        if rh is not None and hasattr(rh, "_endpoints") and rh._endpoints.value():
+            return True
+        if rh is not None and hasattr(rh, "get_endpoints") and rh.get_endpoints():
+            return True
+    except Exception:
+        pass
+    try:
+        wh = getattr(hubs, "workhub", None)
+        if wh is not None and hasattr(wh, "list_tasks") and wh.list_tasks():
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def kickoff_finalized(agent: Any, tool_name: str, tool_args: Dict[str, Any]) -> Optional[str]:
     """PROPOSAL #24 — block premature delivery/validation tools during KICKOFF.
 
@@ -380,16 +414,18 @@ def kickoff_finalized(agent: Any, tool_name: str, tool_args: Dict[str, Any]) -> 
     artifacts" and emitting ``run_completed`` that woke the debugger into spurious
     ``bug_create`` ×6). These actions are meaningless until kickoff is finalized.
 
-    KICKOFF = ``not agent._kickoff_bootstrapped`` — the SAME hub-derived signal
-    ``KickoffBootstrapGate`` flips (RegistryHub gains an endpoint OR WorkHub gains a
-    task; workflow_policies KickoffBootstrapGate). Sticky/monotonic once flipped, so
-    this never re-blocks legitimate post-kickoff work. Keyed under the bare ``action``
+    KICKOFF = ``not kickoff_finalized_signal(...)`` (PROPOSAL #28 F1): uses the
+    GATE-SAFE hub-derived predicate (RegistryHub endpoint OR WorkHub task OR the agent
+    flag) — NOT the agent flag alone. The orchestrator has no KickoffBootstrapGate, so
+    its ``_kickoff_bootstrapped`` is never set; the #24 flag-only check therefore
+    PERMANENTLY blocked the orchestrator's deliverability_check/run_start/run_validation
+    even post-kickoff (a latent over-block + wasted rounds — NOT a delivery breaker, as
+    delivery is driven deterministically by the run() loop, never by these LLM tools).
+    The hub read unblocks them once the contract exists. Keyed under the bare ``action``
     stage so it fires in the orchestrator's RESIDENT coordination loop where
-    ``_active_phase`` is ``None`` (an allowlist keyed on ``kickoff:action`` would NOT
-    bite there — review §5/condition 2). The deterministic framework validation/deliver
-    drivers run on a SEPARATE run()-loop path and never call these LLM tools, so they
-    are unaffected (review §7 / Q5). Never raises."""
-    if getattr(agent, "_kickoff_bootstrapped", False):
+    ``_active_phase`` is ``None``. The deterministic framework drivers run on a SEPARATE
+    run()-loop path and never call these LLM tools, so they are unaffected. Never raises."""
+    if kickoff_finalized_signal(getattr(agent, "_hubs", None), agent):
         return None
     return (
         f"{tool_name} is unavailable during KICKOFF: kickoff is not finalized "
