@@ -58,6 +58,14 @@ class FrameworkValidation:
                 setattr(self._orch, _guard, None)
             except Exception:
                 pass
+        # PROPOSAL #21: the per-check dispatch guard is a DICT (one entry per
+        # failing check id) — clear it so a changed/persisting failure set re-fires
+        # the dead_controls/reachable/endpoints-reachable/etc. dispatches too. Missing
+        # this reset is the exact #20-family latent omission (a guard that never re-arms).
+        try:
+            self._orch._check_owner_dispatched = {}
+        except Exception:
+            pass
 
     async def maybe_run(self) -> None:
         """Deterministically run api_smoke + record the RunHub run when the
@@ -397,6 +405,13 @@ class FrameworkValidation:
                 # routes) otherwise pins validation red with no path back to the
                 # lane that owns the UI.
                 await orch._dispatch_frontend_navigable(data)
+                # PROPOSAL #21: re-dispatch the OTHER lane-actionable failing checks
+                # that previously routed NOWHERE (frontend_dead_controls/reachable →
+                # frontend; business_endpoints_reachable/correct_shape/auth_enforced_401/
+                # writes_persist → backend). Without this, an idle owning lane is never
+                # re-woken for these (run #4: frontend idle 30min on dead_controls) →
+                # api_smoke never goes unanimous-green → no RunHub gate run → no delivery.
+                await orch._dispatch_failing_checks(data)
                 # Mechanism #53 (round 33 deadlock): business_chain failing
                 # because the verifier never authored verification_chains.json
                 # must CLOSE THE LOOP — the chain fallback was removed (user

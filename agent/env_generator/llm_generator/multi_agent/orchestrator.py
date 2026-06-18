@@ -1650,6 +1650,14 @@ class Orchestrator:
         from .runtime.remediation_dispatcher import RemediationDispatcher
         await RemediationDispatcher(self).dispatch_frontend_navigable(data)
 
+    async def _dispatch_failing_checks(self, data) -> None:
+        # PROPOSAL #21: re-dispatch the UNCOVERED lane-actionable failing checks
+        # (dead_controls/reachable→frontend, endpoints_reachable/correct_shape/
+        # auth_enforced_401/writes_persist→backend) — guard dict _check_owner_dispatched
+        # reset by _fwval_rearm_owner_dispatch.
+        from .runtime.remediation_dispatcher import RemediationDispatcher
+        await RemediationDispatcher(self).dispatch_failing_checks(data)
+
     async def _dispatch_unwired_ui_pages(self, blockers) -> None:
         from .runtime.remediation_dispatcher import RemediationDispatcher
         await RemediationDispatcher(self).dispatch_unwired_ui_pages(blockers)

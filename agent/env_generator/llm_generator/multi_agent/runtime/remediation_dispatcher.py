@@ -160,6 +160,94 @@ class RemediationDispatcher:
         except Exception as exc:
             orch._logger.error("frontend-navigable dispatch failed: %s", exc)
 
+    async def dispatch_failing_checks(self, data) -> None:
+        """PROPOSAL #21 — close the remediation-dispatch COVERAGE gap. The
+        validate→remediate loop previously re-dispatched only TWO lane-actionable
+        failing checks (``business_endpoints_implemented``→backend via
+        dispatch_unimplemented_routes, ``frontend_navigable``→frontend above), so
+        EVERY OTHER failing check sat unremediated when its owning lane had finished
+        and gone idle — the orchestrator LLM "waits" but does not deterministically
+        re-task it (run #4: the frontend went idle 30min on ``frontend_dead_controls``
+        while the orchestrator logged "Waiting for frontend to fix dead controls"; the
+        backend stalled on ``business_endpoints_reachable`` the same way). For each
+        UNCOVERED failing check, create ONE P0 task + urgent ``task_ready`` to the
+        OWNING lane, carrying the check's detail (``frontend_dead_controls`` detail
+        names the offending .jsx files). Same family as #20 — re-wake the idle owner
+        deterministically, independent of the (unreliable) orchestrator LLM. Guarded
+        per-milestone in ``orch._check_owner_dispatched`` (a dict; reset by
+        rearm_owner_dispatch so a changed/stuck failure set re-fires). The two
+        already-covered checks are intentionally ABSENT (their bespoke helpers own
+        them, untouched). Best-effort: never raises into the loop."""
+        # check_id → (owner_lane, task_title, concrete how-to-fix instruction)
+        _CHECK_OWNER = {
+            "frontend_dead_controls": (
+                "frontend", "Bind the dead frontend controls (blocks delivery)",
+                "interactive markup (<form>/submit button) with NO bound handler — a "
+                "user clicking it gets nothing. Wire onSubmit/onClick + the matching "
+                "src/services/api.js call in EACH listed file."),
+            "frontend_reachable": (
+                "frontend", "Frontend container must serve over HTTP (blocks delivery)",
+                "the frontend container does not actually serve (build/serve crash) — "
+                "fix the vite/nginx/start config so the UI loads."),
+            "business_endpoints_reachable": (
+                "backend", "Wire the unreachable business endpoints (blocks delivery)",
+                "registered+implemented endpoints answer 404/405 — the routes are not "
+                "actually mounted. Wire them in app/backend/main.py (include_router / "
+                "the @app.<method> path) so each declared path responds."),
+            "business_endpoints_correct_shape": (
+                "backend", "Fix business endpoint response shapes (blocks delivery)",
+                "endpoints return the wrong response body/shape — match the declared "
+                "schema (fields/types/nesting) for each named endpoint."),
+            "auth_enforced_401": (
+                "backend", "Enforce auth on business endpoints (blocks delivery)",
+                "a business GET must return 401 without a valid token — add the auth "
+                "dependency so unauthenticated requests are rejected."),
+            "business_writes_persist": (
+                "backend", "Fix write persistence (blocks delivery)",
+                "a POST then GET readback does not return the written row — fix the "
+                "handler/ORM commit so writes persist and read back."),
+        }
+        orch = self._orch
+        try:
+            milestone = getattr(orch, "_current_milestone_version", "")
+            guard = getattr(orch, "_check_owner_dispatched", None)
+            if not isinstance(guard, dict):
+                guard = {}
+                orch._check_owner_dispatched = guard
+            from tools.communication_tools import _create_message
+            for c in ((data or {}).get("checks") or []):
+                if not isinstance(c, dict) or c.get("status") != "fail":
+                    continue
+                name = c.get("name")
+                spec = _CHECK_OWNER.get(name)
+                if not spec:
+                    continue  # covered by a bespoke helper, or not lane-actionable
+                if guard.get(name) == milestone:
+                    continue  # one dispatch per milestone (storm control)
+                owner, title, how = spec
+                detail = str(c.get("detail") or "")
+                task = orch.hubs.workhub.create_task(
+                    title=title,
+                    description=(
+                        f"The `{name}` validation check FAILED: {detail}\n{how}\n"
+                        "Delivery stays blocked until a validation pass shows this "
+                        "check green. Fix it, then finish."),
+                    assignee=owner, agent="orchestrator", priority="P0")
+                guard[name] = milestone
+                await orch.message_bus.send(_create_message(
+                    source_agent_id="orchestrator", target_agent_id=owner,
+                    content=(
+                        f"URGENT: delivery is blocked on `{name}`. Claim task "
+                        f"{(task or {}).get('id')} and fix it NOW, then finish. "
+                        f"Detail: {detail[:300]}"),
+                    msg_type="task_ready", priority="urgent", persist=True,
+                    tags=[str(name), "remediation"]))
+                orch._logger.warning(
+                    "FAILING-CHECK remediation dispatched to %s (task %s): %s — %s",
+                    owner, (task or {}).get("id"), name, detail[:160])
+        except Exception as exc:
+            orch._logger.error("failing-check dispatch failed: %s", exc)
+
     async def dispatch_unwired_ui_pages(self, blockers) -> None:
         """ui_page-wiring feedback loop: declared ui_pages whose route is not
         wired in App.jsx (or whose component file is missing) HARD-block delivery
