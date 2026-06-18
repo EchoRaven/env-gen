@@ -129,6 +129,25 @@ class DependsOnPolicy(BaseWorkflowPolicy):
         # whether the upstream LANES cleanly finished (they may be mid bookkeeping).
         if _is_validation_ready_signal(message):
             return None
+        # PROPOSAL #20 (C-i): honor the framework's deterministic validation-phase
+        # self-trigger as a depends_on BYPASS. framework_validation.py sets
+        # metadata["validation_phase"]=True ONLY from the framework (never any lane
+        # tool path) when it has already cleared the route-code floor and declared
+        # the tree validation-ready — at which point an idle verifier "waiting on its
+        # upstreams" SHOULD proceed (to run validation / register verification
+        # chains). Without this, the verifier's _upstream_ready_agents is populated
+        # only by task_ready it directly receives, so when lane finish-notifies never
+        # reach it (run #3: 0 task_ready from backend/frontend), THIS gate vetoes
+        # every trigger — framework and orchestrator alike — for the whole run →
+        # chains never register → run_validation blocked → no delivery.
+        # METADATA BOOLEAN ONLY: a lane can place "validation_phase" in `tags`
+        # (orchestrator_agent.j2) — that is LLM-reachable and must NOT bypass; only
+        # the framework-set metadata key does. The `isinstance(dict)` guard keeps a
+        # non-dict metadata (None, or a bare Mock in tests) from spuriously
+        # bypassing — a real BaseMessage.metadata is always a dict.
+        _md = getattr(message, "metadata", None)
+        if isinstance(_md, dict) and _md.get("validation_phase"):
+            return None
         missing = [dep for dep in self.depends_on if dep not in getattr(agent, "_upstream_ready_agents", set())]
         if missing:
             return False, f"waiting on depends_on={missing}"
