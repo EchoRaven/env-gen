@@ -17,7 +17,7 @@ app that won't build at all).
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 _EXPORT_RE = re.compile(
     r"export\s+(?:async\s+)?(?:function|const|let|var)\s+([A-Za-z0-9_$]+)"
@@ -253,6 +253,100 @@ def _render_routed_app(entries: List[tuple]) -> str:
     )
 
 
+def _dominant_route_wrapper(app_jsx: str) -> Optional[str]:
+    """The component that wraps the MAJORITY of existing ``<Route element={<X…>}>``
+    (e.g. ``ProtectedRoute``), or None. An injected route should wrap in the same
+    guard its siblings use — wiring an auth-gated page bare, outside the wrapper
+    every sibling has, is a latent correctness bug. Only returns a name used by
+    ≥2 routes AND in-scope (imported or defined in App.jsx); else None → wire
+    bare. (Captures the FIRST identifier after ``element={<`` — the wrapper, not
+    the inner page — which is exactly what we want here.)"""
+    from collections import Counter
+    names = re.findall(r"element=\{\s*<\s*([A-Za-z_]\w*)", app_jsx)
+    if not names:
+        return None
+    name, cnt = Counter(names).most_common(1)[0]
+    in_scope = bool(
+        re.search(r"(function|const|class)\s+" + re.escape(name) + r"\b", app_jsx)
+        or re.search(r"import\b[^\n;]*\b" + re.escape(name) + r"\b", app_jsx))
+    return name if cnt >= 2 and in_scope else None
+
+
+def project_missing_ui_routes(app_jsx: str, ui_pages: List[Dict[str, Any]]
+                              ) -> Tuple[str, List[str]]:
+    """ADDITIVELY inject a ``<Route>`` (+ default import) for every declared
+    ui_page whose route is NOT already wired in a (lane-authored) App.jsx — the
+    frontend analogue of ``route_projector.project_missing_routes`` (additive:
+    never removes/rewrites a lane route, only fills declared gaps). PROPOSAL #19.
+
+    The route-identity test reuses #18's ``frontend_audit._canon_route`` /
+    ``_wired_route_set`` (the single source of truth for "the same route", same
+    rule as the backend ``_norm_route``), so a lane that wired the declared route
+    under a different param NAME or shape is NOT double-wired. The injected route
+    is wrapped in the dominant sibling wrapper (e.g. ``ProtectedRoute``) when one
+    is detectable, else wired bare. Component file existence is the caller's job
+    (``scaffold_pages_from_contract`` writes the stub only-if-missing first).
+
+    Returns ``(new_text, injected_routes)``. Idempotent (a second call is a
+    no-op). Best-effort: returns the input UNCHANGED (and ``[]``) if it cannot
+    anchor confidently — NEVER raises, NEVER corrupts a lane file."""
+    try:
+        from .frontend_audit import _canon_route, _route_is_wired
+        wrapper = _dominant_route_wrapper(app_jsx)
+        new_routes: List[str] = []
+        new_imports: List[str] = []
+        injected: List[str] = []
+        seen_canon = set()
+        for page in ui_pages or []:
+            if not isinstance(page, dict):
+                continue
+            route = str(page.get("route") or "").strip()
+            if not route:
+                continue
+            canon = _canon_route(route)
+            # decide "missing" with the EXACT gate predicate (#18 _route_is_wired:
+            # normalized SET match + trailing-optional fallback) — NOT raw set
+            # membership — so we inject ONLY what the delivery gate would flag as
+            # unwired (e.g. /watch/:id, already satisfied by a wired /watch, is NOT
+            # re-injected; a genuinely-absent /feed/library IS).
+            if canon in seen_canon or _route_is_wired(route, app_jsx):
+                continue
+            seen_canon.add(canon)
+            comp = _page_component_name(page)
+            inner = f"<{comp} />"
+            elem = f"<{wrapper}>{inner}</{wrapper}>" if wrapper else inner
+            new_routes.append(f'        <Route path="{route}" element={{{elem}}} />')
+            if not re.search(r"import\s+" + re.escape(comp) + r"\s+from", app_jsx):
+                new_imports.append(f"import {comp} from './pages/{comp}';")
+            injected.append(route)
+        if not injected:
+            return app_jsx, []
+        # ── route anchor: before the catch-all path="*" else before </Routes> ──
+        text = app_jsx
+        block = "\n".join(new_routes)
+        m_star = re.search(r"""[ \t]*<Route\s+path=["']\*["']""", text)
+        idx_close = text.find("</Routes>")
+        if m_star:
+            text = text[:m_star.start()] + block + "\n" + text[m_star.start():]
+        elif idx_close != -1:
+            text = text[:idx_close] + block + "\n" + text[idx_close:]
+        else:
+            return app_jsx, []  # no confident anchor → skip, never guess
+        # ── imports: after the last top-of-file import line (positions above the
+        # injected routes are unshifted, so re-scan is safe) ──
+        if new_imports:
+            imps = list(re.finditer(r"^import .*$", text, re.M))
+            ins = "\n".join(new_imports)
+            if imps:
+                end = imps[-1].end()
+                text = text[:end] + "\n" + ins + text[end:]
+            else:
+                text = ins + "\n" + text
+        return text, injected
+    except Exception:
+        return app_jsx, []
+
+
 def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -> Dict[str, object]:
     """Project one page-component STUB per registered ui_page + wire React-Router
     routes in App.jsx — the frontend analogue of the deterministic backend
@@ -310,6 +404,7 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                 scaffolded.append(str(target.relative_to(frontend_dir)))
 
         app_wired = False
+        injected_routes: List[str] = []
         if entries:
             app = src / "App.jsx"
             existing = ""
@@ -321,8 +416,19 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
             if (not existing.strip()) or (_ROUTES_MARKER in existing):
                 app.write_text(_render_routed_app(entries), encoding="utf-8")
                 app_wired = True
+            else:
+                # PROPOSAL #19: the lane took over App.jsx (dropped the marker). DON'T
+                # clobber its routing/bodies — but ADDITIVELY inject any DECLARED route
+                # it omitted (the stubs above guarantee each component file exists), so
+                # every declared ui_page is navigable-by-construction even when the lane
+                # diverges (run #2: lane wired /feed/you, omitted declared /feed/library
+                # → delivery hard-blocked forever). Frontend twin of the backend's
+                # additive project_missing_routes. Idempotent; never clobbers.
+                new_text, injected_routes = project_missing_ui_routes(existing, ui_pages)
+                if injected_routes:
+                    app.write_text(new_text, encoding="utf-8")
         return {"scaffolded": sorted(scaffolded), "routes": len(entries),
-                "app_wired": app_wired}
+                "app_wired": app_wired, "injected_routes": injected_routes}
     except Exception as exc:  # never raise into the orchestrator
         return {"scaffolded": [], "routes": 0, "app_wired": False,
                 "error": str(exc)}

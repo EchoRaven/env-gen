@@ -110,10 +110,15 @@ class FrameworkValidation:
                 orch._generate_backend_skeleton()
                 orch._scaffold_frontend_baseline()
                 orch._repair_frontend_api()
-                # FRONTEND SKELETON: project the contract-derived page set BEFORE
-                # validation, so the frontend_navigable gate validates the real
-                # deliverable (idempotent — only fills routes that don't exist; with
-                # zero declared ui_pages the page set derives from the API contract).
+                # FRONTEND SKELETON (PROPOSAL #19 — now actually wired; this was a
+                # dead comment): project the contract-derived page set BEFORE
+                # validation, so the ui_page-unwired gate validates the real
+                # deliverable. Creates a stub per declared ui_page (only-if-missing)
+                # and ADDITIVELY injects any declared route the lane omitted into its
+                # own App.jsx (never clobbers lane routes/bodies). Re-applied EVERY
+                # tick post-merge because the per-tick merge stashes+drops the
+                # uncommitted working-tree write (the at-release call commits it).
+                orch._scaffold_frontend_pages()
                 orch._repair_backend_entrypoint()
                 orch._repair_backend_as_wiring()
                 orch._repair_backend_auth()

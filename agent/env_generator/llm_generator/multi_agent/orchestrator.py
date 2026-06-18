@@ -1449,9 +1449,13 @@ class Orchestrator:
                 # so nothing follows to stash/drop the projection (the bug that
                 # would otherwise leave the final app hollow).
                 self._project_missing_routes()
-                # …and missing UI pages (frontend analog): declared-but-unbuilt
-                # screens get a functional, API-wired, navigable page so the booted
-                # app is not thin/unreachable.
+                # …and missing UI pages (frontend analog, PROPOSAL #19 — now wired;
+                # this was a dead comment): a declared ui_page the lane omitted from
+                # its App.jsx gets a stub component + its route additively injected,
+                # so the booted/shipped app is navigable to every declared page. Runs
+                # HERE (final merge) + committed below, so the release snapshot carries
+                # it (the per-tick heal write is stashed/dropped by this merge).
+                self._scaffold_frontend_pages()
                 # COMMIT the framework writes above on integration — mirrors the
                 # happy-path delivery (see _commit_framework_delivery before
                 # create_release). The skeleton/infra/projection are working-tree-only
@@ -1960,8 +1964,15 @@ class Orchestrator:
             # stashes+drops an uncommitted projection, so projecting before a merge
             # is destroyed and re-added every tick. Here nothing follows to drop it.
             self._project_missing_routes()
-            # (frontend projection removed 2026-06-11 — the lane owns the UI;
-            # frontend_navigable / dead-controls / visual gates enforce it.)
+            # Frontend analog (PROPOSAL #19 — RE-INSTATED; "removed 2026-06-11" was
+            # the regression: a lane that drops the @framework-managed-routes marker
+            # can omit a declared route entirely, and frontend_navigable/visual do NOT
+            # catch a single genuinely-missing declared page → permanent ui_page-unwired
+            # block, no delivery). ADDITIVELY inject any declared route the lane omitted
+            # (+ a stub component if missing) on the merged tree, right before the
+            # snapshot, so the release ships navigable-to-every-declared-page. Never
+            # clobbers lane routes/bodies; idempotent.
+            self._scaffold_frontend_pages()
             # COMMIT the framework writes above — the release branch is cut from the
             # COMMITTED head, so uncommitted skeleton/infra/projection writes would
             # otherwise be excluded from the snapshot the user boots.
