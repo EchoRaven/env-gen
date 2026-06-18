@@ -236,6 +236,60 @@ def restage_written_files(
     return staged
 
 
+# PROPOSAL #22 — ownership partition for deterministic agent/backend→integration
+# conflict resolution. main.py + the other skeleton outputs are FRAMEWORK-owned
+# (regenerated from the contract by backend_skeleton.write_backend_skeleton /
+# write_backend_build_infra + the oauth_scaffold AS modules), so on a conflict they
+# take INTEGRATION's by-construction version; ``custom_routes.py`` is THE ONE
+# lane-owned backend file (backend_skeleton _MAIN_FOOTER: "the framework NEVER writes
+# it"), so it takes the AGENT's version (the lane's real business logic). Keep these
+# in sync with the skeleton writer's file list. Matched by basename under app/backend/.
+_BACKEND_FRAMEWORK_OWNED = frozenset({
+    "main.py", "models.py", "database.py", "auth_dependency.py", "schemas.py",
+    "pyproject.toml", "Dockerfile", "reset.sh",
+    "oauth_routes.py", "oauth_store.py", "jwt_manager.py",
+})
+_BACKEND_LANE_OWNED = frozenset({"custom_routes.py"})
+
+
+def _resolve_backend_conflict_by_ownership(repo: Path) -> Tuple[bool, str]:
+    """PROPOSAL #22 — deterministically resolve an ``agent/backend → integration``
+    squash conflict by per-path OWNERSHIP, so the framework's regenerated backend and
+    the lane's custom logic both survive and the merge stops blocking delivery.
+
+    Framework-owned skeleton files resolve to INTEGRATION's side (``--ours``; the
+    skeleton regenerates them from the contract, so the lane's edits to them are
+    redundant-by-design); the lane-owned ``custom_routes.py`` resolves to the AGENT's
+    side (``--theirs``). If ANY conflicted path is OUTSIDE the known backend-owned set,
+    return ``(False, ...)`` so the caller aborts (never guess on an unknown path).
+    Best-effort; never raises. (For a ``--squash`` conflict the index carries the
+    unmerged stages, so ``git checkout --ours/--theirs -- <path>`` + ``git add`` is the
+    standard resolution; add/add conflicts resolve the same way.)"""
+    try:
+        rc, out, _e = _run_git(
+            ["diff", "--name-only", "--diff-filter=U"], cwd=repo)
+        paths = [p.strip() for p in out.splitlines() if p.strip()] if rc == 0 else []
+        if not paths:
+            return False, "no conflicted paths to resolve"
+        resolved: List[str] = []
+        for p in paths:
+            base = p.rsplit("/", 1)[-1]
+            if p.startswith("app/backend/") and base in _BACKEND_FRAMEWORK_OWNED:
+                side, who = "--ours", "integration"      # framework skeleton wins
+            elif p.startswith("app/backend/") and base in _BACKEND_LANE_OWNED:
+                side, who = "--theirs", "agent"           # lane's custom_routes.py wins
+            else:
+                return False, f"conflict path outside backend-owned set: {p}"
+            rcc, _o, ec = _run_git(["checkout", side, "--", p], cwd=repo)
+            if rcc != 0:
+                return False, f"checkout {side} {p} failed: {ec.strip()}"
+            _run_git(["add", "--", p], cwd=repo)
+            resolved.append(f"{p}→{who}")
+        return True, "resolved by ownership: " + ", ".join(resolved)
+    except Exception as exc:  # never raise into the merge/coordination loop
+        return False, f"ownership-resolve raised: {type(exc).__name__}: {exc}"
+
+
 def merge_agent_branch_to_main(
     *,
     repo_root: Union[str, Path],
@@ -382,13 +436,37 @@ def merge_agent_branch_to_main(
             ["merge", "--squash", "--no-commit", agent_branch], cwd=repo,
         )
     if mc != 0:
-        # Real conflict — abort cleanly and report.
-        _run_git(["merge", "--abort"], cwd=repo)
-        try:
-            _run_git(["reset", "--hard", "HEAD"], cwd=repo)
-        except Exception:
-            pass
-        return False, f"conflict merging {agent_branch} → {main_branch}: {me.strip()}"
+        # PROPOSAL #22: for the BACKEND lane only, try a deterministic per-path
+        # ownership resolution BEFORE aborting — framework-owned skeleton files take
+        # integration's by-construction version, custom_routes.py takes the lane's.
+        # This unblocks the agent/backend→integration merge that otherwise deadlocks
+        # delivery (the orchestrator LLM can't reliably resolve it). Scoped to
+        # agent/backend AND only when EVERY conflicted path is backend-owned; any
+        # other branch — or a backend conflict touching an unknown path — keeps the
+        # abort+event behavior so a lane that legitimately owns its tree is never
+        # corrupted.
+        if agent_branch == "agent/backend":
+            res_ok, res_info = _resolve_backend_conflict_by_ownership(repo)
+            if res_ok:
+                # conflicts resolved + staged → fall through to Step 4 (commit).
+                pass
+            else:
+                _run_git(["merge", "--abort"], cwd=repo)
+                try:
+                    _run_git(["reset", "--hard", "HEAD"], cwd=repo)
+                except Exception:
+                    pass
+                return False, (f"conflict merging {agent_branch} → {main_branch}: "
+                               f"{me.strip()} [{res_info}]")
+        else:
+            # Real conflict on a non-backend lane — abort cleanly and report
+            # (frontend/verifier legitimately own their trees; do NOT auto-resolve).
+            _run_git(["merge", "--abort"], cwd=repo)
+            try:
+                _run_git(["reset", "--hard", "HEAD"], cwd=repo)
+            except Exception:
+                pass
+            return False, f"conflict merging {agent_branch} → {main_branch}: {me.strip()}"
 
     # Step 4 — commit with agent author.
     author = agent_id or agent_branch.split("/")[-1]
