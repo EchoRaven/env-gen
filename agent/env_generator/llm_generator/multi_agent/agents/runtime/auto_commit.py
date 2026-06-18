@@ -250,22 +250,53 @@ _BACKEND_FRAMEWORK_OWNED = frozenset({
     "oauth_routes.py", "oauth_store.py", "jwt_manager.py",
 })
 _BACKEND_LANE_OWNED = frozenset({"custom_routes.py"})
+# PROPOSAL #23 — the frontend lane AUTHORS App.jsx (the framework only ADDITIVELY
+# injects declared routes into it via #19 project_missing_ui_routes, which re-runs
+# every heal tick + at release), so App.jsx resolves to the LANE; the framework owns
+# the build/infra files it pins (main.jsx entry, vite/tailwind/postcss config,
+# Dockerfile/nginx/start, package manifests). Lane-authored src/pages/* + src/api.js
+# are NOT in the map → if they ever conflict, abort (never guess).
+_FRONTEND_FRAMEWORK_OWNED = frozenset({
+    "main.jsx", "vite.config.js", "tailwind.config.js", "postcss.config.js",
+    "index.html", "Dockerfile", "nginx.conf", "nginx.conf.template", "start.sh",
+    "package.json", "package-lock.json",
+})
+_FRONTEND_LANE_OWNED = frozenset({"App.jsx"})
+# lane → (path prefix, framework-owned basenames, lane-owned basenames)
+_OWNERSHIP = {
+    "backend": ("app/backend/", _BACKEND_FRAMEWORK_OWNED, _BACKEND_LANE_OWNED),
+    "frontend": ("app/frontend/", _FRONTEND_FRAMEWORK_OWNED, _FRONTEND_LANE_OWNED),
+}
 
 
-def _resolve_backend_conflict_by_ownership(repo: Path) -> Tuple[bool, str]:
-    """PROPOSAL #22 — deterministically resolve an ``agent/backend → integration``
-    squash conflict by per-path OWNERSHIP, so the framework's regenerated backend and
-    the lane's custom logic both survive and the merge stops blocking delivery.
+def _lane_of_worktree(wt: Path) -> str:
+    """The lane name from a worktree's checked-out ``agent/<lane>`` branch, or ''."""
+    rc, out, _e = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=wt)
+    br = out.strip() if rc == 0 else ""
+    return br.split("/", 1)[1] if br.startswith("agent/") else ""
 
-    Framework-owned skeleton files resolve to INTEGRATION's side (``--ours``; the
-    skeleton regenerates them from the contract, so the lane's edits to them are
-    redundant-by-design); the lane-owned ``custom_routes.py`` resolves to the AGENT's
-    side (``--theirs``). If ANY conflicted path is OUTSIDE the known backend-owned set,
-    return ``(False, ...)`` so the caller aborts (never guess on an unknown path).
-    Best-effort; never raises. (For a ``--squash`` conflict the index carries the
-    unmerged stages, so ``git checkout --ours/--theirs -- <path>`` + ``git add`` is the
-    standard resolution; add/add conflicts resolve the same way.)"""
+
+def _resolve_conflict_by_ownership(repo: Path, *, lane: str,
+                                   framework_side: str) -> Tuple[bool, str]:
+    """PROPOSAL #22/#23 — deterministically resolve a framework-owned-file merge/pull
+    conflict by per-path OWNERSHIP, so the framework's regenerated files and the lane's
+    authored files both survive and the conflict stops blocking delivery. SHARED by both
+    git paths; the only difference is DIRECTION:
+      * MERGE (merge_agent_branch_to_main, integration checked out): framework=``--ours``
+      * PULL  (pull_main_into_worktree, lane worktree checked out):  framework=``--theirs``
+    so the caller passes ``framework_side`` and the lane-owned side is the opposite.
+    Resolves framework-owned basenames (per the ``lane``'s _OWNERSHIP entry) to the
+    framework side, lane-owned basenames to the lane side; if ANY conflicted path is
+    OUTSIDE the known owned-set, returns ``(False, ...)`` so the caller aborts (never
+    guess on a path a lane legitimately owns). Best-effort; never raises. (Index carries
+    the unmerged stages, so ``git checkout --ours/--theirs -- <path>`` + ``git add`` is
+    the standard resolution; add/add resolves the same way.)"""
     try:
+        spec = _OWNERSHIP.get(lane)
+        if not spec:
+            return False, f"lane {lane!r} not in ownership map"
+        prefix, framework_owned, lane_owned = spec
+        lane_side = "--theirs" if framework_side == "--ours" else "--ours"
         rc, out, _e = _run_git(
             ["diff", "--name-only", "--diff-filter=U"], cwd=repo)
         paths = [p.strip() for p in out.splitlines() if p.strip()] if rc == 0 else []
@@ -274,12 +305,12 @@ def _resolve_backend_conflict_by_ownership(repo: Path) -> Tuple[bool, str]:
         resolved: List[str] = []
         for p in paths:
             base = p.rsplit("/", 1)[-1]
-            if p.startswith("app/backend/") and base in _BACKEND_FRAMEWORK_OWNED:
-                side, who = "--ours", "integration"      # framework skeleton wins
-            elif p.startswith("app/backend/") and base in _BACKEND_LANE_OWNED:
-                side, who = "--theirs", "agent"           # lane's custom_routes.py wins
+            if p.startswith(prefix) and base in framework_owned:
+                side, who = framework_side, "framework"
+            elif p.startswith(prefix) and base in lane_owned:
+                side, who = lane_side, "lane"
             else:
-                return False, f"conflict path outside backend-owned set: {p}"
+                return False, f"conflict path outside {lane}-owned set: {p}"
             rcc, _o, ec = _run_git(["checkout", side, "--", p], cwd=repo)
             if rcc != 0:
                 return False, f"checkout {side} {p} failed: {ec.strip()}"
@@ -288,6 +319,13 @@ def _resolve_backend_conflict_by_ownership(repo: Path) -> Tuple[bool, str]:
         return True, "resolved by ownership: " + ", ".join(resolved)
     except Exception as exc:  # never raise into the merge/coordination loop
         return False, f"ownership-resolve raised: {type(exc).__name__}: {exc}"
+
+
+def _resolve_backend_conflict_by_ownership(repo: Path) -> Tuple[bool, str]:
+    """PROPOSAL #22 — backend MERGE path (integration checked out → framework=--ours).
+    Thin wrapper over the shared direction-aware resolver so the two git paths share one
+    ownership source-of-truth and cannot drift."""
+    return _resolve_conflict_by_ownership(repo, lane="backend", framework_side="--ours")
 
 
 def merge_agent_branch_to_main(
@@ -867,26 +905,45 @@ def pull_main_into_worktree(
             [ln.strip() for ln in df_out.splitlines() if ln.strip()]
             if rc_diff == 0 else []
         )
-        _run_git(["merge", "--abort"], cwd=wt)
-        if stashed:
-            # Restore the agent's uncommitted work so they don't lose it.
-            _run_git(["stash", "pop"], cwd=wt)
-        if not conflict_files:
-            # Non-conflict merge failure (signing / hook / transient).
-            # The worktree was returned to HEAD by `merge --abort`.
-            # Return success-with-skip so step_runner.py does NOT
-            # publish a misleading merge_conflict event. The next
-            # step retries the pull, which is the same recovery
-            # behavior as before — just without the false alarm.
-            return True, (
-                f"merge_failed_no_conflict pulling {main_branch} "
-                f"(worktree returned to HEAD; will retry next step): "
-                f"{me.strip()}"
+        # PROPOSAL #23: the SAME framework-owned-file conflict class as the MERGE path
+        # (#22), here on the step-start PULL (integration → lane worktree). Resolve
+        # per-path by ownership BEFORE aborting, so the lane stops re-hitting the
+        # identical conflict every step and finally converges. DIRECTION is reversed
+        # vs the merge: the worktree has the lane's branch checked out, so framework
+        # files = ``--theirs`` (integration) and lane files = ``--ours``. Scoped to
+        # known lanes (backend/frontend) + their owned paths; anything else → abort+event.
+        # The pull is a real ``git merge`` (not --squash), so COMMIT to finish it.
+        _pull_resolved = False
+        if conflict_files:
+            _lane = _lane_of_worktree(wt)
+            _res_ok, _res_info = _resolve_conflict_by_ownership(
+                wt, lane=_lane, framework_side="--theirs")
+            if _res_ok:
+                rc_ci, _ci, _ec = _run_git(["commit", "--no-edit"], cwd=wt)
+                _pull_resolved = (rc_ci == 0)
+        if not _pull_resolved:
+            _run_git(["merge", "--abort"], cwd=wt)
+            if stashed:
+                # Restore the agent's uncommitted work so they don't lose it.
+                _run_git(["stash", "pop"], cwd=wt)
+            if not conflict_files:
+                # Non-conflict merge failure (signing / hook / transient).
+                # The worktree was returned to HEAD by `merge --abort`.
+                # Return success-with-skip so step_runner.py does NOT
+                # publish a misleading merge_conflict event. The next
+                # step retries the pull, which is the same recovery
+                # behavior as before — just without the false alarm.
+                return True, (
+                    f"merge_failed_no_conflict pulling {main_branch} "
+                    f"(worktree returned to HEAD; will retry next step): "
+                    f"{me.strip()}"
+                )
+            return False, (
+                f"conflict pulling {main_branch} "
+                f"[files={','.join(conflict_files)}]: {me.strip()}"
             )
-        return False, (
-            f"conflict pulling {main_branch} "
-            f"[files={','.join(conflict_files)}]: {me.strip()}"
-        )
+        # #23-resolved + committed → fall through to the stash-pop + sha return
+        # below, exactly like a clean merge.
 
     if stashed:
         rc_pop, _po, se_pop = _run_git(["stash", "pop"], cwd=wt)
