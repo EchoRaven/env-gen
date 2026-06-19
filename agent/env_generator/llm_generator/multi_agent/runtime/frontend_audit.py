@@ -221,6 +221,25 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
     if comp_file_text and _page_dead_controls(comp_file_text):
         missing.append(f"component `{component}` renders interactive markup "
                        "with no bound handler (dead controls)")
+    # PROPOSAL #39 (G2): catch PLACEHOLDER/STUB pages that _page_dead_controls misses.
+    # A pure placeholder ("This section is being set up", no form/button) has
+    # interactive=False so dead_controls doesn't fire — yet it ships a blank/empty page.
+    # Run #36: ALL declared pages were the framework's _stub_page_component
+    # ("This section is being set up") and the lane never filled them. Flag a page that
+    # (a) still carries a known placeholder phrase, OR (b) declared apis_used but its file
+    # references NO api call / handler / form at all (declared behavior, built nothing).
+    # Gated tightly to avoid flagging a legitimately-static page (empty apis_used + real copy).
+    if comp_file_text:
+        _low = comp_file_text.lower()
+        _placeholder = any(p in _low for p in (
+            "this section is being set up", "under construction",
+            "coming soon", "placeholder page", "todo: implement"))
+        _declared_but_inert = bool(apis) and not any(
+            tok in comp_file_text for tok in _HANDLER_TOKENS)
+        if _placeholder or _declared_but_inert:
+            missing.append(
+                f"component `{component}` is a placeholder stub — it renders no real "
+                "UI/behavior; build the page's declared content and wire its apis_used")
     # MODEL RULE (user design): pages compose COMPONENTS; page→page is
     # NAVIGATION (a route/link), never composition. A page importing another
     # page means shared UI that belongs in src/components/.
@@ -352,7 +371,8 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
 # api_smoke green, blank screen shipped). apis_used loose-match and dead-
 # controls are SOFTER (the call site may build the URL; a handler may be wired
 # indirectly) → NOT promoted to hard blockers here.
-_HARD_MISS_MARKERS = ("not wired in App.jsx", "not found — expected")
+_HARD_MISS_MARKERS = ("not wired in App.jsx", "not found — expected",
+                      "is a placeholder stub")  # #39 G2: a stub page = a shipped-blank page
 
 
 def _is_hard_miss(missing_line: str) -> bool:

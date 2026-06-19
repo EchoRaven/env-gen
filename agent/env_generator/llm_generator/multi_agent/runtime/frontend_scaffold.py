@@ -413,17 +413,27 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                     existing = app.read_text(encoding="utf-8")
                 except Exception:
                     existing = ""
-            if (not existing.strip()) or (_ROUTES_MARKER in existing):
+            # PROPOSAL #39 (G1): ALSO regenerate when App.jsx has NO router at all
+            # (`</Routes>` absent). Run #36: the lane shipped a 24-line hand-rolled STUB
+            # App.jsx — no <Routes>, marker dropped — so this branch fell to the additive
+            # `project_missing_ui_routes` below, which needs an existing `</Routes>` to
+            # inject before and thus NO-OPPED → every declared ui_page stayed orphaned →
+            # /register,/notes rendered BLANK. A marker-less, router-less App.jsx is not a
+            # legitimate "lane took over routing" — it's broken (guaranteed blank pages), so
+            # regenerate the router (wiring every declared page). A real lane router HAS
+            # `</Routes>` → preserved (additive path), so this never clobbers genuine custom
+            # routing/layout.
+            if (not existing.strip()) or (_ROUTES_MARKER in existing) or ("</Routes>" not in existing):
                 app.write_text(_render_routed_app(entries), encoding="utf-8")
                 app_wired = True
             else:
-                # PROPOSAL #19: the lane took over App.jsx (dropped the marker). DON'T
-                # clobber its routing/bodies — but ADDITIVELY inject any DECLARED route
-                # it omitted (the stubs above guarantee each component file exists), so
-                # every declared ui_page is navigable-by-construction even when the lane
-                # diverges (run #2: lane wired /feed/you, omitted declared /feed/library
-                # → delivery hard-blocked forever). Frontend twin of the backend's
-                # additive project_missing_routes. Idempotent; never clobbers.
+                # PROPOSAL #19: the lane took over App.jsx (dropped the marker) WITH a real
+                # router. DON'T clobber its routing/bodies — but ADDITIVELY inject any
+                # DECLARED route it omitted (the stubs above guarantee each component file
+                # exists), so every declared ui_page is navigable-by-construction even when
+                # the lane diverges (run #2: lane wired /feed/you, omitted declared
+                # /feed/library → delivery hard-blocked forever). Frontend twin of the
+                # backend's additive project_missing_routes. Idempotent; never clobbers.
                 new_text, injected_routes = project_missing_ui_routes(existing, ui_pages)
                 if injected_routes:
                     app.write_text(new_text, encoding="utf-8")
