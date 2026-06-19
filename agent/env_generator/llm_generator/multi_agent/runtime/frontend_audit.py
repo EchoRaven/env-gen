@@ -32,8 +32,19 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 # brittle byte-equality match in an otherwise param-tolerant pipeline).
 from .route_projector import _express_to_fastapi, _norm_path
 
+# Tokens that prove a page does real work (a handler or an API call), used by both the
+# dead-controls check and the "declared apis but built nothing" stub check.
+# PROPOSAL #55: the framework's OWN baseline api client (`_BASELINE_API_JS`, #41) is a
+# DEFAULT export used as `import api from '../services/api'` → `api.get(...)` /
+# `api.post(...)` / `api.<verb>(...)`, and the prompts tell pages to use exactly that.
+# The old token set only recognized the NAMED helpers (apiGet/apiPost) + raw fetch/axios,
+# so a real read-only detail page calling `api.get('/api/notes/{id}')` (no <form>, no
+# onClick) was FALSELY flagged "placeholder stub — renders no real UI" → a permanent,
+# unsatisfiable ui_page_unwired block (smoke-notes 2026-06-19: a 76-line NoteDetailPage
+# bounced 5× as a "stub"). Recognize the default-import service style too (`api.` is only
+# present when the page imports+uses the api client; a genuine framework stub does not).
 _HANDLER_TOKENS = ("onSubmit", "onClick", "fetch(", "apiGet", "apiPost",
-                   "apiPut", "apiDelete", "axios")
+                   "apiPut", "apiDelete", "axios", "api.", "await api")
 
 
 def _norm_api(entry: str) -> str:
