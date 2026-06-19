@@ -177,8 +177,25 @@ class AgentStepToolingMixin:
         defer = getattr(self, "_KICKOFF_DEFER_TOOLS", None)
         if defer and always_include:
             try:
-                from ..preconditions import validation_ready_signal
-                if not validation_ready_signal(getattr(self, "_hubs", None), self):
+                from ..preconditions import (
+                    kickoff_finalized_signal, validation_ready_signal)
+                hubs = getattr(self, "_hubs", None)
+                # The ORCHESTRATOR polls delivery/validation tools all through
+                # IMPLEMENTATION (run #28/#31), so defer them until VALIDATION-ready for
+                # it. EVERY OTHER lane keeps the kickoff-only defer — critically the
+                # VERIFIER, whose JOB at validation IS run_validation /
+                # register_verification_chain (in _VALIDATION_FLOW): a validation-ready
+                # defer there would STRIP those tools if it triggers before
+                # all_business_endpoints_implemented (e.g. a non-backend-owned business
+                # endpoint), breaking validation. So validation-ready scope = orchestrator
+                # only; kickoff scope = everyone else (a no-op post-kickoff, preserving
+                # the verifier's force-offer). The orchestrator's hard block stays the
+                # delivery_phase_reached precondition.
+                if getattr(self, "agent_id", None) == "orchestrator":
+                    ready = validation_ready_signal(hubs, self)
+                else:
+                    ready = kickoff_finalized_signal(hubs, self)
+                if not ready:
                     always_include = set(always_include) - defer
             except Exception:
                 pass
