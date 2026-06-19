@@ -1891,6 +1891,16 @@ class Orchestrator:
                         "Framework deliver declined: delivery gate has %d failed check(s): %s",
                         len(_failed), _failed,
                     )
+                # PROPOSAL #49 (user): route each lane-owned gate-level failed_check back
+                # to its owner for repair (guarded per-milestone) — and log any uncovered
+                # one — so a gate blocker never silently dead-ends. Complements the bespoke
+                # ui_page_unwired dispatch below + the validation-run #21 dispatch.
+                try:
+                    from .runtime.remediation_dispatcher import RemediationDispatcher
+                    await RemediationDispatcher(self).dispatch_gate_level_checks(
+                        gate.get("failed_checks"))
+                except Exception as _gc_exc:
+                    self._logger.error("gate-level check dispatch failed: %s", _gc_exc)
                 # FEEDBACK LOOP (2026-06-13): an unwired-ui-pages block (declared
                 # pages whose routes aren't in App.jsx) HARD-blocks delivery but,
                 # unlike GATE-C1 / frontend_navigable / visual, routed NOWHERE —

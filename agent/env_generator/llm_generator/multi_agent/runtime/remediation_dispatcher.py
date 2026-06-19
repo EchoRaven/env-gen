@@ -328,6 +328,87 @@ class RemediationDispatcher:
         except Exception as exc:
             orch._logger.error("ui-page-unwired dispatch failed: %s", exc)
 
+    async def dispatch_gate_level_checks(self, failed_checks) -> None:
+        """PROPOSAL #49 (user: a gate-detected problem must route back to the OWNING
+        lane for repair, not silently dead-end). The DELIVERY-GATE-level failed_checks
+        (``delivery_gate.failed_checks`` — a DIFFERENT set from the validation-run
+        ``checks`` that #21 ``dispatch_failing_checks`` covers) routed NOWHERE except the
+        bespoke ui_page_unwired / frontend_navigable helpers, so a gate-level blocker
+        (e.g. ``business_response_key_noncanonical``, ``contract_alignment_failed``) sat
+        unremediated forever even on a functionally-validated app (smoke-notes
+        2026-06-19 stalled on ``business_response_key_noncanonical`` with no path back to
+        the backend). For each gate check with an UNAMBIGUOUS lane owner, create ONE P0
+        task + urgent wake to the owner (guarded per-milestone). Any failing check NOT
+        routed here AND not bespoke-covered is LOGGED so it never silently dead-ends
+        (complements #45's failed_checks log). Conservative: ambiguous / relaxed /
+        framework-deterministic checks are logged, not mis-routed. Best-effort."""
+        _GATE_OWNER = {
+            "business_response_key_noncanonical": (
+                "backend", "Fix non-canonical business response_key (blocks delivery)",
+                "a business endpoint declares a response_key the projector never emits — "
+                "the backend returns {\"items\": [...]} (list) / {\"item\": {...}} (single). "
+                "Set each flagged endpoint's response_key to 'items' (collection) or "
+                "'item' (single resource), then re-register it."),
+            "contract_alignment_failed": (
+                "backend", "Align implemented routes with the registered contract (blocks delivery)",
+                "implemented backend routes don't match the registered endpoint contract "
+                "(path/method/shape drift). Reconcile app/backend so every registered "
+                "endpoint is served at its declared path + shape."),
+        }
+        # Owned by a bespoke helper, or framework-deterministic (re-runs/records itself),
+        # or routed via the task's own assignee — NOT dead-ends, so don't log as uncovered.
+        _COVERED_ELSEWHERE = {
+            "deliverability_ui_page_unwired", "ui_page_unwired", "frontend_navigable",
+            "deliverability_no_successful_run", "frontend_build_not_recorded",
+            "validation_api_smoke_missing", "validation_ui_smoke_missing",
+            "incomplete_required_tasks",
+        }
+        orch = self._orch
+        try:
+            if not failed_checks:
+                return
+            milestone = getattr(orch, "_current_milestone_version", "")
+            guard = getattr(orch, "_gatecheck_owner_dispatched", None)
+            if not isinstance(guard, dict):
+                guard = {}
+                orch._gatecheck_owner_dispatched = guard
+            from tools.communication_tools import _create_message
+            uncovered: List[str] = []
+            for raw in failed_checks:
+                name = str(raw)
+                spec = _GATE_OWNER.get(name)
+                if not spec:
+                    if name not in _COVERED_ELSEWHERE:
+                        uncovered.append(name)
+                    continue
+                if guard.get(name) == milestone:
+                    continue  # one dispatch per milestone (storm control)
+                owner, title, how = spec
+                task = orch.hubs.workhub.create_task(
+                    title=title,
+                    description=(
+                        f"The `{name}` delivery-gate check FAILED.\n{how}\n"
+                        "Delivery stays blocked until a gate tick shows this check "
+                        "green. Fix it, then finish."),
+                    assignee=owner, agent="orchestrator", priority="P0")
+                guard[name] = milestone
+                await orch.message_bus.send(_create_message(
+                    source_agent_id="orchestrator", target_agent_id=owner,
+                    content=(
+                        f"URGENT: delivery is blocked on the `{name}` gate check. Claim "
+                        f"task {(task or {}).get('id')} and fix it NOW, then finish."),
+                    msg_type="task_ready", priority="urgent", persist=True,
+                    tags=[name, "remediation"]))
+                orch._logger.warning(
+                    "GATE-CHECK remediation dispatched to %s (task %s): %s",
+                    owner, (task or {}).get("id"), name)
+            if uncovered:
+                orch._logger.warning(
+                    "Delivery declined on gate check(s) with NO remediation owner "
+                    "(needs a fix at source or an owner mapping): %s", sorted(uncovered))
+        except Exception as exc:
+            orch._logger.error("gate-level check dispatch failed: %s", exc)
+
     def detect_misplaced_frontend_root(self) -> Optional[Dict[str, Any]]:
         """Detect a frontend the lane authored at the REPO ROOT (``./src``) while
         the canonical ``app/frontend/src`` the framework builds+gates is the blank
