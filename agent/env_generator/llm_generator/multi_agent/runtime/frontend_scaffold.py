@@ -588,6 +588,26 @@ export async function getFeed() {
   return r.json().catch(() => ([]))
 }
 export function logout() { localStorage.removeItem('token') }
+// Generic fixed-envelope CRUD helpers (the projector returns {item}/{items}); pages may
+// import these by name OR use the default `api` object (api.get/post/...).
+async function request(path, { method = 'GET', body } = {}) {
+  const r = await fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  })
+  const d = await r.json().catch(() => ({}))
+  if (!r.ok) throw Object.assign(new Error(d.detail || r.statusText), { status: r.status, data: d })
+  return d
+}
+export const get = (path) => request(path)
+export const post = (path, body) => request(path, { method: 'POST', body })
+export const put = (path, body) => request(path, { method: 'PUT', body })
+export const del = (path) => request(path, { method: 'DELETE' })
+// #41: default export so `import api from '../services/api'` (a common lane style) yields a
+// usable object — without it the module resolves but `api` is undefined → runtime crash.
+const api = { register, login, logout, getFeed, get, post, put, del, request }
+export default api
 """
 
 _ROUTES_MARKER = "// @framework-managed-routes"

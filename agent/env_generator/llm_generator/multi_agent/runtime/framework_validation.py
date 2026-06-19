@@ -134,6 +134,20 @@ class FrameworkValidation:
                 orch._repair_ddl_from_orm()
                 orch._repair_handler_fk_aliases()
                 orch._repair_psycopg_dsn()
+                # PROPOSAL #41 (reviewer-corrected ROOT): COMMIT the framework-scaffolded
+                # baseline (backend skeleton + frontend infra/api.js + projected
+                # routes/pages) onto integration NOW — every tick, not just at release.
+                # Run #38 aborted because the scaffold wrote src/services/api.js + the
+                # frontend infra to the integration WORKING TREE but left them UNCOMMITTED;
+                # the next per-tick merge stashes+drops uncommitted writes, so the COMMITTED
+                # merge that RunValidationTool builds lacked api.js → vite "Could not resolve
+                # ../services/api" → docker_up FAIL → no delivery. Committing here makes the
+                # build (below) AND the lane's next pull_main_into_worktree see the baseline
+                # (also fixing the frontend required-files finish-gate: the infra files now
+                # reach the lane worktree). It also breaks the re-scaffold churn (the dropped
+                # writes flipped the app-signature every tick). Best-effort; idempotent
+                # ("nothing to commit" when already clean). Reuses the at-release commit.
+                orch._commit_framework_delivery()
                 # RESILIENCE (stuck-loop breaker): record the post-heal signature so
                 # the heal-gate (line above) only re-heals when the *integrated source*
                 # changed — but DO NOT reset the validation budget on that delta. The
