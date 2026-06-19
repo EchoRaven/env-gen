@@ -336,6 +336,21 @@ class EnvGenAgent(
         "registryhub_get_table",
         "registryhub_list_tables",
     }
+    # PROPOSAL #39 (#2): the DEBUGGER's canonical triage tools. The debugger's whole job is
+    # to triage validation bugs (bug_list_open → root-cause → bug_triage(assignee=...)), and
+    # its prompt instructs exactly that — but with a 6-slot action budget and NO
+    # stage_tool_allowlist, the ranker crowded bug_triage/bug_list_open OUT of its per-step
+    # surface (run #36: the debugger asked the orchestrator "I don't have the bug_triage
+    # tool" and flailed). Same crowd-out class as _VALIDATION_FLOW / _CLAIM_FLOW. Force-offer
+    # them; bundle-intersection means only lanes that bundle bug_tools see them — i.e. the
+    # debugger. The VERIFIER also bundles bug_tools but its implementation:action allowlist
+    # (which never lists bug_triage) is intersected FIRST (tooling.py:166), so it does NOT
+    # leak there — triage stays debugger-only by role.
+    _BUG_FLOW = {
+        "bug_triage",
+        "bug_list_open",
+        "bug_list_assigned_to",
+    }
     ACTION_STAGE_ALWAYS_INCLUDE: Dict[str, Set[str]] = {
         "communicate": {"check_inbox", "send_message", "ask_agent", "broadcast", "report_progress", "finish"}
                         | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW,
@@ -357,7 +372,7 @@ class EnvGenAgent(
         # skill → deliver_project blocked (run #28: 33× wedge). Bundle-intersected, so
         # only the orchestrator (which bundles knowledge_skill_tools) ever sees it.
         "deliver": {"finish", "deliver_project", "report_completion", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW,
-        "action": {"finish", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW,
+        "action": {"finish", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW | _BUG_FLOW,
     }
 
     # PROPOSAL #28 F2 — validation/delivery tools that are MEANINGLESS during KICKOFF
