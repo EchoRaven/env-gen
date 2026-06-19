@@ -151,7 +151,18 @@ class RegistryHub:
           * method → upper-case, trimmed.
           * path  → trimmed; ensure exactly one leading ``/`` if path
                     is non-empty; strip trailing ``/`` (except for the
-                    bare root ``/`` which stays as-is).
+                    bare root ``/`` which stays as-is); Express ``:param``
+                    → FastAPI ``{param}`` (PROPOSAL #29).
+
+        PROPOSAL #29: the ``:param`` → ``{param}`` step makes the SAME route
+        registered in either idiom — frontend/router ``/api/notes/:id`` vs backend
+        FastAPI ``/api/notes/{id}`` — resolve to ONE endpoint id, instead of two
+        distinct endpoints (the second a phantom the backend can never implement →
+        permanent finish-block). Slash-anchored so a literal ``:`` MID-segment (a
+        custom-method path) is untouched. This matches the ``_express_to_fastapi``
+        normalization route_projector/backend_audit/frontend_audit already apply for
+        verification matching, so endpoint IDENTITY now agrees with the matcher.
+        MUST stay byte-identical with ``kickoff/contract.py:endpoint_id``.
         """
         m = str(method or "").upper().strip()
         p = str(path or "").strip()
@@ -160,6 +171,8 @@ class RegistryHub:
                 p = "/" + p
             if len(p) > 1 and p.endswith("/"):
                 p = p.rstrip("/") or "/"
+            import re as _re
+            p = _re.sub(r"(?<=/):([A-Za-z_][A-Za-z0-9_]*)", r"{\1}", p)
         return f"{m} {p}"
 
     def register_endpoint(self, method: str, path: str, schema: dict = None, provider: str = "", agent: str = "", status: str = "defined", **metadata: Any) -> dict:

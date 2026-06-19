@@ -44,6 +44,7 @@ without side effects.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Mapping
 
 
@@ -129,7 +130,8 @@ def endpoint_id(method: str, path: str) -> str:
       * ``method`` → upper-case, trimmed.
       * ``path``   → trimmed; ensure exactly one leading ``/`` if path
                      is non-empty; strip trailing ``/`` (except for the
-                     bare root ``/`` which stays as-is).
+                     bare root ``/`` which stays as-is); Express ``:param``
+                     → FastAPI ``{param}`` (PROPOSAL #29, slash-anchored).
     """
     m = str(method or "").upper().strip()
     p = str(path or "").strip()
@@ -138,6 +140,7 @@ def endpoint_id(method: str, path: str) -> str:
             p = "/" + p
         if len(p) > 1 and p.endswith("/"):
             p = p.rstrip("/") or "/"
+        p = re.sub(r"(?<=/):([A-Za-z_][A-Za-z0-9_]*)", r"{\1}", p)
     return f"{m} {p}"
 
 
