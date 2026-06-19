@@ -93,6 +93,29 @@ def _included_modules(main_src: str) -> Dict[str, str]:
     return out
 
 
+def _apirouter_prefix(module_src: str) -> str:
+    """PROPOSAL #55-v2 (BUG C): the prefix a module sets on its OWN router via
+    ``router = APIRouter(prefix="/api/foo")``. A route ``@router.get("/bar")`` under such
+    a router mounts at ``/api/foo/bar``, but ``_existing_routes`` sees only ``/bar`` and
+    ``_included_modules`` only reads a prefix from the ``include_router(prefix=...)`` site
+    — so without this the real endpoint is FALSE-DEMOTED (the 404=contract-lie revert) and
+    never satisfies business_endpoints_implemented. Returns the first APIRouter prefix
+    found in the module, else ''. (FastAPI idiom + the lane's editable custom_routes.py.)"""
+    try:
+        tree = ast.parse(module_src)
+    except SyntaxError:
+        return ""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and (
+                (isinstance(node.func, ast.Name) and node.func.id == "APIRouter")
+                or (isinstance(node.func, ast.Attribute) and node.func.attr == "APIRouter")):
+            for kw in (node.keywords or []):
+                if kw.arg == "prefix" and isinstance(kw.value, ast.Constant) \
+                        and isinstance(kw.value.value, str):
+                    return kw.value.value
+    return ""
+
+
 def served_routes(backend_dir: Path) -> Set[Tuple[str, str]]:
     """The (METHOD, normpath) set actually MOUNTED on the served app: main.py's own
     ``@app`` routes PLUS the ``@router`` routes of every module main.py includes
@@ -114,10 +137,13 @@ def served_routes(backend_dir: Path) -> Set[Tuple[str, str]]:
             msrc = modfile.read_text(encoding="utf-8", errors="ignore")
         except Exception:
             continue
+        # Effective mount prefix = include-site prefix + the module's own
+        # APIRouter(prefix=...) (BUG C: the latter was previously ignored → false demote).
+        eff_prefix = (prefix or "") + _apirouter_prefix(msrc)
         for method, path in _existing_routes(msrc):
             # _existing_routes already normalized path; re-normalize with the
-            # include prefix prepended (no-op when prefix is "").
-            served.add((method, _norm_path(prefix + path) if prefix else path))
+            # effective prefix prepended (no-op when it's "").
+            served.add((method, _norm_path(eff_prefix + path) if eff_prefix else path))
     return served
 
 

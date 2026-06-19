@@ -225,8 +225,12 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         if not _route_is_wired(route, app_jsx):
             missing.append(f"route `{route}` not wired in App.jsx")
     for api in apis:
-        # loose: the path literal (or its parametrized prefix) appears anywhere
-        probe = re.sub(r"\{[^}]+\}", "", api).rstrip("/")
+        # loose: the path literal (or its parametrized prefix) appears anywhere.
+        # PROPOSAL #55-v2 (BUG B): strip BOTH FastAPI `{param}` AND Express `:param` —
+        # apis_used are declared in `:id` form (prompt) but the code writes the path as a
+        # `${id}` template literal, so a `{param}`-only strip left the `:id` in the probe
+        # and never matched → a phantom "never referenced" miss on a working call.
+        probe = re.sub(r"\{[^}]+\}|:[A-Za-z_]\w*", "", api).rstrip("/")
         if probe and probe not in all_src:
             missing.append(f"declared API `{api}` never referenced in frontend src")
     if comp_file_text and _page_dead_controls(comp_file_text):
@@ -245,7 +249,15 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         _placeholder = any(p in _low for p in (
             "this section is being set up", "under construction",
             "coming soon", "placeholder page", "todo: implement"))
-        _declared_but_inert = bool(apis) and not any(
+        # PROPOSAL #55-v2: #55 added the `api.<verb>()` default-import style, but the
+        # frontend prompt's PRIMARY page template uses NAMED service functions
+        # (`import { getTasks } from '../services/api'` → `getTasks()`), which match no
+        # _HANDLER_TOKEN — so a real list/detail page using the framework's own MANDATED
+        # style was still false-flagged "placeholder stub". A genuine stub never imports
+        # the api client; a real data page always does (default OR named import). So a
+        # file that imports from `services/api` is doing real work → not inert.
+        _imports_api_service = "services/api" in comp_file_text
+        _declared_but_inert = bool(apis) and not _imports_api_service and not any(
             tok in comp_file_text for tok in _HANDLER_TOKENS)
         if _placeholder or _declared_but_inert:
             missing.append(
