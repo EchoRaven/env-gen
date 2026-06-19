@@ -123,6 +123,26 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
         a = s.get("auth")
         if a and a not in _saved and str(s.get("path", "")).rstrip("/").startswith("/api/"):
             s["auth"] = "token"
+    # AUTH-PREPEND (PROPOSAL #40): if the chain uses token auth but has NO /auth step that
+    # MINTS the token, synthesize the register step. Run #37 (recurring in #36): the
+    # verifier's chain DESCRIPTION said "registers, logs in, creates a note…" but its STEPS
+    # jumped straight to POST /api/notes auth="token" with NO register/login step → "token"
+    # was never saved → every authed step sent an EMPTY bearer → 401 → business_chain failed
+    # 6/6 forever (a manual register→POST curl on the SAME container returns 201, proving the
+    # APP is fine and the CHAIN under-authored). The auth round-trip is a PLATFORM invariant
+    # (the token always comes from /auth/register, regardless of domain), so synthesize the
+    # missing step rather than depend on the verifier authoring it — mirrors the existing
+    # auto-save / auth-first-reorder / auth-body-default platform fixes. Idempotent: only
+    # when token-auth is referenced AND no step already mints "token".
+    if any(s.get("auth") == "token" for s in out) and not any(
+            "token" in (s.get("save") or {}) for s in out):
+        out.insert(0, {
+            "method": "POST", "path": "/auth/register",
+            "body": {"email": "chain_${rand}@example.com",
+                     "password": "Chain123!x", "name": "Chain Tester"},
+            "save": {"token": "access_token"},
+            "expect": [200, 201],
+        })
     # AUTH-FIRST REORDER (round 45): the verifier wrote /api/* steps that use a
     # token BEFORE the /auth/register|login step that mints it → 401 "missing
     # token" → business_chain fails forever. "auth round-trip first" is a
