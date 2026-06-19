@@ -15,6 +15,15 @@ import time
 from typing import Any, Dict, List, Optional
 
 
+# PROPOSAL #32: kickoff attendees whose section is NON-essential to the contract — it is
+# either DERIVED by synthesis or done POST-impl — so a stalled kickoff may finalize by
+# DEFERRING them rather than failing. Currently just the verifier: its acceptance
+# predicates are derived from the frontend's user_flows + the roadmap floor, and its real
+# work (verification chains) is designed at the validation phase from the registered
+# contract. Backend/frontend are ESSENTIAL (no contract without them) → never deferred.
+_DEFERRABLE_KICKOFF_ATTENDEES = frozenset({"verifier"})
+
+
 class KickoffDriver:
     """Drives the kickoff meeting to completion + finalize/author/dispatch.
     Stateless; reads the orchestrator's collaborators live via the back-ref."""
@@ -460,6 +469,48 @@ class KickoffDriver:
                 "Kickoff reconcile attempt raised (%s): %s", reason, exc,
             )
             return None
+        # PROPOSAL #32: if synthesis is only blocked because a DEFERRABLE attendee never
+        # submitted (the verifier — its acceptance predicates are derived from the
+        # frontend's user_flows + the roadmap floor, and its REAL work, verification
+        # chains, is designed POST-impl), record a deferred decision ATTRIBUTED TO that
+        # attendee (load-bearing: _missing_attendees counts by the decision's ``agent``
+        # field, so it must be agent=<attendee>, not "orchestrator") and re-synthesize.
+        # Run #31 died here: Gemini didn't author section='verifier' → awaiting → kickoff
+        # FAILED. ESSENTIAL attendees (backend/frontend) missing are NOT deferred → the
+        # re-synthesis still returns awaiting → honest fallback (deferral can't
+        # manufacture a real contract). The verifier still registers real chains at
+        # validation (the deferred kickoff stub sets no "done" flag).
+        if synth.get("status") == "awaiting":
+            missing = [m for m in (synth.get("missing") or []) if isinstance(m, str)]
+            if missing and all(m in _DEFERRABLE_KICKOFF_ATTENDEES for m in missing):
+                for attendee in missing:
+                    try:
+                        self._orch.hubs.workhub.add_meeting_decision(
+                            kickoff_handle.get("meeting_id"),
+                            decision={
+                                "section": attendee,
+                                "content": {"deferred": True},
+                                "note": ("auto-deferred at kickoff stall — section is "
+                                         "derived/post-impl; lane did not author it in time"),
+                            },
+                            agent=attendee,
+                            milestone_index=kickoff_handle.get("milestone_index"),
+                        )
+                    except Exception as _def_err:  # pragma: no cover - defensive
+                        self._orch._logger.warning(
+                            "Kickoff defer of '%s' failed (%s): %s", attendee, reason, _def_err,
+                        )
+                self._orch._logger.warning(
+                    "Kickoff (%s): deferred non-submitting attendee(s) %s (section "
+                    "derived/post-impl) → re-synthesizing instead of failing the run.",
+                    reason, missing,
+                )
+                try:
+                    synth = run_kickoff.try_synthesize(
+                        self._orch.hubs, kickoff_handle, reconcile=True,
+                    )
+                except Exception:
+                    return None
         if synth.get("status") != "ready":
             # Diagnostic: surface what's still blocking after pruning dangling
             # UI calls + downgrading dead endpoints, so the run log pinpoints
