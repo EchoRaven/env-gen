@@ -1443,6 +1443,36 @@ class RegistryHub:
                 "chain rejected: " + ("; ".join(errors) or "no valid steps") +
                 ". Each step needs method+path (or endpoint='METHOD /path'), "
                 "optional body/expect/save/auth — see the chain spec.")}
+        # PROPOSAL #42 (user): every chain step MUST exercise a REGISTERED endpoint. A
+        # chain that references an endpoint which doesn't exist tests a phantom (404/422)
+        # and fails business_chain forever (the verifier authors loose paths). All
+        # framework endpoints (/auth/*, /oauth/*, /api/v1/*, /health, /.well-known) AND the
+        # business endpoints are in the registry, so "must be registered" needs NO
+        # whitelist. Match via endpoint_id (param-NAME-agnostic + :id↔{id}, PROPOSAL #1/#29),
+        # so /api/notes/{id} in a chain matches a backend /api/notes/{note_id}. #40's
+        # auto-prepended /auth/register is registered too, so it passes.
+        registered_ids = set((self._endpoints.value() or {}).keys())
+        if registered_ids:  # only enforce once a contract exists (kickoff registered it)
+            import re as _re
+
+            def _chain_eid(step):
+                # chain paths carry ${var} substitution segments (e.g. /api/notes/${note_id})
+                # — collapse those to a path param FIRST so endpoint_id's {param}/:param
+                # normalization yields /api/notes/{} (matching the registered endpoint).
+                p = _re.sub(r"\$\{[^}]+\}", "{x}", str(step.get("path") or ""))
+                return self.endpoint_id(step.get("method") or "GET", p)
+
+            unregistered = sorted({
+                _chain_eid(s) for s in norm if s.get("path")
+                if _chain_eid(s) not in registered_ids
+            })
+            if unregistered:
+                return {"error": (
+                    "chain rejected: these steps reference endpoints NOT registered in "
+                    "RegistryHub: " + ", ".join(unregistered) + ". A verification chain may "
+                    "only exercise endpoints that exist — register the endpoint first "
+                    "(registryhub_register_endpoint) or fix the chain to use a registered "
+                    "one. Registered endpoints: " + ", ".join(sorted(registered_ids)) + ".")}
         now = time.time()
         actor = agent or "registryhub"
         rec = {"id": str(name), "name": str(name),
