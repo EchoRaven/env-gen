@@ -328,22 +328,79 @@ def _atomic_write_text(path: Path, content: str, *, encoding: str = "utf-8") -> 
             pass
 
 
-class _FileLock:
-    """Simple lockfile guard for cross-process writes."""
+# PROPOSAL #31 S3: a lockfile older than this (or held by a dead pid) is treated as
+# ORPHANED and reclaimed. Must EXCEED the longest legit critical section: write (sub-ms)
+# + run_lint worst case (tsc subprocess timeout is 30s, file_tools run_lint) — so 45s
+# sits safely above a legitimately-slow TS lint yet well below the multi-minute wedge an
+# orphan caused in run #28 (a cancelled async step in the still-LIVE process left a lock
+# whose pid stays alive → only the AGE branch reclaims it). Without reclamation an
+# interrupted locked region blocked the file FOREVER (every later write failed
+# O_CREAT|O_EXCL on the stale sidecar).
+_LOCK_STALE_SEC = 45.0
 
-    def __init__(self, path: Path, timeout_seconds: float = 5.0):
+
+class _FileLock:
+    """Simple lockfile guard for cross-process writes, with stale-lock reclamation."""
+
+    def __init__(self, path: Path, timeout_seconds: float = 15.0):
         self._lock_path = path.parent / f".{path.name}.lock"
         self._timeout = max(0.1, float(timeout_seconds))
         self._fd: Optional[int] = None
+        self._our_pid = os.getpid()
+
+    def _reclaim_if_stale(self) -> bool:
+        """Reclaim an ORPHANED lockfile. Returns True if a stale lock was cleared (caller
+        should retry acquire). RACE-SAFE: reclaim ONLY on a confident orphan signal —
+        recorded holder pid DEAD (``os.kill(pid,0)`` raising ProcessLookupError ONLY;
+        EPERM = alive under another user, NOT dead), OR age >= _LOCK_STALE_SEC. The AGE
+        branch is the load-bearing one: this pipeline's lanes are async tasks in ONE
+        process, so a cancelled step leaves a lock whose pid is still ALIVE (run #28) —
+        only age reclaims it. Age uses the recorded epoch (stamped at acquire), mtime as
+        fallback for a half-written/unparseable lockfile. The O_CREAT|O_EXCL re-acquire
+        after unlink stays the SOLE authority, so concurrent reclaimers still serialize
+        (only one wins)."""
+        try:
+            parts = open(self._lock_path, "r").read().split()
+            holder_pid = int(parts[0])
+            holder_epoch = int(parts[1])
+            age = time.time() - holder_epoch
+            pid_dead = False
+            try:
+                os.kill(holder_pid, 0)
+            except ProcessLookupError:
+                pid_dead = True
+            reclaim = pid_dead or (age >= _LOCK_STALE_SEC)
+        except FileNotFoundError:
+            return True  # already gone → retry acquire
+        except Exception:
+            # half-written / unparseable content → fall back to lockfile mtime age;
+            # if that can't be read or it's fresh, spin (do NOT reclaim).
+            try:
+                reclaim = (time.time() - os.stat(self._lock_path).st_mtime) >= _LOCK_STALE_SEC
+            except FileNotFoundError:
+                return True
+            except Exception:
+                return False
+        if not reclaim:
+            return False
+        try:
+            os.unlink(self._lock_path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return False
+        return True
 
     def __enter__(self):
         start = time.time()
         while True:
             try:
                 self._fd = os.open(str(self._lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.write(self._fd, f"{os.getpid()} {int(time.time())}\n".encode("utf-8"))
+                os.write(self._fd, f"{self._our_pid} {int(time.time())}\n".encode("utf-8"))
                 return self
             except FileExistsError:
+                if self._reclaim_if_stale():
+                    continue  # orphan cleared → re-attempt acquire immediately
                 if time.time() - start >= self._timeout:
                     # PROPOSAL #30 S4: do NOT leak the absolute host lock path into the
                     # agent-visible error (the agent can't act on the internal .lock
@@ -360,9 +417,17 @@ class _FileLock:
                 os.close(self._fd)
         except Exception:
             pass
+        # Only unlink if the lockfile still records OUR pid — so if a reclaimer already
+        # took over our (stale) lock and a new holder owns it, we don't delete theirs.
         try:
             if self._lock_path.exists():
-                self._lock_path.unlink()
+                try:
+                    with open(self._lock_path, "r") as fh:
+                        owner = int((fh.readline().split() or ["0"])[0])
+                except Exception:
+                    owner = self._our_pid  # unreadable → assume ours, clean up
+                if owner == self._our_pid:
+                    self._lock_path.unlink()
         except Exception:
             pass
 
