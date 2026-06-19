@@ -1876,6 +1876,21 @@ class Orchestrator:
                 return  # nothing to deliver yet
             gate = self._validate_delivery_gate()
             if gate.get("failed_checks"):
+                # OBSERVABILITY (PROPOSAL #45): the deterministic deliver declined
+                # SILENTLY for every non-ui_page blocker, so a run that "never
+                # delivered" left NO on-disk signal of WHICH gate check was red —
+                # forcing fragile post-mortem reconstruction (and mis-diagnosis:
+                # smoke-notes 2026-06-19 was blocked on incomplete_required_tasks, a
+                # contract-test param-key mismatch, but nothing logged it). Log the
+                # failed-check set, deduped to once-per-CHANGE so it never spams the
+                # ≤60s loop.
+                _failed = sorted(str(c) for c in (gate.get("failed_checks") or []))
+                if _failed != getattr(self, "_fwdeliver_last_failed", None):
+                    self._fwdeliver_last_failed = _failed
+                    self._logger.warning(
+                        "Framework deliver declined: delivery gate has %d failed check(s): %s",
+                        len(_failed), _failed,
+                    )
                 # FEEDBACK LOOP (2026-06-13): an unwired-ui-pages block (declared
                 # pages whose routes aren't in App.jsx) HARD-blocks delivery but,
                 # unlike GATE-C1 / frontend_navigable / visual, routed NOWHERE —
