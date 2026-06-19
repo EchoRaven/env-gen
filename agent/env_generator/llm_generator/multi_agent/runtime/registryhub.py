@@ -165,6 +165,18 @@ class RegistryHub:
         MUST stay byte-identical with ``kickoff/contract.py:endpoint_id``.
         """
         m = str(method or "").upper().strip()
+        return f"{m} {RegistryHub._canonical_path(path)}"
+
+    @staticmethod
+    def _canonical_path(path: str) -> str:
+        """The canonical FastAPI path form used by both ``endpoint_id`` and the stored
+        endpoint ``path`` field (PROPOSAL #38 A2): trim, ensure one leading ``/``, strip
+        trailing ``/`` (except bare root), and rewrite Express ``:param`` → FastAPI
+        ``{param}`` (slash-anchored, PROPOSAL #29). Storing this — not the raw input —
+        means a registration of ``/api/notes/:id`` PERSISTS as ``/api/notes/{id}``, so the
+        route projector stamps a real path param (not a literal ``:id`` static route) and
+        the verifier tests ``/api/notes/1`` against a matching route instead of getting a
+        405. Byte-identical normalization to the prior inline ``endpoint_id`` logic."""
         p = str(path or "").strip()
         if p:
             if not p.startswith("/"):
@@ -173,7 +185,7 @@ class RegistryHub:
                 p = p.rstrip("/") or "/"
             import re as _re
             p = _re.sub(r"(?<=/):([A-Za-z_][A-Za-z0-9_]*)", r"{\1}", p)
-        return f"{m} {p}"
+        return p
 
     def register_endpoint(self, method: str, path: str, schema: dict = None, provider: str = "", agent: str = "", status: str = "defined", **metadata: Any) -> dict:
         # Ownership: backend owns endpoint registration; the kickoff
@@ -205,7 +217,9 @@ class RegistryHub:
             **(old or {}),
             "id": endpoint_id,
             "method": str(method or "").upper(),
-            "path": path,
+            # #38 A2: store the CANONICAL FastAPI path (`:id`→`{id}`), not the raw input,
+            # so the projector + verifier never see a literal Express `:id` (→ 405).
+            "path": self._canonical_path(path),
             "status": status or (old or {}).get("status") or "defined",
             "provider": provider or (old or {}).get("provider"),
             "schema": schema or (old or {}).get("schema") or {},
