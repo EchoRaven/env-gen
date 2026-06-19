@@ -309,7 +309,13 @@ def run_smoke_validation(
             # Also capture the per-container logs (mirrors backend_health at the
             # /health-timeout branch) so the failure detail shows the ROOT, not the
             # warning. Service-agnostic: `logs` with no service = every container.
-            _up_detail = (up.stderr or up.stdout or "")[-400:]
+            # CLASS A (#36): on a BUILD failure (e.g. apt exit 100) the root cause is in
+            # the build transcript, NOT the brief "failed to solve … exit code N" summary,
+            # and `compose logs` is empty (no container booted). A 400-char tail of ONE
+            # stream hid the apt error in run #34 → agents re-ran validation blindly ("the
+            # output got truncated … I need the full stack trace"). Capture a generous
+            # tail of BOTH streams so the lane sees the actual error.
+            _up_detail = (((up.stdout or "") + "\n" + (up.stderr or "")).strip())[-3000:]
             try:
                 _clogs = _compose(compose_file, "logs", "--tail", "40", cwd=cwd, timeout=30)
                 _ctail = (_clogs.stdout or _clogs.stderr or "")[-1500:]

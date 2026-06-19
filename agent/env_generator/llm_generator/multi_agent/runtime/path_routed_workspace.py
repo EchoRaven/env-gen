@@ -41,6 +41,27 @@ def _writers(*extra: str) -> FrozenSet[str]:
     return _BROAD_WRITERS | frozenset(extra)
 
 
+_FW_OWNED_MAP_CACHE: Optional[List[Tuple[str, FrozenSet[str]]]] = None
+
+
+def _framework_owned_routes() -> List[Tuple[str, FrozenSet[str]]]:
+    """CLASS B (#36): the canonical (prefix, framework-owned-basenames) list, reused
+    from the conflict resolver's ownership map so the WRITE GUARD denies exactly what
+    the resolver resolves framework-side (no divergence). Lazy + cached to avoid a
+    module-load cycle. Empty on any import failure (fail-open — never wedge writes)."""
+    global _FW_OWNED_MAP_CACHE
+    if _FW_OWNED_MAP_CACHE is None:
+        try:
+            from ..agents.runtime.auto_commit import _OWNERSHIP
+            _FW_OWNED_MAP_CACHE = [
+                (prefix, fw_owned)
+                for (_lane, (prefix, fw_owned, _lane_owned)) in _OWNERSHIP.items()
+            ]
+        except Exception:
+            _FW_OWNED_MAP_CACHE = []
+    return _FW_OWNED_MAP_CACHE
+
+
 # (prefix, target, allowed_writers, notes)
 # target ∈ {"code", "base"}.
 # allowed_writers:
@@ -552,6 +573,16 @@ class PathRoutedWorkspace:
         route_label, _target, writers = self._route_of_resolved(resolved)
         if route_label == "outside":
             return False
+        # CLASS B (#36): the framework DETERMINISTICALLY generates + overwrites certain
+        # files in app/backend & app/frontend (skeleton/infra). A lane editing one (run
+        # #34: the backend rewrote the framework Dockerfile with a broken apt line) only
+        # creates a merge conflict + a pre-overwrite broken build — it cannot stick (the
+        # scaffold + the ownership resolver discard it). Deny ALL lane writes to those
+        # framework-owned files (even in the lane's own worktree, where it otherwise owns
+        # everything). Lane-owned files (custom_routes.py / App.jsx) + lane-authored
+        # pages are NOT framework-owned, so they stay writable.
+        if self.is_framework_owned(resolved):
+            return False
         # Code- and base-routed entries both consult ROUTING_TABLE's
         # writer column from the RESOLVED path's matching prefix. A
         # raw-prefix lookup against the input string would let
@@ -563,6 +594,23 @@ class PathRoutedWorkspace:
         if agent_id is None:
             return False
         return agent_id in writers
+
+    def is_framework_owned(self, path: Union[str, Path]) -> bool:
+        """CLASS B (#36): True if ``path`` is a framework-OWNED file in app/backend or
+        app/frontend (the files the scaffold generates + overwrites every tick). Uses the
+        SAME ownership map the conflict resolver resolves framework-side, so the write
+        guard and the resolver never disagree. Lane-owned files (custom_routes.py /
+        App.jsx) and lane-authored pages return False. Used both as the write-deny gate
+        and to enrich the lane-facing denial message."""
+        try:
+            resolved = self.resolve(path)
+        except (ValueError, OSError):
+            return False
+        rel = self.relative(resolved).replace("\\", "/")
+        for prefix, fw_owned in _framework_owned_routes():
+            if rel.startswith(prefix) and rel.rsplit("/", 1)[-1] in fw_owned:
+                return True
+        return False
 
     def relative(self, path: Union[str, Path]) -> str:
         """Path relative to whichever root contains it (for display)."""
