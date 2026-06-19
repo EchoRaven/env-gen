@@ -1040,6 +1040,85 @@ def _normalize_roadmap_shape_for_reconcile(
     return new_drafts, notes
 
 
+# PROPOSAL #43: the whole framework implements *business* endpoints under the
+# ``/api`` prefix — the frontend baseline client (`_BASELINE_API_JS`: nginx proxies
+# ``/api,/auth,/oauth``), the backend skeleton (`render_skeleton_main` skips any path
+# not ``startswith("/api/")``) and the gap-filling route projector
+# (`project_missing_routes`, same guard). But the kickoff LLM authors business
+# endpoint paths free-form, so it routinely emits a bare ``/notes``. That bare path is
+# structurally un-implementable by the machinery above, while the frontend's
+# ``/api/notes`` call gets AUTO-REGISTERED as a *separate* endpoint by
+# `_reconcile_dangling_frontend_calls` (its ``known`` set is param-name-agnostic but
+# NOT prefix-agnostic) — leaving ``/notes`` a permanent ``defined`` orphan that fails
+# ``business_endpoints_implemented`` forever (observed: smoke-notes run, 2026-06-19).
+#
+# Fix: canonicalize business endpoint paths to ``/api`` at synthesis, BEFORE the
+# contract / task_tree / reconcile-known-set are derived. We do NOT use a hardcoded
+# control-plane path blocklist (the architecture deliberately avoids that —
+# control_plane.py: "needs no hardcoded exemption list"). Instead the pre-registered
+# fixed surface (spine/auth/control, kind-tagged, registered before the meeting) is the
+# oracle: a draft path that matches a registered fixed-surface endpoint is owned
+# elsewhere and left verbatim; everything else the LLM authored is business and gets
+# the prefix. Already-``/api`` paths are left untouched (no ``/api/api`` double-prefix).
+_API_PREFIX = "/api"
+
+
+def _control_plane_keys(
+    registered_endpoints: Optional[Iterable[Mapping[str, Any]]],
+) -> set:
+    """Param-agnostic keys of the pre-registered fixed surface (kind-tagged
+    spine/auth/control). At synthesis time only the fixed surface is registered, so
+    any draft endpoint matching one of these is control-plane, owned elsewhere."""
+    keys: set = set()
+    for rec in (registered_endpoints or []):
+        if isinstance(rec, Mapping) and rec.get("method") and rec.get("path"):
+            keys.add(_param_agnostic(_endpoint_key(rec.get("method"), rec.get("path"))))
+    return keys
+
+
+def _ensure_business_api_prefix(method: Any, path: Any, control_plane_keys: set) -> Any:
+    """Return ``path`` carrying the ``/api`` business convention, unless it already
+    has it, is unparseable, or matches a registered control-plane endpoint."""
+    p = str(path or "").strip()
+    if not p.startswith("/"):
+        return path  # unparseable / relative — leave alone
+    if p == _API_PREFIX or p.startswith(_API_PREFIX + "/"):
+        return path  # already conventional → no double-prefix
+    if _param_agnostic(_endpoint_key(method, p)) in control_plane_keys:
+        return path  # control-plane / fixed surface — owned elsewhere
+    return _API_PREFIX + p
+
+
+def _canonicalize_business_endpoint_paths(
+    drafts: Mapping[str, Mapping[str, Any]],
+    registered_endpoints: Optional[Iterable[Mapping[str, Any]]] = None,
+) -> Mapping[str, Mapping[str, Any]]:
+    """Rewrite bare business endpoint paths in the backend draft to the ``/api``
+    convention (PROPOSAL #43). Idempotent; returns drafts unchanged if nothing moved."""
+    backend = drafts.get("backend") or {}
+    cp_keys = _control_plane_keys(registered_endpoints)
+    new_backend = dict(backend)
+    changed = False
+    for key in ("endpoints", "api_endpoints"):
+        eps = new_backend.get(key)
+        if not isinstance(eps, list):
+            continue
+        out: List[Any] = []
+        for ep in eps:
+            if isinstance(ep, Mapping) and ep.get("path"):
+                canon = _ensure_business_api_prefix(ep.get("method"), ep.get("path"), cp_keys)
+                if canon != ep.get("path"):
+                    ep = {**ep, "path": canon}
+                    changed = True
+            out.append(ep)
+        new_backend[key] = out
+    if not changed:
+        return drafts
+    new_drafts = dict(drafts)
+    new_drafts["backend"] = new_backend
+    return new_drafts
+
+
 def _reconcile_dangling_frontend_calls(
     drafts: Mapping[str, Mapping[str, Any]],
     registered_endpoints: Optional[Iterable[Mapping[str, Any]]] = None,
@@ -1071,6 +1150,10 @@ def _reconcile_dangling_frontend_calls(
         if isinstance(rec, Mapping) and rec.get("method") and rec.get("path"):
             known.add(_param_agnostic(_endpoint_key(rec.get("method"), rec.get("path"))))
 
+    # PROPOSAL #43: same control-plane oracle as the synthesis-time canonicalizer, so a
+    # genuinely-new business call the frontend makes is auto-registered under ``/api``
+    # (matching the rest of the contract) rather than as a bare orphan.
+    cp_keys = _control_plane_keys(registered_endpoints)
     added: List[str] = []
     new_endpoints: List[Dict[str, Any]] = []
     for screen in _extract_frontend_screens(frontend):
@@ -1084,7 +1167,8 @@ def _reconcile_dangling_frontend_calls(
             if len(parts) != 2 or not parts[1].startswith("/"):
                 continue                                     # unparseable → leave alone
             method, path = parts[0].upper(), parts[1].strip()
-            known.add(_param_agnostic(disp))
+            path = _ensure_business_api_prefix(method, path, cp_keys)
+            known.add(_param_agnostic(_endpoint_key(method, path)))
             last = next((s for s in reversed(path.split("/")) if s), "")
             single = method != "GET" or last == "me" or (last.startswith("{") and last.endswith("}"))
             new_endpoints.append({
@@ -1180,6 +1264,15 @@ def try_synthesize(
         registered = list((hubs.registryhub.get_endpoints() or {}).values())
     except Exception:
         registered = []
+    # PROPOSAL #43: canonicalize bare business endpoint paths to the framework's
+    # ``/api`` convention BEFORE the contract, task_tree and reconcile-known-set are
+    # derived from drafts — so the LLM's ``/notes`` becomes ``/api/notes`` (which the
+    # skeleton/projector can implement and the frontend baseline already calls),
+    # instead of orphaning as a permanent ``defined`` endpoint. Runs unconditionally
+    # (not just on the reconcile path) so the normal happy-path contract is canonical
+    # too. Control-plane / fixed-surface endpoints (matched against the pre-registered
+    # kind-tagged surface) are left verbatim.
+    drafts = _canonicalize_business_endpoint_paths(drafts, registered_endpoints=registered)
     # Last-resort deterministic reconciliation (only when the caller is about to
     # abort the kickoff): prune frontend api_calls to undefined endpoints so the
     # contract converges by construction instead of failing the whole run.
