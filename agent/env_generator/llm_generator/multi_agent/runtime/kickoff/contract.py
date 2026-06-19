@@ -131,7 +131,9 @@ def endpoint_id(method: str, path: str) -> str:
       * ``path``   → trimmed; ensure exactly one leading ``/`` if path
                      is non-empty; strip trailing ``/`` (except for the
                      bare root ``/`` which stays as-is); Express ``:param``
-                     → FastAPI ``{param}`` (PROPOSAL #29, slash-anchored).
+                     → FastAPI ``{param}`` (PROPOSAL #29, slash-anchored); then every
+                     ``{param}`` → ``{}`` so the id is param-NAME-agnostic (PROPOSAL #39 #1:
+                     ``/notes/{id}`` ≡ ``/notes/{note_id}`` — one endpoint, not a phantom).
     """
     m = str(method or "").upper().strip()
     p = str(path or "").strip()
@@ -141,6 +143,9 @@ def endpoint_id(method: str, path: str) -> str:
         if len(p) > 1 and p.endswith("/"):
             p = p.rstrip("/") or "/"
         p = re.sub(r"(?<=/):([A-Za-z_][A-Za-z0-9_]*)", r"{\1}", p)
+    # PROPOSAL #39 (#1): param-NAME-agnostic identity — collapse {param}->{} so the same
+    # route under a different param name resolves to ONE id (see registryhub.endpoint_id).
+    p = re.sub(r"\{[^}]+\}", "{}", p)
     return f"{m} {p}"
 
 

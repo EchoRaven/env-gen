@@ -162,10 +162,21 @@ class RegistryHub:
         custom-method path) is untouched. This matches the ``_express_to_fastapi``
         normalization route_projector/backend_audit/frontend_audit already apply for
         verification matching, so endpoint IDENTITY now agrees with the matcher.
-        MUST stay byte-identical with ``kickoff/contract.py:endpoint_id``.
+        PROPOSAL #39 (#1): the id is also param-NAME-agnostic — every ``{param}`` collapses
+        to ``{}`` so the SAME route declared as ``/notes/{id}`` and implemented as
+        ``/notes/{note_id}`` resolves to ONE endpoint id (the param name is arbitrary),
+        instead of forking a phantom ``defined`` endpoint that blocks
+        all_business_endpoints_implemented forever (run #36: validation never opened because
+        the declared ``{id}`` variant stayed ``defined`` while the backend implemented
+        ``{note_id}``). The STORED ``path`` keeps the real param name (codegen + the route
+        handler need it); only the IDENTITY is param-agnostic — same idea as
+        ``route_projector._norm_path``. MUST stay byte-identical with
+        ``kickoff/contract.py:endpoint_id``.
         """
+        import re as _re
         m = str(method or "").upper().strip()
-        return f"{m} {RegistryHub._canonical_path(path)}"
+        ident = _re.sub(r"\{[^}]+\}", "{}", RegistryHub._canonical_path(path))
+        return f"{m} {ident}"
 
     @staticmethod
     def _canonical_path(path: str) -> str:
