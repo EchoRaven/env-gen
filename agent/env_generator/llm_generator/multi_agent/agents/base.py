@@ -349,8 +349,15 @@ class EnvGenAgent(
         # fail_count=0, blocked only on the retro gate). Intersected with the
         # agent's pool, so only the orchestrator (which bundles retro_tools) gets
         # them. See FIX #1 (_VALIDATION_FLOW / run_validation) — same crowd-out.
-        "deliver": {"finish", "deliver_project", "report_completion", "submit_retro", "deliverability_check"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW,
-        "action": {"finish", "submit_retro", "deliverability_check"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW,
+        # PROPOSAL #30 S2: ``get_skill`` is force-offered here because deliver_project /
+        # report_completion are gated on release_readiness_consulted (the gate requires
+        # get_skill(release-readiness) first). get_skill is granted but, with the
+        # orchestrator running a single un-allowlisted ``action`` stage, the ~10-slot
+        # ranker crowded it out of ~150 tools → the orchestrator could never consult the
+        # skill → deliver_project blocked (run #28: 33× wedge). Bundle-intersected, so
+        # only the orchestrator (which bundles knowledge_skill_tools) ever sees it.
+        "deliver": {"finish", "deliver_project", "report_completion", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW,
+        "action": {"finish", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW,
     }
 
     # PROPOSAL #28 F2 — validation/delivery tools that are MEANINGLESS during KICKOFF

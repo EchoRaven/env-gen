@@ -90,12 +90,25 @@ def kickoff_endpoints_implemented(
     if not lane:
         return None
     endpoints = registryhub.get_endpoints() or {}
+    # PROPOSAL #30 S1: skip the FRAMEWORK-OWNED fixed surface (auth/oauth/infra/spine)
+    # via the canonical lifecycle.is_business — the SAME predicate
+    # all_business_endpoints_implemented (the delivery driver) uses. Without this the
+    # STATUS gate counted the framework's tenant control-plane (control_plane.py,
+    # kind='infra', registered provider='backend') against the backend → it was told
+    # to "implement" framework endpoints it neither owns nor can write → deadlock
+    # (the code gate already skips these kinds, but it calls THIS gate as Layer 1 and
+    # returns its block before its own kind-skip is reached). Using is_business (not a
+    # copied kind literal) also covers kind='oauth' — which the code gate's inline set
+    # misses — and is metadata-aware.
+    from ...runtime.lifecycle import is_business
     pending = []
     for ep_id, ep in endpoints.items():
         if not isinstance(ep, dict):
             continue
         provider = ep.get("provider")
         if provider and provider != lane:
+            continue
+        if not is_business(ep):
             continue
         if ep.get("status") not in _FINISH_TERMINAL_STATUSES:
             method = ep.get("method") or "?"
@@ -224,6 +237,7 @@ def endpoints_implemented_with_code(
     endpoints = registryhub.get_endpoints() or {}
     route_tokens = _collect_source_route_tokens(root)
 
+    from ...runtime.lifecycle import is_business  # PROPOSAL #30 S1 (canonical filter)
     missing = []
     for ep_id, ep in endpoints.items():
         if not isinstance(ep, dict):
@@ -231,10 +245,11 @@ def endpoints_implemented_with_code(
         provider = ep.get("provider")
         if provider and provider != lane:
             continue
-        # Only business endpoints carry a UI/business consumer; skip the
-        # runtime-owned fixed surface (auth/health/spine) by registered kind.
-        kind = (ep.get("kind") or "").lower()
-        if kind in ("infra", "auth", "spine", "control", "system"):
+        # PROPOSAL #30 S1: skip the framework-owned fixed surface via the canonical
+        # lifecycle.is_business (covers auth/oauth/infra/spine + metadata-nested kind)
+        # — converged with the status gate above + the delivery driver, replacing the
+        # ad-hoc kind literal that missed kind='oauth'.
+        if not is_business(ep):
             continue
         if ep.get("status") not in _FINISH_TERMINAL_STATUSES:
             continue  # status layer already handled non-terminal

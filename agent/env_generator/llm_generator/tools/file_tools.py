@@ -345,7 +345,13 @@ class _FileLock:
                 return self
             except FileExistsError:
                 if time.time() - start >= self._timeout:
-                    raise TimeoutError(f"Timeout acquiring file lock: {self._lock_path}")
+                    # PROPOSAL #30 S4: do NOT leak the absolute host lock path into the
+                    # agent-visible error (the agent can't act on the internal .lock
+                    # sidecar, and already knows the file it asked to write). Generic +
+                    # actionable message only.
+                    raise TimeoutError(
+                        "Timeout acquiring file lock (file busy — another writer holds "
+                        "it; retry shortly)")
                 time.sleep(0.05)
 
     def __exit__(self, exc_type, exc, tb):

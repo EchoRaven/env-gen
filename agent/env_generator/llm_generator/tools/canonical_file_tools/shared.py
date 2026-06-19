@@ -311,7 +311,8 @@ def write_workspace_file(workspace: Workspace, file_path: str, content: str, too
                         pass
                 else:
                     _atomic_write_text(file_path_resolved, old_content, encoding="utf-8")
-                error_msg = format_lint_error(str(file_path_resolved), lint_errors, content, old_content)
+                # PROPOSAL #30 S4: workspace-relative path in agent-visible lint errors.
+                error_msg = format_lint_error(_workspace_rel(workspace, file_path_resolved), lint_errors, content, old_content)
                 return ToolResult(success=False, error_message=error_msg)
         _record_file_write(file_path_resolved, content)
         sync_hub_write(
@@ -335,7 +336,9 @@ def write_workspace_file(workspace: Workspace, file_path: str, content: str, too
             },
         )
     except Exception as e:
-        return ToolResult(success=False, error_message=f"Write failed: {e}")
+        # PROPOSAL #30 S4: strip the host workspace root from any path the exception
+        # carries (e.g. OSError messages) so agent-visible errors stay workspace-relative.
+        return ToolResult(success=False, error_message=f"Write failed: {_redact_ws(workspace, e)}")
 
 
 
@@ -374,7 +377,7 @@ def _write_with_lint_guard(
                 return ToolResult(
                     success=False,
                     error_message=format_lint_error(
-                        str(path),
+                        _workspace_rel(workspace, path),  # PROPOSAL #30 S4: workspace-relative
                         lint_errors,
                         updated_content,
                         original_content,
@@ -391,7 +394,17 @@ def _write_with_lint_guard(
         )
         return ToolResult(success=True, data=success_payload)
     except Exception as e:
-        return ToolResult(success=False, error_message=f"write failed: {e}")
+        return ToolResult(success=False, error_message=f"write failed: {_redact_ws(workspace, e)}")
+
+
+def _redact_ws(workspace: Workspace, e: object) -> str:
+    """PROPOSAL #30 S4: strip the host project root from an exception's message so
+    agent-visible errors never leak the absolute host path (OSError etc. embed it).
+    Uses ``base_root`` (the sanctioned named root) rather than bare ``.root``."""
+    try:
+        return str(e).replace(str(workspace.base_root), "<workspace>")
+    except Exception:
+        return str(e)
 
 
 def _parse_patch(patch: str) -> List[_PatchOperation]:
