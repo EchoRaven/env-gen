@@ -194,10 +194,11 @@ profiles:
     # "progress": report_progress is an always-include base tool registered
     # under the "progress" category (tools.py) and treated as ALWAYS_INCLUDE by
     # the stage ranker, but the category filter dropped it for the backend.
-    # knowledge_skill (get_skill) is REQUIRED here: backend's codehub_open_pr is gated on
-    # api_contract_guard_consulted (stage_tool_preconditions below), which instructs the
-    # agent to call get_skill — so the tool MUST be granted or the gate is unsatisfiable
-    # (same class as the orchestrator release_readiness gate / PROPOSAL #14).
+    # knowledge_skill (get_skill) is REQUIRED here: skill-consult preconditions (e.g. the
+    # orchestrator release_readiness_consulted / deliver_project gate, PROPOSAL #14)
+    # instruct the agent to call get_skill — so the tool MUST be granted or the gate is
+    # unsatisfiable. (#35 retired the backend codehub_open_pr/api_contract_guard gate, but
+    # get_skill stays load-bearing for the remaining skill-consult gates.)
     tool_categories: ["file", "reasoning", "vision", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "knowledge_skill", "mcp_registry", "team_spawn", "team_reasoning", "runtime", "api", "api_contract", "database", "dependency", "reference", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "design", "progress"]
     # Backend reads the reference images too: every visible datum implies a
     # column, every actionable control implies an endpoint — the contract is
@@ -262,9 +263,9 @@ profiles:
         # code-presence layer ON TOP of the status gate: finish stays blocked
         # until each owned endpoint's route actually exists in the source.
         finish: endpoints_implemented_with_code
-        # skill-trigger L2: backend must consult api-contract-guard before
-        # opening a PR (engine-enforced; reuses the precondition lever).
-        codehub_open_pr: api_contract_guard_consulted
+        # #35: codehub_open_pr precondition removed — the tool is no longer surfaced
+        # (commit-only pipeline; PRs are dead). knowledge_skill grant stays (still used
+        # by release_readiness_consulted / deliver_project).
     # PR1.3 — kickoff stage allowlist. Same shape as verifier — the
     # legitimate backend kickoff toolbox is the meeting write + page
     # peek + read + finish + think. registryhub_register_endpoint /
@@ -334,7 +335,7 @@ profiles:
         - mcp_registry_register_tool
         - mcp_registry_register_consumer
         - codehub_commit
-        - codehub_resolve_conflict
+        # #35: codehub_resolve_conflict (pr_id-based) removed — not surfaced (commit-only).
         - codehub_resolve_merge_conflict
         - test_api
         # File-search / symbol lookup (PROPOSAL #6). The backend authors

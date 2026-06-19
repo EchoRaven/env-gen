@@ -608,8 +608,10 @@ def build_hub_pulse_prompt(pulse: Dict[str, Any]) -> Optional[str]:
             files = bs.get("dirty_files") or []
             lines.append(f"  - Working tree: **dirty** ({len(files)} file(s): {', '.join(files[:3])}{'...' if len(files) > 3 else ''})")
         if bs.get("commits_ahead_of_main", 0) > 0 and not ch.get("my_open_prs"):
-            lines.append(f"  - {bs['commits_ahead_of_main']} commits ahead of main, NO PR open")
-            lines.append("    -> consider `codehub_commit(...)` then `codehub_open_pr(...)`")
+            # #35: commit-only pipeline — committed work auto-integrates to the
+            # integration branch. Ahead-of-main with no PR is the NORMAL state; do NOT
+            # nag to open a PR (the tool is not surfaced and PR-mode is dead).
+            lines.append(f"  - {bs['commits_ahead_of_main']} commit(s) ahead — will auto-integrate (no PR needed)")
         for pr in ch.get("my_open_prs") or []:
             lines.append(f"  - Your open PR {pr['id']} -- {pr.get('merge_state', 'unknown')} ({pr.get('approvals_received', 0)}/{pr.get('approvals_needed', 0)} approvals)")
         if ch.get("prs_needing_my_review"):

@@ -33,13 +33,14 @@ HUB_TOOL_SURFACE: Dict[str, Dict[str, Set[str]]] = {
             "codehub_suggest_reviewers",
         },
         "writes": {
+            # #35: codehub_open_pr + codehub_resolve_conflict (pr_id-based) dropped — not
+            # surfaced to agents (commit-only pipeline; PRs are dead). Branch/worktree
+            # conflicts use codehub_resolve_merge_conflict.
             "codehub_commit",
             "codehub_create_release",
             "codehub_force_merge",
-            "codehub_open_pr",
             "codehub_record_commit",
             "codehub_register_repo",
-            "codehub_resolve_conflict",
             "codehub_resolve_merge_conflict",
             "codehub_revert_commit",
         },

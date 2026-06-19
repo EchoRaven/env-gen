@@ -274,7 +274,7 @@ class EnvGenAgent(
     # surface (the focus_hub return text listed it, but the JSON tool
     # schema sent to the LLM didn't include it).
     _CONFLICT_FLOW = {
-        "codehub_resolve_conflict",
+        # #35: codehub_resolve_conflict (pr_id-based) dropped — not surfaced (commit-only).
         "codehub_resolve_merge_conflict",
         "codehub_force_merge",
     }

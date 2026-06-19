@@ -344,7 +344,10 @@ def _bundle_codehub_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext
             "codehub_commit",
             "codehub_register_repo",
             "codehub_record_commit",
-            "codehub_open_pr",
+            # #35: codehub_open_pr NOT surfaced — the pipeline is commit-only (committed
+            # work auto-integrates via merge_agent_branch_to_main; PR-mode is dead). The
+            # tool CLASS + service method are kept (live-monitor HTTP shim / tests), just
+            # never offered to an agent.
             # Round 8h smoke #18 follow-up: backend/verifier need to
             # write build:* + validation:* checks to satisfy the
             # orchestrator delivery gate (build checklist + validation
@@ -360,7 +363,9 @@ def _bundle_codehub_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext
             "codehub_get_file_content",
             "codehub_list_prs",
             "codehub_list_checks",
-            "codehub_resolve_conflict",
+            # #35: codehub_resolve_conflict (pr_id-based) NOT surfaced — it needs a PR in
+            # conflict state, impossible in commit-only mode (run #34 "PR not found: 1").
+            # Branch/worktree conflicts use codehub_resolve_merge_conflict below.
             "codehub_resolve_merge_conflict",
             "codehub_revert_commit",
             "codehub_suggest_reviewers",
