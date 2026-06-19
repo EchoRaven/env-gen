@@ -275,31 +275,59 @@ class RemediationDispatcher:
                 pages = orch.hubs.registryhub.list_ui_pages() or {}
             except Exception:
                 pages = {}
-            # Build an actionable list: route → component, for the pages the
-            # blockers name (audit emits ``ui_page `<name>` declared but unusable``).
+            # PROPOSAL #51 (b): build a per-page directive that DISTINGUISHES the two
+            # failure modes (a lane that already wired the routes misread the old
+            # "wire pages" message as done — smoke-notes 2026-06-19 finished with 3
+            # stub pages). For a STUB (file exists, placeholder body) the fix is to
+            # WRITE the real component body + its apis_used — NOT to touch App.jsx.
+            # Carry the exact file path + apis_used so the lane doesn't guess (it
+            # hallucinated HomePage.jsx + wrote introspection scripts last run).
             lines: List[str] = []
+            n_stub = 0
             for name, pg in (pages.items() if isinstance(pages, dict) else []):
                 if not isinstance(pg, dict):
                     continue
-                if any(("`%s`" % name) in str(b) for b in blockers):
-                    route = pg.get("route") or pg.get("path") or "?"
-                    comp = pg.get("component") or "?"
-                    lines.append(f"  - {route}  →  <{comp} />")
+                _b = next((str(b) for b in blockers if ("`%s`" % name) in str(b)), None)
+                if _b is None:
+                    continue
+                route = pg.get("route") or pg.get("path") or "?"
+                comp = pg.get("component") or "?"
+                apis = ", ".join(pg.get("apis_used") or []) or "(its declared apis_used)"
+                # "declared but unusable" is the generic prefix on EVERY blocker — the
+                # SPECIFIC reason discriminates: a placeholder/stub body vs a not-wired
+                # route vs a missing component. Match only the stub-body reasons.
+                is_stub = any(s in _b.lower() for s in (
+                    "placeholder", "stub", "renders no real", "no real ui"))
+                if is_stub:
+                    n_stub += 1
+                    lines.append(
+                        f"  - {comp} (route {route}): STUB — the file "
+                        f"app/frontend/src/pages/{comp}.jsx EXISTS but is a placeholder "
+                        f"that renders no real UI. OPEN it and write the REAL {comp} body: "
+                        f"render data from [{apis}] via src/services/api.js "
+                        f"(data.items / data.item), with forms/lists + bound "
+                        f"onSubmit/onClick handlers. The route is already wired — editing "
+                        f"App.jsx will NOT fix this.")
+                else:
+                    lines.append(
+                        f"  - {comp} (route {route}): UNWIRED — add "
+                        f"`<Route path=\"{route}\" element={{<{comp}/>}} />` to "
+                        f"app/frontend/src/App.jsx (and author the component if missing, "
+                        f"calling [{apis}]).")
             page_list = "\n".join(lines) or "\n".join("  - " + str(b) for b in blockers[:15])
+            _verb = "are placeholder STUBS / unwired" if n_stub else "are unwired"
             task = orch.hubs.workhub.create_task(
-                title="Wire the declared pages into App.jsx routes (blocks delivery)",
+                title="Make the declared pages deliverable: fill stubs + wire routes (blocks delivery)",
                 description=(
-                    f"Delivery is HARD-BLOCKED: {len(blockers)} declared ui_page(s) "
-                    "are unwired — their declared route is not present in "
-                    "src/App.jsx (or the page component file is missing). api_smoke "
-                    "is green but the app is a near-blank shell — only the wired "
-                    "route(s) render. Wire EVERY page below into src/App.jsx "
-                    "react-router <Routes> (BrowserRouter + a <Route> per page, "
-                    "each pointing at its component), then finish:\n"
+                    f"Delivery is HARD-BLOCKED: {len(blockers)} declared ui_page(s) {_verb}. "
+                    "api_smoke is green but the UI is a near-blank shell. Wiring a route is "
+                    "NOT enough — each page must render its REAL UI and call its declared "
+                    "apis_used. Fix EACH below, then finish:\n"
                     f"{page_list}\n"
-                    "Author any page component that doesn't exist yet (read data via "
-                    "src/services/api.js → data.items / data.item). Delivery stays "
-                    "blocked until a gate tick shows every declared route wired."),
+                    "For STUB pages the fix is to WRITE THE COMPONENT BODY (open the named "
+                    ".jsx and replace the placeholder), NOT to edit App.jsx routes. Delivery "
+                    "stays blocked until every declared page renders real UI (a gate tick "
+                    "re-checks)."),
                 assignee="frontend",
                 agent="orchestrator",
                 priority="P0",
@@ -311,10 +339,10 @@ class RemediationDispatcher:
                 target_agent_id="frontend",
                 content=(
                     f"URGENT: delivery is blocked — {len(blockers)} declared page(s) "
-                    "are unwired in src/App.jsx (only a subset of routes render). "
-                    f"Claim task {(task or {}).get('id')} and add a react-router "
-                    "<Route> for EACH unwired page (home/explore/reels/messages/"
-                    "profile/…) pointing at its component, then finish."),
+                    f"{_verb} (api_smoke is green but the UI is a near-blank shell). Claim "
+                    f"task {(task or {}).get('id')}: for each STUB, OPEN its "
+                    "app/frontend/src/pages/<Component>.jsx and WRITE the real UI (render "
+                    "its apis_used) — do NOT just edit App.jsx routes — then finish."),
                 msg_type="task_ready",
                 priority="urgent",
                 persist=True,

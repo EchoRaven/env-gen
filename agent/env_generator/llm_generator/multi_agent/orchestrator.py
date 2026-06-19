@@ -1909,7 +1909,23 @@ class Orchestrator:
                 # unwired pages back to the frontend lane (it owns the UI) so the
                 # run can't deadlock with one route wired (gemini: 12 unwired,
                 # delivery stuck for hours with no path back to the owner).
-                if any("ui_page_unwired" in str(c) for c in gate.get("failed_checks") or []):
+                # PROPOSAL #51 (a): the unwired-pages dispatch is ONE-SHOT per milestone,
+                # and the validation-tied rearm (rearm_owner_dispatch) STOPS once api_smoke
+                # passes — but ui_page_unwired is a DELIVERY-gate check evaluated AFTER that,
+                # so a frontend that finished with stubs is never re-engaged (smoke-notes
+                # 2026-06-19: 1 dispatch, lane misread it + idled, stuck to cap). Periodically
+                # re-arm so the (sharper, #51b) dispatch re-fires + re-wakes the idle lane
+                # while the stubs persist. ~every 8 declines (≈8 min); the dispatch is
+                # idempotent within each re-arm window.
+                _uw = any("ui_page_unwired" in str(c) for c in gate.get("failed_checks") or [])
+                if _uw:
+                    _n = getattr(self, "_unwired_persist_count", 0) + 1
+                    self._unwired_persist_count = _n
+                    if _n % 8 == 0:
+                        self._unwired_ui_pages_dispatched = None  # re-arm the one-shot guard
+                else:
+                    self._unwired_persist_count = 0
+                if _uw:
                     try:
                         # ROOT-CAUSE FIRST: if the pages exist but the lane built the
                         # whole app at the repo root (./src) instead of app/frontend/,
