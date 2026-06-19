@@ -145,8 +145,14 @@ profiles:
     # delivering (engine-enforced; reuses the precondition lever).
     stage_tool_preconditions:
       action:
-        deliver_project: release_readiness_consulted
-        report_completion: release_readiness_consulted
+        # #36-cluster (run #35): phase-gate delivery so the orchestrator cannot attempt
+        # deliver_project / submit_retro during KICKOFF/IMPLEMENTATION (it called them
+        # mid-kickoff "to finalize the run" — the deterministic gate blocked the real
+        # release but it wasted rounds + ended its wake). release_phase_and_readiness =
+        # delivery_phase_reached (validation-ready) AND release_readiness_consulted.
+        deliver_project: release_phase_and_readiness
+        report_completion: release_phase_and_readiness
+        submit_retro: delivery_phase_reached
         # FIX #28: bound ask_agent so the orchestrator can't interrogate the
         # lanes into a no-progress ping-pong that derails their implementation
         # (instagram-core froze after 28 questions). Self-resets on real progress.

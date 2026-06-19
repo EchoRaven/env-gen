@@ -469,6 +469,20 @@ def delivery_phase_reached(agent: Any, tool_name: str, tool_args: Dict[str, Any]
     )
 
 
+def release_phase_and_readiness(agent: Any, tool_name: str, tool_args: Dict[str, Any]) -> Optional[str]:
+    """#36-cluster (run #35): deliver_project / report_completion require BOTH the
+    VALIDATION phase (delivery_phase_reached — every business endpoint implemented) AND a
+    release-readiness skill consult. They were only skill-gated (release_readiness_consulted),
+    so the orchestrator called deliver_project mid-KICKOFF ("Round 10 … finalize this run")
+    — harmless (the deterministic delivery gate blocked the real release) but a wasted-round
+    loop that ended its wake prematurely. Phase gate FIRST so premature delivery during
+    kickoff/implementation is impossible, not merely discouraged. Never raises."""
+    phase_block = delivery_phase_reached(agent, tool_name, tool_args)
+    if phase_block:
+        return phase_block
+    return release_readiness_consulted(agent, tool_name, tool_args)
+
+
 def kickoff_finalized(agent: Any, tool_name: str, tool_args: Dict[str, Any]) -> Optional[str]:
     """PROPOSAL #24 — block premature delivery/validation tools during KICKOFF.
 
@@ -548,6 +562,7 @@ PRECONDITION_REGISTRY: Dict[str, PreconditionFn] = {
     "frontend_canonical_root": frontend_canonical_root,
     "orchestrator_ask_cap": orchestrator_ask_cap,
     "release_readiness_consulted": release_readiness_consulted,
+    "release_phase_and_readiness": release_phase_and_readiness,
     "api_contract_guard_consulted": api_contract_guard_consulted,
     # PROPOSAL #24 — run-phase hygiene (EXTEND existing hub-derived gates):
     "kickoff_finalized": kickoff_finalized,

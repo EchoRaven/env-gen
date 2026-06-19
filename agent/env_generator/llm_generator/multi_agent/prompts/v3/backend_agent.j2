@@ -73,7 +73,7 @@
         "inbox": "ONCE at start of step. check_inbox(limit=20). Look for: task_ready (your trigger), issue events on your PRs (need inline-comment fix cycle), send_message from peers asking for endpoint clarification.",
         "planning": "Briefly state your strategy in one line: direct mode (small scope) vs team mode (3+ route groups -> parallel_execute). Reference your <delegation_rubric>.",
         "retrieve_context": "OPTIONAL. ONE retrieve_context query if a past API pattern is plausibly relevant. Default to skip — your spec + DB schema usually contain enough.",
-        "action": "Execute the implementation step (write file, register endpoint, send message, etc). PREFER one tool call per step, but a tightly-coupled batch (main.py + models.py + schemas.py + database.py + Dockerfile + pyproject.toml written together) is acceptable.",
+        "action": "Execute the implementation step: register endpoints/tables to the contract, write custom business logic in custom_routes.py, send messages. The framework GENERATES main.py/models.py/schemas.py/database.py/Dockerfile/pyproject from your contract — do NOT write those (the write is denied + discarded). custom_routes.py is your one editable code file.",
         "hub_commit_gate": "Register every NEW or CHANGED endpoint to RegistryHub before finishing the step. registryhub_register_endpoint with schema.response_key set. If you implemented an MCP server, also call mcp_registry_register_server + _register_tool.",
         "knowledge_sync": "Default: skip. Only call submit_learning(...) if you genuinely discovered a reusable cross-project pattern (per the rubric in [[project-envgen-prompt-v3-skeleton]]). Run-specific status is NOT a lesson."
     },
@@ -107,7 +107,7 @@
 "- `inputs_from` (table names, endpoint specs) and `outputs_to` (which routers/endpoints registered in main.py)\n"
 "- `acceptance_criteria` (lint clean, response_key matches design, register to RegistryHub)\n"
 "\n"
-"You retain ownership of shared infra: `main.py`, `database.py`, `models.py`, `schemas.py`, pyproject.toml, Dockerfile (the AS modules are runtime-owned — off-limits to everyone). After workers finish, you integrate endpoints into main.py + run lint + register BUSINESS endpoints + notify frontend.\n"
+"Shared infra (`main.py`, `database.py`, `models.py`, `schemas.py`, `pyproject.toml`, `Dockerfile`, and the AS modules) is FRAMEWORK-OWNED — generated from your contract and off-limits to everyone (writes are denied + overwritten). After workers finish, you register BUSINESS endpoints + tables to the contract, put any custom logic in `custom_routes.py`, run lint, and notify frontend — the framework regenerates main.py et al. from what you registered.\n"
 "\n"
 "**Direct mode** when:\n"
 "- ≤2 small route groups (overhead > parallelism).\n"
@@ -384,7 +384,7 @@ The `response.tables=["posts"]` entries cross-reference `data_model.tables[0].na
 
 START NOW with Step 1.
 
-FINAL PROTOCOL (this overrides anything above if in doubt): declare your 'backend' section ONE ITEM PER CALL with the typed declare tools — declarations merge automatically: `kickoff_declare_endpoint(meeting_id=..., milestone_index=..., method='GET', path='/api/feed', response_key='items', auth_required=true) — ONCE PER ENDPOINT; kickoff_declare_table(meeting_id=..., milestone_index=..., name='posts', columns=['id:text:pk','author_id:text:fk=users.id','caption:text']) — ONCE PER TABLE`. Scalar fields (e.g. auth) go in one small `workhub_add_meeting_decision(..., decision={'section': 'backend', 'content': {...}})`. Then `finish()`. NEVER one giant inline payload. Never cancel/fail workhub tasks here.
+FINAL PROTOCOL (this overrides anything above if in doubt): declare your 'backend' section ONE ITEM PER CALL with the typed declare tools — declarations merge automatically: `kickoff_declare_endpoint(meeting_id=..., milestone_index=..., method='GET', path='/api/feed', response_key='items', auth_required=true) — ONCE PER ENDPOINT; kickoff_declare_table(meeting_id=..., milestone_index=..., name='posts', columns=['id:text:pk','author_id:text:fk=users.id','caption:text']) — ONCE PER TABLE`. Your `backend` section is **endpoints + tables ONLY** — do NOT add auth/JWT/token scalars (`model`, `token_location`, `auth_required`, etc.): **auth is FRAMEWORK-OWNED** (the generated stack embeds an OAuth2 AS minting RS256 JWTs), so those keys are rejected as non-contract and waste a round. If you genuinely need a non-auth scalar for your section, put it in one small `workhub_add_meeting_decision(..., decision={'section': 'backend', 'content': {...}})`. Then `finish()`. NEVER one giant inline payload. Never cancel/fail workhub tasks here.
 </kickoff_response_briefing>
 
 {% endmacro %}
@@ -584,7 +584,7 @@ START NOW with Step 1.
    semantic XML so they sit in the right structural position. #}
 {% macro backend_implementation_templates() %}
 <stack>
-**FastAPI (Python 3.11) + Postgres.** Target = a forgingground/agentsuite sandbox env (see `docs/target_env_architecture.md`). The env **IS its own OAuth2 Authorization Server** (zoom-style): it mints RS256 access tokens and exposes a JWKS. Emit the modular **calendar-style** layout under `app/backend/`: `main.py`, `models.py` (SQLAlchemy ORM), `schemas.py` (Pydantic v2), `database.py`, `sandbox_init.py`, `Dockerfile`, `pyproject.toml`, `reset.sh`. Endpoints are plain **sync `def`** functions using `Depends(get_db)` + `Depends(get_current_user)`. **psycopg3** driver (`postgresql+psycopg://`), NOT psycopg2.
+**FastAPI (Python 3.11) + Postgres.** Target = a forgingground/agentsuite sandbox env (see `docs/target_env_architecture.md`). The env **IS its own OAuth2 Authorization Server** (zoom-style): it mints RS256 access tokens and exposes a JWKS. The **FRAMEWORK** generates this modular **calendar-style** layout under `app/backend/` FROM YOUR REGISTERED CONTRACT — `main.py`, `models.py` (SQLAlchemy ORM), `schemas.py` (Pydantic v2), `database.py`, `sandbox_init.py`, `Dockerfile`, `pyproject.toml`, `reset.sh` — and OVERWRITES any hand-written copy. **You do NOT write these files** (reference only, shown so you know the shape). In particular the **Dockerfile + pyproject are framework-owned and ABSENT from your worktree until integration — do NOT read or create them** (the write is denied + discarded); the framework's Dockerfile uses **`psycopg[binary]`** (NO `libpq-dev`/`gcc`/`apt-get` needed). Endpoints are plain **sync `def`** functions using `Depends(get_db)` + `Depends(get_current_user)`. **psycopg3** driver (`postgresql+psycopg://`), NOT psycopg2. **Your one editable file is `custom_routes.py`.**
 
 **🔒 RUNTIME-OWNED — already git-tracked in your worktree AND registered in RegistryHub. DO NOT AUTHOR or edit them:**
 - `jwt_manager.py` — RSA keypair + RS256 signing + JWKS (`JWTManager`, `ALGORITHM`).
