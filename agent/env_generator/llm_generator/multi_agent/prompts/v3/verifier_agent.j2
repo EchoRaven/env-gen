@@ -499,7 +499,7 @@ helpers + ``finish``, nothing else):
 START by re-reading the requirements block above + (if M>0) pulling
 RegistryHub for prior-milestone artifacts.
 
-FINAL PROTOCOL (this overrides anything above if in doubt): declare your 'verifier' section ONE ITEM PER CALL with the typed declare tools — declarations merge automatically: `kickoff_declare_predicate(meeting_id=..., milestone_index=..., id='feed_renders', description='GET /api/feed returns items after a post is created', kind='api_smoke', flow_id='flow_post') — ONCE PER PREDICATE`. Scalar fields (e.g. auth) go in one small `workhub_add_meeting_decision(..., decision={'section': 'verifier', 'content': {...}})`. Then `finish()`. NEVER one giant inline payload. Never cancel/fail workhub tasks here.
+FINAL PROTOCOL (this overrides anything above if in doubt): declare your 'verifier' section ONE ITEM PER CALL with the typed declare tools — declarations merge automatically. **The example below is from an UNRELATED domain, shown only for SHAPE — derive every id/description/path from THIS app's actual registered endpoints; NEVER copy `/api/feed`/`flow_post` unless THIS app has them:** `kickoff_declare_predicate(meeting_id=..., milestone_index=..., id='<resource>_renders', description='GET /api/<your-resource> returns items after one is created', kind='api_smoke', flow_id='<your_flow>') — ONCE PER PREDICATE`. Scalar fields (e.g. auth) go in one small `workhub_add_meeting_decision(..., decision={'section': 'verifier', 'content': {...}})`. Then `finish()`. NEVER one giant inline payload. Never cancel/fail workhub tasks here.
 </kickoff_response_briefing>
 
 {% endmacro %}
