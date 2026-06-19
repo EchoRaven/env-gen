@@ -418,6 +418,57 @@ def kickoff_finalized_signal(hubs: Any, agent: Any = None) -> bool:
     return False
 
 
+def validation_ready_signal(hubs: Any, agent: Any = None) -> bool:
+    """PRE-LAUNCH AUDIT F1/F5 — STICKY "is the run VALIDATION-ready?" predicate.
+
+    True once every business endpoint is implemented (the IMPL→VALIDATION boundary the
+    delivery driver + the verifier's validation trigger already use). LATCHED per-agent
+    (``_validation_ready_latched``) so it cannot REGRESS mid-validation if a late
+    ``defined`` endpoint is registered — ``all_business_endpoints_implemented`` is NOT
+    monotonic (audit F5), so a fresh read alone could re-block a tool after validation
+    began; the latch makes it sticky like ``_kickoff_bootstrapped``. Never raises."""
+    if getattr(agent, "_validation_ready_latched", False):
+        return True
+    try:
+        rh = getattr(hubs, "registryhub", None)
+        if rh is None or not hasattr(rh, "get_endpoints"):
+            return False
+        from ...runtime.lifecycle import all_business_endpoints_implemented
+        if all_business_endpoints_implemented(rh.get_endpoints() or {}):
+            if agent is not None:
+                try:
+                    agent._validation_ready_latched = True
+                except Exception:
+                    pass
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def delivery_phase_reached(agent: Any, tool_name: str, tool_args: Dict[str, Any]) -> Optional[str]:
+    """PRE-LAUNCH AUDIT F1 — block the orchestrator's delivery/validation LLM tools
+    (deliverability_check / run_start / run_validation) until the run is VALIDATION-ready.
+
+    They were gated only on ``kickoff_finalized``, which opens the instant
+    finalize_kickoff registers endpoints — i.e. all through IMPLEMENTATION, where there
+    is nothing built to validate/deliver. So the orchestrator polled deliverability_check
+    ×48 (run #28/#31) and fired run_start = ``docker compose up`` against a half-built
+    tree. Gate them on the STICKY validation-ready signal instead. The DETERMINISTIC
+    framework validate/deliver drivers run on a SEPARATE run()-loop path and never call
+    these LLM tools, so delivery itself is unaffected. Never raises."""
+    if validation_ready_signal(getattr(agent, "_hubs", None), agent):
+        return None
+    return (
+        f"{tool_name} is unavailable until VALIDATION: not every business endpoint is "
+        f"implemented yet, so there is nothing to validate or deliver. During "
+        f"IMPLEMENTATION your job is to COORDINATE the lanes (answer questions, dispatch "
+        f"failing checks, keep work flowing) — the framework validates + delivers "
+        f"AUTOMATICALLY once every endpoint is implemented; you do not call {tool_name} "
+        f"to trigger it."
+    )
+
+
 def kickoff_finalized(agent: Any, tool_name: str, tool_args: Dict[str, Any]) -> Optional[str]:
     """PROPOSAL #24 — block premature delivery/validation tools during KICKOFF.
 
@@ -501,6 +552,8 @@ PRECONDITION_REGISTRY: Dict[str, PreconditionFn] = {
     # PROPOSAL #24 — run-phase hygiene (EXTEND existing hub-derived gates):
     "kickoff_finalized": kickoff_finalized,
     "validation_phase_reached": validation_phase_reached,
+    # PRE-LAUNCH AUDIT F1 — orchestrator delivery/validation tools gate on validation-ready:
+    "delivery_phase_reached": delivery_phase_reached,
 }
 
 

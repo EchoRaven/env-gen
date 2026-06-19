@@ -1193,6 +1193,15 @@ class Orchestrator:
                                 orchestrator_lane._project_delivered_event.wait(),
                                 timeout=60.0,
                             )
+                            # B1 (pre-launch audit): the event may have been set by the
+                            # LLM's deliver_project, which only flags the LANE — it does
+                            # NOT cut a release. _maybe_framework_deliver (the SOLE
+                            # create_release caller) is below this break, so without this
+                            # the run could exit "delivered" with NO release tag. Run it
+                            # once before breaking — it's idempotent (guards on the
+                            # ORCHESTRATOR's self._project_delivered, distinct from the
+                            # lane flag the tool set), so it cuts the release exactly once.
+                            await self._maybe_framework_deliver()
                             break
                         except asyncio.TimeoutError:
                             pass

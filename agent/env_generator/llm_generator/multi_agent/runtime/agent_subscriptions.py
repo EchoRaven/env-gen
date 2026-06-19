@@ -64,12 +64,12 @@ DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
         ("registryhub", "endpoint_defined", "normal"),
         ("registryhub", "endpoint_implemented", "normal"),
         ("registryhub", "endpoint_schema_changed", "high"),
-        # PROPOSAL #25 B1: RegistryHub emits ``table_registered`` (registryhub.py
-        # register_table), NEVER ``table_defined`` — the old line was a DEAD
-        # subscription, so the backend was never told its tables were registered
-        # (only the later ``table_implemented``). Subscribe to the name actually
-        # emitted so the owning backend hears the initial table registration.
-        ("registryhub", "table_registered", "normal"),
+        # PROPOSAL #25 B1: the backend hears ``table_registered`` (the emitted name;
+        # ``table_defined`` was a DEAD sub). PRE-LAUNCH AUDIT R2: moved to
+        # INBOX_ONLY_SUBSCRIPTIONS below — ``table_registered`` fires on EVERY
+        # register_table (incl. idempotent re-registration in the per-tick heal/scaffold
+        # loop), so a LIVE sub re-woke the backend each tick (amplification). inbox_only
+        # keeps the backend INFORMED (seen at next hub_pulse) without the wakeup churn.
         ("registryhub", "table_implemented", "normal"),
         ("workhub", "task_created", "high"),
         ("codehub", "review_requested", "high"),
@@ -153,6 +153,10 @@ DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
 INBOX_ONLY_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
     "backend": [
         ("registryhub", "framework_decision", "normal"),
+        # PRE-LAUNCH AUDIT R2: table_registered fires on every (idempotent)
+        # register_table; inbox_only keeps the backend informed at its next pulse
+        # without re-waking it each heal-loop tick (the #25 B1 intent, minus the churn).
+        ("registryhub", "table_registered", "normal"),
     ],
     "frontend": [
         ("registryhub", "framework_decision", "normal"),

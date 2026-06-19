@@ -164,17 +164,21 @@ class AgentStepToolingMixin:
         always_include = self.ACTION_STAGE_ALWAYS_INCLUDE.get(stage_name, set())
         if stage_allow:
             always_include = set(always_include) & stage_allow_set
-        # PROPOSAL #28 F2: during KICKOFF, do NOT force-offer the validation/delivery
-        # tools — they're blocked by kickoff_finalized anyway, so surfacing them just
-        # wastes a round (the orchestrator, which has no kickoff allowlist, otherwise
-        # attempts run_validation/deliverability_check every kickoff round). Strictly
-        # gated on the MONOTONIC kickoff signal → a no-op post-kickoff (delivery tools
-        # stay force-offered, so the smoke #9/#41 retro-gate crowd-out fix is preserved).
+        # PROPOSAL #28 F2 + PRE-LAUNCH AUDIT F1: do NOT force-offer the validation/
+        # delivery tools until the run is VALIDATION-ready. Originally gated on the
+        # kickoff signal (defer only during kickoff), but the orchestrator then polled
+        # run_validation/deliverability_check all through IMPLEMENTATION too (nothing
+        # built → empty/partial; run #28/#31). Gate on the STICKY validation-ready signal
+        # so these stay deferred through kickoff AND implementation and only surface once
+        # every business endpoint is implemented — when there's actually something to
+        # validate/deliver (matches the delivery_phase_reached precondition). This only
+        # removes the force-PRIORITY; an allowlisted tool can still be ranked if a lane
+        # genuinely needs it. Sticky → no re-defer if a late endpoint regresses (F5).
         defer = getattr(self, "_KICKOFF_DEFER_TOOLS", None)
         if defer and always_include:
             try:
-                from ..preconditions import kickoff_finalized_signal
-                if not kickoff_finalized_signal(getattr(self, "_hubs", None), self):
+                from ..preconditions import validation_ready_signal
+                if not validation_ready_signal(getattr(self, "_hubs", None), self):
                     always_include = set(always_include) - defer
             except Exception:
                 pass

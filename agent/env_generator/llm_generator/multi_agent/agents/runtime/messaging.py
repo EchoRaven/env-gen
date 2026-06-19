@@ -743,11 +743,23 @@ Start by thinking about what might cause this issue.
             # `max_steps_per_task_ready` YAML flag so a system-prompt-ignoring
             # LLM is still hard-bounded.
             max_steps = getattr(self, "_max_steps_per_task_ready", 2000)
-            await self.run_agentic_loop(
-                system_prompt=system_prompt,
-                initial_prompt=task_prompt,
-                max_steps=max_steps,
-            )
+            # PRE-LAUNCH AUDIT R1: pin _active_phase="implementation" around the loop so
+            # the lane's `implementation:action` stage allowlist BINDS on this urgent
+            # task_ready path too. process_task pins it (base.py), but this interrupt
+            # path called run_agentic_loop directly with _active_phase=None → the
+            # verifier's validation allowlist silently missed and it fell back to the
+            # ~10-slot ranker (the crowd-out #28's allowlist was meant to prevent).
+            # Save/restore so resident-loop state is untouched.
+            _prev_active_phase = getattr(self, "_active_phase", None)
+            self._active_phase = "implementation"
+            try:
+                await self.run_agentic_loop(
+                    system_prompt=system_prompt,
+                    initial_prompt=task_prompt,
+                    max_steps=max_steps,
+                )
+            finally:
+                self._active_phase = _prev_active_phase
         except Exception as e:
             self._logger.error(f"[{self.agent_id}] Task failed: {e}")
         finally:
