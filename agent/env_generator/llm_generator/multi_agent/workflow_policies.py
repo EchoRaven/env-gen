@@ -635,7 +635,7 @@ class HubConsistencyPolicy(BaseWorkflowPolicy):
                 return (
                     f"You wrote {len(relevant)} page file(s) [{sample}{more}] "
                     f"but registered 0 ui_pages as RegistryHub ui_pages. Call "
-                    f"`workhub_register_ui_page(name=..., path=..., "
+                    f"`registryhub_register_ui_page(name=..., path=..., "
                     f"status='implemented', components=[...])` for each."
                 )
             return None

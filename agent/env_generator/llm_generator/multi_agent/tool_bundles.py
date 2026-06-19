@@ -394,17 +394,17 @@ def _bundle_workhub_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext
             "workhub_create_document",
             # Re-audit (2026-05-29, HIGH #3): HubConsistencyPolicy's
             # workhub_pages gate explicitly tells the agent to call
-            # ``workhub_register_ui_page(name=..., path=...,
+            # ``registryhub_register_ui_page(name=..., path=...,
             # status='implemented')`` to clear the
             # "WorkHub has 0 pages registered" block — but the tool
             # was missing from this bundle, so the gate was telling
             # the agent to call a tool it didn't have, soft-locking
             # frontend/design at finish. ``_count_owned_pages`` only
             # counts ``kind=="ui_page"`` entries, and
-            # ``workhub_register_ui_page`` is the only call that writes
+            # ``registryhub_register_ui_page`` is the only call that writes
             # that kind; ``workhub_create_document`` writes generic
             # coordination documents and cannot satisfy the gate.
-            "workhub_register_ui_page",
+            "registryhub_register_ui_page",
             "workhub_task",
             "workhub_fail_task",
             "workhub_cancel_task",
@@ -413,7 +413,7 @@ def _bundle_workhub_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext
             "workhub_available_tasks",
             "workhub_get_document",
             "workhub_list_documents",
-            "workhub_list_ui_pages",
+            "registryhub_list_ui_pages",
             "workhub_list_ui_components",
             "workhub_link_task_to_pr",
             "workhub_link_task_to_apis",

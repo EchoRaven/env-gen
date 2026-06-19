@@ -751,7 +751,7 @@ def build_hub_pulse_prompt(pulse: Dict[str, Any]) -> Optional[str]:
             lines.append(
                 f"- You've written {count} page/component file(s) "
                 f"(e.g. {sample}) but RegistryHub shows **0 ui_pages owned by you**. "
-                f"Call `workhub_register_ui_page(...)` for each."
+                f"Call `registryhub_register_ui_page(...)` for each."
             )
 
     stale = pulse.get("stale_tasks") or []

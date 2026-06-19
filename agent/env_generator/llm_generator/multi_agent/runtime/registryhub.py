@@ -1092,7 +1092,7 @@ class RegistryHub:
             # A3 (2026-06-12): widened from {frontend, orchestrator} when
             # workhub.update_ui_page became a thin delegate to this method.
             # The old workhub path was UNGATED and its shadow-write swallowed
-            # PermissionError, so EVERY agent holding the workhub_register_ui_page
+            # PermissionError, so EVERY agent holding the registryhub_register_ui_page
             # tool (orchestrator/backend/frontend/verifier/debugger — see
             # tool_bundles._bundle_workhub_tools grants) could write a ui_page.
             # backend/verifier/debugger are added here to preserve that
@@ -1131,22 +1131,13 @@ class RegistryHub:
             "metadata": {**(existing.get("metadata") or {}), **(metadata or {})},
             "_updated_by": agent, "_updated_at": now,
         }
-        # PROPOSAL #47: reject a MALFORMED ui_page. An empty/garbage route or an empty
-        # component can NEVER be wired into App.jsx, so it sits as a permanent
-        # deliverability_ui_page_unwired blocker that no remediation can clear
-        # (smoke-notes 2026-06-19: a 'login_page' entry with route='' component='' — plus
-        # a prior run's route='src/pages/LoginPage.jsx' file-path garbage). The resolved
-        # route MUST start with '/' and the component MUST be non-empty. Guarded on the
-        # RESOLVED rec (so a status-only update inheriting a valid existing record passes).
-        _r = str(rec.get("route") or "").strip()
-        _c = str(rec.get("component") or "").strip()
-        if not _r.startswith("/") or not _c:
-            return {"error": (
-                f"ui_page '{name}' rejected (malformed): needs a route starting with '/' "
-                f"AND a component name — got route={rec.get('route')!r}, "
-                f"component={rec.get('component')!r}. Register the page with its real "
-                f"App.jsx route + component, e.g. register_ui_page(name='notes_list', "
-                f"route='/notes', component='NotesList').")}
+        # PROPOSAL #47 (v2): a thin/placeholder ui_page (no route/component yet) is a
+        # SUPPORTED design-phase registration (scan_pages_without_files +
+        # test_page_without_path_field_is_silently_ignored treat it as a placeholder), so
+        # registration stays PERMISSIVE here. The malformed-entry handling that keeps a
+        # route-less placeholder from permanently blocking delivery now lives in the
+        # delivery gate's ui_page_unwired computation (it skips entries with no real
+        # '/'-route) — not at registration.
         if not existing:
             rec["created_by"] = agent
             rec["created_at"] = now

@@ -214,7 +214,7 @@ class EnvGenAgent(
         "registryhub_register_endpoint",
         "registryhub_register_table",
         "registryhub_register_consumer",
-        "workhub_register_ui_page",
+        "registryhub_register_ui_page",
         "workhub_create_document",
         "workhub_share_implementation",
         "workhub_task",       # create/claim/complete — only way to mark task done
@@ -224,7 +224,7 @@ class EnvGenAgent(
         # class as the original _HUB_REGISTRATION rationale — the LLM
         # ranker (action.py:_apply_hub_focus → tooling.py:_stage_tool_names
         # → rank_tool_names, limit=10) was dropping these as semantically
-        # similar to workhub_register_ui_page / workhub_task, so attendees
+        # similar to registryhub_register_ui_page / workhub_task, so attendees
         # following the kickoff_response_prompt macro's "call
         # workhub_add_meeting_decision" instruction could not find the
         # tool in their per-step surface and finished blocked. Live

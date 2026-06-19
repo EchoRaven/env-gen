@@ -320,7 +320,7 @@ profiles:
         - report_progress
         - workhub_task
         - workhub_list_tasks
-        - workhub_register_ui_page
+        - registryhub_register_ui_page
         - workhub_create_document
         - workhub_share_implementation
         - workhub_fail_task
@@ -861,7 +861,7 @@ profiles:
       - registryhub_update_schema
       - registryhub_update_table_schema
       - registryhub_deprecate_endpoint
-      - workhub_register_ui_page
+      - registryhub_register_ui_page
     # PROPOSAL #24 — give the debugger the SAME hub-derived phase gates the impl
     # lanes already have, so it stops doing out-of-stage work. The debugger had NO
     # workflow_policies and NO stage_tool_preconditions, so it woke on the

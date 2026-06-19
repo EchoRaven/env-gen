@@ -401,6 +401,14 @@ def ui_page_delivery_blockers(frontend_src: Any, workhub: Any) -> List[str]:
             except Exception:
                 continue
         for name, page in pages.items():
+            # PROPOSAL #47 (v2): a thin/placeholder ui_page with no real '/'-route is a
+            # design-phase stub (registration is intentionally permissive), not a
+            # deliverable page — it has no App.jsx route to wire, so skip it here instead
+            # of letting a route-less garbage entry permanently inflate ui_page_unwired
+            # (smoke-notes 2026-06-19: a 'login_page' entry with route='' did exactly that).
+            # A genuinely-declared page always carries a '/'-anchored route.
+            if not isinstance(page, dict) or not str(page.get("route") or "").strip().startswith("/"):
+                continue
             _ok, missing = audit_ui_page(src, page, _src_cache=cache)
             hard = [m for m in missing if _is_hard_miss(m)]
             if hard:
