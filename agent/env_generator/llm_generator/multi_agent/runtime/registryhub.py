@@ -198,6 +198,19 @@ class RegistryHub:
             p = _re.sub(r"(?<=/):([A-Za-z_][A-Za-z0-9_]*)", r"{\1}", p)
         return p
 
+    @staticmethod
+    def _canonical_response_key(method: str, path: str) -> str:
+        """PROPOSAL #50: the canonical response envelope key the route_projector emits —
+        ``item`` (non-GET / ``/me`` / param-tail) else ``items`` (collection GET). Mirrors
+        kickoff ``_canonical_response_key`` (#46); kept here too so the REGISTRY layer
+        (which every registration flows through, incl. backend impl-time) enforces it."""
+        import re as _re
+        m = str(method or "GET").upper().strip()
+        last = next((p for p in reversed(str(path or "").strip("/").split("/")) if p), "")
+        is_param = (last.startswith("{") and last.endswith("}")) or last.startswith(":")
+        single = m != "GET" or last == "me" or is_param
+        return "item" if single else "items"
+
     def register_endpoint(self, method: str, path: str, schema: dict = None, provider: str = "", agent: str = "", status: str = "defined", **metadata: Any) -> dict:
         # Ownership: backend owns endpoint registration; the kickoff
         # coordinator (actor='orchestrator') also registers the
@@ -238,6 +251,25 @@ class RegistryHub:
             "_updated_by": agent,
             "_updated_at": now,
         }
+        # PROPOSAL #50: enforce the canonical response envelope key (item/items — what the
+        # projector emits + the delivery gate requires) for BUSINESS endpoints on EVERY
+        # registration. #46 canonicalizes at KICKOFF, but the backend registers endpoints
+        # at IMPL time (e.g. an invented /api/dummy_trigger with response_key='triggered')
+        # which bypasses kickoff → the gate's business_response_key_noncanonical
+        # hard-blocks delivery (smoke-notes 2026-06-19: the FINAL remaining check before the
+        # first create_release was a backend-registered non-canonical key). Scope mirrors
+        # #46 + the gate's exemption: business /api/ + non-exempt kind only (control-plane
+        # keeps its declared key — clobbering it would cause false contract-drift). Only a
+        # PRESENT non-canonical key is rewritten; an absent key stays absent (gate-exempt).
+        _md = endpoint["metadata"]
+        _rk = _md.get("response_key")
+        if (isinstance(_rk, str) and _rk and _rk not in ("item", "items")
+                and str(endpoint["path"]).startswith("/api/")
+                and str(_md.get("kind") or "").strip().lower() not in {
+                    "auth", "oauth", "infra", "spine", "control_plane", "custom"}
+                and not (_md.get("custom") or _md.get("custom_route"))):
+            _md["response_key"] = self._canonical_response_key(
+                endpoint["method"], endpoint["path"])
         old_full = {
             **((old or {}).get("schema") or {}),
             "method": (old or {}).get("method"),
