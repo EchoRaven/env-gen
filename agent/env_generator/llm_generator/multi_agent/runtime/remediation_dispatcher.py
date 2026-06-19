@@ -402,10 +402,14 @@ class RemediationDispatcher:
                 orch._logger.warning(
                     "GATE-CHECK remediation dispatched to %s (task %s): %s",
                     owner, (task or {}).get("id"), name)
-            if uncovered:
+            # Dedup to once-per-CHANGE (mirrors #45) — _maybe_framework_deliver runs every
+            # ≤60s loop, so an undeduped log would spam while the same checks persist.
+            _uncov = sorted(uncovered)
+            if _uncov and _uncov != getattr(orch, "_gatecheck_uncovered_last", None):
+                orch._gatecheck_uncovered_last = _uncov
                 orch._logger.warning(
                     "Delivery declined on gate check(s) with NO remediation owner "
-                    "(needs a fix at source or an owner mapping): %s", sorted(uncovered))
+                    "(needs a fix at source or an owner mapping): %s", _uncov)
         except Exception as exc:
             orch._logger.error("gate-level check dispatch failed: %s", exc)
 
