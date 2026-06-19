@@ -623,51 +623,67 @@ def resolve_merge_conflict_via_strategy(
         line for line in (st_out or "").splitlines()
         if rc_st == 0 and line.strip() and not line.startswith("??")
     ]
+    repo_stashed = False
     if tracked_dirty:
         # Determine the currently-checked-out branch deterministically.
         rc_cur, cur_out, _ce = _run_git(["symbolic-ref", "--short", "HEAD"], cwd=repo)
         current_branch = cur_out.strip() if rc_cur == 0 else ""
-        # The WIP belongs to the agent's work, so it must land on the AGENT
-        # branch — never on main_branch. If we are not already on the agent
-        # branch, switch to it; git carries the uncommitted edits across a
-        # checkout when they don't conflict. (If repo_root were dirty ON
-        # main_branch we must NOT commit there.)
-        if current_branch != agent_branch:
-            sc_a, _soa, se_a = _run_git(["checkout", agent_branch], cwd=repo)
-            if sc_a != 0:
-                # Could not move the WIP onto the agent branch (e.g. the dirty
-                # file also differs on agent_branch). Refuse to drop the
-                # agent's work — report so the operator can recover rather than
-                # losing edits or committing onto the wrong branch.
-                return False, (
-                    f"strategic merge blocked: uncommitted changes in repo_root "
-                    f"on {current_branch or '<detached>'} could not be moved onto "
-                    f"{agent_branch} before integrating ({se_a.strip()})"
+        if current_branch == agent_branch:
+            # Genuinely ON the agent branch (a non-worktree caller): the dirt is
+            # the agent's own WIP → commit it onto the agent branch so it becomes
+            # part of the very branch we're about to integrate (never onto
+            # main_branch). git carries the edits; we author as the agent.
+            wip_author = agent_id or agent_branch.split("/")[-1]
+            wip_email = f"{wip_author}@env-gen.local"
+            wip_env = {
+                **os.environ,
+                "GIT_AUTHOR_NAME": wip_author,
+                "GIT_AUTHOR_EMAIL": wip_email,
+                "GIT_COMMITTER_NAME": wip_author,
+                "GIT_COMMITTER_EMAIL": wip_email,
+            }
+            _run_git(["add", "-A"], cwd=repo)
+            try:
+                subprocess.run(
+                    ["git", "commit", "--no-verify", "-qm",
+                     f"auto-commit uncommitted work on {agent_branch} "
+                     f"before strategic merge"],
+                    cwd=str(repo), env=wip_env,
+                    capture_output=True, text=True, timeout=_GIT_TIMEOUT,
                 )
-        wip_author = agent_id or agent_branch.split("/")[-1]
-        wip_email = f"{wip_author}@env-gen.local"
-        wip_env = {
-            **os.environ,
-            "GIT_AUTHOR_NAME": wip_author,
-            "GIT_AUTHOR_EMAIL": wip_email,
-            "GIT_COMMITTER_NAME": wip_author,
-            "GIT_COMMITTER_EMAIL": wip_email,
-        }
-        _run_git(["add", "-A"], cwd=repo)
-        try:
-            subprocess.run(
-                ["git", "commit", "--no-verify", "-qm",
-                 f"auto-commit uncommitted work on {agent_branch} "
-                 f"before strategic merge"],
-                cwd=str(repo), env=wip_env,
-                capture_output=True, text=True, timeout=_GIT_TIMEOUT,
-            )
-        except Exception as exc:
-            return False, f"auto-commit WIP before strategic merge raised: {exc}"
+            except Exception as exc:
+                return False, f"auto-commit WIP before strategic merge raised: {exc}"
+        else:
+            # current_branch is main_branch (integration). The repo_root tracked
+            # dirt is the FRAMEWORK's scaffold/heal residue (skeleton/infra/route
+            # projections written into the integration working tree, committed
+            # later by commit_framework_delivery) — NOT the agent's work, which
+            # lives in worktrees/<id>. agent_branch is checked out in its OWN
+            # worktree, so a `git checkout agent_branch` here is IMPOSSIBLE (git
+            # forbids a 2nd checkout of a worktree-held branch — this was the run
+            # #34 "strategic merge blocked … already checked out at worktrees/…"
+            # wedge that starved the ownership resolver). Stash the transient
+            # residue (mirrors merge_agent_branch_to_main) so the checkout+merge
+            # can proceed; the scaffold re-emits these files every tick, so
+            # dropping the stash is safe. NO -u → keep untracked hub state on disk.
+            rc_sp, _so_sp, _se_sp = _run_git(
+                ["stash", "push", "-m", "strategic-merge-pre-checkout"], cwd=repo)
+            if rc_sp == 0:
+                repo_stashed = True
+            else:
+                # Nothing stashable / stash failed — hard-reset TRACKED state to
+                # HEAD as last resort (untracked hub state is preserved).
+                _run_git(["reset", "--hard", "HEAD"], cwd=repo)
 
     sc, _so, se = _run_git(["checkout", main_branch], cwd=repo)
     if sc != 0:
+        if repo_stashed:
+            _run_git(["stash", "pop"], cwd=repo)
         return False, f"checkout {main_branch} failed: {se.strip()}"
+    if repo_stashed:
+        # Transient framework residue — drop it (the scaffold re-emits + commits
+        # it via commit_framework_delivery). Untracked state wasn't stashed.
+        _run_git(["stash", "drop"], cwd=repo)
 
     # Squash-merge with strategy option. --no-commit so we can author.
     mc, _mo, me = _run_git(
