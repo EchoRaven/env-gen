@@ -216,6 +216,11 @@ def endpoints_implemented_with_code(
     code; it only fires on the egregious no-route case. Vacuous-pass when the
     worktree can't be resolved (don't wedge).
     """
+    # PROPOSAL #58: skip the whole "endpoints implemented + code present" demand during the
+    # KICKOFF turn (lane only declares; no write tools yet) — both Layer 1 (status) and
+    # Layer 2 (code-presence) are unsatisfiable then, so a kickoff finish must not block.
+    if getattr(agent, "_active_phase", None) == "kickoff":
+        return None
     status_block = kickoff_endpoints_implemented(agent, tool_name, tool_args)
     if status_block is not None:
         return status_block
