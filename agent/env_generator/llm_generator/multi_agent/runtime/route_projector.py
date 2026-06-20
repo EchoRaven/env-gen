@@ -342,7 +342,7 @@ def _resource_model(path: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tu
     """Pick the ORM model a path operates on: the LAST path segment that matches a
     known table (plural or singular). ``/api/users/{u}/posts`` → posts(Post).
     A feed/timeline path that names no table resolves to the app's primary content
-    table (the social ``posts`` when present, else shape-derived — domain-agnostic)."""
+    table — shape-derived (timestamp + owner FK + richness), domain-agnostic."""
     chosen: Optional[Tuple[str, Dict[str, Any]]] = None
     for seg, is_p in _segments(path):
         if is_p:
@@ -353,7 +353,9 @@ def _resource_model(path: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tu
     if chosen is None:
         segs = {seg for seg, is_p in _segments(path) if not is_p}
         if segs & set(_FEED_SHAPED_TOKENS):
-            chosen = _match_model("posts", models) or _primary_content_model(models)
+            # No hardcoded "posts" preference — derive the primary content model
+            # from shape so a feed-shaped path in a non-social app maps correctly.
+            chosen = _primary_content_model(models)
     return chosen
 
 

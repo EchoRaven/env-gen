@@ -168,25 +168,23 @@ def map_reference_screens(
         route, auth = None, True
         cands = (f"/{stem}", f"/{stem}s", f"/{stem.rstrip('s')}",
                  "/" + stem.replace("_", "-"), "/" + stem.replace("_", ""))
-        for keys, r, a in _ROUTE_KEYWORDS:
-            if any(k in stem for k in keys):
-                route, auth = r, a
-                break
-        if route is None and known:
-            # GENERIC, domain-agnostic: match the filename to a declared route, or
-            # "/" for a home/landing screen — so an arbitrary app's screens map
-            # without relying on the social catalog above.
+        # GENERIC FIRST (domain-agnostic): match the screenshot filename to a
+        # declared route, or "/" for a home/landing screen — so an arbitrary app's
+        # screens map without the social catalog biasing ambiguous names.
+        if known:
             route = next((c for c in cands if c in known), None)
             if route is None and stem in _HOME_STEMS and "/" in known:
                 route = "/"
-        if route is not None and known and route not in known:
-            # a keyword-mapped route the app does NOT serve → use the app's REAL
-            # route instead of screenshotting a 404 (domain-agnostic correction).
-            _alt = next((c for c in cands if c in known), None)
-            if _alt is None and stem in _HOME_STEMS and "/" in known:
-                _alt = "/"
-            if _alt is not None:
-                route = _alt
+        # The keyword catalog still supplies the public/auth flag (a login/landing
+        # screen is public) and fills the ROUTE only as a LAST resort (never
+        # overriding a generic match, and only when the app serves it) — so a
+        # non-social app whose screen name contains a social token isn't mis-routed.
+        for keys, r, a in _ROUTE_KEYWORDS:
+            if any(k in stem for k in keys):
+                auth = a
+                if route is None and ((not known) or r in known):
+                    route = r
+                break
         screens.append({"name": p.stem, "path": str(p), "route": route, "auth": auth})
     return screens
 
