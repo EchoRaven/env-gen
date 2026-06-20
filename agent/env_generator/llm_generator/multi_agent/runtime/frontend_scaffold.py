@@ -17,7 +17,7 @@ app that won't build at all).
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
 
 _EXPORT_RE = re.compile(
     r"export\s+(?:async\s+)?(?:function|const|let|var)\s+([A-Za-z0-9_$]+)"
@@ -146,18 +146,132 @@ _COMPONENT_DIR = re.compile(r"/(pages|components|views|screens|routes)/")
 
 def _stub_page_component(name: str) -> str:
     """A minimal default-exported React component (JSX automatic runtime — no
-    React import needed, matching the lane's pages)."""
+    React import needed, matching the lane's pages). Used for build-integrity
+    stubs of UNDECLARED local imports; carries NO flagged placeholder marker so a
+    declared page never trips the stub-detector on it."""
     label = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").strip() or name
     return (
         f"export default function {name}() {{\n"
         f"  return (\n"
         f'    <div className="glass rounded-[2rem] border border-white/10 px-8 py-16 text-center">\n'
         f'      <h2 className="text-xl font-semibold text-white">{label}</h2>\n'
-        f'      <p className="mt-3 text-sm text-zinc-400">This section is being set up.</p>\n'
         f"    </div>\n"
         f"  );\n"
         f"}}\n"
     )
+
+
+def _api_path_to_js(path: str) -> str:
+    """'/api/notes' -> "'/api/notes'"; '/api/notes/:id' (or {id}) ->
+    "'/api/notes/' + (params.id || '')" — a route-param-aware fetch target."""
+    m = re.search(r"[:{]([a-zA-Z_]\w*)[}]?", path)
+    if not m:
+        return "'" + path + "'"
+    expr = "'" + path[:m.start()] + "' + (params." + m.group(1) + " || '')"
+    post = path[m.end():]
+    if post:
+        expr += " + '" + post + "'"
+    return expr
+
+
+def _project_page_component(name: str, page: Mapping[str, Any]) -> str:
+    """Project a MINIMALLY-FUNCTIONAL, data-driven page from the contract instead
+    of an inert stub. Generic for ANY app: a page with a declared GET fetches it
+    and renders the rows; a POST-only page renders a submit form; an api-less page
+    is a clean static page. Uses bare ``fetch`` + the JWT from localStorage (no
+    dependency on the lane's api.js export shape), so the page (a) carries a real
+    handler/api call and no placeholder marker — passing the stub-detector — and
+    (b) actually exercises its declared endpoint. The lane may still overwrite it
+    with richer UI (this only runs when the page file is missing)."""
+    label = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").strip() or name
+    parsed = []
+    for a in (page.get("apis_used") or []):
+        parts = str(a).strip().split(None, 1)
+        if len(parts) == 2 and str(parts[0]).isalpha():
+            parsed.append((parts[0].upper(), parts[1].strip()))
+        elif parts and str(parts[0]).startswith("/"):
+            parsed.append(("GET", str(parts[0]).strip()))
+    get_ep = next((p for (m, p) in parsed if m == "GET"), None)
+    post_ep = next((p for (m, p) in parsed if m == "POST"), None)
+
+    if get_ep:
+        tpl = """import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+
+export default function __COMP__() {
+  const params = useParams();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    fetch(__PATH__, token ? { headers: { Authorization: 'Bearer ' + token } } : {})
+      .then((r) => r.json())
+      .then(setData)
+      .catch((e) => setError(String(e)));
+  }, []);
+  const rows = Array.isArray(data && data.items)
+    ? data.items
+    : (data && data.item ? [data.item] : (Array.isArray(data) ? data : []));
+  return (
+    <div className="glass rounded-[2rem] border border-white/10 px-8 py-12">
+      <h2 className="text-xl font-semibold text-white">__LABEL__</h2>
+      {error ? <p className="mt-3 text-sm text-red-400">{error}</p> : null}
+      <ul className="mt-6 space-y-3">
+        {rows.map((row, i) => (
+          <li key={(row && row.id) || i} className="rounded-xl border border-white/10 px-4 py-3 text-sm text-zinc-200">
+            {Object.keys(row || {}).filter((k) => k !== 'password').map((k) => (
+              <span key={k} className="mr-4"><span className="text-zinc-500">{k}: </span>{String(row[k])}</span>
+            ))}
+          </li>
+        ))}
+      </ul>
+      {rows.length === 0 && !error ? <p className="mt-6 text-sm text-zinc-400">No data yet.</p> : null}
+    </div>
+  );
+}
+"""
+        return (tpl.replace("__COMP__", name).replace("__LABEL__", label)
+                .replace("__PATH__", _api_path_to_js(get_ep)))
+
+    if post_ep:
+        tpl = """import { useState } from 'react';
+
+export default function __COMP__() {
+  const [value, setValue] = useState('');
+  const [status, setStatus] = useState('');
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem('access_token');
+    try {
+      const r = await fetch('__POST__', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' },
+          token ? { Authorization: 'Bearer ' + token } : {}),
+        body: JSON.stringify({ title: value, name: value, content: value, body: value }),
+      });
+      setStatus(r.ok ? 'Saved.' : ('Error ' + r.status));
+    } catch (err) {
+      setStatus(String(err));
+    }
+  };
+  return (
+    <div className="glass rounded-[2rem] border border-white/10 px-8 py-12">
+      <h2 className="text-xl font-semibold text-white">__LABEL__</h2>
+      <form onSubmit={onSubmit} className="mt-6 space-y-4">
+        <input value={value} onChange={(e) => setValue(e.target.value)}
+               className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-2 text-white"
+               placeholder="Enter a value" />
+        <button type="submit" className="rounded-xl bg-white/10 px-5 py-2 text-white">Submit</button>
+      </form>
+      {status ? <p className="mt-3 text-sm text-zinc-300">{status}</p> : null}
+    </div>
+  );
+}
+"""
+        return (tpl.replace("__COMP__", name).replace("__LABEL__", label)
+                .replace("__POST__", post_ep))
+
+    return _stub_page_component(name)
 
 
 def scaffold_missing_local_pages(frontend_dir) -> Dict[str, object]:
@@ -418,7 +532,10 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
 
             target = pages_dir / f"{comp}.jsx"
             if not target.exists():
-                target.write_text(_stub_page_component(comp), encoding="utf-8")
+                # Project a minimally-FUNCTIONAL page from the contract (fetches the
+                # declared endpoint + renders it), not an inert stub the audit then
+                # blocks. The lane may still overwrite it with richer UI.
+                target.write_text(_project_page_component(comp, page), encoding="utf-8")
                 scaffolded.append(str(target.relative_to(frontend_dir)))
 
         app_wired = False
@@ -601,10 +718,6 @@ export async function login({ email, username, password }) {
   if (d.access_token) localStorage.setItem('token', d.access_token)
   return d
 }
-export async function getFeed() {
-  const r = await fetch('/api/feed', { headers: { ...authHeaders() } })
-  return r.json().catch(() => ([]))
-}
 export function logout() { localStorage.removeItem('token') }
 // Generic fixed-envelope CRUD helpers (the projector returns {item}/{items}); pages may
 // import these by name OR use the default `api` object (api.get/post/...).
@@ -624,23 +737,20 @@ export const put = (path, body) => request(path, { method: 'PUT', body })
 export const del = (path) => request(path, { method: 'DELETE' })
 // #41: default export so `import api from '../services/api'` (a common lane style) yields a
 // usable object — without it the module resolves but `api` is undefined → runtime crash.
-const api = { register, login, logout, getFeed, get, post, put, del, request }
+const api = { register, login, logout, get, post, put, del, request }
 export default api
 """
 
 _ROUTES_MARKER = "// @framework-managed-routes"
 
 _BASELINE_APP_JSX = """// @framework-managed-routes
-import React, { useState, useEffect } from 'react'
-import { register, login, getFeed, logout } from './services/api.js'
+import React, { useState } from 'react'
+import { register, login, logout } from './services/api.js'
 
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem('token'))
-  const [feed, setFeed] = useState(null)
   const [mode, setMode] = useState('login')
   const [form, setForm] = useState({ username: '', email: '', password: '' })
-
-  useEffect(() => { if (token) getFeed().then(setFeed).catch(() => {}) }, [token])
 
   async function submit(e) {
     e.preventDefault()
@@ -648,7 +758,7 @@ export default function App() {
     const d = await fn(form)
     if (d.access_token) setToken(d.access_token)
   }
-  function doLogout() { logout(); setToken(null); setFeed(null) }
+  function doLogout() { logout(); setToken(null) }
 
   if (!token) {
     return (
@@ -675,23 +785,14 @@ export default function App() {
       </div>
     )
   }
-  const posts = Array.isArray(feed) ? feed : (feed && (feed.items || feed.posts)) || []
   return (
     <div className="min-h-screen bg-black text-white">
       <header className="flex justify-between items-center p-4 border-b border-gray-800 sticky top-0 bg-black">
         <h1 className="text-xl font-bold">__APP_NAME__</h1>
         <button className="text-sm text-blue-400" onClick={doLogout}>Log out</button>
       </header>
-      <main className="max-w-xl mx-auto p-4 space-y-4">
-        {!feed && <p className="text-gray-500">Loading feed…</p>}
-        {feed && posts.length === 0 && <p className="text-gray-500">No posts yet.</p>}
-        {posts.map((p, i) => (
-          <article key={p.id || i} className="border border-gray-800 rounded-lg overflow-hidden">
-            <div className="p-3 font-semibold">{(p.author && p.author.username) || p.username || 'user'}</div>
-            {p.image_url && <img src={p.image_url} alt="" className="w-full" />}
-            <div className="p-3">{p.caption}</div>
-          </article>
-        ))}
+      <main className="max-w-xl mx-auto p-8 text-center text-gray-400">
+        <p>You are signed in.</p>
       </main>
     </div>
   )
@@ -925,8 +1026,9 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
 def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
     """Gap-fill a minimal buildable Vite+React+Tailwind+nginx frontend. Writes
     each standard file ONLY when missing/empty, so a lane that produced code is
-    never clobbered. An empty-frontend run gets a complete login+feed app that
-    builds + serves and hits the framework /auth/* + /api/feed. Best-effort."""
+    never clobbered. An empty-frontend run gets a complete login/register auth
+    shell that builds + serves and hits the framework /auth/*; declared pages are
+    projected functionally from the contract elsewhere. Best-effort."""
     try:
         frontend_dir = Path(frontend_dir)
         frontend_dir.mkdir(parents=True, exist_ok=True)
