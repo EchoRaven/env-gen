@@ -412,7 +412,15 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
         path = str(_subst(step.get("path", ""), variables, bare=True))
         body = _subst(step.get("body"), variables) if step.get("body") else None
         token = variables.get(str(step.get("auth"))) if step.get("auth") else None
-        expect = [int(x) for x in (step.get("expect") or []) if str(x).isdigit()]
+        # ``expect`` tolerated as a scalar (verifier authored ``expect: 201``
+        # instead of ``[201]``; iterating the int crashed the WHOLE runner →
+        # business_chain failed for every chain → no delivery, smoke run #10).
+        _exp = step.get("expect")
+        if _exp is None:
+            _exp = []
+        elif not isinstance(_exp, (list, tuple, set)):
+            _exp = [_exp]
+        expect = [int(x) for x in _exp if str(x).isdigit()]
         res = _http(method, base + path, token=token, body=body)
         status = res.get("status")
         if expect:
