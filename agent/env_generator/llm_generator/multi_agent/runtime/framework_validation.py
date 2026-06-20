@@ -30,6 +30,62 @@ from typing import Any
 from progress import EventType
 
 
+def snapshot_passing_chains(orch: Any) -> None:
+    """REGRESSION GUARD (snapshot-on-green): called when api_smoke fully passes
+    (business_chain green). Snapshot the verification chains + the contract
+    (endpoint id set) onto the orchestrator, so a later regression of
+    business_chain WHILE the contract is unchanged — an agent re-authored a
+    chain into a broken state (smoke run #9: a re-authored chain dropped
+    tenant_id from login → 401 → a 1-check-from-delivery app churned back to
+    broken) — can be reverted via ``restore_regressed_chains``. Best-effort."""
+    try:
+        rh = getattr(getattr(orch, "hubs", None), "registryhub", None)
+        if rh is None:
+            return
+        orch._chains_snapshot = dict(rh._verification_chains.value() or {})
+        orch._chains_snapshot_endpoints = set((rh.get_endpoints() or {}).keys())
+        orch._fwval_green_high_water = (
+            getattr(orch, "_fwval_green_high_water", None) or set()
+        ) | {"business_chain"}
+    except Exception:
+        pass
+
+
+def restore_regressed_chains(orch: Any, fset):
+    """REGRESSION GUARD (restore-on-regression): if business_chain passed before
+    (high-water) and is now failing AND the contract (endpoint id set) is
+    unchanged, an agent re-authored the chains into a broken state — not a real
+    app/contract change. Replace the chains store with the last-passing snapshot
+    (FULL replace, so a NEW broken chain is dropped too), re-validate next tick,
+    and drop business_chain from the failure set so the verifier is NOT
+    re-dispatched to re-author (which would loop). Self-correcting: if the app
+    genuinely broke, the restored-correct chain still fails and (current ==
+    snapshot) so the restore is skipped and normal feedback proceeds — never
+    masks a real defect. Returns the (possibly-reduced) failure set."""
+    try:
+        rh = getattr(getattr(orch, "hubs", None), "registryhub", None)
+        snap = getattr(orch, "_chains_snapshot", None)
+        if (rh is None or not snap
+                or "business_chain" not in (getattr(orch, "_fwval_green_high_water", None) or set())
+                or "business_chain" not in fset):
+            return fset
+        cur_eps = set((rh.get_endpoints() or {}).keys())
+        snap_eps = getattr(orch, "_chains_snapshot_endpoints", cur_eps)
+        if cur_eps == snap_eps and dict(rh._verification_chains.value() or {}) != snap:
+            restore = dict(snap)
+            rh._verification_chains.update(
+                lambda _v: restore, change_info={"agent": "regression-guard"})
+            orch._framework_validation_attempts = 0
+            orch._logger.warning(
+                "REGRESSION GUARD: business_chain was green then regressed with the "
+                "contract unchanged — restored the last-passing verification chains "
+                "(agent re-authoring reverted).")
+            return fset - {"business_chain"}
+    except Exception:
+        pass
+    return fset
+
+
 class FrameworkValidation:
     """Deterministic api_smoke validation + stuck-loop escalation + lane
     feedback. Stateless; reads/writes the orchestrator's ``_fwval_*`` state and
@@ -284,6 +340,7 @@ class FrameworkValidation:
                     data.get("runhub_run_id"), data.get("endpoints_tested"),
                 )
                 await orch._maybe_run_visual_fidelity()
+                snapshot_passing_chains(orch)
             else:
                 # FIX #36: log WHY the in-run validation failed (summary + failed
                 # check names). The bare "not yet passing" hid the real cause for
@@ -312,7 +369,7 @@ class FrameworkValidation:
                 # spin). The self-induced heal/skeleton churn no longer resets the
                 # budget (above), so the fast cap now actually trips; once it does on a
                 # stable failure set we ESCALATE rather than spin to wall-clock.
-                _fset = _fwval_failure_set(data)
+                _fset = restore_regressed_chains(orch, _fset)
                 _prev_fset = getattr(orch, "_fwval_failure_set", None)
                 if _prev_fset is None or _fset != _prev_fset:
                     # New/changed failure set → real progress (or first observation).
