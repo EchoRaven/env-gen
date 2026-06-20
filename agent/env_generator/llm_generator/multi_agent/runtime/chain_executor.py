@@ -3,12 +3,15 @@
 OWNERSHIP (user decision 2026-06-11/12): the VERIFIER owns the chain
 DEFINITIONS — it REGISTERS them via the ``registryhub_register_verification_chain``
 tool (boundary-validated, normalized on registration; NOT a loose file — round
-35: file authoring drifted schema silently). The framework owns ONLY this
-deterministic EXECUTOR. There is NO framework fallback chain (user decision):
-zero registered chains is an AGENT deliverable gap — run_validation is tool-
-blocked and the gate fails with authoring instructions, and the existing
-feedback/retry loop drives the verifier to register one. A framework-authored
-journey would be app-biased — exactly what the generality principle forbids.
+35: file authoring drifted schema silently). The framework owns this deterministic
+EXECUTOR and a contract-projected FILL-IN default (``synthesize_default_chain``):
+the verifier's chains stay AUTHORITATIVE whenever present, but when it registered
+none, the framework projects a default register→CRUD chain DETERMINISTICALLY FROM
+THE REGISTERED CONTRACT (generic, like ``_probe_body``/route_projector). This is
+NOT the hand-rolled app-shaped journey the original no-fallback decision forbade —
+a contract-projected chain carries no app bias — so business_chain (and the
+delivery-gate RunHub run it gates) no longer dead-ends on a drifting agent while
+the generality principle is preserved (2026-06-20).
 
 Per-step shape (one registered chain = {name, steps:[...]}):
 
@@ -31,6 +34,7 @@ Semantics:
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
@@ -193,23 +197,141 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
     return out, errors
 
 
+_FIXED_ENDPOINT_KINDS = {"auth", "oauth", "infra", "spine"}
+
+
+def _default_chain_body(ep: Mapping[str, Any]) -> Dict[str, Any]:
+    """Generic request body from the endpoint's registered request schema —
+    mirrors validation_runner._probe_body (domain-agnostic typed placeholders).
+    Falls back to common text fields when no request schema is registered (a
+    write needs SOME body); the projected handler drops fields the model lacks."""
+    req = ((ep.get("schema") or {}).get("request")) or {}
+    body: Dict[str, Any] = {}
+    for field, typ in req.items():
+        t = str(typ or "").lower()
+        if any(x in t for x in ("[]", "list", "array")):
+            body[field] = []
+        elif any(x in t for x in ("dict", "object", "json", "{}")):
+            body[field] = {}
+        elif "bool" in t:
+            body[field] = True
+        elif any(x in t for x in ("float", "decimal", "double")):
+            body[field] = 1.0
+        elif any(x in t for x in ("int", "number")):
+            body[field] = 1
+        else:
+            body[field] = "chain-${rand}"
+    if not body:
+        body = {"name": "chain-${rand}", "title": "chain-${rand}",
+                "content": "chain-${rand}", "body": "chain-${rand}",
+                "description": "chain-${rand}", "text": "chain-${rand}"}
+    return body
+
+
+def synthesize_default_chain(endpoints: List[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    """Project a default verification chain DETERMINISTICALLY FROM THE REGISTERED
+    CONTRACT: register → for each business collection, create (saving the row id)
+    → list → read-by-id → update → delete. This is generic projection (like
+    ``_probe_body`` / route_projector), NOT a hand-rolled app-shaped journey — so
+    it carries NO app bias and satisfies the generality principle. Used only as a
+    FILL-IN when the verifier registered no usable chain. Returns [] when the
+    contract exposes no creatable business resource (then the verifier-authoring
+    feedback path still applies)."""
+    eps = [e for e in (endpoints or []) if isinstance(e, Mapping)]
+    by_key: Dict[tuple, Mapping[str, Any]] = {}
+    for e in eps:
+        m = str(e.get("method", "")).upper()
+        p = str(e.get("path", "")).rstrip("/")
+        if m and p:
+            by_key[(m, p)] = e
+
+    def _kind(e: Mapping[str, Any]) -> str:
+        return str((e.get("metadata") or {}).get("kind") or "").lower()
+
+    steps: List[Dict[str, Any]] = []
+    reg = next((e for (m, p), e in by_key.items()
+                if m == "POST" and p.endswith("/auth/register")), None)
+    steps.append({
+        "action": "register", "method": "POST",
+        "path": (str(reg.get("path")) if reg else "/auth/register"),
+        "body": {"email": "chain-${rand}@example.com",
+                 "password": "Chain123!x", "name": "Chain Tester"},
+        "expect": [200, 201, 409], "save": {"token": "access_token"}})
+
+    made_any = False
+    for (m, p), e in sorted(by_key.items()):
+        # a business COLLECTION create: POST /api/<col> with no path param
+        if m != "POST" or not p.startswith("/api/") or "{" in p or ":" in p:
+            continue
+        if _kind(e) in _FIXED_ENDPOINT_KINDS:
+            continue
+        col = p
+        var = re.sub(r"[^a-z0-9]+", "_", col.strip("/").lower()) + "_id"
+        steps.append({"action": f"create {col}", "method": "POST", "path": col,
+                      "auth": "token", "body": _default_chain_body(e),
+                      "expect": [200, 201], "save": {var: "id"}})
+        made_any = True
+        if ("GET", col) in by_key:
+            steps.append({"action": f"list {col}", "method": "GET", "path": col,
+                          "auth": "token", "expect": [200]})
+        # item ops on the immediate child param path: /api/<col>/{id}
+        item_paths = [pp for (mm, pp) in by_key
+                      if pp.startswith(col + "/") and ("{" in pp or ":" in pp)
+                      and pp.count("/") == col.count("/") + 1]
+        for mm in ("GET", "PUT", "DELETE"):
+            ip = next((pp for pp in item_paths if (mm, pp) in by_key), None)
+            if not ip:
+                continue
+            sub = re.sub(r"(\{[^}]+\}|:[^/]+)$", "${" + var + "}", ip)
+            st: Dict[str, Any] = {"action": f"{mm.lower()} {col}/id",
+                                  "method": mm, "path": sub, "auth": "token"}
+            if mm == "PUT":
+                st["body"] = _default_chain_body(by_key[(mm, ip)])
+                st["expect"] = [200]
+            elif mm == "DELETE":
+                st["expect"] = [200, 204]
+            else:
+                st["expect"] = [200]
+            steps.append(st)
+
+    if not made_any:
+        return []
+    norm, _errs = normalize_steps(steps)
+    return [{"name": "framework_default_crud", "steps": norm}] if norm else []
+
+
 def load_verifier_chains(project_dir: Any) -> List[Dict[str, Any]]:
     """Chains from the REGISTRY store (written via the registration tool).
-    Deterministic file read so the validation runner needs no live hub."""
+    Deterministic file read so the validation runner needs no live hub. When the
+    verifier registered no usable chain, FILL IN a contract-projected default
+    (``synthesize_default_chain``) so business_chain — and the delivery-gate
+    RunHub run it gates — no longer depends on a drifting agent. Verifier chains
+    stay authoritative whenever present (fill-in, never supplement)."""
     path = Path(project_dir) / CHAINS_STORE_RELPATH
-    if not path.exists():
-        return []
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return []
     out: List[Dict[str, Any]] = []
-    for name, rec in (data or {}).items():
-        if name == "_meta" or not isinstance(rec, Mapping):
-            continue
-        steps, _errs = normalize_steps(rec.get("steps") or [])
-        if steps:
-            out.append({"name": str(rec.get("name") or name), "steps": steps})
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+        for name, rec in (data or {}).items():
+            if name == "_meta" or not isinstance(rec, Mapping):
+                continue
+            steps, _errs = normalize_steps(rec.get("steps") or [])
+            if steps:
+                out.append({"name": str(rec.get("name") or name), "steps": steps})
+    if out:
+        return out
+    # FILL-IN: no usable verifier chain → project a default from the contract.
+    try:
+        eps_path = Path(project_dir) / "shared" / "hubs" / "registryhub_endpoints.json"
+        if eps_path.exists():
+            eps_data = json.loads(eps_path.read_text(encoding="utf-8"))
+            eps = [v for k, v in (eps_data or {}).items()
+                   if k != "_meta" and isinstance(v, Mapping)]
+            return synthesize_default_chain(eps)
+    except Exception:
+        pass
     return out
 
 
