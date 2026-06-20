@@ -1152,11 +1152,38 @@ class RequiredFilesPolicy(BaseWorkflowPolicy):
             # Can't verify without a worktree — abstain (don't false-block).
             return None
         root = Path(wt)
-        missing = [p for p in self.paths if not (root / p).exists()]
-        # An any_of group is "missing" only when NONE of its alternatives exist.
+        # Framework-owned files (frontend: Dockerfile/package.json/nginx/start.sh/
+        # index.html; backend infra) are generated + overwritten by the framework in the
+        # INTEGRATION tree — the lane is write-denied on them (path_routed_workspace.
+        # is_framework_owned) and they never land in the lane worktree, so requiring them
+        # here deadlocks finish (run bsb900gpt: frontend "package.json is framework-owned
+        # AND the gate demands it"). Same rationale that already excludes app/database/.
+        # Filter by construction so the policy can't drift from the ownership map.
+        # Consult the SAME workspace object the write-gate uses (tooling.py
+        # _enforce_write_permissions → self._routed_workspace). agent.workspace is the
+        # bare WorkspaceManager, which has NO is_framework_owned method — reading it
+        # made this filter DEAD CODE, so finish demanded the very infra files the
+        # write-gate denies as framework-owned (smoke catch-22: Dockerfile/
+        # package.json/pyproject.toml/etc. listed missing AND write-denied). The
+        # PathRoutedWorkspace on _routed_workspace actually implements the ownership map.
+        ws = getattr(agent, "_routed_workspace", None) or getattr(agent, "workspace", None)
+        def _fw_owned(p: str) -> bool:
+            try:
+                return bool(ws and hasattr(ws, "is_framework_owned") and ws.is_framework_owned(p))
+            except Exception:
+                return False
+        missing = [p for p in self.paths if not _fw_owned(p) and not (root / p).exists()]
+        # An any_of group is satisfied-by-construction when ANY alternative is
+        # framework-owned: the framework emits that file into the integration tree
+        # (e.g. the src/main.jsx entrypoint), so the lane neither can nor needs to
+        # produce one — drop the group. (Was `all`, which left the main.jsx entry
+        # group demanding a file the lane is write-denied on → residual thrash.)
+        # Lane-owned groups (App.jsx, services/api.js) contain no owned member, so
+        # they stay demanded as real lane work.
         missing_groups = [
             grp for grp in self.any_of
-            if not any((root / p).exists() for p in grp)
+            if not any(_fw_owned(p) for p in grp)
+            and not any((root / p).exists() for p in grp)
         ]
         if not missing and not missing_groups:
             return None

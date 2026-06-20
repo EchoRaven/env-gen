@@ -494,9 +494,16 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
     cls = None
     cols: List[str] = []
     table = ""
+    owner_fk = None
     if res:
         table, meta = res
         cls, cols = meta["cls"], meta["cols"]
+        # The column that attributes a row to the authenticated caller (user_id/
+        # author_id/...). Used to AUTHORIZE mutations (PUT/DELETE only touch your
+        # OWN rows). NOTE: read-scoping (GET list/item) is deliberately NOT keyed
+        # off this — "only see your own rows" is domain-dependent (private notes
+        # vs a public feed), so it stays a separate, explicit decision.
+        owner_fk = _owner_fk(meta) if auth else None
 
     # Nested parent: /api/users/{username}/posts → parent users(User) via {username}.
     parent_ctx = _parent_context(path, models, table) if cls else None
@@ -538,6 +545,16 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             f"    obj = db.get({cls}, {last_param})",
             "    if obj is None:",
             '        raise HTTPException(status_code=404, detail="not found")',
+        ]
+        if owner_fk:
+            # AUTHORIZE: only the owner may delete (404, not 403, so a non-owner
+            # can't even probe existence). Safe default for projected CRUD; broader
+            # rules (admin/moderator) go in the lane's custom_routes.
+            body_lines += [
+                f'    if getattr(obj, "{owner_fk}", None) != user.id:',
+                '        raise HTTPException(status_code=404, detail="not found")',
+            ]
+        body_lines += [
             "    db.delete(obj)",
             "    db.commit()",
             f"    return {{\"item\": {{\"id\": {last_param}, \"deleted\": True}}}}",
@@ -614,6 +631,26 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 "        obj = db.get(User, user.id)" if auth else f"        obj = db.query({cls}).first()",
                 "        if obj is None:",
                 '            raise HTTPException(status_code=404, detail="not found")',
+                "        for k, v in valid.items():",
+                "            setattr(obj, k, v)",
+            ]
+        elif m in ("PUT", "PATCH") and last_param and _is_id_param(last_param):
+            # UPDATE the existing row by id — NOT a new insert. Falling through to
+            # the create path below made PUT/PATCH do ``cls(**valid); db.add`` →
+            # every update INSERTED a duplicate row (live: PUT /api/notes/{id}
+            # created notes instead of editing them).
+            body_lines += [
+                "    try:",
+                f"        obj = db.get({cls}, {last_param})",
+                "        if obj is None:",
+                '            raise HTTPException(status_code=404, detail="not found")',
+            ]
+            if owner_fk:
+                body_lines += [
+                    f'        if getattr(obj, "{owner_fk}", None) != user.id:',
+                    '            raise HTTPException(status_code=404, detail="not found")',
+                ]
+            body_lines += [
                 "        for k, v in valid.items():",
                 "            setattr(obj, k, v)",
             ]

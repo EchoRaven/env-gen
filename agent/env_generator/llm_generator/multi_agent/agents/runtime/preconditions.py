@@ -17,7 +17,10 @@ runtime.
 """
 from __future__ import annotations
 
+import logging as _logging
 from typing import Any, Callable, Dict, Optional
+
+_log = _logging.getLogger(__name__)
 
 
 PreconditionFn = Callable[[Any, str, Dict[str, Any]], Optional[str]]
@@ -138,6 +141,30 @@ def _require_skill_consulted(required_skill: str, tool_name: str, agent: Any) ->
     consulted = getattr(agent, "_consulted_skills", None) or set()
     if required_skill in consulted:
         return None
+    # SATISFIABILITY GUARD (bsb900gpt run): the gate tells the agent to "call
+    # get_skill(...)", but if THIS agent has no get_skill in its tool surface the
+    # instruction is IMPOSSIBLE — the gate is unsatisfiable and the gated tool
+    # loops until action rounds are exhausted. That is exactly what killed the
+    # run: the orchestrator's delivery toolset omitted get_skill, so the
+    # release-readiness gate blocked deliver_project forever ("I don't have
+    # access to the get_skill tool" ×N → rounds exhausted → no delivery).
+    # Blocking forever is strictly worse than proceeding, and the real safety
+    # gates (delivery_phase_reached + the deterministic delivery gate) still
+    # apply. So when get_skill is uncallable, best-effort auto-consult (preserve
+    # intent + record it) and let the call through. The nudge is unchanged for
+    # agents that CAN consult — they still get the directed "call get_skill" block.
+    tools = getattr(agent, "_tool_instances", None)
+    if not (tools and "get_skill" in tools):
+        if not isinstance(getattr(agent, "_consulted_skills", None), set):
+            agent._consulted_skills = set()
+        agent._consulted_skills.add(required_skill)
+        _log.warning(
+            "[precondition] %s gated on '%s' skill-consult but agent %r has no "
+            "get_skill tool — auto-consulting to keep the gate satisfiable "
+            "(prevents the deliver_project deadlock that killed run bsb900gpt).",
+            tool_name, required_skill, getattr(agent, "agent_id", "?"),
+        )
+        return None
     return (
         f"{tool_name} blocked: consult the `{required_skill}` skill first. "
         f"Call get_skill(name='{required_skill}') and follow it, then retry "
@@ -220,6 +247,15 @@ def endpoints_implemented_with_code(
     # KICKOFF turn (lane only declares; no write tools yet) — both Layer 1 (status) and
     # Layer 2 (code-presence) are unsatisfiable then, so a kickoff finish must not block.
     if getattr(agent, "_active_phase", None) == "kickoff":
+        return None
+    # Satisfiability backstop for #58 (run bsb900gpt predated #58 and still wedged):
+    # this gate's corrective action is "WRITE the route + registryhub_register_endpoint".
+    # If the lane currently holds NEITHER tool, that instruction is impossible and blocking
+    # only wedges finish — regardless of how _active_phase happens to be set. Mirrors
+    # _require_skill_consulted's uncallable-tool escape. The implementation lane grants both
+    # (implementation:action allowlist), so the real gate still fires there unchanged.
+    _tools = getattr(agent, "_tool_instances", None) or {}
+    if not ("write" in _tools and "registryhub_register_endpoint" in _tools):
         return None
     status_block = kickoff_endpoints_implemented(agent, tool_name, tool_args)
     if status_block is not None:

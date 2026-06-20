@@ -226,13 +226,30 @@ def _page_component_name(page: Dict[str, Any]) -> str:
     return _pascal_case((page or {}).get("name"))
 
 
+# Identifiers the framework-managed App.jsx already binds — a projected PAGE import
+# must never reuse them or esbuild fails the whole build with "symbol X has already
+# been declared" (smoke-notes 2026-06-19: an agent registered a ui_page named "App",
+# so `import App from './pages/App.jsx'` collided with `export default function App()`
+# → the frontend build failed every cycle → run wedged on docker_up).
+_RESERVED_APP_IDENTS = frozenset({"App", "BrowserRouter", "Routes", "Route", "React"})
+
+
+def _safe_import_alias(comp: str) -> str:
+    """Local binding for a projected page import; aliased to ``<Comp>Page`` when the
+    component name would collide with App.jsx's own identifiers (default import of
+    the page file is unchanged — only the local name is aliased)."""
+    return f"{comp}Page" if comp in _RESERVED_APP_IDENTS else comp
+
+
 def _render_routed_app(entries: List[tuple]) -> str:
     """Generic React-Router App over the declared pages. DOMAIN-AGNOSTIC — no
     feed/login assumptions (unlike the social-shaped _BASELINE_APP_JSX it
     replaces). ``entries``: list of (component, route)."""
-    imports = "\n".join(f"import {c} from './pages/{c}.jsx';" for c, _ in entries)
+    imports = "\n".join(
+        f"import {_safe_import_alias(c)} from './pages/{c}.jsx';" for c, _ in entries)
     routes = "\n".join(
-        f'          <Route path="{r}" element={{<{c} />}} />' for c, r in entries)
+        f'          <Route path="{r}" element={{<{_safe_import_alias(c)} />}} />'
+        for c, r in entries)
     return (
         f"{_ROUTES_MARKER}\n"
         "// The orchestrator projects these routes from the registered ui_pages\n"
@@ -313,11 +330,12 @@ def project_missing_ui_routes(app_jsx: str, ui_pages: List[Dict[str, Any]]
                 continue
             seen_canon.add(canon)
             comp = _page_component_name(page)
-            inner = f"<{comp} />"
+            local = _safe_import_alias(comp)  # avoid colliding with App.jsx's own idents
+            inner = f"<{local} />"
             elem = f"<{wrapper}>{inner}</{wrapper}>" if wrapper else inner
             new_routes.append(f'        <Route path="{route}" element={{{elem}}} />')
-            if not re.search(r"import\s+" + re.escape(comp) + r"\s+from", app_jsx):
-                new_imports.append(f"import {comp} from './pages/{comp}';")
+            if not re.search(r"import\s+" + re.escape(local) + r"\s+from", app_jsx):
+                new_imports.append(f"import {local} from './pages/{comp}';")
             injected.append(route)
         if not injected:
             return app_jsx, []
@@ -729,6 +747,62 @@ _FRONTEND_TOOLING_PINS = {
     "vite": "^5.3.1", "@vitejs/plugin-react": "^4.3.1",
     "tailwindcss": "^3.4.4", "postcss": "^8.4.38", "autoprefixer": "^10.4.19",
 }
+
+# Common, REAL frontend libraries a lane may import that aren't in the baseline
+# package.json (which the lane can't edit — it's framework-owned). A bare import
+# of one of these used to fail the vite/Rollup build → docker_up FAILED forever →
+# no release (live smoke-notes 2026-06-20: `import "date-fns"` in NoteCard.jsx →
+# "Rollup failed to resolve import 'date-fns'"). Auto-adding the imported ones
+# from THIS curated, version-pinned set makes the build resolve. Only known-real
+# packages are added (a hallucinated import is left to fail honestly rather than
+# breaking `npm install`).
+_COMMON_FRONTEND_LIBS = {
+    "date-fns": "^3.6.0", "dayjs": "^1.11.11", "moment": "^2.30.1",
+    "axios": "^1.7.2", "clsx": "^2.1.1", "classnames": "^2.5.1",
+    "lodash": "^4.17.21", "lodash-es": "^4.17.21", "zustand": "^4.5.4",
+    "react-icons": "^5.2.1", "uuid": "^9.0.1", "nanoid": "^5.0.7",
+    "react-hook-form": "^7.52.1", "zod": "^3.23.8", "yup": "^1.4.0",
+    "recharts": "^2.12.7", "chart.js": "^4.4.3", "react-chartjs-2": "^5.2.0",
+    "@tanstack/react-query": "^5.51.1", "swr": "^2.2.5",
+    "framer-motion": "^11.3.2", "react-hot-toast": "^2.4.1",
+    "react-toastify": "^10.0.5", "qs": "^6.12.1", "js-cookie": "^3.0.5",
+}
+
+# import X from 'pkg'  /  import 'pkg'  /  } from "pkg"  — captures the bare
+# specifier; relative ('./', '../', '/') imports are ignored by the caller.
+_BARE_IMPORT_RE = re.compile(
+    r"""(?:from|import)\s+['"]([^'"]+)['"]""")
+
+
+def _pkg_root(spec: str) -> str:
+    """The installable package name from an import specifier: 'date-fns/format'
+    -> 'date-fns'; '@scope/pkg/sub' -> '@scope/pkg'."""
+    parts = spec.split("/")
+    if spec.startswith("@"):
+        return "/".join(parts[:2])
+    return parts[0]
+
+
+def _scan_bare_imports(src_dir) -> set:
+    """All bare (non-relative) package roots imported under src_dir."""
+    found: set = set()
+    try:
+        root = Path(src_dir)
+        if not root.exists():
+            return found
+        for f in root.rglob("*"):
+            if f.suffix not in (".js", ".jsx", ".ts", ".tsx") or not f.is_file():
+                continue
+            try:
+                text = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            for spec in _BARE_IMPORT_RE.findall(text):
+                if spec and not spec.startswith((".", "/")):
+                    found.add(_pkg_root(spec))
+    except Exception:
+        pass
+    return found
 _FRONTEND_FORCE_INFRA = {
     "postcss.config.js": _BASELINE_POSTCSS,
     "tailwind.config.js": _BASELINE_TAILWIND,
@@ -818,6 +892,17 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
                 deps = data.setdefault("dependencies", {})
                 if isinstance(deps, dict):
                     deps.setdefault("react-router-dom", "^6.26.0")
+                    # AUTO-ADD imported common libs (date-fns/axios/clsx/…): scan
+                    # the lane's src for bare third-party imports and pull in any
+                    # from the curated set so the vite build can resolve them. The
+                    # lane can't add them itself (package.json is framework-owned).
+                    try:
+                        for imp in _scan_bare_imports(fe / "src"):
+                            if imp in _COMMON_FRONTEND_LIBS and imp not in deps:
+                                deps[imp] = _COMMON_FRONTEND_LIBS[imp]
+                                changed.append(f"package.json (+{imp})")
+                    except Exception:
+                        pass
                 # SCRIPTS are build INFRASTRUCTURE, not lane content (round 46:
                 # a lane overwrote package.json with no "scripts" at all →
                 # `npm run build` had no build script → docker build failed →

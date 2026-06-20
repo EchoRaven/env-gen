@@ -82,6 +82,17 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
             errors.append(f"step[{i}] lacks method+path (or endpoint='METHOD /path')")
             continue
         pth = str(st["path"]).rstrip("/")
+        # REPOINT MIS-TARGETED REGISTER (smoke-notes 2026-06-20): verifiers confuse
+        # /oauth/register (RFC-7591 OAuth CLIENT registration — needs redirect_uris,
+        # returns client_id, creates NO user) with USER registration. A step POSTing
+        # {email,password} to /oauth/register both 400s (no redirect_uris) AND never
+        # creates a user, so a later /auth/login 401s → business_chain fails forever.
+        # When the body is clearly a user credential (email+password), repoint to the
+        # real user endpoint so the round-trip can close.
+        if pth == "/oauth/register" and isinstance(st.get("body"), Mapping) \
+                and st["body"].get("email") and st["body"].get("password"):
+            st["path"] = "/auth/register"
+            pth = "/auth/register"
         # CANONICAL TOKEN SAVE: an /auth/* step ALWAYS saves the token under the
         # canonical var "token" — merged, never skipped when the verifier already
         # authored a custom save (e.g. {"commenter_token": "access_token"}). The
@@ -143,15 +154,42 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
             "save": {"token": "access_token"},
             "expect": [200, 201],
         })
-    # AUTH-FIRST REORDER (round 45): the verifier wrote /api/* steps that use a
-    # token BEFORE the /auth/register|login step that mints it → 401 "missing
-    # token" → business_chain fails forever. "auth round-trip first" is a
-    # PLATFORM invariant (every app's token comes from /auth/*, true regardless
-    # of domain), so stably hoist the auth steps to the front — a verifier
-    # ordering slip can never 401-block the chain again. Stable sort preserves
-    # register-before-login and the relative order of the rest.
-    out.sort(key=lambda st: 0 if str(st.get("path", "")).rstrip("/")
-             in ("/auth/register", "/auth/login") else 1)
+    # ENSURE-USER-BEFORE-LOGIN (smoke-notes 2026-06-20): /auth/login authenticates
+    # a user that a prior /auth/register must have CREATED. The canonical-save above
+    # gives every login a save:{token}, which masks it from AUTH-PREPEND's "no
+    # minting step" check — so a chain that logs in without ever registering a user
+    # (verifier authored login-first, or registered via /oauth/register) 401s
+    # forever. If a login step has no /auth/register anywhere, synthesize one using
+    # the LOGIN's OWN credentials (so the just-created user matches what login sends)
+    # — the reorder below then runs register first.
+    _logins = [s for s in out if str(s.get("path", "")).rstrip("/") == "/auth/login"]
+    if _logins and not any(
+            str(s.get("path", "")).rstrip("/") == "/auth/register" for s in out):
+        _lb = _logins[0].get("body") if isinstance(_logins[0].get("body"), Mapping) else {}
+        out.insert(0, {
+            "method": "POST", "path": "/auth/register",
+            "body": {"email": (_lb or {}).get("email") or "chain_${rand}@example.com",
+                     "password": (_lb or {}).get("password") or "Chain123!x",
+                     "name": (_lb or {}).get("name") or "Chain Tester"},
+            "save": {"token": "access_token"},
+            "expect": [200, 201, 409],  # 409 = user already exists → still loginable
+        })
+    # AUTH-FIRST REORDER (round 45, hardened 2026-06-20): the verifier wrote /api/*
+    # steps that use a token BEFORE the /auth/* step that mints it, OR authored
+    # login BEFORE register → 401 → business_chain fails forever. "auth round-trip
+    # first, register before login" is a PLATFORM invariant (every app's token comes
+    # from /auth/register → /auth/login, regardless of domain). Rank register(0) <
+    # login(1) < everything-else(2); a stable sort then GUARANTEES register precedes
+    # login even when the verifier authored them in the wrong order (the old sort
+    # gave both rank 0, so a stable sort preserved an authored login-first slip).
+    def _auth_rank(st: Mapping[str, Any]) -> int:
+        p = str(st.get("path", "")).rstrip("/")
+        if p == "/auth/register":
+            return 0
+        if p == "/auth/login":
+            return 1
+        return 2
+    out.sort(key=_auth_rank)
     return out, errors
 
 
@@ -203,15 +241,31 @@ def _dig(payload: Any, dotted: str) -> Optional[Any]:
     return cur
 
 
-def _subst(value: Any, variables: Mapping[str, str]) -> Any:
+def _subst(value: Any, variables: Mapping[str, str], bare: bool = False) -> Any:
     if isinstance(value, str):
         for k, v in variables.items():
-            value = value.replace("${" + k + "}", str(v))
+            sv = str(v)
+            # ``${var.<k>}`` (a var-namespaced form some verifiers author, live
+            # smoke-notes 2026-06-20: login body email "${var.user_email}", note
+            # path "/api/notes/${var.note_id}") is accepted alongside the plain
+            # ``${<k>}``. The namespaced form is replaced first; neither is a
+            # substring of the other, so order only matters for the bare pass.
+            value = value.replace("${var." + k + "}", sv).replace("${" + k + "}", sv)
+            # bare {var} (OpenAPI path-param style) is ALSO accepted, but only on
+            # PATHS (bare=True): verifiers routinely author "/api/notes/{id}"
+            # instead of "/api/notes/${id}" — the literal "{id}" then reaches the
+            # backend int path param → 422 → business_chain breaks forever
+            # (observed live: GET/PUT /api/notes/{id}). The ${...} forms are
+            # replaced FIRST so an already-correct "${id}" leaves no bare "{id}"
+            # behind. Bodies are NOT bare-substituted: a JSON string leaf may
+            # legitimately contain a "{rand}"/"{id}" literal and must not change.
+            if bare:
+                value = value.replace("{var." + k + "}", sv).replace("{" + k + "}", sv)
         return value
     if isinstance(value, Mapping):
-        return {k: _subst(v, variables) for k, v in value.items()}
+        return {k: _subst(v, variables, bare) for k, v in value.items()}
     if isinstance(value, list):
-        return [_subst(v, variables) for v in value]
+        return [_subst(v, variables, bare) for v in value]
     return value
 
 
@@ -222,7 +276,7 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     recorded: List[Dict[str, Any]] = []
     for step in chain.get("steps") or []:
         method = str(step.get("method", "GET")).upper()
-        path = str(_subst(step.get("path", ""), variables))
+        path = str(_subst(step.get("path", ""), variables, bare=True))
         body = _subst(step.get("body"), variables) if step.get("body") else None
         token = variables.get(str(step.get("auth"))) if step.get("auth") else None
         expect = [int(x) for x in (step.get("expect") or []) if str(x).isdigit()]
@@ -250,6 +304,21 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                 val = _dig(payload, dotted)
                 if val is not None:
                     variables[str(var)] = str(val)
+                elif "." not in str(dotted) and str(dotted) not in variables:
+                    # REVERSED-MAPPING TOLERANCE: the contract is
+                    # save:{var_name: response_dotted_path}, but verifiers often
+                    # invert it — save:{"id": "note_id"} meaning "save var note_id
+                    # from response field id" — so the forward dig (response."note_id")
+                    # misses, var "id" never feeds a later ${note_id}, and the chain
+                    # 422s forever. When the forward path is absent AND the value
+                    # lives under the VAR name instead, save under the dotted token.
+                    # Guards: fires only when forward resolution already failed (a
+                    # correct mapping is never disturbed) AND the dotted token is not
+                    # already a set variable (never CLOBBER a value an earlier step
+                    # captured correctly — a later reversed slip can't overwrite it).
+                    rev = _dig(payload, str(var))
+                    if rev is not None:
+                        variables[str(dotted)] = str(rev)
         if kind == "broken":
             break  # later steps would cascade-fail on missing variables
     broken = [f"{s['method']} {s['path']} → {s['status']} ({s['note']})"

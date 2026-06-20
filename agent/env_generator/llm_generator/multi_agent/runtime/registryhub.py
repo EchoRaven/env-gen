@@ -1108,6 +1108,27 @@ class RegistryHub:
                 "to='orchestrator', ...)."
             ),
         )
+        # STRUCTURAL GUARD: App.jsx is the FRAMEWORK-OWNED router/entry point. A
+        # ui_page whose component (or name) is a reserved frontend identifier — "App"
+        # above all — collides with App.jsx's own `export default function App()` and
+        # its react-router imports, so the projected router fails to build ("symbol
+        # App has already been declared", smoke-notes 2026-06-19 → frontend build
+        # broken every cycle → run wedged). Reject at the SOURCE so the frontend entry
+        # point stays consistent (the projector also aliases as a backstop). The agent
+        # must pick a descriptive page name.
+        _RESERVED_FRONTEND_IDENTS = {"App", "BrowserRouter", "Routes", "Route", "React"}
+        _cand = {str(component or "").strip(), str(name or "").strip()}
+        _clash = _cand & _RESERVED_FRONTEND_IDENTS
+        # Reject for AGENT actors (they must rename). The orchestrator's kickoff
+        # FINALIZE path is left to pass — raising there would break finalization;
+        # the projector's reserved-name aliasing is the build-safety net for it.
+        if _clash and str(agent or "") != "orchestrator":
+            raise ValueError(
+                f"register_ui_page rejected: {sorted(_clash)} is a RESERVED framework "
+                f"identifier — App.jsx is the framework-owned router/entry point, NOT a "
+                f"page. Rename the page component to something descriptive (e.g. "
+                f"'NotesAppPage', 'HomePage') and re-register; pages never share App.jsx's name."
+            )
         name = self._ui_snake(name)
         # LIFECYCLE AUTHORITY (mechanism #54): only the framework audit
         # (orchestrator) may flip a page to implemented; an agent self-claiming

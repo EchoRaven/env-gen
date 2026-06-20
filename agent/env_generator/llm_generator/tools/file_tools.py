@@ -71,6 +71,29 @@ def _path_not_found_hint(workspace: Workspace, resolved: Path, raw_path: str) ->
         return ""
 
 
+def _redirect_bare_memory_bank(workspace: Workspace, raw_path: str) -> Optional[Path]:
+    """Agents guess the flat ``memory-bank/<file>`` path, but the bank is per-agent:
+    ``memory-bank/<agent_id>/<file>`` (agents/base.py init_memory_bank). If a bare
+    ``memory-bank/<rest>`` doesn't exist but the same file under THIS agent's subdir
+    does, redirect to it (run bsb900gpt: agents burned reads on the flat path).
+    Best-effort; returns None to leave the original resolution untouched."""
+    try:
+        norm = str(raw_path).strip().lstrip("./")
+        if "\\" in norm:                       # normalize Windows separators
+            norm = "/".join(norm.split("\\"))  # (avoid .replace → Path.replace write-heuristic)
+        prefix = "memory-bank/"
+        if not norm.startswith(prefix):
+            return None
+        rest = norm[len(prefix):]
+        agent_id = getattr(workspace, "agent_id", None)
+        if not agent_id or not rest or rest.startswith(f"{agent_id}/"):
+            return None  # not memory-bank, no agent id, or already per-agent
+        candidate = workspace.resolve(f"{prefix}{agent_id}/{rest}")
+        return candidate if candidate.exists() else None
+    except Exception:
+        return None
+
+
 def _resolve_workspace_path(
     workspace: Workspace,
     raw_path: Optional[str],
@@ -97,7 +120,11 @@ def _resolve_workspace_path(
         return None, f"{op_name}: invalid path '{raw_path}': {e}"
 
     if must_exist and not resolved.exists():
-        return None, f"{op_name}: path not found: {raw_path}" + _path_not_found_hint(workspace, resolved, raw_path)
+        redirected = _redirect_bare_memory_bank(workspace, raw_path)
+        if redirected is not None:
+            resolved = redirected
+        else:
+            return None, f"{op_name}: path not found: {raw_path}" + _path_not_found_hint(workspace, resolved, raw_path)
     if expect_file is True and resolved.exists() and not resolved.is_file():
         return None, f"{op_name}: expected file, got directory: {_workspace_rel(workspace, resolved)}"
     if expect_file is False and resolved.exists() and not resolved.is_dir():

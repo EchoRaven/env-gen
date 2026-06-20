@@ -161,9 +161,22 @@ class AgentStepToolingMixin:
             candidate_names = candidate_names & stage_allow_set
             if not candidate_names:
                 return set()
-        always_include = self.ACTION_STAGE_ALWAYS_INCLUDE.get(stage_name, set())
+        always_include = set(self.ACTION_STAGE_ALWAYS_INCLUDE.get(stage_name, set()))
+        # The orchestrator runs the action-internal sub-stages (communicate/edit_code/
+        # run_checks/delegate_team/deliver) as SEPARATE LLM calls, and this lookup keys
+        # on the BARE sub-stage name. The deliver-gate tools force-offered under the
+        # "action" key (get_skill / submit_retro / deliver_project / deliverability_check)
+        # therefore never reached the run_checks/communicate/edit_code menus → the model
+        # emitted deliver_project from run_checks, hit the release-readiness/retro gate,
+        # then could not call get_skill/submit_retro ("not available in my current scope")
+        # → delivery DEADLOCK (run bsb900gpt: get_skill dispatched 0×, run killed). Mirror
+        # the stage_allow action-inner → "action" fallback above: union the "action"
+        # force-offer into every action-inner sub-stage. The _KICKOFF_DEFER_TOOLS gate
+        # below still strips delivery tools until the run is validation-ready.
+        if stage_name in action_inner and stage_name != "action":
+            always_include |= set(self.ACTION_STAGE_ALWAYS_INCLUDE.get("action", set()))
         if stage_allow:
-            always_include = set(always_include) & stage_allow_set
+            always_include = always_include & stage_allow_set
         # PROPOSAL #28 F2 + PRE-LAUNCH AUDIT F1: do NOT force-offer the validation/
         # delivery tools until the run is VALIDATION-ready. Originally gated on the
         # kickoff signal (defer only during kickoff), but the orchestrator then polled

@@ -189,6 +189,16 @@ class RemediationDispatcher:
                 "frontend", "Frontend container must serve over HTTP (blocks delivery)",
                 "the frontend container does not actually serve (build/serve crash) — "
                 "fix the vite/nginx/start config so the UI loads."),
+            "docker_up": (
+                # Route a build/up failure to the VERIFIER — the only lane with
+                # docker_build/docker_logs (agents_config.yaml). Otherwise the build
+                # error dead-ends on whoever was messaged: smoke-notes 2026-06-19, the
+                # frontend escalated a vite build failure to the BACKEND, which has no
+                # docker tools and no bash menu, and the run wedged on docker_up.
+                "verifier", "Docker build/up is failing — diagnose the FULL build error (blocks delivery)",
+                "the stack build fails (e.g. a vite/esbuild Transform error). Run "
+                "docker_build(service='frontend', no_cache=True) (or docker_logs) to get "
+                "the FULL error with file:line, then file a precise bug to the owning lane."),
             "business_endpoints_reachable": (
                 "backend", "Wire the unreachable business endpoints (blocks delivery)",
                 "registered+implemented endpoints answer 404/405 — the routes are not "

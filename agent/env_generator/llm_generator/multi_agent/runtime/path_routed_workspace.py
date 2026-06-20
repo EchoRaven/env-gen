@@ -525,20 +525,34 @@ class PathRoutedWorkspace:
             else:
                 inferred = ""  # outside — _is_contained will reject
             if not self._is_contained(resolved, inferred):
+                # A leading-slash path the agent means as PROJECT-ROOT-relative
+                # (e.g. "/app/backend") is NOT a real host path — re-interpret it
+                # as workspace-root-relative (chroot semantics) instead of treating
+                # it as a host escape. Sibling-worktree escapes are already raised
+                # above; `..` traversal stays caught (re-rooted path still fails
+                # containment → the redacted error below, which never leaks the
+                # host roots).
+                rel = str(path).replace("\\", "/").lstrip("/")
+                rerooted = (self._code / rel).resolve()
+                # Only honor the chroot re-root when the target (or its parent,
+                # for a new-file write) actually EXISTS in THIS workspace. A real
+                # host path like /etc/passwd or /other/tmp has no in-workspace
+                # counterpart → it stays rejected, preserving the
+                # absolute-outside-is-rejected security invariant.
+                if (self._is_contained(rerooted, "code")
+                        and (rerooted.exists() or rerooted.parent.exists())):
+                    return rerooted
                 raise ValueError(
-                    f"PathRoutedWorkspace: path {str(path)!r} escapes "
-                    f"workspace roots (base={self._base}, code={self._code}); "
-                    f"resolved to {resolved}"
+                    f"path {str(path)!r} is outside the project workspace "
+                    f"and cannot be resolved relative to the project root"
                 )
             return resolved
         root = self._code if target == "code" else self._base
         resolved = (root / as_str).resolve()
         if not self._is_contained(resolved, target):
             raise ValueError(
-                f"PathRoutedWorkspace: path {str(path)!r} escapes "
-                f"its route's root (route={target!r}, "
-                f"base={self._base}, code={self._code}); "
-                f"resolved to {resolved}"
+                f"path {str(path)!r} escapes its route's root "
+                f"(route={target!r}) — use a path inside the project workspace"
             )
         return resolved
 
