@@ -222,6 +222,80 @@ def normalize_table_schema(schema: Any) -> Dict[str, Any]:
     return {"columns": normalize_columns(schema)}
 
 
+_MISSING_TABLE_FIXED_KINDS = {"auth", "oauth", "infra", "spine"}
+_MISSING_TABLE_SPINE = {"users", "tenants"}
+
+
+def _derived_col_type(spec: Any) -> str:
+    t = str(spec or "").lower()
+    if "bool" in t:
+        return "bool"
+    if any(x in t for x in ("float", "decimal", "double", "numeric")):
+        return "float"
+    if any(x in t for x in ("int", "number")):
+        return "int"
+    if any(x in t for x in ("date", "time")):
+        return "timestamp"
+    return "text"
+
+
+def synthesize_missing_tables(tables: Any, endpoints: Any) -> Dict[str, Any]:
+    """BY-CONSTRUCTION contract completeness: ADD a backing table for every
+    creatable business RESOURCE that has NO registered table, derived from the
+    POST endpoint's request schema. At scale the backend lane registers the
+    endpoints but not every table (youtube: 20 business endpoints, 1 table) →
+    the route projector stubs those handlers (no id) → the default verification
+    chain's create saves no id → ${...}_id sent literally → 422 → business_chain
+    wedges → STUCK-ABORT. This is the table analog of synthesize_default_chain and
+    uses the SAME creatable predicate (POST /api/<collection>, no path param, not a
+    fixed kind), so the two agree by construction. Only ADDS (never overrides a
+    lane-registered table); generic; deterministic. Columns mirror the registered
+    convention: id(int,pk) + user_id(int→users.id) + nested parent FK + the request
+    schema's fields (typed)."""
+    out: Dict[str, Any] = dict(tables or {})
+    have = {str(k).lower() for k in out}
+    for ep in (endpoints or []):
+        if not isinstance(ep, dict):
+            continue
+        if str(ep.get("method", "")).upper() != "POST":
+            continue
+        p = str(ep.get("path", "")).rstrip("/")
+        # A creatable COLLECTION resource is a PARAM-LESS POST /api/<col> — exactly
+        # synthesize_default_chain's predicate, so the table side and the chain side
+        # agree by construction (no path param → not a nested resource or an action
+        # verb like POST /api/videos/{id}/like, which would mint a junk 'like' table
+        # the chain never CRUDs).
+        if not p.startswith("/api/") or "{" in p or ":" in p:
+            continue
+        if str((ep.get("metadata") or {}).get("kind") or "").lower() in _MISSING_TABLE_FIXED_KINDS:
+            continue
+        segs = [s for s in p.split("/") if s and s != "api"]
+        if not segs:
+            continue
+        resource = segs[-1]
+        if resource.lower() in have or resource.lower() in _MISSING_TABLE_SPINE:
+            continue
+        cols: List[Dict[str, Any]] = [
+            {"name": "id", "type": "int", "primary_key": True},
+            {"name": "user_id", "type": "int", "references": "users.id"},
+        ]
+        seen = {"id", "user_id"}
+        req = (ep.get("schema") or {}).get("request")
+        if isinstance(req, dict):
+            for field, typ in req.items():
+                f = str(field).strip()
+                if f and f not in seen:
+                    cols.append({"name": f, "type": _derived_col_type(typ)})
+                    seen.add(f)
+        out[resource] = {
+            "id": resource, "name": resource, "status": "defined",
+            "provider": "backend", "schema": {"columns": cols},
+            "metadata": {"derived": "endpoint_schema"},
+        }
+        have.add(resource.lower())
+    return out
+
+
 def _columns_of(table: Dict[str, Any]) -> List[Any]:
     """Extract the column list from a SchemaHub table record.
 
