@@ -1420,6 +1420,35 @@ class Orchestrator:
                     raise RuntimeError(f"Delivery gate failed.\n{report}")
             
                 self._enter_project_phase("done", reason="delivery gate passed")
+                # FINAL-MILESTONE RELEASE. create_release lives ONLY inside the
+                # per-milestone _maybe_framework_deliver, which DEFERS on the final
+                # milestone (visual gate) — so this post-loop success path would mark
+                # the generation done without ever cutting the last milestone's
+                # release (run #11: M1 cut v1.0.0 but M2's v1.1.0 was never cut, and
+                # the resident-lane shutdown then hung). Now the objective gate is
+                # fully clear, so cut it here, BEFORE shutdown — the snapshot only
+                # needs the committed integration head, not stopped lanes. Idempotent:
+                # skipped when the tag is already released (single-milestone path).
+                try:
+                    self._commit_framework_delivery()
+                    _ch = getattr(self.hubs, "codehub", None)
+                    _ver = getattr(self, "_current_milestone_version", "1.0.0")
+                    _already = False
+                    try:
+                        _rs = getattr(getattr(_ch, "stores", None), "releases", None)
+                        _already = bool(_rs and _ver in (_rs.value() or {}))
+                    except Exception:
+                        _already = False
+                    if _ch is not None and hasattr(_ch, "create_release") and not _already:
+                        _ch.create_release(
+                            tag=_ver, source="integration",
+                            notes="Final delivery: delivery gate fully clear.",
+                            agent="orchestrator")
+                        self._write_preview_config(_ver)
+                        self._logger.warning(
+                            "FINAL DELIVERY: gate clear → cut release v%s", _ver)
+                except Exception as _fin_rel_err:  # best-effort observability
+                    self._logger.warning("final-gate release cut failed: %s", _fin_rel_err)
                 phases_completed = ["requirements", "design", "code", "docker", "testing"]
                 self.progress.emit(EventType.PHASE_COMPLETE, "Agent Workflow", {})
                 self.checkpoint.complete_phase("agent_workflow")
