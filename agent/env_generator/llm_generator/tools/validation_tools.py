@@ -163,6 +163,16 @@ then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
         # The orchestrator already runs run_validation (the verifier LLM drifts
         # and won't), so this is what actually lets a healthy app reach delivery.
         runhub_run_id = self._record_runhub_run(report, project_dir)
+        # The delivery gate's verification checklist keys on four build:* CodeHub
+        # checks (delivery_gate.py: build:{database,docker,frontend,backend}). The
+        # framework never recorded them — the verifier was expected to (its prompt
+        # even falsely claimed they auto-record) and drifts / records the wrong
+        # names / stops after one → checklist stuck "not ready" forever even on a
+        # healthy app (smoke run #7: reached delivery, only build:frontend recorded).
+        # run_validation OWNS the per-service docker-up + health outcome, so record
+        # them deterministically here (failure self-corrects: a broken build keeps
+        # the gate honestly blocked).
+        self._record_build_checks(report)
         data = {
             "passed": report["passed"],
             "summary": report["summary"],
@@ -207,6 +217,39 @@ then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
                               "source": "run_validation", "error": er.get("error")},
                     agent="",  # framework/system authority (see docstring)
                 )
+                n += 1
+            except Exception:
+                continue
+        return n
+
+    def _record_build_checks(self, report: dict) -> int:
+        """Record the four ``build:*`` CodeHub checks the delivery-gate verification
+        checklist keys on, derived from run_validation's OWN docker-up + health
+        outcome (not the verifier's error-prone manual recording). Framework
+        authority (``agent=""`` → CodeHub's system fallthrough); best-effort, never
+        affects the verdict. Component map matches delivery_gate's checklist:
+        build:docker←docker_up, build:backend←backend_health,
+        build:frontend←frontend_reachable, build:database←business_writes_persist."""
+        hubs = self._hubs
+        codehub = getattr(hubs, "codehub", None) if hubs is not None else None
+        if codehub is None or not hasattr(codehub, "record_check"):
+            return 0
+        by_name = {c.get("name"): (c.get("status") == "pass")
+                   for c in (report.get("checks") or []) if c.get("name")}
+        docker_ok = by_name.get("docker_up", False)
+        mapping = {
+            "build:docker": docker_ok,
+            "build:backend": by_name.get("backend_health", docker_ok),
+            "build:frontend": by_name.get("frontend_reachable", docker_ok),
+            "build:database": by_name.get("business_writes_persist", docker_ok),
+        }
+        n = 0
+        for name, ok in mapping.items():
+            try:
+                codehub.record_check(
+                    pr_id="main", name=name,
+                    status="success" if ok else "failure",
+                    evidence={"source": "run_validation"}, agent="")
                 n += 1
             except Exception:
                 continue
