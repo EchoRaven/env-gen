@@ -203,7 +203,7 @@ export default function __COMP__() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => {
-    const token = localStorage.getItem('access_token');
+    const token = (localStorage.getItem('access_token') || localStorage.getItem('token'));
     fetch(__PATH__, token ? { headers: { Authorization: 'Bearer ' + token } } : {})
       .then((r) => r.json())
       .then(setData)
@@ -241,7 +241,7 @@ export default function __COMP__() {
   const [status, setStatus] = useState('');
   const onSubmit = async (e) => {
     e.preventDefault();
-    const token = localStorage.getItem('access_token');
+    const token = (localStorage.getItem('access_token') || localStorage.getItem('token'));
     try {
       const r = await fetch('__POST__', {
         method: 'POST',
