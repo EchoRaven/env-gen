@@ -213,17 +213,13 @@ def load_verifier_chains(project_dir: Any) -> List[Dict[str, Any]]:
     return out
 
 
-def _dig(payload: Any, dotted: str) -> Optional[Any]:
-    parts = str(dotted).split(".")
+def _dig_path(payload: Any, parts: List[str]) -> Optional[Any]:
     # ENVELOPE TOLERANCE (2026-06-13): the route projector wraps every business
     # response in the canonical {"item": {...}} (single) / {"items": [...]}
     # (list) envelope, but verifier-authored chains save dotted paths against the
     # bare row — e.g. POST /api/posts saves {"post_id": "id"} expecting {id:...},
     # not {item:{id:...}}. When the first segment isn't at the top level, descend
     # once through the canonical wrapper so the save resolves against the row.
-    # Otherwise post_id stays unsaved → a later ${post_id} step sends a literal
-    # "${post_id}" path param → 422 → the business_chain breaks forever (observed
-    # live: POST /api/posts/${post_id}/likes → 422).
     if isinstance(payload, Mapping) and parts and parts[0] not in payload:
         item = payload.get("item")
         items = payload.get("items")
@@ -239,6 +235,21 @@ def _dig(payload: Any, dotted: str) -> Optional[Any]:
         else:
             return None
     return cur
+
+
+def _dig(payload: Any, dotted: str) -> Optional[Any]:
+    parts = str(dotted).split(".")
+    val = _dig_path(payload, parts)
+    if val is None and len(parts) > 1:
+        # LEAF FALLBACK (2026-06-20): the verifier often prefixes the save-path
+        # with a wrong wrapper/resource key — save {"note_id": "note.id"} or
+        # {"id": "data.id"} where the canonical response is {item:{id}}. The full
+        # path misses (no "note"/"data" key), so resolve the LEAF field alone
+        # (with envelope descent). Closes the save-path-prefix class: id /
+        # item.id / note.id / response.note.id all resolve. Only fires when the
+        # explicit path already failed, so a real nested path is never overridden.
+        val = _dig_path(payload, [parts[-1]])
+    return val
 
 
 def _subst(value: Any, variables: Mapping[str, str], bare: bool = False) -> Any:
