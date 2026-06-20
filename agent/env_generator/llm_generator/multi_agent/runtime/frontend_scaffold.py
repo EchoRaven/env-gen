@@ -721,14 +721,67 @@ _BASELINE_PACKAGE_JSON = """{
 }
 """
 
-_BASELINE_VITE = """import { defineConfig } from 'vite'
+_BASELINE_VITE = r"""import { defineConfig } from 'vite'
 // JSX via Vite's BUILT-IN esbuild automatic runtime — NOT @vitejs/plugin-react.
 // Round 44 white-screen: plugin-react failed to install (ERESOLVE) → vite fell
 // back to esbuild CLASSIC jsx (React.createElement) with no React import →
 // "React is not defined" → every page blank. The automatic runtime compiles
 // JSX to react/jsx-runtime (no React global needed) and depends on NO external
 // plugin, so a missing plugin-react can never blank the UI again.
+
+// safeIconImports: LLM frontends routinely import HALLUCINATED named icons from
+// icon libraries (youtube 2026-06-20: `import { ClosedCaption } from
+// 'lucide-react'` — not a real export → Rollup "is not exported" → vite build
+// fails → docker_up FAILED → no delivery). Route every NAMED icon-lib import
+// through a virtual module that re-exports the REAL icon when it exists and a
+// generic SVG fallback when it does not, so a wrong icon name degrades to a
+// placeholder instead of breaking the whole build. Fully general: no embedded
+// list of valid names; real icons still render; only bad names degrade.
+function safeIconImports() {
+  const ICON_LIB = /^(lucide-react|@heroicons\/react(\/.*)?|react-icons\/.+|@tabler\/icons-react|@radix-ui\/react-icons)$/;
+  const V = '\0safe-icon:';
+  return {
+    name: 'safe-icon-imports',
+    enforce: 'pre',
+    transform(code, id) {
+      if (id.includes('node_modules') || !/\.(jsx?|tsx?)$/.test(id)) return null;
+      if (code.indexOf('import') === -1) return null;
+      let changed = false;
+      const out = code.replace(
+        /import\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g,
+        (m, names, src) => {
+          if (!ICON_LIB.test(src)) return m;
+          changed = true;
+          const enc = src + '::' + names.replace(/\s+/g, ' ').trim();
+          return 'import {' + names + '} from ' + JSON.stringify(V + enc);
+        });
+      return changed ? { code: out, map: null } : null;
+    },
+    resolveId(id) { return id.startsWith(V) ? id : null; },
+    load(id) {
+      if (!id.startsWith(V)) return null;
+      const body = id.slice(V.length);
+      const sep = body.indexOf('::');
+      const src = body.slice(0, sep);
+      const specs = body.slice(sep + 2).split(',').map((s) => s.trim()).filter(Boolean);
+      const lines = [
+        "import React from 'react';",
+        'import * as _real from ' + JSON.stringify(src) + ';',
+        "const _F = React.forwardRef((p, r) => React.createElement('svg', Object.assign({ ref: r, width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 }, p), React.createElement('circle', { cx: 12, cy: 12, r: 10 })));",
+      ];
+      for (const sp of specs) {
+        const parts = sp.split(/\s+as\s+/);
+        const real = parts[0].trim();
+        const local = (parts[1] || parts[0]).trim();
+        lines.push('export const ' + local + ' = _real[' + JSON.stringify(real) + '] || _F;');
+      }
+      return lines.join('\n') + '\n';
+    },
+  };
+}
+
 export default defineConfig({
+  plugins: [safeIconImports()],
   esbuild: { jsx: 'automatic', jsxImportSource: 'react' },
   build: { outDir: 'dist' },
 })
@@ -941,12 +994,29 @@ _COMMON_FRONTEND_LIBS = {
     "@tanstack/react-query": "^5.51.1", "swr": "^2.2.5",
     "framer-motion": "^11.3.2", "react-hot-toast": "^2.4.1",
     "react-toastify": "^10.0.5", "qs": "^6.12.1", "js-cookie": "^3.0.5",
+    # icon / UI / animation libs LLM frontends reach for constantly
+    "lucide-react": "^0.408.0", "@heroicons/react": "^2.1.4",
+    "@headlessui/react": "^2.1.2", "react-router": "^6.26.0",
 }
+
+# Roots the framework already provides (declared as deps by construction) — never
+# re-add or "latest"-pin these.
+_FRAMEWORK_FRONTEND_ROOTS = {"react", "react-dom", "react-router-dom"}
 
 # import X from 'pkg'  /  import 'pkg'  /  } from "pkg"  — captures the bare
 # specifier; relative ('./', '../', '/') imports are ignored by the caller.
 _BARE_IMPORT_RE = re.compile(
     r"""(?:from|import)\s+['"]([^'"]+)['"]""")
+
+# A real, installable npm package root: optional @scope/, lowercase name. Rejects
+# virtual/protocol specifiers (node:fs, virtual:uno.css) and anything that isn't a
+# plain package name, so the general "latest" fallback never feeds npm garbage.
+_INSTALLABLE_PKG_RE = re.compile(
+    r"^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$")
+
+
+def _is_installable_pkg(root: str) -> bool:
+    return bool(root) and ":" not in root and bool(_INSTALLABLE_PKG_RE.match(root))
 
 
 def _pkg_root(spec: str) -> str:
@@ -1067,15 +1137,25 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
                 deps = data.setdefault("dependencies", {})
                 if isinstance(deps, dict):
                     deps.setdefault("react-router-dom", "^6.26.0")
-                    # AUTO-ADD imported common libs (date-fns/axios/clsx/…): scan
-                    # the lane's src for bare third-party imports and pull in any
-                    # from the curated set so the vite build can resolve them. The
-                    # lane can't add them itself (package.json is framework-owned).
+                    # AUTO-ADD EVERY imported third-party lib so the vite build can
+                    # resolve it. The lane can't edit package.json (framework-owned),
+                    # and a curated allowlist can NEVER cover every lib an app
+                    # legitimately uses (youtube 2026-06-20: lucide-react not listed
+                    # → Rollup "failed to resolve import" → docker_up FAILED → no
+                    # release). Pin the known-common ones for reproducibility; fall
+                    # back to "latest" for anything else so NO app is allowlist-
+                    # limited. Skip framework-provided roots + already-declared deps;
+                    # the installable-name guard keeps node:/virtual: specifiers out.
                     try:
+                        _declared = set(deps) | set(data.get("devDependencies") or {})
                         for imp in _scan_bare_imports(fe / "src"):
-                            if imp in _COMMON_FRONTEND_LIBS and imp not in deps:
-                                deps[imp] = _COMMON_FRONTEND_LIBS[imp]
-                                changed.append(f"package.json (+{imp})")
+                            if (imp in _declared or imp in _FRAMEWORK_FRONTEND_ROOTS
+                                    or not _is_installable_pkg(imp)):
+                                continue
+                            ver = _COMMON_FRONTEND_LIBS.get(imp, "latest")
+                            deps[imp] = ver
+                            _declared.add(imp)
+                            changed.append(f"package.json (+{imp}@{ver})")
                     except Exception:
                         pass
                 # SCRIPTS are build INFRASTRUCTURE, not lane content (round 46:
