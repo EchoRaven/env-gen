@@ -142,6 +142,80 @@ def repair_frontend_api_exports(frontend_dir) -> Dict[str, object]:
 _LOCAL_DEFAULT_IMPORT = re.compile(
     r"""import\s+([A-Za-z_$][\w$]*)\s+from\s+['"](\.[^'"]+)['"]""")
 _COMPONENT_DIR = re.compile(r"/(pages|components|views|screens|routes)/")
+_LOCAL_NAMED_IMPORT = re.compile(
+    r"""import\s*\{([^}]*)\}\s*from\s*(['"])(\.[^'"]+)\2""")
+_HAS_DEFAULT_EXPORT = re.compile(r"export\s+default\b")
+
+
+def repair_frontend_named_default_imports(frontend_dir) -> Dict[str, object]:
+    """A page does ``import { NavBar } from '../components/NavBar'`` (NAMED) but the
+    target only ``export default NavBar`` → Rollup HARD-fails the build ("NavBar is
+    not exported by NavBar.jsx") → frontend image won't build → docker_up FAIL → no
+    delivery (live smoke-notes 2026-06-20). The frontend twin of
+    repair_frontend_api_exports for LOCAL component/page imports: when a SINGLE
+    named import isn't exported by its target AND the target has a default export,
+    rewrite that import to a default import. Build-integrity is framework-owned;
+    best-effort, never raises."""
+    try:
+        frontend_dir = Path(frontend_dir)
+        src = frontend_dir / "src"
+        if not src.is_dir():
+            return {"repaired": False, "reason": "no src/"}
+        info: Dict[Path, Tuple[Set[str], bool]] = {}
+
+        def _target_info(p: Path) -> Tuple[Set[str], bool]:
+            if p not in info:
+                try:
+                    t = p.read_text(encoding="utf-8")
+                    info[p] = (_exported_names(t), bool(_HAS_DEFAULT_EXPORT.search(t)))
+                except Exception:
+                    info[p] = (set(), False)
+            return info[p]
+
+        def _resolve(importer: Path, rel: str) -> Optional[Path]:
+            base = (importer.parent / rel)
+            for e in _FRONT_EXTS:
+                cand = base.with_suffix(e)
+                if cand.is_file():
+                    return cand
+            for e in _FRONT_EXTS:
+                idx = base / f"index{e}"
+                if idx.is_file():
+                    return idx
+            return None
+
+        fixed: List[str] = []
+        for f in src.rglob("*"):
+            if f.suffix.lower() not in _FRONT_EXTS or not f.is_file():
+                continue
+            try:
+                text = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            state = {"changed": False}
+
+            def _repl(m: "re.Match") -> str:
+                body, quote, rel = m.group(1), m.group(2), m.group(3)
+                names = [n.strip() for n in body.split(",") if n.strip()]
+                if len(names) != 1 or " as " in body:
+                    return m.group(0)
+                tgt = _resolve(f, rel)
+                if tgt is None:
+                    return m.group(0)
+                exported, has_default = _target_info(tgt)
+                name = names[0]
+                if name not in exported and has_default:
+                    state["changed"] = True
+                    return f"import {name} from {quote}{rel}{quote}"
+                return m.group(0)
+
+            new_text = _LOCAL_NAMED_IMPORT.sub(_repl, text)
+            if state["changed"] and new_text != text:
+                f.write_text(new_text, encoding="utf-8")
+                fixed.append(str(f.relative_to(frontend_dir)))
+        return {"repaired": bool(fixed), "fixed": fixed}
+    except Exception as exc:
+        return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
 def _stub_page_component(name: str) -> str:

@@ -339,7 +339,8 @@ class HealPipeline:
             if not out_dir:
                 return
             from .frontend_scaffold import (
-                repair_frontend_api_exports, scaffold_missing_local_pages)
+                repair_frontend_api_exports, scaffold_missing_local_pages,
+                repair_frontend_named_default_imports)
             from pathlib import Path as _P
             fe = _P(out_dir) / "app" / "frontend"
             rep = repair_frontend_api_exports(fe)
@@ -348,6 +349,13 @@ class HealPipeline:
                     "Frontend api.js reconciled: aliased=%s stubbed=%s",
                     rep.get("aliased"), rep.get("stubbed"),
                 )
+            # Build-integrity: a page doing `import { X } from './Comp'` against a
+            # default-only Comp HARD-fails the Rollup build (live: NotesListPage
+            # imported { NavBar } from a default-export NavBar.jsx → docker_up FAIL).
+            _nd = repair_frontend_named_default_imports(fe)
+            if _nd.get("repaired"):
+                orch._logger.warning(
+                    "Frontend named→default imports reconciled: %s", _nd.get("fixed"))
             # Build-integrity: the frontend lane routinely imports a page it never
             # created (e.g. ./pages/MessagesInboxPage) → ``npm run build`` fails →
             # frontend container can't boot. Scaffold a valid stub for any dangling
