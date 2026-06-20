@@ -369,6 +369,7 @@ class FrameworkValidation:
                 # spin). The self-induced heal/skeleton churn no longer resets the
                 # budget (above), so the fast cap now actually trips; once it does on a
                 # stable failure set we ESCALATE rather than spin to wall-clock.
+                _fset = _fwval_failure_set(data)
                 _fset = restore_regressed_chains(orch, _fset)
                 _prev_fset = getattr(orch, "_fwval_failure_set", None)
                 if _prev_fset is None or _fset != _prev_fset:
