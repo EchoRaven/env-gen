@@ -347,6 +347,14 @@ from models import *  # noqa: F401,F403
 
 Base.metadata.create_all(bind=engine)
 
+# Populate empty business tables with realistic demo data so the UI is not blank
+# on first load (framework-owned; idempotent — skips tables that already have rows).
+try:
+    from seed_data import seed_if_empty
+    seed_if_empty()
+except Exception:
+    pass  # seeding is best-effort; never block boot
+
 app = FastAPI(title="app")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])
@@ -492,6 +500,186 @@ def write_backend_build_infra(output_dir: Any) -> Dict[str, Any]:
     return {"written": list(written), "backend_dir": str(be)}
 
 
+# ── Deterministic SEED DATA (by-construction populated UI on first load) ──────
+# The spec asks for demo data so the home/feed/lists are populated on first load,
+# but the lane rarely produces it and nothing enforced it → blank app. The
+# framework owns the backend, so it owns the seed too: project a seed_data.py from
+# the contract that, on startup, fills each EMPTY business table with FK-valid,
+# realistic rows + login-able demo users. Domain-agnostic (value by column-name
+# heuristic, never placeholder/sequential words the seed_audit flags).
+import hashlib as _seed_hashlib
+
+# MUST stay byte-identical to oauth_store.PASSWORD_SALT / _hash_password (a drift
+# here silently breaks seeded logins). Seeded demo users log in with "password".
+_SEED_PASSWORD = "password"
+_SEED_PASSWORD_SALT = "app_sandbox_salt_2024"
+
+
+def _seed_password_hash() -> str:
+    return _seed_hashlib.sha256(
+        (_SEED_PASSWORD + _SEED_PASSWORD_SALT).encode("utf-8")).hexdigest()
+
+
+_SEED_PEOPLE = ["Ava Chen", "Liam Patel", "Noah Kim", "Mia Garcia", "Ethan Brooks", "Sofia Rossi"]
+_SEED_TITLES = ["Sunrise Timelapse over the Bay", "How We Built It in a Weekend",
+                "A Calm Morning Routine", "Deep Dive: Getting Started",
+                "Field Notes from the Road", "Behind the Scenes"]
+_SEED_BRANDS = ["Pixel Forge", "Trailhead Studio", "North Loop", "Quiet Harbor", "Bright Atlas", "Cedar & Co"]
+_SEED_SENTENCES = ["A behind-the-scenes look at how it all came together.",
+                   "Everything you need to get started, one step at a time.",
+                   "Quick highlights and a few things we learned this week.",
+                   "Thanks for following along — much more on the way.",
+                   "A relaxed walkthrough with notes you can follow."]
+_SEED_GENRES = ["Ambient", "Lo-fi", "Cinematic", "Acoustic", "Electronic"]
+_SEED_OMIT = object()
+
+
+def _seed_slug(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(s).lower()) or "demo"
+
+
+def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Dict[str, int]):
+    """A realistic, deterministic value for one column of seed row ``i`` — or
+    ``_SEED_OMIT`` to leave it (PK/timestamp/unknown → DB default/null). Value is
+    chosen by COLUMN NAME first (domain-agnostic), then type-ish fallbacks."""
+    n = col.lower()
+    if fk_table:
+        if fk_table == "tenants":
+            return "default"
+        m = max(1, int(counts.get(fk_table, 1)))
+        return (i % m) + 1  # reference an existing parent row (SERIAL 1..N)
+    if n in ("id",):
+        return _SEED_OMIT  # PK → SERIAL
+    if n == "password_hash":
+        return _seed_password_hash()
+    if n in ("created_at", "updated_at", "published_at", "watched_at") or n.endswith("_at"):
+        return _SEED_OMIT  # DB default now()/nullable — avoid datetime coercion
+    if n == "email":
+        return _seed_slug(_SEED_PEOPLE[i % len(_SEED_PEOPLE)]) + "@example.com"
+    if n in ("username", "handle") or n.endswith("_handle") or n.endswith("_username"):
+        return "@" + _seed_slug(_SEED_PEOPLE[i % len(_SEED_PEOPLE)])
+    if (n.endswith("_url") or n in ("url", "avatar", "thumbnail", "banner", "image", "photo")
+            or any(k in n for k in ("avatar", "thumbnail", "banner", "image_url", "photo", "video_url", "audio_url"))):
+        size = "200/200" if ("avatar" in n or "photo" in n) else "640/360"
+        return f"https://picsum.photos/seed/{table}{i}/{size}"
+    if any(k in n for k in ("description", "bio", "summary", "about", "caption",
+                            "content", "body", "message", "text", "comment")):
+        return _SEED_SENTENCES[i % len(_SEED_SENTENCES)]
+    if n == "genre":
+        return _SEED_GENRES[i % len(_SEED_GENRES)]
+    if n == "artist":
+        return _SEED_PEOPLE[i % len(_SEED_PEOPLE)]
+    if n in ("name", "title", "display_name", "full_name", "label") or n.endswith("_name") or n.endswith("_title"):
+        pool = _SEED_PEOPLE if table in ("users",) else (_SEED_BRANDS if table in ("channels", "tenants") else _SEED_TITLES)
+        return pool[i % len(pool)]
+    if any(k in n for k in ("views", "count", "subscriber", "likes", "total",
+                            "watch_time", "revenue", "quantity", "duration", "seconds", "position")):
+        return (i + 1) * 1731 % 9800 + 42
+    if n in ("kind", "type"):
+        return ["video", "short"][i % 2]
+    if n == "visibility":
+        return ["public", "unlisted", "public"][i % 3]
+    if n in ("status", "state"):
+        return "active"
+    if n in ("value", "role"):
+        return ["like", "dislike"][i % 2] if n == "value" else "member"
+    if n.startswith("is_") or n.endswith("_flag") or n.endswith("_enabled") or n.startswith("has_") or n in ("active", "enabled", "is_read"):
+        return (i % 2 == 0)
+    return _SEED_OMIT
+
+
+def _seed_topo_order(meta: Dict[str, Dict[str, Any]]) -> List[str]:
+    """Order tables so every FK target is seeded before its referrers (Kahn);
+    self-refs and unresolved cycles are broken by emitting remaining tables in a
+    stable order (their back-edge FK rows reference earlier ids / 'default')."""
+    names = [t for t in meta.keys() if t != "tenants"]  # tenants seeded implicitly
+    deps = {t: set() for t in names}
+    for t in names:
+        for _col, ref in (meta[t].get("fks") or {}).items():
+            if ref in deps and ref != t:
+                deps[t].add(ref)
+    order, placed = [], set()
+    while len(placed) < len(names):
+        ready = [t for t in names if t not in placed and deps[t] <= placed]
+        if not ready:  # cycle — break by taking the lowest-unplaced-dep table
+            remaining = [t for t in names if t not in placed]
+            ready = [min(remaining, key=lambda x: len(deps[x] - placed))]
+        for t in sorted(ready):
+            order.append(t)
+            placed.add(t)
+    return order
+
+
+def render_seed_data(tables: Dict[str, Any]) -> str:
+    """Project a seed_data.py that fills each EMPTY table with realistic, FK-valid
+    rows on startup (idempotent — skips a table that already has rows). Users get a
+    real auth hash so they log in with 'password'. Domain-agnostic + deterministic."""
+    meta = _models_meta(tables)
+    order = _seed_topo_order(meta)
+    n_users = 5
+    counts: Dict[str, int] = {"users": n_users, "tenants": 1}
+    for t in order:
+        counts.setdefault(t, 6)
+    # users first (login-able), then business tables in FK order.
+    seed: Dict[str, List[Dict[str, Any]]] = {}
+    full_order = (["users"] if "users" in meta else []) + [t for t in order if t != "users"]
+    for t in full_order:
+        cols = [c for c in (meta[t].get("cols") or []) if c]
+        fks = meta[t].get("fks") or {}
+        rows: List[Dict[str, Any]] = []
+        for i in range(counts.get(t, 6)):
+            row: Dict[str, Any] = {}
+            for c in cols:
+                v = _seed_cell(c, t, i, fks.get(c), counts)
+                if v is not _SEED_OMIT:
+                    row[c] = v
+            if t == "users":
+                row.setdefault("password_hash", _seed_password_hash())
+                row.setdefault("tenant_id", "default")
+            if row:
+                rows.append(row)
+        if rows:
+            seed[t] = rows
+    classmap = {t: meta[t]["cls"] for t in seed}
+    # repr() (NOT json.dumps) — this is a PYTHON module, so booleans must be
+    # True/False not JSON true/false (else NameError at import).
+    body = (
+        '"""Framework-generated deterministic seed data — every business table is\n'
+        'populated with realistic, FK-valid demo rows on first boot so the UI is not\n'
+        'blank. Idempotent: a table that already has rows is left untouched. Demo\n'
+        'users log in with password "password"."""\n'
+        "from database import SessionLocal\n"
+        "import models\n\n"
+        f"_ORDER = {list(seed.keys())!r}\n"
+        f"_CLASS = {classmap!r}\n"
+        f"_SEED = {seed!r}\n\n\n"
+        "def seed_if_empty():\n"
+        "    db = SessionLocal()\n"
+        "    try:\n"
+        "        for t in _ORDER:\n"
+        "            cls = getattr(models, _CLASS.get(t, ''), None)\n"
+        "            if cls is None:\n"
+        "                continue\n"
+        "            try:\n"
+        "                if db.query(cls).first() is not None:\n"
+        "                    continue\n"
+        "            except Exception:\n"
+        "                continue\n"
+        "            for row in _SEED.get(t, []):\n"
+        "                try:\n"
+        "                    db.add(cls(**{k: v for k, v in row.items() if hasattr(cls, k)}))\n"
+        "                except Exception:\n"
+        "                    pass\n"
+        "            try:\n"
+        "                db.commit()\n"
+        "            except Exception:\n"
+        "                db.rollback()\n"
+        "    finally:\n"
+        "        db.close()\n"
+    )
+    return body
+
+
 def write_backend_skeleton(
     output_dir: Any,
     endpoints: List[Mapping[str, Any]],
@@ -513,6 +701,7 @@ def write_backend_skeleton(
 
     w("database.py", _DATABASE_PY)
     w("models.py", render_models(tables))
+    w("seed_data.py", render_seed_data(tables))
     w("auth_dependency.py", _AUTH_DEPENDENCY_PY)
     w("main.py", render_skeleton_main(endpoints, tables))
     w("schemas.py", _SCHEMAS_PY)
