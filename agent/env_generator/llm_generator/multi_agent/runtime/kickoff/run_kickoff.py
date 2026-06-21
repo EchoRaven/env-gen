@@ -439,6 +439,56 @@ def extract_contract_from_description(description: str) -> Dict[str, Any]:
     return {"endpoints": endpoints, "tables": tables}
 
 
+def derive_frontend_pages_from_endpoints(
+    endpoints: List[Mapping[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Domain-agnostic ui_pages: a login page + one list page per collection-GET
+    business endpoint (``GET /api/<resource>``, last segment not a param and not
+    ``me``). Used to SALVAGE a kickoff whose frontend lane never authored a section
+    in time (slow Gemini) — the synthesis only needs a frontend decision to clear
+    quorum, and the implementation lane then builds these declared pages properly.
+    Empty-in → just the login page; no app-specific names."""
+    pages: List[Dict[str, Any]] = [{
+        "id": "login_page", "route": "/login", "component": "LoginPage",
+        "purpose": "Authenticate the user (framework-owned auth surface).",
+    }]
+    seen_routes = {"/login"}
+    for ep in endpoints or []:
+        # tolerate both {method, path} dicts and "METHOD /path" strings (a lane's
+        # declared backend draft may store endpoints in either shape).
+        if isinstance(ep, str):
+            parts = ep.strip().split(None, 1)
+            if len(parts) != 2:
+                continue
+            method, path = parts[0].upper(), parts[1]
+        elif isinstance(ep, Mapping):
+            method = str(ep.get("method") or "GET").upper()
+            path = str(ep.get("path") or "")
+        else:
+            continue
+        if method != "GET":
+            continue
+        if not path.startswith("/api/"):
+            continue
+        segs = [p for p in path.strip("/").split("/") if p]
+        last = segs[-1] if segs else ""
+        is_param = (last.startswith("{") and last.endswith("}")) or last.startswith(":") or last == "me"
+        if is_param or len(segs) < 2:  # /api/<resource> collection only
+            continue
+        resource = segs[-1]
+        route = "/" + resource
+        if route in seen_routes:
+            continue
+        seen_routes.add(route)
+        comp = "".join(w.capitalize() for w in re.split(r"[_\-]", resource) if w) + "Page"
+        pages.append({
+            "id": f"{resource}_page", "route": route, "component": comp,
+            "purpose": f"List and manage {resource}.",
+            "apis_used": [f"GET {path}"],
+        })
+    return pages
+
+
 def _build_contract(
     drafts: Mapping[str, Mapping[str, Any]], description: str = "",
 ) -> Dict[str, Any]:

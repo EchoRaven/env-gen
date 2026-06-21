@@ -447,6 +447,79 @@ class KickoffDriver:
                 kickoff_handle, synthesis, "unknown_action",
             )
 
+    def _derive_missing_essential_sections(self, kickoff_handle, missing, reason: str):
+        """Record deterministically-DERIVED sections for ESSENTIAL lanes
+        (frontend/backend) that never authored a meeting decision in time (slow
+        Gemini lane → kickoff stall/timeout → missing essential lane → today the
+        run ABORTS because backend/frontend are non-deferrable). The milestone
+        slice already LISTS the endpoints/tables (``- METHOD /path`` / ``- table:
+        col,col``), so extract them and author the lane's section attributed to
+        that lane — clearing quorum so synthesis can finalize. The implementation
+        lane then builds these declared pages/endpoints properly. Returns the list
+        of lanes salvaged ([] → nothing derivable; caller falls through to the
+        honest fallback). Only ever fires for a lane that recorded NOTHING (it's in
+        ``missing``), so it never fights a lane that already declared. General +
+        deterministic; never manufactures a contract from an empty slice."""
+        from .kickoff import run_kickoff
+        description = str(kickoff_handle.get("description") or "")
+        extracted = run_kickoff.extract_contract_from_description(description)
+        eps = extracted.get("endpoints") or []
+        tbls = extracted.get("tables") or []
+        # Prefer endpoints the BACKEND lane ALREADY declared this milestone over the
+        # slice extraction — the common stall is "backend declared, frontend didn't"
+        # (youtube run #17), and the declared set is richer + format-independent.
+        try:
+            _decisions = run_kickoff._read_meeting_decisions(
+                self._orch.hubs, kickoff_handle.get("meeting_id"))
+            _drafts = run_kickoff._collect_drafts(_decisions)
+            _be = _drafts.get("backend") or {}
+            _declared_eps = list(_be.get("api_endpoints") or _be.get("endpoints") or [])
+        except Exception:
+            _declared_eps = []
+        fe_source_eps = _declared_eps or eps
+        salvaged: List[str] = []
+        for lane in missing:
+            if lane == "backend":
+                # GUARD: require BOTH endpoints AND tables — roadmap_validator
+                # hard-requires a non-empty contract.data_model.tables, so deriving
+                # a table-less backend section would just re-fail validation while
+                # misleadingly logging "authored" (reviewer-caught). Without both,
+                # fall through to the honest fallback.
+                if not eps or not tbls:
+                    continue
+                content: Dict[str, Any] = {
+                    "section": "backend", "endpoints": list(eps),
+                    "data_model": {"tables": list(tbls)},
+                }
+            elif lane == "frontend":
+                if not fe_source_eps:
+                    continue  # GUARD: no endpoints anywhere → no derivable pages
+                content = {"section": "frontend",
+                           "ui_pages": run_kickoff.derive_frontend_pages_from_endpoints(fe_source_eps)}
+            else:
+                continue  # verifier handled by the existing defer block below
+            try:
+                self._orch.hubs.workhub.add_meeting_decision(
+                    kickoff_handle.get("meeting_id"),
+                    decision={
+                        "section": lane, "content": content,
+                        "note": ("auto-derived at kickoff stall from the milestone "
+                                 "slice — lane did not author it in time"),
+                    },
+                    agent=lane,  # load-bearing: _missing_attendees counts by agent
+                    milestone_index=kickoff_handle.get("milestone_index"),
+                )
+                salvaged.append(lane)
+            except Exception as exc:  # pragma: no cover - defensive
+                self._orch._logger.warning(
+                    "Kickoff derive of '%s' failed (%s): %s", lane, reason, exc)
+        if salvaged:
+            self._orch._logger.warning(
+                "🔧 KICKOFF DERIVE (%s): authored %s from the milestone slice "
+                "(%d endpoints, %d tables) → re-synthesizing instead of aborting.",
+                reason, salvaged, len(eps), len(tbls))
+        return salvaged
+
     def _attempt_reconciled_finalize(self, kickoff_handle, reason: str):
         """Last-resort deterministic kickoff convergence (charter §8).
 
@@ -469,6 +542,23 @@ class KickoffDriver:
                 "Kickoff reconcile attempt raised (%s): %s", reason, exc,
             )
             return None
+        # ESSENTIAL-lane salvage (youtube 2026-06-21): a slow Gemini frontend/backend
+        # lane that never authored its section in time leaves an essential attendee
+        # "missing" → non-deferrable → the run aborts even though M1 already delivered.
+        # The milestone slice deterministically lists the endpoints/tables, so DERIVE
+        # the missing essential lane's section from it (attributed to that lane),
+        # clearing quorum, then re-synthesize. Runs BEFORE the verifier defer so a
+        # frontend+verifier gap collapses to just-verifier, which the defer handles.
+        if synth.get("status") == "awaiting":
+            _missing = [m for m in (synth.get("missing") or []) if isinstance(m, str)]
+            _essential = [m for m in _missing if m not in _DEFERRABLE_KICKOFF_ATTENDEES]
+            if _essential and self._derive_missing_essential_sections(
+                    kickoff_handle, _essential, reason):
+                try:
+                    synth = run_kickoff.try_synthesize(
+                        self._orch.hubs, kickoff_handle, reconcile=True)
+                except Exception:
+                    return None
         # PROPOSAL #32: if synthesis is only blocked because a DEFERRABLE attendee never
         # submitted (the verifier — its acceptance predicates are derived from the
         # frontend's user_flows + the roadmap floor, and its REAL work, verification
