@@ -474,7 +474,7 @@ def _sig_for_params(params: List[str], path: str, models: Dict[str, Dict[str, An
     return "".join(f"{p}: {_param_column_type(p, path, models)}, " for p in params)
 
 
-def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict[str, Any]], idx: int) -> str:
+def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict[str, Any]], idx: int, response_key: str = "") -> str:
     """Project a FastAPI handler. Functional for recognised CRUD + nested-resource
     patterns over a resolvable model; valid-shape stub otherwise. Never 404s."""
     fn = "_projected_" + re.sub(r"[^a-zA-Z0-9]+", "_", f"{method}_{path}").strip("_").lower() + f"_{idx}"
@@ -720,7 +720,16 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                     "    raise HTTPException(status_code=404, detail=\"not found\")",
                 ]
         elif m == "GET":
-            body_lines = ['    return {"items": [], "total": 0}']
+            # SHAPE CORRECTNESS (youtube run #16, 2026-06-20): a non-param GET whose
+            # resource has no resolvable model (e.g. GET /api/auth/me — "auth" has no
+            # table) fell through to the COLLECTION stub, but the contract declared
+            # response_key='item' → business_endpoints_correct_shape failed forever
+            # ("returns a list but the contract is a single item"). Honor the declared
+            # response_key so the stub shape always matches the contract.
+            if response_key == "item":
+                body_lines = ['    return {"item": {}}']
+            else:
+                body_lines = ['    return {"items": [], "total": 0}']
         elif m == "DELETE":
             body_lines = ['    return {"item": {"deleted": True}}']
         else:
@@ -791,7 +800,14 @@ def project_missing_routes(
             continue
         meta = ep.get("metadata") if isinstance(ep.get("metadata"), Mapping) else {}
         auth = bool(ep.get("auth_required", meta.get("auth_required", True)))
-        block_info.append((path, _generate_handler(method, path, auth, models, i)))
+        _schema = ep.get("schema") if isinstance(ep.get("schema"), Mapping) else {}
+        response_key = str(
+            ep.get("response_key")
+            or (_schema.get("response_key") if isinstance(_schema, Mapping) else "")
+            or meta.get("response_key")
+            or ""
+        ).strip()
+        block_info.append((path, _generate_handler(method, path, auth, models, i, response_key)))
         projected.append(f"{method} {path}")
         existing.add((method, _norm_path(path)))  # dedupe within this batch
 
