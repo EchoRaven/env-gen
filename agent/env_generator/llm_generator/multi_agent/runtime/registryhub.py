@@ -262,14 +262,25 @@ class RegistryHub:
         # keeps its declared key — clobbering it would cause false contract-drift). Only a
         # PRESENT non-canonical key is rewritten; an absent key stays absent (gate-exempt).
         _md = endpoint["metadata"]
-        _rk = _md.get("response_key")
+        # Canonicalize the EFFECTIVE response_key the gate reads — metadata OR
+        # schema (the gate's `noncanonical_business_response_keys` falls back to
+        # schema.response_key). A lane that put a non-canonical key ONLY in schema
+        # (youtube run #18: GET /api/v1/health → schema.response_key='status', no
+        # metadata key) bypassed the metadata-only rewrite → the gate hard-blocked
+        # delivery on it. Set metadata.response_key (read first by the gate) to the
+        # canonical envelope the projector actually emits.
+        _rk = _md.get("response_key") or (endpoint.get("schema") or {}).get("response_key")
         if (isinstance(_rk, str) and _rk and _rk not in ("item", "items")
                 and str(endpoint["path"]).startswith("/api/")
                 and str(_md.get("kind") or "").strip().lower() not in {
                     "auth", "oauth", "infra", "spine", "control_plane", "custom"}
                 and not (_md.get("custom") or _md.get("custom_route"))):
-            _md["response_key"] = self._canonical_response_key(
+            _canon = self._canonical_response_key(
                 endpoint["method"], endpoint["path"])
+            _md["response_key"] = _canon
+            # keep schema consistent so no other reader sees the stale non-canonical key
+            if isinstance(endpoint.get("schema"), dict) and endpoint["schema"].get("response_key"):
+                endpoint["schema"]["response_key"] = _canon
         old_full = {
             **((old or {}).get("schema") or {}),
             "method": (old or {}).get("method"),
