@@ -474,9 +474,12 @@ class KickoffDriver:
             _drafts = run_kickoff._collect_drafts(_decisions)
             _be = _drafts.get("backend") or {}
             _declared_eps = list(_be.get("api_endpoints") or _be.get("endpoints") or [])
+            _dm = _be.get("data_model") if isinstance(_be.get("data_model"), dict) else {}
+            _declared_tbls = list(_dm.get("tables") or [])
         except Exception:
-            _declared_eps = []
+            _declared_eps, _declared_tbls = [], []
         fe_source_eps = _declared_eps or eps
+        fe_source_tbls = _declared_tbls or tbls
         salvaged: List[str] = []
         for lane in missing:
             if lane == "backend":
@@ -492,10 +495,11 @@ class KickoffDriver:
                     "data_model": {"tables": list(tbls)},
                 }
             elif lane == "frontend":
-                if not fe_source_eps:
-                    continue  # GUARD: no endpoints anywhere → no derivable pages
+                if not fe_source_eps and not fe_source_tbls:
+                    continue  # GUARD: no endpoints or tables → only a login page; skip
                 content = {"section": "frontend",
-                           "ui_pages": run_kickoff.derive_frontend_pages_from_endpoints(fe_source_eps)}
+                           "ui_pages": run_kickoff.derive_frontend_pages_from_endpoints(
+                               fe_source_eps, fe_source_tbls)}
             else:
                 continue  # verifier handled by the existing defer block below
             try:

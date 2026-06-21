@@ -439,15 +439,37 @@ def extract_contract_from_description(description: str) -> Dict[str, Any]:
     return {"endpoints": endpoints, "tables": tables}
 
 
+# Infra/spine tables that aren't user-facing list pages.
+_FRONTEND_SKIP_TABLES = {
+    "users", "user", "tenants", "tenant", "sessions", "session", "tokens", "token",
+    "oauth_clients", "oauth_codes", "oauth_tokens", "auth", "migrations", "alembic_version",
+}
+
+
+def _frontend_page_from_resource(resource: str, apis_used: Optional[List[str]] = None) -> Dict[str, Any]:
+    comp = "".join(w.capitalize() for w in re.split(r"[_\-]", resource) if w) + "Page"
+    page: Dict[str, Any] = {
+        "id": f"{resource}_page", "route": "/" + resource,
+        "component": comp, "purpose": f"List and manage {resource}.",
+    }
+    if apis_used:
+        page["apis_used"] = apis_used
+    return page
+
+
 def derive_frontend_pages_from_endpoints(
     endpoints: List[Mapping[str, Any]],
+    tables: Optional[List[Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Domain-agnostic ui_pages: a login page + one list page per collection-GET
     business endpoint (``GET /api/<resource>``, last segment not a param and not
     ``me``). Used to SALVAGE a kickoff whose frontend lane never authored a section
     in time (slow Gemini) — the synthesis only needs a frontend decision to clear
     quorum, and the implementation lane then builds these declared pages properly.
-    Empty-in → just the login page; no app-specific names."""
+    When NO endpoints are extractable (e.g. a prose spec the line-regex can't parse),
+    fall back to one page per business ``tables`` entry (skipping infra/spine tables)
+    so the salvage isn't login-only. Empty-in → just the login page; no app-specific
+    names."""
     pages: List[Dict[str, Any]] = [{
         "id": "login_page", "route": "/login", "component": "LoginPage",
         "purpose": "Authenticate the user (framework-owned auth surface).",
@@ -480,12 +502,16 @@ def derive_frontend_pages_from_endpoints(
         if route in seen_routes:
             continue
         seen_routes.add(route)
-        comp = "".join(w.capitalize() for w in re.split(r"[_\-]", resource) if w) + "Page"
-        pages.append({
-            "id": f"{resource}_page", "route": route, "component": comp,
-            "purpose": f"List and manage {resource}.",
-            "apis_used": [f"GET {path}"],
-        })
+        pages.append(_frontend_page_from_resource(resource, [f"GET {path}"]))
+    # Fallback: no endpoint-derived pages (prose spec) → one page per business table.
+    if len(pages) == 1 and tables:
+        for t in tables:
+            name = (t.get("name") if isinstance(t, Mapping) else str(t or "")).strip().lower()
+            if (not name or name in _FRONTEND_SKIP_TABLES
+                    or ("/" + name) in seen_routes):
+                continue
+            seen_routes.add("/" + name)
+            pages.append(_frontend_page_from_resource(name, [f"GET /api/{name}"]))
     return pages
 
 
