@@ -473,8 +473,12 @@ def derive_frontend_pages_from_endpoints(
     pages: List[Dict[str, Any]] = [{
         "id": "login_page", "route": "/login", "component": "LoginPage",
         "purpose": "Authenticate the user (framework-owned auth surface).",
+    }, {
+        "id": "signup_page", "route": "/signup", "component": "SignupPage",
+        "purpose": "Register a new user (framework-owned auth surface).",
     }]
-    seen_routes = {"/login"}
+    seen_routes = {"/login", "/signup"}
+    _baseline = len(pages)  # auth pages; resource pages are appended past this
     for ep in endpoints or []:
         # tolerate both {method, path} dicts and "METHOD /path" strings (a lane's
         # declared backend draft may store endpoints in either shape).
@@ -504,7 +508,7 @@ def derive_frontend_pages_from_endpoints(
         seen_routes.add(route)
         pages.append(_frontend_page_from_resource(resource, [f"GET {path}"]))
     # Fallback: no endpoint-derived pages (prose spec) → one page per business table.
-    if len(pages) == 1 and tables:
+    if len(pages) == _baseline and tables:
         for t in tables:
             name = (t.get("name") if isinstance(t, Mapping) else str(t or "")).strip().lower()
             if (not name or name in _FRONTEND_SKIP_TABLES

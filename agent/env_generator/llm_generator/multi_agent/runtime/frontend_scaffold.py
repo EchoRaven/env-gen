@@ -248,6 +248,87 @@ def _api_path_to_js(path: str) -> str:
     return expr
 
 
+def _is_auth_page(name: str, page: Mapping[str, Any]) -> bool:
+    """True for the login/signup page — by route, id, or component name. The
+    framework universally owns /auth/register + /auth/login, so a login/signup page
+    must project a REAL functional auth form (not the generic single-input POST stub
+    or the inert no-api stub). youtube run #20 shipped a dead <h2>Login</h2> card
+    because the kickoff-derived login_page had no apis_used → fell to the inert stub
+    → the test-user signup/login walkthrough found no submit button."""
+    route = str((page or {}).get("route") or "").strip().lower().rstrip("/")
+    pid = str((page or {}).get("id") or "").strip().lower()
+    n = str(name or "").lower()
+    return (route in ("/login", "/signin", "/signup", "/register")
+            or pid in ("login_page", "signup_page", "login", "signup", "register_page", "auth_page")
+            or "login" in n or "signup" in n or n == "authpage")
+
+
+def _is_register_mode(name: str, page: Mapping[str, Any]) -> bool:
+    route = str((page or {}).get("route") or "").strip().lower()
+    pid = str((page or {}).get("id") or "").strip().lower()
+    n = str(name or "").lower()
+    return ("signup" in route or "register" in route
+            or "signup" in pid or "register" in pid
+            or "signup" in n or "register" in n)
+
+
+# A self-contained, functional auth form (no dependency on the lane's api.js shape):
+# real email/password inputs + submit, POSTs to the framework-universal /auth/login
+# and /auth/register, stores the access_token under BOTH localStorage keys the
+# projected pages read, and redirects. No placeholder marker → passes the stub gate.
+_AUTH_PAGE_TEMPLATE = """import { useState } from 'react';
+
+export default function __COMP__() {
+  const [isRegister, setIsRegister] = useState(__IS_REGISTER__);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    const path = isRegister ? '/auth/register' : '/auth/login';
+    const body = isRegister ? { email, password, name, username: email } : { email, password };
+    try {
+      const r = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setError((d && (d.detail || d.error)) || ('Error ' + r.status)); return; }
+      const token = d.access_token || d.token || (d.item && (d.item.access_token || d.item.token));
+      if (token) { localStorage.setItem('access_token', token); localStorage.setItem('token', token); }
+      window.location.href = '/';
+    } catch (err) { setError(String(err)); }
+  };
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-zinc-50">
+      <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-xl border border-zinc-200 bg-white p-8 shadow-sm">
+        <h1 className="text-2xl font-semibold text-zinc-900">{isRegister ? 'Create account' : 'Sign in'}</h1>
+        {isRegister ? (
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name"
+                 className="w-full rounded-lg border border-zinc-300 px-3 py-2" />
+        ) : null}
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required
+               className="w-full rounded-lg border border-zinc-300 px-3 py-2" />
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required
+               className="w-full rounded-lg border border-zinc-300 px-3 py-2" />
+        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        <button type="submit" className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700">
+          {isRegister ? 'Create account' : 'Log in'}
+        </button>
+        <button type="button" onClick={() => setIsRegister(!isRegister)}
+                className="w-full text-sm text-blue-600">
+          {isRegister ? 'Have an account? Sign in' : 'New here? Create an account'}
+        </button>
+      </form>
+    </div>
+  );
+}
+"""
+
+
 def _project_page_component(name: str, page: Mapping[str, Any]) -> str:
     """Project a MINIMALLY-FUNCTIONAL, data-driven page from the contract instead
     of an inert stub. Generic for ANY app: a page with a declared GET fetches it
@@ -257,6 +338,12 @@ def _project_page_component(name: str, page: Mapping[str, Any]) -> str:
     handler/api call and no placeholder marker — passing the stub-detector — and
     (b) actually exercises its declared endpoint. The lane may still overwrite it
     with richer UI (this only runs when the page file is missing)."""
+    # Auth pages get a REAL functional login/register form (framework owns
+    # /auth/login + /auth/register) — never the generic single-input POST stub or
+    # the inert no-api stub, which would ship a login page a user can't use.
+    if _is_auth_page(name, page):
+        return (_AUTH_PAGE_TEMPLATE.replace("__COMP__", name)
+                .replace("__IS_REGISTER__", "true" if _is_register_mode(name, page) else "false"))
     label = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").strip() or name
     parsed = []
     for a in (page.get("apis_used") or []):
