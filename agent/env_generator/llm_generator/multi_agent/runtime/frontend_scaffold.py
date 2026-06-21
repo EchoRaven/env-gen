@@ -640,6 +640,25 @@ def project_missing_ui_routes(app_jsx: str, ui_pages: List[Dict[str, Any]]
         return app_jsx, []
 
 
+def _ensure_framework_auth_pages(ui_pages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The framework OWNS the auth UI: /auth/register + /auth/login are
+    framework-scaffolded, and the frontend lane consistently ships a dead/unwired
+    login (no submit, no API call) or omits /signup entirely (youtube run #20/#21:
+    the test-user walkthrough can't register → can't log in → the whole UI is
+    unusable). Force a functional /login AND /signup into the contract, DROPPING any
+    lane-declared page on those routes so the framework's wired auth form always
+    wins the route. Universal + deterministic; no app-specific assumptions."""
+    auth_routes = {"/login", "/signup"}
+    kept = [p for p in (ui_pages or [])
+            if isinstance(p, dict)
+            and str(p.get("route") or "").strip().rstrip("/").lower() not in auth_routes]
+    auth = [
+        {"id": "login_page", "route": "/login", "component": "LoginPage", "name": "Login"},
+        {"id": "signup_page", "route": "/signup", "component": "SignupPage", "name": "Signup"},
+    ]
+    return auth + kept
+
+
 def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -> Dict[str, object]:
     """Project one page-component STUB per registered ui_page + wire React-Router
     routes in App.jsx — the frontend analogue of the deterministic backend
@@ -667,6 +686,13 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
         pages_dir = src / "pages"
         pages_dir.mkdir(parents=True, exist_ok=True)
 
+        # Framework OWNS the auth UI: force a functional /login + /signup (the lane
+        # ships dead/unwired login pages or omits /signup → unusable app). Only when
+        # there are pages to scaffold — an empty contract stays a no-op (don't write
+        # a premature auth-only App.jsx before the contract is ready).
+        if ui_pages:
+            ui_pages = _ensure_framework_auth_pages(ui_pages)
+
         scaffolded: List[str] = []
         entries: List[tuple] = []
         seen_components: Set[str] = set()
@@ -692,7 +718,10 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
             entries.append((comp, route))
 
             target = pages_dir / f"{comp}.jsx"
-            if not target.exists():
+            # Auth pages are ALWAYS (over)written with the framework's wired auth
+            # form — the lane consistently ships a dead/unwired login. Other pages
+            # are projected only when missing (never clobber the lane's real UI).
+            if _is_auth_page(comp, page) or not target.exists():
                 # Project a minimally-FUNCTIONAL page from the contract (fetches the
                 # declared endpoint + renders it), not an inert stub the audit then
                 # blocks. The lane may still overwrite it with richer UI.
