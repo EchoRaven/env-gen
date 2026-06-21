@@ -47,6 +47,44 @@ def _lane_keyword(agent_id: str) -> str:
     return aid
 
 
+def _active_kickoff_meeting_unfinalized(hubs: Any) -> bool:
+    """True iff the most-recent kickoff meeting has NOT reached phase 'finalized'.
+
+    Source of truth = ``run_kickoff._current_phase`` (the last phase_transition
+    decision), matching the kickoff driver's own finalized signal. An open kickoff
+    meeting means the team is DECLARING the current milestone's contract — and at
+    milestone N>=2 the RegistryHub still holds M1's implemented endpoints, so the
+    registry-derived read below would otherwise return VALIDATION and tell a fresh
+    lane "do not start new features", causing it to ignore the new milestone's
+    kickoff_request as stale (youtube run #15: backend never authored its M2
+    section → kickoff timeout → hard abort). Keying on live meeting state re-arms
+    KICKOFF for every milestone. Never raises; degrades to False."""
+    try:
+        wh = getattr(hubs, "workhub", None)
+        stores = getattr(wh, "stores", None)
+        pages_store = getattr(stores, "pages", None)
+        pages = pages_store.value() if pages_store is not None else None
+        if not isinstance(pages, dict):
+            return False
+        latest_id = None
+        latest_at = None
+        for mid, page in pages.items():
+            if not isinstance(page, dict):
+                continue
+            if str(page.get("kind") or "").lower() != "kickoff":
+                continue
+            at = page.get("created_at") or 0
+            if latest_at is None or at >= latest_at:
+                latest_at = at
+                latest_id = mid
+        if latest_id is None:
+            return False
+        from ...runtime.kickoff import run_kickoff
+        return run_kickoff._current_phase(hubs, latest_id) != "finalized"
+    except Exception:
+        return False
+
+
 def current_run_phase(hubs: Any, agent: Any = None) -> str:
     """Return the run lifecycle phase: KICKOFF | IMPLEMENTATION | VALIDATION.
 
@@ -63,6 +101,12 @@ def current_run_phase(hubs: Any, agent: Any = None) -> str:
         validation_phase_reached + the delivery driver use).
     Never raises; degrades to KICKOFF on any read error."""
     try:
+        # An OPEN kickoff meeting overrides the registry-derived read: at milestone
+        # N>=2 the registry still holds M1's endpoints (registry is never reset), so
+        # the checks below return VALIDATION and a fresh lane treats the new
+        # milestone's kickoff_request as stale. Live meeting state re-arms KICKOFF.
+        if _active_kickoff_meeting_unfinalized(hubs):
+            return "KICKOFF"
         bootstrapped = bool(getattr(agent, "_kickoff_bootstrapped", False)) if agent is not None else False
         if not bootstrapped:
             rh = getattr(hubs, "registryhub", None)
