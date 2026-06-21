@@ -329,6 +329,17 @@ export default function __COMP__() {
 """
 
 
+def _mark_fallback_page(src: str) -> str:
+    """Prefix a framework-projected (fallback) page with _PAGE_MARKER so
+    validation_runner.frontend_fallback_pages counts it AND the runtime page gate
+    knows it is NOT a real lane-built page. Auth pages are framework-OWNED (the
+    intended login/signup), NOT fallback, so they are NOT marked."""
+    from .frontend_page_projector import _PAGE_MARKER
+    if _PAGE_MARKER in src:
+        return src
+    return _PAGE_MARKER + "\n" + src
+
+
 def _project_page_component(name: str, page: Mapping[str, Any]) -> str:
     """Project a MINIMALLY-FUNCTIONAL, data-driven page from the contract instead
     of an inert stub. Generic for ANY app: a page with a declared GET fetches it
@@ -356,8 +367,17 @@ def _project_page_component(name: str, page: Mapping[str, Any]) -> str:
     post_ep = next((p for (m, p) in parsed if m == "POST"), None)
 
     if get_ep:
+        # Card/GRID render (not a raw key:value dump): detect an image/thumbnail/
+        # avatar field → <img>; a title/name field → heading; a few scalar fields →
+        # muted meta. Generic for ANY app, so the framework fallback is at least
+        # usable. data-fallback marks it as framework-generated (not lane-built) for
+        # the runtime page gate; it must NOT count as a real 'implemented' page.
         tpl = """import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
+
+const _imgOf = (r) => { for (const k of ['thumbnail_url','image_url','avatar_url','banner_url','photo_url','cover_url','poster_url','image','thumbnail','avatar','url']) { if (r && r[k]) return r[k]; } return null; };
+const _titleOf = (r) => { for (const k of ['title','name','display_name','full_name','label','handle','subject']) { if (r && r[k]) return String(r[k]); } return (r && r.id != null) ? ('#' + r.id) : ''; };
+const _metaOf = (r) => Object.keys(r || {}).filter((k) => !['id','password','password_hash'].includes(k) && !/_url$|^url$|^image$|^thumbnail$|^avatar$|title|name|description/.test(k) && (typeof r[k] !== 'object')).slice(0, 3);
 
 export default function __COMP__() {
   const params = useParams();
@@ -374,25 +394,30 @@ export default function __COMP__() {
     ? data.items
     : (data && data.item ? [data.item] : (Array.isArray(data) ? data : []));
   return (
-    <div className="glass rounded-[2rem] border border-white/10 px-8 py-12">
-      <h2 className="text-xl font-semibold text-white">__LABEL__</h2>
-      {error ? <p className="mt-3 text-sm text-red-400">{error}</p> : null}
-      <ul className="mt-6 space-y-3">
+    <div data-fallback="1" className="px-6 py-8">
+      <h2 className="text-xl font-semibold text-white mb-6">__LABEL__</h2>
+      {error ? <p className="text-sm text-red-400 mb-4">{error}</p> : null}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
         {rows.map((row, i) => (
-          <li key={(row && row.id) || i} className="rounded-xl border border-white/10 px-4 py-3 text-sm text-zinc-200">
-            {Object.keys(row || {}).filter((k) => k !== 'password').map((k) => (
-              <span key={k} className="mr-4"><span className="text-zinc-500">{k}: </span>{String(row[k])}</span>
-            ))}
-          </li>
+          <div key={(row && row.id) || i} className="rounded-xl overflow-hidden border border-white/10 bg-white/5 hover:bg-white/10 transition cursor-pointer">
+            {_imgOf(row)
+              ? <img src={_imgOf(row)} alt="" className="w-full aspect-video object-cover bg-white/10" />
+              : <div className="w-full aspect-video bg-gradient-to-br from-white/10 to-white/5" />}
+            <div className="p-3">
+              <div className="font-medium text-white text-sm line-clamp-2">{_titleOf(row)}</div>
+              {row && row.description ? <div className="text-xs text-zinc-400 mt-1 line-clamp-2">{String(row.description)}</div> : null}
+              {_metaOf(row).map((k) => (<div key={k} className="text-xs text-zinc-500 mt-1">{String(row[k])}</div>))}
+            </div>
+          </div>
         ))}
-      </ul>
+      </div>
       {rows.length === 0 && !error ? <p className="mt-6 text-sm text-zinc-400">No data yet.</p> : null}
     </div>
   );
 }
 """
-        return (tpl.replace("__COMP__", name).replace("__LABEL__", label)
-                .replace("__PATH__", _api_path_to_js(get_ep)))
+        return _mark_fallback_page(tpl.replace("__COMP__", name).replace("__LABEL__", label)
+                                   .replace("__PATH__", _api_path_to_js(get_ep)))
 
     if post_ep:
         tpl = """import { useState } from 'react';
@@ -416,7 +441,7 @@ export default function __COMP__() {
     }
   };
   return (
-    <div className="glass rounded-[2rem] border border-white/10 px-8 py-12">
+    <div data-fallback="1" className="glass rounded-[2rem] border border-white/10 px-8 py-12">
       <h2 className="text-xl font-semibold text-white">__LABEL__</h2>
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
         <input value={value} onChange={(e) => setValue(e.target.value)}
@@ -429,10 +454,10 @@ export default function __COMP__() {
   );
 }
 """
-        return (tpl.replace("__COMP__", name).replace("__LABEL__", label)
-                .replace("__POST__", post_ep))
+        return _mark_fallback_page(tpl.replace("__COMP__", name).replace("__LABEL__", label)
+                                   .replace("__POST__", post_ep))
 
-    return _stub_page_component(name)
+    return _mark_fallback_page(_stub_page_component(name))
 
 
 def scaffold_missing_local_pages(frontend_dir) -> Dict[str, object]:
