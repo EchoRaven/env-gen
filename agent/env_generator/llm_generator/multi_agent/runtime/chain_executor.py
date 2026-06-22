@@ -402,14 +402,48 @@ def _subst(value: Any, variables: Mapping[str, str], bare: bool = False) -> Any:
     return value
 
 
+def _extract_resource_id(payload: Any) -> Any:
+    """Best-effort id from a canonical response envelope — ``{item:{id}}`` (single),
+    ``{id}`` (bare), or ``{items:[{id}]}`` (list, first row). Used to auto-capture
+    the 'current resource id' as a chain runs, so a later get/update/delete step can
+    fall back to it when the verifier referenced an unsaved path variable."""
+    if isinstance(payload, Mapping):
+        item = payload.get("item")
+        if isinstance(item, Mapping) and item.get("id") is not None:
+            return item["id"]
+        if payload.get("id") is not None:
+            return payload["id"]
+        items = payload.get("items")
+        if isinstance(items, list) and items and isinstance(items[0], Mapping) \
+                and items[0].get("id") is not None:
+            return items[0]["id"]
+    return None
+
+
+# A path placeholder the verifier left unresolved: ``${msg_id}`` / ``${var.x}`` or a
+# bare ``{id}`` (never a substituted value, since saved vars are replaced first).
+_UNRESOLVED_PLACEHOLDER = re.compile(r"\$\{[^}]+\}|\{[a-zA-Z_][^}]*\}")
+
+
 def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     """Run one chain; returns {name, steps: [...], broken: [...]}.
     Deterministic wiring; never raises."""
     variables: Dict[str, str] = {"rand": str(int(time.time() * 1000))[-7:]}
     recorded: List[Dict[str, Any]] = []
+    last_id: Any = None
     for step in chain.get("steps") or []:
         method = str(step.get("method", "GET")).upper()
         path = str(_subst(step.get("path", ""), variables, bare=True))
+        # UNRESOLVED-VARIABLE FALLBACK: verifier-authored chains routinely reference a
+        # path var they never saved (outlook run #6: GET /api/messages/${msg_id} with no
+        # prior save:{msg_id:...}). The literal "${msg_id}"/"{msg_id}" then reaches the
+        # int path param → 422 → business_chain fails FOREVER on a functionally-correct
+        # app (the endpoint works fine with a real id). If a placeholder survives
+        # substitution, use the most recent resource id captured from a prior step's
+        # response — the id a correctly-wired chain would have saved. Untouched when the
+        # chain is wired correctly (no leftover placeholder) or no id seen yet.
+        if last_id is not None and _UNRESOLVED_PLACEHOLDER.search(path):
+            path = _UNRESOLVED_PLACEHOLDER.sub(str(last_id), path)
         body = _subst(step.get("body"), variables) if step.get("body") else None
         token = variables.get(str(step.get("auth"))) if step.get("auth") else None
         # ``expect`` tolerated as a scalar (verifier authored ``expect: 201``
@@ -436,6 +470,17 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                  "path": path, "status": status, "ok": ok, "kind": kind,
                  "note": note}
         recorded.append(entry)
+        if ok:
+            # Auto-capture the current resource id (id / item.id / items[0].id) from
+            # EVERY successful step — feeds the unresolved-variable fallback above so a
+            # later get/update/delete step can target a real row even when the verifier
+            # didn't wire an explicit save. Never overrides an explicit save.
+            try:
+                _cid = _extract_resource_id(json.loads(res.get("body_text") or "{}"))
+                if _cid is not None:
+                    last_id = _cid
+            except Exception:
+                pass
         if ok and isinstance(step.get("save"), Mapping):
             try:
                 payload = json.loads(res.get("body_text") or "{}")
