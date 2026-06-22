@@ -405,9 +405,16 @@ if __name__ == "__main__":
             _ASYNC_LOOP[0] = asyncio.get_running_loop()
         except Exception:
             pass
+        # The watchdog (finally) must force-exit with the code main() ACTUALLY
+        # returned: a successful generation (release cut, delivery gate passed)
+        # whose post-delivery asyncio cleanup hangs on leftover resident-lane tasks
+        # should still exit 0 — not be reported a failure (run #11: M1 cut v1.0.0,
+        # gate passed, main() returned 0, yet the watchdog forced exit 7).
+        _rc_holder = [7]
         try:
             rc = await main()
             print(f"[main-exit] main() returned {rc!r}", file=sys.stderr, flush=True)
+            _rc_holder[0] = rc if isinstance(rc, int) else 0
             return rc
         except BaseException as exc:
             # EVIDENCE (2026-06-11 freeze post-mortem): a silent main() exit at
@@ -426,10 +433,13 @@ if __name__ == "__main__":
             # process exits ≤120s after main() ends, no matter what.
             import threading as _th, os as _os
             def _force_exit():
-                print("[main-exit] shutdown watchdog fired — forcing exit",
-                      file=sys.stderr, flush=True)
-                _os._exit(7)
-            _t = _th.Timer(120.0, _force_exit)
+                print(f"[main-exit] shutdown watchdog fired — forcing exit "
+                      f"(rc={_rc_holder[0]})", file=sys.stderr, flush=True)
+                _os._exit(_rc_holder[0])
+            # On success the result (release/commit) is already durable, so a hung
+            # cleanup needn't wait the full safety bound — exit promptly; keep the
+            # long bound for the unknown/failure case.
+            _t = _th.Timer(20.0 if _rc_holder[0] == 0 else 120.0, _force_exit)
             _t.daemon = True
             _t.start()
 

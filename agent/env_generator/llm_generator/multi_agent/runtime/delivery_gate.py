@@ -342,6 +342,19 @@ def incomplete_required_tasks(hubs) -> List[Dict[str, Any]]:
             return False
         try:
             recs = rh.get_contract_test_results(clean) or []
+            # PROPOSAL #44: contract-test records are stored under the
+            # param-NAME-agnostic endpoint_id (``GET /api/notes/{}`` — the same
+            # canonicalization as registryhub.endpoint_id / PROPOSAL #1/#29), but
+            # ``clean`` carries the registry path form (``GET /api/notes/{id}``).
+            # An exact-match lookup misses a PASSING test for an ``{id}`` endpoint,
+            # so validate_api_smoke.*_{id} tasks are falsely "incomplete" and the
+            # delivery gate (incomplete_required_tasks) blocks forever even though
+            # the smoke test passed (smoke-notes run 2026-06-19). Fall back to the
+            # canonical form so the passing record resolves.
+            if not recs:
+                canon = re.sub(r"\{[^}]+\}", "{}", clean)
+                if canon != clean:
+                    recs = rh.get_contract_test_results(canon) or []
         except Exception:
             return False
         return any(
@@ -359,9 +372,20 @@ def incomplete_required_tasks(hubs) -> List[Dict[str, Any]]:
             continue
         kind = (t.get("metadata") or {}).get("kind") or t.get("kind")
         if kind == "implement_endpoint":
-            if _endpoint_norm(t) in impl_ep:
+            _nk = _endpoint_norm(t)
+            # Covered if the lane flipped the registry status, OR if api_smoke
+            # PROVED the endpoint works — a passing contract-test record from
+            # run_validation's live HTTP probe (the same evidence the
+            # validate_api_smoke branch below trusts). The framework PROJECTS a
+            # working handler for every registered endpoint and api_smoke probes
+            # all of them, but the lane often never calls
+            # register_endpoint(status='implemented'); without this, those
+            # api_smoke-validated endpoints' impl tasks block delivery FOREVER
+            # while the idle lanes can't self-heal (youtube run #19 deadlock:
+            # 32 'defined' endpoints all passed api_smoke, gate wedged anyway).
+            if _nk in impl_ep or _endpoint_validated(_nk):
                 continue
-            reason = "endpoint not implemented in registry"
+            reason = "endpoint not implemented in registry and no passing contract-test record"
         elif kind == "implement_table":
             if _table_norm(t) in impl_tbl:
                 continue

@@ -165,28 +165,43 @@ def map_reference_screens(
         if not p.is_file():
             continue
         stem = re.sub(r"[^a-z0-9]+", "_", p.stem.lower())
+        segs = [s for s in stem.split("_") if s]
         route, auth = None, True
-        cands = (f"/{stem}", f"/{stem}s", f"/{stem.rstrip('s')}",
-                 "/" + stem.replace("_", "-"), "/" + stem.replace("_", ""))
+        # Candidates from the full stem AND every TRAILING suffix of its segments.
+        # Reference files are conventionally named ``<appname>_<screen>`` (e.g.
+        # ``outlook_inbox``, ``outlook_calendar_event``); the leading app-name segment
+        # is NOT part of the route, so ``outlook_inbox`` must match ``/inbox`` and
+        # ``outlook_calendar`` ``/calendar`` (run #8: the full-stem-only match mapped
+        # 2/9 outlook references → the visual gate was blind to inbox/calendar/landing).
+        cands: List[str] = []
+        def _add(tok: str) -> None:
+            for v in (f"/{tok}", f"/{tok}s", f"/{tok.rstrip('s')}",
+                      "/" + tok.replace("_", "-"), "/" + tok.replace("_", ""),
+                      "/" + tok.replace("_", "/")):
+                if v and v not in cands:
+                    cands.append(v)
+        _add(stem)
+        for i in range(1, len(segs)):
+            _add("_".join(segs[i:]))   # drop leading segment(s) — the app name
+        if segs:
+            _add(segs[-1])             # the trailing screen token alone
+        # GENERIC FIRST (domain-agnostic): match the screenshot filename to a
+        # declared route, or "/" for a home/landing screen — so an arbitrary app's
+        # screens map without the social catalog biasing ambiguous names.
+        if known:
+            route = next((c for c in cands if c in known), None)
+            if route is None and (stem in _HOME_STEMS or (segs and segs[-1] in _HOME_STEMS)) and "/" in known:
+                route = "/"
+        # The keyword catalog still supplies the public/auth flag (a login/landing
+        # screen is public) and fills the ROUTE only as a LAST resort (never
+        # overriding a generic match, and only when the app serves it) — so a
+        # non-social app whose screen name contains a social token isn't mis-routed.
         for keys, r, a in _ROUTE_KEYWORDS:
             if any(k in stem for k in keys):
-                route, auth = r, a
+                auth = a
+                if route is None and ((not known) or r in known):
+                    route = r
                 break
-        if route is None and known:
-            # GENERIC, domain-agnostic: match the filename to a declared route, or
-            # "/" for a home/landing screen — so an arbitrary app's screens map
-            # without relying on the social catalog above.
-            route = next((c for c in cands if c in known), None)
-            if route is None and stem in _HOME_STEMS and "/" in known:
-                route = "/"
-        if route is not None and known and route not in known:
-            # a keyword-mapped route the app does NOT serve → use the app's REAL
-            # route instead of screenshotting a 404 (domain-agnostic correction).
-            _alt = next((c for c in cands if c in known), None)
-            if _alt is None and stem in _HOME_STEMS and "/" in known:
-                _alt = "/"
-            if _alt is not None:
-                route = _alt
         screens.append({"name": p.stem, "path": str(p), "route": route, "auth": auth})
     return screens
 
@@ -230,9 +245,43 @@ def _http_json(url: str, payload: Optional[dict] = None, timeout: int = 10) -> t
         return 0, {}
 
 
-def _mint_token(backend_port: int, timeout_s: int = 60) -> Optional[str]:
-    """Register a throwaway user and return its bearer token (None on failure)."""
+def _seed_demo_login(project_dir: Any) -> Optional[Dict[str, str]]:
+    """Credentials of the SEEDED demo user (the first user in the generated seed_data.py,
+    whose password is the framework's fixed seed password). The QA tooling logs in AS this
+    user so it validates the POPULATED app — the references depict screens WITH data, and a
+    fresh throwaway user sees empty lists (multi-tenant read-scoping), making every page look
+    blank/mismatched. Domain-agnostic: reads whatever the seed generated. None if no seed."""
+    try:
+        import ast
+        sd = Path(project_dir) / "app" / "backend" / "seed_data.py"
+        if not sd.is_file():
+            return None
+        m = re.search(r"_SEED\s*=\s*(\{.*\})", sd.read_text(encoding="utf-8", errors="ignore"))
+        if not m:
+            return None
+        seed = ast.literal_eval(m.group(1))
+        users = (seed or {}).get("users") or []
+        email = users[0].get("email") if users and isinstance(users[0], dict) else None
+        if not email:
+            return None
+        return {"email": str(email), "password": "password",  # backend_skeleton._SEED_PASSWORD
+                "name": str((users[0].get("name") or "Demo"))}
+    except Exception:
+        return None
+
+
+def _mint_token(backend_port: int, timeout_s: int = 60,
+                demo: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    """A bearer token for screenshots. Prefer the SEEDED demo user (populated screens that
+    match the references); fall back to a throwaway register only if no demo user is known."""
     suffix = str(int(time.time()))[-7:]
+    if demo and demo.get("email"):
+        # the seeded user already exists — log in (don't register); it owns the seed data.
+        _st, _d = _http_json(f"http://localhost:{backend_port}/auth/login",
+                             {"email": demo["email"], "password": demo.get("password") or "password"})
+        _tok = _d.get("access_token") or _d.get("token")
+        if _tok:
+            return str(_tok)
     payload = {
         "email": f"vf_{suffix}@gate.local", "password": "VfGate123!",
         "username": f"vf_{suffix}", "full_name": "Visual Gate",
@@ -486,7 +535,9 @@ async def run_visual_fidelity(
         be_port = (_service_host_port(compose_file, cwd, "backend")
                    or _service_host_port(compose_file, cwd, "api") or 3001)
         auth_needed = any(s["auth"] for s in judged_screens)
-        token = _mint_token(be_port) if auth_needed else None
+        # Log in as the SEEDED demo user so authed screens render POPULATED (matching the
+        # references), not the empty lists a fresh throwaway user sees under tenant-scoping.
+        token = _mint_token(be_port, demo=_seed_demo_login(project_dir)) if auth_needed else None
         if auth_needed and not token:
             # Not a judgment: without a session every auth route renders the
             # login page. Report it; the orchestrator refunds the attempt.
@@ -606,3 +657,136 @@ def remediation_text(result: Mapping[str, Any]) -> str:
     lines.append("\nReference images: use list_reference_images / view_image. "
                  "Your screenshots from the last gate run are in design/visual_gate/.")
     return "\n".join(lines)
+
+
+class VisualFidelityGate:
+    """Stateful visual-fidelity gate extracted from the Orchestrator (PROPOSAL
+    #8 — VisualFidelity slice B). Owns the per-source judging budget + pass
+    latch and the per-milestone deferral counters (the seven ``_vf_*`` fields
+    the orchestrator used to carry inline) and runs the bounded
+    judge-and-remediate loop. It borrows the orchestrator for I/O collaborators
+    (the app-source signature, the run's LLM / output_dir / logger, the workhub
+    and message bus) — this gate is a decomposed PART of the orchestrator, not a
+    general utility.
+
+    The blocking RELEASE decision stays in the orchestrator's deliver flow
+    (``_visual_release_decision``); it reads + anchors this gate's counters
+    (``passed`` / ``deferred_since`` / ``attempts`` / ``total_judgments``).
+    """
+
+    def __init__(self, orch: Any) -> None:
+        self._orch = orch
+        self.sig = None                # current app-source signature
+        self.attempts = 0              # judged runs on the CURRENT source (cap 3)
+        self.passed = False            # latched pass for the current source
+        self.deferred_since = None     # wall-clock anchor of the milestone's FIRST defer
+        self.total_judgments = 0       # per-milestone real-verdict count (backstop)
+        self.last_result = None
+        self.last_judged_sig = None
+
+    def reset_for_milestone(self) -> None:
+        """Anchor the deferral clock + total-judgment backstop to a NEW milestone
+        (PIPE-C3: within a milestone neither is reset by lane churn)."""
+        self.deferred_since = None
+        self.total_judgments = 0
+
+    async def maybe_run(self) -> None:
+        """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the
+        running frontend on the routes the reference images depict, has the
+        vision model compare each pair, and on failure files an ACTIONABLE
+        remediation task for the frontend lane (concrete per-screen deviations).
+        Visual design stays the lane's job; this is the enforcement loop that
+        makes the app converge to the references instead of to whatever the
+        lane happened to ship. Bounded: 3 judged runs per app-source signature
+        (each is N vision calls); a pass latches until the source changes.
+        Best-effort — never raises into the coordination loop."""
+        orch = self._orch
+        try:
+            refs = list(getattr(orch, "_reference_images", None) or [])
+            if not refs:
+                return
+            sig = orch._compute_app_source_signature()
+            if sig != self.sig:
+                self.sig = sig
+                self.attempts = 0   # fresh per-source judging budget (new pixels deserve a verdict)
+                self.passed = False
+                # PIPE-C3: do NOT reset deferred_since here. The deferral
+                # wall-clock is anchored to the milestone's FIRST defer (set in
+                # _maybe_framework_deliver, zeroed only at milestone start) — a
+                # frontend lane that churns files on every visual-fail must NOT be
+                # able to keep rewinding the 900s escape clock (the livelock that
+                # left delivery deferred until the run's budget died).
+            if self.passed:
+                return
+            if self.attempts >= 3:
+                return  # budget spent on this source state — wait for lane changes
+            self.attempts = self.attempts + 1
+            if sig is not None and sig == self.last_judged_sig:
+                # JUDGE-ON-CHANGE: identical source ⇒ identical pixels — re-
+                # judging burns 7 vision calls to learn nothing (round 30:
+                # 3 attempts on one source, scores just noise-wiggled). The
+                # attempt budget now counts DISTINCT source versions.
+                return
+            result = await run_visual_fidelity(orch.output_dir, refs, orch.llm)
+            if result.get("capture_unavailable") or result.get("auth_unavailable"):
+                # Not a judgment — the app wasn't reachable (mid-rebuild) or
+                # the authed session was rejected wholesale (token mint failed
+                # / every auth route bounced to /login — round 31 judged the
+                # LOGIN PAGE against feed/profile references, 0.2s across the
+                # board). Refund so the budget only counts REAL verdicts.
+                self.attempts = max(0, self.attempts - 1)
+                orch._logger.warning(
+                    "Visual fidelity: %s — attempt refunded, will retry next tick.",
+                    result.get("summary") or "capture/auth unavailable")
+                return
+            screens = result.get("screens") or []
+            self.last_result = result
+            self.last_judged_sig = sig
+            # PIPE-C3: per-milestone real-judgment counter (NOT reset on sig
+            # change — only at milestone start). A vision-cost backstop escape so a
+            # churning lane that keeps flipping the source signature can't drive
+            # unbounded judging even before the 900s wall-clock escape fires.
+            self.total_judgments = self.total_judgments + 1
+            if result.get("passed"):
+                self.passed = True
+                orch._logger.warning(
+                    "Visual fidelity PASSED (%s): %s",
+                    ", ".join(f"{s['name']}={s['similarity']:.2f}" for s in screens),
+                    result.get("summary"))
+                return
+            orch._logger.warning(
+                "Visual fidelity attempt %s/3 FAILED — %s",
+                self.attempts, result.get("summary"))
+            try:
+                _vt = orch.hubs.workhub.create_task(
+                    title=f"UI does not match reference designs (visual gate, attempt {self.attempts})",
+                    description=remediation_text(result),
+                    assignee="frontend",
+                    agent="orchestrator",
+                    priority="P1",
+                )
+                # Wake the frontend NOW — milestone work is done at this
+                # point and the lane otherwise idles through the deferral.
+                try:
+                    from tools.communication_tools import _create_message
+                    _msg = _create_message(
+                        source_agent_id="orchestrator",
+                        target_agent_id="frontend",
+                        content=(
+                            "Visual-fidelity remediation task assigned "
+                            f"(task_id={(_vt or {}).get('id')}). Claim it and "
+                            "fix the listed per-screen deviations NOW — the "
+                            "milestone release is DEFERRED until the UI "
+                            "matches the references (or attempts exhaust)."),
+                        msg_type="task_ready",
+                        priority="urgent",
+                        persist=True,
+                        tags=["visual_fidelity", "remediation"],
+                    )
+                    await orch.message_bus.send(_msg)
+                except Exception:
+                    pass
+            except Exception as exc:
+                orch._logger.error("visual-fidelity task creation failed: %s", exc)
+        except Exception as exc:
+            orch._logger.error("visual fidelity gate raised (non-fatal): %s", exc)

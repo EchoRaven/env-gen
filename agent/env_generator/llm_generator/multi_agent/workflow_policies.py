@@ -129,6 +129,25 @@ class DependsOnPolicy(BaseWorkflowPolicy):
         # whether the upstream LANES cleanly finished (they may be mid bookkeeping).
         if _is_validation_ready_signal(message):
             return None
+        # PROPOSAL #20 (C-i): honor the framework's deterministic validation-phase
+        # self-trigger as a depends_on BYPASS. framework_validation.py sets
+        # metadata["validation_phase"]=True ONLY from the framework (never any lane
+        # tool path) when it has already cleared the route-code floor and declared
+        # the tree validation-ready — at which point an idle verifier "waiting on its
+        # upstreams" SHOULD proceed (to run validation / register verification
+        # chains). Without this, the verifier's _upstream_ready_agents is populated
+        # only by task_ready it directly receives, so when lane finish-notifies never
+        # reach it (run #3: 0 task_ready from backend/frontend), THIS gate vetoes
+        # every trigger — framework and orchestrator alike — for the whole run →
+        # chains never register → run_validation blocked → no delivery.
+        # METADATA BOOLEAN ONLY: a lane can place "validation_phase" in `tags`
+        # (orchestrator_agent.j2) — that is LLM-reachable and must NOT bypass; only
+        # the framework-set metadata key does. The `isinstance(dict)` guard keeps a
+        # non-dict metadata (None, or a bare Mock in tests) from spuriously
+        # bypassing — a real BaseMessage.metadata is always a dict.
+        _md = getattr(message, "metadata", None)
+        if isinstance(_md, dict) and _md.get("validation_phase"):
+            return None
         missing = [dep for dep in self.depends_on if dep not in getattr(agent, "_upstream_ready_agents", set())]
         if missing:
             return False, f"waiting on depends_on={missing}"
@@ -616,7 +635,7 @@ class HubConsistencyPolicy(BaseWorkflowPolicy):
                 return (
                     f"You wrote {len(relevant)} page file(s) [{sample}{more}] "
                     f"but registered 0 ui_pages as RegistryHub ui_pages. Call "
-                    f"`workhub_register_ui_page(name=..., path=..., "
+                    f"`registryhub_register_ui_page(name=..., path=..., "
                     f"status='implemented', components=[...])` for each."
                 )
             return None
@@ -1133,11 +1152,38 @@ class RequiredFilesPolicy(BaseWorkflowPolicy):
             # Can't verify without a worktree — abstain (don't false-block).
             return None
         root = Path(wt)
-        missing = [p for p in self.paths if not (root / p).exists()]
-        # An any_of group is "missing" only when NONE of its alternatives exist.
+        # Framework-owned files (frontend: Dockerfile/package.json/nginx/start.sh/
+        # index.html; backend infra) are generated + overwritten by the framework in the
+        # INTEGRATION tree — the lane is write-denied on them (path_routed_workspace.
+        # is_framework_owned) and they never land in the lane worktree, so requiring them
+        # here deadlocks finish (run bsb900gpt: frontend "package.json is framework-owned
+        # AND the gate demands it"). Same rationale that already excludes app/database/.
+        # Filter by construction so the policy can't drift from the ownership map.
+        # Consult the SAME workspace object the write-gate uses (tooling.py
+        # _enforce_write_permissions → self._routed_workspace). agent.workspace is the
+        # bare WorkspaceManager, which has NO is_framework_owned method — reading it
+        # made this filter DEAD CODE, so finish demanded the very infra files the
+        # write-gate denies as framework-owned (smoke catch-22: Dockerfile/
+        # package.json/pyproject.toml/etc. listed missing AND write-denied). The
+        # PathRoutedWorkspace on _routed_workspace actually implements the ownership map.
+        ws = getattr(agent, "_routed_workspace", None) or getattr(agent, "workspace", None)
+        def _fw_owned(p: str) -> bool:
+            try:
+                return bool(ws and hasattr(ws, "is_framework_owned") and ws.is_framework_owned(p))
+            except Exception:
+                return False
+        missing = [p for p in self.paths if not _fw_owned(p) and not (root / p).exists()]
+        # An any_of group is satisfied-by-construction when ANY alternative is
+        # framework-owned: the framework emits that file into the integration tree
+        # (e.g. the src/main.jsx entrypoint), so the lane neither can nor needs to
+        # produce one — drop the group. (Was `all`, which left the main.jsx entry
+        # group demanding a file the lane is write-denied on → residual thrash.)
+        # Lane-owned groups (App.jsx, services/api.js) contain no owned member, so
+        # they stay demanded as real lane work.
         missing_groups = [
             grp for grp in self.any_of
-            if not any((root / p).exists() for p in grp)
+            if not any(_fw_owned(p) for p in grp)
+            and not any((root / p).exists() for p in grp)
         ]
         if not missing and not missing_groups:
             return None
@@ -1251,12 +1297,27 @@ class AutoCommitOnFinishPolicy(BaseWorkflowPolicy):
         if repo_root is None:
             return None
 
+        _superseded: list = []  # PROPOSAL #26 N2
         merge_ok, merge_info = merge_agent_branch_to_main(
             repo_root=repo_root,
             agent_branch=f"agent/{agent.agent_id}",
             main_branch="integration",
             agent_id=str(agent.agent_id),
+            superseded_out=_superseded,
         )
+        if merge_ok and _superseded and hubs is not None:
+            # PROPOSAL #26 N2: the framework superseded this lane's edit(s) to
+            # framework-owned file(s) while resolving the merge conflict. Tell the
+            # lane (inbox_only → surfaced at its next pulse, NO wakeup) so it stops
+            # re-editing them → re-conflict.
+            try:
+                from .runtime.framework_notice import emit_framework_decision
+                emit_framework_decision(
+                    getattr(hubs, "eventhub", None),
+                    lane=str(agent.agent_id), kind="conflict_resolved",
+                    paths=_superseded)
+            except Exception:
+                pass
         if not merge_ok:
             # Conflict (or git error). Emit a structured event so the
             # orchestrator / humans can route resolution. Never block

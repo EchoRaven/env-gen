@@ -53,7 +53,7 @@
 
     hubs=[
         {"name": "RegistryHub",   "read_when": "ONCE per pass to confirm endpoints status='implemented' (registryhub_list_endpoints) and tables status='implemented' (registryhub_list_tables). Contract test results logged via registryhub_record_contract_test.",                                                                                                  "write_when": "registryhub_record_contract_test(endpoint_id=..., result={'passed': bool, 'duration_ms': N}, evidence={'trace':..., 'status_code': N}) for each tested endpoint.",                                                                                                                                                                                                                                                          "tools": "registryhub_list_endpoints, registryhub_list_tables, registryhub_record_contract_test"},
-        {"name": "WorkHub",  "read_when": "workhub_list_ui_pages to see Frontend's UI pages + critical_flows. workhub_get_document to read a coordination document (e.g. the kickoff meeting).",                                                                                                                                                                                          "write_when": "Rarely — bug_create is your canonical write. workhub_comment if leaving a note on a specific page.",                                                                                                                                                                                                                                                                                                                  "tools": "workhub_list_ui_pages, workhub_list_documents, workhub_get_document, workhub_comment"},
+        {"name": "WorkHub",  "read_when": "registryhub_list_ui_pages to see Frontend's UI pages + critical_flows. workhub_get_document to read a coordination document (e.g. the kickoff meeting).",                                                                                                                                                                                          "write_when": "Rarely — bug_create is your canonical write. workhub_comment if leaving a note on a specific page.",                                                                                                                                                                                                                                                                                                                  "tools": "registryhub_list_ui_pages, workhub_list_documents, workhub_get_document, workhub_comment"},
         {"name": "CodeHub",  "read_when": "codehub_get_diff + codehub_get_file_content when reviewing OTHER agents' PRs. Bare read(file_path=...) reads YOUR worktree which does NOT contain other agents' un-merged writes.",                                                                                                                  "write_when": "Rarely — report findings via send_message/bug_create; there is NO PR-review tool.",                                                                                                                                                                                                                                                                                                                                                          "tools": "codehub_get_diff, codehub_get_file_content, codehub_list_inline_comments"},
         {"name": "EventHub", "read_when": "task_ready from upstream is your wake trigger. issue events on PRs you opened.",                                                                                                                                                                                                                      "write_when": "EventHub READ-ONLY from this agent. bug_create publishes verifier/bug_found internally — you do NOT call eventhub_publish.",                                                                                                                                                                                                                                                                                          "tools": "eventhub_inbox, eventhub_get_thread, eventhub_subscribe"}
     ],
@@ -254,7 +254,7 @@ Workspace conventions: read `design/agent_notes.md` before authoring.
        contracts from M{{ milestone_index - 1 }}.
      - `registryhub_list_tables(status='implemented')` — data-model tables
        from M{{ milestone_index - 1 }}.
-     - `workhub_list_ui_pages()` — UI pages already drafted.
+     - `registryhub_list_ui_pages()` — UI pages already drafted.
      - Do NOT re-litigate prior-milestone predicates; add NEW
        predicates for the M{{ milestone_index }} critical flows only.
 {% else %}
@@ -499,7 +499,7 @@ helpers + ``finish``, nothing else):
 START by re-reading the requirements block above + (if M>0) pulling
 RegistryHub for prior-milestone artifacts.
 
-FINAL PROTOCOL (this overrides anything above if in doubt): declare your 'verifier' section ONE ITEM PER CALL with the typed declare tools — declarations merge automatically: `kickoff_declare_predicate(meeting_id=..., milestone_index=..., id='feed_renders', description='GET /api/feed returns items after a post is created', kind='api_smoke', flow_id='flow_post') — ONCE PER PREDICATE`. Scalar fields (e.g. auth) go in one small `workhub_add_meeting_decision(..., decision={'section': 'verifier', 'content': {...}})`. Then `finish()`. NEVER one giant inline payload. Never cancel/fail workhub tasks here.
+FINAL PROTOCOL (this overrides anything above if in doubt): declare your 'verifier' section ONE ITEM PER CALL with the typed declare tools — declarations merge automatically. **The example below is from an UNRELATED domain, shown only for SHAPE — derive every id/description/path from THIS app's actual registered endpoints; NEVER copy `/api/feed`/`flow_post` unless THIS app has them:** `kickoff_declare_predicate(meeting_id=..., milestone_index=..., id='<resource>_renders', description='GET /api/<your-resource> returns items after one is created', kind='api_smoke', flow_id='<your_flow>') — ONCE PER PREDICATE`. Scalar fields (e.g. auth) go in one small `workhub_add_meeting_decision(..., decision={'section': 'verifier', 'content': {...}})`. Then `finish()`. NEVER one giant inline payload. Never cancel/fail workhub tasks here.
 </kickoff_response_briefing>
 
 {% endmacro %}
@@ -839,6 +839,10 @@ docker_down()            # Stop containers
 
 <api_testing_template>
 ```python
+# SHAPE ONLY — registryhub_list_endpoints is the source of truth. Substitute THIS app's
+# real base URL + host port (run-specific; see your wake metadata / docker-compose host
+# ports) and its OWN resources. The /login and /posts paths below are a generic illustration
+# from an unrelated domain, NOT this app's contract — never test endpoints this app lacks.
 # Health check
 test_api(method="GET", url="http://localhost:8080/health")
 
@@ -940,7 +944,7 @@ Validate this run for release readiness.
 2. `workhub_list_tasks(assignee="verifier", status="pending")` to enumerate your assigned validation tasks (validate_api_smoke / validate_ui_smoke / validate_ui_flow); for each: `workhub_task(action="claim", task_id=...)`.
 3. `registryhub_list_endpoints(status='implemented')` — confirms backend has shipped. If empty: send_message orchestrator + finish.
 4. `registryhub_list_tables(status='implemented')` — confirms DB ready.
-5. `workhub_list_ui_pages()` — read the frontend's ui_pages (from the kickoff section) — drives ui_smoke + ui_flow targets.
+5. `registryhub_list_ui_pages()` — read the frontend's ui_pages (from the kickoff section) — drives ui_smoke + ui_flow targets.
 6. `docker_up(build=True)` + `docker_status()` — first-time validation needs images built; orphan containers from earlier runs are removed automatically. Must succeed before any API/UI tests.
 7. For EACH endpoint: `test_api(...)` + `registryhub_record_contract_test(...)`; complete the matching `validate.api_smoke.*` task via `workhub_task(action="complete", task_id=...)`.
 8. For EACH UI page: `browser_navigate(...)` + `browser_screenshot(...)` (ui_smoke); complete the matching `validate.ui_smoke.*` task.

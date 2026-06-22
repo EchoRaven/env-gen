@@ -26,6 +26,29 @@ _RECOGNIZED_KEYS = {
     "verifier": ("predicates",),
 }
 
+# AUXILIARY kickoff fields a section legitimately records via the generic
+# workhub_add_meeting_decision tool — there is NO kickoff_declare_* tool for
+# them. The frontend prompt's FINAL PROTOCOL step 4 instructs exactly this
+# ("one small add_meeting_decision for the scalar fields: auth, done_def"), and
+# the reconcile/synthesis READS them (run_kickoff: done_def floor +
+# _pick_feature_inventory). They are NOT buildable substance (section_has_substance
+# still ignores them, so they don't advance the phase) but they are NOT
+# non-contract garbage either: a decision carrying ONLY these must be ACCEPTED,
+# not rejected into an 18× resend loop (run bsb900gpt). Auth (auth/auth_model)
+# is deliberately EXCLUDED — it is framework-owned and a real wrong-keys signal
+# (youtube run #13). Prefix match absorbs the LLM's flattened variants
+# (feature_inventory_auth / feature_inventory_tags).
+_AUX_KICKOFF_KEYS = {
+    "frontend": ("done_def", "feature_inventory", "reference_image_manifest", "task_tree"),
+    "backend": ("done_def", "feature_inventory", "task_tree"),
+    "verifier": ("done_def", "feature_inventory"),
+}
+
+
+def _is_aux_key(key: str, section: str) -> bool:
+    return any(key == aux or key.startswith(aux)
+               for aux in _AUX_KICKOFF_KEYS.get(section, ()))
+
 
 def non_contract_keys(content: Any, section: str) -> list:
     """Return the sorted non-meta keys a decision carried that are NOT part of
@@ -45,7 +68,13 @@ def non_contract_keys(content: Any, section: str) -> list:
     present = {k for k in content if k not in _META_KEYS}
     if not present or (present & recognized):
         return []
-    return sorted(present)
+    # A decision carrying ONLY legitimate auxiliary kickoff fields (done_def /
+    # feature_inventory / ...) is the prompt-sanctioned "scalar fields" decision —
+    # accept it (return []), don't reject it into a resend loop. Only keys that are
+    # neither contract NOR aux (e.g. framework-owned auth / auth_model) are real
+    # "wrong keys" — and the message then names exactly those.
+    wrong = sorted(k for k in present if not _is_aux_key(k, section))
+    return wrong
 
 
 def real_items(seq: Any) -> int:

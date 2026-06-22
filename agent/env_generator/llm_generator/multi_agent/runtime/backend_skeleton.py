@@ -302,6 +302,7 @@ def _models_meta(tables: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     def add(table: str, cols: List[Dict[str, Any]]) -> None:
         names, fks = [], {}
         have_pk = False
+        pk_name, pk_type = None, "integer"
         for c in cols:
             if _is_constraint_pseudo_column(c):
                 continue
@@ -311,12 +312,17 @@ def _models_meta(tables: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
             names.append(n)
             if c.get("primary_key") or c.get("pk"):
                 have_pk = True
+                pk_name = n
+                pk_type = str(c.get("type") or "integer")
             tgt = _fk_target(c)
             if tgt:
                 fks[n] = tgt.split(".")[0]
         if not have_pk and "id" not in names:
             names.insert(0, "id")
-        meta[table] = {"cls": _class_name(table), "cols": names, "fks": fks}
+        if pk_name is None:
+            pk_name = "id"  # synthesized SERIAL id
+        meta[table] = {"cls": _class_name(table), "cols": names, "fks": fks,
+                       "pk": pk_name, "pk_type": pk_type}
 
     add("tenants", _merge_cols(_SPINE_TENANT_COLS, by_name.get("tenants", [])))
     add("users", _merge_cols(_SPINE_USER_COLS, by_name.get("users", [])))
@@ -347,6 +353,14 @@ from models import *  # noqa: F401,F403
 
 Base.metadata.create_all(bind=engine)
 
+# Populate empty business tables with realistic demo data so the UI is not blank
+# on first load (framework-owned; idempotent — skips tables that already have rows).
+try:
+    from seed_data import seed_if_empty
+    seed_if_empty()
+except Exception:
+    pass  # seeding is best-effort; never block boot
+
 app = FastAPI(title="app")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])
@@ -366,20 +380,66 @@ def health():
     return {"status": "healthy"}
 '''
 
-_MAIN_FOOTER = '''
-
 # LANE-OVERRIDE HOOK: custom_routes.py is the ONE backend file the lane owns —
 # genuinely custom business logic (beyond contract-projected CRUD) goes there.
-# The framework NEVER writes or overwrites it. Routes registered there take
-# effect on top of the projected handlers (FastAPI matches them as defined).
+# The framework NEVER writes or overwrites it.
+#
+# OVERRIDE SCOPE (outlook run #7): the custom router is included BEFORE the projected
+# handlers so it OVERRIDES them (Starlette matches the first-registered route) — but
+# ONLY for NON-STANDARD endpoints. The projected handlers for STANDARD CRUD (a bare
+# collection GET/POST, an item GET/PATCH/PUT/DELETE by trailing {param}, and the /me
+# singleton) are correct-by-construction over the real ORM columns AND wrapped in
+# try/except. A lane custom CRUD handler, by contrast, routinely uses WRONG column
+# names (run #7: POST /api/messages with sender/date/is_starred vs the model's
+# from_name/sent_at/is_flagged) and has NO error handling → 500 → business_endpoints
+# fails → the run wedges (the lane often can't even self-heal it). So for standard
+# CRUD the SAFE projected handler must win; custom_routes overrides ONLY the endpoints
+# the projector mis-handles — the /{id}/<action> verbs (rsvp/reply/forward/…) it
+# treats as a wrong create. That keeps the run #2 fixes (/auth/me via the projector's
+# own /me branch; /{id}/rsvp via custom) while removing the buggy-CRUD-handler 500s.
+# custom_routes imports only database/models/auth_dependency (never main) → no
+# circular-import risk from the early include.
+_CUSTOM_ROUTES_INCLUDE = '''
+def _custom_route_overrides_projected(method, path):
+    """A lane custom route may OVERRIDE the projected handler only for NON-standard-CRUD
+    endpoints — i.e. an action verb after a path param (/x/{id}/rsvp), search, or any
+    other novel shape. Standard CRUD (bare collection, item-by-{param}, /me) keeps the
+    safe projected handler, so a buggy lane CRUD handler can't 500-shadow it."""
+    segs = [s for s in str(path).strip("/").split("/") if s]
+    if segs and segs[0] == "api":
+        segs = segs[1:]
+    if not segs:
+        return True
+    last = segs[-1]
+    n_params = sum(1 for s in segs if s.startswith("{") or s.startswith(":"))
+    last_is_param = last.startswith("{") or last.startswith(":")
+    # standard CRUD shapes → projected wins (return False = do NOT let custom override):
+    if len(segs) == 1 and not last_is_param:          # collection: /messages
+        return False
+    if last_is_param and n_params == 1:               # item by id: /messages/{id}
+        return False
+    if last == "me":                                  # current-user singleton: /auth/me
+        return False
+    return True                                       # actions / search / novel → custom wins
+
 try:
     from custom_routes import router as _custom_router
+    # Keep only the custom routes that legitimately override (or add) — drop the ones
+    # duplicating a standard-CRUD endpoint so the safe projected handler serves those.
+    _custom_router.routes = [
+        _r for _r in list(getattr(_custom_router, "routes", []))
+        if _custom_route_overrides_projected(
+            next(iter(getattr(_r, "methods", []) or ["GET"])), getattr(_r, "path", ""))
+    ]
     app.include_router(_custom_router)
 except ImportError:
     pass
 except Exception as _custom_exc:  # pragma: no cover — a broken override must not kill boot
     import logging
     logging.getLogger("custom_routes").warning("custom_routes failed to load: %s", _custom_exc)
+'''
+
+_MAIN_FOOTER = '''
 
 if __name__ == "__main__":
     import uvicorn
@@ -413,7 +473,12 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
     # _AUTH_MIDDLEWARE references ``app`` + imports jwt/JSONResponse/jwt_manager; it is
     # inserted after the app is constructed and before the routes (static-first).
     mid = _AUTH_MIDDLEWARE.strip("\n")
+    # _CUSTOM_ROUTES_INCLUDE precedes the projected blocks so a lane custom_routes
+    # handler OVERRIDES the projected one for the same METHOD+path (first-registered
+    # wins in Starlette) — the documented lane-override intent, which the old footer
+    # placement silently inverted.
     body = (_MAIN_HEADER + "\n\n" + mid + "\n\n\n"
+            + _CUSTOM_ROUTES_INCLUDE + "\n\n\n"
             + "\n\n\n".join(static_blocks + param_blocks) + _MAIN_FOOTER)
     return body
 
@@ -492,6 +557,222 @@ def write_backend_build_infra(output_dir: Any) -> Dict[str, Any]:
     return {"written": list(written), "backend_dir": str(be)}
 
 
+# ── Deterministic SEED DATA (by-construction populated UI on first load) ──────
+# The spec asks for demo data so the home/feed/lists are populated on first load,
+# but the lane rarely produces it and nothing enforced it → blank app. The
+# framework owns the backend, so it owns the seed too: project a seed_data.py from
+# the contract that, on startup, fills each EMPTY business table with FK-valid,
+# realistic rows + login-able demo users. Domain-agnostic (value by column-name
+# heuristic, never placeholder/sequential words the seed_audit flags).
+import hashlib as _seed_hashlib
+
+# MUST stay byte-identical to oauth_store.PASSWORD_SALT / _hash_password (a drift
+# here silently breaks seeded logins). Seeded demo users log in with "password".
+_SEED_PASSWORD = "password"
+_SEED_PASSWORD_SALT = "app_sandbox_salt_2024"
+
+
+def _seed_password_hash() -> str:
+    return _seed_hashlib.sha256(
+        (_SEED_PASSWORD + _SEED_PASSWORD_SALT).encode("utf-8")).hexdigest()
+
+
+_SEED_PEOPLE = ["Ava Chen", "Liam Patel", "Noah Kim", "Mia Garcia", "Ethan Brooks", "Sofia Rossi"]
+# Neutral, domain-agnostic labels for name/title columns — read fine as a task title, a
+# document name, a board, a product, or a message subject (NOT video/media-platform shaped).
+_SEED_TITLES = ["Getting Started", "Project Overview", "Weekly Summary",
+                "Quarterly Plan", "Team Update", "Field Report"]
+_SEED_SENTENCES = ["A short overview of what this is and how it works.",
+                   "Everything you need to get started, one step at a time.",
+                   "A few quick highlights and notes from this week.",
+                   "Thanks for following along — more to come.",
+                   "A brief walkthrough with notes you can follow."]
+_SEED_OMIT = object()
+
+
+def _seed_slug(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(s).lower()) or "demo"
+
+
+def _pk_type_cat(t: Optional[str]) -> str:
+    """Coarse PK type category, domain-agnostic: integer (SERIAL) / uuid / text."""
+    s = str(t or "").lower()
+    if "uuid" in s or "guid" in s:
+        return "uuid"
+    if any(k in s for k in ("int", "serial", "bigint", "smallint", "number")):
+        return "integer"
+    if any(k in s for k in ("char", "text", "string", "str", "slug", "varchar", "clob")):
+        return "text"
+    return "integer"  # unknown → assume SERIAL (the common case)
+
+
+def _seed_pk_value(table: str, n: int, pk_type: Optional[str]):
+    """Deterministic PK value for parent row ``n`` (0-based) when its PK is NOT an integer
+    SERIAL — so a child FK can reference the exact same key. Integer PKs return None (the
+    caller leaves them to SERIAL / index+1)."""
+    cat = _pk_type_cat(pk_type)
+    if cat == "uuid":
+        import uuid as _uuid
+        return str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"{table}-{n + 1}"))
+    if cat == "text":
+        return f"{_seed_slug(table)[:12]}-{n + 1}"
+    return None
+
+
+def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Dict[str, int],
+               pk_name: Optional[str] = None, pk_type: Optional[str] = None,
+               pk_types: Optional[Dict[str, str]] = None):
+    """A realistic, deterministic value for one column of seed row ``i`` — or
+    ``_SEED_OMIT`` to leave it (PK/timestamp/unknown → DB default/null). Value is
+    chosen by COLUMN NAME first (domain-agnostic), then type-ish fallbacks.
+    ``pk_types`` maps each parent table to its PK type so a FK is seeded with the parent's
+    ACTUAL key type (integer SERIAL 1..N, or a deterministic text/uuid key)."""
+    n = col.lower()
+    if fk_table:
+        if fk_table == "tenants":
+            return "default"
+        m = max(1, int(counts.get(fk_table, 1)))
+        idx = i % m
+        _ppk = _seed_pk_value(fk_table, idx, (pk_types or {}).get(fk_table))
+        return _ppk if _ppk is not None else idx + 1  # text/uuid parent key, else SERIAL 1..N
+    if pk_name is not None and col == pk_name:
+        _own = _seed_pk_value(table, i, pk_type)
+        return _own if _own is not None else _SEED_OMIT  # deterministic text/uuid PK, else SERIAL
+    if n in ("id",):
+        return _SEED_OMIT  # PK → SERIAL (fallback when pk metadata isn't threaded)
+    if n == "password_hash":
+        return _seed_password_hash()
+    if n in ("created_at", "updated_at") or n.endswith("_at"):
+        return _SEED_OMIT  # DB default now()/nullable — avoid datetime coercion
+    if n == "email":
+        return _seed_slug(_SEED_PEOPLE[i % len(_SEED_PEOPLE)]) + "@example.com"
+    if n in ("username", "handle") or n.endswith("_handle") or n.endswith("_username"):
+        return "@" + _seed_slug(_SEED_PEOPLE[i % len(_SEED_PEOPLE)])
+    if (n.endswith("_url") or n in ("url", "avatar", "thumbnail", "banner", "image", "photo")
+            or any(k in n for k in ("avatar", "thumbnail", "banner", "image_url", "photo", "video_url", "audio_url"))):
+        size = "200/200" if ("avatar" in n or "photo" in n) else "640/360"
+        return f"https://picsum.photos/seed/{table}{i}/{size}"
+    if any(k in n for k in ("description", "bio", "summary", "about", "caption",
+                            "content", "body", "message", "text", "comment")):
+        return _SEED_SENTENCES[i % len(_SEED_SENTENCES)]
+    if n in ("name", "title", "display_name", "full_name", "label") or n.endswith("_name") or n.endswith("_title"):
+        pool = _SEED_PEOPLE if table == "users" else _SEED_TITLES
+        return pool[i % len(pool)]
+    if any(k in n for k in ("count", "total", "amount", "quantity", "number", "duration",
+                            "seconds", "position", "score", "rating", "price", "views",
+                            "likes", "subscriber", "watch_time", "revenue")):
+        return (i + 1) * 1731 % 9800 + 42
+    if n in ("status", "state"):
+        return "active"
+    if n == "role":
+        return "member"
+    if n in ("kind", "type", "category"):
+        # no enum/CHECK metadata in the contract → a NEUTRAL non-null token, never a
+        # domain literal like 'video'/'short' (which is wrong for non-video apps).
+        return "standard"
+    if n == "visibility":
+        return "public"
+    if n.startswith("is_") or n.endswith("_flag") or n.endswith("_enabled") or n.startswith("has_") or n in ("active", "enabled", "is_read"):
+        return (i % 2 == 0)
+    return _SEED_OMIT
+
+
+def _seed_topo_order(meta: Dict[str, Dict[str, Any]]) -> List[str]:
+    """Order tables so every FK target is seeded before its referrers (Kahn);
+    self-refs and unresolved cycles are broken by emitting remaining tables in a
+    stable order (their back-edge FK rows reference earlier ids / 'default')."""
+    names = [t for t in meta.keys() if t != "tenants"]  # tenants seeded implicitly
+    deps = {t: set() for t in names}
+    for t in names:
+        for _col, ref in (meta[t].get("fks") or {}).items():
+            if ref in deps and ref != t:
+                deps[t].add(ref)
+    order, placed = [], set()
+    while len(placed) < len(names):
+        ready = [t for t in names if t not in placed and deps[t] <= placed]
+        if not ready:  # cycle — break by taking the lowest-unplaced-dep table
+            remaining = [t for t in names if t not in placed]
+            ready = [min(remaining, key=lambda x: len(deps[x] - placed))]
+        for t in sorted(ready):
+            order.append(t)
+            placed.add(t)
+    return order
+
+
+def render_seed_data(tables: Dict[str, Any]) -> str:
+    """Project a seed_data.py that fills each EMPTY table with realistic, FK-valid
+    rows on startup (idempotent — skips a table that already has rows). Users get a
+    real auth hash so they log in with 'password'. Domain-agnostic + deterministic."""
+    meta = _models_meta(tables)
+    order = _seed_topo_order(meta)
+    n_users = 5
+    counts: Dict[str, int] = {"users": n_users, "tenants": 1}
+    for t in order:
+        counts.setdefault(t, 6)
+    # PK type per table so a FK is seeded with the parent's ACTUAL key type.
+    pk_types = {t: meta[t].get("pk_type") for t in meta}
+    # users first (login-able), then business tables in FK order.
+    seed: Dict[str, List[Dict[str, Any]]] = {}
+    full_order = (["users"] if "users" in meta else []) + [t for t in order if t != "users"]
+    for t in full_order:
+        cols = [c for c in (meta[t].get("cols") or []) if c]
+        fks = meta[t].get("fks") or {}
+        _pk_name, _pk_type = meta[t].get("pk"), meta[t].get("pk_type")
+        rows: List[Dict[str, Any]] = []
+        for i in range(counts.get(t, 6)):
+            row: Dict[str, Any] = {}
+            for c in cols:
+                v = _seed_cell(c, t, i, fks.get(c), counts,
+                               pk_name=_pk_name, pk_type=_pk_type, pk_types=pk_types)
+                if v is not _SEED_OMIT:
+                    row[c] = v
+            if t == "users":
+                row.setdefault("password_hash", _seed_password_hash())
+                row.setdefault("tenant_id", "default")
+            if row:
+                rows.append(row)
+        if rows:
+            seed[t] = rows
+    classmap = {t: meta[t]["cls"] for t in seed}
+    # repr() (NOT json.dumps) — this is a PYTHON module, so booleans must be
+    # True/False not JSON true/false (else NameError at import).
+    body = (
+        '"""Framework-generated deterministic seed data — every business table is\n'
+        'populated with realistic, FK-valid demo rows on first boot so the UI is not\n'
+        'blank. Idempotent: a table that already has rows is left untouched. Demo\n'
+        'users log in with password "password"."""\n'
+        "from database import SessionLocal\n"
+        "import models\n\n"
+        f"_ORDER = {list(seed.keys())!r}\n"
+        f"_CLASS = {classmap!r}\n"
+        f"_SEED = {seed!r}\n\n\n"
+        "def seed_if_empty():\n"
+        "    db = SessionLocal()\n"
+        "    try:\n"
+        "        for t in _ORDER:\n"
+        "            cls = getattr(models, _CLASS.get(t, ''), None)\n"
+        "            if cls is None:\n"
+        "                continue\n"
+        "            try:\n"
+        "                if db.query(cls).first() is not None:\n"
+        "                    continue\n"
+        "            except Exception:\n"
+        "                continue\n"
+        "            for row in _SEED.get(t, []):\n"
+        "                try:\n"
+        "                    db.add(cls(**{k: v for k, v in row.items() if hasattr(cls, k)}))\n"
+        "                except Exception:\n"
+        "                    pass\n"
+        "            try:\n"
+        "                db.commit()\n"
+        "            except Exception:\n"
+        "                db.rollback()\n"
+        "    finally:\n"
+        "        db.close()\n"
+    )
+    return body
+
+
 def write_backend_skeleton(
     output_dir: Any,
     endpoints: List[Mapping[str, Any]],
@@ -513,6 +794,7 @@ def write_backend_skeleton(
 
     w("database.py", _DATABASE_PY)
     w("models.py", render_models(tables))
+    w("seed_data.py", render_seed_data(tables))
     w("auth_dependency.py", _AUTH_DEPENDENCY_PY)
     w("main.py", render_skeleton_main(endpoints, tables))
     w("schemas.py", _SCHEMAS_PY)

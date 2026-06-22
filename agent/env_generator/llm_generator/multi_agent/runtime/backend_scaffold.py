@@ -16,7 +16,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
-_AUTH_DEPENDENCY_PY = '''"""FIX #45: framework-owned auth dependency (real JWT verification).
+_AUTH_DEPENDENCY_PY = '''"""Framework-owned auth dependency: real RS256 JWT verification.
 
 Verifies the RS256 access token minted by the embedded OAuth2 AS (jwt_manager),
 loads the user whose id == the token ``sub``, else raises 401. The business
@@ -131,7 +131,7 @@ def _rewrite_local_get_current_user(src: str) -> str:
     start = (func.decorator_list[0].lineno if func.decorator_list else func.lineno) - 1
     end = getattr(func, "end_lineno", func.lineno)  # 1-based inclusive → slice end
     new = (lines[:start]
-           + ["from auth_dependency import get_current_user  # FIX #45"]
+           + ["from auth_dependency import get_current_user  # canonical framework auth"]
            + lines[end:])
     return "\n".join(new) + ("\n" if src.endswith("\n") else "")
 

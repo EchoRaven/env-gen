@@ -151,16 +151,65 @@ class RegistryHub:
           * method → upper-case, trimmed.
           * path  → trimmed; ensure exactly one leading ``/`` if path
                     is non-empty; strip trailing ``/`` (except for the
-                    bare root ``/`` which stays as-is).
+                    bare root ``/`` which stays as-is); Express ``:param``
+                    → FastAPI ``{param}`` (PROPOSAL #29).
+
+        PROPOSAL #29: the ``:param`` → ``{param}`` step makes the SAME route
+        registered in either idiom — frontend/router ``/api/notes/:id`` vs backend
+        FastAPI ``/api/notes/{id}`` — resolve to ONE endpoint id, instead of two
+        distinct endpoints (the second a phantom the backend can never implement →
+        permanent finish-block). Slash-anchored so a literal ``:`` MID-segment (a
+        custom-method path) is untouched. This matches the ``_express_to_fastapi``
+        normalization route_projector/backend_audit/frontend_audit already apply for
+        verification matching, so endpoint IDENTITY now agrees with the matcher.
+        PROPOSAL #39 (#1): the id is also param-NAME-agnostic — every ``{param}`` collapses
+        to ``{}`` so the SAME route declared as ``/notes/{id}`` and implemented as
+        ``/notes/{note_id}`` resolves to ONE endpoint id (the param name is arbitrary),
+        instead of forking a phantom ``defined`` endpoint that blocks
+        all_business_endpoints_implemented forever (run #36: validation never opened because
+        the declared ``{id}`` variant stayed ``defined`` while the backend implemented
+        ``{note_id}``). The STORED ``path`` keeps the real param name (codegen + the route
+        handler need it); only the IDENTITY is param-agnostic — same idea as
+        ``route_projector._norm_path``. MUST stay byte-identical with
+        ``kickoff/contract.py:endpoint_id``.
         """
+        import re as _re
         m = str(method or "").upper().strip()
+        ident = _re.sub(r"\{[^}]+\}", "{}", RegistryHub._canonical_path(path))
+        return f"{m} {ident}"
+
+    @staticmethod
+    def _canonical_path(path: str) -> str:
+        """The canonical FastAPI path form used by both ``endpoint_id`` and the stored
+        endpoint ``path`` field (PROPOSAL #38 A2): trim, ensure one leading ``/``, strip
+        trailing ``/`` (except bare root), and rewrite Express ``:param`` → FastAPI
+        ``{param}`` (slash-anchored, PROPOSAL #29). Storing this — not the raw input —
+        means a registration of ``/api/notes/:id`` PERSISTS as ``/api/notes/{id}``, so the
+        route projector stamps a real path param (not a literal ``:id`` static route) and
+        the verifier tests ``/api/notes/1`` against a matching route instead of getting a
+        405. Byte-identical normalization to the prior inline ``endpoint_id`` logic."""
         p = str(path or "").strip()
         if p:
             if not p.startswith("/"):
                 p = "/" + p
             if len(p) > 1 and p.endswith("/"):
                 p = p.rstrip("/") or "/"
-        return f"{m} {p}"
+            import re as _re
+            p = _re.sub(r"(?<=/):([A-Za-z_][A-Za-z0-9_]*)", r"{\1}", p)
+        return p
+
+    @staticmethod
+    def _canonical_response_key(method: str, path: str) -> str:
+        """PROPOSAL #50: the canonical response envelope key the route_projector emits —
+        ``item`` (non-GET / ``/me`` / param-tail) else ``items`` (collection GET). Mirrors
+        kickoff ``_canonical_response_key`` (#46); kept here too so the REGISTRY layer
+        (which every registration flows through, incl. backend impl-time) enforces it."""
+        import re as _re
+        m = str(method or "GET").upper().strip()
+        last = next((p for p in reversed(str(path or "").strip("/").split("/")) if p), "")
+        is_param = (last.startswith("{") and last.endswith("}")) or last.startswith(":")
+        single = m != "GET" or last == "me" or is_param
+        return "item" if single else "items"
 
     def register_endpoint(self, method: str, path: str, schema: dict = None, provider: str = "", agent: str = "", status: str = "defined", **metadata: Any) -> dict:
         # Ownership: backend owns endpoint registration; the kickoff
@@ -192,7 +241,9 @@ class RegistryHub:
             **(old or {}),
             "id": endpoint_id,
             "method": str(method or "").upper(),
-            "path": path,
+            # #38 A2: store the CANONICAL FastAPI path (`:id`→`{id}`), not the raw input,
+            # so the projector + verifier never see a literal Express `:id` (→ 405).
+            "path": self._canonical_path(path),
             "status": status or (old or {}).get("status") or "defined",
             "provider": provider or (old or {}).get("provider"),
             "schema": schema or (old or {}).get("schema") or {},
@@ -200,6 +251,36 @@ class RegistryHub:
             "_updated_by": agent,
             "_updated_at": now,
         }
+        # PROPOSAL #50: enforce the canonical response envelope key (item/items — what the
+        # projector emits + the delivery gate requires) for BUSINESS endpoints on EVERY
+        # registration. #46 canonicalizes at KICKOFF, but the backend registers endpoints
+        # at IMPL time (e.g. an invented /api/dummy_trigger with response_key='triggered')
+        # which bypasses kickoff → the gate's business_response_key_noncanonical
+        # hard-blocks delivery (smoke-notes 2026-06-19: the FINAL remaining check before the
+        # first create_release was a backend-registered non-canonical key). Scope mirrors
+        # #46 + the gate's exemption: business /api/ + non-exempt kind only (control-plane
+        # keeps its declared key — clobbering it would cause false contract-drift). Only a
+        # PRESENT non-canonical key is rewritten; an absent key stays absent (gate-exempt).
+        _md = endpoint["metadata"]
+        # Canonicalize the EFFECTIVE response_key the gate reads — metadata OR
+        # schema (the gate's `noncanonical_business_response_keys` falls back to
+        # schema.response_key). A lane that put a non-canonical key ONLY in schema
+        # (youtube run #18: GET /api/v1/health → schema.response_key='status', no
+        # metadata key) bypassed the metadata-only rewrite → the gate hard-blocked
+        # delivery on it. Set metadata.response_key (read first by the gate) to the
+        # canonical envelope the projector actually emits.
+        _rk = _md.get("response_key") or (endpoint.get("schema") or {}).get("response_key")
+        if (isinstance(_rk, str) and _rk and _rk not in ("item", "items")
+                and str(endpoint["path"]).startswith("/api/")
+                and str(_md.get("kind") or "").strip().lower() not in {
+                    "auth", "oauth", "infra", "spine", "control_plane", "custom"}
+                and not (_md.get("custom") or _md.get("custom_route"))):
+            _canon = self._canonical_response_key(
+                endpoint["method"], endpoint["path"])
+            _md["response_key"] = _canon
+            # keep schema consistent so no other reader sees the stale non-canonical key
+            if isinstance(endpoint.get("schema"), dict) and endpoint["schema"].get("response_key"):
+                endpoint["schema"]["response_key"] = _canon
         old_full = {
             **((old or {}).get("schema") or {}),
             "method": (old or {}).get("method"),
@@ -1022,7 +1103,7 @@ class RegistryHub:
             # A3 (2026-06-12): widened from {frontend, orchestrator} when
             # workhub.update_ui_page became a thin delegate to this method.
             # The old workhub path was UNGATED and its shadow-write swallowed
-            # PermissionError, so EVERY agent holding the workhub_register_ui_page
+            # PermissionError, so EVERY agent holding the registryhub_register_ui_page
             # tool (orchestrator/backend/frontend/verifier/debugger — see
             # tool_bundles._bundle_workhub_tools grants) could write a ui_page.
             # backend/verifier/debugger are added here to preserve that
@@ -1038,6 +1119,27 @@ class RegistryHub:
                 "to='orchestrator', ...)."
             ),
         )
+        # STRUCTURAL GUARD: App.jsx is the FRAMEWORK-OWNED router/entry point. A
+        # ui_page whose component (or name) is a reserved frontend identifier — "App"
+        # above all — collides with App.jsx's own `export default function App()` and
+        # its react-router imports, so the projected router fails to build ("symbol
+        # App has already been declared", smoke-notes 2026-06-19 → frontend build
+        # broken every cycle → run wedged). Reject at the SOURCE so the frontend entry
+        # point stays consistent (the projector also aliases as a backstop). The agent
+        # must pick a descriptive page name.
+        _RESERVED_FRONTEND_IDENTS = {"App", "BrowserRouter", "Routes", "Route", "React"}
+        _cand = {str(component or "").strip(), str(name or "").strip()}
+        _clash = _cand & _RESERVED_FRONTEND_IDENTS
+        # Reject for AGENT actors (they must rename). The orchestrator's kickoff
+        # FINALIZE path is left to pass — raising there would break finalization;
+        # the projector's reserved-name aliasing is the build-safety net for it.
+        if _clash and str(agent or "") != "orchestrator":
+            raise ValueError(
+                f"register_ui_page rejected: {sorted(_clash)} is a RESERVED framework "
+                f"identifier — App.jsx is the framework-owned router/entry point, NOT a "
+                f"page. Rename the page component to something descriptive (e.g. "
+                f"'NotesAppPage', 'HomePage') and re-register; pages never share App.jsx's name."
+            )
         name = self._ui_snake(name)
         # LIFECYCLE AUTHORITY (mechanism #54): only the framework audit
         # (orchestrator) may flip a page to implemented; an agent self-claiming
@@ -1061,6 +1163,13 @@ class RegistryHub:
             "metadata": {**(existing.get("metadata") or {}), **(metadata or {})},
             "_updated_by": agent, "_updated_at": now,
         }
+        # PROPOSAL #47 (v2): a thin/placeholder ui_page (no route/component yet) is a
+        # SUPPORTED design-phase registration (scan_pages_without_files +
+        # test_page_without_path_field_is_silently_ignored treat it as a placeholder), so
+        # registration stays PERMISSIVE here. The malformed-entry handling that keeps a
+        # route-less placeholder from permanently blocking delivery now lives in the
+        # delivery gate's ui_page_unwired computation (it skips entries with no real
+        # '/'-route) — not at registration.
         if not existing:
             rec["created_by"] = agent
             rec["created_at"] = now
@@ -1405,6 +1514,36 @@ class RegistryHub:
                 "chain rejected: " + ("; ".join(errors) or "no valid steps") +
                 ". Each step needs method+path (or endpoint='METHOD /path'), "
                 "optional body/expect/save/auth — see the chain spec.")}
+        # PROPOSAL #42 (user): every chain step MUST exercise a REGISTERED endpoint. A
+        # chain that references an endpoint which doesn't exist tests a phantom (404/422)
+        # and fails business_chain forever (the verifier authors loose paths). All
+        # framework endpoints (/auth/*, /oauth/*, /api/v1/*, /health, /.well-known) AND the
+        # business endpoints are in the registry, so "must be registered" needs NO
+        # whitelist. Match via endpoint_id (param-NAME-agnostic + :id↔{id}, PROPOSAL #1/#29),
+        # so /api/notes/{id} in a chain matches a backend /api/notes/{note_id}. #40's
+        # auto-prepended /auth/register is registered too, so it passes.
+        registered_ids = set((self._endpoints.value() or {}).keys())
+        if registered_ids:  # only enforce once a contract exists (kickoff registered it)
+            import re as _re
+
+            def _chain_eid(step):
+                # chain paths carry ${var} substitution segments (e.g. /api/notes/${note_id})
+                # — collapse those to a path param FIRST so endpoint_id's {param}/:param
+                # normalization yields /api/notes/{} (matching the registered endpoint).
+                p = _re.sub(r"\$\{[^}]+\}", "{x}", str(step.get("path") or ""))
+                return self.endpoint_id(step.get("method") or "GET", p)
+
+            unregistered = sorted({
+                _chain_eid(s) for s in norm if s.get("path")
+                if _chain_eid(s) not in registered_ids
+            })
+            if unregistered:
+                return {"error": (
+                    "chain rejected: these steps reference endpoints NOT registered in "
+                    "RegistryHub: " + ", ".join(unregistered) + ". A verification chain may "
+                    "only exercise endpoints that exist — register the endpoint first "
+                    "(registryhub_register_endpoint) or fix the chain to use a registered "
+                    "one. Registered endpoints: " + ", ".join(sorted(registered_ids)) + ".")}
         now = time.time()
         actor = agent or "registryhub"
         rec = {"id": str(name), "name": str(name),

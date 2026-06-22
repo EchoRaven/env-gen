@@ -161,9 +161,57 @@ class AgentStepToolingMixin:
             candidate_names = candidate_names & stage_allow_set
             if not candidate_names:
                 return set()
-        always_include = self.ACTION_STAGE_ALWAYS_INCLUDE.get(stage_name, set())
+        always_include = set(self.ACTION_STAGE_ALWAYS_INCLUDE.get(stage_name, set()))
+        # The orchestrator runs the action-internal sub-stages (communicate/edit_code/
+        # run_checks/delegate_team/deliver) as SEPARATE LLM calls, and this lookup keys
+        # on the BARE sub-stage name. The deliver-gate tools force-offered under the
+        # "action" key (get_skill / submit_retro / deliver_project / deliverability_check)
+        # therefore never reached the run_checks/communicate/edit_code menus → the model
+        # emitted deliver_project from run_checks, hit the release-readiness/retro gate,
+        # then could not call get_skill/submit_retro ("not available in my current scope")
+        # → delivery DEADLOCK (run bsb900gpt: get_skill dispatched 0×, run killed). Mirror
+        # the stage_allow action-inner → "action" fallback above: union the "action"
+        # force-offer into every action-inner sub-stage. The _KICKOFF_DEFER_TOOLS gate
+        # below still strips delivery tools until the run is validation-ready.
+        if stage_name in action_inner and stage_name != "action":
+            always_include |= set(self.ACTION_STAGE_ALWAYS_INCLUDE.get("action", set()))
         if stage_allow:
-            always_include = set(always_include) & stage_allow_set
+            always_include = always_include & stage_allow_set
+        # PROPOSAL #28 F2 + PRE-LAUNCH AUDIT F1: do NOT force-offer the validation/
+        # delivery tools until the run is VALIDATION-ready. Originally gated on the
+        # kickoff signal (defer only during kickoff), but the orchestrator then polled
+        # run_validation/deliverability_check all through IMPLEMENTATION too (nothing
+        # built → empty/partial; run #28/#31). Gate on the STICKY validation-ready signal
+        # so these stay deferred through kickoff AND implementation and only surface once
+        # every business endpoint is implemented — when there's actually something to
+        # validate/deliver (matches the delivery_phase_reached precondition). This only
+        # removes the force-PRIORITY; an allowlisted tool can still be ranked if a lane
+        # genuinely needs it. Sticky → no re-defer if a late endpoint regresses (F5).
+        defer = getattr(self, "_KICKOFF_DEFER_TOOLS", None)
+        if defer and always_include:
+            try:
+                from ..preconditions import (
+                    kickoff_finalized_signal, validation_ready_signal)
+                hubs = getattr(self, "_hubs", None)
+                # The ORCHESTRATOR polls delivery/validation tools all through
+                # IMPLEMENTATION (run #28/#31), so defer them until VALIDATION-ready for
+                # it. EVERY OTHER lane keeps the kickoff-only defer — critically the
+                # VERIFIER, whose JOB at validation IS run_validation /
+                # register_verification_chain (in _VALIDATION_FLOW): a validation-ready
+                # defer there would STRIP those tools if it triggers before
+                # all_business_endpoints_implemented (e.g. a non-backend-owned business
+                # endpoint), breaking validation. So validation-ready scope = orchestrator
+                # only; kickoff scope = everyone else (a no-op post-kickoff, preserving
+                # the verifier's force-offer). The orchestrator's hard block stays the
+                # delivery_phase_reached precondition.
+                if getattr(self, "agent_id", None) == "orchestrator":
+                    ready = validation_ready_signal(hubs, self)
+                else:
+                    ready = kickoff_finalized_signal(hubs, self)
+                if not ready:
+                    always_include = set(always_include) - defer
+            except Exception:
+                pass
         # FIX #29: when a per-stage allowlist is configured, it already IS the
         # curated set of tools this workflow stage needs — so OFFER ALL OF THEM
         # rather than ranking down to the global top-k (~10). The 10-cap was

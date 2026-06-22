@@ -344,7 +344,10 @@ def _bundle_codehub_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext
             "codehub_commit",
             "codehub_register_repo",
             "codehub_record_commit",
-            "codehub_open_pr",
+            # #35: codehub_open_pr NOT surfaced — the pipeline is commit-only (committed
+            # work auto-integrates via merge_agent_branch_to_main; PR-mode is dead). The
+            # tool CLASS + service method are kept (live-monitor HTTP shim / tests), just
+            # never offered to an agent.
             # Round 8h smoke #18 follow-up: backend/verifier need to
             # write build:* + validation:* checks to satisfy the
             # orchestrator delivery gate (build checklist + validation
@@ -360,7 +363,9 @@ def _bundle_codehub_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext
             "codehub_get_file_content",
             "codehub_list_prs",
             "codehub_list_checks",
-            "codehub_resolve_conflict",
+            # #35: codehub_resolve_conflict (pr_id-based) NOT surfaced — it needs a PR in
+            # conflict state, impossible in commit-only mode (run #34 "PR not found: 1").
+            # Branch/worktree conflicts use codehub_resolve_merge_conflict below.
             "codehub_resolve_merge_conflict",
             "codehub_revert_commit",
             "codehub_suggest_reviewers",
@@ -389,17 +394,17 @@ def _bundle_workhub_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext
             "workhub_create_document",
             # Re-audit (2026-05-29, HIGH #3): HubConsistencyPolicy's
             # workhub_pages gate explicitly tells the agent to call
-            # ``workhub_register_ui_page(name=..., path=...,
+            # ``registryhub_register_ui_page(name=..., path=...,
             # status='implemented')`` to clear the
             # "WorkHub has 0 pages registered" block — but the tool
             # was missing from this bundle, so the gate was telling
             # the agent to call a tool it didn't have, soft-locking
             # frontend/design at finish. ``_count_owned_pages`` only
             # counts ``kind=="ui_page"`` entries, and
-            # ``workhub_register_ui_page`` is the only call that writes
+            # ``registryhub_register_ui_page`` is the only call that writes
             # that kind; ``workhub_create_document`` writes generic
             # coordination documents and cannot satisfy the gate.
-            "workhub_register_ui_page",
+            "registryhub_register_ui_page",
             "workhub_task",
             "workhub_fail_task",
             "workhub_cancel_task",
@@ -408,7 +413,7 @@ def _bundle_workhub_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext
             "workhub_available_tasks",
             "workhub_get_document",
             "workhub_list_documents",
-            "workhub_list_ui_pages",
+            "registryhub_list_ui_pages",
             "workhub_list_ui_components",
             "workhub_link_task_to_pr",
             "workhub_link_task_to_apis",

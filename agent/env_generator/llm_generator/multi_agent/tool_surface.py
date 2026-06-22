@@ -165,6 +165,41 @@ def validate_stage_allowlists(
     return problems
 
 
+def validate_skill_consult_preconditions(
+    profile_id: str,
+    *,
+    stage_tool_preconditions: Optional[Dict[str, Any]],
+    granted_tool_names: Set[str],
+) -> List[str]:
+    """SYS-1 capability-satisfiability guard (PROPOSAL #14 / BUG#5): a
+    ``stage_tool_precondition`` whose id ends in ``_consulted`` blocks its tool
+    and instructs the agent to call ``get_skill(name=...)`` to clear the gate
+    (preconditions._require_skill_consulted). So the profile MUST grant
+    ``get_skill`` (the ``knowledge_skill`` category / ``knowledge_skill_tools``
+    bundle) — otherwise the gate is UNSATISFIABLE and the agent loops the gated
+    tool forever (run #21: 14× deliver_project, killed). Sibling to
+    ``validate_stage_allowlists``: one problem string per offending
+    (stage, tool) gate; empty list when the config is satisfiable.
+
+    Accepts either the runtime shape ``{stage: {tool: gate_id}}`` or the flat
+    ``{tool: gate_id}`` — walks one level of nesting either way."""
+    if "get_skill" in (granted_tool_names or set()):
+        return []  # satisfiable — nothing to flag
+    problems: List[str] = []
+    for stage, entry in (stage_tool_preconditions or {}).items():
+        items = entry.items() if isinstance(entry, dict) else [(stage, entry)]
+        for tool, gate in items:
+            if str(gate).endswith("_consulted"):
+                problems.append(
+                    f"profile '{profile_id}' gates '{tool}' on '{gate}' (a skill-consult "
+                    "precondition that instructs the agent to call get_skill) but the "
+                    "assembled pool does NOT grant get_skill — the gate is UNSATISFIABLE. "
+                    "Grant the 'knowledge_skill' category (or 'knowledge_skill_tools' "
+                    "bundle). PROPOSAL #14 / BUG#5."
+                )
+    return problems
+
+
 def build_profile_tool_audit(profiles: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     """Build a static profile-level audit report from config only."""
     report: Dict[str, Any] = {}

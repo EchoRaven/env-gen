@@ -245,7 +245,24 @@ class AgentActionStageMixin:
             candidate_names = (set(self.TEAM_TOOL_NAMES) | set(self.TEAM_MODE_SUPPORT_TOOLS)) & all_names
         else:
             candidate_names = all_names - set(self.TEAM_TOOL_NAMES)
-        candidate_names -= (knowledge_fetch_names | knowledge_store_names | hub_sync_tool_names)
+        # Force-offered delivery-gate tools must survive the knowledge-fetch
+        # subtraction. ``get_skill`` is BOTH a knowledge-fetch tool AND force-offered
+        # in the deliver/action stages (deliver_project is gated on
+        # release_readiness_consulted, which the agent can only clear by calling
+        # get_skill(release-readiness)). Subtracting it here silently nullified the
+        # force-offer — tool_surface filters always_include ∩ candidate_names, so a
+        # tool removed from the pool can't be re-admitted — and the orchestrator
+        # could never consult the skill → deliver_project DEADLOCK (smoke run #6:
+        # reached delivery, then "I do not have the get_skill tool" ×N, get_skill
+        # dispatched 0×). Exempt this stage's force-offer set from the knowledge
+        # subtraction ONLY (store/hub-sync subtractions are untouched).
+        _force_offer = set(self.ACTION_STAGE_ALWAYS_INCLUDE.get(action_stage_name, set()))
+        if (action_stage_name in set(getattr(self, "ACTION_INTERNAL_STAGES", ()) or ())
+                and action_stage_name != "action"):
+            _force_offer |= set(self.ACTION_STAGE_ALWAYS_INCLUDE.get("action", set()))
+        candidate_names -= (
+            (knowledge_fetch_names - _force_offer)
+            | knowledge_store_names | hub_sync_tool_names)
         candidate_names.discard("think")
         # Hub-focus: only the focus hub's write tools are eligible this stage.
         candidate_names = _apply_hub_focus(self, candidate_names)

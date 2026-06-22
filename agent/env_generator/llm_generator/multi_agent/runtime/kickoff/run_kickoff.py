@@ -114,6 +114,16 @@ __all__ = [
 # without touching orchestrator.py.
 KICKOFF_POLL_INTERVAL_SEC: float = 5.0
 KICKOFF_TIMEOUT_SEC: float = 1200.0
+# PROPOSAL #28 (C-recovery): a FAST stall escape so a lane that can never emit a
+# clean section (e.g. Gemini re-mangling its draft to {auth:-1}) does not pin the
+# whole run in phase=initial for the full 1200s. When NO new attendee records a
+# substantive section for KICKOFF_INITIAL_STALL_POLLS consecutive polls AND at
+# least KICKOFF_INITIAL_STALL_MIN_SEC has elapsed, the driver finalizes via the
+# EXISTING _kickoff_fallback_or_reconcile (which synthesizes from whatever WAS
+# recorded). Grace before the first stall-check leaves honest-but-slow kickoffs
+# alone; the no-progress window distinguishes "stuck" from "still trickling in".
+KICKOFF_INITIAL_STALL_MIN_SEC: float = 240.0
+KICKOFF_INITIAL_STALL_POLLS: int = 24  # × 5s poll = 120s of no new substantive section
 
 
 # v2 vocabulary (round 8e.1) — every kickoff meeting expects ONE
@@ -358,6 +368,32 @@ def _infer_sql_type(col: str) -> str:
     return "text"
 
 
+def _canonical_response_key(method: Any, path: Any) -> str:
+    """PROPOSAL #46: the CANONICAL response envelope key the route_projector
+    actually emits — ``item`` (single) or ``items`` (collection).
+
+    The projector hardcodes ``{"items": [...]}`` for collection reads and
+    ``{"item": {...}}`` for single/mutating routes and IGNORES any other declared
+    key; the delivery gate ``noncanonical_business_response_keys`` then HARD-BLOCKS
+    a business endpoint whose declared ``response_key`` isn't ``item``/``items``.
+    The legacy ``_derive_response_key*`` returned the last PATH SEGMENT
+    (``/api/notes/{id}`` → ``"notes"``) — a resource name no consumer reads, which
+    the gate rightly rejected → a permanent, remediation-less delivery block
+    (smoke-notes 2026-06-19: ``GET/PUT/DELETE /api/notes/{id}`` got
+    ``response_key="notes"`` → never delivered).
+
+    Single (``item``) when the route is NOT a plain collection read: a non-GET
+    (create/update/delete return the affected row), a ``/me`` route, or a path
+    whose last segment is a parameter (``/{id}`` / ``:id``). Otherwise it's a
+    collection GET → ``items``. Mirrors the reconciler heuristic + the projector's
+    own emit, so the metadata matches the body BY CONSTRUCTION."""
+    m = str(method or "GET").upper().strip()
+    last = next((p for p in reversed(str(path or "").strip("/").split("/")) if p), "")
+    is_param = (last.startswith("{") and last.endswith("}")) or last.startswith(":")
+    single = m != "GET" or last == "me" or is_param
+    return "item" if single else "items"
+
+
 def _derive_response_key_from_path(path: str) -> str:
     parts = [p for p in str(path).strip("/").split("/")
              if p and not p.startswith("{") and not p.startswith(":")]
@@ -379,7 +415,11 @@ def extract_contract_from_description(description: str) -> Dict[str, Any]:
         seen_ep.add((method, path))
         endpoints.append({
             "method": method, "path": path,
-            "response_key": _derive_response_key_from_path(path),
+            # PROPOSAL #46: canonical item/items for business (/api/); legacy
+            # resource-name for control-plane (kind-exempt, must not be clobbered).
+            "response_key": (_canonical_response_key(method, path)
+                             if str(path).startswith("/api/")
+                             else _derive_response_key_from_path(path)),
             "auth_required": True,
         })
     tables: List[Dict[str, Any]] = []
@@ -397,6 +437,86 @@ def extract_contract_from_description(description: str) -> Dict[str, Any]:
         seen_t.add(name)
         tables.append({"name": name, "columns": cols})
     return {"endpoints": endpoints, "tables": tables}
+
+
+# Infra/spine tables that aren't user-facing list pages.
+_FRONTEND_SKIP_TABLES = {
+    "users", "user", "tenants", "tenant", "sessions", "session", "tokens", "token",
+    "oauth_clients", "oauth_codes", "oauth_tokens", "auth", "migrations", "alembic_version",
+}
+
+
+def _frontend_page_from_resource(resource: str, apis_used: Optional[List[str]] = None) -> Dict[str, Any]:
+    comp = "".join(w.capitalize() for w in re.split(r"[_\-]", resource) if w) + "Page"
+    page: Dict[str, Any] = {
+        "id": f"{resource}_page", "route": "/" + resource,
+        "component": comp, "purpose": f"List and manage {resource}.",
+    }
+    if apis_used:
+        page["apis_used"] = apis_used
+    return page
+
+
+def derive_frontend_pages_from_endpoints(
+    endpoints: List[Mapping[str, Any]],
+    tables: Optional[List[Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Domain-agnostic ui_pages: a login page + one list page per collection-GET
+    business endpoint (``GET /api/<resource>``, last segment not a param and not
+    ``me``). Used to SALVAGE a kickoff whose frontend lane never authored a section
+    in time (slow Gemini) — the synthesis only needs a frontend decision to clear
+    quorum, and the implementation lane then builds these declared pages properly.
+    When NO endpoints are extractable (e.g. a prose spec the line-regex can't parse),
+    fall back to one page per business ``tables`` entry (skipping infra/spine tables)
+    so the salvage isn't login-only. Empty-in → just the login page; no app-specific
+    names."""
+    pages: List[Dict[str, Any]] = [{
+        "id": "login_page", "route": "/login", "component": "LoginPage",
+        "purpose": "Authenticate the user (framework-owned auth surface).",
+    }, {
+        "id": "signup_page", "route": "/signup", "component": "SignupPage",
+        "purpose": "Register a new user (framework-owned auth surface).",
+    }]
+    seen_routes = {"/login", "/signup"}
+    _baseline = len(pages)  # auth pages; resource pages are appended past this
+    for ep in endpoints or []:
+        # tolerate both {method, path} dicts and "METHOD /path" strings (a lane's
+        # declared backend draft may store endpoints in either shape).
+        if isinstance(ep, str):
+            parts = ep.strip().split(None, 1)
+            if len(parts) != 2:
+                continue
+            method, path = parts[0].upper(), parts[1]
+        elif isinstance(ep, Mapping):
+            method = str(ep.get("method") or "GET").upper()
+            path = str(ep.get("path") or "")
+        else:
+            continue
+        if method != "GET":
+            continue
+        if not path.startswith("/api/"):
+            continue
+        segs = [p for p in path.strip("/").split("/") if p]
+        last = segs[-1] if segs else ""
+        is_param = (last.startswith("{") and last.endswith("}")) or last.startswith(":") or last == "me"
+        if is_param or len(segs) < 2:  # /api/<resource> collection only
+            continue
+        resource = segs[-1]
+        route = "/" + resource
+        if route in seen_routes:
+            continue
+        seen_routes.add(route)
+        pages.append(_frontend_page_from_resource(resource, [f"GET {path}"]))
+    # Fallback: no endpoint-derived pages (prose spec) → one page per business table.
+    if len(pages) == _baseline and tables:
+        for t in tables:
+            name = (t.get("name") if isinstance(t, Mapping) else str(t or "")).strip().lower()
+            if (not name or name in _FRONTEND_SKIP_TABLES
+                    or ("/" + name) in seen_routes):
+                continue
+            seen_routes.add("/" + name)
+            pages.append(_frontend_page_from_resource(name, [f"GET /api/{name}"]))
+    return pages
 
 
 def _build_contract(
@@ -504,7 +624,7 @@ def _build_contract(
                 _known.add((m, pth))
                 endpoints.append({"method": m, "path": pth,
                                   "auth_required": True,
-                                  "response_key": _derive_response_key_from_path(pth),
+                                  "response_key": _canonical_response_key(m, pth),
                                   "source": "auto_from_ui_declaration"})
     auth = frontend.get("auth") or backend.get("auth") or {}
     auth_dict = dict(auth) if isinstance(auth, Mapping) else {}
@@ -524,9 +644,20 @@ def _build_contract(
     # inline decision, typed declare, or UI auto-enrollment).
     for _ep in endpoints:
         if isinstance(_ep, Mapping):
-            if not (isinstance(_ep.get("response_key"), str) and _ep.get("response_key").strip()):
-                _ep["response_key"] = _derive_response_key_from_path(
-                    str(_ep.get("path") or ""))
+            # PROPOSAL #46: for BUSINESS endpoints (/api/, the only ones the projector
+            # projects + the gate checks) override ABSENT *and* non-canonical
+            # response_keys with the projector's canonical envelope key (item/items) —
+            # a resource-name key like "notes" no consumer reads and the gate
+            # hard-blocks. Control-plane (/auth,/oauth,/health) is kind-exempt from the
+            # gate and clobbering its key would cause false contract-drift, so it keeps
+            # the legacy fill-when-absent (never overridden).
+            _rk = _ep.get("response_key")
+            _epath = str(_ep.get("path") or "")
+            if _epath.startswith("/api/"):
+                if not (isinstance(_rk, str) and _rk in ("item", "items")):
+                    _ep["response_key"] = _canonical_response_key(_ep.get("method"), _epath)
+            elif not (isinstance(_rk, str) and _rk.strip()):
+                _ep["response_key"] = _derive_response_key_from_path(_epath)
             if not isinstance(_ep.get("auth_required"), bool):
                 _ep["auth_required"] = True
     # TABLE-COLUMNS FLOOR (round 38 systematic pass): roadmap_validator hard-
@@ -905,8 +1036,18 @@ def _normalize_backend_endpoints_for_reconcile(
             notes.append(f"defaulted auth_required=True for {method} {path}")
             changed = True
         rk = ep2.get("response_key")
-        if not (isinstance(rk, str) and rk.strip()):
-            ep2["response_key"] = _derive_response_key(path)
+        # PROPOSAL #46: BUSINESS endpoints (/api/) get the canonical projector envelope
+        # key (item/items) — override absent OR non-canonical (e.g. "notes" the gate
+        # rejects). Control-plane is kind-exempt + would false-drift if clobbered, so it
+        # keeps the legacy fill-when-absent.
+        if str(path).startswith("/api/"):
+            if not (isinstance(rk, str) and rk in ("item", "items")):
+                ep2["response_key"] = _canonical_response_key(method, path)
+                notes.append(
+                    f"derived response_key={ep2['response_key']!r} for {method} {path}")
+                changed = True
+        elif not (isinstance(rk, str) and rk.strip()):
+            ep2["response_key"] = _derive_response_key_from_path(path)
             notes.append(
                 f"derived response_key={ep2['response_key']!r} for {method} {path}")
             changed = True
@@ -1030,6 +1171,85 @@ def _normalize_roadmap_shape_for_reconcile(
     return new_drafts, notes
 
 
+# PROPOSAL #43: the whole framework implements *business* endpoints under the
+# ``/api`` prefix — the frontend baseline client (`_BASELINE_API_JS`: nginx proxies
+# ``/api,/auth,/oauth``), the backend skeleton (`render_skeleton_main` skips any path
+# not ``startswith("/api/")``) and the gap-filling route projector
+# (`project_missing_routes`, same guard). But the kickoff LLM authors business
+# endpoint paths free-form, so it routinely emits a bare ``/notes``. That bare path is
+# structurally un-implementable by the machinery above, while the frontend's
+# ``/api/notes`` call gets AUTO-REGISTERED as a *separate* endpoint by
+# `_reconcile_dangling_frontend_calls` (its ``known`` set is param-name-agnostic but
+# NOT prefix-agnostic) — leaving ``/notes`` a permanent ``defined`` orphan that fails
+# ``business_endpoints_implemented`` forever (observed: smoke-notes run, 2026-06-19).
+#
+# Fix: canonicalize business endpoint paths to ``/api`` at synthesis, BEFORE the
+# contract / task_tree / reconcile-known-set are derived. We do NOT use a hardcoded
+# control-plane path blocklist (the architecture deliberately avoids that —
+# control_plane.py: "needs no hardcoded exemption list"). Instead the pre-registered
+# fixed surface (spine/auth/control, kind-tagged, registered before the meeting) is the
+# oracle: a draft path that matches a registered fixed-surface endpoint is owned
+# elsewhere and left verbatim; everything else the LLM authored is business and gets
+# the prefix. Already-``/api`` paths are left untouched (no ``/api/api`` double-prefix).
+_API_PREFIX = "/api"
+
+
+def _control_plane_keys(
+    registered_endpoints: Optional[Iterable[Mapping[str, Any]]],
+) -> set:
+    """Param-agnostic keys of the pre-registered fixed surface (kind-tagged
+    spine/auth/control). At synthesis time only the fixed surface is registered, so
+    any draft endpoint matching one of these is control-plane, owned elsewhere."""
+    keys: set = set()
+    for rec in (registered_endpoints or []):
+        if isinstance(rec, Mapping) and rec.get("method") and rec.get("path"):
+            keys.add(_param_agnostic(_endpoint_key(rec.get("method"), rec.get("path"))))
+    return keys
+
+
+def _ensure_business_api_prefix(method: Any, path: Any, control_plane_keys: set) -> Any:
+    """Return ``path`` carrying the ``/api`` business convention, unless it already
+    has it, is unparseable, or matches a registered control-plane endpoint."""
+    p = str(path or "").strip()
+    if not p.startswith("/"):
+        return path  # unparseable / relative — leave alone
+    if p == _API_PREFIX or p.startswith(_API_PREFIX + "/"):
+        return path  # already conventional → no double-prefix
+    if _param_agnostic(_endpoint_key(method, p)) in control_plane_keys:
+        return path  # control-plane / fixed surface — owned elsewhere
+    return _API_PREFIX + p
+
+
+def _canonicalize_business_endpoint_paths(
+    drafts: Mapping[str, Mapping[str, Any]],
+    registered_endpoints: Optional[Iterable[Mapping[str, Any]]] = None,
+) -> Mapping[str, Mapping[str, Any]]:
+    """Rewrite bare business endpoint paths in the backend draft to the ``/api``
+    convention (PROPOSAL #43). Idempotent; returns drafts unchanged if nothing moved."""
+    backend = drafts.get("backend") or {}
+    cp_keys = _control_plane_keys(registered_endpoints)
+    new_backend = dict(backend)
+    changed = False
+    for key in ("endpoints", "api_endpoints"):
+        eps = new_backend.get(key)
+        if not isinstance(eps, list):
+            continue
+        out: List[Any] = []
+        for ep in eps:
+            if isinstance(ep, Mapping) and ep.get("path"):
+                canon = _ensure_business_api_prefix(ep.get("method"), ep.get("path"), cp_keys)
+                if canon != ep.get("path"):
+                    ep = {**ep, "path": canon}
+                    changed = True
+            out.append(ep)
+        new_backend[key] = out
+    if not changed:
+        return drafts
+    new_drafts = dict(drafts)
+    new_drafts["backend"] = new_backend
+    return new_drafts
+
+
 def _reconcile_dangling_frontend_calls(
     drafts: Mapping[str, Mapping[str, Any]],
     registered_endpoints: Optional[Iterable[Mapping[str, Any]]] = None,
@@ -1061,6 +1281,10 @@ def _reconcile_dangling_frontend_calls(
         if isinstance(rec, Mapping) and rec.get("method") and rec.get("path"):
             known.add(_param_agnostic(_endpoint_key(rec.get("method"), rec.get("path"))))
 
+    # PROPOSAL #43: same control-plane oracle as the synthesis-time canonicalizer, so a
+    # genuinely-new business call the frontend makes is auto-registered under ``/api``
+    # (matching the rest of the contract) rather than as a bare orphan.
+    cp_keys = _control_plane_keys(registered_endpoints)
     added: List[str] = []
     new_endpoints: List[Dict[str, Any]] = []
     for screen in _extract_frontend_screens(frontend):
@@ -1074,7 +1298,8 @@ def _reconcile_dangling_frontend_calls(
             if len(parts) != 2 or not parts[1].startswith("/"):
                 continue                                     # unparseable → leave alone
             method, path = parts[0].upper(), parts[1].strip()
-            known.add(_param_agnostic(disp))
+            path = _ensure_business_api_prefix(method, path, cp_keys)
+            known.add(_param_agnostic(_endpoint_key(method, path)))
             last = next((s for s in reversed(path.split("/")) if s), "")
             single = method != "GET" or last == "me" or (last.startswith("{") and last.endswith("}"))
             new_endpoints.append({
@@ -1170,6 +1395,15 @@ def try_synthesize(
         registered = list((hubs.registryhub.get_endpoints() or {}).values())
     except Exception:
         registered = []
+    # PROPOSAL #43: canonicalize bare business endpoint paths to the framework's
+    # ``/api`` convention BEFORE the contract, task_tree and reconcile-known-set are
+    # derived from drafts — so the LLM's ``/notes`` becomes ``/api/notes`` (which the
+    # skeleton/projector can implement and the frontend baseline already calls),
+    # instead of orphaning as a permanent ``defined`` endpoint. Runs unconditionally
+    # (not just on the reconcile path) so the normal happy-path contract is canonical
+    # too. Control-plane / fixed-surface endpoints (matched against the pre-registered
+    # kind-tagged surface) are left verbatim.
+    drafts = _canonicalize_business_endpoint_paths(drafts, registered_endpoints=registered)
     # Last-resort deterministic reconciliation (only when the caller is about to
     # abort the kickoff): prune frontend api_calls to undefined endpoints so the
     # contract converges by construction instead of failing the whole run.

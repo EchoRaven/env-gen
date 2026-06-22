@@ -214,7 +214,7 @@ class EnvGenAgent(
         "registryhub_register_endpoint",
         "registryhub_register_table",
         "registryhub_register_consumer",
-        "workhub_register_ui_page",
+        "registryhub_register_ui_page",
         "workhub_create_document",
         "workhub_share_implementation",
         "workhub_task",       # create/claim/complete — only way to mark task done
@@ -224,7 +224,7 @@ class EnvGenAgent(
         # class as the original _HUB_REGISTRATION rationale — the LLM
         # ranker (action.py:_apply_hub_focus → tooling.py:_stage_tool_names
         # → rank_tool_names, limit=10) was dropping these as semantically
-        # similar to workhub_register_ui_page / workhub_task, so attendees
+        # similar to registryhub_register_ui_page / workhub_task, so attendees
         # following the kickoff_response_prompt macro's "call
         # workhub_add_meeting_decision" instruction could not find the
         # tool in their per-step surface and finished blocked. Live
@@ -274,7 +274,7 @@ class EnvGenAgent(
     # surface (the focus_hub return text listed it, but the JSON tool
     # schema sent to the LLM didn't include it).
     _CONFLICT_FLOW = {
-        "codehub_resolve_conflict",
+        # #35: codehub_resolve_conflict (pr_id-based) dropped — not surfaced (commit-only).
         "codehub_resolve_merge_conflict",
         "codehub_force_merge",
     }
@@ -296,6 +296,11 @@ class EnvGenAgent(
         "run_validation",  # §6 deterministic one-call api_smoke — MUST be force-offered
         "test_api",
         "registryhub_record_contract_test",
+        # run_validation BLOCKS until chains are registered, so the register tool MUST
+        # be force-offered too — without it the verifier sees run_validation (which
+        # errors "no chains registered") but the ranker never surfaces the register
+        # tool, so it reports it "missing" and the run never validates → never delivers.
+        "registryhub_register_verification_chain",
         # UI smoke + flow
         "browser_navigate",
         "browser_screenshot",
@@ -331,10 +336,43 @@ class EnvGenAgent(
         "registryhub_get_table",
         "registryhub_list_tables",
     }
+    # PROPOSAL #39 (#2): the DEBUGGER's canonical triage tools. The debugger's whole job is
+    # to triage validation bugs (bug_list_open → root-cause → bug_triage(assignee=...)), and
+    # its prompt instructs exactly that — but with a 6-slot action budget and NO
+    # stage_tool_allowlist, the ranker crowded bug_triage/bug_list_open OUT of its per-step
+    # surface (run #36: the debugger asked the orchestrator "I don't have the bug_triage
+    # tool" and flailed). Same crowd-out class as _VALIDATION_FLOW / _CLAIM_FLOW. Force-offer
+    # them; bundle-intersection means only lanes that bundle bug_tools see them — i.e. the
+    # debugger. The VERIFIER also bundles bug_tools but its implementation:action allowlist
+    # (which never lists bug_triage) is intersected FIRST (tooling.py:166), so it does NOT
+    # leak there — triage stays debugger-only by role.
+    _BUG_FLOW = {
+        "bug_triage",
+        "bug_list_open",
+        "bug_list_assigned_to",
+    }
+    # The FRONTEND lane's reference-screenshot read tools. frontend_agent.j2
+    # mandates "inspect them via view_image() and produce a visual_reference_analysis
+    # section ... list_reference_images ONCE in Phase A, then view_image() for every
+    # path — never guess the UI from memory" — i.e. the lane is supposed to LOOK at
+    # the references while authoring src/pages/*.jsx. But view_image / list_reference_images
+    # live in the "file" tool category (tools.py: _assemble_agent_tool_pool) and were
+    # NOT in edit_code's always-include, so the per-step ranker (top-N over ~150 tools)
+    # crowded them out: youtube run #20 AND outlook run #1 both show the frontend lane
+    # calling view_image ZERO times across the whole run (and pleading "I am missing
+    # ... view_image" to the orchestrator) — it never once saw the references it was
+    # told to match, so every projected page is a generic fallback. Same crowd-out
+    # class as _CONTRACT_READ / _CLAIM_FLOW / _BUG_FLOW. Force-offer in edit_code (the
+    # build stage); bundle-intersection means only lanes that bundle these (frontend)
+    # ever see them — backend/verifier are unaffected.
+    _REFERENCE_VIEW = {
+        "view_image",
+        "list_reference_images",
+    }
     ACTION_STAGE_ALWAYS_INCLUDE: Dict[str, Set[str]] = {
         "communicate": {"check_inbox", "send_message", "ask_agent", "broadcast", "report_progress", "finish"}
                         | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW,
-        "edit_code": {"read", "edit", "apply_patch", "write", "finish"} | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _CONTRACT_READ,
+        "edit_code": {"read", "edit", "apply_patch", "write", "finish"} | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _CONTRACT_READ | _REFERENCE_VIEW,
         "run_checks": {"lint", "test_api", "finish"} | _CLAIM_FLOW | _VALIDATION_FLOW | _CONTRACT_READ,
         "delegate_team": {"finish"},
         # ``submit_retro`` + ``deliverability_check`` are the pre-delivery gate
@@ -344,10 +382,28 @@ class EnvGenAgent(
         # fail_count=0, blocked only on the retro gate). Intersected with the
         # agent's pool, so only the orchestrator (which bundles retro_tools) gets
         # them. See FIX #1 (_VALIDATION_FLOW / run_validation) — same crowd-out.
-        "deliver": {"finish", "deliver_project", "report_completion", "submit_retro", "deliverability_check"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW,
-        "action": {"finish", "submit_retro", "deliverability_check"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW,
+        # PROPOSAL #30 S2: ``get_skill`` is force-offered here because deliver_project /
+        # report_completion are gated on release_readiness_consulted (the gate requires
+        # get_skill(release-readiness) first). get_skill is granted but, with the
+        # orchestrator running a single un-allowlisted ``action`` stage, the ~10-slot
+        # ranker crowded it out of ~150 tools → the orchestrator could never consult the
+        # skill → deliver_project blocked (run #28: 33× wedge). Bundle-intersected, so
+        # only the orchestrator (which bundles knowledge_skill_tools) ever sees it.
+        "deliver": {"finish", "deliver_project", "report_completion", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW,
+        "action": {"finish", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW | _BUG_FLOW,
     }
-    
+
+    # PROPOSAL #28 F2 — validation/delivery tools that are MEANINGLESS during KICKOFF
+    # (the kickoff_finalized precondition blocks them anyway, so force-offering them
+    # only wastes a round: the orchestrator attempts run_validation/deliverability_check
+    # then gets blocked). step_pipeline.tooling subtracts these from the action-stage
+    # always-include while ``not kickoff_finalized_signal`` — a STRICT no-op post-kickoff
+    # (the signal is monotonic), so the smoke #9/#41 delivery-gate crowd-out fix stays
+    # intact once the contract exists.
+    _KICKOFF_DEFER_TOOLS = _VALIDATION_FLOW | {
+        "deliver_project", "report_completion", "submit_retro",
+    }
+
     def __init__(
         self,
         config: AgentConfig,

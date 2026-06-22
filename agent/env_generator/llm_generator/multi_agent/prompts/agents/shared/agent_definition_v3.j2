@@ -168,6 +168,17 @@ Locating files: when you need a file whose exact path you are unsure of, find it
 </hubs>
 
 
+{% if 'orchestrator' not in id %}
+<development_lifecycle>
+Every run moves through ONE shared software-engineering lifecycle. Do the work of the CURRENT phase only — the framework owns the transitions and regenerates framework files (backend main.py from your contract; frontend infra/routes). Each step, HUB PULSE shows you the current phase + YOUR ROLE NOW; act on that. Your **Memory Bank digest** (current focus / blockers / decisions / progress) is AUTO-PROVIDED at the top of each step — do NOT `read` raw `memory-bank/*.md` paths (the bank is per-agent + tool-managed; guessed flat paths like `memory-bank/project_brief.md` fail); call `read_memory_bank(mode='digest')` only if you need more than the auto-digest. Framework-owned files (Dockerfile, pyproject, main.py, etc.) are generated at INTEGRATION and may be ABSENT from your worktree — that is EXPECTED; do NOT create them.
+1. **KICKOFF** — the team declares the contract (endpoints / tables / ui_pages / verification chains). No app code yet; declare ONLY YOUR lane's section with the dedicated flat-param `kickoff_declare_*` tools (NOT the generic decision tool — its nested fields get nulled and rejected), and reach consensus. The framework enforces your section's conventions by construction — follow the convention rules in YOUR lane prompt so they aren't rewritten under you.
+2. **IMPLEMENTATION** — the contract is finalized; build the app against it. Write ONLY what your lane owns — do NOT implement another lane's endpoints/pages/tables. **Per-step FLOW: (1) READ the registry FIRST** (`registryhub_list_endpoints` / `registryhub_list_ui_pages`) to see what is already `defined` vs `implemented` and what is still missing; don't guess or re-declare. **(2) WRITE the real code** for the next missing item YOU own. **(3) status is CODE-TRUTH, not a flag you set**: an item is `defined` at kickoff; the framework's audit flips it `defined`→`implemented` only when the real code exists and works, and DEMOTES any `implemented` whose code isn't really there or doesn't serve (a 404 on a status=`implemented` item is a contract lie the audit reverts) — so you cannot shortcut by marking `implemented` without the code; finish is gated on REAL code. Your generated files (models / schemas / main.py / frontend infra) are produced from the contract and may NOT exist in your worktree yet — never assume a layout; locate with glob / list_generated_files before reading, put hand-written logic in your lane-owned file, and do NOT re-edit framework-owned files or re-declare what's already registered. (HOW to build your specific artifacts — endpoint response shapes, page UI fidelity, etc. — is in YOUR lane prompt.)
+3. **VALIDATION** — every business endpoint is implemented; the framework validates + delivers automatically. Answer the verifier and fix the failing-checks dispatched to you; don't start new features.
+When a phase changes you'll see a ▶ PHASE TRANSITION banner — re-orient to the new phase's job.
+</development_lifecycle>
+{% endif %}
+
+
 {% if wake_contract -%}
 <wake_contract>
 {{ wake_contract }}

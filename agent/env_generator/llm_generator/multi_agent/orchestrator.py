@@ -102,78 +102,9 @@ def reset_allocated_ports():
     _allocated_ports = set()
 
 
-# Runnable BASE backend entrypoint, committed to the git base pre-spawn (see
-# Orchestrator._seed_base_scaffold). The backend lane ADDS business route handlers
-# to this; the OAuth2 AS + /health + uvicorn entrypoint are framework-owned.
-_BASE_MAIN_PY = '''"""FastAPI application entrypoint.
-
-Framework-scaffolded BASE. The backend lane ADDS the app's business route handlers
-below (``@app.<method>(...)`` handlers, or ``from <x>_routes import router as r;
-app.include_router(r)``). The embedded OAuth2 AS (/oauth/*, /.well-known/*,
-/auth/register, /auth/login) and /health are wired here and MUST NOT be re-authored.
-"""
-import os
-import logging
-
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
-app = FastAPI(title="app")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Framework OAuth2 AS — provides /oauth/*, /.well-known/*, /auth/register, /auth/login.
-try:
-    from oauth_store import OAuthStore
-    from jwt_manager import JWTManager
-    from oauth_routes import build_router as _as_build_router
-    app.include_router(_as_build_router(OAuthStore(), JWTManager()))
-except Exception as _as_exc:  # pragma: no cover
-    logging.getLogger("uvicorn").warning("AS wiring skipped: %s", _as_exc)
-
-
-@app.get("/health")
-def health():
-    return {"status": "healthy"}
-
-
-# ============================================================================
-# BUSINESS ROUTES — the backend lane implements the app's endpoints below.
-# Add @app.<method>(...) handlers or include_router(...) for your route modules.
-# ============================================================================
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("API_PORT", "8081")))
-'''
-
-# Base reset.sh — the backend's Dockerfile ``COPY reset.sh /reset.sh`` fails the
-# image build if it's absent (the lane writes the Dockerfile referencing it but
-# may not author the script). Best-effort generic business-data reset over the
-# ORM; never fails the build (skips cleanly if models/db aren't importable). The
-# backend MAY overwrite with an app-specific version.
-_BASE_RESET_SH = '''#!/usr/bin/env bash
-set -euo pipefail
-python - <<'PY'
-try:
-    from database import SessionLocal, Base
-    with SessionLocal() as db:
-        for table in reversed(Base.metadata.sorted_tables):
-            if table.name not in ("users", "tenants"):
-                db.execute(table.delete())
-        db.commit()
-    print("backend business data reset complete")
-except Exception as exc:
-    print(f"reset skipped: {exc}")
-PY
-'''
+# NOTE: the base backend entrypoint + reset.sh templates (_BASE_MAIN_PY /
+# _BASE_RESET_SH) moved to runtime/scaffolder.py with Scaffolder.seed_base_scaffold
+# (PROPOSAL #8 — Scaffolder extraction).
 
 
 # ── deterministic-rescue pacing (PIPE-C2 / PIPE-C3, 2026-06-12) ──────────────
@@ -938,8 +869,11 @@ class Orchestrator:
                     # Per-milestone visual state: anchor the deferral clock and the
                     # total-judgment backstop to THIS milestone (PIPE-C3 — within a
                     # milestone neither is reset by lane churn).
-                    self._vf_deferred_since = None
-                    self._vf_total_judgments = 0
+                    self._vf_gate.reset_for_milestone()
+                    # Per-milestone page-build deferral state (mirror of the visual
+                    # gate): the deferral clock + attempt count anchor to THIS milestone.
+                    self._pages_gate_deferred_since = None
+                    self._pages_gate_attempts = 0
                     # This milestone's requirement slice → kickoff input. When
                     # milestones were NOT explicitly supplied, the single
                     # synthesized M1 MUST receive the exact legacy ``raw_req``
@@ -951,11 +885,21 @@ class Orchestrator:
                     else:
                         _slice = str(_milestone.get("description_slice") or "").strip()
                         _milestone_req = _slice or raw_req
-                        # The compiled REFERENCE SPEC is milestone-independent
-                        # ground truth — a slice replacing raw_req must not
-                        # drop it (it carries the binding endpoint/MCP lists).
+                        # The compiled REFERENCE SPEC enumerates the FULL endpoint/
+                        # screen surface. Appending it to a PARTIAL slice makes that
+                        # milestone over-declare LATER milestones' surface (smoke-notes
+                        # 2026-06-19: M1's "auth-and-list" slice got all 8 endpoints
+                        # marked binding → declared the whole CRUD → M2 had 0 new
+                        # surface → its frontend submitted empty `screens` → substance-
+                        # gate rejection). The full spec is only needed at M1 (where the
+                        # whole data model legitimately ships); M2+ scope to their self-
+                        # contained slice (the planner guarantees each slice repeats the
+                        # full DATA MODEL + lists ONLY its NEW endpoints/pages). When
+                        # there is no slice (single synthesized milestone) the spec still
+                        # backstops as before.
                         _spec_block = getattr(self, "_reference_spec_summary", "")
-                        if _spec_block and _spec_block not in _milestone_req:
+                        if _spec_block and (_m_idx == 1 or not _slice) \
+                                and _spec_block not in _milestone_req:
                             _milestone_req = _milestone_req + _spec_block
 
                     if _m_idx > 1:
@@ -1220,17 +1164,26 @@ class Orchestrator:
                     nudge_interval_sec = float(
                         os.environ.get("ENVGEN_NUDGE_INTERVAL_SEC", "60")
                     )
-                    # Defect B (coordination-tick decouple, YOUTUBE_RUN_STALL_REVIEW):
-                    # the tick re-dispatch was gated SOLELY on
-                    # ``orchestrator_task_done_event.is_set()``, which stays False
-                    # forever when the resident orchestrator's tick #1 LLM-loops
-                    # without finishing (smoke #19 decoupled the NUDGE this way but
-                    # missed the tick). Wall-clock fallback so the orchestrator is
-                    # re-woken to escalate/deliver even when that event is stuck —
-                    # bounded to one extra tick per stuck window (no flood).
+                    # Coordination-tick dispatch (Defect B + PROPOSAL #17 fix). The
+                    # resident orchestrator lane is a SERIAL queue-consumer: a tick
+                    # dispatched while a prior one is still in flight cannot be
+                    # consumed, so the lane's message queue floods and the dispatch
+                    # send_task BLOCKS — the observed repeated 900s hangs (youtube run
+                    # 2026-06-18). Defect B's wall-clock "re-dispatch a fresh tick when
+                    # the done-event is stuck" was the very thing piling ticks onto the
+                    # wedged lane. PROPOSAL #17: dispatch ONLY when the lane is FREE
+                    # (done-event set → one tick in flight) and bound the dispatch await
+                    # to a tunable timeout (was a hard-coded 900s, 3x this stuck cadence).
+                    # While a tick is in flight or wedged, the deterministic drivers above
+                    # (_maybe_run_framework_validation / _maybe_framework_deliver, every
+                    # ~60s) carry the run — they, not a re-dispatched LLM tick, are the
+                    # reliable recovery from a stuck orchestrator lane.
                     last_coordination_tick_at = 0.0
                     coordination_tick_stuck_sec = float(
                         os.environ.get("ENVGEN_COORD_TICK_STUCK_SEC", "300")
+                    )
+                    coordination_tick_dispatch_timeout_s = float(
+                        os.environ.get("ENVGEN_COORD_TICK_DISPATCH_TIMEOUT_S", "180")
                     )
                     # Run budget: initial caps come from env (the UI sets them on spawn);
                     # thereafter we re-read run_budget.json each tick so the UI can raise
@@ -1254,6 +1207,15 @@ class Orchestrator:
                                 orchestrator_lane._project_delivered_event.wait(),
                                 timeout=60.0,
                             )
+                            # B1 (pre-launch audit): the event may have been set by the
+                            # LLM's deliver_project, which only flags the LANE — it does
+                            # NOT cut a release. _maybe_framework_deliver (the SOLE
+                            # create_release caller) is below this break, so without this
+                            # the run could exit "delivered" with NO release tag. Run it
+                            # once before breaking — it's idempotent (guards on the
+                            # ORCHESTRATOR's self._project_delivered, distinct from the
+                            # lane flag the tool set), so it cuts the release exactly once.
+                            await self._maybe_framework_deliver()
                             break
                         except asyncio.TimeoutError:
                             pass
@@ -1360,8 +1322,15 @@ class Orchestrator:
                                 pass
 
                         _now_tick = time.time()
-                        if self._coordination_tick_due(
-                            event_set=orchestrator_task_done_event.is_set(),
+                        # PROPOSAL #17 busy-guard: dispatch a coordination tick ONLY
+                        # when the lane is FREE (its prior tick completed → done-event
+                        # set). Never pile a tick onto a busy/wedged serial-consumer
+                        # lane — that floods its queue and blocks send_task (the 900s
+                        # hang). While a tick is in flight the deterministic drivers
+                        # above carry the run.
+                        _lane_free = orchestrator_task_done_event.is_set()
+                        if _lane_free and self._coordination_tick_due(
+                            event_set=_lane_free,
                             now=_now_tick,
                             last_tick_at=last_coordination_tick_at,
                             loop_start=loop_start,
@@ -1417,11 +1386,13 @@ class Orchestrator:
                                         if stalled else ""
                                     )
                                 ),
-                                }), timeout=900.0)
+                                }), timeout=coordination_tick_dispatch_timeout_s)
                             except asyncio.TimeoutError:
                                 self._logger.error(
-                                    "coordination-tick dispatch timed out (900s) — "
-                                    "lane wedged; looping to re-check delivered/budget.")
+                                    "coordination-tick dispatch timed out (%.0fs) — "
+                                    "lane busy/wedged; looping to re-check delivered/budget "
+                                    "(deterministic drivers continue).",
+                                    coordination_tick_dispatch_timeout_s)
                                 continue
                     if orchestrator_lane._project_delivered_event.is_set():
                         self._write_run_budget(caps, loop_start, time.time() - loop_start, tick_count, "delivered")
@@ -1453,6 +1424,35 @@ class Orchestrator:
                     raise RuntimeError(f"Delivery gate failed.\n{report}")
             
                 self._enter_project_phase("done", reason="delivery gate passed")
+                # FINAL-MILESTONE RELEASE. create_release lives ONLY inside the
+                # per-milestone _maybe_framework_deliver, which DEFERS on the final
+                # milestone (visual gate) — so this post-loop success path would mark
+                # the generation done without ever cutting the last milestone's
+                # release (run #11: M1 cut v1.0.0 but M2's v1.1.0 was never cut, and
+                # the resident-lane shutdown then hung). Now the objective gate is
+                # fully clear, so cut it here, BEFORE shutdown — the snapshot only
+                # needs the committed integration head, not stopped lanes. Idempotent:
+                # skipped when the tag is already released (single-milestone path).
+                try:
+                    self._commit_framework_delivery()
+                    _ch = getattr(self.hubs, "codehub", None)
+                    _ver = getattr(self, "_current_milestone_version", "1.0.0")
+                    _already = False
+                    try:
+                        _rs = getattr(getattr(_ch, "stores", None), "releases", None)
+                        _already = bool(_rs and _ver in (_rs.value() or {}))
+                    except Exception:
+                        _already = False
+                    if _ch is not None and hasattr(_ch, "create_release") and not _already:
+                        _ch.create_release(
+                            tag=_ver, source="integration",
+                            notes="Final delivery: delivery gate fully clear.",
+                            agent="orchestrator")
+                        self._write_preview_config(_ver)
+                        self._logger.warning(
+                            "FINAL DELIVERY: gate clear → cut release v%s", _ver)
+                except Exception as _fin_rel_err:  # best-effort observability
+                    self._logger.warning("final-gate release cut failed: %s", _fin_rel_err)
                 phases_completed = ["requirements", "design", "code", "docker", "testing"]
                 self.progress.emit(EventType.PHASE_COMPLETE, "Agent Workflow", {})
                 self.checkpoint.complete_phase("agent_workflow")
@@ -1501,9 +1501,13 @@ class Orchestrator:
                 # so nothing follows to stash/drop the projection (the bug that
                 # would otherwise leave the final app hollow).
                 self._project_missing_routes()
-                # …and missing UI pages (frontend analog): declared-but-unbuilt
-                # screens get a functional, API-wired, navigable page so the booted
-                # app is not thin/unreachable.
+                # …and missing UI pages (frontend analog, PROPOSAL #19 — now wired;
+                # this was a dead comment): a declared ui_page the lane omitted from
+                # its App.jsx gets a stub component + its route additively injected,
+                # so the booted/shipped app is navigable to every declared page. Runs
+                # HERE (final merge) + committed below, so the release snapshot carries
+                # it (the per-tick heal write is stashed/dropped by this merge).
+                self._scaffold_frontend_pages()
                 # COMMIT the framework writes above on integration — mirrors the
                 # happy-path delivery (see _commit_framework_delivery before
                 # create_release). The skeleton/infra/projection are working-tree-only
@@ -1583,1145 +1587,87 @@ class Orchestrator:
         for agent_id in ["database", "backend", "frontend"]:
             self._agents[agent_id].set_design_docs(docs)
 
-    def _finalize_kickoff_and_author(
-        self,
-        kickoff_handle: Dict[str, Any],
-        synthesis: Dict[str, Any],
-        *,
-        poll_count: int,
-        elapsed: float,
-    ) -> Dict[str, Any]:
-        """Register a READY synthesis (finalize_kickoff) + author the
-        milestone/roadmap/briefing docs, returning the finalize receipt.
+    # ── Kickoff driver (PROPOSAL #8/#16 — KickoffDriver) ──
+    # The facilitator-led kickoff meeting loop + finalize/author/dispatch moved to
+    # runtime/kickoff_driver.py. STATELESS (no orch state; calls only its own siblings),
+    # so each shim constructs a fresh KickoffDriver(self) per call — call sites + tests
+    # unchanged. (The interleaved _coordination_tick_due / _should_attempt_silent_lane_nudge
+    # / _nudge_silent_resident_lanes stay here — they are NOT kickoff methods.)
+    def _finalize_kickoff_and_author(self, *args, **kwargs):
+        from .runtime.kickoff_driver import KickoffDriver
+        return KickoffDriver(self)._finalize_kickoff_and_author(*args, **kwargs)
 
-        Shared by the two finalize sites in ``_drive_kickoff_to_completion``:
-        the deterministic synth=ready fast-path and the LLM-facilitator
-        ``consensus`` branch. finalize_kickoff is a pure §8 function — it is
-        the single writer of the registered contract + task_ready dispatch —
-        so a ready synthesis NEVER needs the LLM to bless it; centralizing the
-        finalize keeps both paths byte-identical. Doc authoring failures are
-        non-fatal (the contract has already shipped).
-        """
-        from .runtime.kickoff import run_kickoff
-        receipt = run_kickoff.finalize_kickoff(
-            hubs=self.hubs,
-            kickoff_handle=kickoff_handle,
-            synthesis=synthesis,
-            agent="orchestrator",
-        )
-        self._logger.info(
-            "Kickoff finalize receipt: phase=%s endpoints=%d tables=%d "
-            "tasks=%d predicates=%d failures=%d",
-            receipt.get("phase"),
-            receipt.get("endpoints_registered", 0),
-            receipt.get("tables_registered", 0),
-            receipt.get("tasks_created", 0),
-            receipt.get("predicates_persisted", 0),
-            len(receipt.get("failures") or []),
-        )
-        try:
-            self._author_kickoff_docs(synthesis)
-        except Exception as _auth_err:
-            self._logger.warning(
-                "kickoff authoring failed (non-fatal): %s", _auth_err,
-            )
-        return receipt
+    async def _drive_kickoff_to_completion(self, *args, **kwargs):
+        from .runtime.kickoff_driver import KickoffDriver
+        return await KickoffDriver(self)._drive_kickoff_to_completion(*args, **kwargs)
 
-    async def _drive_kickoff_to_completion(
-        self,
-        kickoff_handle: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Round-8f.1 driver: pure-Python facilitator-led meeting loop.
+    def _attempt_reconciled_finalize(self, *args, **kwargs):
+        from .runtime.kickoff_driver import KickoffDriver
+        return KickoffDriver(self)._attempt_reconciled_finalize(*args, **kwargs)
 
-        Background (round-8c → 8f.1): the original 8c driver polled
-        ``try_synthesize`` and short-circuited any non-``ready`` status
-        straight to ``synthesize_fallback``. That treated the kickoff as
-        a one-shot paper-submission rather than a real meeting. Round-8f
-        introduces the orchestrator-as-facilitator turn (see
-        ``runtime/kickoff/facilitate.py``):
-
-          Round 1: attendees author initial proposals (no change).
-          Facilitator turn: orchestrator LLM reads all decisions, emits a
-            ``facilitator_note`` whose ``content.action`` is one of
-            ``consensus``, ``request_revision``, or ``escalate``.
-          Round N>1 (only on request_revision): the flagged revisers
-            re-author their sections, then the facilitator runs again.
-          After ``KICKOFF_MAX_ROUNDS`` rounds the driver falls back.
-
-        This driver is the pure-Python state machine that wires those
-        events together; it does NOT call the LLM directly. The
-        facilitator LLM runs inside the orchestrator's resident lane via
-        its ``_handle_kickoff_facilitate_request`` handler.
-
-        Returns the kickoff receipt (finalize_kickoff's normal return
-        shape) on consensus; a ``synthesize_fallback`` dict on
-        timeout / escalate / max_rounds. Caller inspects ``phase``.
-        """
-        from .runtime.kickoff import run_kickoff
-        from .runtime.kickoff import facilitate
-        from .runtime.kickoff.schema_tolerance import (
-            coerce_facilitator_action,
-        )
-        # NOTE: use ``is None`` not ``or`` — 0.0 is a valid (if degenerate)
-        # started_at and ``or`` would silently replace it with time.time(),
-        # masking a timeout-driven abort in tests/production alike.
-        started_at = kickoff_handle.get("started_at")
-        if started_at is None:
-            started_at = time.time()
-        poll_count = 0
-        expected_attendees = list(kickoff_handle.get("expected_attendees") or [])
-        meeting_id = kickoff_handle.get("meeting_id")
-        # Round-8g: track which (round, phase) broadcasts have fired so
-        # we don't re-broadcast on every poll. In-memory state — only
-        # valid for the lifetime of this driver call. If the driver
-        # restarts mid-meeting (it doesn't today), we'd have to persist
-        # this in workhub but for now in-process is fine.
-        broadcasts_fired: set = set()
-
-        while True:
-            poll_count += 1
-            elapsed = time.time() - started_at
-
-            # Timeout check FIRST — overrides any other state machine
-            # decision. Matches the 8c contract that ``test_driver_timeout
-            # _falls_through_to_fallback`` pins.
-            if elapsed > run_kickoff.KICKOFF_TIMEOUT_SEC:
-                try:
-                    last_synth = run_kickoff.try_synthesize(self.hubs, kickoff_handle)
-                except Exception:
-                    last_synth = {"status": "unknown"}
-                self._logger.error(
-                    "Kickoff timed out after %.0fs (poll %s); attempting "
-                    "deterministic reconcile before kickoff_failed.",
-                    elapsed, poll_count,
-                )
-                return self._kickoff_fallback_or_reconcile(
-                    kickoff_handle, last_synth, "timeout",
-                )
-
-            # Round-8g: derive the meeting's current phase from
-            # decisions[]. Phases iterate per round:
-            #   initial → comment → reply → facilitator
-            #   → (consensus | request_revision | escalate)
-            phase = facilitate.current_phase(
-                self.hubs, meeting_id, expected_attendees,
-            )
-            cur_round = facilitate.current_round(self.hubs, meeting_id)
-
-            if phase == "initial":
-                # Initial drafts still being authored (kickoff_request
-                # was broadcast by start_kickoff for round 1; revisions
-                # are dispatched via kickoff_revision_request when a
-                # facilitator says request_revision).
-                self._logger.info(
-                    "Kickoff phase=initial (round %d, poll %s, %.0fs); "
-                    "waiting for attendees to record initial proposals.",
-                    cur_round, poll_count, elapsed,
-                )
-                await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
-                continue
-
-            if phase == "comment":
-                # Initial drafts done — fire kickoff_comment_phase_request
-                # once for this (round, phase), then wait for all
-                # attendees to ack the comment phase.
-                key = (cur_round, "comment")
-                if key not in broadcasts_fired:
-                    self._logger.info(
-                        "Kickoff phase=comment (round %d, poll %s, "
-                        "%.0fs); broadcasting kickoff_comment_phase_request.",
-                        cur_round, poll_count, elapsed,
-                    )
-                    facilitate.request_comment_phase(
-                        self.hubs, kickoff_handle,
-                    )
-                    broadcasts_fired.add(key)
-                else:
-                    acked = facilitate.phase_acked_by(
-                        self.hubs, meeting_id, cur_round, "comment",
-                    )
-                    self._logger.info(
-                        "Kickoff phase=comment (round %d, poll %s, "
-                        "%.0fs); waiting on %s.",
-                        cur_round, poll_count, elapsed,
-                        [a for a in expected_attendees if a not in acked],
-                    )
-                await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
-                continue
-
-            if phase == "reply":
-                # Comment phase done — fire kickoff_reply_phase_request
-                # once, then wait for all attendees to ack reply phase.
-                key = (cur_round, "reply")
-                if key not in broadcasts_fired:
-                    self._logger.info(
-                        "Kickoff phase=reply (round %d, poll %s, %.0fs); "
-                        "broadcasting kickoff_reply_phase_request.",
-                        cur_round, poll_count, elapsed,
-                    )
-                    facilitate.request_reply_phase(
-                        self.hubs, kickoff_handle,
-                    )
-                    broadcasts_fired.add(key)
-                else:
-                    acked = facilitate.phase_acked_by(
-                        self.hubs, meeting_id, cur_round, "reply",
-                    )
-                    self._logger.info(
-                        "Kickoff phase=reply (round %d, poll %s, "
-                        "%.0fs); waiting on %s.",
-                        cur_round, poll_count, elapsed,
-                        [a for a in expected_attendees if a not in acked],
-                    )
-                await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
-                continue
-
-            if phase == "facilitator":
-                # synth=ready is TERMINAL — finalize deterministically rather
-                # than waiting for the LLM facilitator to record a "consensus"
-                # note. The facilitation pass exists only to RESOLVE non-ready
-                # statuses (conflict / validation_failed); an already-ready
-                # synthesis has cleared every gate (quorum + cross-checks +
-                # roadmap validation), so gating its finalize on the
-                # orchestrator-LLM behaving is pure fragility. youtube run #12
-                # (2026-06-16): synthesis reached ready but the orchestrator-
-                # facilitator was handed backend implementation context, never
-                # recorded a consensus note, and a fully-ready kickoff polled to
-                # its 1200s timeout with the lanes stuck in kickoff:action stage.
-                # Finalize here; the LLM only sees facilitation when there is an
-                # actual conflict to adjudicate (the consensus branch below
-                # remains for the after-revisions-became-ready case).
-                try:
-                    ready_synth = run_kickoff.try_synthesize(
-                        self.hubs, kickoff_handle,
-                    )
-                except Exception as exc:
-                    self._logger.error(
-                        "try_synthesize raised at facilitator ready-check "
-                        "(round %d, poll %s): %s", cur_round, poll_count, exc,
-                    )
-                    ready_synth = {"status": "unknown"}
-                if ready_synth.get("status") == "ready":
-                    self._logger.info(
-                        "synth=ready at facilitator phase — finalizing "
-                        "deterministically (poll %s, %.0fs); no LLM consensus "
-                        "required.", poll_count, elapsed,
-                    )
-                    return self._finalize_kickoff_and_author(
-                        kickoff_handle, ready_synth,
-                        poll_count=poll_count, elapsed=elapsed,
-                    )
-                # Not ready — fire kickoff_facilitate_request once, then wait
-                # for orchestrator's facilitator_note to resolve the conflict.
-                key = (cur_round, "facilitator")
-                if key not in broadcasts_fired:
-                    try:
-                        synthesis = run_kickoff.try_synthesize(
-                            self.hubs, kickoff_handle,
-                        )
-                    except Exception as exc:
-                        self._logger.error(
-                            "try_synthesize raised before facilitator "
-                            "turn (round %d, poll %s): %s",
-                            cur_round, poll_count, exc,
-                        )
-                        raise
-                    self._logger.info(
-                        "Kickoff phase=facilitator (round %d, poll %s, "
-                        "%.0fs, synth=%s); requesting facilitation.",
-                        cur_round, poll_count, elapsed,
-                        synthesis.get("status"),
-                    )
-                    facilitate.request_facilitation(
-                        self.hubs, kickoff_handle, synthesis,
-                    )
-                    broadcasts_fired.add(key)
-                await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
-                continue
-
-            # phase ∈ {consensus, request_revision, escalate} — the
-            # facilitator has spoken. Read the actual note for content.
-            note = facilitate.read_facilitator_decision(
-                self.hubs, kickoff_handle,
-            )
-            if note is None:
-                # current_phase said facilitator-action but the note was
-                # racy — give it one more poll.
-                self._logger.warning(
-                    "Kickoff phase=%s but no facilitator_note found yet "
-                    "for round %d; one more poll.",
-                    phase, cur_round,
-                )
-                await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
-                continue
-
-            note_content = note.get("content") or {}
-            # Round 8h follow-up: facilitate.current_phase() already
-            # coerced any invented action string (e.g.
-            # "accept_revision_and_recenter") to a canonical
-            # FACILITATOR_ACTIONS value when deciding ``phase`` above.
-            # Re-coerce here so this branch sees the SAME canonical
-            # action — otherwise the if/elif chain below would
-            # fall through to "Unknown facilitator action" and
-            # synthesize_fallback, exactly the failure mode Fix #O
-            # was meant to prevent.
-            action = coerce_facilitator_action(note_content.get("action"))
-            # Re-run try_synthesize so the rest of the loop (consensus
-            # → finalize, escalate → fallback) has fresh state.
-            try:
-                synthesis = run_kickoff.try_synthesize(self.hubs, kickoff_handle)
-            except Exception as exc:
-                self._logger.error(
-                    "try_synthesize raised post-facilitator (round %d): %s",
-                    cur_round, exc,
-                )
-                raise
-
-            if action == "consensus":
-                # Trust the facilitator's verdict, but re-poll
-                # try_synthesize once more — the latest revisions may
-                # have just made it ready. If still not ready, fall back
-                # rather than finalize with a bad synthesis.
-                if synthesis.get("status") != "ready":
-                    synthesis = run_kickoff.try_synthesize(
-                        self.hubs, kickoff_handle
-                    )
-                if synthesis.get("status") == "ready":
-                    self._logger.info(
-                        "Facilitator declared consensus (poll %s, "
-                        "%.0fs); finalizing.",
-                        poll_count, elapsed,
-                    )
-                    return self._finalize_kickoff_and_author(
-                        kickoff_handle, synthesis,
-                        poll_count=poll_count, elapsed=elapsed,
-                    )
-                self._logger.warning(
-                    "Facilitator declared consensus but try_synthesize "
-                    "still %r; attempting reconcile before fallback.",
-                    synthesis.get("status"),
-                )
-                return self._kickoff_fallback_or_reconcile(
-                    kickoff_handle, synthesis, "consensus_not_ready",
-                )
-
-            if action == "request_revision":
-                cur_round = facilitate.current_round(
-                    self.hubs, kickoff_handle["meeting_id"]
-                )
-                if cur_round >= facilitate.KICKOFF_MAX_ROUNDS:
-                    self._logger.error(
-                        "Kickoff hit max_rounds=%d; attempting reconcile "
-                        "before fallback",
-                        facilitate.KICKOFF_MAX_ROUNDS,
-                    )
-                    return self._kickoff_fallback_or_reconcile(
-                        kickoff_handle, synthesis, "max_rounds",
-                    )
-                revisers = note_content.get("revisers") or []
-                if not revisers:
-                    self._logger.error(
-                        "Facilitator requested revision but listed no "
-                        "revisers; attempting reconcile before fallback."
-                    )
-                    return self._kickoff_fallback_or_reconcile(
-                        kickoff_handle, synthesis, "no_revisers",
-                    )
-                self._logger.info(
-                    "Facilitator requested revision from %s (round %d "
-                    "-> %d).",
-                    revisers, cur_round, cur_round + 1,
-                )
-                facilitate.request_revisions(
-                    self.hubs, kickoff_handle, revisers, note,
-                )
-                # broadcasts_fired keys are (round, phase) tuples — the
-                # new round will use fresh keys (round+1, *), so no
-                # explicit reset needed. The current_phase computation
-                # for round+1 will see no decisions yet for that round
-                # and return "initial".
-                await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
-                continue
-
-            if action == "escalate":
-                self._logger.error(
-                    "Facilitator escalated kickoff; attempting reconcile "
-                    "before fallback. rationale=%r",
-                    note_content.get("rationale"),
-                )
-                return self._kickoff_fallback_or_reconcile(
-                    kickoff_handle, synthesis, "escalate",
-                )
-
-            # Unknown action — fail loud (do NOT keep polling: an
-            # unrecognized verdict means a contract drift, not a
-            # transient state).
-            self._logger.error(
-                "Unknown facilitator action %r; attempting reconcile before "
-                "fallback", action,
-            )
-            return self._kickoff_fallback_or_reconcile(
-                kickoff_handle, synthesis, "unknown_action",
-            )
-
-    def _attempt_reconciled_finalize(self, kickoff_handle, reason: str):
-        """Last-resort deterministic kickoff convergence (charter §8).
-
-        Before aborting a kickoff that won't reach consensus, re-synthesize with
-        ``reconcile=True`` — which prunes frontend api_calls to UNDEFINED
-        endpoints (a UI call into the void; e.g. an invented ``GET /api/stories``)
-        — and, if that makes the synthesis ``ready``, finalize the contract
-        instead of failing the whole run. Returns the finalize receipt on
-        success, or ``None`` (caller proceeds to ``synthesize_fallback``) when
-        reconciliation can't produce a ready synthesis (a non-reconcilable
-        conflict — dead endpoint, data-model drift — still aborts honestly).
-        """
-        from .runtime.kickoff import run_kickoff
-        try:
-            synth = run_kickoff.try_synthesize(
-                self.hubs, kickoff_handle, reconcile=True,
-            )
-        except Exception as exc:  # pragma: no cover - defensive
-            self._logger.warning(
-                "Kickoff reconcile attempt raised (%s): %s", reason, exc,
-            )
-            return None
-        if synth.get("status") != "ready":
-            # Diagnostic: surface what's still blocking after pruning dangling
-            # UI calls + downgrading dead endpoints, so the run log pinpoints
-            # any residual runtime-fatal drift (e.g. api↔data_model) instead of
-            # an opaque "still conflict".
-            findings = synth.get("findings") or []
-            details = [
-                # cross-check findings carry detail/offending_field; roadmap
-                # validation findings carry section/id/message — log whichever.
-                (f.get("message") or f.get("detail")
-                 or f.get("offending_field")
-                 or f.get("id") or f.get("section"))
-                for f in findings if isinstance(f, dict)
-            ][:8]
-            self._logger.warning(
-                "Kickoff reconcile (%s) did not reach ready (status=%s); "
-                "residual findings=%s — falling through to fallback.",
-                reason, synth.get("status"), details,
-            )
-            return None
-        added = synth.get("reconciled_added") or []
-        normalized = synth.get("reconciled_normalized") or []
-        self._logger.warning(
-            "🔧 KICKOFF RECONCILE (%s): auto-registered %d endpoint(s) for frontend "
-            "call(s) the backend didn't declare %s (the skeleton generates them); "
-            "normalized %d endpoint-shape issue(s) %s → synthesis ready; finalizing "
-            "instead of aborting the run.",
-            reason, len(added), added, len(normalized), normalized[:6],
-        )
-        receipt = run_kickoff.finalize_kickoff(
-            hubs=self.hubs,
-            kickoff_handle=kickoff_handle,
-            synthesis=synth,
-            agent="orchestrator",
-        )
-        try:
-            self._author_kickoff_docs(synth)
-        except Exception as _auth_err:  # pragma: no cover - doc bug, not kickoff
-            self._logger.warning(
-                "kickoff authoring failed (non-fatal): %s", _auth_err,
-            )
-        return receipt
-
-    def _kickoff_fallback_or_reconcile(
-        self, kickoff_handle, last_synthesis, reason: str,
-    ):
-        """Try a deterministic reconcile-and-finalize before the hard abort.
-
-        Wraps every kickoff abort site: if dangling-UI-call reconciliation can
-        finalize the contract, return that receipt; otherwise fall through to
-        the honest ``synthesize_fallback`` (kickoff_failed) path.
-        """
-        from .runtime.kickoff import run_kickoff
-        receipt = self._attempt_reconciled_finalize(kickoff_handle, reason)
-        if receipt is not None:
-            return receipt
-        return run_kickoff.synthesize_fallback(
-            hubs=self.hubs,
-            kickoff_handle=kickoff_handle,
-            last_synthesis=last_synthesis,
-            agent="orchestrator",
-        )
+    def _kickoff_fallback_or_reconcile(self, *args, **kwargs):
+        from .runtime.kickoff_driver import KickoffDriver
+        return KickoffDriver(self)._kickoff_fallback_or_reconcile(*args, **kwargs)
 
     @staticmethod
-    def _coordination_tick_due(
-        *,
-        event_set: bool,
-        now: float,
-        last_tick_at: float,
-        loop_start: float,
-        stuck_sec: float,
-    ) -> bool:
-        """Pure gate for the resident coordination-tick re-dispatch (Defect B,
-        YOUTUBE_RUN_STALL_REVIEW).
-
-        Fires when EITHER the lane's done-event is set (a clean tick finish) OR a
-        wall-clock ``stuck_sec`` window has elapsed since the last tick. The latter
-        is the decouple: the done-event stays False forever when the resident
-        orchestrator's tick LLM-loops without finishing, which wedged the run
-        (smoke #19 fixed this for the nudge but missed the tick). Bounded to one
-        tick per stuck window (no flood). ``max(last_tick_at, loop_start)`` makes
-        the first tick fire within ``stuck_sec`` even if the event never sets.
-        Kept pure so the cadence is testable in isolation."""
-        if event_set:
-            return True
-        return (now - max(last_tick_at, loop_start)) >= stuck_sec
+    def _coordination_tick_due(*, event_set, now, last_tick_at, loop_start, stuck_sec):
+        from .runtime.coordination import coordination_tick_due
+        return coordination_tick_due(
+            event_set=event_set, now=now, last_tick_at=last_tick_at,
+            loop_start=loop_start, stuck_sec=stuck_sec)
 
     @staticmethod
-    def _should_attempt_silent_lane_nudge(
-        now: float,
-        kickoff_finalized_at: float,
-        last_nudge_attempt_at: float,
-        grace_sec: float,
-        interval_sec: float,
-    ) -> bool:
-        """Round 8h Patch B v2: pure decision for whether the
-        coordination loop should run a silent-lane nudge attempt on
-        the current wait_for-timeout iteration.
+    def _should_attempt_silent_lane_nudge(now, kickoff_finalized_at, last_nudge_attempt_at, grace_sec, interval_sec):
+        from .runtime.coordination import should_attempt_silent_lane_nudge
+        return should_attempt_silent_lane_nudge(
+            now, kickoff_finalized_at, last_nudge_attempt_at, grace_sec, interval_sec)
 
-        Returns True iff BOTH:
-          * At least ``grace_sec`` has elapsed since
-            ``kickoff_finalized_at`` (lets kickoff_complete subscribers
-            wake naturally before we assume bug).
-          * At least ``interval_sec`` has elapsed since the previous
-            nudge attempt (don't spam the bus / inbox).
+    async def _dispatch_implementation_phase(self, *args, **kwargs):
+        from .runtime.kickoff_driver import KickoffDriver
+        return await KickoffDriver(self)._dispatch_implementation_phase(*args, **kwargs)
 
-        Kept pure so the wall-clock cadence is testable in isolation
-        without booting the full coordination loop. Smoke #19 surfaced
-        the v1 wiring bug (nested inside `if task_done.is_set()` which
-        was False forever when the orchestrator lane LLM-looped on
-        inbox reads) — this helper guarantees v2 cannot regress to
-        the same gating mistake by accident.
-        """
-        if now - kickoff_finalized_at < grace_sec:
-            return False
-        if now - last_nudge_attempt_at < interval_sec:
-            return False
-        return True
+    # ── Coordination (PROPOSAL #8 — Coordination, final slice) ──
+    # Resident-lane cadence predicates + stall-nudge moved to runtime/coordination.py
+    # (the 2 pures are module fns; the stateful nudge is Coordination(orch).
+    # _silent_lane_nudges stays here on the orch, init/reset by run()). The run()
+    # coordination-tick BLOCK stays in the spine.
+    async def _nudge_silent_resident_lanes(self, *args, **kwargs):
+        from .runtime.coordination import Coordination
+        return await Coordination(self).nudge_silent_resident_lanes(*args, **kwargs)
 
-    async def _dispatch_implementation_phase(self) -> List[str]:
-        """§5-entry / D4.3 (reframed): deterministically hand the implementation
-        phase to the lanes the moment kickoff finalizes.
+    def _author_kickoff_docs(self, *args, **kwargs):
+        from .runtime.kickoff_driver import KickoffDriver
+        return KickoffDriver(self)._author_kickoff_docs(*args, **kwargs)
 
-        finalize_kickoff already created + assigned the task tree; this is the
-        ``[P]`` dispatch step (pipeline_process_design.md §4 D4.3 / §5.1). Smoke
-        #3 (2026-06-05) proved the old "lanes wake on kickoff_complete + a later
-        nudge" path fails: kickoff_complete isn't a ``task_ready`` so it doesn't
-        pass ``KickoffBootstrapGate`` (allowed_starters=['orchestrator']), and the
-        lanes burn their idle budget on empty kickoff-reply finishes and get
-        ``LaneIdleCircuitBreaker``-halted before they ever implement.
-
-        So, right after finalize, we:
-          1. RESET each lane's idle counters — the kickoff-reply phase must not
-             pre-halt the implementation phase (fresh budget at the boundary).
-          2. DISPATCH an orchestrator ``task_ready`` to each implementation lane
-             with assigned work — which passes ``KickoffBootstrapGate`` and makes
-             the lane claim + implement (one-pass), no subscription/nudge race.
-
-        The verifier is intentionally NOT dispatched here — it self-triggers on
-        impl-completion (the §6 / ⚠2 validation-ready hub signal)."""
-        from tools.communication_tools import _create_message
-
-        # 1. Reset idle counters at the kickoff→implement boundary.
-        for lane_id, agent in self._agents.items():
-            if agent is None:
-                continue
-            agent._consecutive_idle_steps = 0
-            agent._last_idle_tier = 0
-            agent._lane_idle_tier3_failed = False
-            # None forces the breaker to re-seed its "owned" baseline on the next
-            # finish — so the first implementation step is never counted as idle.
-            agent._lane_idle_prev_owned = None
-
-        # 2. Which lanes have assigned implementation tasks?
-        try:
-            tasks = self.hubs.workhub.list_tasks() or {}
-            task_iter = tasks.values() if isinstance(tasks, dict) else tasks
-        except Exception:
-            task_iter = []
-        assignees = set()
-        for t in task_iter:
-            if not isinstance(t, dict):
-                continue
-            a = str(t.get("owner") or t.get("assignee") or "").strip().lower()
-            if a:
-                assignees.add(a)
-        # The code-writing impl lanes (verifier validates later; orchestrator
-        # coordinates; knowledge is an observer).
-        impl_lanes = {"backend", "frontend"}
-        targets = [
-            lane for lane in self._agents
-            if lane in impl_lanes and (lane in assignees or True)
-        ]
-
-        dispatched: List[str] = []
-        for lane_id in targets:
-            msg = _create_message(
-                source_agent_id="orchestrator",
-                target_agent_id=lane_id,
-                content=(
-                    "Kickoff finalized — the M1 contract (endpoints/tables/pages) "
-                    "and your assigned task_tree entries are registered in "
-                    "RegistryHub/WorkHub. Claim your tasks now "
-                    f"(workhub_list_tasks assignee='{lane_id}', status='pending') "
-                    "and implement them in one pass. Do NOT ack-and-wait."
-                ),
-                msg_type="task_ready",
-                priority="urgent",
-                persist=True,
-                tags=["kickoff_dispatch", "implementation_start"],
-            )
-            try:
-                if await self.message_bus.send(msg):
-                    dispatched.append(lane_id)
-            except Exception as exc:
-                self._logger.warning("impl dispatch to %s failed: %s", lane_id, exc)
-        self._logger.info(
-            "Dispatched implementation phase task_ready to: %s",
-            ", ".join(dispatched) or "none",
-        )
-        return dispatched
-
-    async def _nudge_silent_resident_lanes(
-        self,
-        kickoff_finalized_at: float,
-    ) -> List[str]:
-        """Round 8h Patch B: dispatch urgent task_ready to any resident
-        lane that has produced ZERO ``agent_status`` events since
-        ``kickoff_finalized_at`` — the structural fix for the smoke #18
-        Frontend/Verifier never-woke pathology.
-
-        The orchestrator coordination loop calls this at
-        ``idle_tick_count >= 3``. Pre-fix the only escalation was a
-        textual instruction on the resident_coordination_tick prompt
-        ("you've been idle 3 ticks; escalate") which had no effect
-        when the OTHER lanes were the ones never waking — the
-        orchestrator lane is the one reading that prompt, and it
-        cannot wake a peer by reading text.
-
-        Behavior:
-          * Reads ``eventhub.get_all_agent_statuses()`` and finds the
-            last agent_status timestamp per resident lane id.
-          * A lane is "silent" if it has NO agent_status entry OR
-            its latest entry is older than ``kickoff_finalized_at``.
-          * For each silent lane (excluding the orchestrator itself,
-            which is by design the polling coordinator), construct a
-            ``msg_type=task_ready`` message with URGENT priority and
-            send it through the message bus.
-          * Increment ``self._silent_lane_nudges[lane_id]`` so a
-            future iteration can detect "still silent after N nudges"
-            and escalate further (loud log; structural failure of the
-            subscription path).
-
-        Returns the list of lane ids that were nudged this call. An
-        empty list means every lane has emitted at least one
-        agent_status since finalize — no escalation needed.
-
-        Charter §8: this is closed-by-construction (the orchestrator
-        either gets evidence of liveness or sends a structured wake
-        signal — no "log and hope" path).
-        """
-        from tools.communication_tools import _create_message
-        try:
-            all_statuses = self.hubs.eventhub.get_all_agent_statuses() or {}
-        except Exception as exc:
-            self._logger.warning(
-                "Could not read agent statuses for stall escalation: %s",
-                exc,
-            )
-            return []
-
-        nudged: List[str] = []
-        for lane_id in self._agents:
-            if lane_id == "orchestrator":
-                continue
-            status = all_statuses.get(lane_id) or {}
-            last_at = status.get("_event_created_at", 0.0)
-            if last_at and last_at > kickoff_finalized_at:
-                # Lane has emitted an agent_status post-finalize, so
-                # it is provably alive. Reset its nudge counter so the
-                # next stall episode starts clean.
-                self._silent_lane_nudges.pop(lane_id, None)
-                continue
-
-            prior_nudges = self._silent_lane_nudges.get(lane_id, 0)
-            # FIX #41 (speed): cap stall nudges per lane per stall-episode. A lane
-            # silent after several urgent nudges is STUCK (long LLM self-loop or
-            # genuinely wedged) — re-sending an urgent persist=True task_ready every
-            # 60s for the rest of the run just FLOODS its inbox (163-msg inboxes
-            # observed), and since every lane re-scans its whole inbox each step,
-            # the flood slows the ENTIRE run (good runs hit the 2h wall-clock cap
-            # this way) without ever un-sticking the lane. The counter resets the
-            # moment the lane emits any agent_status (line above), so this caps per
-            # episode, not for the whole run.
-            _MAX_SILENT_NUDGES = int(os.environ.get("ENVGEN_MAX_SILENT_NUDGES", "4"))
-            if prior_nudges >= _MAX_SILENT_NUDGES:
-                if prior_nudges == _MAX_SILENT_NUDGES:
-                    self._silent_lane_nudges[lane_id] = prior_nudges + 1  # bump once so we log once
-                    self._logger.warning(
-                        "Stall escalation: lane %s still silent after %d nudges — "
-                        "SUPPRESSING further nudges this episode (avoid inbox flood "
-                        "that stalls the whole run).",
-                        lane_id, prior_nudges,
-                    )
-                continue
-            message = _create_message(
-                source_agent_id="orchestrator",
-                target_agent_id=lane_id,
-                content=(
-                    "Stall escalation: kickoff_complete fired but you "
-                    "have produced no agent_status events since finalize. "
-                    "Pick up your assigned kickoff task_tree entries from "
-                    "WorkHub and start executing. Do not ack and wait — "
-                    "run your one-pass step_contract NOW."
-                ),
-                msg_type="task_ready",
-                priority="urgent",
-                persist=True,
-                tags=["stall_escalation", "kickoff_followup"],
-            )
-            try:
-                delivered = await self.message_bus.send(message)
-            except Exception as exc:
-                self._logger.error(
-                    "Stall escalation: bus.send to %s raised %s",
-                    lane_id, exc,
-                )
-                continue
-            if not delivered:
-                self._logger.error(
-                    "Stall escalation: bus.send to %s returned False "
-                    "(target not registered with bus). Lane "
-                    "spawn-time wiring is broken upstream.",
-                    lane_id,
-                )
-                continue
-            self._silent_lane_nudges[lane_id] = prior_nudges + 1
-            nudged.append(lane_id)
-        return nudged
-
-    def _author_kickoff_docs(
-        self, synthesis: Dict[str, Any],
-    ) -> None:
-        """Round 8f.2: after finalize_kickoff returns a clean receipt,
-        materialize the human-readable milestone docs to disk.
-
-        Writes (under ``self.output_dir``):
-          * ``docs/milestones/MILESTONE_M{n}.md`` (overwrite)
-          * ``docs/ROADMAP.md`` (idempotent append/replace by M-section)
-          * ``docs/briefings/BRIEFING_M{n}_{agent}.md`` per attendee
-
-        Uses :mod:`runtime.kickoff.authoring` — pure-Python rendering,
-        no LLM call. Determinism is enforced by passing the same
-        synthesis_result the driver already used for finalize_kickoff.
-
-        Errors are intentionally swallowed by the caller: the contract
-        ALREADY shipped via finalize_kickoff before this runs; a
-        markdown-write failure must not invalidate that. The caller
-        logs at WARNING so a debug pass can pick up the failure.
-        """
-        from .runtime.kickoff.authoring import author_all
-        # Read existing ROADMAP.md (if any) so we append/replace
-        # idempotently rather than blowing away prior milestones.
-        roadmap_path = self.output_dir / "docs" / "ROADMAP.md"
-        prior_roadmap_md: Optional[str] = None
-        if roadmap_path.exists():
-            try:
-                prior_roadmap_md = roadmap_path.read_text(encoding="utf-8")
-            except OSError as _e:
-                self._logger.warning(
-                    "Could not read existing %s (%s); rewriting from scratch.",
-                    roadmap_path, _e,
-                )
-        project_name = getattr(self.context, "name", None) or "Project"
-        outputs = author_all(
-            synthesis,
-            project_name=project_name,
-            prior_roadmap_md=prior_roadmap_md,
-        )
-        # Write artifacts. Paths in `outputs["paths"]` are relative; we
-        # anchor under output_dir so they land alongside the project
-        # workspace (CI repo / live_monitor inspection / etc.).
-        milestone_path = self.output_dir / outputs["paths"]["milestone"]
-        milestone_path.parent.mkdir(parents=True, exist_ok=True)
-        milestone_path.write_text(outputs["milestone"], encoding="utf-8")
-
-        roadmap_path.parent.mkdir(parents=True, exist_ok=True)
-        roadmap_path.write_text(outputs["roadmap"], encoding="utf-8")
-
-        for agent_id, briefing_md in (outputs.get("briefings") or {}).items():
-            rel = outputs["paths"]["briefings"][agent_id]
-            briefing_path = self.output_dir / rel
-            briefing_path.parent.mkdir(parents=True, exist_ok=True)
-            briefing_path.write_text(briefing_md, encoding="utf-8")
-
-        self._logger.info(
-            "Authored kickoff docs: %s + %s + %d briefings",
-            milestone_path, roadmap_path,
-            len(outputs.get("briefings") or {}),
-        )
+    @property
+    def _scaffolder(self):
+        """Lazily-created project Scaffolder (PROPOSAL #8 — Scaffolder). Owns the
+        deterministic scaffolding over runtime/*; created on first access (cached
+        in __dict__) so partially-constructed orchestrators stay cheap."""
+        s = self.__dict__.get("_scaffolder_instance")
+        if s is None:
+            from .runtime.scaffolder import Scaffolder
+            s = Scaffolder(self)
+            self.__dict__["_scaffolder_instance"] = s
+        return s
 
     async def _generate_docker(self):
-        """Generate docker-compose.yml."""
-        db_port = self.context.db_port
-        backend_port = self.context.backend_internal_port
-        api_port = self.context.api_port
-        ui_port = self.context.ui_port
-        
-        docker_compose = f'''version: '3.8'
-
-# Generated with run-specific free host ports.
-# Target = forgingground/agentsuite env (see docs/target_env_architecture.md):
-# FastAPI backend + stock postgres (schema delivered via init/ mount, NOT a
-# custom db image) + React/Vite frontend. Agents may edit host-side port
-# mappings if validation finds conflicts.
-
-services:
-  database:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: sandbox
-      POSTGRES_PASSWORD: sandbox
-      POSTGRES_DB: app
-      PGPORT: {db_port}
-    volumes:
-      - ../app/database/init:/docker-entrypoint-initdb.d:ro
-    ports:
-      - "{db_port}:{db_port}"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sandbox -d app -p {db_port}"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 30s
-
-  backend:
-    build: ../app/backend
-    environment:
-      DATABASE_URL: postgresql+psycopg://sandbox:sandbox@database:{db_port}/app
-      API_PORT: {backend_port}
-      # Embedded OAuth2 AS (zoom-style): the env mints its OWN RS256 tokens.
-      # OAUTH_ISSUER is intentionally unset → derived from request.base_url.
-      OAUTH_DEFAULT_AUDIENCE: app-api
-      OAUTH_DEFAULT_SCOPE: app.read app.write app.admin
-      OAUTH_ACCESS_TOKEN_TTL: "3600"
-      JWT_DATA_DIR: /var/lib/app-auth
-      APP_PASSWORD_SALT: app_sandbox_salt_2024
-    volumes:
-      - app_auth_keys:/var/lib/app-auth   # persist the RSA signing key across restarts
-    ports:
-      - "{api_port}:{backend_port}"
-    depends_on:
-      database:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:{backend_port}/health', timeout=5)"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-
-  frontend:
-    build: ../app/frontend
-    environment:
-      UI_PORT: 3000
-      API_URL: http://backend:{backend_port}
-    ports:
-      - "{ui_port}:3000"
-    depends_on:
-      - backend
-
-volumes:
-  app_auth_keys:
-'''
-        
-        docker_dir = self.output_dir / "docker"
-        docker_dir.mkdir(exist_ok=True)
-        (docker_dir / "docker-compose.yml").write_text(docker_compose)
+        await self._scaffolder.generate_docker()
 
     async def _generate_database(self):
-        """Author ``app/database/`` deterministically from the registered
-        SchemaHub tables.
-
-        Closed-by-construction sibling to ``_generate_docker``: the
-        compose file unconditionally declares a ``database`` service whose
-        build context is ``../app/database`` and the delivery gate requires
-        ``app/database/*.sql``, but no LLM lane reliably wrote that dir
-        (0/10 across smokes #38-49). The kickoff validator guarantees every
-        registered table carries a non-empty ``columns: [{name, type}]``
-        list, so once kickoff finalizes the runtime holds everything needed
-        to emit a faithful ``CREATE TABLE`` schema — no agent, no variance.
-        The runtime is the SOLE owner of ``app/database/``.
-
-        Called once, post-``finalize_kickoff`` (tables are registered by
-        then). Idempotent — overwrites so the scaffold always reflects the
-        current contract."""
-        from .runtime.database_scaffold import write_database_scaffold
-
-        tables = self.hubs.schema_hub.list_tables() or {}
-        paths = write_database_scaffold(self.output_dir, tables)
-        self._logger.info(
-            "Authored app/database/ scaffold: %d table(s) → %s",
-            paths["table_count"], paths["schema_sql"],
-        )
+        await self._scaffolder.generate_database()
 
     def _generate_backend_skeleton(self) -> None:
-        """SKELETON根治 (2026-06-09, user-chosen): generate the ENTIRE backend
-        DETERMINISTICALLY from the contract (SchemaHub tables + RegistryHub endpoints) — ORM
-        models, all CRUD handlers, fixed storage/auth/infra — OVERWRITING whatever the
-        lane wrote. This removes the lane's STRUCTURAL non-determinism at the source
-        (across runs it wrote ORM/raw-SQL/file-based-JSON/fragmented apps that DB-centric
-        repairs couldn't all cover): the same contract now always yields a consistent,
-        complete, auth-enforced, all-2xx backend with real persistence (reconstruction-
-        proven by a docker build+boot). The lane's role shrinks to AUTHORING THE
-        CONTRACT. Best-effort; idempotent (deterministic → byte-identical)."""
-        try:
-            out_dir = getattr(self, "output_dir", None)
-            if not out_dir:
-                return
-            from .runtime.backend_skeleton import write_backend_skeleton
-            from .runtime.lifecycle import business_endpoints
-            sh = getattr(self.hubs, "schema_hub", None)
-            registryhub = getattr(self.hubs, "registryhub", None)
-            tables = (sh.list_tables() if sh else {}) or {}
-            endpoints = business_endpoints(registryhub.get_endpoints() or {}) if registryhub else []
-            if not tables and not endpoints:
-                return  # contract not finalized yet — nothing to project
-            res = write_backend_skeleton(out_dir, endpoints, tables)
-            self._logger.warning(
-                "BACKEND SKELETON generated by-construction from the contract "
-                "(%d tables, %d endpoints) — the whole backend is framework-owned "
-                "(deterministic, consistent, auth-enforced): %s",
-                len(tables), len(endpoints), res.get("written"))
-            # Mechanism #43 (round 32: 17 endpoint tasks cancelled in cascade):
-            # the skeleton just MATERIALIZED every contract table as ORM+DDL,
-            # but their RegistryHub status stayed 'defined' — so the impl.table.*
-            # dispatch tasks never auto-completed, every impl.endpoint.* task
-            # stayed depends_on-blocked, and the backend talked the
-            # orchestrator into bulk-cancelling the plan. Flip the generated
-            # tables to implemented (by-construction truth); register_table
-            # cascades sync_impl_table_completed → tasks complete → deps clear.
-            if registryhub is not None:
-                for _tname in (tables or {}):
-                    try:
-                        _cur = registryhub.get_table(_tname) or {}
-                        if (_cur.get("status") or "").lower() != "implemented":
-                            registryhub.register_table(
-                                _tname, agent="orchestrator", status="implemented")
-                    except Exception:
-                        pass
-        except Exception as exc:
-            self._logger.debug("backend skeleton generation skipped: %s", exc)
-        # Mechanism #50: audit the registered ui_pages against the actual
-        # frontend code and flip defined→implemented (cascades impl.page.*
-        # completion) — the frontend's analog of the table flip above.
-        try:
-            from .runtime.frontend_audit import sync_ui_page_statuses
-            _pa = sync_ui_page_statuses(self.output_dir, self.hubs.workhub,
-                                        registryhub=getattr(self.hubs, "registryhub", None))
-            if _pa.get("implemented") or _pa.get("regressed"):
-                self._logger.warning(
-                    "UI-PAGE LIFECYCLE: implemented=%s regressed=%s pending=%s",
-                    _pa.get("implemented"), _pa.get("regressed"),
-                    list((_pa.get("pending") or {}).keys()))
-        except Exception:
-            pass
+        self._scaffolder.generate_backend_skeleton()
 
     async def _seed_base_scaffold(self):
-        """Seed the FIXED contract surface into the git base, pre-spawn.
-
-        The target env IS its own OAuth2 AS (zoom-style); its three modules —
-        ``jwt_manager.py`` (RS256 sign + JWKS), ``oauth_store.py`` (psycopg3 store
-        over the spine), ``oauth_routes.py`` (authorize/token/register + PKCE
-        S256) — are pure infrastructure with zero business logic, and the
-        backend's ``main.py`` IMPORTS them. Re-authoring an OAuth2 AS per run via
-        an LLM lane is the textbook drift source (a salt mismatch, a missing PKCE
-        check, a ``sub`` that isn't the user id → no token mints or verifies).
-
-        So the runtime emits them verbatim AND commits them to the git base
-        BEFORE any agent worktree exists. Because every ``agent/<id>`` worktree
-        branches off base HEAD (and ``integration`` is bootstrapped from the
-        first agent branch), all lanes inherit the AS modules by construction:
-        the backend's imports/lint resolve in-worktree, and git — not a prompt
-        convention — owns the "do not author these" boundary. Idempotent."""
-        from .runtime.oauth_scaffold import write_oauth_as, AS_MODULES
-
-        # ensure the git repo exists before we commit (it is otherwise lazily
-        # init'd by the first register_agent_worktree, which runs during spawn).
-        self.hubs.codehub.ensure_repo()
-        result = write_oauth_as(self.output_dir)
-        rel_paths = [f"app/backend/{m}" for m in AS_MODULES]
-        # Scaffold a runnable BASE ``main.py`` too. The backend lane BLOCKS trying to
-        # READ app/backend/main.py to add its route handlers — but nothing creates it
-        # (the framework owns only the AS modules), so the lane spins reporting
-        # "scaffold exists but main.py absent" instead of writing code. Provide a
-        # valid FastAPI app (AS wired, /health, uvicorn entrypoint) committed to the
-        # git base pre-spawn so every lane inherits it; the backend then ADDS business
-        # routes to it. Same "framework owns the boilerplate" basis as the AS modules.
-        main_py = self.output_dir / "app" / "backend" / "main.py"
-        if not main_py.exists():
-            main_py.parent.mkdir(parents=True, exist_ok=True)
-            main_py.write_text(_BASE_MAIN_PY, encoding="utf-8")
-            rel_paths.append("app/backend/main.py")
-        # The backend Dockerfile COPYs reset.sh; scaffold a base one so the image
-        # always builds (the lane may overwrite it with an app-specific reset).
-        reset_sh = self.output_dir / "app" / "backend" / "reset.sh"
-        if not reset_sh.exists():
-            reset_sh.parent.mkdir(parents=True, exist_ok=True)
-            reset_sh.write_text(_BASE_RESET_SH, encoding="utf-8")
-            try:
-                reset_sh.chmod(0o755)
-            except Exception:
-                pass
-            rel_paths.append("app/backend/reset.sh")
-        sha = self.hubs.codehub.commit_runtime_scaffold(
-            rel_paths,
-            "bootstrap: embedded OAuth2 AS modules + base main.py (runtime-owned)",
-        )
-        self._logger.info(
-            "Seeded base scaffold (commit %s): %s",
-            (sha or "noop")[:12], ", ".join(Path(p).name for p in result["written"]),
-        )
+        await self._scaffolder.seed_base_scaffold()
 
     def _register_contract_surface(self):
-        """Register the FIXED contract surface (spine tables + AS/auth endpoints)
-        in RegistryHub/SchemaHub under actor='orchestrator', post-kickoff.
-
-        Consistency-by-construction: the tenancy spine tables and the embedded-AS
-        / first-party-auth endpoints are deterministic and runtime-owned, so the
-        orchestrator publishes them to the contract truth-source rather than
-        relying on prose + a hardcoded delivery-gate exemption. The AS/auth
-        endpoints are tagged ``kind='auth'|'oauth'`` so the frontend's
-        response_key-keyed api.js generator SKIPS them (they are fixed-spec with
-        heterogeneous shapes — a 302 redirect, a {access_token}, a JWKS doc).
-
-        Idempotent: RegistryHub/SchemaHub register_* are merge-upserts keyed on
-        (method, path) / table name (Charter §8 — re-registration never errors)."""
-        from .runtime.database_scaffold import SPINE_TABLE_RECORDS
-        from .runtime.oauth_scaffold import AS_CONTRACT_ENDPOINTS
-        from .runtime.control_plane import CONTROL_SURFACE_ENDPOINTS
-
-        tables_n = 0
-        for rec in SPINE_TABLE_RECORDS:
-            try:
-                self.hubs.schema_hub.register_table(
-                    name=rec["name"],
-                    schema={"columns": rec["columns"]},
-                    provider="backend",
-                    agent="orchestrator",
-                    status="implemented",
-                    kind="spine",
-                )
-                tables_n += 1
-            except Exception as exc:  # never block the run on a contract publish
-                self._logger.warning("spine table register failed (%s): %s", rec["name"], exc)
-
-        eps_n = 0
-        for ep in (*AS_CONTRACT_ENDPOINTS, *CONTROL_SURFACE_ENDPOINTS):
-            try:
-                self.hubs.registryhub.register_endpoint(
-                    method=ep["method"],
-                    path=ep["path"],
-                    schema={"request": ep.get("request", {}), "response": ep.get("response", {})},
-                    provider="backend",
-                    agent="orchestrator",
-                    status="implemented",
-                    kind=ep["kind"],
-                    auth_required=ep.get("auth_required", False),
-                    summary=ep.get("summary", ""),
-                )
-                eps_n += 1
-            except Exception as exc:
-                self._logger.warning("fixed endpoint register failed (%s %s): %s",
-                                     ep["method"], ep["path"], exc)
-
-        self._logger.info(
-            "Registered fixed contract surface: %d spine table(s) + %d auth/oauth/infra endpoint(s)",
-            tables_n, eps_n,
-        )
+        self._scaffolder.register_contract_surface()
 
     async def _generate_mcp(self):
-        """Project the FastMCP server (``mcp_server/<env>/``) 1:1 from the
-        registered BUSINESS endpoints + register the server and its tools.
-
-        Consistency-by-construction (Phase 3c): the MCP tool surface is a
-        deterministic projection of the RegistryHub business contract, so it cannot
-        drift from the endpoints — the runtime emits it; an LLM never re-authors
-        an MCP server. Only BUSINESS endpoints become tools; the fixed
-        auth/oauth/infra/spine surface is excluded (it's protocol/infra, not an
-        agent-drivable operation).
-
-        Registered with ``status='implemented'`` — which (a) exempts the tools
-        from the dead-tool coverage gate (they are consumed by the EXTERNAL
-        red-team agent, not the env's own frontend, so zero internal consumers is
-        correct by construction) and (b) makes RunHub skip the in-run liveness
-        probe (the agentsuite-red pool launches + probes the MCP, not env-gen).
-        Post-kickoff, untracked ``output_dir`` write (like the DB DDL)."""
-        from .runtime.mcp_scaffold import write_mcp_server, business_endpoints
-
-        endpoints = self.hubs.registryhub.get_endpoints() or {}
-        if not business_endpoints(endpoints):
-            self._logger.info("No business endpoints registered — skipping MCP projection.")
-            return
-
-        env_name = "app"
-        # SPEC TOOL NAMES (2026-06-11): when the compiled reference spec binds
-        # MCP tools to endpoints, the server emits the SPEC'S semantic names
-        # (get_profile_info, publish_media, ...) — the 22 mcp_tool_exists
-        # deliverability gates then bind by construction instead of failing on
-        # derived endpoint-style names.
-        _aliases = {}
-        try:
-            from .runtime.mcp_scaffold import spec_tool_aliases
-            import json as _json
-            _spec_path = Path(self.output_dir) / "design" / "reference_spec.json"
-            if _spec_path.is_file():
-                _aliases = spec_tool_aliases(_json.loads(_spec_path.read_text()))
-                if _aliases:
-                    self._logger.info("MCP spec tool aliases: %d bound", len(_aliases))
-        except Exception:
-            _aliases = {}
-        result = write_mcp_server(self.output_dir, endpoints, env_name=env_name,
-                                  tool_aliases=_aliases)
-
-        mcp_reg = getattr(self.hubs, "mcp_registry", None)
-        if mcp_reg is None:
-            self._logger.warning(
-                "mcp_registry unavailable — emitted mcp_server/%s/ (%d tools) but did not register.",
-                env_name, result["tool_count"],
-            )
-            return
-
-        try:
-            mcp_reg.register_mcp_server(
-                name=env_name, transport="http",
-                endpoint=f"mcp_server/{env_name}/main.py",
-                provider="backend", agent="orchestrator", status="implemented",
-            )
-            registered = 0
-            for rec in result["tools"]:
-                res = mcp_reg.register_mcp_tool(
-                    server_name=env_name, tool_name=rec["tool_name"],
-                    schema=rec["schema"], provider="backend",
-                    agent="orchestrator", status="implemented",
-                )
-                if isinstance(res, dict) and res.get("error"):
-                    self._logger.warning("MCP tool register failed (%s): %s",
-                                         rec["tool_name"], res["error"])
-                else:
-                    registered += 1
-            self._logger.info(
-                "Projected MCP server mcp_server/%s/: %d tool(s) emitted, %d registered.",
-                env_name, result["tool_count"], registered,
-            )
-        except Exception as exc:  # never block the run on a contract publish
-            self._logger.warning("MCP registration failed: %s", exc)
+        await self._scaffolder.generate_mcp()
 
     @staticmethod
     def _verifier_trigger_due(impl_epoch: int, last_triggered_epoch: int) -> bool:
@@ -2735,903 +1681,90 @@ volumes:
         return impl_epoch != last_triggered_epoch
 
     async def _maybe_run_framework_validation(self) -> None:
-        """Deterministically run api_smoke + record the RunHub run when the
-        contract is fully implemented and no gate-passing run exists yet.
-
-        WHY: the verifier/orchestrator LLMs run run_validation too early
-        (pre-merge → ~700ms fast-fail) and don't retry, so a WORKING app (proven:
-        run_smoke_validation passes manually on the generated tree) never records
-        the RunHub run the delivery gate requires (compute_deliverability blocker
-        #1). This runs the SAME deterministic procedure (RunValidationTool: clean
-        docker boot + live probe of every business endpoint + record_run/probes
-        with framework authority) once per idle tick until it passes — natural
-        retry across ticks as the merge/app settles. Capped so a genuinely broken
-        app doesn't churn docker forever. Best-effort: never raises into the loop."""
-        try:
-            from .runtime.lifecycle import all_business_endpoints_implemented
-            registryhub = getattr(self.hubs, "registryhub", None)
-            if registryhub is None:
-                return
-            # FIX #25: surface committed agent-branch work to integration every
-            # tick (before the gate), so the integrated app reflects code the
-            # lanes wrote+committed even before they finish-merge.
-            self._merge_committed_agent_work()
-            # design/README.md is a delivery-gate required artifact but lives outside
-            # the app-source signature, so scaffold it unconditionally (write-if-
-            # missing) — cheap, and keeps the final delivery gate from failing an
-            # otherwise-working app on a missing doc.
-            self._scaffold_design_readme()
-            # OPTIMIZATION (heal-on-change): the deterministic heal repairs
-            # (frontend baseline/api.js, backend entrypoint/AS-wiring/auth, ORM-DDL)
-            # are idempotent, but re-running them EVERY coordination tick is wasteful
-            # (the ORM introspection spawns a subprocess; file IO) and needlessly
-            # races the lanes. Gate them on a CONTENT signature of the integrated app
-            # source: heal only when the lanes actually changed something. CRUCIALLY,
-            # reset the validation attempt-cap on that same change — FIX #31 only
-            # reset on endpoint-COUNT increase, so an app made deliverable by a REPAIR
-            # (e.g. the DDL/auth fix, not a new endpoint) stayed capped and never got
-            # re-validated → no delivery. Now any real source change → fresh budget.
-            _app_sig = self._compute_app_source_signature()
-            if _app_sig is None or _app_sig != getattr(self, "_fwval_healed_sig", None):
-                # SKELETON根治: regenerate the WHOLE backend from the contract FIRST, so
-                # validation runs on the deterministic, by-construction app — not on the
-                # lane's variably-structured one. The backend repairs below then no-op on
-                # a correct skeleton (kept as a safety net); the frontend repairs still
-                # matter (skeleton is backend-only).
-                self._generate_backend_skeleton()
-                self._scaffold_frontend_baseline()
-                self._repair_frontend_api()
-                # FRONTEND SKELETON: project the contract-derived page set BEFORE
-                # validation, so the frontend_navigable gate validates the real
-                # deliverable (idempotent — only fills routes that don't exist; with
-                # zero declared ui_pages the page set derives from the API contract).
-                self._repair_backend_entrypoint()
-                self._repair_backend_as_wiring()
-                self._repair_backend_auth()
-                self._repair_backend_packaging()
-                self._repair_ddl_from_orm()
-                self._repair_handler_fk_aliases()
-                self._repair_psycopg_dsn()
-                # RESILIENCE (stuck-loop breaker): record the post-heal signature so
-                # the heal-gate (line above) only re-heals when the *integrated source*
-                # changed — but DO NOT reset the validation budget on that delta. The
-                # heal/skeleton/DDL regeneration is the orchestrator's OWN output and is
-                # not byte-stable across cycles (subprocess ORM introspection ordering,
-                # write churn), so a post-heal-signature reset re-granted a fresh fast
-                # budget EVERY cycle → the FAST cap never tripped → the SAME failing
-                # validation cycle (merge → regen → run_validation → fail) spun every
-                # ~60s forever with zero agent activity (observed: 36 identical cycles).
-                # The fast budget is now reset ONLY on genuine LANE progress: a rising
-                # implemented-endpoint count (below) or a CHANGED failure set (after the
-                # validation result is known) — never on self-induced signature churn.
-                self._fwval_healed_sig = self._compute_app_source_signature()
-            # FIX #26: fire when the contract is implemented by registryhub registration
-            # OR by route code present in the integrated source (registration lags
-            # the actual code). api_smoke is the real arbiter downstream.
-            if not (all_business_endpoints_implemented(registryhub.get_endpoints())
-                    or self._all_business_endpoints_have_route_code()):
-                return
-            session_ts = getattr(self, "_session_start_ts", 0.0) or 0.0
-            runhub = getattr(self.hubs, "runhub", None)
-            if runhub is not None and hasattr(runhub, "last_successful_run_since"):
-                if runhub.last_successful_run_since(session_ts):
-                    return  # already have a gate-passing run
-            # FIX #31: reset the attempt cap on real progress. The 6-attempt
-            # cap (anti-docker-churn) was exhausting in a ~5-min window WHILE the
-            # app was still implementing/merging (instagram-core: all 6 attempts
-            # 05:13-05:19 reported "app may still be booting/merging", then
-            # endpoints kept landing until 05:37 — by which point the now-ready,
-            # all-22-implemented app could NEVER be re-validated → no delivery).
-            # Reset the counter whenever the implemented-endpoint count rises, so
-            # validation keeps retrying as the app converges; the cap only bites
-            # once the app is STABLE and still failing. Same self-reset shape as
-            # FIX #28's ask_cap.
-            try:
-                from .runtime.lifecycle import business_endpoints
-                _cur_impl = sum(
-                    1 for e in business_endpoints(registryhub.get_endpoints() or {})
-                    if isinstance(e, dict) and e.get("status") == "implemented"
-                )
-            except Exception:
-                _cur_impl = 0
-            if _cur_impl > getattr(self, "_fwval_last_impl_count", -1):
-                self._fwval_last_impl_count = _cur_impl
-                self._framework_validation_attempts = 0
-                # PROPOSAL #5: a rising implemented-endpoint count is REAL progress on the
-                # second stable axis — reset the stuck counter too (today it resets only on a
-                # failure-set change below), so an app still landing endpoints never counts
-                # toward the fail-fast abort.
-                self._fwval_stuck_count = 0
-            # PIPE-C2: cap the FAST (every-tick) retries to stop docker churn, but
-            # past the cap DOWNSHIFT to a slow retry instead of hard-stopping — a
-            # sig-stable app failing on transient docker contention must still
-            # eventually record the gate-required RunHub run (else: silent budget
-            # death, 0 release). _fwval_should_attempt gates the slow phase by a
-            # wall-clock interval; attempts stays pinned at the cap (logs read 6/6).
-            _attempts = getattr(self, "_framework_validation_attempts", 0)
-            _now = time.time()
-            if not _fwval_should_attempt(
-                    _attempts, getattr(self, "_fwval_last_attempt_ts", 0.0), _now):
-                return  # capped + within the slow-retry interval — wait, don't churn
-            self._fwval_last_attempt_ts = _now
-            if _attempts < FWVAL_FAST_CAP:
-                self._framework_validation_attempts = _attempts + 1
-            from tools.validation_tools import RunValidationTool
-            tool = RunValidationTool(workspace=None)
-            tool._hubs = self.hubs
-            tool._agent_id = "orchestrator"
-            res = await tool.execute()
-            # ── Verifier self-trigger (Design A — PROPOSAL #2, reviewed_version:2 PASS) ──
-            # The deterministic driver (NOT the orchestrator LLM) wakes the verifier to run its
-            # validation pass whenever api_smoke is ATTEMPTED on a bootable impl (we reach here
-            # only past the route-code floor at :2751-2753), independent of the canonical
-            # `validation_ready` signal — which needs ALL endpoints `implemented` and did NOT
-            # fire in run #15 (validation_ready count=0), leaving the verifier idle
-            # `awaiting ['frontend']` forever because the frontend finished notify=[] (Defect C).
-            # Re-armable, keyed to the impl epoch (`_fwval_last_impl_count`, updated at :2777-78):
-            # one guarded message per epoch (no storm); re-fires after the impl lanes implement
-            # MORE endpoints — i.e. after they fix the bugs the verifier filed. Placed AFTER
-            # tool.execute() so the verifier validates a SETTLED docker stack (no contention with
-            # the framework's own api_smoke boot), but fired UNCONDITIONALLY (not gated on the
-            # api_smoke result). Do NOT move this above the passing-run early-return at :2756-58:
-            # once a clean run exists this function returns first and the canonical
-            # `validation_ready` (all-implemented) path owns the verifier — this driver trigger is
-            # the failing/pre-pass regime only. DEPENDS ON a3aea89: task_ready must wake an IDLE
-            # resident lane (allow_resident_wakeup → allow_task_ready); if reverted this silently
-            # no-ops (guarded by tests/test_verifier_validation_trigger.py).
-            try:
-                _epoch = getattr(self, "_fwval_last_impl_count", -1)
-                if self._verifier_trigger_due(
-                        _epoch, getattr(self, "_verifier_triggered_impl_count", -1)):
-                    from tools.communication_tools import _create_message
-                    _vmsg = _create_message(
-                        source_agent_id="orchestrator", target_agent_id="verifier",
-                        content=(
-                            "Implementation is bootable and api_smoke is being validated — run "
-                            "your validation pass now: docker_up -> the 5 check categories "
-                            "(build:docker / build:frontend / validation:api_smoke / "
-                            "validation:ui_smoke / validation:ui_flow:<name>) -> bug_create per "
-                            "failure -> route summary -> finish."
-                        ),
-                        msg_type="task_ready", priority="urgent", persist=True,
-                    )
-                    # _create_message has NO metadata kwarg; inject the explicit-trigger key
-                    # post-construction. validation_phase=True alone satisfies
-                    # VerifierValidationTriggerPolicy.explicit_trigger (workflow_policies.py:327),
-                    # with zero dependence on env-configured accepted_tags/phases/keywords.
-                    _vmsg.metadata["validation_phase"] = True
-                    await self.message_bus.send(_vmsg)
-                    self._verifier_triggered_impl_count = _epoch
-                    self._logger.info(
-                        "Orchestrator triggered verifier validation pass (impl epoch=%s; "
-                        "validation_ready not required).", _epoch,
-                    )
-            except Exception as _vte:
-                self._logger.debug("verifier validation trigger skipped: %s", _vte)
-            data = getattr(res, "data", None) if res is not None else None
-            # CHAINS-BLOCKED early-exit (round 39 deadlock): RunValidationTool
-            # refuses to run until chains are registered, returning a fail with
-            # data=None. The framework validation shares that tool — so a
-            # missing-chains block looks like "no checks returned" AND #53's
-            # data.checks scan finds nothing. Detect the block via the error
-            # string and SYNTHESIZE a business_chain-fail check so the #53
-            # dispatch path below fires (verifier gets the P0 task).
-            _err = getattr(res, "error_message", "") or "" if res is not None else ""
-            if (not data) and "no verification chains" in _err.lower():
-                data = {"summary": "blocked: no verification chains registered",
-                        "checks": [{"name": "business_chain", "status": "fail",
-                                    "detail": _err}]}
-            if data and data.get("runhub_run_id"):
-                self._logger.warning(
-                    "Framework validation: api_smoke PASSED → recorded RunHub run %s "
-                    "(%s endpoints) — delivery-gate run requirement satisfied.",
-                    data.get("runhub_run_id"), data.get("endpoints_tested"),
-                )
-                await self._maybe_run_visual_fidelity()
-            else:
-                # FIX #36: log WHY the in-run validation failed (summary + failed
-                # check names). The bare "not yet passing" hid the real cause for
-                # a whole 2-hour run — the app passes api_smoke when booted by
-                # hand, so the in-run failures are environmental (docker
-                # contention / build-under-load) and we need the detail to fix it.
-                _summ = (data or {}).get("summary", "?")
-                _failed = [
-                    f"{c.get('name')}:{(c.get('detail') or '')[:60]}"
-                    for c in ((data or {}).get("checks") or [])
-                    if c.get("status") == "fail"
-                ]
-                self._logger.warning(
-                    "Framework validation attempt %s/6: api_smoke NOT passing — %s "
-                    "| failed=%s",
-                    self._framework_validation_attempts, str(_summ)[:200],
-                    _failed or "(no checks returned)",
-                )
-                # RESILIENCE (stuck-loop breaker): track the FAILURE SET (the set of
-                # failing check ids) across validations. A CHANGED failure set is
-                # genuine lane-driven progress (a check now passes, or a new one
-                # fails) → grant a fresh fast budget and reset the stuck counter, so a
-                # converging app is never slowed. An UNCHANGING failure set means the
-                # last fast-cap of validations achieved nothing — the lanes are idle
-                # and the orchestrator is re-running the identical cycle (the 36-cycle
-                # spin). The self-induced heal/skeleton churn no longer resets the
-                # budget (above), so the fast cap now actually trips; once it does on a
-                # stable failure set we ESCALATE rather than spin to wall-clock.
-                _fset = _fwval_failure_set(data)
-                _prev_fset = getattr(self, "_fwval_failure_set", None)
-                if _prev_fset is None or _fset != _prev_fset:
-                    # New/changed failure set → real progress (or first observation).
-                    self._fwval_failure_set = _fset
-                    self._fwval_stuck_count = 0
-                    if _prev_fset is not None:
-                        # An actual change (not the first sight) → fresh fast budget,
-                        # exactly like a rising endpoint count (FIX #31).
-                        self._framework_validation_attempts = 0
-                        # Re-arm the per-milestone owner-dispatch guards so the
-                        # next-failure feedback can fire afresh for the new failure set.
-                        self._fwval_rearm_owner_dispatch()
-                else:
-                    # Same failure set as last validation → no functional progress.
-                    self._fwval_stuck_count = getattr(self, "_fwval_stuck_count", 0) + 1
-                    # Only escalate once the FAST budget is spent (the converging
-                    # window is over); below the cap we are still in the normal
-                    # fast-retry phase and must not interfere with a healthy run.
-                    if _attempts >= FWVAL_FAST_CAP:
-                        _stage = _fwval_stuck_decision(self._fwval_stuck_count)
-                        if _stage == "redispatch":
-                            # Re-wake the lane(s) that own the failing dimension: the
-                            # existing per-milestone _dispatch_* guards have gone quiet
-                            # (one dispatch per milestone), so re-arm them — the
-                            # _dispatch_* calls below will then re-fire the owner task +
-                            # urgent wake for this specific, persisting failure set.
-                            self._fwval_rearm_owner_dispatch()
-                            self._logger.warning(
-                                "STUCK-LOOP ESCALATION: framework validation has failed "
-                                "on the SAME failure set %s for %s post-cap cycles with no "
-                                "lane progress — re-dispatching the owning lane(s).",
-                                sorted(_fset) or "(none)", self._fwval_stuck_count,
-                            )
-                        elif _stage == "terminal":
-                            # Re-dispatch did not break the stall → surface a clear,
-                            # terminal "stuck on <blocker>" signal so the run stops
-                            # churning to wall-clock and the UI/monitor shows the real
-                            # blocker (instead of looking dead with idle lanes + a
-                            # spinning orchestrator). We do NOT hard-kill here — the run
-                            # budget cap is the terminator; this downshifts the cadence
-                            # (attempts pinned at the cap → slow interval) and makes the
-                            # blocker visible exactly once.
-                            _blocker = ", ".join(sorted(_fset)) or (str(_summ)[:120] or "unknown")
-                            if getattr(self, "_fwval_stuck_blocker", None) != _blocker:
-                                self._fwval_stuck_blocker = _blocker
-                                self._logger.error(
-                                    "STUCK: framework validation is wedged on %s — the "
-                                    "same failure set has persisted for %s post-cap "
-                                    "cycles with no lane progress AND re-dispatch did not "
-                                    "help. Downshifting to the slow re-validation "
-                                    "interval; the run will end on its budget cap unless "
-                                    "a lane makes progress. Real blocker: %s",
-                                    _blocker, self._fwval_stuck_count, str(_summ)[:200],
-                                )
-                                try:
-                                    self.progress.emit(
-                                        EventType.PHASE_ERROR,
-                                        "Framework Validation",
-                                        {"error": f"stuck on {_blocker}",
-                                         "failure_set": sorted(_fset),
-                                         "cycles": self._fwval_stuck_count},
-                                    )
-                                except Exception:
-                                    pass
-                        elif _stage == "abort":
-                            # PROPOSAL #5 — terminal-surface ALSO did not help: redispatch +
-                            # the terminal warning have run and the SAME failure set still
-                            # persists with no lane progress. This is an unrecoverable
-                            # framework-generation bug the in-run agents cannot fix (the
-                            # framework regenerates the same artifact every cycle). FAIL FAST:
-                            # record the abort reason WITH the real root — the failing checks'
-                            # detail, which now carries the S1 crashed-container logs (PROPOSAL
-                            # #3) — so the delivery-wait loop terminates and raises a
-                            # root-surfacing message instead of limping to the wall-clock.
-                            _blocker = ", ".join(sorted(_fset)) or (str(_summ)[:120] or "unknown")
-                            _root_detail = "; ".join(
-                                "{}: {}".format(c.get("name"), str(c.get("detail"))[:400])
-                                for c in ((data or {}).get("checks") or [])
-                                if isinstance(c, dict) and c.get("status") == "fail"
-                                and c.get("detail")
-                            )[:1500] or (str(_summ)[:400] or "(no detail)")
-                            self._fwval_last_fail_detail = _root_detail
-                            self._fwval_abort_reason = (
-                                "framework validation wedged on [{}] for {} post-cap cycles "
-                                "with no lane progress (re-dispatch + terminal escalation did "
-                                "not help). Real blocker: {}".format(
-                                    _blocker, self._fwval_stuck_count, _root_detail)
-                            )
-                            self._logger.error("STUCK-ABORT: %s", self._fwval_abort_reason)
-                            try:
-                                self.progress.emit(
-                                    EventType.PHASE_ERROR, "Framework Validation",
-                                    {"error": "stuck-abort: {}".format(_blocker),
-                                     "failure_set": sorted(_fset),
-                                     "cycles": self._fwval_stuck_count, "abort": True},
-                                )
-                            except Exception:
-                                pass
-                # GATE-C1 feedback loop: a business_endpoints_implemented FAIL
-                # (registered-implemented endpoint answering 404/405) routes to
-                # the backend lane — a hard gate with no exit deadlocks the run.
-                await self._dispatch_unimplemented_routes(data)
-                # frontend_navigable feedback loop: a blank-shell frontend (0
-                # routes) otherwise pins validation red with no path back to the
-                # lane that owns the UI.
-                await self._dispatch_frontend_navigable(data)
-                # Mechanism #53 (round 33 deadlock): business_chain failing
-                # because the verifier never authored verification_chains.json
-                # must CLOSE THE LOOP — the chain fallback was removed (user
-                # decision: agent feedback over framework content), so the
-                # framework must actually deliver that feedback: one P0 task +
-                # urgent wake per milestone, carrying the authoring spec.
-                # Match VERB-INDEPENDENTLY (the chain_executor wording moved
-                # authored→registered when chains became registry-backed; the
-                # old literal "authored" match silently broke #53 — found in
-                # the 2026-06-12 scheduling audit). Key on the stable prefix.
-                _chain_fail = next(
-                    (c for c in ((data or {}).get("checks") or [])
-                     if c.get("name") == "business_chain"
-                     and c.get("status") == "fail"
-                     and "no verification chains" in str(c.get("detail") or "")),
-                    None)
-                if _chain_fail and getattr(self, "_chain_task_dispatched", None) == \
-                        getattr(self, "_current_milestone_version", ""):
-                    # already dispatched but STILL failing → the verifier has
-                    # not digested it (round 34: a 97-message inbox swallowed
-                    # the first wake). Re-nudge, urgent, no duplicate task.
-                    try:
-                        from tools.communication_tools import _create_message
-                        await self.message_bus.send(_create_message(
-                            source_agent_id="orchestrator",
-                            target_agent_id="verifier",
-                            content=(
-                                "STILL BLOCKED on business_chain: you have not "
-                                "registered any verification chains. Drop "
-                                "everything, claim your P0 chain task, and "
-                                "register them via "
-                                "registryhub_register_verification_chain, then "
-                                "run_validation."),
-                            msg_type="task_ready", priority="urgent",
-                            persist=True, tags=["verification_chains", "renudge"],
-                        ))
-                        self._logger.warning(
-                            "CHAIN-AUTHORING re-nudge sent to verifier.")
-                    except Exception:
-                        pass
-                if _chain_fail and getattr(self, "_chain_task_dispatched", None) != \
-                        getattr(self, "_current_milestone_version", ""):
-                    self._chain_task_dispatched = getattr(
-                        self, "_current_milestone_version", "")
-                    try:
-                        from .runtime.chain_executor import AUTHORING_INSTRUCTIONS
-                        _ct = self.hubs.workhub.create_task(
-                            title="Register verification chains (blocks delivery)",
-                            description=(
-                                "The business_chain delivery check FAILS until you "
-                                "register chains. " + AUTHORING_INSTRUCTIONS +
-                                " Derive the chains from THIS app's registered endpoints "
-                                "(registryhub_list_endpoints) and the kickoff user_flows, "
-                                "register each via registryhub_register_verification_chain, "
-                                "then re-run run_validation."),
-                            assignee="verifier",
-                            agent="orchestrator",
-                            priority="P0",
-                        )
-                        from tools.communication_tools import _create_message
-                        await self.message_bus.send(_create_message(
-                            source_agent_id="orchestrator",
-                            target_agent_id="verifier",
-                            content=(
-                                "URGENT: delivery is blocked on business_chain — you have "
-                                "registered no verification chains. Claim task "
-                                f"{(_ct or {}).get('id')} and register them via "
-                                "registryhub_register_verification_chain NOW, then "
-                                "run_validation."),
-                            msg_type="task_ready",
-                            priority="urgent",
-                            persist=True,
-                            tags=["verification_chains", "remediation"],
-                        ))
-                        self._logger.warning(
-                            "CHAIN-AUTHORING remediation dispatched to verifier "
-                            "(task %s).", (_ct or {}).get("id"))
-                    except Exception as _cd_exc:
-                        self._logger.error(
-                            "chain-authoring dispatch failed: %s", _cd_exc)
-        except Exception as exc:  # never break the coordination loop
-            self._logger.error("framework validation raised (non-fatal): %s", exc)
+        from .runtime.framework_validation import FrameworkValidation
+        await FrameworkValidation(self).maybe_run()
 
     def _fwval_rearm_owner_dispatch(self) -> None:
-        """RESILIENCE: clear the per-milestone owner-dispatch guards so the existing
-        ``_dispatch_*`` feedback helpers (business_endpoints → backend,
-        frontend_navigable / unwired_ui_pages → frontend, business_chain → verifier)
-        re-fire their P0 task + urgent wake for a failure set that has either CHANGED
-        (genuine progress — the new gap deserves a fresh dispatch) or PERSISTED past
-        the fast cap (stuck — re-wake the owner that's gone quiet). Reuses the
-        existing dispatch machinery; invents no new control flow. Clearing the guard
-        is safe — each ``_dispatch_*`` is idempotent within a milestone (it re-sets
-        its own guard) and only acts when its specific check is still failing."""
-        for _guard in (
-            "_unimpl_routes_dispatched",
-            "_frontend_navigable_dispatched",
-            "_unwired_ui_pages_dispatched",
-            "_chain_task_dispatched",
-        ):
-            try:
-                setattr(self, _guard, None)
-            except Exception:
-                pass
+        from .runtime.framework_validation import FrameworkValidation
+        FrameworkValidation(self).rearm_owner_dispatch()
 
+    # ── Remediation dispatch (PROPOSAL #8 — RemediationDispatcher) ──────────────
+    # The 5 failed-gate→owner-lane dispatch helpers moved to
+    # runtime/remediation_dispatcher.py. They are STATELESS (the per-milestone
+    # ``_*_dispatched`` guards live here on the orchestrator, reset by
+    # _fwval_rearm_owner_dispatch), so the shims construct a fresh dispatcher
+    # bound to ``self`` per call — call sites + tests are unchanged.
     async def _dispatch_unimplemented_routes(self, data) -> None:
-        """GATE-C1 feedback loop: a ``business_endpoints_implemented`` FAIL (an
-        endpoint registered ``status=implemented`` answering 404/405) must reach
-        the lane that can fix it — the verifier has no bug-write channel
-        (TOOL-C1), so without this the hard gate just pins validation red until
-        the budget dies. Mirrors the business_chain #53 dispatch: ONE P0 task +
-        urgent wake to the BACKEND lane per milestone (validation retries every
-        tick; re-dispatching would spam workhub). The fix is either real
-        (implement the route) or registry hygiene (deprecate a junk
-        registration via registryhub_deprecate_endpoint — it then leaves the
-        business contract and the gate self-clears). Best-effort: never raises
-        into the coordination loop."""
-        try:
-            check = next(
-                (c for c in ((data or {}).get("checks") or [])
-                 if c.get("name") == "business_endpoints_implemented"
-                 and c.get("status") == "fail"),
-                None)
-            if not check:
-                return
-            milestone = getattr(self, "_current_milestone_version", "")
-            if getattr(self, "_unimpl_routes_dispatched", None) == milestone:
-                return
-            detail = str(check.get("detail") or "")
-            task = self.hubs.workhub.create_task(
-                title="Registered-implemented endpoint(s) answer 404/405 (blocks delivery)",
-                description=(
-                    "api_smoke's business_endpoints_implemented gate FAILED: the "
-                    "following endpoints are registered status=implemented but the "
-                    "live app answers 404/405 — the route is not actually wired:\n"
-                    f"{detail}\n"
-                    "For each one, either IMPLEMENT the route in the backend, or — "
-                    "if the registration is junk/obsolete — deprecate it via "
-                    "registryhub_deprecate_endpoint so it leaves the business "
-                    "contract. Delivery stays blocked until a validation pass shows "
-                    "every registered-implemented endpoint serving its route."),
-                assignee="backend",
-                agent="orchestrator",
-                priority="P0",
-            )
-            self._unimpl_routes_dispatched = milestone
-            from tools.communication_tools import _create_message
-            await self.message_bus.send(_create_message(
-                source_agent_id="orchestrator",
-                target_agent_id="backend",
-                content=(
-                    "URGENT: delivery is blocked on business_endpoints_implemented "
-                    "— endpoint(s) registered as implemented answer 404/405. Claim "
-                    f"task {(task or {}).get('id')} and implement the route(s) or "
-                    "deprecate the junk registration(s) NOW."),
-                msg_type="task_ready",
-                priority="urgent",
-                persist=True,
-                tags=["unimplemented_routes", "remediation"],
-            ))
-            self._logger.warning(
-                "UNIMPLEMENTED-ROUTE remediation dispatched to backend (task %s): %s",
-                (task or {}).get("id"), detail[:200])
-        except Exception as exc:
-            self._logger.error("unimplemented-route dispatch failed: %s", exc)
+        from .runtime.remediation_dispatcher import RemediationDispatcher
+        await RemediationDispatcher(self).dispatch_unimplemented_routes(data)
 
     async def _dispatch_frontend_navigable(self, data) -> None:
-        """frontend_navigable feedback loop: a blank-shell frontend (page
-        components present but 0 routes wired, or 0 pages) FAILS the navigable
-        gate, but the failure routed NOWHERE — the framework deliberately does
-        not author UI (lane owns it, 2026-06-11), and the frontend lane has
-        already finish()ed, so it never re-engages and the gate pins validation
-        red until the budget dies (observed: gemini wrote 2 components, 0 routes,
-        imported one into App.jsx, finished → "blank shell" forever). Close the
-        loop the same way visual-fidelity and GATE-C1 do: ONE P0 task + urgent
-        wake to the FRONTEND lane per milestone, with a concrete instruction to
-        wire the router. Framework still authors no UI content — it only routes
-        the failure back to the owner. Best-effort: never raises into the loop."""
-        try:
-            check = next(
-                (c for c in ((data or {}).get("checks") or [])
-                 if c.get("name") == "frontend_navigable"
-                 and c.get("status") == "fail"),
-                None)
-            if not check:
-                return
-            milestone = getattr(self, "_current_milestone_version", "")
-            if getattr(self, "_frontend_navigable_dispatched", None) == milestone:
-                return
-            detail = str(check.get("detail") or "")
-            task = self.hubs.workhub.create_task(
-                title="Frontend is a blank shell — wire routes + build the pages (blocks delivery)",
-                description=(
-                    "The frontend_navigable gate FAILED: " + detail + ".\n"
-                    "The app renders blank because react-router routes are not "
-                    "wired. Do ALL of the following, then finish:\n"
-                    "1. In src/App.jsx set up react-router (BrowserRouter + Routes) "
-                    "with a <Route> for EVERY screen in the reference spec "
-                    "(design/reference_spec.json) — login, signup, feed/home, "
-                    "explore/search, create, reels, messages, profile — each "
-                    "pointing at its page component.\n"
-                    "2. Author any page components that don't exist yet (one per "
-                    "screen), reading data via src/services/api.js (data.items / "
-                    "data.item).\n"
-                    "3. A logged-out user lands on /login; an authed user lands on "
-                    "the home feed.\n"
-                    "frontend_navigable requires >=1 page AND >=1 route; delivery "
-                    "stays blocked until a validation pass shows a navigable UI."),
-                assignee="frontend",
-                agent="orchestrator",
-                priority="P0",
-            )
-            self._frontend_navigable_dispatched = milestone
-            from tools.communication_tools import _create_message
-            await self.message_bus.send(_create_message(
-                source_agent_id="orchestrator",
-                target_agent_id="frontend",
-                content=(
-                    "URGENT: delivery is blocked on frontend_navigable — the app is "
-                    "a blank shell (routes not wired). Claim task "
-                    f"{(task or {}).get('id')} and wire src/App.jsx react-router "
-                    "Routes for every reference-spec screen (+ author the missing "
-                    "page components) NOW, then finish."),
-                msg_type="task_ready",
-                priority="urgent",
-                persist=True,
-                tags=["frontend_navigable", "remediation"],
-            ))
-            self._logger.warning(
-                "FRONTEND-NAVIGABLE remediation dispatched to frontend (task %s): %s",
-                (task or {}).get("id"), detail[:200])
-        except Exception as exc:
-            self._logger.error("frontend-navigable dispatch failed: %s", exc)
+        from .runtime.remediation_dispatcher import RemediationDispatcher
+        await RemediationDispatcher(self).dispatch_frontend_navigable(data)
+
+    async def _dispatch_failing_checks(self, data) -> None:
+        # PROPOSAL #21: re-dispatch the UNCOVERED lane-actionable failing checks
+        # (dead_controls/reachable→frontend, endpoints_reachable/correct_shape/
+        # auth_enforced_401/writes_persist→backend) — guard dict _check_owner_dispatched
+        # reset by _fwval_rearm_owner_dispatch.
+        from .runtime.remediation_dispatcher import RemediationDispatcher
+        await RemediationDispatcher(self).dispatch_failing_checks(data)
 
     async def _dispatch_unwired_ui_pages(self, blockers) -> None:
-        """ui_page-wiring feedback loop: declared ui_pages whose route is not
-        wired in App.jsx (or whose component file is missing) HARD-block delivery
-        (``deliverability_ui_page_unwired``) even on a functionally-validated app
-        — but, unlike GATE-C1 / frontend_navigable / visual-fidelity, this blocker
-        routed NOWHERE. ``frontend_navigable`` passes on >=1 route (a lone wired
-        ``/login`` satisfies it), so ITS dispatch goes quiet while delivery still
-        requires EVERY declared page wired — the frontend lane finish()es with one
-        route wired and nothing ever tells it to wire the rest, so the run
-        deadlocks (gemini instagram 2026-06-13: App.jsx wired only ``/login``; 12
-        declared pages — home/explore/reels/messages/profile/… — sat unwired and
-        delivery blocked for hours with no feedback). Close the loop the same way
-        the others do: ONE P0 task + urgent wake to the FRONTEND lane per
-        milestone, listing the specific unwired pages + their declared routes +
-        components. The framework authors NO UI — it routes the gap (with registry
-        truth) back to the owner. Best-effort: never raises into the loop."""
-        try:
-            if not blockers:
-                return
-            milestone = getattr(self, "_current_milestone_version", "")
-            if getattr(self, "_unwired_ui_pages_dispatched", None) == milestone:
-                return  # one dispatch per milestone — the gate recomputes every tick
-            try:
-                pages = self.hubs.registryhub.list_ui_pages() or {}
-            except Exception:
-                pages = {}
-            # Build an actionable list: route → component, for the pages the
-            # blockers name (audit emits ``ui_page `<name>` declared but unusable``).
-            lines: List[str] = []
-            for name, pg in (pages.items() if isinstance(pages, dict) else []):
-                if not isinstance(pg, dict):
-                    continue
-                if any(("`%s`" % name) in str(b) for b in blockers):
-                    route = pg.get("route") or pg.get("path") or "?"
-                    comp = pg.get("component") or "?"
-                    lines.append(f"  - {route}  →  <{comp} />")
-            page_list = "\n".join(lines) or "\n".join("  - " + str(b) for b in blockers[:15])
-            task = self.hubs.workhub.create_task(
-                title="Wire the declared pages into App.jsx routes (blocks delivery)",
-                description=(
-                    f"Delivery is HARD-BLOCKED: {len(blockers)} declared ui_page(s) "
-                    "are unwired — their declared route is not present in "
-                    "src/App.jsx (or the page component file is missing). api_smoke "
-                    "is green but the app is a near-blank shell — only the wired "
-                    "route(s) render. Wire EVERY page below into src/App.jsx "
-                    "react-router <Routes> (BrowserRouter + a <Route> per page, "
-                    "each pointing at its component), then finish:\n"
-                    f"{page_list}\n"
-                    "Author any page component that doesn't exist yet (read data via "
-                    "src/services/api.js → data.items / data.item). Delivery stays "
-                    "blocked until a gate tick shows every declared route wired."),
-                assignee="frontend",
-                agent="orchestrator",
-                priority="P0",
-            )
-            self._unwired_ui_pages_dispatched = milestone
-            from tools.communication_tools import _create_message
-            await self.message_bus.send(_create_message(
-                source_agent_id="orchestrator",
-                target_agent_id="frontend",
-                content=(
-                    f"URGENT: delivery is blocked — {len(blockers)} declared page(s) "
-                    "are unwired in src/App.jsx (only a subset of routes render). "
-                    f"Claim task {(task or {}).get('id')} and add a react-router "
-                    "<Route> for EACH unwired page (home/explore/reels/messages/"
-                    "profile/…) pointing at its component, then finish."),
-                msg_type="task_ready",
-                priority="urgent",
-                persist=True,
-                tags=["ui_page_unwired", "remediation"],
-            ))
-            self._logger.warning(
-                "UI-PAGE-UNWIRED remediation dispatched to frontend (task %s): %s "
-                "unwired page(s): %s",
-                (task or {}).get("id"), len(blockers),
-                "; ".join(str(b) for b in blockers)[:200])
-        except Exception as exc:
-            self._logger.error("ui-page-unwired dispatch failed: %s", exc)
+        from .runtime.remediation_dispatcher import RemediationDispatcher
+        await RemediationDispatcher(self).dispatch_unwired_ui_pages(blockers)
+
+    async def _dispatch_unbuilt_pages(self, components) -> None:
+        from .runtime.remediation_dispatcher import RemediationDispatcher
+        await RemediationDispatcher(self).dispatch_unbuilt_pages(components)
 
     def _detect_misplaced_frontend_root(self) -> Optional[Dict[str, Any]]:
-        """Detect a frontend the lane authored at the REPO ROOT (``./src``) while
-        the canonical ``app/frontend/src`` the framework builds+gates is the blank
-        baseline. Observed live (gemini instagram 2026-06-13): the lane built a
-        full Vite app at ``./src`` (10 routes, 8 pages, own ``./package.json``) —
-        but docker uses ``build: ../app/frontend`` and the gate audits
-        ``app/frontend/src``, so the real app was invisible and delivery saw a
-        blank shell. Returns a small count summary when the repo-root tree is
-        materially richer than the canonical one (→ misplaced), else None.
-        Deterministic, best-effort — never raises."""
-        try:
-            root_src = self.output_dir / "src"
-            canon_src = self.output_dir / "app" / "frontend" / "src"
-            if not root_src.is_dir():
-                return None
-
-            def _pages(p: Path) -> int:
-                d = p / "pages"
-                return len(list(d.glob("*.jsx")) + list(d.glob("*.tsx"))) if d.is_dir() else 0
-
-            def _routes(p: Path) -> int:
-                f = p / "App.jsx"
-                if not f.is_file():
-                    f = p / "App.tsx"
-                try:
-                    txt = f.read_text(encoding="utf-8", errors="ignore") if f.is_file() else ""
-                except Exception:
-                    txt = ""
-                # count <Route …> elements but NOT the <Routes> wrapper (which
-                # contains the substring "<Route") — match only when a delimiter
-                # follows, so "<Routes>" is excluded.
-                return len(re.findall(r"<Route[\s/>]", txt))
-
-            rp, cp = _pages(root_src), _pages(canon_src)
-            rr, cr = _routes(root_src), _routes(canon_src)
-            # Misplaced when the repo-root tree is the real app and the canonical
-            # one is (at most) the baseline shell — i.e. root is materially richer.
-            if (rp >= 2 and rp > cp) or (rr >= 2 and rr > cr):
-                return {"root_pages": rp, "canonical_pages": cp,
-                        "root_routes": rr, "canonical_routes": cr}
-            return None
-        except Exception:
-            return None
+        from .runtime.remediation_dispatcher import RemediationDispatcher
+        return RemediationDispatcher(self).detect_misplaced_frontend_root()
 
     async def _dispatch_misplaced_frontend_root(self, info) -> None:
-        """The frontend lane authored a real app at the REPO ROOT (``./src`` +
-        ``./package.json``) instead of under ``app/frontend/`` — so docker
-        (``build: ../app/frontend``) and the delivery gate (``app/frontend/src``)
-        never see it and report a blank shell despite a full app existing. The
-        framework does NOT move the lane's files (the lane owns the UI); it routes
-        the fix back to the owner: ONE P0 task + urgent wake per milestone to
-        RELOCATE the app into ``app/frontend/``. This is the ROOT-cause remedy for
-        the ``ui_page_unwired`` block when the pages exist but at the wrong root —
-        preferred over the per-page wiring dispatch, which would give misleading
-        'wire each route' advice when the whole app just needs moving.
-        Best-effort: never raises into the loop."""
-        try:
-            if not info:
-                return
-            milestone = getattr(self, "_current_milestone_version", "")
-            if getattr(self, "_misplaced_frontend_dispatched", None) == milestone:
-                return
-            task = self.hubs.workhub.create_task(
-                title="Move the frontend into app/frontend/ — it was built at the repo root (blocks delivery)",
-                description=(
-                    f"Your frontend app is at the REPO ROOT (./src/App.jsx + ./src/pages/ "
-                    f"= {info.get('root_routes')} route(s) / {info.get('root_pages')} page(s)), "
-                    f"but the framework builds and gates ONLY `app/frontend/` (currently "
-                    f"{info.get('canonical_routes')} route(s) / {info.get('canonical_pages')} "
-                    "page(s) — a blank shell). docker-compose uses `build: ../app/frontend` "
-                    "and the delivery gate audits `app/frontend/src`, so your real app is "
-                    "INVISIBLE to delivery. MOVE the whole app under app/frontend/: "
-                    "app/frontend/src/App.jsx, app/frontend/src/pages/*.jsx, "
-                    "app/frontend/src/components/*.jsx, app/frontend/src/services/api.js, "
-                    "app/frontend/package.json, app/frontend/index.html, "
-                    "app/frontend/vite.config.js — then delete the repo-root ./src + "
-                    "./package.json + ./index.html + ./vite.config.js duplicates, and "
-                    "finish. EVERY file-tool path must start with `app/frontend/`."),
-                assignee="frontend",
-                agent="orchestrator",
-                priority="P0",
-            )
-            self._misplaced_frontend_dispatched = milestone
-            from tools.communication_tools import _create_message
-            await self.message_bus.send(_create_message(
-                source_agent_id="orchestrator",
-                target_agent_id="frontend",
-                content=(
-                    f"URGENT: your frontend is at the repo ROOT (./src, "
-                    f"{info.get('root_pages')} pages) but the framework only builds "
-                    f"app/frontend/ — delivery sees a blank shell. Claim task "
-                    f"{(task or {}).get('id')} and MOVE the app into app/frontend/ "
-                    "(full app/frontend/src/... paths, delete the root duplicates), "
-                    "then finish."),
-                msg_type="task_ready",
-                priority="urgent",
-                persist=True,
-                tags=["frontend_misplaced_root", "remediation"],
-            ))
-            self._logger.warning(
-                "MISPLACED-FRONTEND-ROOT remediation dispatched to frontend (task %s): "
-                "repo-root=%s routes/%s pages vs canonical app/frontend=%s routes/%s pages",
-                (task or {}).get("id"), info.get("root_routes"), info.get("root_pages"),
-                info.get("canonical_routes"), info.get("canonical_pages"))
-        except Exception as exc:
-            self._logger.error("misplaced-frontend-root dispatch failed: %s", exc)
+        from .runtime.remediation_dispatcher import RemediationDispatcher
+        await RemediationDispatcher(self).dispatch_misplaced_frontend_root(info)
 
     async def _compile_reference_materials(self, raw_req: str) -> str:
-        """Classify reference materials, stage documents into the workspace,
-        compile the REFERENCE SPEC with the run's selected model, persist it,
-        derive deliverability gates from it, and return the requirements text
-        extended with the spec summary. Best-effort: on any failure the run
-        proceeds with the original requirements."""
-        try:
-            from .runtime.reference_materials import (
-                classify_references, compile_reference_spec, gates_from_spec,
-                merge_user_gates, spec_summary_for_requirements,
-                stage_reference_docs)
-            split = classify_references(getattr(self, "_reference_images", None) or [])
-            self._reference_images = split["images"]
-            self._reference_docs = split["docs"]
-            if not split["images"] and not split["docs"]:
-                return raw_req
-            try:
-                from .runtime.reference_materials import write_agent_notes
-                write_agent_notes(self.output_dir)
-            except Exception:
-                pass
-            # stage BOTH docs and reference images into design/references/ so the
-            # env is self-contained (the Env Forge UI can serve/show the screenshots).
-            staged = stage_reference_docs(split["docs"] + split["images"], self.output_dir)
-            if staged:
-                self._logger.info("Reference documents staged: %s", staged)
-            spec = await compile_reference_spec(
-                self.llm, split["images"], split["docs"], raw_req)
-            if not spec or not any(spec.get(k) for k in
-                                   ("screens", "endpoints", "entities", "mcp_tools")):
-                self._logger.info("Reference spec compile produced nothing usable — continuing without.")
-                return raw_req
-            spec_path = Path(self.output_dir) / "design" / "reference_spec.json"
-            spec_path.parent.mkdir(parents=True, exist_ok=True)
-            spec_path.write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
-            gates = gates_from_spec(spec)
-            n = merge_user_gates(self.output_dir, gates) if gates else 0
-            self._reference_spec = spec
-            self._reference_spec_summary = spec_summary_for_requirements(spec)
-            self._logger.warning(
-                "REFERENCE SPEC compiled: %d screens, %d endpoints, %d entities, "
-                "%d mcp tools → %d deliverability gates registered; spec at %s",
-                len(spec.get("screens") or []), len(spec.get("endpoints") or []),
-                len(spec.get("entities") or []), len(spec.get("mcp_tools") or []),
-                n, spec_path)
-            return raw_req + spec_summary_for_requirements(spec)
-        except Exception as exc:
-            self._logger.error("reference material compile failed (non-fatal): %s", exc)
-            return raw_req
+        """Compile reference materials into a spec + deliverability gates and
+        return the spec-extended requirements (delegates to
+        ``runtime.reference_materials.compile_reference_materials``). Records the
+        reference image/doc/spec state only for what this run actually produced,
+        so a best-effort failure leaves prior state untouched."""
+        from .runtime.reference_materials import compile_reference_materials
+        res = await compile_reference_materials(
+            raw_req,
+            output_dir=self.output_dir,
+            llm=self.llm,
+            logger=self._logger,
+            reference_images=getattr(self, "_reference_images", None),
+        )
+        if res.classified:
+            self._reference_images = res.images
+            self._reference_docs = res.docs
+        if res.spec is not None:
+            self._reference_spec = res.spec
+            self._reference_spec_summary = res.spec_summary
+        return res.requirements
+
+    @property
+    def _vf_gate(self):
+        """Lazily-created visual-fidelity gate (PROPOSAL #8 — VisualFidelity
+        slice B). Owns the per-source judging budget + the per-milestone
+        deferral counters that used to live as inline ``_vf_*`` attrs; created
+        on first access so partially-constructed orchestrators stay cheap."""
+        g = self.__dict__.get("_vf_gate_instance")
+        if g is None:
+            from .runtime.visual_fidelity import VisualFidelityGate
+            g = VisualFidelityGate(self)
+            self.__dict__["_vf_gate_instance"] = g
+        return g
 
     async def _maybe_run_visual_fidelity(self) -> None:
-        """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the
-        running frontend on the routes the reference images depict, has the
-        vision model compare each pair, and on failure files an ACTIONABLE
-        remediation task for the frontend lane (concrete per-screen deviations).
-        Visual design stays the lane's job; this is the enforcement loop that
-        makes the app converge to the references instead of to whatever the
-        lane happened to ship. Bounded: 3 judged runs per app-source signature
-        (each is N vision calls); a pass latches until the source changes.
-        Best-effort — never raises into the coordination loop."""
-        try:
-            refs = list(getattr(self, "_reference_images", None) or [])
-            if not refs:
-                return
-            sig = self._compute_app_source_signature()
-            if sig != getattr(self, "_vf_sig", None):
-                self._vf_sig = sig
-                self._vf_attempts = 0   # fresh per-source judging budget (new pixels deserve a verdict)
-                self._vf_passed = False
-                # PIPE-C3: do NOT reset _vf_deferred_since here. The deferral
-                # wall-clock is anchored to the milestone's FIRST defer (set in
-                # _maybe_framework_deliver, zeroed only at milestone start) — a
-                # frontend lane that churns files on every visual-fail must NOT be
-                # able to keep rewinding the 900s escape clock (the livelock that
-                # left delivery deferred until the run's budget died).
-            if getattr(self, "_vf_passed", False):
-                return
-            if getattr(self, "_vf_attempts", 0) >= 3:
-                return  # budget spent on this source state — wait for lane changes
-            self._vf_attempts = getattr(self, "_vf_attempts", 0) + 1
-            from .runtime.visual_fidelity import run_visual_fidelity, remediation_text
-            if sig is not None and sig == getattr(self, "_vf_last_judged_sig", None):
-                # JUDGE-ON-CHANGE: identical source ⇒ identical pixels — re-
-                # judging burns 7 vision calls to learn nothing (round 30:
-                # 3 attempts on one source, scores just noise-wiggled). The
-                # attempt budget now counts DISTINCT source versions.
-                return
-            result = await run_visual_fidelity(self.output_dir, refs, self.llm)
-            if result.get("capture_unavailable") or result.get("auth_unavailable"):
-                # Not a judgment — the app wasn't reachable (mid-rebuild) or
-                # the authed session was rejected wholesale (token mint failed
-                # / every auth route bounced to /login — round 31 judged the
-                # LOGIN PAGE against feed/profile references, 0.2s across the
-                # board). Refund so the budget only counts REAL verdicts.
-                self._vf_attempts = max(0, getattr(self, "_vf_attempts", 1) - 1)
-                self._logger.warning(
-                    "Visual fidelity: %s — attempt refunded, will retry next tick.",
-                    result.get("summary") or "capture/auth unavailable")
-                return
-            screens = result.get("screens") or []
-            self._vf_last_result = result
-            self._vf_last_judged_sig = sig
-            # PIPE-C3: per-milestone real-judgment counter (NOT reset on sig
-            # change — only at milestone start). A vision-cost backstop escape so a
-            # churning lane that keeps flipping the source signature can't drive
-            # unbounded judging even before the 900s wall-clock escape fires.
-            self._vf_total_judgments = getattr(self, "_vf_total_judgments", 0) + 1
-            if result.get("passed"):
-                self._vf_passed = True
-                self._logger.warning(
-                    "Visual fidelity PASSED (%s): %s",
-                    ", ".join(f"{s['name']}={s['similarity']:.2f}" for s in screens),
-                    result.get("summary"))
-                return
-            self._logger.warning(
-                "Visual fidelity attempt %s/3 FAILED — %s",
-                self._vf_attempts, result.get("summary"))
-            try:
-                _vt = self.hubs.workhub.create_task(
-                    title=f"UI does not match reference designs (visual gate, attempt {self._vf_attempts})",
-                    description=remediation_text(result),
-                    assignee="frontend",
-                    agent="orchestrator",
-                    priority="P1",
-                )
-                # Wake the frontend NOW — milestone work is done at this
-                # point and the lane otherwise idles through the deferral.
-                try:
-                    from tools.communication_tools import _create_message
-                    _msg = _create_message(
-                        source_agent_id="orchestrator",
-                        target_agent_id="frontend",
-                        content=(
-                            "Visual-fidelity remediation task assigned "
-                            f"(task_id={(_vt or {}).get('id')}). Claim it and "
-                            "fix the listed per-screen deviations NOW — the "
-                            "milestone release is DEFERRED until the UI "
-                            "matches the references (or attempts exhaust)."),
-                        msg_type="task_ready",
-                        priority="urgent",
-                        persist=True,
-                        tags=["visual_fidelity", "remediation"],
-                    )
-                    await self.message_bus.send(_msg)
-                except Exception:
-                    pass
-            except Exception as exc:
-                self._logger.error("visual-fidelity task creation failed: %s", exc)
-        except Exception as exc:
-            self._logger.error("visual fidelity gate raised (non-fatal): %s", exc)
+        """Run the bounded visual-fidelity judge-and-remediate loop (delegates to
+        the extracted VisualFidelityGate)."""
+        await self._vf_gate.maybe_run()
 
     def _all_business_endpoints_have_route_code(self) -> bool:
         """Code-reality complement to ``all_business_endpoints_implemented``
@@ -3702,626 +1835,69 @@ volumes:
             return None
 
     def _scaffold_design_readme(self) -> None:
-        """The delivery gate requires ``design/README.md`` (a design artifact the
-        kickoff coordinator is meant to author). When no lane writes it, the run
-        cuts a release via api_smoke but the FINAL delivery gate fails on the
-        missing file → Status FAILED on an otherwise-working app. Framework-scaffold
-        a project README from the registered contract (write-if-missing, idempotent,
-        best-effort)."""
-        try:
-            out_dir = getattr(self, "output_dir", None)
-            if not out_dir:
-                return
-            readme = out_dir / "design" / "README.md"
-            if readme.exists() and readme.read_text(encoding="utf-8", errors="ignore").strip():
-                return
-            name = out_dir.name or "app"
-            lines = [
-                f"# {name}", "",
-                "Generated full-stack application — FastAPI backend, React/Vite "
-                "frontend, PostgreSQL, embedded OAuth2 (RS256 JWT).", "",
-            ]
-            eps = []
-            registryhub = getattr(getattr(self, "hubs", None), "registryhub", None)
-            if registryhub is not None:
-                try:
-                    from .runtime.lifecycle import business_endpoints
-                    for e in business_endpoints(registryhub.get_endpoints() or {}):
-                        if isinstance(e, dict) and e.get("method") and e.get("path"):
-                            eps.append((str(e["method"]).upper(), str(e["path"]),
-                                        str(e.get("summary") or "")))
-                except Exception:
-                    pass
-            if eps:
-                lines += ["## API", ""]
-                for m, p, s in sorted(set(eps)):
-                    lines.append(f"- `{m} {p}`" + (f" — {s}" if s else ""))
-                lines.append("")
-            lines += ["## Run", "", "```bash",
-                      "cd docker && docker compose up -d --build", "```", ""]
-            readme.parent.mkdir(parents=True, exist_ok=True)
-            readme.write_text("\n".join(lines), encoding="utf-8")
-            _log = getattr(self, "_logger", None)
-            if _log is not None:
-                _log.warning(
-                    "Scaffolded design/README.md (delivery-gate required artifact)")
-        except Exception:
-            pass  # best-effort; logger may be absent in minimal/test contexts
+        self._scaffolder.scaffold_design_readme()
 
+    # ── Delivery-time heal pipeline (PROPOSAL #8 — HealPipeline) ────────────────
+    # The 12 repair/merge/commit steps moved to runtime/heal_pipeline.py. They are
+    # STATELESS, idempotent wrappers; the load-bearing CALL ORDER lives in the
+    # callers below (merge → skeleton → projection → audit, …), unchanged. Each
+    # shim constructs a fresh HealPipeline(self) per call.
     def _repair_backend_auth(self) -> None:
-        """FIX #45: the handlers gate on ``Depends(get_current_user)`` but the lane
-        writes a placeholder that IGNORES the token (returns the first DB user) —
-        the lane itself says "the full auth dependency is provided elsewhere in the
-        complete scaffold". So the framework provides it: a real JWT-verifying
-        ``auth_dependency.py`` + rewrite each route file's placeholder to import it.
-        Best-effort."""
-        try:
-            out_dir = getattr(self, "output_dir", None)
-            if not out_dir:
-                return
-            from pathlib import Path as _P
-            from .runtime.backend_scaffold import (
-                repair_backend_auth_dependency, repair_auth_import_paths,
-                repair_inline_token_auth, repair_auth_enforcement_middleware)
-            be_dir = _P(out_dir) / "app" / "backend"
-            rep = repair_backend_auth_dependency(be_dir)
-            if rep.get("repaired"):
-                self._logger.warning(
-                    "Backend auth dependency installed (FIX #45, real JWT auth): "
-                    "rewrote %s", rep.get("rewritten"))
-            # FIX #48 (run #12 / #18): lanes import get_current_user from the WRONG module
-            # (`from oauth_routes import get_current_user` — oauth_routes only exposes
-            # build_router) → ImportError → backend crashes on startup → backend_health
-            # fails forever. Repoint every wrong-module import at the scaffolded
-            # auth_dependency. AST-precise; complements FIX #45 (which fixes placeholder
-            # DEFS, not wrong IMPORTS).
-            imp = repair_auth_import_paths(be_dir)
-            if imp.get("repaired"):
-                self._logger.warning(
-                    "Backend auth imports normalized (FIX #48): repointed "
-                    "get_current_user to auth_dependency in %s", imp.get("rewritten"))
-            # FIX #46 (run #12): handlers that fake-parse a ``user:<id>`` token INLINE
-            # (no shared get_current_user to rewrite) → rewrite the fake split to decode
-            # the real RS256 JWT, so authed endpoints stop 401'ing 'invalid token'.
-            inline = repair_inline_token_auth(be_dir)
-            if inline.get("fixed"):
-                self._logger.warning(
-                    "Backend inline token auth repaired (FIX #46): %s fake "
-                    "'user:<id>' parse site(s) now decode the real JWT.",
-                    inline.get("fixed"))
-            # FIX #47 (run #16): some lanes write NO auth (handlers fetch the first DB
-            # user) → 200 with no token → auth_enforced_401 stalls the milestone. Enforce
-            # a valid bearer JWT on every /api/ business route via middleware.
-            mw = repair_auth_enforcement_middleware(be_dir)
-            if mw.get("injected"):
-                self._logger.warning(
-                    "Backend auth-enforcement middleware injected (FIX #47): /api/ "
-                    "business routes now require a valid bearer JWT.")
-        except Exception as exc:
-            self._logger.debug("backend auth repair skipped: %s", exc)
+        from .runtime.heal_pipeline import HealPipeline
+        HealPipeline(self).repair_backend_auth()
 
     def _repair_backend_packaging(self) -> None:
-        """Ensure the backend is pip-installable in docker. The lane writes a
-        hatchling pyproject with a FLAT layout, so the Dockerfile's
-        ``uv pip install .`` can't build a wheel → the whole docker build dies →
-        docker_up TIMES OUT → no delivery (instagram MM, 2026-06-08: M5 was blocked
-        here for 12 min, never delivered, so its declared endpoints — incl. POST
-        follow — were never projected). bypass-selection makes the deps install +
-        the build succeed. Best-effort."""
-        try:
-            out_dir = getattr(self, "output_dir", None)
-            if not out_dir:
-                return
-            from pathlib import Path as _P
-            from .runtime.backend_scaffold import repair_backend_packaging
-            rep = repair_backend_packaging(_P(out_dir) / "app" / "backend")
-            if rep.get("repaired"):
-                self._logger.warning(
-                    "Backend packaging made build-safe (hatchling flat-layout → "
-                    "wheel bypass-selection so `pip install .` installs deps without "
-                    "failing package detection): %s", rep.get("pyproject"))
-        except Exception as exc:
-            self._logger.debug("backend packaging repair skipped: %s", exc)
+        from .runtime.heal_pipeline import HealPipeline
+        HealPipeline(self).repair_backend_packaging()
 
     def _repair_ddl_from_orm(self) -> None:
-        """FIX #43 (#2 guaranteed): regenerate the DDL FROM the app's SQLAlchemy
-        models so it can never drift from the handlers. The LLM's model+handler
-        agree with each other (e.g. ``posts.user_id``) but may diverge from the
-        description-derived DDL (``posts.author_id``) → runtime UndefinedColumn.
-        The model is the runtime truth, so project the DDL from it. Best-effort:
-        leaves the existing spec-DDL in place if models.py can't be introspected."""
-        try:
-            out_dir = getattr(self, "output_dir", None)
-            if not out_dir:
-                return
-            from pathlib import Path as _P
-            from .runtime.database_scaffold import (
-                introspect_orm_schema, render_schema_sql)
-            be = _P(out_dir) / "app" / "backend"
-            tables = introspect_orm_schema(be)
-            if not tables:
-                return
-            ddl_sql = render_schema_sql(tables)
-            # Write the spine-correct DDL to the framework's canonical path AND to
-            # EVERY path the docker-compose actually MOUNTS as a Postgres init
-            # script. The backend routinely authors its OWN app/backend/01_init.sql
-            # (its users table carries username/full_name but NOT the spine `name`
-            # column the embedded OAuth2 AS register inserts) and points the
-            # compose at THAT file — so writing only to app/database/init/ leaves
-            # the LIVE DB with the wrong schema (auth_register_login 500: column
-            # "name" does not exist, which silently burned a full M1 run on 36
-            # validation retries before this fix).
-            targets = [_P(out_dir) / "app" / "database" / "init" / "01_init.sql"]
-            try:
-                import yaml as _yaml
-                compose = _P(out_dir) / "docker" / "docker-compose.yml"
-                if compose.exists():
-                    data = _yaml.safe_load(compose.read_text(encoding="utf-8")) or {}
-                    for svc in (data.get("services") or {}).values():
-                        if not isinstance(svc, dict):
-                            continue
-                        for vol in (svc.get("volumes") or []):
-                            if not isinstance(vol, str) or "initdb.d" not in vol:
-                                continue
-                            host = vol.split(":")[0].strip()
-                            if not host:
-                                continue
-                            p = (compose.parent / host).resolve()
-                            targets.append(p if host.endswith(".sql") else p / "01_init.sql")
-            except Exception:
-                pass
-            written: List[str] = []
-            for t in list(dict.fromkeys(targets)):  # dedup, keep order
-                try:
-                    t.parent.mkdir(parents=True, exist_ok=True)
-                    t.write_text(ddl_sql, encoding="utf-8")
-                    written.append(str(t))
-                except Exception:
-                    continue
-            self._logger.warning(
-                "DDL regenerated from the app's ORM models + written to all "
-                "compose-mounted init paths (FIX #43 + mount-path fix): tables=%s "
-                "targets=%s", sorted(tables), written)
-        except Exception as exc:
-            self._logger.debug("ORM-DDL repair skipped: %s", exc)
+        from .runtime.heal_pipeline import HealPipeline
+        HealPipeline(self).repair_ddl_from_orm()
 
     def _project_missing_routes(self) -> None:
-        """ROOT FIX (instagram MM, 2026-06-08): a backend lane DECLARES endpoints in
-        RegistryHub but runs out of its loop budget before writing route code for all of
-        them — the milestone then delivers HOLLOW (declared endpoints that 404, e.g.
-        7/28 on instagram). Trusting RegistryHub status is the trap; the contract surface
-        must be PROJECTED from the declared contract, exactly as _repair_ddl_from_orm
-        projects the DDL from the ORM rather than trusting LLM-written SQL. For every
-        business endpoint RegistryHub declares that has no route in main.py, project a
-        working handler from the ORM (the lane's real handlers are untouched; this
-        only fills the gaps). Idempotent; best-effort."""
-        try:
-            out_dir = getattr(self, "output_dir", None)
-            if not out_dir:
-                return
-            registryhub = getattr(self.hubs, "registryhub", None)
-            if registryhub is None:
-                return
-            from pathlib import Path as _P
-            from .runtime.lifecycle import business_endpoints
-            from .runtime.route_projector import project_missing_routes
-            declared = business_endpoints(registryhub.get_endpoints())
-            if not declared:
-                return
-            res = project_missing_routes(_P(out_dir) / "app" / "backend", declared)
-            projected = res.get("projected") or []
-            if projected:
-                self._logger.warning(
-                    "By-construction route projection: the lane DECLARED %s "
-                    "endpoint(s) it never coded — projected working handlers from "
-                    "the ORM so the contract is complete (no 404 on declared "
-                    "routes): %s", len(projected), projected)
-            # PROPOSAL #13: with the skeleton + projection done, audit the registry
-            # against CODE TRUTH — flip an endpoint `implemented` only when its route
-            # is actually on the SERVED surface (main.py `@app` + the `include_router`
-            # chain), and regress phantom-"implemented" routes to `defined`. Hooked
-            # HERE — after projection (so projector-filled routes count) and after the
-            # merge that always precedes projection (1484→1503 / 4417→4435) — so it
-            # audits what actually ships, NOT inside _generate_backend_skeleton which
-            # runs pre-projection. The backend twin of frontend_audit. Honest flags →
-            # api_smoke stops failing "status=implemented but 404" contract lies.
-            try:
-                from .runtime.backend_audit import sync_endpoint_statuses
-                _ea = sync_endpoint_statuses(out_dir, registryhub)
-                if _ea.get("implemented") or _ea.get("regressed"):
-                    self._logger.warning(
-                        "ENDPOINT LIFECYCLE (code-truth): implemented=%s regressed=%s "
-                        "pending=%s", _ea.get("implemented"), _ea.get("regressed"),
-                        _ea.get("pending"))
-            except Exception:
-                pass
-        except Exception as exc:
-            self._logger.debug("route projection skipped: %s", exc)
+        from .runtime.heal_pipeline import HealPipeline
+        HealPipeline(self).project_missing_routes()
 
     def _repair_handler_fk_aliases(self) -> None:
-        """ROOT FIX (instagram MM run #9, 2026-06-09): the backend lane authored a
-        handler querying ``Post.user_id`` while the Post model's owner FK is
-        ``author_id`` → ``AttributeError`` 500 on /api/users/me → api_smoke
-        ``business_endpoints_reachable`` stalled out the whole milestone. Like
-        _repair_ddl_from_orm, repair the handler↔model surface deterministically:
-        rewrite ``<Model>.<owner_alias>`` references to the model's real owner FK when
-        the alias is not a column (a guaranteed AttributeError) — never touching a valid
-        query. Best-effort; idempotent."""
-        try:
-            out_dir = getattr(self, "output_dir", None)
-            if not out_dir:
-                return
-            from pathlib import Path as _P
-            from .runtime.handler_fk_repair import repair_handler_fk_aliases
-            res = repair_handler_fk_aliases(_P(out_dir) / "app" / "backend")
-            fixed = res.get("fixed") or []
-            if fixed:
-                self._logger.warning(
-                    "By-construction handler FK-alias repair: rewrote %s handler "
-                    "reference(s) to a non-existent owner FK to the model's real one "
-                    "(prevents AttributeError 500s): %s", len(fixed), fixed)
-        except Exception as exc:
-            self._logger.debug("handler FK-alias repair skipped: %s", exc)
+        from .runtime.heal_pipeline import HealPipeline
+        HealPipeline(self).repair_handler_fk_aliases()
 
     def _repair_psycopg_dsn(self) -> None:
-        """ROOT FIX (instagram MM run #10, 2026-06-09): the backend lane opened RAW
-        psycopg connections with the SQLAlchemy URL ``postgresql+psycopg://…`` (the env
-        ``DATABASE_URL``), which ``psycopg.connect`` rejects (``missing "=" …``) → 500 on
-        every such endpoint (/api/users/suggested, /api/feed, /api/explore, … 14+ sites)
-        → api_smoke stall. The SQLAlchemy engine needs the +driver form, so only the raw
-        call sites are normalised: wrap each ``psycopg.connect(arg)`` with a
-        ``_psycopg_dsn(arg)`` helper that strips the dialect. Best-effort; idempotent."""
-        try:
-            out_dir = getattr(self, "output_dir", None)
-            if not out_dir:
-                return
-            from pathlib import Path as _P
-            from .runtime.psycopg_dsn_repair import repair_psycopg_dsn
-            res = repair_psycopg_dsn(_P(out_dir) / "app" / "backend")
-            wrapped = res.get("wrapped") or 0
-            if wrapped:
-                self._logger.warning(
-                    "By-construction psycopg DSN repair: wrapped %s raw "
-                    "psycopg.connect() site(s) to strip the SQLAlchemy dialect from the "
-                    "DSN (prevents 'missing \"=\"' 500s).", wrapped)
-        except Exception as exc:
-            self._logger.debug("psycopg DSN repair skipped: %s", exc)
+        from .runtime.heal_pipeline import HealPipeline
+        HealPipeline(self).repair_psycopg_dsn()
 
     # _project_missing_pages REMOVED (user decision 2026-06-11): the framework
     # no longer authors UI content — gates + lane feedback replace projection.
 
     def _run_test_user_validation(self, version: str) -> None:
-        """Post-milestone TEST-USER phase (2026-06-09, user-asked): once a release is
-        cut, simulate a real user's journey across the API (register → post → feed →
-        view-my-posts → follow → comment → like → message) and check the MCP surface is
-        complete, writing a feedback report — the automated form of the hand-verification
-        that exposed the route_projector bugs (null owner on create, 500 on
-        /users/{username}/posts). Blocking (HTTP + subprocess); the caller runs it in a
-        thread. Health-pre-checks the app and SKIPS (no false negatives) if it is not
-        up — never boots (to avoid racing the next milestone's api_smoke) and never
-        raises into delivery. Web screenshots are produced by the orchestrating layer
-        (Playwright is not a gen-runtime dependency)."""
-        try:
-            out_dir = getattr(self, "output_dir", None)
-            registryhub = getattr(self.hubs, "registryhub", None)
-            if not out_dir or registryhub is None:
-                return
-            from pathlib import Path as _P
-            from .runtime.lifecycle import business_endpoints
-            from .runtime.validation_runner import _backend_host_port, _http
-            from .runtime.test_user_validation import run_test_user_validation
-            proj = _P(out_dir)
-            compose = proj / "docker" / "docker-compose.yml"
-            port = _backend_host_port(compose, compose.parent) if compose.exists() else None
-            base = f"http://localhost:{port}" if port else None
-            # Health pre-check: only run the journey against a live app.
-            healthy = False
-            if base:
-                for _ in range(3):
-                    if _http("GET", f"{base}/health", timeout=5).get("status") == 200:
-                        healthy = True
-                        break
-            if not healthy:
-                self._logger.warning(
-                    "TEST-USER validation (v%s): SKIPPED — app not reachable at "
-                    "delivery time (no false-negative report).", version)
-                return
-            eps = business_endpoints(registryhub.get_endpoints())
-            report = run_test_user_validation(
-                proj, eps, version=version, base_url=base, compose_file=compose,
-                llm=getattr(self, "llm", None))
-            summ = report.get("summary", {})
-            if summ.get("verdict") == "PASS":
-                self._logger.warning(
-                    "TEST-USER validation (v%s): PASS — %s/%s API journey steps OK + "
-                    "MCP surface complete.", version,
-                    summ.get("api_passed"), summ.get("api_steps"))
-            else:
-                self._logger.warning(
-                    "TEST-USER validation (v%s): %s — %s/%s journey steps passed; "
-                    "BROKEN: %s", version, summ.get("verdict"),
-                    summ.get("api_passed"), summ.get("api_steps"), summ.get("broken"))
-        except Exception as exc:
-            self._logger.debug("test-user validation skipped: %s", exc)
+        from .runtime.heal_pipeline import HealPipeline
+        HealPipeline(self).run_test_user_validation(version)
 
     def _scaffold_frontend_baseline(self) -> None:
-        """FIX #40: gap-fill a minimal buildable frontend (infra + login/feed UI)
-        for any standard file the frontend lane left missing/empty. The frontend
-        lane variably produces NOTHING (empty app/frontend/ → no Dockerfile →
-        docker build can't start → docker_up FAIL → no delivery). Best-effort;
-        never clobbers files the lane wrote."""
-        try:
-            out_dir = getattr(self, "output_dir", None)
-            if not out_dir:
-                return
-            from .runtime.frontend_scaffold import (
-                scaffold_frontend_baseline, pin_frontend_build_tooling)
-            from pathlib import Path as _P
-            fe = _P(out_dir) / "app" / "frontend"
-            rep = scaffold_frontend_baseline(fe)
-            if rep.get("scaffolded"):
-                self._logger.warning(
-                    "Frontend baseline scaffolded (lane left it incomplete): %s",
-                    rep.get("written"))
-            # FIX #44: force the build tooling to known-good pinned versions so the
-            # image always builds (the lane writes "latest" everywhere → tailwind v4
-            # vs v3 postcss config → npm build dies).
-            pin = pin_frontend_build_tooling(fe)
-            if pin.get("pinned"):
-                self._logger.warning(
-                    "Frontend build tooling pinned to known-good: %s", pin.get("changed"))
-        except Exception as exc:
-            self._logger.debug("frontend baseline scaffold skipped: %s", exc)
+        self._scaffolder.scaffold_frontend_baseline()
 
     def _scaffold_frontend_pages(self) -> None:
-        """Project a page-component STUB per registered ui_page + wire React-Router
-        routes — the frontend analogue of the deterministic backend skeleton
-        (_generate_database / backend models from the contract).
-
-        Closes the build-asymmetry root cause (youtube run #13): the backend is
-        framework-scaffolded so it completes reliably; the frontend had to
-        hand-author every page + routing from scratch → built 1 page, left the
-        rest in_progress, declared a hallucinated done (blank shell). Run once
-        after finalize: the lane then FILLS page bodies (write/edit) instead of
-        authoring from nothing, and the app is navigable-by-construction. Stubs
-        are written only-if-missing; App.jsx only (re)written while it carries the
-        @framework-managed-routes marker (the lane deletes it to take over). Also
-        replaces the social-shaped baseline App.jsx (login/feed) with a generic
-        router → domain-agnostic. Best-effort; never raises."""
-        try:
-            out_dir = getattr(self, "output_dir", None)
-            if not out_dir:
-                return
-            ui_pages = []
-            registryhub = getattr(self.hubs, "registryhub", None)
-            if registryhub is not None and hasattr(registryhub, "list_ui_pages"):
-                ui_pages = list((registryhub.list_ui_pages() or {}).values())
-            if not ui_pages:
-                return
-            from .runtime.frontend_scaffold import scaffold_pages_from_contract
-            from pathlib import Path as _P
-            fe = _P(out_dir) / "app" / "frontend"
-            rep = scaffold_pages_from_contract(fe, ui_pages)
-            if rep.get("scaffolded") or rep.get("app_wired"):
-                self._logger.info(
-                    "Frontend pages projected from contract: %d stub(s), "
-                    "%d route(s) wired (app_wired=%s)",
-                    len(rep.get("scaffolded") or []), rep.get("routes", 0),
-                    rep.get("app_wired"))
-        except Exception as exc:
-            self._logger.debug("frontend page projection skipped: %s", exc)
+        self._scaffolder.scaffold_frontend_pages()
 
     def _repair_frontend_api(self) -> None:
-        """FIX #37: reconcile frontend api.js exports with component imports on the
-        integrated tree, so naming drift can't break ``npm run build`` (and thus
-        the api_smoke docker_up gate). Deterministic + best-effort."""
-        try:
-            out_dir = getattr(self, "output_dir", None)
-            if not out_dir:
-                return
-            from .runtime.frontend_scaffold import (
-                repair_frontend_api_exports, scaffold_missing_local_pages)
-            from pathlib import Path as _P
-            fe = _P(out_dir) / "app" / "frontend"
-            rep = repair_frontend_api_exports(fe)
-            if rep.get("repaired"):
-                self._logger.warning(
-                    "Frontend api.js reconciled: aliased=%s stubbed=%s",
-                    rep.get("aliased"), rep.get("stubbed"),
-                )
-            # Build-integrity: the frontend lane routinely imports a page it never
-            # created (e.g. ./pages/MessagesInboxPage) → ``npm run build`` fails →
-            # frontend container can't boot. Scaffold a valid stub for any dangling
-            # local component import so the app always builds.
-            pages = scaffold_missing_local_pages(fe)
-            if pages.get("scaffolded"):
-                self._logger.warning(
-                    "Frontend dangling imports resolved by stub pages (lane "
-                    "imported components it never created): %s",
-                    pages.get("scaffolded"),
-                )
-        except Exception as exc:
-            self._logger.debug("frontend api repair skipped: %s", exc)
+        from .runtime.heal_pipeline import HealPipeline
+        HealPipeline(self).repair_frontend_api()
 
     def _repair_backend_as_wiring(self) -> None:
-        """FIX #39: ensure main.py wires the framework OAuth2 AS router, which now
-        owns /oauth/*, /.well-known/*, AND the standard /auth/register +
-        /auth/login. The backend lane variably forgets to include it (this run:
-        no /oauth/* and no /auth/register at all → auth_register_login 404).
-        Inject the include_router right after ``app = FastAPI(...)`` (so its routes
-        take precedence over any inline /auth/* the backend wrote). Idempotent +
-        best-effort."""
-        try:
-            out_dir = getattr(self, "output_dir", None)
-            if not out_dir:
-                return
-            from pathlib import Path as _P
-            be = _P(out_dir) / "app" / "backend"
-            main_py = be / "main.py"
-            if not main_py.exists() or not (be / "oauth_routes.py").exists():
-                return
-            src = main_py.read_text(encoding="utf-8")
-            if "build_router" in src:
-                return  # AS already wired (and the template now includes /auth/*)
-            import re as _re
-            lines = src.splitlines()
-            idx = None
-            for i, ln in enumerate(lines):
-                if _re.match(r"\s*app\s*=\s*FastAPI\b", ln):
-                    depth, j = 0, i
-                    while j < len(lines):
-                        depth += lines[j].count("(") - lines[j].count(")")
-                        if depth <= 0:
-                            break
-                        j += 1
-                    idx = j
-                    break
-            if idx is None:
-                return
-            wiring = [
-                "",
-                "# FIX #39: wire the framework OAuth2 AS (provides /oauth/*,",
-                "# /.well-known/*, and the standard /auth/register + /auth/login).",
-                "try:",
-                "    from oauth_store import OAuthStore as _ASStore",
-                "    from jwt_manager import JWTManager as _ASJwt",
-                "    from oauth_routes import build_router as _as_build_router",
-                "    app.include_router(_as_build_router(_ASStore(), _ASJwt()))",
-                "except Exception as _as_exc:  # pragma: no cover",
-                "    import logging as _l",
-                "    _l.getLogger('uvicorn').warning('AS wiring skipped: %s', _as_exc)",
-            ]
-            lines[idx + 1:idx + 1] = wiring
-            main_py.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            self._logger.warning(
-                "Backend main.py: wired the framework OAuth2 AS router "
-                "(was missing → /auth/register + /oauth/* absent).")
-        except Exception as exc:
-            self._logger.debug("backend AS wiring repair skipped: %s", exc)
+        from .runtime.heal_pipeline import HealPipeline
+        HealPipeline(self).repair_backend_as_wiring()
 
     def _repair_backend_entrypoint(self) -> None:
-        """FIX #38: ensure the backend main.py actually STARTS the server. The
-        Dockerfile CMD is ``python main.py``, but the lane sometimes omits the
-        ``if __name__ == '__main__': uvicorn.run(...)`` block → the container
-        imports main.py and exits(0) without serving → backend_health FAIL → no
-        delivery of an otherwise-working app. Append a standard uvicorn entrypoint
-        (reading API_PORT, which the compose sets) when missing. Deterministic +
-        best-effort."""
-        try:
-            out_dir = getattr(self, "output_dir", None)
-            if not out_dir:
-                return
-            from pathlib import Path as _P
-            main_py = _P(out_dir) / "app" / "backend" / "main.py"
-            if not main_py.exists():
-                return
-            src = main_py.read_text(encoding="utf-8")
-            if "uvicorn.run" in src or "__main__" in src:
-                return  # already starts the server / has a main guard
-            import re as _re
-            if not _re.search(r"^\s*app\s*=", src, _re.M):
-                return  # no module-level `app` to serve
-            entry = (
-                "\n\n# FIX #38: ensure `python main.py` actually serves (the lane "
-                "omitted the\n# entrypoint, so the container exited(0) without "
-                "starting uvicorn).\n"
-                'if __name__ == "__main__":\n'
-                "    import os\n"
-                "    import uvicorn\n"
-                "    uvicorn.run(app, host=\"0.0.0.0\", "
-                "port=int(os.environ.get(\"API_PORT\", \"8081\")))\n"
-            )
-            main_py.write_text(src.rstrip() + entry, encoding="utf-8")
-            self._logger.warning(
-                "Backend main.py entrypoint appended (was missing uvicorn.run "
-                "→ container would exit(0) without serving).")
-        except Exception as exc:
-            self._logger.debug("backend entrypoint repair skipped: %s", exc)
+        from .runtime.heal_pipeline import HealPipeline
+        HealPipeline(self).repair_backend_entrypoint()
 
     def _merge_committed_agent_work(self) -> None:
-        """Merge each lane's COMMITTED agent-branch work into integration so the
-        framework validation/delivery runs against the latest code even when the
-        authoring lane hasn't 'finished' (its workhub-task bookkeeping can lag the
-        code it already wrote+committed). Best-effort, idempotent
-        ("nothing to merge" when already integrated), conflict-safe
-        (merge_agent_branch_to_main aborts on conflict). Never raises into the loop.
-        """
-        try:
-            from .agents.runtime.auto_commit import merge_agent_branch_to_main, flush_worktree
-        except Exception:
-            return
-        repo = getattr(self, "output_dir", None)
-        if repo is None:
-            return
-        from pathlib import Path as _P
-        for lane in ("backend", "database", "frontend"):
-            # FLUSH FIRST: commit any uncommitted/untracked app work in the lane's
-            # worktree so it's part of agent/<lane> before we merge. Without this,
-            # files the lane WROTE but never finish-committed (e.g. the frontend's
-            # pages authored after its last commit) are invisible to the squash
-            # merge → integration ships a blank shell (frontend_navigable: 0) and
-            # the run idle-wedges. This is the root fix for that recurring stall.
-            try:
-                _wt = _P(repo) / "worktrees" / lane
-                if _wt.exists():
-                    fok, finfo = flush_worktree(worktree_dir=_wt, branch=f"agent/{lane}", author=lane)
-                    if fok and all(s not in str(finfo) for s in ("nothing to commit", "no deliverable", "not a git")):
-                        self._logger.warning("🧹 flushed uncommitted %s worktree before merge → %s", lane, finfo)
-            except Exception:
-                pass
-            try:
-                ok, info = merge_agent_branch_to_main(
-                    repo_root=repo,
-                    agent_branch=f"agent/{lane}",
-                    main_branch="integration",
-                    agent_id=lane,
-                )
-            except Exception:
-                continue
-            if ok and info and "nothing to merge" not in str(info):
-                self._logger.warning(
-                    "🔀 Pre-validation merge agent/%s → integration: %s "
-                    "(surfaced committed code the lane had not finish-merged).",
-                    lane, info,
-                )
+        from .runtime.heal_pipeline import HealPipeline
+        HealPipeline(self).merge_committed_agent_work()
 
     def _commit_framework_delivery(self) -> None:
-        """Commit the framework's delivery-time writes (backend skeleton, frontend
-        infra pin, projected routes/pages) on integration BEFORE the release branch
-        is cut. ``create_release`` snapshots the COMMITTED head — without this
-        commit every framework write stayed working-tree-only, so each release
-        shipped the lane's last committed (broken) state: v1.0.0's snapshot carried
-        the lane's mismatched start.sh and NO vite.config.js even though the pin
-        had fixed both on disk. Best-effort; "nothing to commit" is fine."""
-        try:
-            from pathlib import Path as _P
-            from .agents.runtime.auto_commit import _run_git
-            repo = getattr(self, "output_dir", None)
-            if not repo:
-                return
-            repo = _P(repo)
-            staged_any = False
-            for sub in ("app", "mcp_server", "docker"):
-                if not (repo / sub).exists():
-                    continue
-                rc, _o, _e = _run_git(
-                    ["add", "-A", "--", sub,
-                     ":(exclude)**/__pycache__/**", ":(exclude)**/*.py[cod]"],
-                    cwd=repo)
-                staged_any = staged_any or (rc == 0)
-            if not staged_any:
-                return
-            rc, out, err = _run_git(
-                ["commit", "-m",
-                 "framework delivery: backend skeleton + frontend infra + projections"],
-                cwd=repo)
-            if rc == 0:
-                self._logger.warning(
-                    "Framework delivery writes COMMITTED to integration so the "
-                    "release snapshot ships them (skeleton/infra/projections).")
-            # rc != 0 → nothing to commit (already clean) — silent.
-        except Exception as exc:
-            self._logger.debug("framework delivery commit skipped: %s", exc)
+        from .runtime.heal_pipeline import HealPipeline
+        HealPipeline(self).commit_framework_delivery()
 
     async def _maybe_framework_deliver(self) -> None:
         """Deterministically DELIVER when the delivery gate is fully clear.
@@ -4347,6 +1923,31 @@ volumes:
                 return  # nothing to deliver yet
             gate = self._validate_delivery_gate()
             if gate.get("failed_checks"):
+                # OBSERVABILITY (PROPOSAL #45): the deterministic deliver declined
+                # SILENTLY for every non-ui_page blocker, so a run that "never
+                # delivered" left NO on-disk signal of WHICH gate check was red —
+                # forcing fragile post-mortem reconstruction (and mis-diagnosis:
+                # smoke-notes 2026-06-19 was blocked on incomplete_required_tasks, a
+                # contract-test param-key mismatch, but nothing logged it). Log the
+                # failed-check set, deduped to once-per-CHANGE so it never spams the
+                # ≤60s loop.
+                _failed = sorted(str(c) for c in (gate.get("failed_checks") or []))
+                if _failed != getattr(self, "_fwdeliver_last_failed", None):
+                    self._fwdeliver_last_failed = _failed
+                    self._logger.warning(
+                        "Framework deliver declined: delivery gate has %d failed check(s): %s",
+                        len(_failed), _failed,
+                    )
+                # PROPOSAL #49 (user): route each lane-owned gate-level failed_check back
+                # to its owner for repair (guarded per-milestone) — and log any uncovered
+                # one — so a gate blocker never silently dead-ends. Complements the bespoke
+                # ui_page_unwired dispatch below + the validation-run #21 dispatch.
+                try:
+                    from .runtime.remediation_dispatcher import RemediationDispatcher
+                    await RemediationDispatcher(self).dispatch_gate_level_checks(
+                        gate.get("failed_checks"))
+                except Exception as _gc_exc:
+                    self._logger.error("gate-level check dispatch failed: %s", _gc_exc)
                 # FEEDBACK LOOP (2026-06-13): an unwired-ui-pages block (declared
                 # pages whose routes aren't in App.jsx) HARD-blocks delivery but,
                 # unlike GATE-C1 / frontend_navigable / visual, routed NOWHERE —
@@ -4355,7 +1956,23 @@ volumes:
                 # unwired pages back to the frontend lane (it owns the UI) so the
                 # run can't deadlock with one route wired (gemini: 12 unwired,
                 # delivery stuck for hours with no path back to the owner).
-                if any("ui_page_unwired" in str(c) for c in gate.get("failed_checks") or []):
+                # PROPOSAL #51 (a): the unwired-pages dispatch is ONE-SHOT per milestone,
+                # and the validation-tied rearm (rearm_owner_dispatch) STOPS once api_smoke
+                # passes — but ui_page_unwired is a DELIVERY-gate check evaluated AFTER that,
+                # so a frontend that finished with stubs is never re-engaged (smoke-notes
+                # 2026-06-19: 1 dispatch, lane misread it + idled, stuck to cap). Periodically
+                # re-arm so the (sharper, #51b) dispatch re-fires + re-wakes the idle lane
+                # while the stubs persist. ~every 8 declines (≈8 min); the dispatch is
+                # idempotent within each re-arm window.
+                _uw = any("ui_page_unwired" in str(c) for c in gate.get("failed_checks") or [])
+                if _uw:
+                    _n = getattr(self, "_unwired_persist_count", 0) + 1
+                    self._unwired_persist_count = _n
+                    if _n % 8 == 0:
+                        self._unwired_ui_pages_dispatched = None  # re-arm the one-shot guard
+                else:
+                    self._unwired_persist_count = 0
+                if _uw:
                     try:
                         # ROOT-CAUSE FIRST: if the pages exist but the lane built the
                         # whole app at the repo root (./src) instead of app/frontend/,
@@ -4374,6 +1991,65 @@ volumes:
                     except Exception as _exc:
                         self._logger.error("unwired/misplaced frontend dispatch failed: %s", _exc)
                 return  # not deliverable yet
+            # PAGE-BUILD BLOCKING (2026-06-22, user goal: the UI must be the REAL
+            # reference pages, not the framework fallback). A declared business
+            # ui_page the lane never authored ships as the framework FALLBACK
+            # (data-fallback marker) — it is wired + functional so it passes
+            # ui_page_unwired / frontend_navigable / the whole delivery gate above,
+            # but it is NOT the real page (outlook: the inbox/calendar shipped as the
+            # generic placeholder list even though the lane viewed the references).
+            # When attempts remain, DEFER the final milestone's release and
+            # re-dispatch the frontend lane to BUILD the fallback pages (it now views
+            # the references + has write in edit_code). Bounded: <=3 attempts / 900s
+            # anchored to the FIRST defer, then ESCAPE and ship the (usable light-list)
+            # fallback — never deadlocks (mirrors the visual deferral). DEFAULT-OFF
+            # until validated; enable via ENVGEN_PAGES_BLOCKING=1.
+            if (os.environ.get("ENVGEN_PAGES_BLOCKING", "0").lower()
+                    in ("1", "true", "yes", "on")
+                    and getattr(self, "_is_final_milestone", True)):
+                _unbuilt: List[str] = []
+                try:
+                    from .runtime.page_build_gate import (
+                        frontend_unbuilt_pages, pages_release_decision)
+                    _app_root = self.output_dir / "app"
+                    if not _app_root.exists():
+                        _app_root = self.output_dir
+                    _rh = getattr(self.hubs, "registryhub", None)
+                    _unbuilt = frontend_unbuilt_pages(_rh, _app_root)
+                except Exception as _pb_exc:
+                    self._logger.error("page-build gate detect failed: %s", _pb_exc)
+                    _unbuilt = []
+                if _unbuilt:
+                    if getattr(self, "_pages_gate_deferred_since", None) is None:
+                        self._pages_gate_deferred_since = time.time()
+                    _now = time.time()
+                    _pb_decision = pages_release_decision(
+                        self._pages_gate_deferred_since,
+                        getattr(self, "_pages_gate_attempts", 0),
+                        _now,
+                    )
+                    if _pb_decision == "defer":
+                        self._pages_gate_attempts = getattr(
+                            self, "_pages_gate_attempts", 0) + 1
+                        self._logger.warning(
+                            "DELIVERY DEFERRED: %d business page(s) are still the "
+                            "framework fallback (attempt %s/3, %ss deferred) — "
+                            "re-dispatching the frontend lane to BUILD them: %s",
+                            len(_unbuilt), self._pages_gate_attempts,
+                            int(_now - self._pages_gate_deferred_since),
+                            ", ".join(_unbuilt))
+                        try:
+                            await self._dispatch_unbuilt_pages(_unbuilt)
+                        except Exception as _pb_d_exc:
+                            self._logger.error(
+                                "unbuilt-pages dispatch failed: %s", _pb_d_exc)
+                        return
+                    # release: escape fired — deliver with the fallback, loudly.
+                    self._logger.warning(
+                        "Page-build deferral RELEASED (escape after %ss / %s attempts) "
+                        "— delivering with the framework fallback for: %s",
+                        int(_now - self._pages_gate_deferred_since),
+                        getattr(self, "_pages_gate_attempts", 0), ", ".join(_unbuilt))
             # VISUAL-FIDELITY BLOCKING (2026-06-11, user goal: UI must be
             # near-indistinguishable from the references). Releases used to cut
             # the moment the functional gate cleared, so the lane NEVER paused
@@ -4388,14 +2064,14 @@ volumes:
                     and getattr(self, "_is_final_milestone", True)
                     and os.environ.get("ENVGEN_VISUAL_BLOCKING", "1").lower()
                         not in ("0", "false", "no", "off")
-                    and not getattr(self, "_vf_passed", False)):
-                if getattr(self, "_vf_deferred_since", None) is None:
-                    self._vf_deferred_since = time.time()  # anchor: milestone's FIRST defer
+                    and not self._vf_gate.passed):
+                if self._vf_gate.deferred_since is None:
+                    self._vf_gate.deferred_since = time.time()  # anchor: milestone's FIRST defer
                 _now = time.time()
                 _vf_decision = _visual_release_decision(
-                    self._vf_deferred_since,
-                    getattr(self, "_vf_attempts", 0),
-                    getattr(self, "_vf_total_judgments", 0),
+                    self._vf_gate.deferred_since,
+                    self._vf_gate.attempts,
+                    self._vf_gate.total_judgments,
                     _now,
                 )
                 if _vf_decision == "defer":
@@ -4404,9 +2080,9 @@ volumes:
                         "%s/3 on current source, %ss deferred, %s judged) — re-"
                         "judging now; waiting for the frontend to digest the "
                         "remediation task before cutting this milestone's release.",
-                        getattr(self, "_vf_attempts", 0),
-                        int(_now - self._vf_deferred_since),
-                        getattr(self, "_vf_total_judgments", 0))
+                        self._vf_gate.attempts,
+                        int(_now - self._vf_gate.deferred_since),
+                        self._vf_gate.total_judgments)
                     # DRIVE the re-judge from here (the validation-success branch
                     # SKIPS once a gate-passing run exists). _maybe_run_visual_fidelity
                     # self-guards (pass latch + per-source attempt cap); the deferral
@@ -4421,9 +2097,9 @@ volumes:
                     "Visual fidelity deferral RELEASED (escape after %ss deferred / "
                     "%s attempts / %s total judged) — delivering anyway "
                     "(recorded as below-threshold).",
-                    int(_now - self._vf_deferred_since),
-                    getattr(self, "_vf_attempts", 0),
-                    getattr(self, "_vf_total_judgments", 0))
+                    int(_now - self._vf_gate.deferred_since),
+                    self._vf_gate.attempts,
+                    self._vf_gate.total_judgments)
             # Flush any committed-but-unmerged lane work into integration BEFORE
             # snapshotting the release. Observed (instagram MM, 2026-06-08): the
             # backend committed the final milestone's routes to agent/backend 11s
@@ -4452,8 +2128,15 @@ volumes:
             # stashes+drops an uncommitted projection, so projecting before a merge
             # is destroyed and re-added every tick. Here nothing follows to drop it.
             self._project_missing_routes()
-            # (frontend projection removed 2026-06-11 — the lane owns the UI;
-            # frontend_navigable / dead-controls / visual gates enforce it.)
+            # Frontend analog (PROPOSAL #19 — RE-INSTATED; "removed 2026-06-11" was
+            # the regression: a lane that drops the @framework-managed-routes marker
+            # can omit a declared route entirely, and frontend_navigable/visual do NOT
+            # catch a single genuinely-missing declared page → permanent ui_page-unwired
+            # block, no delivery). ADDITIVELY inject any declared route the lane omitted
+            # (+ a stub component if missing) on the merged tree, right before the
+            # snapshot, so the release ships navigable-to-every-declared-page. Never
+            # clobbers lane routes/bodies; idempotent.
+            self._scaffold_frontend_pages()
             # COMMIT the framework writes above — the release branch is cut from the
             # COMMITTED head, so uncommitted skeleton/infra/projection writes would
             # otherwise be excluded from the snapshot the user boots.
@@ -4475,6 +2158,9 @@ volumes:
                     )
             except Exception as _rel_err:  # release is best-effort observability
                 self._logger.warning("framework delivery: create_release failed: %s", _rel_err)
+            # Framework-written preview pointer for the Env Forge UI (NOT an agent
+            # artifact — see _write_preview_config). Deterministic, agent-invisible.
+            self._write_preview_config(release_tag)
             # Post-milestone TEST-USER phase: simulate a real user's journey across the
             # API + check the MCP surface, writing a feedback report so a milestone never
             # ships a broken contract silently. Offloaded to a thread (blocking HTTP +
@@ -4499,6 +2185,32 @@ volumes:
             )
         except Exception as exc:  # never break the coordination loop
             self._logger.error("framework delivery raised (non-fatal): %s", exc)
+
+    def _write_preview_config(self, release_tag: str) -> None:
+        """Write the Env Forge UI's preview pointer at ``<output_dir>/config.yaml``.
+
+        This is FRAMEWORK metadata for the frontend preview panel only — NOT part of
+        the generated app and NOT an agent surface. It is written via a raw
+        ``Path.write_text`` at the integration root (outside every agent worktree),
+        so no lane routes through it: agents cannot read, write, or clobber it. The
+        UI reads it via ``app/hub_reader.py:_preview_url``. Best-effort: never raises
+        into the delivery path. (The released app must be running at ``ui_port`` for
+        the iframe to render — keeping the stack up is a separate concern.)"""
+        try:
+            ui_port = getattr(self.context, "ui_port", None)
+            if not ui_port:
+                return
+            url = f"http://localhost:{ui_port}/"
+            (self.output_dir / "config.yaml").write_text(
+                "# AUTO-GENERATED by the framework for the Env Forge preview panel.\n"
+                "# Not part of the generated app; not an agent-editable file.\n"
+                f"preview_url: {url}\n"
+                f"frontend:\n  preview_url: {url}\n  host_port: {ui_port}\n"
+                f"release_tag: {release_tag}\n",
+                encoding="utf-8",
+            )
+        except Exception as _cfg_err:
+            self._logger.debug("preview config write failed (non-fatal): %s", _cfg_err)
 
     def _incomplete_required_tasks(self) -> List[Dict[str, Any]]:
         from .runtime.delivery_gate import incomplete_required_tasks

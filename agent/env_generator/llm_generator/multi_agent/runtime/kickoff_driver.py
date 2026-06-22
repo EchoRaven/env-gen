@@ -1,0 +1,814 @@
+"""Kickoff driver — facilitator-led kickoff meeting loop + finalize/author/dispatch,
+extracted from the Orchestrator (PROPOSAL #8 — KickoffDriver; reviewed PASS as PROPOSAL #16).
+
+Stateless: the cluster writes ZERO orchestrator state and calls no orchestrator methods
+outside its own 6 siblings, so KickoffDriver borrows the orchestrator via a back-ref and
+the orchestrator keeps 6 fresh-construct shims. Every ``self.X`` from the original is
+``self._orch.X`` here — INCLUDING sibling kickoff calls, which therefore route back through
+the orchestrator shims (preserving dispatch + any test stub on an intermediate method).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from typing import Any, Dict, List, Optional
+
+
+# PROPOSAL #32: kickoff attendees whose section is NON-essential to the contract — it is
+# either DERIVED by synthesis or done POST-impl — so a stalled kickoff may finalize by
+# DEFERRING them rather than failing. Currently just the verifier: its acceptance
+# predicates are derived from the frontend's user_flows + the roadmap floor, and its real
+# work (verification chains) is designed at the validation phase from the registered
+# contract. Backend/frontend are ESSENTIAL (no contract without them) → never deferred.
+_DEFERRABLE_KICKOFF_ATTENDEES = frozenset({"verifier"})
+
+
+class KickoffDriver:
+    """Drives the kickoff meeting to completion + finalize/author/dispatch.
+    Stateless; reads the orchestrator's collaborators live via the back-ref."""
+
+    def __init__(self, orch: Any) -> None:
+        self._orch = orch
+
+    def _finalize_kickoff_and_author(
+        self,
+        kickoff_handle: Dict[str, Any],
+        synthesis: Dict[str, Any],
+        *,
+        poll_count: int,
+        elapsed: float,
+    ) -> Dict[str, Any]:
+        """Register a READY synthesis (finalize_kickoff) + author the
+        milestone/roadmap/briefing docs, returning the finalize receipt.
+
+        Shared by the two finalize sites in ``_drive_kickoff_to_completion``:
+        the deterministic synth=ready fast-path and the LLM-facilitator
+        ``consensus`` branch. finalize_kickoff is a pure §8 function — it is
+        the single writer of the registered contract + task_ready dispatch —
+        so a ready synthesis NEVER needs the LLM to bless it; centralizing the
+        finalize keeps both paths byte-identical. Doc authoring failures are
+        non-fatal (the contract has already shipped).
+        """
+        from .kickoff import run_kickoff
+        receipt = run_kickoff.finalize_kickoff(
+            hubs=self._orch.hubs,
+            kickoff_handle=kickoff_handle,
+            synthesis=synthesis,
+            agent="orchestrator",
+        )
+        self._orch._logger.info(
+            "Kickoff finalize receipt: phase=%s endpoints=%d tables=%d "
+            "tasks=%d predicates=%d failures=%d",
+            receipt.get("phase"),
+            receipt.get("endpoints_registered", 0),
+            receipt.get("tables_registered", 0),
+            receipt.get("tasks_created", 0),
+            receipt.get("predicates_persisted", 0),
+            len(receipt.get("failures") or []),
+        )
+        try:
+            self._orch._author_kickoff_docs(synthesis)
+        except Exception as _auth_err:
+            self._orch._logger.warning(
+                "kickoff authoring failed (non-fatal): %s", _auth_err,
+            )
+        return receipt
+
+    async def _drive_kickoff_to_completion(
+        self,
+        kickoff_handle: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Round-8f.1 driver: pure-Python facilitator-led meeting loop.
+
+        Background (round-8c → 8f.1): the original 8c driver polled
+        ``try_synthesize`` and short-circuited any non-``ready`` status
+        straight to ``synthesize_fallback``. That treated the kickoff as
+        a one-shot paper-submission rather than a real meeting. Round-8f
+        introduces the orchestrator-as-facilitator turn (see
+        ``runtime/kickoff/facilitate.py``):
+
+          Round 1: attendees author initial proposals (no change).
+          Facilitator turn: orchestrator LLM reads all decisions, emits a
+            ``facilitator_note`` whose ``content.action`` is one of
+            ``consensus``, ``request_revision``, or ``escalate``.
+          Round N>1 (only on request_revision): the flagged revisers
+            re-author their sections, then the facilitator runs again.
+          After ``KICKOFF_MAX_ROUNDS`` rounds the driver falls back.
+
+        This driver is the pure-Python state machine that wires those
+        events together; it does NOT call the LLM directly. The
+        facilitator LLM runs inside the orchestrator's resident lane via
+        its ``_handle_kickoff_facilitate_request`` handler.
+
+        Returns the kickoff receipt (finalize_kickoff's normal return
+        shape) on consensus; a ``synthesize_fallback`` dict on
+        timeout / escalate / max_rounds. Caller inspects ``phase``.
+        """
+        from .kickoff import run_kickoff
+        from .kickoff import facilitate
+        from .kickoff.schema_tolerance import (
+            coerce_facilitator_action,
+        )
+        # NOTE: use ``is None`` not ``or`` — 0.0 is a valid (if degenerate)
+        # started_at and ``or`` would silently replace it with time.time(),
+        # masking a timeout-driven abort in tests/production alike.
+        started_at = kickoff_handle.get("started_at")
+        if started_at is None:
+            started_at = time.time()
+        poll_count = 0
+        expected_attendees = list(kickoff_handle.get("expected_attendees") or [])
+        meeting_id = kickoff_handle.get("meeting_id")
+        # Round-8g: track which (round, phase) broadcasts have fired so
+        # we don't re-broadcast on every poll. In-memory state — only
+        # valid for the lifetime of this driver call. If the driver
+        # restarts mid-meeting (it doesn't today), we'd have to persist
+        # this in workhub but for now in-process is fine.
+        broadcasts_fired: set = set()
+        # PROPOSAL #28 (C-recovery): track substantive-section progress while the
+        # meeting is stuck in phase=initial, so a lane that can never emit a clean
+        # section doesn't pin the run for the full 1200s timeout.
+        _initial_fewest_missing: Optional[int] = None
+        _initial_progress_poll = 0
+
+        while True:
+            poll_count += 1
+            elapsed = time.time() - started_at
+
+            # Timeout check FIRST — overrides any other state machine
+            # decision. Matches the 8c contract that ``test_driver_timeout
+            # _falls_through_to_fallback`` pins.
+            if elapsed > run_kickoff.KICKOFF_TIMEOUT_SEC:
+                try:
+                    last_synth = run_kickoff.try_synthesize(self._orch.hubs, kickoff_handle)
+                except Exception:
+                    last_synth = {"status": "unknown"}
+                self._orch._logger.error(
+                    "Kickoff timed out after %.0fs (poll %s); attempting "
+                    "deterministic reconcile before kickoff_failed.",
+                    elapsed, poll_count,
+                )
+                return self._orch._kickoff_fallback_or_reconcile(
+                    kickoff_handle, last_synth, "timeout",
+                )
+
+            # Round-8g: derive the meeting's current phase from
+            # decisions[]. Phases iterate per round:
+            #   initial → comment → reply → facilitator
+            #   → (consensus | request_revision | escalate)
+            phase = facilitate.current_phase(
+                self._orch.hubs, meeting_id, expected_attendees,
+            )
+            cur_round = facilitate.current_round(self._orch.hubs, meeting_id)
+
+            if phase == "initial":
+                # Initial drafts still being authored (kickoff_request
+                # was broadcast by start_kickoff for round 1; revisions
+                # are dispatched via kickoff_revision_request when a
+                # facilitator says request_revision).
+                # PROPOSAL #28 (C-recovery): measure substantive-section progress via
+                # try_synthesize's ``missing`` (attendees lacking a substantive
+                # decision). A SHRINKING missing-set = progress; if it stops shrinking
+                # for KICKOFF_INITIAL_STALL_POLLS while in initial (past the grace
+                # window), a lane is stuck (e.g. Gemini re-mangling its draft) — stop
+                # waiting for the full 1200s and finalize via the existing fallback,
+                # which synthesizes/reconciles from whatever WAS recorded.
+                try:
+                    _synth = run_kickoff.try_synthesize(self._orch.hubs, kickoff_handle)
+                except Exception:
+                    _synth = {"status": "unknown", "missing": list(expected_attendees)}
+                _missing = len(_synth.get("missing") or [])
+                if _initial_fewest_missing is None or _missing < _initial_fewest_missing:
+                    _initial_fewest_missing = _missing
+                    _initial_progress_poll = poll_count
+                stalled_polls = poll_count - _initial_progress_poll
+                if (elapsed >= run_kickoff.KICKOFF_INITIAL_STALL_MIN_SEC
+                        and stalled_polls >= run_kickoff.KICKOFF_INITIAL_STALL_POLLS):
+                    self._orch._logger.error(
+                        "Kickoff STALLED in phase=initial (round %d, poll %s, %.0fs): "
+                        "no new substantive section for %s polls (%s attendee(s) still "
+                        "missing). Finalizing early via deterministic reconcile instead "
+                        "of waiting for the %.0fs timeout.",
+                        cur_round, poll_count, elapsed, stalled_polls,
+                        _initial_fewest_missing, run_kickoff.KICKOFF_TIMEOUT_SEC,
+                    )
+                    return self._orch._kickoff_fallback_or_reconcile(
+                        kickoff_handle, _synth, "initial_stall",
+                    )
+                self._orch._logger.info(
+                    "Kickoff phase=initial (round %d, poll %s, %.0fs); "
+                    "waiting for attendees to record initial proposals "
+                    "(%s missing, %s polls since progress).",
+                    cur_round, poll_count, elapsed, _missing, stalled_polls,
+                )
+                await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
+                continue
+
+            if phase == "comment":
+                # Initial drafts done — fire kickoff_comment_phase_request
+                # once for this (round, phase), then wait for all
+                # attendees to ack the comment phase.
+                key = (cur_round, "comment")
+                if key not in broadcasts_fired:
+                    self._orch._logger.info(
+                        "Kickoff phase=comment (round %d, poll %s, "
+                        "%.0fs); broadcasting kickoff_comment_phase_request.",
+                        cur_round, poll_count, elapsed,
+                    )
+                    facilitate.request_comment_phase(
+                        self._orch.hubs, kickoff_handle,
+                    )
+                    broadcasts_fired.add(key)
+                else:
+                    acked = facilitate.phase_acked_by(
+                        self._orch.hubs, meeting_id, cur_round, "comment",
+                    )
+                    self._orch._logger.info(
+                        "Kickoff phase=comment (round %d, poll %s, "
+                        "%.0fs); waiting on %s.",
+                        cur_round, poll_count, elapsed,
+                        [a for a in expected_attendees if a not in acked],
+                    )
+                await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
+                continue
+
+            if phase == "reply":
+                # Comment phase done — fire kickoff_reply_phase_request
+                # once, then wait for all attendees to ack reply phase.
+                key = (cur_round, "reply")
+                if key not in broadcasts_fired:
+                    self._orch._logger.info(
+                        "Kickoff phase=reply (round %d, poll %s, %.0fs); "
+                        "broadcasting kickoff_reply_phase_request.",
+                        cur_round, poll_count, elapsed,
+                    )
+                    facilitate.request_reply_phase(
+                        self._orch.hubs, kickoff_handle,
+                    )
+                    broadcasts_fired.add(key)
+                else:
+                    acked = facilitate.phase_acked_by(
+                        self._orch.hubs, meeting_id, cur_round, "reply",
+                    )
+                    self._orch._logger.info(
+                        "Kickoff phase=reply (round %d, poll %s, "
+                        "%.0fs); waiting on %s.",
+                        cur_round, poll_count, elapsed,
+                        [a for a in expected_attendees if a not in acked],
+                    )
+                await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
+                continue
+
+            if phase == "facilitator":
+                # synth=ready is TERMINAL — finalize deterministically rather
+                # than waiting for the LLM facilitator to record a "consensus"
+                # note. The facilitation pass exists only to RESOLVE non-ready
+                # statuses (conflict / validation_failed); an already-ready
+                # synthesis has cleared every gate (quorum + cross-checks +
+                # roadmap validation), so gating its finalize on the
+                # orchestrator-LLM behaving is pure fragility. youtube run #12
+                # (2026-06-16): synthesis reached ready but the orchestrator-
+                # facilitator was handed backend implementation context, never
+                # recorded a consensus note, and a fully-ready kickoff polled to
+                # its 1200s timeout with the lanes stuck in kickoff:action stage.
+                # Finalize here; the LLM only sees facilitation when there is an
+                # actual conflict to adjudicate (the consensus branch below
+                # remains for the after-revisions-became-ready case).
+                try:
+                    ready_synth = run_kickoff.try_synthesize(
+                        self._orch.hubs, kickoff_handle,
+                    )
+                except Exception as exc:
+                    self._orch._logger.error(
+                        "try_synthesize raised at facilitator ready-check "
+                        "(round %d, poll %s): %s", cur_round, poll_count, exc,
+                    )
+                    ready_synth = {"status": "unknown"}
+                if ready_synth.get("status") == "ready":
+                    self._orch._logger.info(
+                        "synth=ready at facilitator phase — finalizing "
+                        "deterministically (poll %s, %.0fs); no LLM consensus "
+                        "required.", poll_count, elapsed,
+                    )
+                    return self._orch._finalize_kickoff_and_author(
+                        kickoff_handle, ready_synth,
+                        poll_count=poll_count, elapsed=elapsed,
+                    )
+                # Not ready — fire kickoff_facilitate_request once, then wait
+                # for orchestrator's facilitator_note to resolve the conflict.
+                key = (cur_round, "facilitator")
+                if key not in broadcasts_fired:
+                    try:
+                        synthesis = run_kickoff.try_synthesize(
+                            self._orch.hubs, kickoff_handle,
+                        )
+                    except Exception as exc:
+                        self._orch._logger.error(
+                            "try_synthesize raised before facilitator "
+                            "turn (round %d, poll %s): %s",
+                            cur_round, poll_count, exc,
+                        )
+                        raise
+                    self._orch._logger.info(
+                        "Kickoff phase=facilitator (round %d, poll %s, "
+                        "%.0fs, synth=%s); requesting facilitation.",
+                        cur_round, poll_count, elapsed,
+                        synthesis.get("status"),
+                    )
+                    facilitate.request_facilitation(
+                        self._orch.hubs, kickoff_handle, synthesis,
+                    )
+                    broadcasts_fired.add(key)
+                await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
+                continue
+
+            # phase ∈ {consensus, request_revision, escalate} — the
+            # facilitator has spoken. Read the actual note for content.
+            note = facilitate.read_facilitator_decision(
+                self._orch.hubs, kickoff_handle,
+            )
+            if note is None:
+                # current_phase said facilitator-action but the note was
+                # racy — give it one more poll.
+                self._orch._logger.warning(
+                    "Kickoff phase=%s but no facilitator_note found yet "
+                    "for round %d; one more poll.",
+                    phase, cur_round,
+                )
+                await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
+                continue
+
+            note_content = note.get("content") or {}
+            # Round 8h follow-up: facilitate.current_phase() already
+            # coerced any invented action string (e.g.
+            # "accept_revision_and_recenter") to a canonical
+            # FACILITATOR_ACTIONS value when deciding ``phase`` above.
+            # Re-coerce here so this branch sees the SAME canonical
+            # action — otherwise the if/elif chain below would
+            # fall through to "Unknown facilitator action" and
+            # synthesize_fallback, exactly the failure mode Fix #O
+            # was meant to prevent.
+            action = coerce_facilitator_action(note_content.get("action"))
+            # Re-run try_synthesize so the rest of the loop (consensus
+            # → finalize, escalate → fallback) has fresh state.
+            try:
+                synthesis = run_kickoff.try_synthesize(self._orch.hubs, kickoff_handle)
+            except Exception as exc:
+                self._orch._logger.error(
+                    "try_synthesize raised post-facilitator (round %d): %s",
+                    cur_round, exc,
+                )
+                raise
+
+            if action == "consensus":
+                # Trust the facilitator's verdict, but re-poll
+                # try_synthesize once more — the latest revisions may
+                # have just made it ready. If still not ready, fall back
+                # rather than finalize with a bad synthesis.
+                if synthesis.get("status") != "ready":
+                    synthesis = run_kickoff.try_synthesize(
+                        self._orch.hubs, kickoff_handle
+                    )
+                if synthesis.get("status") == "ready":
+                    self._orch._logger.info(
+                        "Facilitator declared consensus (poll %s, "
+                        "%.0fs); finalizing.",
+                        poll_count, elapsed,
+                    )
+                    return self._orch._finalize_kickoff_and_author(
+                        kickoff_handle, synthesis,
+                        poll_count=poll_count, elapsed=elapsed,
+                    )
+                self._orch._logger.warning(
+                    "Facilitator declared consensus but try_synthesize "
+                    "still %r; attempting reconcile before fallback.",
+                    synthesis.get("status"),
+                )
+                return self._orch._kickoff_fallback_or_reconcile(
+                    kickoff_handle, synthesis, "consensus_not_ready",
+                )
+
+            if action == "request_revision":
+                cur_round = facilitate.current_round(
+                    self._orch.hubs, kickoff_handle["meeting_id"]
+                )
+                if cur_round >= facilitate.KICKOFF_MAX_ROUNDS:
+                    self._orch._logger.error(
+                        "Kickoff hit max_rounds=%d; attempting reconcile "
+                        "before fallback",
+                        facilitate.KICKOFF_MAX_ROUNDS,
+                    )
+                    return self._orch._kickoff_fallback_or_reconcile(
+                        kickoff_handle, synthesis, "max_rounds",
+                    )
+                revisers = note_content.get("revisers") or []
+                if not revisers:
+                    self._orch._logger.error(
+                        "Facilitator requested revision but listed no "
+                        "revisers; attempting reconcile before fallback."
+                    )
+                    return self._orch._kickoff_fallback_or_reconcile(
+                        kickoff_handle, synthesis, "no_revisers",
+                    )
+                self._orch._logger.info(
+                    "Facilitator requested revision from %s (round %d "
+                    "-> %d).",
+                    revisers, cur_round, cur_round + 1,
+                )
+                facilitate.request_revisions(
+                    self._orch.hubs, kickoff_handle, revisers, note,
+                )
+                # broadcasts_fired keys are (round, phase) tuples — the
+                # new round will use fresh keys (round+1, *), so no
+                # explicit reset needed. The current_phase computation
+                # for round+1 will see no decisions yet for that round
+                # and return "initial".
+                await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
+                continue
+
+            if action == "escalate":
+                self._orch._logger.error(
+                    "Facilitator escalated kickoff; attempting reconcile "
+                    "before fallback. rationale=%r",
+                    note_content.get("rationale"),
+                )
+                return self._orch._kickoff_fallback_or_reconcile(
+                    kickoff_handle, synthesis, "escalate",
+                )
+
+            # Unknown action — fail loud (do NOT keep polling: an
+            # unrecognized verdict means a contract drift, not a
+            # transient state).
+            self._orch._logger.error(
+                "Unknown facilitator action %r; attempting reconcile before "
+                "fallback", action,
+            )
+            return self._orch._kickoff_fallback_or_reconcile(
+                kickoff_handle, synthesis, "unknown_action",
+            )
+
+    def _derive_missing_essential_sections(self, kickoff_handle, missing, reason: str):
+        """Record deterministically-DERIVED sections for ESSENTIAL lanes
+        (frontend/backend) that never authored a meeting decision in time (slow
+        Gemini lane → kickoff stall/timeout → missing essential lane → today the
+        run ABORTS because backend/frontend are non-deferrable). The milestone
+        slice already LISTS the endpoints/tables (``- METHOD /path`` / ``- table:
+        col,col``), so extract them and author the lane's section attributed to
+        that lane — clearing quorum so synthesis can finalize. The implementation
+        lane then builds these declared pages/endpoints properly. Returns the list
+        of lanes salvaged ([] → nothing derivable; caller falls through to the
+        honest fallback). Only ever fires for a lane that recorded NOTHING (it's in
+        ``missing``), so it never fights a lane that already declared. General +
+        deterministic; never manufactures a contract from an empty slice."""
+        from .kickoff import run_kickoff
+        description = str(kickoff_handle.get("description") or "")
+        extracted = run_kickoff.extract_contract_from_description(description)
+        eps = extracted.get("endpoints") or []
+        tbls = extracted.get("tables") or []
+        # Prefer endpoints the BACKEND lane ALREADY declared this milestone over the
+        # slice extraction — the common stall is "backend declared, frontend didn't"
+        # (youtube run #17), and the declared set is richer + format-independent.
+        try:
+            _decisions = run_kickoff._read_meeting_decisions(
+                self._orch.hubs, kickoff_handle.get("meeting_id"))
+            _drafts = run_kickoff._collect_drafts(_decisions)
+            _be = _drafts.get("backend") or {}
+            _declared_eps = list(_be.get("api_endpoints") or _be.get("endpoints") or [])
+            _dm = _be.get("data_model") if isinstance(_be.get("data_model"), dict) else {}
+            _declared_tbls = list(_dm.get("tables") or [])
+        except Exception:
+            _declared_eps, _declared_tbls = [], []
+        fe_source_eps = _declared_eps or eps
+        fe_source_tbls = _declared_tbls or tbls
+        salvaged: List[str] = []
+        for lane in missing:
+            if lane == "backend":
+                # GUARD: require BOTH endpoints AND tables — roadmap_validator
+                # hard-requires a non-empty contract.data_model.tables, so deriving
+                # a table-less backend section would just re-fail validation while
+                # misleadingly logging "authored" (reviewer-caught). Without both,
+                # fall through to the honest fallback.
+                if not eps or not tbls:
+                    continue
+                content: Dict[str, Any] = {
+                    "section": "backend", "endpoints": list(eps),
+                    "data_model": {"tables": list(tbls)},
+                }
+            elif lane == "frontend":
+                if not fe_source_eps and not fe_source_tbls:
+                    continue  # GUARD: no endpoints or tables → only a login page; skip
+                content = {"section": "frontend",
+                           "ui_pages": run_kickoff.derive_frontend_pages_from_endpoints(
+                               fe_source_eps, fe_source_tbls)}
+            else:
+                continue  # verifier handled by the existing defer block below
+            try:
+                self._orch.hubs.workhub.add_meeting_decision(
+                    kickoff_handle.get("meeting_id"),
+                    decision={
+                        "section": lane, "content": content,
+                        "note": ("auto-derived at kickoff stall from the milestone "
+                                 "slice — lane did not author it in time"),
+                    },
+                    agent=lane,  # load-bearing: _missing_attendees counts by agent
+                    milestone_index=kickoff_handle.get("milestone_index"),
+                )
+                salvaged.append(lane)
+            except Exception as exc:  # pragma: no cover - defensive
+                self._orch._logger.warning(
+                    "Kickoff derive of '%s' failed (%s): %s", lane, reason, exc)
+        if salvaged:
+            self._orch._logger.warning(
+                "🔧 KICKOFF DERIVE (%s): authored %s from the milestone slice "
+                "(%d endpoints, %d tables) → re-synthesizing instead of aborting.",
+                reason, salvaged, len(eps), len(tbls))
+        return salvaged
+
+    def _attempt_reconciled_finalize(self, kickoff_handle, reason: str):
+        """Last-resort deterministic kickoff convergence (charter §8).
+
+        Before aborting a kickoff that won't reach consensus, re-synthesize with
+        ``reconcile=True`` — which prunes frontend api_calls to UNDEFINED
+        endpoints (a UI call into the void; e.g. an invented ``GET /api/stories``)
+        — and, if that makes the synthesis ``ready``, finalize the contract
+        instead of failing the whole run. Returns the finalize receipt on
+        success, or ``None`` (caller proceeds to ``synthesize_fallback``) when
+        reconciliation can't produce a ready synthesis (a non-reconcilable
+        conflict — dead endpoint, data-model drift — still aborts honestly).
+        """
+        from .kickoff import run_kickoff
+        try:
+            synth = run_kickoff.try_synthesize(
+                self._orch.hubs, kickoff_handle, reconcile=True,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            self._orch._logger.warning(
+                "Kickoff reconcile attempt raised (%s): %s", reason, exc,
+            )
+            return None
+        # ESSENTIAL-lane salvage (youtube 2026-06-21): a slow Gemini frontend/backend
+        # lane that never authored its section in time leaves an essential attendee
+        # "missing" → non-deferrable → the run aborts even though M1 already delivered.
+        # The milestone slice deterministically lists the endpoints/tables, so DERIVE
+        # the missing essential lane's section from it (attributed to that lane),
+        # clearing quorum, then re-synthesize. Runs BEFORE the verifier defer so a
+        # frontend+verifier gap collapses to just-verifier, which the defer handles.
+        if synth.get("status") == "awaiting":
+            _missing = [m for m in (synth.get("missing") or []) if isinstance(m, str)]
+            _essential = [m for m in _missing if m not in _DEFERRABLE_KICKOFF_ATTENDEES]
+            if _essential and self._derive_missing_essential_sections(
+                    kickoff_handle, _essential, reason):
+                try:
+                    synth = run_kickoff.try_synthesize(
+                        self._orch.hubs, kickoff_handle, reconcile=True)
+                except Exception:
+                    return None
+        # PROPOSAL #32: if synthesis is only blocked because a DEFERRABLE attendee never
+        # submitted (the verifier — its acceptance predicates are derived from the
+        # frontend's user_flows + the roadmap floor, and its REAL work, verification
+        # chains, is designed POST-impl), record a deferred decision ATTRIBUTED TO that
+        # attendee (load-bearing: _missing_attendees counts by the decision's ``agent``
+        # field, so it must be agent=<attendee>, not "orchestrator") and re-synthesize.
+        # Run #31 died here: Gemini didn't author section='verifier' → awaiting → kickoff
+        # FAILED. ESSENTIAL attendees (backend/frontend) missing are NOT deferred → the
+        # re-synthesis still returns awaiting → honest fallback (deferral can't
+        # manufacture a real contract). The verifier still registers real chains at
+        # validation (the deferred kickoff stub sets no "done" flag).
+        if synth.get("status") == "awaiting":
+            missing = [m for m in (synth.get("missing") or []) if isinstance(m, str)]
+            if missing and all(m in _DEFERRABLE_KICKOFF_ATTENDEES for m in missing):
+                for attendee in missing:
+                    try:
+                        self._orch.hubs.workhub.add_meeting_decision(
+                            kickoff_handle.get("meeting_id"),
+                            decision={
+                                "section": attendee,
+                                "content": {"deferred": True},
+                                "note": ("auto-deferred at kickoff stall — section is "
+                                         "derived/post-impl; lane did not author it in time"),
+                            },
+                            agent=attendee,
+                            milestone_index=kickoff_handle.get("milestone_index"),
+                        )
+                    except Exception as _def_err:  # pragma: no cover - defensive
+                        self._orch._logger.warning(
+                            "Kickoff defer of '%s' failed (%s): %s", attendee, reason, _def_err,
+                        )
+                self._orch._logger.warning(
+                    "Kickoff (%s): deferred non-submitting attendee(s) %s (section "
+                    "derived/post-impl) → re-synthesizing instead of failing the run.",
+                    reason, missing,
+                )
+                try:
+                    synth = run_kickoff.try_synthesize(
+                        self._orch.hubs, kickoff_handle, reconcile=True,
+                    )
+                except Exception:
+                    return None
+        if synth.get("status") != "ready":
+            # Diagnostic: surface what's still blocking after pruning dangling
+            # UI calls + downgrading dead endpoints, so the run log pinpoints
+            # any residual runtime-fatal drift (e.g. api↔data_model) instead of
+            # an opaque "still conflict".
+            findings = synth.get("findings") or []
+            details = [
+                # cross-check findings carry detail/offending_field; roadmap
+                # validation findings carry section/id/message — log whichever.
+                (f.get("message") or f.get("detail")
+                 or f.get("offending_field")
+                 or f.get("id") or f.get("section"))
+                for f in findings if isinstance(f, dict)
+            ][:8]
+            self._orch._logger.warning(
+                "Kickoff reconcile (%s) did not reach ready (status=%s); "
+                "residual findings=%s — falling through to fallback.",
+                reason, synth.get("status"), details,
+            )
+            return None
+        added = synth.get("reconciled_added") or []
+        normalized = synth.get("reconciled_normalized") or []
+        self._orch._logger.warning(
+            "🔧 KICKOFF RECONCILE (%s): auto-registered %d endpoint(s) for frontend "
+            "call(s) the backend didn't declare %s (the skeleton generates them); "
+            "normalized %d endpoint-shape issue(s) %s → synthesis ready; finalizing "
+            "instead of aborting the run.",
+            reason, len(added), added, len(normalized), normalized[:6],
+        )
+        receipt = run_kickoff.finalize_kickoff(
+            hubs=self._orch.hubs,
+            kickoff_handle=kickoff_handle,
+            synthesis=synth,
+            agent="orchestrator",
+        )
+        try:
+            self._orch._author_kickoff_docs(synth)
+        except Exception as _auth_err:  # pragma: no cover - doc bug, not kickoff
+            self._orch._logger.warning(
+                "kickoff authoring failed (non-fatal): %s", _auth_err,
+            )
+        return receipt
+
+    def _kickoff_fallback_or_reconcile(
+        self, kickoff_handle, last_synthesis, reason: str,
+    ):
+        """Try a deterministic reconcile-and-finalize before the hard abort.
+
+        Wraps every kickoff abort site: if dangling-UI-call reconciliation can
+        finalize the contract, return that receipt; otherwise fall through to
+        the honest ``synthesize_fallback`` (kickoff_failed) path.
+        """
+        from .kickoff import run_kickoff
+        receipt = self._orch._attempt_reconciled_finalize(kickoff_handle, reason)
+        if receipt is not None:
+            return receipt
+        return run_kickoff.synthesize_fallback(
+            hubs=self._orch.hubs,
+            kickoff_handle=kickoff_handle,
+            last_synthesis=last_synthesis,
+            agent="orchestrator",
+        )
+
+    async def _dispatch_implementation_phase(self) -> List[str]:
+        """§5-entry / D4.3 (reframed): deterministically hand the implementation
+        phase to the lanes the moment kickoff finalizes.
+
+        finalize_kickoff already created + assigned the task tree; this is the
+        ``[P]`` dispatch step (pipeline_process_design.md §4 D4.3 / §5.1). Smoke
+        #3 (2026-06-05) proved the old "lanes wake on kickoff_complete + a later
+        nudge" path fails: kickoff_complete isn't a ``task_ready`` so it doesn't
+        pass ``KickoffBootstrapGate`` (allowed_starters=['orchestrator']), and the
+        lanes burn their idle budget on empty kickoff-reply finishes and get
+        ``LaneIdleCircuitBreaker``-halted before they ever implement.
+
+        So, right after finalize, we:
+          1. RESET each lane's idle counters — the kickoff-reply phase must not
+             pre-halt the implementation phase (fresh budget at the boundary).
+          2. DISPATCH an orchestrator ``task_ready`` to each implementation lane
+             with assigned work — which passes ``KickoffBootstrapGate`` and makes
+             the lane claim + implement (one-pass), no subscription/nudge race.
+
+        The verifier is intentionally NOT dispatched here — it self-triggers on
+        impl-completion (the §6 / ⚠2 validation-ready hub signal)."""
+        from tools.communication_tools import _create_message
+
+        # 1. Reset idle counters at the kickoff→implement boundary.
+        for lane_id, agent in self._orch._agents.items():
+            if agent is None:
+                continue
+            agent._consecutive_idle_steps = 0
+            agent._last_idle_tier = 0
+            agent._lane_idle_tier3_failed = False
+            # None forces the breaker to re-seed its "owned" baseline on the next
+            # finish — so the first implementation step is never counted as idle.
+            agent._lane_idle_prev_owned = None
+
+        # 2. Which lanes have assigned implementation tasks?
+        try:
+            tasks = self._orch.hubs.workhub.list_tasks() or {}
+            task_iter = tasks.values() if isinstance(tasks, dict) else tasks
+        except Exception:
+            task_iter = []
+        assignees = set()
+        for t in task_iter:
+            if not isinstance(t, dict):
+                continue
+            a = str(t.get("owner") or t.get("assignee") or "").strip().lower()
+            if a:
+                assignees.add(a)
+        # The code-writing impl lanes (verifier validates later; orchestrator
+        # coordinates; knowledge is an observer).
+        impl_lanes = {"backend", "frontend"}
+        targets = [
+            lane for lane in self._orch._agents
+            if lane in impl_lanes and (lane in assignees or True)
+        ]
+
+        dispatched: List[str] = []
+        for lane_id in targets:
+            msg = _create_message(
+                source_agent_id="orchestrator",
+                target_agent_id=lane_id,
+                content=(
+                    "Kickoff finalized — the M1 contract (endpoints/tables/pages) "
+                    "and your assigned task_tree entries are registered in "
+                    "RegistryHub/WorkHub. Claim your tasks now "
+                    f"(workhub_list_tasks assignee='{lane_id}', status='pending') "
+                    "and implement them in one pass. Do NOT ack-and-wait."
+                ),
+                msg_type="task_ready",
+                priority="urgent",
+                persist=True,
+                tags=["kickoff_dispatch", "implementation_start"],
+            )
+            try:
+                if await self._orch.message_bus.send(msg):
+                    dispatched.append(lane_id)
+            except Exception as exc:
+                self._orch._logger.warning("impl dispatch to %s failed: %s", lane_id, exc)
+        self._orch._logger.info(
+            "Dispatched implementation phase task_ready to: %s",
+            ", ".join(dispatched) or "none",
+        )
+        return dispatched
+
+    def _author_kickoff_docs(
+        self, synthesis: Dict[str, Any],
+    ) -> None:
+        """Round 8f.2: after finalize_kickoff returns a clean receipt,
+        materialize the human-readable milestone docs to disk.
+
+        Writes (under ``self._orch.output_dir``):
+          * ``docs/milestones/MILESTONE_M{n}.md`` (overwrite)
+          * ``docs/ROADMAP.md`` (idempotent append/replace by M-section)
+          * ``docs/briefings/BRIEFING_M{n}_{agent}.md`` per attendee
+
+        Uses :mod:`runtime.kickoff.authoring` — pure-Python rendering,
+        no LLM call. Determinism is enforced by passing the same
+        synthesis_result the driver already used for finalize_kickoff.
+
+        Errors are intentionally swallowed by the caller: the contract
+        ALREADY shipped via finalize_kickoff before this runs; a
+        markdown-write failure must not invalidate that. The caller
+        logs at WARNING so a debug pass can pick up the failure.
+        """
+        from .kickoff.authoring import author_all
+        # Read existing ROADMAP.md (if any) so we append/replace
+        # idempotently rather than blowing away prior milestones.
+        roadmap_path = self._orch.output_dir / "docs" / "ROADMAP.md"
+        prior_roadmap_md: Optional[str] = None
+        if roadmap_path.exists():
+            try:
+                prior_roadmap_md = roadmap_path.read_text(encoding="utf-8")
+            except OSError as _e:
+                self._orch._logger.warning(
+                    "Could not read existing %s (%s); rewriting from scratch.",
+                    roadmap_path, _e,
+                )
+        project_name = getattr(self._orch.context, "name", None) or "Project"
+        outputs = author_all(
+            synthesis,
+            project_name=project_name,
+            prior_roadmap_md=prior_roadmap_md,
+        )
+        # Write artifacts. Paths in `outputs["paths"]` are relative; we
+        # anchor under output_dir so they land alongside the project
+        # workspace (CI repo / live_monitor inspection / etc.).
+        milestone_path = self._orch.output_dir / outputs["paths"]["milestone"]
+        milestone_path.parent.mkdir(parents=True, exist_ok=True)
+        milestone_path.write_text(outputs["milestone"], encoding="utf-8")
+
+        roadmap_path.parent.mkdir(parents=True, exist_ok=True)
+        roadmap_path.write_text(outputs["roadmap"], encoding="utf-8")
+
+        for agent_id, briefing_md in (outputs.get("briefings") or {}).items():
+            rel = outputs["paths"]["briefings"][agent_id]
+            briefing_path = self._orch.output_dir / rel
+            briefing_path.parent.mkdir(parents=True, exist_ok=True)
+            briefing_path.write_text(briefing_md, encoding="utf-8")
+
+        self._orch._logger.info(
+            "Authored kickoff docs: %s + %s + %d briefings",
+            milestone_path, roadmap_path,
+            len(outputs.get("briefings") or {}),
+        )
+

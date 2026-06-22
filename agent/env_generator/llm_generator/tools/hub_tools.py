@@ -599,7 +599,7 @@ class WorkHubCreatePageTool(HubTool):
     DESCRIPTION = (
         "Create a Notion-like WorkHub coordination document (kickoff/meeting/"
         "retro/project/general notes). NOTE: this is NOT a UI page — UI pages "
-        "are registered via workhub_register_ui_page into RegistryHub."
+        "are registered via registryhub_register_ui_page into RegistryHub."
     )
     PARAMETERS = {"type": "object", "properties": {"title": {"type": "string"}, "parent": {"type": "string"}, "attendees": {"type": "array", "items": {"type": "string"}}}, "required": ["title"]}
 
@@ -608,14 +608,14 @@ class WorkHubCreatePageTool(HubTool):
 
 
 class WorkHubUpdatePageTool(HubTool):
-    NAME = "workhub_register_ui_page"
+    NAME = "registryhub_register_ui_page"
     DESCRIPTION = (
         "Register a UI page into RegistryHub (kind='ui_page'), keyed by ``name`` — "
         "the spec-to-file mapping (path/components/reference). NOTE: you cannot "
         "set status='implemented' — the FRAMEWORK audits the code (component "
         "exists + route wired + declared APIs called + controls bound) and flips "
         "the status itself; agent-supplied 'implemented' is downgraded to "
-        "'defined'. Check your lifecycle status via workhub_list_ui_pages."
+        "'defined'. Check your lifecycle status via registryhub_list_ui_pages."
     )
     PARAMETERS = {
         "type": "object",
@@ -1502,7 +1502,7 @@ class RegistryHubUpdateTableSchemaTool(HubTool):
 
 
 class WorkhubListUiPagesTool(HubTool):
-    NAME = "workhub_list_ui_pages"
+    NAME = "registryhub_list_ui_pages"
     DESCRIPTION = (
         "READ the ui_page registry: each declared page with its route, "
         "component, apis_used and lifecycle status (defined/implemented — the "

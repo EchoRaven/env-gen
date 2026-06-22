@@ -68,7 +68,11 @@ profiles:
     name: "Orchestrator Agent"
     reasoning_effort: "high"  # coordinator role requires high reasoning for tick decisions + delivery gate composition + silent-lane detection. Tunable live.
     description: "Global orchestrator - planning, cross-team coordination, and delivery control"
-    tool_categories: ["reasoning", "file", "progress", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "observability", "coverage", "visual_review", "seed", "delivery", "mcp_registry", "team_spawn", "team_lifecycle", "team_reasoning", "team_planning", "runtime", "api", "docker", "logs", "database", "browser", "verification", "web", "codehub", "workhub", "registryhub", "eventhub", "run", "hub"]
+    # knowledge_skill (get_skill) is REQUIRED here: the orchestrator's deliver_project /
+    # report_completion are gated on release_readiness_consulted (stage_tool_preconditions
+    # below), which instructs the agent to call get_skill — so the tool MUST be granted or
+    # the gate is unsatisfiable (run #21: 14× deliver_project loop = BUG#5 / PROPOSAL #14).
+    tool_categories: ["reasoning", "file", "progress", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "knowledge_skill", "observability", "coverage", "visual_review", "seed", "delivery", "mcp_registry", "team_spawn", "team_lifecycle", "team_reasoning", "team_planning", "runtime", "api", "docker", "logs", "database", "browser", "verification", "web", "codehub", "workhub", "registryhub", "eventhub", "run", "hub"]
     include_vision: false
     timeout: 7200
     prompts:
@@ -103,6 +107,7 @@ profiles:
       - analysis_tools
       - knowledge_read_tools
       - knowledge_write_tools
+      - knowledge_skill_tools   # PROPOSAL #14: grants get_skill (release_readiness gate needs it)
       - team_spawn_tools
       - team_lifecycle_tools
       - team_reasoning_tools
@@ -140,12 +145,35 @@ profiles:
     # delivering (engine-enforced; reuses the precondition lever).
     stage_tool_preconditions:
       action:
-        deliver_project: release_readiness_consulted
-        report_completion: release_readiness_consulted
+        # #36-cluster (run #35): phase-gate delivery so the orchestrator cannot attempt
+        # deliver_project / submit_retro during KICKOFF/IMPLEMENTATION (it called them
+        # mid-kickoff "to finalize the run" — the deterministic gate blocked the real
+        # release but it wasted rounds + ended its wake). release_phase_and_readiness =
+        # delivery_phase_reached (validation-ready) AND release_readiness_consulted.
+        deliver_project: release_phase_and_readiness
+        report_completion: release_phase_and_readiness
+        submit_retro: delivery_phase_reached
         # FIX #28: bound ask_agent so the orchestrator can't interrogate the
         # lanes into a no-progress ping-pong that derails their implementation
         # (instagram-core froze after 28 questions). Self-resets on real progress.
         ask_agent: orchestrator_ask_cap
+        # PROPOSAL #24: the orchestrator's prompt calls deliverability_check "the
+        # critical first step", so its resident-loop LLM fires these delivery/
+        # validation tools DURING kickoff (smoke-notes run #3: deliverability_check
+        # ×10 / run_start ×8 before any contract existed), each emitting a
+        # meaningless run_completed that woke the debugger into spurious bugs.
+        # PRE-LAUNCH AUDIT F1: kickoff_finalized opened these the instant
+        # finalize_kickoff registered endpoints — i.e. ALL through IMPLEMENTATION, where
+        # there's nothing built → the orchestrator polled deliverability_check ×48 and
+        # ran docker-up (run_start) on a half-built tree (run #28/#31). Gate on the
+        # STICKY validation-ready signal instead (delivery_phase_reached): blocked through
+        # kickoff AND implementation, opens once every business endpoint is implemented.
+        # Subsumes the #24 kickoff block. Bare `action` stage → bites in the resident
+        # loop (_active_phase None). The deterministic framework validate/deliver drivers
+        # run on a separate run()-loop path and never call these tools.
+        deliverability_check: delivery_phase_reached
+        run_start: delivery_phase_reached
+        run_validation: delivery_phase_reached
     workflow_policies:
       - kind: finish_continue
         tool_name: finish
@@ -172,7 +200,12 @@ profiles:
     # "progress": report_progress is an always-include base tool registered
     # under the "progress" category (tools.py) and treated as ALWAYS_INCLUDE by
     # the stage ranker, but the category filter dropped it for the backend.
-    tool_categories: ["file", "reasoning", "vision", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "mcp_registry", "team_spawn", "team_reasoning", "runtime", "api", "api_contract", "database", "dependency", "reference", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "design", "progress"]
+    # knowledge_skill (get_skill) is REQUIRED here: skill-consult preconditions (e.g. the
+    # orchestrator release_readiness_consulted / deliver_project gate, PROPOSAL #14)
+    # instruct the agent to call get_skill — so the tool MUST be granted or the gate is
+    # unsatisfiable. (#35 retired the backend codehub_open_pr/api_contract_guard gate, but
+    # get_skill stays load-bearing for the remaining skill-consult gates.)
+    tool_categories: ["file", "reasoning", "vision", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "knowledge_skill", "mcp_registry", "team_spawn", "team_reasoning", "runtime", "api", "api_contract", "database", "dependency", "reference", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "design", "progress"]
     # Backend reads the reference images too: every visible datum implies a
     # column, every actionable control implies an endpoint — the contract is
     # derived from the screens, not just the requirements text.
@@ -197,6 +230,7 @@ profiles:
       - analysis_tools
       - knowledge_read_tools
       - knowledge_write_tools
+      - knowledge_skill_tools   # PROPOSAL #14: grants get_skill (api_contract_guard gate needs it)
       - team_spawn_tools
       - team_reasoning_tools
       - runtime_full
@@ -235,9 +269,9 @@ profiles:
         # code-presence layer ON TOP of the status gate: finish stays blocked
         # until each owned endpoint's route actually exists in the source.
         finish: endpoints_implemented_with_code
-        # skill-trigger L2: backend must consult api-contract-guard before
-        # opening a PR (engine-enforced; reuses the precondition lever).
-        codehub_open_pr: api_contract_guard_consulted
+        # #35: codehub_open_pr precondition removed — the tool is no longer surfaced
+        # (commit-only pipeline; PRs are dead). knowledge_skill grant stays (still used
+        # by release_readiness_consulted / deliver_project).
     # PR1.3 — kickoff stage allowlist. Same shape as verifier — the
     # legitimate backend kickoff toolbox is the meeting write + page
     # peek + read + finish + think. registryhub_register_endpoint /
@@ -258,6 +292,18 @@ profiles:
         - workhub_list_documents
         - workhub_comment
         - read
+        # The backend authors its data_model + endpoints AT KICKOFF, and the
+        # contract is "derived from the screens, not just the requirements text"
+        # (see tool_categories comment above: every visible datum implies a column,
+        # every actionable control implies an endpoint). The system prompt's
+        # "Reference-driven contract design" block instructs list_reference_images /
+        # view_image + reading design/reference_spec.json BEFORE authoring — but those
+        # tools were missing from this kickoff allowlist, so the instruction was DEAD
+        # (engine-blocked) exactly where the contract is decided. Mirrors the
+        # frontend's PROPOSAL #12. Bundle-intersected (backend has vision/reference +
+        # include_vision), so this only re-enables an already-bundled, prompt-mandated use.
+        - list_reference_images
+        - view_image
         # PROPOSAL #9: file-search tools (glob/grep/list_generated_files) are NOT
         # exposed in kickoff — nothing is built yet (the lane only DECLARES its
         # contract slice), so they have no use here and only widen the surface that
@@ -286,7 +332,7 @@ profiles:
         - report_progress
         - workhub_task
         - workhub_list_tasks
-        - workhub_register_ui_page
+        - registryhub_register_ui_page
         - workhub_create_document
         - workhub_share_implementation
         - workhub_fail_task
@@ -307,7 +353,7 @@ profiles:
         - mcp_registry_register_tool
         - mcp_registry_register_consumer
         - codehub_commit
-        - codehub_resolve_conflict
+        # #35: codehub_resolve_conflict (pr_id-based) removed — not surfaced (commit-only).
         - codehub_resolve_merge_conflict
         - test_api
         # File-search / symbol lookup (PROPOSAL #6). The backend authors
@@ -426,6 +472,17 @@ profiles:
       - codehub_force_merge
       - wait
       - wait_for_process
+      # PROPOSAL #27: deny the backend/database-owned registryhub WRITE tools the
+      # frontend is role-gated out of (register_endpoint/table etc.) so they stop
+      # surfacing as dead actor-error calls. CRITICAL — do NOT deny
+      # registryhub_register_consumer (frontend_agent.j2 mandates declaring early
+      # consumption) NOR the ui_page register tool (its hub_consistency_gate blocks
+      # finish on 0 owned ui_pages and names that tool in the remediation).
+      - registryhub_register_endpoint
+      - registryhub_register_table
+      - registryhub_register_table_consumer
+      - registryhub_update_table_schema
+      - registryhub_deprecate_endpoint
     # Frontend finish-gate = frontend_canonical_root (run #5): blocks finish on
     # WRONG-ROOT — pages authored at repo-root ./src instead of app/frontend/src
     # (bash heredocs bypass write-tool path routing → blank canonical tree).
@@ -613,6 +670,20 @@ profiles:
       - codehub_force_merge
       - wait
       - wait_for_process
+      # PROPOSAL #27: the broad registryhub_tools bundle grants the verifier the
+      # backend/database-owned WRITE tools, which it is role-gated OUT of
+      # (registryhub.py register_endpoint→{backend,orchestrator} etc.) — so the LLM
+      # surfaces + calls them and burns a turn on a "restricted to ['backend',...]"
+      # error. The verifier reads the contract + records contract tests + registers
+      # verification chains; it never authors the endpoint/table surface. Deny the
+      # owner-only writes (KEEP the reads + record_contract_test + the ungated
+      # register_verification_chain — all verifier-owned and in its impl:action allowlist).
+      - registryhub_register_endpoint
+      - registryhub_register_table
+      - registryhub_register_table_consumer
+      - registryhub_update_table_schema
+      - registryhub_update_schema
+      - registryhub_deprecate_endpoint
       # workhub_task is NO LONGER denied: orchestrator dispatches an
       # assignee="verifier" P0 chain-authoring task (orchestrator.py) and tells
       # the verifier to CLAIM it, but the blanket deny also blocked claim/
@@ -792,6 +863,38 @@ profiles:
       - codehub_force_merge
       - wait
       - wait_for_process
+      # PROPOSAL #27: the debugger is READ-ONLY by charter (triages, never authors
+      # contract/pages). Deny every registryhub WRITE + the ui_page register tool so
+      # they stop surfacing as dead actor-error calls. KEEPS all reads + hub_snapshot.
+      - registryhub_register_endpoint
+      - registryhub_register_table
+      - registryhub_register_consumer
+      - registryhub_register_table_consumer
+      - registryhub_update_schema
+      - registryhub_update_table_schema
+      - registryhub_deprecate_endpoint
+      - registryhub_register_ui_page
+    # PROPOSAL #24 — give the debugger the SAME hub-derived phase gates the impl
+    # lanes already have, so it stops doing out-of-stage work. The debugger had NO
+    # workflow_policies and NO stage_tool_preconditions, so it woke on the
+    # orchestrator's premature run_completed during kickoff and filed spurious bugs
+    # (smoke-notes run #3: bug_create ×6 / bug_triage ×4 before any code existed).
+    workflow_policies:
+      # KickoffBootstrapGate makes _has_kickoff_bootstrap_gate() true, so
+      # messaging.py suppresses the debugger's resident run_completed WAKEUP until
+      # kickoff finalizes (RegistryHub has an endpoint OR WorkHub has a task) —
+      # exactly as it already does for the impl lanes. Closes the LOGGED case.
+      - kind: kickoff_bootstrap_gate
+        allowed_starters: [orchestrator]
+    stage_tool_preconditions:
+      action:
+        # Additionally block the bug TOOLS until the IMPL→VALIDATION boundary, so a
+        # run_completed fired during early IMPLEMENTATION (post-finalize, pre-impl)
+        # is also caught: there is no working app to debug until every business
+        # endpoint is implemented (the same predicate the framework validate/deliver
+        # drivers use). A genuine failing validation run then opens these.
+        bug_create: validation_phase_reached
+        bug_triage: validation_phase_reached
     execution_pipeline:
       stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:

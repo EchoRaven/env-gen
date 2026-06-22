@@ -17,7 +17,10 @@ runtime.
 """
 from __future__ import annotations
 
+import logging as _logging
 from typing import Any, Callable, Dict, Optional
+
+_log = _logging.getLogger(__name__)
 
 
 PreconditionFn = Callable[[Any, str, Dict[str, Any]], Optional[str]]
@@ -90,12 +93,25 @@ def kickoff_endpoints_implemented(
     if not lane:
         return None
     endpoints = registryhub.get_endpoints() or {}
+    # PROPOSAL #30 S1: skip the FRAMEWORK-OWNED fixed surface (auth/oauth/infra/spine)
+    # via the canonical lifecycle.is_business — the SAME predicate
+    # all_business_endpoints_implemented (the delivery driver) uses. Without this the
+    # STATUS gate counted the framework's tenant control-plane (control_plane.py,
+    # kind='infra', registered provider='backend') against the backend → it was told
+    # to "implement" framework endpoints it neither owns nor can write → deadlock
+    # (the code gate already skips these kinds, but it calls THIS gate as Layer 1 and
+    # returns its block before its own kind-skip is reached). Using is_business (not a
+    # copied kind literal) also covers kind='oauth' — which the code gate's inline set
+    # misses — and is metadata-aware.
+    from ...runtime.lifecycle import is_business
     pending = []
     for ep_id, ep in endpoints.items():
         if not isinstance(ep, dict):
             continue
         provider = ep.get("provider")
         if provider and provider != lane:
+            continue
+        if not is_business(ep):
             continue
         if ep.get("status") not in _FINISH_TERMINAL_STATUSES:
             method = ep.get("method") or "?"
@@ -124,6 +140,30 @@ def _require_skill_consulted(required_skill: str, tool_name: str, agent: Any) ->
     existing precondition mechanism rather than a separate gate policy."""
     consulted = getattr(agent, "_consulted_skills", None) or set()
     if required_skill in consulted:
+        return None
+    # SATISFIABILITY GUARD (bsb900gpt run): the gate tells the agent to "call
+    # get_skill(...)", but if THIS agent has no get_skill in its tool surface the
+    # instruction is IMPOSSIBLE — the gate is unsatisfiable and the gated tool
+    # loops until action rounds are exhausted. That is exactly what killed the
+    # run: the orchestrator's delivery toolset omitted get_skill, so the
+    # release-readiness gate blocked deliver_project forever ("I don't have
+    # access to the get_skill tool" ×N → rounds exhausted → no delivery).
+    # Blocking forever is strictly worse than proceeding, and the real safety
+    # gates (delivery_phase_reached + the deterministic delivery gate) still
+    # apply. So when get_skill is uncallable, best-effort auto-consult (preserve
+    # intent + record it) and let the call through. The nudge is unchanged for
+    # agents that CAN consult — they still get the directed "call get_skill" block.
+    tools = getattr(agent, "_tool_instances", None)
+    if not (tools and "get_skill" in tools):
+        if not isinstance(getattr(agent, "_consulted_skills", None), set):
+            agent._consulted_skills = set()
+        agent._consulted_skills.add(required_skill)
+        _log.warning(
+            "[precondition] %s gated on '%s' skill-consult but agent %r has no "
+            "get_skill tool — auto-consulting to keep the gate satisfiable "
+            "(prevents the deliver_project deadlock that killed run bsb900gpt).",
+            tool_name, required_skill, getattr(agent, "agent_id", "?"),
+        )
         return None
     return (
         f"{tool_name} blocked: consult the `{required_skill}` skill first. "
@@ -203,6 +243,20 @@ def endpoints_implemented_with_code(
     code; it only fires on the egregious no-route case. Vacuous-pass when the
     worktree can't be resolved (don't wedge).
     """
+    # PROPOSAL #58: skip the whole "endpoints implemented + code present" demand during the
+    # KICKOFF turn (lane only declares; no write tools yet) — both Layer 1 (status) and
+    # Layer 2 (code-presence) are unsatisfiable then, so a kickoff finish must not block.
+    if getattr(agent, "_active_phase", None) == "kickoff":
+        return None
+    # Satisfiability backstop for #58 (run bsb900gpt predated #58 and still wedged):
+    # this gate's corrective action is "WRITE the route + registryhub_register_endpoint".
+    # If the lane currently holds NEITHER tool, that instruction is impossible and blocking
+    # only wedges finish — regardless of how _active_phase happens to be set. Mirrors
+    # _require_skill_consulted's uncallable-tool escape. The implementation lane grants both
+    # (implementation:action allowlist), so the real gate still fires there unchanged.
+    _tools = getattr(agent, "_tool_instances", None) or {}
+    if not ("write" in _tools and "registryhub_register_endpoint" in _tools):
+        return None
     status_block = kickoff_endpoints_implemented(agent, tool_name, tool_args)
     if status_block is not None:
         return status_block
@@ -224,6 +278,7 @@ def endpoints_implemented_with_code(
     endpoints = registryhub.get_endpoints() or {}
     route_tokens = _collect_source_route_tokens(root)
 
+    from ...runtime.lifecycle import is_business  # PROPOSAL #30 S1 (canonical filter)
     missing = []
     for ep_id, ep in endpoints.items():
         if not isinstance(ep, dict):
@@ -231,10 +286,11 @@ def endpoints_implemented_with_code(
         provider = ep.get("provider")
         if provider and provider != lane:
             continue
-        # Only business endpoints carry a UI/business consumer; skip the
-        # runtime-owned fixed surface (auth/health/spine) by registered kind.
-        kind = (ep.get("kind") or "").lower()
-        if kind in ("infra", "auth", "spine", "control", "system"):
+        # PROPOSAL #30 S1: skip the framework-owned fixed surface via the canonical
+        # lifecycle.is_business (covers auth/oauth/infra/spine + metadata-nested kind)
+        # — converged with the status gate above + the delivery driver, replacing the
+        # ad-hoc kind literal that missed kind='oauth'.
+        if not is_business(ep):
             continue
         if ep.get("status") not in _FINISH_TERMINAL_STATUSES:
             continue  # status layer already handled non-terminal
@@ -369,13 +425,191 @@ def frontend_canonical_root(
         return None
 
 
+def kickoff_finalized_signal(hubs: Any, agent: Any = None) -> bool:
+    """PROPOSAL #28 (F0) — GATE-SAFE "has kickoff finalized?" predicate.
+
+    True once kickoff has produced contract surface, from the SAME signals
+    ``KickoffBootstrapGate`` uses: the agent's sticky ``_kickoff_bootstrapped`` flag,
+    OR RegistryHub has any endpoint, OR WorkHub has any task. The flag ALONE is
+    insufficient for the ORCHESTRATOR, which has no KickoffBootstrapGate (its flag is
+    never set) — #24's flag-only check therefore mis-classified the orchestrator as
+    "in KICKOFF" forever (a latent permanent over-block). The hub read fixes that.
+
+    Gate-safe — unlike the DISPLAY-only ``hub_pulse.current_run_phase`` (which gates
+    must NOT call): the hub stores are append-only within a run (``deprecate_endpoint``
+    does a status ``.set()``, not a delete), so this signal is MONOTONIC and cannot
+    invert a gate decision once True (the #24/#25 subtlety-1 concern that forbade the
+    display helper does not apply to a fresh predicate over these monotonic signals)."""
+    if getattr(agent, "_kickoff_bootstrapped", False):
+        return True
+    try:
+        rh = getattr(hubs, "registryhub", None)
+        if rh is not None and hasattr(rh, "_endpoints") and rh._endpoints.value():
+            return True
+        if rh is not None and hasattr(rh, "get_endpoints") and rh.get_endpoints():
+            return True
+    except Exception:
+        pass
+    try:
+        wh = getattr(hubs, "workhub", None)
+        if wh is not None and hasattr(wh, "list_tasks") and wh.list_tasks():
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def validation_ready_signal(hubs: Any, agent: Any = None) -> bool:
+    """PRE-LAUNCH AUDIT F1/F5 — STICKY "is the run VALIDATION-ready?" predicate.
+
+    True once every business endpoint is implemented (the IMPL→VALIDATION boundary the
+    delivery driver + the verifier's validation trigger already use). LATCHED per-agent
+    (``_validation_ready_latched``) so it cannot REGRESS mid-validation if a late
+    ``defined`` endpoint is registered — ``all_business_endpoints_implemented`` is NOT
+    monotonic (audit F5), so a fresh read alone could re-block a tool after validation
+    began; the latch makes it sticky like ``_kickoff_bootstrapped``. Never raises."""
+    if getattr(agent, "_validation_ready_latched", False):
+        return True
+    try:
+        rh = getattr(hubs, "registryhub", None)
+        if rh is None or not hasattr(rh, "get_endpoints"):
+            return False
+        from ...runtime.lifecycle import all_business_endpoints_implemented
+        if all_business_endpoints_implemented(rh.get_endpoints() or {}):
+            if agent is not None:
+                try:
+                    agent._validation_ready_latched = True
+                except Exception:
+                    pass
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def delivery_phase_reached(agent: Any, tool_name: str, tool_args: Dict[str, Any]) -> Optional[str]:
+    """PRE-LAUNCH AUDIT F1 — block the orchestrator's delivery/validation LLM tools
+    (deliverability_check / run_start / run_validation) until the run is VALIDATION-ready.
+
+    They were gated only on ``kickoff_finalized``, which opens the instant
+    finalize_kickoff registers endpoints — i.e. all through IMPLEMENTATION, where there
+    is nothing built to validate/deliver. So the orchestrator polled deliverability_check
+    ×48 (run #28/#31) and fired run_start = ``docker compose up`` against a half-built
+    tree. Gate them on the STICKY validation-ready signal instead. The DETERMINISTIC
+    framework validate/deliver drivers run on a SEPARATE run()-loop path and never call
+    these LLM tools, so delivery itself is unaffected. Never raises."""
+    if validation_ready_signal(getattr(agent, "_hubs", None), agent):
+        return None
+    return (
+        f"{tool_name} is unavailable until VALIDATION: not every business endpoint is "
+        f"implemented yet, so there is nothing to validate or deliver. During "
+        f"IMPLEMENTATION your job is to COORDINATE the lanes (answer questions, dispatch "
+        f"failing checks, keep work flowing) — the framework validates + delivers "
+        f"AUTOMATICALLY once every endpoint is implemented; you do not call {tool_name} "
+        f"to trigger it."
+    )
+
+
+def release_phase_and_readiness(agent: Any, tool_name: str, tool_args: Dict[str, Any]) -> Optional[str]:
+    """#36-cluster (run #35): deliver_project / report_completion require BOTH the
+    VALIDATION phase (delivery_phase_reached — every business endpoint implemented) AND a
+    release-readiness skill consult. They were only skill-gated (release_readiness_consulted),
+    so the orchestrator called deliver_project mid-KICKOFF ("Round 10 … finalize this run")
+    — harmless (the deterministic delivery gate blocked the real release) but a wasted-round
+    loop that ended its wake prematurely. Phase gate FIRST so premature delivery during
+    kickoff/implementation is impossible, not merely discouraged. Never raises."""
+    phase_block = delivery_phase_reached(agent, tool_name, tool_args)
+    if phase_block:
+        return phase_block
+    return release_readiness_consulted(agent, tool_name, tool_args)
+
+
+def kickoff_finalized(agent: Any, tool_name: str, tool_args: Dict[str, Any]) -> Optional[str]:
+    """PROPOSAL #24 — block premature delivery/validation tools during KICKOFF.
+
+    The orchestrator's prompt calls ``deliverability_check`` "the critical first
+    step", so its resident-loop LLM fires ``deliverability_check`` / ``run_start``
+    / ``run_validation`` immediately — DURING kickoff, before any contract is
+    declared or code exists (smoke-notes run #3 kickoff window: deliverability_check
+    ×10, run_start ×8, each returning a meaningless "no successful run / dead
+    artifacts" and emitting ``run_completed`` that woke the debugger into spurious
+    ``bug_create`` ×6). These actions are meaningless until kickoff is finalized.
+
+    KICKOFF = ``not kickoff_finalized_signal(...)`` (PROPOSAL #28 F1): uses the
+    GATE-SAFE hub-derived predicate (RegistryHub endpoint OR WorkHub task OR the agent
+    flag) — NOT the agent flag alone. The orchestrator has no KickoffBootstrapGate, so
+    its ``_kickoff_bootstrapped`` is never set; the #24 flag-only check therefore
+    PERMANENTLY blocked the orchestrator's deliverability_check/run_start/run_validation
+    even post-kickoff (a latent over-block + wasted rounds — NOT a delivery breaker, as
+    delivery is driven deterministically by the run() loop, never by these LLM tools).
+    The hub read unblocks them once the contract exists. Keyed under the bare ``action``
+    stage so it fires in the orchestrator's RESIDENT coordination loop where
+    ``_active_phase`` is ``None``. The deterministic framework drivers run on a SEPARATE
+    run()-loop path and never call these LLM tools, so they are unaffected. Never raises."""
+    if kickoff_finalized_signal(getattr(agent, "_hubs", None), agent):
+        return None
+    return (
+        f"{tool_name} is unavailable during KICKOFF: kickoff is not finalized "
+        f"(no endpoints declared / no tasks assigned yet), so there is nothing to "
+        f"validate or deliver — a run now returns a meaningless 'no successful run' "
+        f"and wakes the debugger into spurious bugs. During kickoff your job is to "
+        f"chair the meeting and drive the lanes to declare the full contract "
+        f"(endpoints/tables/ui_pages/chains) and reach finalize_kickoff. The framework "
+        f"runs validation + delivery AUTOMATICALLY once endpoints are implemented — you "
+        f"do not call {tool_name} to trigger it."
+    )
+
+
+def validation_phase_reached(agent: Any, tool_name: str, tool_args: Dict[str, Any]) -> Optional[str]:
+    """PROPOSAL #24 — block the debugger filing/triaging bugs before VALIDATION.
+
+    The debugger wakes on ``run_completed``. When the orchestrator fires a premature
+    run during kickoff/early-implementation (see :func:`kickoff_finalized`), the
+    resulting ``run_completed`` wakes the debugger, which files ``bug_create`` /
+    ``bug_triage`` about an empty validation — there is no implemented code to debug
+    yet (smoke-notes run #3 kickoff window: bug_create ×6, bug_triage ×4).
+    ``KickoffBootstrapGate`` on the debugger suppresses the pre-finalize WAKEUP; this
+    gate additionally blocks the bug TOOLS until the IMPL→VALIDATION boundary the
+    deterministic drivers use, so a ``run_completed`` fired during early
+    IMPLEMENTATION (post-finalize, pre-impl) is also caught (review condition 1).
+
+    VALIDATION = ``all_business_endpoints_implemented(registryhub.get_endpoints())``
+    — the SAME predicate ``framework_validation`` and the delivery driver gate on
+    (review Q2). Once a real validation run can occur, a genuine failing run
+    legitimately wakes the debugger and these tools open. Hub-derived; never raises."""
+    try:
+        registryhub = getattr(getattr(agent, "_hubs", None), "registryhub", None)
+        if registryhub is None or not hasattr(registryhub, "get_endpoints"):
+            return None  # can't determine phase → don't block
+        from ...runtime.lifecycle import all_business_endpoints_implemented
+        eps = registryhub.get_endpoints() or {}
+        if eps and all_business_endpoints_implemented(eps):
+            return None
+        return (
+            f"{tool_name} is unavailable before VALIDATION: not all business "
+            f"endpoints are implemented yet, so there is no working app to debug — a "
+            f"run that completes now reflects an empty/partial build, not a real "
+            f"defect. The framework validates automatically once every endpoint is "
+            f"implemented; a genuine failing validation run will then wake you and "
+            f"{tool_name} will be available. Until then, monitor via check_inbox."
+        )
+    except Exception:
+        return None
+
+
 PRECONDITION_REGISTRY: Dict[str, PreconditionFn] = {
     "kickoff_endpoints_implemented": kickoff_endpoints_implemented,
     "endpoints_implemented_with_code": endpoints_implemented_with_code,
     "frontend_canonical_root": frontend_canonical_root,
     "orchestrator_ask_cap": orchestrator_ask_cap,
     "release_readiness_consulted": release_readiness_consulted,
+    "release_phase_and_readiness": release_phase_and_readiness,
     "api_contract_guard_consulted": api_contract_guard_consulted,
+    # PROPOSAL #24 — run-phase hygiene (EXTEND existing hub-derived gates):
+    "kickoff_finalized": kickoff_finalized,
+    "validation_phase_reached": validation_phase_reached,
+    # PRE-LAUNCH AUDIT F1 — orchestrator delivery/validation tools gate on validation-ready:
+    "delivery_phase_reached": delivery_phase_reached,
 }
 
 

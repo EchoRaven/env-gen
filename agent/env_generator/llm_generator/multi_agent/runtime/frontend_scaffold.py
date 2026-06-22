@@ -17,7 +17,7 @@ app that won't build at all).
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
 
 _EXPORT_RE = re.compile(
     r"export\s+(?:async\s+)?(?:function|const|let|var)\s+([A-Za-z0-9_$]+)"
@@ -118,7 +118,7 @@ def repair_frontend_api_exports(frontend_dir) -> Dict[str, object]:
         if not missing:
             return {"repaired": False, "missing": []}
 
-        lines = ["", "// FIX #37: auto-reconciled api.js exports (component import/export drift)."]
+        lines = ["", "// auto-reconciled api.js exports (component import/export drift)."]
         aliased, stubbed = [], []
         for name in missing:
             match = _best_match(name, exported)
@@ -141,40 +141,470 @@ def repair_frontend_api_exports(frontend_dir) -> Dict[str, object]:
 
 _LOCAL_DEFAULT_IMPORT = re.compile(
     r"""import\s+([A-Za-z_$][\w$]*)\s+from\s+['"](\.[^'"]+)['"]""")
+# A <Route> whose element is an INLINE placeholder <div> (e.g.
+# `element={<div>Login Page Stub</div>}`) instead of a real page component. The lane
+# sometimes inlines a stub div rather than routing to the page the framework already
+# projected — outlook run #9: /login -> "Login Page Stub" (login DEAD) while the
+# functional LoginPage.jsx sat unrouted. Captures: (1) prefix incl path + element={,
+# (2) the route path, (3) the closing }.
+_INLINE_STUB_ROUTE = re.compile(
+    r'(<Route\b[^>]*?\bpath\s*=\s*["\']([^"\']+)["\'][^>]*?\belement\s*=\s*\{\s*)'
+    r'<div\b[^>]*>[^<}]{0,60}</div>(\s*\}\s*/?>)')
 _COMPONENT_DIR = re.compile(r"/(pages|components|views|screens|routes)/")
+_LOCAL_NAMED_IMPORT = re.compile(
+    r"""import\s*\{([^}]*)\}\s*from\s*(['"])(\.[^'"]+)\2""")
+_HAS_DEFAULT_EXPORT = re.compile(r"export\s+default\b")
+
+
+def repair_frontend_named_default_imports(frontend_dir) -> Dict[str, object]:
+    """A page does ``import { NavBar } from '../components/NavBar'`` (NAMED) but the
+    target only ``export default NavBar`` → Rollup HARD-fails the build ("NavBar is
+    not exported by NavBar.jsx") → frontend image won't build → docker_up FAIL → no
+    delivery (live smoke-notes 2026-06-20). The frontend twin of
+    repair_frontend_api_exports for LOCAL component/page imports: when a SINGLE
+    named import isn't exported by its target AND the target has a default export,
+    rewrite that import to a default import. Build-integrity is framework-owned;
+    best-effort, never raises."""
+    try:
+        frontend_dir = Path(frontend_dir)
+        src = frontend_dir / "src"
+        if not src.is_dir():
+            return {"repaired": False, "reason": "no src/"}
+        info: Dict[Path, Tuple[Set[str], bool]] = {}
+
+        def _target_info(p: Path) -> Tuple[Set[str], bool]:
+            if p not in info:
+                try:
+                    t = p.read_text(encoding="utf-8")
+                    info[p] = (_exported_names(t), bool(_HAS_DEFAULT_EXPORT.search(t)))
+                except Exception:
+                    info[p] = (set(), False)
+            return info[p]
+
+        def _resolve(importer: Path, rel: str) -> Optional[Path]:
+            base = (importer.parent / rel)
+            for e in _FRONT_EXTS:
+                cand = base.with_suffix(e)
+                if cand.is_file():
+                    return cand
+            for e in _FRONT_EXTS:
+                idx = base / f"index{e}"
+                if idx.is_file():
+                    return idx
+            return None
+
+        fixed: List[str] = []
+        for f in src.rglob("*"):
+            if f.suffix.lower() not in _FRONT_EXTS or not f.is_file():
+                continue
+            try:
+                text = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            state = {"changed": False}
+
+            def _repl(m: "re.Match") -> str:
+                body, quote, rel = m.group(1), m.group(2), m.group(3)
+                names = [n.strip() for n in body.split(",") if n.strip()]
+                if len(names) != 1 or " as " in body:
+                    return m.group(0)
+                tgt = _resolve(f, rel)
+                if tgt is None:
+                    return m.group(0)
+                exported, has_default = _target_info(tgt)
+                name = names[0]
+                if name not in exported and has_default:
+                    state["changed"] = True
+                    return f"import {name} from {quote}{rel}{quote}"
+                return m.group(0)
+
+            new_text = _LOCAL_NAMED_IMPORT.sub(_repl, text)
+            if state["changed"] and new_text != text:
+                f.write_text(new_text, encoding="utf-8")
+                fixed.append(str(f.relative_to(frontend_dir)))
+        return {"repaired": bool(fixed), "fixed": fixed}
+    except Exception as exc:
+        return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
 def _stub_page_component(name: str) -> str:
     """A minimal default-exported React component (JSX automatic runtime — no
-    React import needed, matching the lane's pages)."""
+    React import needed, matching the lane's pages). Used for build-integrity
+    stubs of UNDECLARED local imports; carries NO flagged placeholder marker so a
+    declared page never trips the stub-detector on it."""
     label = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").strip() or name
     return (
         f"export default function {name}() {{\n"
         f"  return (\n"
-        f'    <div className="glass rounded-[2rem] border border-white/10 px-8 py-16 text-center">\n'
-        f'      <h2 className="text-xl font-semibold text-white">{label}</h2>\n'
-        f'      <p className="mt-3 text-sm text-zinc-400">This section is being set up.</p>\n'
+        f'    <div className="min-h-screen bg-zinc-50 text-zinc-900 px-8 py-16 text-center">\n'
+        f'      <h2 className="text-xl font-semibold">{label}</h2>\n'
         f"    </div>\n"
         f"  );\n"
         f"}}\n"
     )
 
 
-def scaffold_missing_local_pages(frontend_dir) -> Dict[str, object]:
-    """Scaffold a valid stub for any LOCAL default import whose target file is
+def _api_path_to_js(path: str) -> str:
+    """'/api/notes' -> "'/api/notes'"; '/api/notes/:id' (or {id}) ->
+    "'/api/notes/' + (params.id || '')" — a route-param-aware fetch target."""
+    m = re.search(r"[:{]([a-zA-Z_]\w*)[}]?", path)
+    if not m:
+        return "'" + path + "'"
+    expr = "'" + path[:m.start()] + "' + (params." + m.group(1) + " || '')"
+    post = path[m.end():]
+    if post:
+        expr += " + '" + post + "'"
+    return expr
+
+
+def _is_auth_page(name: str, page: Mapping[str, Any]) -> bool:
+    """True for the login/signup page — by route, id, or component name. The
+    framework universally owns /auth/register + /auth/login, so a login/signup page
+    must project a REAL functional auth form (not the generic single-input POST stub
+    or the inert no-api stub). youtube run #20 shipped a dead <h2>Login</h2> card
+    because the kickoff-derived login_page had no apis_used → fell to the inert stub
+    → the test-user signup/login walkthrough found no submit button."""
+    route = str((page or {}).get("route") or "").strip().lower().rstrip("/")
+    pid = str((page or {}).get("id") or "").strip().lower()
+    n = str(name or "").lower()
+    return (route in ("/login", "/signin", "/signup", "/register")
+            or pid in ("login_page", "signup_page", "login", "signup", "register_page", "auth_page")
+            or "login" in n or "signup" in n or n == "authpage")
+
+
+def _is_landing_page(name: str, page: Mapping[str, Any]) -> bool:
+    """A marketing/landing entry page (welcome → sign in/create account). Keyed on
+    the NAME/id/route saying 'landing'/'welcome' — NOT on route=='/' alone, since a
+    content app's home FEED also lives at '/' (and it has apis_used → a real list)."""
+    pid = str((page or {}).get("id") or "").strip().lower()
+    n = str(name or "").lower()
+    route = str((page or {}).get("route") or "").strip().lower().rstrip("/")
+    if (page or {}).get("apis_used"):
+        return False  # a data-driven home page is a list, not a marketing splash
+    return ("landing" in n or "welcome" in n or "landing" in pid or "welcome" in pid
+            or "landing" in route or "welcome" in route)
+
+
+# A real landing/entry page: app wordmark + hero + WORKING nav to /login and /signup
+# (plain <a> so it works with any router). Fixes "stuck on a dead 'Landing' heading
+# with no way in" — the no-api stub used to render just <h2>Landing</h2>. No
+# placeholder marker → counts as a real authored entry page.
+_LANDING_TEMPLATE = """export default function __COMP__() {
+  return (
+    <div className="min-h-screen bg-white text-zinc-900 flex flex-col">
+      <header className="flex items-center justify-between px-6 sm:px-10 py-4 border-b border-zinc-200">
+        <div className="text-lg font-semibold text-blue-700">__APP__</div>
+        <nav className="flex items-center gap-2">
+          <a href="/login" className="rounded-md px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100">Sign in</a>
+          <a href="/signup" className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Create free account</a>
+        </nav>
+      </header>
+      <main className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+        <h1 className="max-w-2xl text-4xl sm:text-5xl font-bold tracking-tight">__APP__</h1>
+        <p className="mt-4 max-w-xl text-lg text-zinc-500">Sign in to connect, organize, and get things done.</p>
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <a href="/login" className="rounded-lg bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700">Sign in</a>
+          <a href="/signup" className="rounded-lg border border-zinc-300 px-6 py-3 font-medium text-zinc-700 hover:bg-zinc-50">Create a free account</a>
+        </div>
+      </main>
+    </div>
+  );
+}
+"""
+
+
+def _is_register_mode(name: str, page: Mapping[str, Any]) -> bool:
+    route = str((page or {}).get("route") or "").strip().lower()
+    pid = str((page or {}).get("id") or "").strip().lower()
+    n = str(name or "").lower()
+    return ("signup" in route or "register" in route
+            or "signup" in pid or "register" in pid
+            or "signup" in n or "register" in n)
+
+
+# A self-contained, functional auth form (no dependency on the lane's api.js shape):
+# real email/password inputs + submit, POSTs to the framework-universal /auth/login
+# and /auth/register, stores the access_token under BOTH localStorage keys the
+# projected pages read, and redirects. No placeholder marker → passes the stub gate.
+_AUTH_PAGE_TEMPLATE = """import { useState } from 'react';
+
+export default function __COMP__() {
+  const [isRegister, setIsRegister] = useState(__IS_REGISTER__);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    const path = isRegister ? '/auth/register' : '/auth/login';
+    const body = isRegister ? { email, password, name, username: email } : { email, password };
+    try {
+      const r = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setError((d && (d.detail || d.error)) || ('Error ' + r.status)); return; }
+      const token = d.access_token || d.token || (d.item && (d.item.access_token || d.item.token));
+      if (token) { localStorage.setItem('access_token', token); localStorage.setItem('token', token); }
+      window.location.href = '/';
+    } catch (err) { setError(String(err)); }
+  };
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-zinc-50">
+      <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-xl border border-zinc-200 bg-white p-8 shadow-sm">
+        <h1 className="text-2xl font-semibold text-zinc-900">{isRegister ? 'Create account' : 'Sign in'}</h1>
+        {isRegister ? (
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name"
+                 className="w-full rounded-lg border border-zinc-300 px-3 py-2" />
+        ) : null}
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required
+               className="w-full rounded-lg border border-zinc-300 px-3 py-2" />
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required
+               className="w-full rounded-lg border border-zinc-300 px-3 py-2" />
+        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        <button type="submit" className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700">
+          {isRegister ? 'Create account' : 'Log in'}
+        </button>
+        <button type="button" onClick={() => setIsRegister(!isRegister)}
+                className="w-full text-sm text-blue-600">
+          {isRegister ? 'Have an account? Sign in' : 'New here? Create an account'}
+        </button>
+      </form>
+    </div>
+  );
+}
+"""
+
+
+def _mark_fallback_page(src: str) -> str:
+    """Prefix a framework-projected (fallback) page with _PAGE_MARKER so
+    validation_runner.frontend_fallback_pages counts it AND the runtime page gate
+    knows it is NOT a real lane-built page. Auth pages are framework-OWNED (the
+    intended login/signup), NOT fallback, so they are NOT marked."""
+    from .frontend_page_projector import _PAGE_MARKER
+    if _PAGE_MARKER in src:
+        return src
+    return _PAGE_MARKER + "\n" + src
+
+
+def _nav_links_jsx(nav_routes) -> str:
+    """A full-bleed top-nav bar linking the app's main business routes, so the
+    projected pages are NAVIGABLE — you can move between inbox/calendar/contacts/…
+    instead of each page being a disconnected dead-end (the #1 'app isn't usable'
+    symptom). Plain ``<a href>`` (router-agnostic) + a Sign out. Negative margins
+    cancel the page's ``px-6 py-6`` padding so the bar is full width at the top.
+    Returns '' when there are no other routes (single-page / auth / landing)."""
+    routes = [(str(l).strip(), str(r).strip()) for (l, r) in (nav_routes or []) if str(r).strip()]
+    if not routes:
+        return ""
+    links = "\n".join(
+        f'        <a href="{r}" className="rounded-md px-3 py-1.5 text-sm font-medium '
+        f'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900">{l}</a>'
+        for (l, r) in routes)
+    return (
+        '<nav className="-mx-6 -mt-6 mb-6 flex flex-wrap items-center gap-1 border-b '
+        'border-zinc-200 bg-white px-6 py-2">\n'
+        + links + "\n"
+        "        <button onClick={() => { localStorage.clear(); window.location.href = '/login'; }} "
+        'className="ml-auto rounded-md px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-100 '
+        'hover:text-zinc-900">Sign out</button>\n'
+        "      </nav>")
+
+
+def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None) -> str:
+    """Project a MINIMALLY-FUNCTIONAL, data-driven page from the contract instead
+    of an inert stub. Generic for ANY app: a page with a declared GET fetches it
+    and renders the rows; a POST-only page renders a submit form; an api-less page
+    is a clean static page. Uses bare ``fetch`` + the JWT from localStorage (no
+    dependency on the lane's api.js export shape), so the page (a) carries a real
+    handler/api call and no placeholder marker — passing the stub-detector — and
+    (b) actually exercises its declared endpoint. ``nav_routes`` (list of (label,
+    route)) injects a shared top-nav so the data pages are interconnected/navigable.
+    The lane may still overwrite it with richer UI (this only runs when missing)."""
+    _nav = _nav_links_jsx(nav_routes)
+    # Auth pages get a REAL functional login/register form (framework owns
+    # /auth/login + /auth/register) — never the generic single-input POST stub or
+    # the inert no-api stub, which would ship a login page a user can't use.
+    if _is_auth_page(name, page):
+        return (_AUTH_PAGE_TEMPLATE.replace("__COMP__", name)
+                .replace("__IS_REGISTER__", "true" if _is_register_mode(name, page) else "false"))
+    label = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").strip() or name
+    if _is_landing_page(name, page):
+        # Real entry page: wordmark/hero + WORKING sign-in/create-account nav. Derive
+        # the app name by stripping the landing/welcome words (OutlookLanding → Outlook;
+        # a bare LandingPage → "Welcome"). Never the dead <h2>Landing</h2> stub again.
+        app = re.sub(r"\b(landing|welcome|page)\b", "", label, flags=re.I).strip() or "Welcome"
+        return _LANDING_TEMPLATE.replace("__COMP__", name).replace("__APP__", app)
+    parsed = []
+    for a in (page.get("apis_used") or []):
+        parts = str(a).strip().split(None, 1)
+        if len(parts) == 2 and str(parts[0]).isalpha():
+            parsed.append((parts[0].upper(), parts[1].strip()))
+        elif parts and str(parts[0]).startswith("/"):
+            parsed.append(("GET", str(parts[0]).strip()))
+    get_ep = next((p for (m, p) in parsed if m == "GET"), None)
+    # ANY write verb (POST/PUT/PATCH/DELETE) renders a functional form — a page whose
+    # apis_used are write-only (e.g. a settings page that only PUTs) must NOT degrade to
+    # the inert no-api stub. POST is preferred (a create form), else the first write verb.
+    write_ep = next(((m, p) for (m, p) in parsed if m == "POST"), None) \
+        or next(((m, p) for (m, p) in parsed if m in ("PUT", "PATCH", "DELETE")), None)
+
+    if get_ep:
+        # LIST render (not a raw key:value dump, NOT a 16:9 video-card grid): a light,
+        # neutral row list — leading avatar/thumbnail (or an initial), a title, a
+        # snippet/sender subtitle, and a few scalar meta fields. This is the universal
+        # business-app shape (email/message/contact/event lists, feeds) and reads as
+        # human-usable for the MAJORITY of apps — a far better FLOOR than the old dark
+        # aspect-video card grid (which only suited a video site and rendered emails as
+        # blank 16:9 tiles on black). The lane authors the real themed page on top; this
+        # only runs when the page file is missing. Fetches the page's OWN declared GET
+        # endpoint (apis_used → __PATH__), never a hardcoded one. data-fallback marks it
+        # framework-generated so the runtime page gate never counts it as 'implemented'.
+        tpl = """import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+
+const _imgOf = (r) => { for (const k of ['thumbnail_url','image_url','avatar_url','banner_url','photo_url','cover_url','poster_url','image','thumbnail','avatar','url']) { if (r && r[k]) return r[k]; } return null; };
+const _titleOf = (r) => { for (const k of ['title','subject','name','display_name','full_name','label','handle','email']) { if (r && r[k]) return String(r[k]); } return (r && r.id != null) ? ('#' + r.id) : ''; };
+const _subOf = (r) => { for (const k of ['snippet','preview','summary','description','from_name','sender','body','caption','content','message','text']) { if (r && r[k]) return String(r[k]); } return ''; };
+const _metaOf = (r) => Object.keys(r || {}).filter((k) => !['id','password','password_hash'].includes(k) && !/_url$|^url$|^image$|^thumbnail$|^avatar$|title|subject|name|description|body|snippet/.test(k) && (typeof r[k] !== 'object')).slice(0, 3);
+
+export default function __COMP__() {
+  const params = useParams();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const token = (localStorage.getItem('access_token') || localStorage.getItem('token'));
+    fetch(__PATH__, token ? { headers: { Authorization: 'Bearer ' + token } } : {})
+      .then((r) => r.json())
+      .then(setData)
+      .catch((e) => setError(String(e)));
+  }, []);
+  const rows = Array.isArray(data && data.items)
+    ? data.items
+    : (data && data.item ? [data.item] : (Array.isArray(data) ? data : []));
+  return (
+    <div data-fallback="1" className="min-h-screen bg-zinc-50 text-zinc-900 px-6 py-6">
+      __NAV__
+      <h2 className="text-xl font-semibold mb-4">__LABEL__</h2>
+      {error ? <p className="text-sm text-red-600 mb-4">{error}</p> : null}
+      <div className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white shadow-sm">
+        {rows.map((row, i) => (
+          <div key={(row && row.id) || i} className="flex items-start gap-3 px-4 py-3 hover:bg-zinc-50 transition cursor-pointer">
+            {_imgOf(row)
+              ? <img src={_imgOf(row)} alt="" className="h-10 w-10 rounded-full object-cover bg-zinc-100 shrink-0" />
+              : <div className="h-10 w-10 rounded-full bg-blue-100 text-blue-700 shrink-0 flex items-center justify-center text-sm font-semibold">{(_titleOf(row).charAt(0) || '?').toUpperCase()}</div>}
+            <div className="min-w-0 flex-1">
+              <div className="font-medium text-sm truncate">{_titleOf(row)}</div>
+              {_subOf(row) ? <div className="text-sm text-zinc-500 truncate">{_subOf(row)}</div> : null}
+              {_metaOf(row).length ? <div className="text-xs text-zinc-400 mt-0.5 truncate">{_metaOf(row).map((k) => String(row[k])).join(' \\u00b7 ')}</div> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+      {rows.length === 0 && !error ? <p className="mt-6 text-sm text-zinc-500">No data yet.</p> : null}
+    </div>
+  );
+}
+"""
+        return _mark_fallback_page(tpl.replace("__COMP__", name).replace("__LABEL__", label)
+                                   .replace("__PATH__", _api_path_to_js(get_ep))
+                                   .replace("__NAV__", _nav))
+
+    if write_ep:
+        write_method, write_path = write_ep
+        tpl = """import { useState } from 'react';
+
+export default function __COMP__() {
+  const [value, setValue] = useState('');
+  const [status, setStatus] = useState('');
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    const token = (localStorage.getItem('access_token') || localStorage.getItem('token'));
+    try {
+      const r = await fetch('__POST__', {
+        method: '__METHOD__',
+        headers: Object.assign({ 'Content-Type': 'application/json' },
+          token ? { Authorization: 'Bearer ' + token } : {}),
+        body: JSON.stringify({ title: value, name: value, content: value, body: value }),
+      });
+      setStatus(r.ok ? 'Saved.' : ('Error ' + r.status));
+    } catch (err) {
+      setStatus(String(err));
+    }
+  };
+  return (
+    <div data-fallback="1" className="min-h-screen bg-zinc-50 text-zinc-900 px-6 py-6">
+      __NAV__
+      <div className="max-w-lg rounded-xl border border-zinc-200 bg-white shadow-sm px-8 py-8">
+        <h2 className="text-xl font-semibold">__LABEL__</h2>
+        <form onSubmit={onSubmit} className="mt-6 space-y-4">
+          <input value={value} onChange={(e) => setValue(e.target.value)}
+                 className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                 placeholder="Enter a value" />
+          <button type="submit" className="rounded-lg bg-blue-600 px-5 py-2 font-medium text-white hover:bg-blue-700">Submit</button>
+        </form>
+        {status ? <p className="mt-3 text-sm text-zinc-500">{status}</p> : null}
+      </div>
+    </div>
+  );
+}
+"""
+        return _mark_fallback_page(tpl.replace("__COMP__", name).replace("__LABEL__", label)
+                                   .replace("__METHOD__", write_method)
+                                   .replace("__POST__", write_path).replace("__NAV__", _nav))
+
+    return _mark_fallback_page(_stub_page_component(name))
+
+
+# <Route path="/x" element={<Comp .../>}> — used to recover the ROUTE a dangling
+# page import is wired at, so a missing page can be projected as a REAL data page
+# (matched to the registered ui_page at that route) instead of a dead heading.
+_ROUTE_ELEMENT = re.compile(
+    r'path\s*=\s*["\']([^"\']+)["\'][^>]*?element\s*=\s*\{\s*<\s*(\w+)')
+
+
+def _route_apis_map(ui_pages) -> Dict[str, list]:
+    """{normalized_route: apis_used} from the registered ui_pages, so a dangling page
+    import can be matched to its contract endpoint by ROUTE (the lane's App.jsx
+    component name often differs from the registered component name)."""
+    out: Dict[str, list] = {}
+    for pg in (ui_pages or []):
+        if not isinstance(pg, dict):
+            continue
+        r = str(pg.get("route") or pg.get("path") or "").strip().rstrip("/").lower()
+        if r and pg.get("apis_used"):
+            out.setdefault(r, list(pg.get("apis_used") or []))
+    return out
+
+
+def scaffold_missing_local_pages(frontend_dir, ui_pages=None) -> Dict[str, object]:
+    """Scaffold a valid component for any LOCAL default import whose target file is
     missing. Root fix for the frontend half of the hollow-release bug (instagram
     MM, 2026-06-08): the frontend lane wires a page import + route
     (``import MessagesInboxPage from './pages/MessagesInboxPage'``) but never
     creates the file, so ``npm run build`` fails ("Could not resolve") and the
-    frontend container can't boot. Build-integrity is framework-owned: project a
-    minimal default-exported stub at the expected path so the app always builds.
-    Restricted to component dirs (pages/components/views/screens/routes) so
-    hooks/utils are never mis-stubbed. Best-effort; never clobbers a real file."""
+    frontend container can't boot. Build-integrity is framework-owned.
+
+    ROUTED-PAGE QUALITY (outlook run #8): the lane routinely routes App.jsx to a
+    component name (``<Route path="/inbox" element={<OutlookInbox/>}>``) that is NOT
+    its registered ui_page (the contract page is e.g. ``InboxPage``), so the good
+    framework projection (light-list + nav) lands on the unrouted name while the
+    ROUTED name fell here and got a dead ``<h2>`` heading — the user saw a bare
+    stub at /inbox. Now: for a missing PAGE import we recover its ROUTE from the
+    importing file's ``<Route>`` and project a REAL data page via
+    ``_project_page_component`` (its apis_used matched to the registered ui_page at
+    that route + the shared nav across the app's routes). Non-page components, or
+    pages with no resolvable route, still get the minimal stub. Best-effort; never
+    clobbers a real file."""
     try:
         frontend_dir = Path(frontend_dir)
         src_root = (frontend_dir / "src").resolve()
         if not src_root.exists():
             return {"scaffolded": []}
+        route_apis = _route_apis_map(ui_pages)
         scaffolded: List[str] = []
         for f in src_root.glob("**/*"):
             if f.suffix.lower() not in _FRONT_EXTS or not f.is_file():
@@ -183,6 +613,22 @@ def scaffold_missing_local_pages(frontend_dir) -> Dict[str, object]:
                 text = f.read_text(encoding="utf-8")
             except Exception:
                 continue
+            # comp -> route + the app's business routes (for the shared nav), recovered
+            # from THIS file's <Route> table (App.jsx imports the page AND routes it).
+            comp_route = {c: p for (p, c) in _ROUTE_ELEMENT.findall(text)}
+            nav_routes = []
+            _seen = set()
+            for _p, _c in _ROUTE_ELEMENT.findall(text):
+                _r = _p.strip().rstrip("/")
+                low = _r.lower()
+                if (":" in _r or "{" in _r or _r in ("", "/")
+                        or low in ("/login", "/signup", "/signin", "/register")
+                        or "landing" in low or "welcome" in low or _r in _seen):
+                    continue
+                _seen.add(_r)
+                seg = _r.strip("/").split("/")[0]
+                nav_routes.append((re.sub(r"[-_]+", " ", seg).title() or seg, _r))
+            nav_routes = nav_routes[:7]
             for name, rel in _LOCAL_DEFAULT_IMPORT.findall(text):
                 if not _COMPONENT_DIR.search(rel):
                     continue
@@ -204,11 +650,109 @@ def scaffold_missing_local_pages(frontend_dir) -> Dict[str, object]:
                 if target.exists():
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(_stub_page_component(name), encoding="utf-8")
+                # A missing PAGE wired at a known route → project a REAL page (light-list
+                # + nav) keyed to the contract endpoint at that route, not a dead heading.
+                route = (comp_route.get(name) or "").strip().rstrip("/")
+                is_page = "/pages/" in rel.replace("\\", "/")
+                page_spec = None
+                if is_page and route:
+                    apis = route_apis.get(route.lower())
+                    page_spec = {"route": route, "id": name.lower(),
+                                 "apis_used": apis or []}
+                if page_spec is not None:
+                    body = _project_page_component(name, page_spec, nav_routes=nav_routes)
+                else:
+                    body = _stub_page_component(name)
+                target.write_text(body, encoding="utf-8")
                 scaffolded.append(str(target.relative_to(frontend_dir)))
         return {"scaffolded": sorted(set(scaffolded))}
     except Exception as exc:  # never break generation/validation
         return {"scaffolded": [], "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _resolve_route_component(route: str, pages_dir: Path) -> Optional[str]:
+    """Pick the REAL page component in src/pages/ that should serve ``route`` — auth
+    routes → LoginPage/SignupPage; else the PascalCase page derived from the route's
+    first segment (``/inbox`` → InboxPage), accepting the first existing candidate
+    with non-trivial content (so a dead 8-line stub is never chosen over a real page)."""
+    low = route.strip().rstrip("/").lower()
+    seg = low.strip("/").split("/")[0] if low.strip("/") else ""
+    if low in ("/login", "/signin"):
+        cands = ["LoginPage"]
+    elif low in ("/signup", "/register"):
+        cands = ["SignupPage"]
+    elif low in ("", "/"):
+        # the root / landing route — point at the real landing/home page (the lane
+        # leaves /  as `element={<div>Landing Page Stub</div>}` while LandingPage.jsx
+        # sits unrouted; outlook run #9).
+        cands = ["LandingPage", "HomePage", "Home", "Dashboard", "DashboardPage"]
+    elif not seg:
+        return None
+    else:
+        pasc = re.sub(r"[^a-z0-9]+", " ", seg).title().replace(" ", "")
+        cands = [pasc + "Page", pasc, pasc + "List", pasc + "ListPage"]
+    for c in cands:
+        f = pages_dir / f"{c}.jsx"
+        try:
+            if f.exists() and (f.stat().st_size > 200
+                               or "divide-y" in f.read_text(encoding="utf-8", errors="ignore")
+                               or "onSubmit" in f.read_text(encoding="utf-8", errors="ignore")):
+                return c
+        except Exception:
+            continue
+    # fallback: any existing page whose name contains the segment
+    if seg:
+        for f in sorted(pages_dir.glob("*.jsx")):
+            if seg in f.stem.lower() and f.stat().st_size > 200:
+                return f.stem
+    return None
+
+
+def reroute_inline_stub_routes(frontend_dir) -> Dict[str, object]:
+    """Re-point App.jsx routes whose element is an INLINE placeholder <div> (e.g.
+    ``element={<div>Login Page Stub</div>}``) to the REAL page component that already
+    exists in src/pages/ for that route. The lane sometimes inlines a stub div instead
+    of importing the page the framework projected — outlook run #9 shipped
+    ``/login -> <div>Login Page Stub</div>`` (login DEAD) and ``/inbox -> <div>Inbox
+    Page Stub</div>`` (blank) while the functional LoginPage.jsx + InboxPage.jsx sat
+    unrouted. Re-point each to its real component (+ import). Domain-agnostic; only
+    touches routes whose element is a literal placeholder div. Best-effort; never raises."""
+    try:
+        frontend_dir = Path(frontend_dir)
+        app = frontend_dir / "src" / "App.jsx"
+        pages_dir = frontend_dir / "src" / "pages"
+        if not app.exists() or not pages_dir.is_dir():
+            return {"rerouted": []}
+        src = app.read_text(encoding="utf-8")
+        rerouted: List[str] = []
+        needed_imports: Dict[str, str] = {}
+
+        def _sub(m):
+            route = m.group(2)
+            comp = _resolve_route_component(route, pages_dir)
+            if not comp:
+                return m.group(0)  # no real page to point at — leave the stub
+            needed_imports[comp] = f"./pages/{comp}"
+            rerouted.append(f"{route} -> {comp}")
+            return f"{m.group(1)}<{comp} />{m.group(3)}"
+
+        new_src = _INLINE_STUB_ROUTE.sub(_sub, src)
+        if not rerouted:
+            return {"rerouted": []}
+        # add any missing default imports at the top (after the last existing import)
+        add = [f"import {c} from '{p}';" for c, p in needed_imports.items()
+               if re.search(rf"\bimport\s+{re.escape(c)}\b", new_src) is None]
+        if add:
+            _imps = list(re.finditer(r"^import .*$", new_src, re.M))
+            if _imps:
+                at = _imps[-1].end()
+                new_src = new_src[:at] + "\n" + "\n".join(add) + new_src[at:]
+            else:
+                new_src = "\n".join(add) + "\n" + new_src
+        app.write_text(new_src, encoding="utf-8")
+        return {"rerouted": sorted(set(rerouted))}
+    except Exception as exc:  # never break generation/validation
+        return {"rerouted": [], "error": f"{type(exc).__name__}: {exc}"}
 
 
 def _pascal_case(name: str) -> str:
@@ -226,13 +770,30 @@ def _page_component_name(page: Dict[str, Any]) -> str:
     return _pascal_case((page or {}).get("name"))
 
 
+# Identifiers the framework-managed App.jsx already binds — a projected PAGE import
+# must never reuse them or esbuild fails the whole build with "symbol X has already
+# been declared" (smoke-notes 2026-06-19: an agent registered a ui_page named "App",
+# so `import App from './pages/App.jsx'` collided with `export default function App()`
+# → the frontend build failed every cycle → run wedged on docker_up).
+_RESERVED_APP_IDENTS = frozenset({"App", "BrowserRouter", "Routes", "Route", "React"})
+
+
+def _safe_import_alias(comp: str) -> str:
+    """Local binding for a projected page import; aliased to ``<Comp>Page`` when the
+    component name would collide with App.jsx's own identifiers (default import of
+    the page file is unchanged — only the local name is aliased)."""
+    return f"{comp}Page" if comp in _RESERVED_APP_IDENTS else comp
+
+
 def _render_routed_app(entries: List[tuple]) -> str:
     """Generic React-Router App over the declared pages. DOMAIN-AGNOSTIC — no
     feed/login assumptions (unlike the social-shaped _BASELINE_APP_JSX it
     replaces). ``entries``: list of (component, route)."""
-    imports = "\n".join(f"import {c} from './pages/{c}.jsx';" for c, _ in entries)
+    imports = "\n".join(
+        f"import {_safe_import_alias(c)} from './pages/{c}.jsx';" for c, _ in entries)
     routes = "\n".join(
-        f'          <Route path="{r}" element={{<{c} />}} />' for c, r in entries)
+        f'          <Route path="{r}" element={{<{_safe_import_alias(c)} />}} />'
+        for c, r in entries)
     return (
         f"{_ROUTES_MARKER}\n"
         "// The orchestrator projects these routes from the registered ui_pages\n"
@@ -251,6 +812,120 @@ def _render_routed_app(entries: List[tuple]) -> str:
         "  );\n"
         "}\n"
     )
+
+
+def _dominant_route_wrapper(app_jsx: str) -> Optional[str]:
+    """The component that wraps the MAJORITY of existing ``<Route element={<X…>}>``
+    (e.g. ``ProtectedRoute``), or None. An injected route should wrap in the same
+    guard its siblings use — wiring an auth-gated page bare, outside the wrapper
+    every sibling has, is a latent correctness bug. Only returns a name used by
+    ≥2 routes AND in-scope (imported or defined in App.jsx); else None → wire
+    bare. (Captures the FIRST identifier after ``element={<`` — the wrapper, not
+    the inner page — which is exactly what we want here.)"""
+    from collections import Counter
+    names = re.findall(r"element=\{\s*<\s*([A-Za-z_]\w*)", app_jsx)
+    if not names:
+        return None
+    name, cnt = Counter(names).most_common(1)[0]
+    in_scope = bool(
+        re.search(r"(function|const|class)\s+" + re.escape(name) + r"\b", app_jsx)
+        or re.search(r"import\b[^\n;]*\b" + re.escape(name) + r"\b", app_jsx))
+    return name if cnt >= 2 and in_scope else None
+
+
+def project_missing_ui_routes(app_jsx: str, ui_pages: List[Dict[str, Any]]
+                              ) -> Tuple[str, List[str]]:
+    """ADDITIVELY inject a ``<Route>`` (+ default import) for every declared
+    ui_page whose route is NOT already wired in a (lane-authored) App.jsx — the
+    frontend analogue of ``route_projector.project_missing_routes`` (additive:
+    never removes/rewrites a lane route, only fills declared gaps). PROPOSAL #19.
+
+    The route-identity test reuses #18's ``frontend_audit._canon_route`` /
+    ``_wired_route_set`` (the single source of truth for "the same route", same
+    rule as the backend ``_norm_route``), so a lane that wired the declared route
+    under a different param NAME or shape is NOT double-wired. The injected route
+    is wrapped in the dominant sibling wrapper (e.g. ``ProtectedRoute``) when one
+    is detectable, else wired bare. Component file existence is the caller's job
+    (``scaffold_pages_from_contract`` writes the stub only-if-missing first).
+
+    Returns ``(new_text, injected_routes)``. Idempotent (a second call is a
+    no-op). Best-effort: returns the input UNCHANGED (and ``[]``) if it cannot
+    anchor confidently — NEVER raises, NEVER corrupts a lane file."""
+    try:
+        from .frontend_audit import _canon_route, _route_is_wired
+        wrapper = _dominant_route_wrapper(app_jsx)
+        new_routes: List[str] = []
+        new_imports: List[str] = []
+        injected: List[str] = []
+        seen_canon = set()
+        for page in ui_pages or []:
+            if not isinstance(page, dict):
+                continue
+            route = str(page.get("route") or "").strip()
+            if not route:
+                continue
+            canon = _canon_route(route)
+            # decide "missing" with the EXACT gate predicate (#18 _route_is_wired:
+            # normalized SET match + trailing-optional fallback) — NOT raw set
+            # membership — so we inject ONLY what the delivery gate would flag as
+            # unwired (e.g. /watch/:id, already satisfied by a wired /watch, is NOT
+            # re-injected; a genuinely-absent /feed/library IS).
+            if canon in seen_canon or _route_is_wired(route, app_jsx):
+                continue
+            seen_canon.add(canon)
+            comp = _page_component_name(page)
+            local = _safe_import_alias(comp)  # avoid colliding with App.jsx's own idents
+            inner = f"<{local} />"
+            elem = f"<{wrapper}>{inner}</{wrapper}>" if wrapper else inner
+            new_routes.append(f'        <Route path="{route}" element={{{elem}}} />')
+            if not re.search(r"import\s+" + re.escape(local) + r"\s+from", app_jsx):
+                new_imports.append(f"import {local} from './pages/{comp}';")
+            injected.append(route)
+        if not injected:
+            return app_jsx, []
+        # ── route anchor: before the catch-all path="*" else before </Routes> ──
+        text = app_jsx
+        block = "\n".join(new_routes)
+        m_star = re.search(r"""[ \t]*<Route\s+path=["']\*["']""", text)
+        idx_close = text.find("</Routes>")
+        if m_star:
+            text = text[:m_star.start()] + block + "\n" + text[m_star.start():]
+        elif idx_close != -1:
+            text = text[:idx_close] + block + "\n" + text[idx_close:]
+        else:
+            return app_jsx, []  # no confident anchor → skip, never guess
+        # ── imports: after the last top-of-file import line (positions above the
+        # injected routes are unshifted, so re-scan is safe) ──
+        if new_imports:
+            imps = list(re.finditer(r"^import .*$", text, re.M))
+            ins = "\n".join(new_imports)
+            if imps:
+                end = imps[-1].end()
+                text = text[:end] + "\n" + ins + text[end:]
+            else:
+                text = ins + "\n" + text
+        return text, injected
+    except Exception:
+        return app_jsx, []
+
+
+def _ensure_framework_auth_pages(ui_pages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The framework OWNS the auth UI: /auth/register + /auth/login are
+    framework-scaffolded, and the frontend lane consistently ships a dead/unwired
+    login (no submit, no API call) or omits /signup entirely (youtube run #20/#21:
+    the test-user walkthrough can't register → can't log in → the whole UI is
+    unusable). Force a functional /login AND /signup into the contract, DROPPING any
+    lane-declared page on those routes so the framework's wired auth form always
+    wins the route. Universal + deterministic; no app-specific assumptions."""
+    auth_routes = {"/login", "/signup"}
+    kept = [p for p in (ui_pages or [])
+            if isinstance(p, dict)
+            and str(p.get("route") or "").strip().rstrip("/").lower() not in auth_routes]
+    auth = [
+        {"id": "login_page", "route": "/login", "component": "LoginPage", "name": "Login"},
+        {"id": "signup_page", "route": "/signup", "component": "SignupPage", "name": "Signup"},
+    ]
+    return auth + kept
 
 
 def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -> Dict[str, object]:
@@ -280,8 +955,16 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
         pages_dir = src / "pages"
         pages_dir.mkdir(parents=True, exist_ok=True)
 
+        # Framework OWNS the auth UI: force a functional /login + /signup (the lane
+        # ships dead/unwired login pages or omits /signup → unusable app). Only when
+        # there are pages to scaffold — an empty contract stays a no-op (don't write
+        # a premature auth-only App.jsx before the contract is ready).
+        if ui_pages:
+            ui_pages = _ensure_framework_auth_pages(ui_pages)
+
         scaffolded: List[str] = []
         entries: List[tuple] = []
+        plan: List[tuple] = []
         seen_components: Set[str] = set()
         used_routes: Set[str] = set()
         for i, page in enumerate(ui_pages or []):
@@ -303,13 +986,41 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                 n += 1
             used_routes.add(route)
             entries.append((comp, route))
+            plan.append((comp, route, page))
 
+        # Shared top-nav for the data pages: the main business routes (skip auth /
+        # landing / param-detail routes, dedup, cap), labelled from the route segment.
+        # Built from ALL entries FIRST so every projected page links to the same set —
+        # makes the app NAVIGABLE (the disconnected-pages symptom the user hit).
+        nav_routes: List[tuple] = []
+        _nav_seen: Set[str] = set()
+        for _c, _r, _pg in plan:
+            if (":" in _r or "{" in _r or _r in ("/", "")
+                    or _is_auth_page(_c, _pg) or _is_landing_page(_c, _pg)):
+                continue
+            if _r in _nav_seen:
+                continue
+            _nav_seen.add(_r)
+            _seg = _r.strip("/").split("/")[0]
+            _lbl = re.sub(r"[-_]+", " ", _seg).strip().title() or _seg
+            nav_routes.append((_lbl, _r))
+        nav_routes = nav_routes[:7]
+
+        for comp, route, page in plan:
             target = pages_dir / f"{comp}.jsx"
-            if not target.exists():
-                target.write_text(_stub_page_component(comp), encoding="utf-8")
+            # Auth pages are ALWAYS (over)written with the framework's wired auth
+            # form — the lane consistently ships a dead/unwired login. Other pages
+            # are projected only when missing (never clobber the lane's real UI).
+            if _is_auth_page(comp, page) or not target.exists():
+                # Project a minimally-FUNCTIONAL page from the contract (fetches the
+                # declared endpoint + renders it), not an inert stub the audit then
+                # blocks. The lane may still overwrite it with richer UI.
+                target.write_text(_project_page_component(comp, page, nav_routes=nav_routes),
+                                  encoding="utf-8")
                 scaffolded.append(str(target.relative_to(frontend_dir)))
 
         app_wired = False
+        injected_routes: List[str] = []
         if entries:
             app = src / "App.jsx"
             existing = ""
@@ -318,11 +1029,32 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                     existing = app.read_text(encoding="utf-8")
                 except Exception:
                     existing = ""
-            if (not existing.strip()) or (_ROUTES_MARKER in existing):
+            # PROPOSAL #39 (G1): ALSO regenerate when App.jsx has NO router at all
+            # (`</Routes>` absent). Run #36: the lane shipped a 24-line hand-rolled STUB
+            # App.jsx — no <Routes>, marker dropped — so this branch fell to the additive
+            # `project_missing_ui_routes` below, which needs an existing `</Routes>` to
+            # inject before and thus NO-OPPED → every declared ui_page stayed orphaned →
+            # /register,/notes rendered BLANK. A marker-less, router-less App.jsx is not a
+            # legitimate "lane took over routing" — it's broken (guaranteed blank pages), so
+            # regenerate the router (wiring every declared page). A real lane router HAS
+            # `</Routes>` → preserved (additive path), so this never clobbers genuine custom
+            # routing/layout.
+            if (not existing.strip()) or (_ROUTES_MARKER in existing) or ("</Routes>" not in existing):
                 app.write_text(_render_routed_app(entries), encoding="utf-8")
                 app_wired = True
+            else:
+                # PROPOSAL #19: the lane took over App.jsx (dropped the marker) WITH a real
+                # router. DON'T clobber its routing/bodies — but ADDITIVELY inject any
+                # DECLARED route it omitted (the stubs above guarantee each component file
+                # exists), so every declared ui_page is navigable-by-construction even when
+                # the lane diverges (run #2: lane wired /feed/you, omitted declared
+                # /feed/library → delivery hard-blocked forever). Frontend twin of the
+                # backend's additive project_missing_routes. Idempotent; never clobbers.
+                new_text, injected_routes = project_missing_ui_routes(existing, ui_pages)
+                if injected_routes:
+                    app.write_text(new_text, encoding="utf-8")
         return {"scaffolded": sorted(scaffolded), "routes": len(entries),
-                "app_wired": app_wired}
+                "app_wired": app_wired, "injected_routes": injected_routes}
     except Exception as exc:  # never raise into the orchestrator
         return {"scaffolded": [], "routes": 0, "app_wired": False,
                 "error": str(exc)}
@@ -396,14 +1128,67 @@ _BASELINE_PACKAGE_JSON = """{
 }
 """
 
-_BASELINE_VITE = """import { defineConfig } from 'vite'
+_BASELINE_VITE = r"""import { defineConfig } from 'vite'
 // JSX via Vite's BUILT-IN esbuild automatic runtime — NOT @vitejs/plugin-react.
 // Round 44 white-screen: plugin-react failed to install (ERESOLVE) → vite fell
 // back to esbuild CLASSIC jsx (React.createElement) with no React import →
 // "React is not defined" → every page blank. The automatic runtime compiles
 // JSX to react/jsx-runtime (no React global needed) and depends on NO external
 // plugin, so a missing plugin-react can never blank the UI again.
+
+// safeIconImports: LLM frontends routinely import HALLUCINATED named icons from
+// icon libraries (youtube 2026-06-20: `import { ClosedCaption } from
+// 'lucide-react'` — not a real export → Rollup "is not exported" → vite build
+// fails → docker_up FAILED → no delivery). Route every NAMED icon-lib import
+// through a virtual module that re-exports the REAL icon when it exists and a
+// generic SVG fallback when it does not, so a wrong icon name degrades to a
+// placeholder instead of breaking the whole build. Fully general: no embedded
+// list of valid names; real icons still render; only bad names degrade.
+function safeIconImports() {
+  const ICON_LIB = /^(lucide-react|@heroicons\/react(\/.*)?|react-icons\/.+|@tabler\/icons-react|@radix-ui\/react-icons)$/;
+  const V = '\0safe-icon:';
+  return {
+    name: 'safe-icon-imports',
+    enforce: 'pre',
+    transform(code, id) {
+      if (id.includes('node_modules') || !/\.(jsx?|tsx?)$/.test(id)) return null;
+      if (code.indexOf('import') === -1) return null;
+      let changed = false;
+      const out = code.replace(
+        /import\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g,
+        (m, names, src) => {
+          if (!ICON_LIB.test(src)) return m;
+          changed = true;
+          const enc = src + '::' + names.replace(/\s+/g, ' ').trim();
+          return 'import {' + names + '} from ' + JSON.stringify(V + enc);
+        });
+      return changed ? { code: out, map: null } : null;
+    },
+    resolveId(id) { return id.startsWith(V) ? id : null; },
+    load(id) {
+      if (!id.startsWith(V)) return null;
+      const body = id.slice(V.length);
+      const sep = body.indexOf('::');
+      const src = body.slice(0, sep);
+      const specs = body.slice(sep + 2).split(',').map((s) => s.trim()).filter(Boolean);
+      const lines = [
+        "import React from 'react';",
+        'import * as _real from ' + JSON.stringify(src) + ';',
+        "const _F = React.forwardRef((p, r) => React.createElement('svg', Object.assign({ ref: r, width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 }, p), React.createElement('circle', { cx: 12, cy: 12, r: 10 })));",
+      ];
+      for (const sp of specs) {
+        const parts = sp.split(/\s+as\s+/);
+        const real = parts[0].trim();
+        const local = (parts[1] || parts[0]).trim();
+        lines.push('export const ' + local + ' = _real[' + JSON.stringify(real) + '] || _F;');
+      }
+      return lines.join('\n') + '\n';
+    },
+  };
+}
+
 export default defineConfig({
+  plugins: [safeIconImports()],
   esbuild: { jsx: 'automatic', jsxImportSource: 'react' },
   build: { outDir: 'dist' },
 })
@@ -467,26 +1252,39 @@ export async function login({ email, username, password }) {
   if (d.access_token) localStorage.setItem('token', d.access_token)
   return d
 }
-export async function getFeed() {
-  const r = await fetch('/api/feed', { headers: { ...authHeaders() } })
-  return r.json().catch(() => ([]))
-}
 export function logout() { localStorage.removeItem('token') }
+// Generic fixed-envelope CRUD helpers (the projector returns {item}/{items}); pages may
+// import these by name OR use the default `api` object (api.get/post/...).
+async function request(path, { method = 'GET', body } = {}) {
+  const r = await fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  })
+  const d = await r.json().catch(() => ({}))
+  if (!r.ok) throw Object.assign(new Error(d.detail || r.statusText), { status: r.status, data: d })
+  return d
+}
+export const get = (path) => request(path)
+export const post = (path, body) => request(path, { method: 'POST', body })
+export const put = (path, body) => request(path, { method: 'PUT', body })
+export const del = (path) => request(path, { method: 'DELETE' })
+// #41: default export so `import api from '../services/api'` (a common lane style) yields a
+// usable object — without it the module resolves but `api` is undefined → runtime crash.
+const api = { register, login, logout, get, post, put, del, request }
+export default api
 """
 
 _ROUTES_MARKER = "// @framework-managed-routes"
 
 _BASELINE_APP_JSX = """// @framework-managed-routes
-import React, { useState, useEffect } from 'react'
-import { register, login, getFeed, logout } from './services/api.js'
+import React, { useState } from 'react'
+import { register, login, logout } from './services/api.js'
 
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem('token'))
-  const [feed, setFeed] = useState(null)
   const [mode, setMode] = useState('login')
   const [form, setForm] = useState({ username: '', email: '', password: '' })
-
-  useEffect(() => { if (token) getFeed().then(setFeed).catch(() => {}) }, [token])
 
   async function submit(e) {
     e.preventDefault()
@@ -494,26 +1292,26 @@ export default function App() {
     const d = await fn(form)
     if (d.access_token) setToken(d.access_token)
   }
-  function doLogout() { logout(); setToken(null); setFeed(null) }
+  function doLogout() { logout(); setToken(null) }
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        <form onSubmit={submit} className="w-80 space-y-3 p-6 border border-gray-800 rounded-lg">
+      <div className="min-h-screen bg-zinc-50 text-zinc-900 flex items-center justify-center">
+        <form onSubmit={submit} className="w-80 space-y-3 p-6 border border-zinc-200 bg-white rounded-xl shadow-sm">
           <h1 className="text-3xl font-bold text-center mb-2">__APP_NAME__</h1>
-          <input className="w-full p-2 bg-gray-900 rounded border border-gray-700"
+          <input className="w-full p-2 bg-white rounded border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="username" value={form.username}
             onChange={e => setForm({ ...form, username: e.target.value })} />
-          <input className="w-full p-2 bg-gray-900 rounded border border-gray-700"
+          <input className="w-full p-2 bg-white rounded border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="email" value={form.email}
             onChange={e => setForm({ ...form, email: e.target.value })} />
-          <input className="w-full p-2 bg-gray-900 rounded border border-gray-700"
+          <input className="w-full p-2 bg-white rounded border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
             type="password" placeholder="password" value={form.password}
             onChange={e => setForm({ ...form, password: e.target.value })} />
-          <button className="w-full p-2 bg-blue-600 hover:bg-blue-500 rounded font-semibold">
+          <button className="w-full p-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold">
             {mode === 'register' ? 'Sign up' : 'Log in'}
           </button>
-          <button type="button" className="w-full text-sm text-blue-400"
+          <button type="button" className="w-full text-sm text-blue-600"
             onClick={() => setMode(mode === 'register' ? 'login' : 'register')}>
             {mode === 'register' ? 'Have an account? Log in' : 'New? Sign up'}
           </button>
@@ -521,23 +1319,14 @@ export default function App() {
       </div>
     )
   }
-  const posts = Array.isArray(feed) ? feed : (feed && (feed.items || feed.posts)) || []
   return (
-    <div className="min-h-screen bg-black text-white">
-      <header className="flex justify-between items-center p-4 border-b border-gray-800 sticky top-0 bg-black">
+    <div className="min-h-screen bg-zinc-50 text-zinc-900">
+      <header className="flex justify-between items-center p-4 border-b border-zinc-200 sticky top-0 bg-white">
         <h1 className="text-xl font-bold">__APP_NAME__</h1>
-        <button className="text-sm text-blue-400" onClick={doLogout}>Log out</button>
+        <button className="text-sm text-blue-600" onClick={doLogout}>Log out</button>
       </header>
-      <main className="max-w-xl mx-auto p-4 space-y-4">
-        {!feed && <p className="text-gray-500">Loading feed…</p>}
-        {feed && posts.length === 0 && <p className="text-gray-500">No posts yet.</p>}
-        {posts.map((p, i) => (
-          <article key={p.id || i} className="border border-gray-800 rounded-lg overflow-hidden">
-            <div className="p-3 font-semibold">{(p.author && p.author.username) || p.username || 'user'}</div>
-            {p.image_url && <img src={p.image_url} alt="" className="w-full" />}
-            <div className="p-3">{p.caption}</div>
-          </article>
-        ))}
+      <main className="max-w-xl mx-auto p-8 text-center text-zinc-500">
+        <p>You are signed in.</p>
       </main>
     </div>
   )
@@ -593,6 +1382,79 @@ _FRONTEND_TOOLING_PINS = {
     "vite": "^5.3.1", "@vitejs/plugin-react": "^4.3.1",
     "tailwindcss": "^3.4.4", "postcss": "^8.4.38", "autoprefixer": "^10.4.19",
 }
+
+# Common, REAL frontend libraries a lane may import that aren't in the baseline
+# package.json (which the lane can't edit — it's framework-owned). A bare import
+# of one of these used to fail the vite/Rollup build → docker_up FAILED forever →
+# no release (live smoke-notes 2026-06-20: `import "date-fns"` in NoteCard.jsx →
+# "Rollup failed to resolve import 'date-fns'"). Auto-adding the imported ones
+# from THIS curated, version-pinned set makes the build resolve. Only known-real
+# packages are added (a hallucinated import is left to fail honestly rather than
+# breaking `npm install`).
+_COMMON_FRONTEND_LIBS = {
+    "date-fns": "^3.6.0", "dayjs": "^1.11.11", "moment": "^2.30.1",
+    "axios": "^1.7.2", "clsx": "^2.1.1", "classnames": "^2.5.1",
+    "lodash": "^4.17.21", "lodash-es": "^4.17.21", "zustand": "^4.5.4",
+    "react-icons": "^5.2.1", "uuid": "^9.0.1", "nanoid": "^5.0.7",
+    "react-hook-form": "^7.52.1", "zod": "^3.23.8", "yup": "^1.4.0",
+    "recharts": "^2.12.7", "chart.js": "^4.4.3", "react-chartjs-2": "^5.2.0",
+    "@tanstack/react-query": "^5.51.1", "swr": "^2.2.5",
+    "framer-motion": "^11.3.2", "react-hot-toast": "^2.4.1",
+    "react-toastify": "^10.0.5", "qs": "^6.12.1", "js-cookie": "^3.0.5",
+    # icon / UI / animation libs LLM frontends reach for constantly
+    "lucide-react": "^0.408.0", "@heroicons/react": "^2.1.4",
+    "@headlessui/react": "^2.1.2", "react-router": "^6.26.0",
+}
+
+# Roots the framework already provides (declared as deps by construction) — never
+# re-add or "latest"-pin these.
+_FRAMEWORK_FRONTEND_ROOTS = {"react", "react-dom", "react-router-dom"}
+
+# import X from 'pkg'  /  import 'pkg'  /  } from "pkg"  — captures the bare
+# specifier; relative ('./', '../', '/') imports are ignored by the caller.
+_BARE_IMPORT_RE = re.compile(
+    r"""(?:from|import)\s+['"]([^'"]+)['"]""")
+
+# A real, installable npm package root: optional @scope/, lowercase name. Rejects
+# virtual/protocol specifiers (node:fs, virtual:uno.css) and anything that isn't a
+# plain package name, so the general "latest" fallback never feeds npm garbage.
+_INSTALLABLE_PKG_RE = re.compile(
+    r"^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$")
+
+
+def _is_installable_pkg(root: str) -> bool:
+    return bool(root) and ":" not in root and bool(_INSTALLABLE_PKG_RE.match(root))
+
+
+def _pkg_root(spec: str) -> str:
+    """The installable package name from an import specifier: 'date-fns/format'
+    -> 'date-fns'; '@scope/pkg/sub' -> '@scope/pkg'."""
+    parts = spec.split("/")
+    if spec.startswith("@"):
+        return "/".join(parts[:2])
+    return parts[0]
+
+
+def _scan_bare_imports(src_dir) -> set:
+    """All bare (non-relative) package roots imported under src_dir."""
+    found: set = set()
+    try:
+        root = Path(src_dir)
+        if not root.exists():
+            return found
+        for f in root.rglob("*"):
+            if f.suffix not in (".js", ".jsx", ".ts", ".tsx") or not f.is_file():
+                continue
+            try:
+                text = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            for spec in _BARE_IMPORT_RE.findall(text):
+                if spec and not spec.startswith((".", "/")):
+                    found.add(_pkg_root(spec))
+    except Exception:
+        pass
+    return found
 _FRONTEND_FORCE_INFRA = {
     "postcss.config.js": _BASELINE_POSTCSS,
     "tailwind.config.js": _BASELINE_TAILWIND,
@@ -682,6 +1544,27 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
                 deps = data.setdefault("dependencies", {})
                 if isinstance(deps, dict):
                     deps.setdefault("react-router-dom", "^6.26.0")
+                    # AUTO-ADD EVERY imported third-party lib so the vite build can
+                    # resolve it. The lane can't edit package.json (framework-owned),
+                    # and a curated allowlist can NEVER cover every lib an app
+                    # legitimately uses (youtube 2026-06-20: lucide-react not listed
+                    # → Rollup "failed to resolve import" → docker_up FAILED → no
+                    # release). Pin the known-common ones for reproducibility; fall
+                    # back to "latest" for anything else so NO app is allowlist-
+                    # limited. Skip framework-provided roots + already-declared deps;
+                    # the installable-name guard keeps node:/virtual: specifiers out.
+                    try:
+                        _declared = set(deps) | set(data.get("devDependencies") or {})
+                        for imp in _scan_bare_imports(fe / "src"):
+                            if (imp in _declared or imp in _FRAMEWORK_FRONTEND_ROOTS
+                                    or not _is_installable_pkg(imp)):
+                                continue
+                            ver = _COMMON_FRONTEND_LIBS.get(imp, "latest")
+                            deps[imp] = ver
+                            _declared.add(imp)
+                            changed.append(f"package.json (+{imp}@{ver})")
+                    except Exception:
+                        pass
                 # SCRIPTS are build INFRASTRUCTURE, not lane content (round 46:
                 # a lane overwrote package.json with no "scripts" at all →
                 # `npm run build` had no build script → docker build failed →
@@ -704,8 +1587,9 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
 def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
     """Gap-fill a minimal buildable Vite+React+Tailwind+nginx frontend. Writes
     each standard file ONLY when missing/empty, so a lane that produced code is
-    never clobbered. An empty-frontend run gets a complete login+feed app that
-    builds + serves and hits the framework /auth/* + /api/feed. Best-effort."""
+    never clobbered. An empty-frontend run gets a complete login/register auth
+    shell that builds + serves and hits the framework /auth/*; declared pages are
+    projected functionally from the contract elsewhere. Best-effort."""
     try:
         frontend_dir = Path(frontend_dir)
         frontend_dir.mkdir(parents=True, exist_ok=True)

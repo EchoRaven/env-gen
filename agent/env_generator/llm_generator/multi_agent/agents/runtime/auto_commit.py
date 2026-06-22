@@ -236,12 +236,115 @@ def restage_written_files(
     return staged
 
 
+# PROPOSAL #22 — ownership partition for deterministic agent/backend→integration
+# conflict resolution. main.py + the other skeleton outputs are FRAMEWORK-owned
+# (regenerated from the contract by backend_skeleton.write_backend_skeleton /
+# write_backend_build_infra + the oauth_scaffold AS modules), so on a conflict they
+# take INTEGRATION's by-construction version; ``custom_routes.py`` is THE ONE
+# lane-owned backend file (backend_skeleton _MAIN_FOOTER: "the framework NEVER writes
+# it"), so it takes the AGENT's version (the lane's real business logic). Keep these
+# in sync with the skeleton writer's file list. Matched by basename under app/backend/.
+_BACKEND_FRAMEWORK_OWNED = frozenset({
+    "main.py", "models.py", "database.py", "auth_dependency.py", "schemas.py",
+    "pyproject.toml", "Dockerfile", "reset.sh",
+    "oauth_routes.py", "oauth_store.py", "jwt_manager.py",
+})
+_BACKEND_LANE_OWNED = frozenset({"custom_routes.py"})
+# PROPOSAL #23 — the frontend lane AUTHORS App.jsx (the framework only ADDITIVELY
+# injects declared routes into it via #19 project_missing_ui_routes, which re-runs
+# every heal tick + at release), so App.jsx resolves to the LANE; the framework owns
+# the build/infra files it pins (main.jsx entry, vite/tailwind/postcss config,
+# Dockerfile/nginx/start, package manifests). Lane-authored src/pages/* + src/api.js
+# are NOT in the map → if they ever conflict, abort (never guess).
+_FRONTEND_FRAMEWORK_OWNED = frozenset({
+    "main.jsx", "vite.config.js", "tailwind.config.js", "postcss.config.js",
+    "index.html", "Dockerfile", "nginx.conf", "nginx.conf.template", "start.sh",
+    "package.json", "package-lock.json",
+})
+_FRONTEND_LANE_OWNED = frozenset({"App.jsx"})
+# lane → (path prefix, framework-owned basenames, lane-owned basenames)
+_OWNERSHIP = {
+    "backend": ("app/backend/", _BACKEND_FRAMEWORK_OWNED, _BACKEND_LANE_OWNED),
+    "frontend": ("app/frontend/", _FRONTEND_FRAMEWORK_OWNED, _FRONTEND_LANE_OWNED),
+}
+
+
+def _lane_of_worktree(wt: Path) -> str:
+    """The lane name from a worktree's checked-out ``agent/<lane>`` branch, or ''."""
+    rc, out, _e = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=wt)
+    br = out.strip() if rc == 0 else ""
+    return br.split("/", 1)[1] if br.startswith("agent/") else ""
+
+
+def _resolve_conflict_by_ownership(repo: Path, *, lane: str,
+                                   framework_side: str,
+                                   superseded_out: Optional[List[str]] = None) -> Tuple[bool, str]:
+    """PROPOSAL #22/#23 — deterministically resolve a framework-owned-file merge/pull
+    conflict by per-path OWNERSHIP, so the framework's regenerated files and the lane's
+    authored files both survive and the conflict stops blocking delivery. SHARED by both
+    git paths; the only difference is DIRECTION:
+      * MERGE (merge_agent_branch_to_main, integration checked out): framework=``--ours``
+      * PULL  (pull_main_into_worktree, lane worktree checked out):  framework=``--theirs``
+    so the caller passes ``framework_side`` and the lane-owned side is the opposite.
+    Resolves framework-owned basenames (per the ``lane``'s _OWNERSHIP entry) to the
+    framework side, lane-owned basenames to the lane side; if ANY conflicted path is
+    OUTSIDE the known owned-set, returns ``(False, ...)`` so the caller aborts (never
+    guess on a path a lane legitimately owns). Best-effort; never raises. (Index carries
+    the unmerged stages, so ``git checkout --ours/--theirs -- <path>`` + ``git add`` is
+    the standard resolution; add/add resolves the same way.)"""
+    try:
+        spec = _OWNERSHIP.get(lane)
+        if not spec:
+            return False, f"lane {lane!r} not in ownership map"
+        prefix, framework_owned, lane_owned = spec
+        lane_side = "--theirs" if framework_side == "--ours" else "--ours"
+        rc, out, _e = _run_git(
+            ["diff", "--name-only", "--diff-filter=U"], cwd=repo)
+        paths = [p.strip() for p in out.splitlines() if p.strip()] if rc == 0 else []
+        if not paths:
+            return False, "no conflicted paths to resolve"
+        resolved: List[str] = []
+        for p in paths:
+            base = p.rsplit("/", 1)[-1]
+            if p.startswith(prefix) and base in framework_owned:
+                side, who = framework_side, "framework"
+            elif p.startswith(prefix) and base in lane_owned:
+                side, who = lane_side, "lane"
+            else:
+                return False, f"conflict path outside {lane}-owned set: {p}"
+            rcc, _o, ec = _run_git(["checkout", side, "--", p], cwd=repo)
+            if rcc != 0:
+                return False, f"checkout {side} {p} failed: {ec.strip()}"
+            _run_git(["add", "--", p], cwd=repo)
+            resolved.append(f"{p}→{who}")
+            # PROPOSAL #26 N2: surface the paths where the LANE's edit was SUPERSEDED
+            # by the framework (framework-owned paths kept the framework's version) so
+            # the hub-holding caller can notify the lane (it would otherwise re-edit
+            # these → re-conflict). Lane-owned paths kept the lane's version → not a
+            # supersede. auto_commit stays hub-free: we only populate the caller's list.
+            if who == "framework" and superseded_out is not None:
+                superseded_out.append(p)
+        return True, "resolved by ownership: " + ", ".join(resolved)
+    except Exception as exc:  # never raise into the merge/coordination loop
+        return False, f"ownership-resolve raised: {type(exc).__name__}: {exc}"
+
+
+def _resolve_backend_conflict_by_ownership(
+        repo: Path, superseded_out: Optional[List[str]] = None) -> Tuple[bool, str]:
+    """PROPOSAL #22 — backend MERGE path (integration checked out → framework=--ours).
+    Thin wrapper over the shared direction-aware resolver so the two git paths share one
+    ownership source-of-truth and cannot drift."""
+    return _resolve_conflict_by_ownership(
+        repo, lane="backend", framework_side="--ours", superseded_out=superseded_out)
+
+
 def merge_agent_branch_to_main(
     *,
     repo_root: Union[str, Path],
     agent_branch: str,
     main_branch: str = "integration",
     agent_id: str = "",
+    superseded_out: Optional[List[str]] = None,
 ) -> Tuple[bool, str]:
     """Merge ``agent_branch`` (e.g. ``agent/backend``) into ``main_branch``
     (default ``agent``) via squash-merge. Triggered after each agent's
@@ -382,13 +485,39 @@ def merge_agent_branch_to_main(
             ["merge", "--squash", "--no-commit", agent_branch], cwd=repo,
         )
     if mc != 0:
-        # Real conflict — abort cleanly and report.
-        _run_git(["merge", "--abort"], cwd=repo)
-        try:
-            _run_git(["reset", "--hard", "HEAD"], cwd=repo)
-        except Exception:
-            pass
-        return False, f"conflict merging {agent_branch} → {main_branch}: {me.strip()}"
+        # PROPOSAL #22: for the BACKEND lane only, try a deterministic per-path
+        # ownership resolution BEFORE aborting — framework-owned skeleton files take
+        # integration's by-construction version, custom_routes.py takes the lane's.
+        # This unblocks the agent/backend→integration merge that otherwise deadlocks
+        # delivery (the orchestrator LLM can't reliably resolve it). Scoped to
+        # agent/backend AND only when EVERY conflicted path is backend-owned; any
+        # other branch — or a backend conflict touching an unknown path — keeps the
+        # abort+event behavior so a lane that legitimately owns its tree is never
+        # corrupted.
+        if agent_branch == "agent/backend":
+            res_ok, res_info = _resolve_backend_conflict_by_ownership(repo, superseded_out)
+            if res_ok:
+                # conflicts resolved + staged → fall through to Step 4 (commit).
+                # superseded_out (if passed) now carries the framework-superseded
+                # paths for the caller to notify the lane (PROPOSAL #26 N2).
+                pass
+            else:
+                _run_git(["merge", "--abort"], cwd=repo)
+                try:
+                    _run_git(["reset", "--hard", "HEAD"], cwd=repo)
+                except Exception:
+                    pass
+                return False, (f"conflict merging {agent_branch} → {main_branch}: "
+                               f"{me.strip()} [{res_info}]")
+        else:
+            # Real conflict on a non-backend lane — abort cleanly and report
+            # (frontend/verifier legitimately own their trees; do NOT auto-resolve).
+            _run_git(["merge", "--abort"], cwd=repo)
+            try:
+                _run_git(["reset", "--hard", "HEAD"], cwd=repo)
+            except Exception:
+                pass
+            return False, f"conflict merging {agent_branch} → {main_branch}: {me.strip()}"
 
     # Step 4 — commit with agent author.
     author = agent_id or agent_branch.split("/")[-1]
@@ -494,51 +623,67 @@ def resolve_merge_conflict_via_strategy(
         line for line in (st_out or "").splitlines()
         if rc_st == 0 and line.strip() and not line.startswith("??")
     ]
+    repo_stashed = False
     if tracked_dirty:
         # Determine the currently-checked-out branch deterministically.
         rc_cur, cur_out, _ce = _run_git(["symbolic-ref", "--short", "HEAD"], cwd=repo)
         current_branch = cur_out.strip() if rc_cur == 0 else ""
-        # The WIP belongs to the agent's work, so it must land on the AGENT
-        # branch — never on main_branch. If we are not already on the agent
-        # branch, switch to it; git carries the uncommitted edits across a
-        # checkout when they don't conflict. (If repo_root were dirty ON
-        # main_branch we must NOT commit there.)
-        if current_branch != agent_branch:
-            sc_a, _soa, se_a = _run_git(["checkout", agent_branch], cwd=repo)
-            if sc_a != 0:
-                # Could not move the WIP onto the agent branch (e.g. the dirty
-                # file also differs on agent_branch). Refuse to drop the
-                # agent's work — report so the operator can recover rather than
-                # losing edits or committing onto the wrong branch.
-                return False, (
-                    f"strategic merge blocked: uncommitted changes in repo_root "
-                    f"on {current_branch or '<detached>'} could not be moved onto "
-                    f"{agent_branch} before integrating ({se_a.strip()})"
+        if current_branch == agent_branch:
+            # Genuinely ON the agent branch (a non-worktree caller): the dirt is
+            # the agent's own WIP → commit it onto the agent branch so it becomes
+            # part of the very branch we're about to integrate (never onto
+            # main_branch). git carries the edits; we author as the agent.
+            wip_author = agent_id or agent_branch.split("/")[-1]
+            wip_email = f"{wip_author}@env-gen.local"
+            wip_env = {
+                **os.environ,
+                "GIT_AUTHOR_NAME": wip_author,
+                "GIT_AUTHOR_EMAIL": wip_email,
+                "GIT_COMMITTER_NAME": wip_author,
+                "GIT_COMMITTER_EMAIL": wip_email,
+            }
+            _run_git(["add", "-A"], cwd=repo)
+            try:
+                subprocess.run(
+                    ["git", "commit", "--no-verify", "-qm",
+                     f"auto-commit uncommitted work on {agent_branch} "
+                     f"before strategic merge"],
+                    cwd=str(repo), env=wip_env,
+                    capture_output=True, text=True, timeout=_GIT_TIMEOUT,
                 )
-        wip_author = agent_id or agent_branch.split("/")[-1]
-        wip_email = f"{wip_author}@env-gen.local"
-        wip_env = {
-            **os.environ,
-            "GIT_AUTHOR_NAME": wip_author,
-            "GIT_AUTHOR_EMAIL": wip_email,
-            "GIT_COMMITTER_NAME": wip_author,
-            "GIT_COMMITTER_EMAIL": wip_email,
-        }
-        _run_git(["add", "-A"], cwd=repo)
-        try:
-            subprocess.run(
-                ["git", "commit", "--no-verify", "-qm",
-                 f"auto-commit uncommitted work on {agent_branch} "
-                 f"before strategic merge"],
-                cwd=str(repo), env=wip_env,
-                capture_output=True, text=True, timeout=_GIT_TIMEOUT,
-            )
-        except Exception as exc:
-            return False, f"auto-commit WIP before strategic merge raised: {exc}"
+            except Exception as exc:
+                return False, f"auto-commit WIP before strategic merge raised: {exc}"
+        else:
+            # current_branch is main_branch (integration). The repo_root tracked
+            # dirt is the FRAMEWORK's scaffold/heal residue (skeleton/infra/route
+            # projections written into the integration working tree, committed
+            # later by commit_framework_delivery) — NOT the agent's work, which
+            # lives in worktrees/<id>. agent_branch is checked out in its OWN
+            # worktree, so a `git checkout agent_branch` here is IMPOSSIBLE (git
+            # forbids a 2nd checkout of a worktree-held branch — this was the run
+            # #34 "strategic merge blocked … already checked out at worktrees/…"
+            # wedge that starved the ownership resolver). Stash the transient
+            # residue (mirrors merge_agent_branch_to_main) so the checkout+merge
+            # can proceed; the scaffold re-emits these files every tick, so
+            # dropping the stash is safe. NO -u → keep untracked hub state on disk.
+            rc_sp, _so_sp, _se_sp = _run_git(
+                ["stash", "push", "-m", "strategic-merge-pre-checkout"], cwd=repo)
+            if rc_sp == 0:
+                repo_stashed = True
+            else:
+                # Nothing stashable / stash failed — hard-reset TRACKED state to
+                # HEAD as last resort (untracked hub state is preserved).
+                _run_git(["reset", "--hard", "HEAD"], cwd=repo)
 
     sc, _so, se = _run_git(["checkout", main_branch], cwd=repo)
     if sc != 0:
+        if repo_stashed:
+            _run_git(["stash", "pop"], cwd=repo)
         return False, f"checkout {main_branch} failed: {se.strip()}"
+    if repo_stashed:
+        # Transient framework residue — drop it (the scaffold re-emits + commits
+        # it via commit_framework_delivery). Untracked state wasn't stashed.
+        _run_git(["stash", "drop"], cwd=repo)
 
     # Squash-merge with strategy option. --no-commit so we can author.
     mc, _mo, me = _run_git(
@@ -672,6 +817,7 @@ def pull_main_into_worktree(
     *,
     worktree_dir: Union[str, Path],
     main_branch: str = "integration",
+    superseded_out: Optional[List[str]] = None,
 ) -> Tuple[bool, str]:
     """Pull ``main_branch`` into the agent's worktree so the agent sees
     OTHER agents' committed-and-merged work at the start of its step.
@@ -789,26 +935,46 @@ def pull_main_into_worktree(
             [ln.strip() for ln in df_out.splitlines() if ln.strip()]
             if rc_diff == 0 else []
         )
-        _run_git(["merge", "--abort"], cwd=wt)
-        if stashed:
-            # Restore the agent's uncommitted work so they don't lose it.
-            _run_git(["stash", "pop"], cwd=wt)
-        if not conflict_files:
-            # Non-conflict merge failure (signing / hook / transient).
-            # The worktree was returned to HEAD by `merge --abort`.
-            # Return success-with-skip so step_runner.py does NOT
-            # publish a misleading merge_conflict event. The next
-            # step retries the pull, which is the same recovery
-            # behavior as before — just without the false alarm.
-            return True, (
-                f"merge_failed_no_conflict pulling {main_branch} "
-                f"(worktree returned to HEAD; will retry next step): "
-                f"{me.strip()}"
+        # PROPOSAL #23: the SAME framework-owned-file conflict class as the MERGE path
+        # (#22), here on the step-start PULL (integration → lane worktree). Resolve
+        # per-path by ownership BEFORE aborting, so the lane stops re-hitting the
+        # identical conflict every step and finally converges. DIRECTION is reversed
+        # vs the merge: the worktree has the lane's branch checked out, so framework
+        # files = ``--theirs`` (integration) and lane files = ``--ours``. Scoped to
+        # known lanes (backend/frontend) + their owned paths; anything else → abort+event.
+        # The pull is a real ``git merge`` (not --squash), so COMMIT to finish it.
+        _pull_resolved = False
+        if conflict_files:
+            _lane = _lane_of_worktree(wt)
+            _res_ok, _res_info = _resolve_conflict_by_ownership(
+                wt, lane=_lane, framework_side="--theirs",
+                superseded_out=superseded_out)  # PROPOSAL #26 N2
+            if _res_ok:
+                rc_ci, _ci, _ec = _run_git(["commit", "--no-edit"], cwd=wt)
+                _pull_resolved = (rc_ci == 0)
+        if not _pull_resolved:
+            _run_git(["merge", "--abort"], cwd=wt)
+            if stashed:
+                # Restore the agent's uncommitted work so they don't lose it.
+                _run_git(["stash", "pop"], cwd=wt)
+            if not conflict_files:
+                # Non-conflict merge failure (signing / hook / transient).
+                # The worktree was returned to HEAD by `merge --abort`.
+                # Return success-with-skip so step_runner.py does NOT
+                # publish a misleading merge_conflict event. The next
+                # step retries the pull, which is the same recovery
+                # behavior as before — just without the false alarm.
+                return True, (
+                    f"merge_failed_no_conflict pulling {main_branch} "
+                    f"(worktree returned to HEAD; will retry next step): "
+                    f"{me.strip()}"
+                )
+            return False, (
+                f"conflict pulling {main_branch} "
+                f"[files={','.join(conflict_files)}]: {me.strip()}"
             )
-        return False, (
-            f"conflict pulling {main_branch} "
-            f"[files={','.join(conflict_files)}]: {me.strip()}"
-        )
+        # #23-resolved + committed → fall through to the stash-pop + sha return
+        # below, exactly like a clean merge.
 
     if stashed:
         rc_pop, _po, se_pop = _run_git(["stash", "pop"], cwd=wt)

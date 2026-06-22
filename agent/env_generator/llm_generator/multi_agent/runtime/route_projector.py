@@ -342,7 +342,7 @@ def _resource_model(path: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tu
     """Pick the ORM model a path operates on: the LAST path segment that matches a
     known table (plural or singular). ``/api/users/{u}/posts`` → posts(Post).
     A feed/timeline path that names no table resolves to the app's primary content
-    table (the social ``posts`` when present, else shape-derived — domain-agnostic)."""
+    table — shape-derived (timestamp + owner FK + richness), domain-agnostic."""
     chosen: Optional[Tuple[str, Dict[str, Any]]] = None
     for seg, is_p in _segments(path):
         if is_p:
@@ -353,7 +353,9 @@ def _resource_model(path: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tu
     if chosen is None:
         segs = {seg for seg, is_p in _segments(path) if not is_p}
         if segs & set(_FEED_SHAPED_TOKENS):
-            chosen = _match_model("posts", models) or _primary_content_model(models)
+            # No hardcoded "posts" preference — derive the primary content model
+            # from shape so a feed-shaped path in a non-social app maps correctly.
+            chosen = _primary_content_model(models)
     return chosen
 
 
@@ -472,7 +474,28 @@ def _sig_for_params(params: List[str], path: str, models: Dict[str, Dict[str, An
     return "".join(f"{p}: {_param_column_type(p, path, models)}, " for p in params)
 
 
-def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict[str, Any]], idx: int) -> str:
+def _me_user_model(models: Dict[str, Dict[str, Any]]):
+    """The model backing a ``/me`` current-user endpoint — the users table.
+
+    A GET path ending in ``/me`` is ALWAYS the authenticated caller's own record,
+    so it resolves to the users model regardless of the path's resource segment
+    (``/api/auth/me`` → "auth" has no table, but the row is still a user). Returns
+    ``(class_name, cols)`` or ``None``. Prefers a conventionally-named users table,
+    else any model carrying an ``email``/``username`` column (user-like)."""
+    for name in ("users", "user", "accounts", "account"):
+        m = models.get(name)
+        if isinstance(m, dict) and m.get("cls"):
+            return m["cls"], (m.get("cols") or [])
+    for _m in models.values():
+        if not isinstance(_m, dict) or not _m.get("cls"):
+            continue
+        cols = _m.get("cols") or []
+        if "email" in cols or "username" in cols:
+            return _m["cls"], cols
+    return None
+
+
+def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict[str, Any]], idx: int, response_key: str = "") -> str:
     """Project a FastAPI handler. Functional for recognised CRUD + nested-resource
     patterns over a resolvable model; valid-shape stub otherwise. Never 404s."""
     fn = "_projected_" + re.sub(r"[^a-zA-Z0-9]+", "_", f"{method}_{path}").strip("_").lower() + f"_{idx}"
@@ -494,9 +517,16 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
     cls = None
     cols: List[str] = []
     table = ""
+    owner_fk = None
     if res:
         table, meta = res
         cls, cols = meta["cls"], meta["cols"]
+        # The column that attributes a row to the authenticated caller (user_id/
+        # author_id/...). Used to AUTHORIZE mutations (PUT/DELETE only touch your
+        # OWN rows). NOTE: read-scoping (GET list/item) is deliberately NOT keyed
+        # off this — "only see your own rows" is domain-dependent (private notes
+        # vs a public feed), so it stays a separate, explicit decision.
+        owner_fk = _owner_fk(meta) if auth else None
 
     # Nested parent: /api/users/{username}/posts → parent users(User) via {username}.
     parent_ctx = _parent_context(path, models, table) if cls else None
@@ -538,6 +568,16 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             f"    obj = db.get({cls}, {last_param})",
             "    if obj is None:",
             '        raise HTTPException(status_code=404, detail="not found")',
+        ]
+        if owner_fk:
+            # AUTHORIZE: only the owner may delete (404, not 403, so a non-owner
+            # can't even probe existence). Safe default for projected CRUD; broader
+            # rules (admin/moderator) go in the lane's custom_routes.
+            body_lines += [
+                f'    if getattr(obj, "{owner_fk}", None) != user.id:',
+                '        raise HTTPException(status_code=404, detail="not found")',
+            ]
+        body_lines += [
             "    db.delete(obj)",
             "    db.commit()",
             f"    return {{\"item\": {{\"id\": {last_param}, \"deleted\": True}}}}",
@@ -569,11 +609,23 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 f"    return {{\"item\": {_serialize_expr('obj', cols)}}}",
             ]
     elif cls and m == "GET" and "search" in path:
+        # Search the model's TEXTUAL columns, derived from the contract's type map —
+        # not a hardcoded social/content name allowlist (which silently failed to
+        # search any column outside that vocabulary). Falls back to all columns when
+        # the type map is unavailable (raw-SQL app); the runtime hasattr() guards it.
+        _tmap = (meta.get("types") or {}) if res else {}
+        def _sensitive(_c):
+            _l = _c.lower()
+            return ("password" in _l or _l.endswith("_hash") or "secret" in _l or "token" in _l)
+        _search_cols = [c for c in cols if not _sensitive(c) and any(
+            k in str(_tmap.get(c, "")).lower() for k in ("char", "text", "string", "clob", "unicode"))]
+        if not _search_cols:
+            _search_cols = [c for c in cols if not _sensitive(c)]
         body_lines = [
             "    term = (q or \"\").strip()",
             f"    query = db.query({cls})",
             "    if term:",
-            f"        cols_to_search = [c for c in (\"username\", \"full_name\", \"name\", \"title\", \"caption\", \"description\", \"content\", \"body\", \"bio\", \"summary\", \"subject\", \"label\", \"message\", \"text\", \"slug\") if hasattr({cls}, c)]",
+            f"        cols_to_search = [c for c in {_search_cols!r} if hasattr({cls}, c)]",
             "        from sqlalchemy import or_ as _or",
             f"        conds = [getattr({cls}, c).ilike(f\"%{{term}}%\") for c in cols_to_search]",
             "        if conds:",
@@ -582,19 +634,31 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": query.count()}}",
         ]
         sig_params += 'q: str = "", '
-    elif cls and m == "GET" and path.endswith("/me"):
+    elif m == "GET" and path.endswith("/me"):
         # GET /<resource>/me → the CURRENT authenticated user as a single {item}.
-        # "me" is a STATIC segment, so without this case it falls through to the
-        # GET-collection branch below and returns EVERY row — a shape AND semantic
-        # bug (the profile page wants the current user, not a list of all users).
-        # Mirror the PUT/PATCH /me handler's "me" resolution (db.get(User, user.id)).
-        body_lines = [
-            ("    obj = db.get(User, user.id) if user is not None else None"
-             if auth else f"    obj = db.query({cls}).first()"),
-            "    if obj is None:",
-            '        raise HTTPException(status_code=404, detail="not found")',
-            f"    return {{\"item\": {_serialize_expr('obj', cols)}}}",
-        ]
+        # "me" is a STATIC segment (not a path param), so without this case it falls
+        # through to the GET-collection branch and returns EVERY row — a shape AND
+        # semantic bug. CRITICALLY this must NOT be gated on the path's resource
+        # segment resolving to a model: ``/api/auth/me`` has resource "auth" (no
+        # table) → cls is None → it used to skip this branch and hit the generic GET
+        # stub, which shipped a ``{"items":[],"total":0}`` LIST envelope whenever the
+        # contract's response_key wasn't "item" → business_endpoints_correct_shape
+        # failed forever ("returns a list but the contract is a single item"; outlook
+        # run #2, GET /api/auth/me). /me is ALWAYS the authenticated caller's own
+        # record, so resolve to the users model (so the row serializes with its real
+        # columns) regardless of the resource segment.
+        _me = _me_user_model(models) or ((cls, cols) if cls else None)
+        if _me and _me[0]:
+            _ucls, _ucols = _me
+            body_lines = [
+                (f"    obj = db.get({_ucls}, user.id) if user is not None else None"
+                 if auth else f"    obj = db.query({_ucls}).first()"),
+                "    if obj is None:",
+                '        raise HTTPException(status_code=404, detail="not found")',
+                f"    return {{\"item\": {_serialize_expr('obj', _ucols)}}}",
+            ]
+        else:
+            body_lines = ['    return {"item": {}}']
     elif cls and m == "GET":
         # GET collection
         body_lines = [
@@ -609,11 +673,36 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             f"    valid = {{k: v for k, v in payload.items() if hasattr({cls}, k)}}",
         ]
         if m in ("PUT", "PATCH") and path.endswith("/me"):
+            # mirror GET /me: resolve the user model DYNAMICALLY. Hardcoding `User`
+            # broke /me updates for any app whose user table isn't literally named
+            # User (accounts/profiles/members) — `NameError: User` at request time.
+            _me_u = _me_user_model(models) or ((cls, cols) if cls else None)
+            _ucls = (_me_u[0] if (_me_u and _me_u[0]) else None) or cls
             body_lines += [
                 "    try:",
-                "        obj = db.get(User, user.id)" if auth else f"        obj = db.query({cls}).first()",
+                f"        obj = db.get({_ucls}, user.id)" if auth else f"        obj = db.query({_ucls}).first()",
                 "        if obj is None:",
                 '            raise HTTPException(status_code=404, detail="not found")',
+                "        for k, v in valid.items():",
+                "            setattr(obj, k, v)",
+            ]
+        elif m in ("PUT", "PATCH") and last_param and _is_id_param(last_param):
+            # UPDATE the existing row by id — NOT a new insert. Falling through to
+            # the create path below made PUT/PATCH do ``cls(**valid); db.add`` →
+            # every update INSERTED a duplicate row (live: PUT /api/notes/{id}
+            # created notes instead of editing them).
+            body_lines += [
+                "    try:",
+                f"        obj = db.get({cls}, {last_param})",
+                "        if obj is None:",
+                '            raise HTTPException(status_code=404, detail="not found")',
+            ]
+            if owner_fk:
+                body_lines += [
+                    f'        if getattr(obj, "{owner_fk}", None) != user.id:',
+                    '            raise HTTPException(status_code=404, detail="not found")',
+                ]
+            body_lines += [
                 "        for k, v in valid.items():",
                 "            setattr(obj, k, v)",
             ]
@@ -662,10 +751,12 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             # ANY app), else an honest 404 (the gate only checks 2xx shapes).
             _resolver = None
             for _mn, _mm in (models or {}).items():
-                _col_names = [c.get("name") for c in (_mm.get("columns") or [])
-                              if isinstance(c, dict) and c.get("name")]
+                # the models dict shape is {table: {"cls": str, "cols": [name,...]}} —
+                # the prior _mm.get("columns")/"class_name" keys never existed, so this
+                # resolver was dead (always 404). Read the real keys.
+                _col_names = list(_mm.get("cols") or [])
                 if last_param in _col_names:
-                    _resolver = (_mm.get("class_name") or _mn.capitalize(),
+                    _resolver = (_mm.get("cls") or _mn.capitalize(),
                                  last_param, _col_names)
                     break
             if _resolver:
@@ -681,7 +772,16 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                     "    raise HTTPException(status_code=404, detail=\"not found\")",
                 ]
         elif m == "GET":
-            body_lines = ['    return {"items": [], "total": 0}']
+            # SHAPE CORRECTNESS (youtube run #16, 2026-06-20): a non-param GET whose
+            # resource has no resolvable model (e.g. GET /api/auth/me — "auth" has no
+            # table) fell through to the COLLECTION stub, but the contract declared
+            # response_key='item' → business_endpoints_correct_shape failed forever
+            # ("returns a list but the contract is a single item"). Honor the declared
+            # response_key so the stub shape always matches the contract.
+            if response_key == "item":
+                body_lines = ['    return {"item": {}}']
+            else:
+                body_lines = ['    return {"items": [], "total": 0}']
         elif m == "DELETE":
             body_lines = ['    return {"item": {"deleted": True}}']
         else:
@@ -752,7 +852,14 @@ def project_missing_routes(
             continue
         meta = ep.get("metadata") if isinstance(ep.get("metadata"), Mapping) else {}
         auth = bool(ep.get("auth_required", meta.get("auth_required", True)))
-        block_info.append((path, _generate_handler(method, path, auth, models, i)))
+        _schema = ep.get("schema") if isinstance(ep.get("schema"), Mapping) else {}
+        response_key = str(
+            ep.get("response_key")
+            or (_schema.get("response_key") if isinstance(_schema, Mapping) else "")
+            or meta.get("response_key")
+            or ""
+        ).strip()
+        block_info.append((path, _generate_handler(method, path, auth, models, i, response_key)))
         projected.append(f"{method} {path}")
         existing.add((method, _norm_path(path)))  # dedupe within this batch
 

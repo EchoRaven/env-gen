@@ -113,10 +113,15 @@ Examples:
         )
     
     def execute(self, pattern: str, path: str = "", include: str = "*") -> ToolResult:
+        # `path` is OPTIONAL (schema: "default: workspace root"). When omitted, search
+        # the whole workspace — pass "." (NOT ""), since _resolve_workspace_path rejects
+        # an empty path with "path is required". (Prior bug: search_scope computed "." but
+        # the resolver was handed `path or ""` → an omitted path errored "grep: path is
+        # required", so agents couldn't grep-by-pattern to LOCATE a file before reading.)
         search_scope = path or "."
         search_path, err = _resolve_workspace_path(
             self.workspace,
-            path or "",
+            search_scope,
             op_name="grep",
             must_exist=True,
             expect_file=None,

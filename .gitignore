@@ -30,3 +30,14 @@ agent/**/.worktrees/
 # dev DB
 *.db
 forgingground_gen.db
+
+# Dev test suites — kept local only, not part of the shipped pipeline repo.
+# (Runtime assets that merely have "test" in the path are NOT matched here:
+#  multi_agent/bundled_tests/ and runtime/test_user_validation.py stay tracked.)
+/tests/
+/agent/tests/
+/agent/env_generator/llm_generator/multi_agent/tests/
+
+# Dev run/launch scripts — kept local only, not pipeline code.
+run_*.sh
+launch_*.sh

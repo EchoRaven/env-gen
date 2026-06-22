@@ -14,15 +14,22 @@ DEFAULT_THRESHOLDS = {
 
 def collect_loose_ends(hubs: Any, agent_id: str, step_num: int,
                         thresholds: Optional[Dict[str, int]] = None) -> Dict[str, bool]:
-    """Return six-category boolean dict. Use collect_loose_ends_details for the data backing each flag."""
+    """Return five-category boolean dict. Use collect_loose_ends_details for the data backing each flag.
+
+    NOTE (#35): ``unpushed_commits`` (commits-ahead-with-no-open-PR) was RETIRED. The
+    pipeline is commit-only — committed work auto-integrates to the integration branch
+    (heal_pipeline._merge_committed_agent_work), so a branch ahead of integration with no
+    PR is the NORMAL, COMPLETE state, not a loose end. Flagging it nagged every agent to
+    open a PR with a tool they don't have / shouldn't use (run #34: the orchestrator
+    nearly mis-finished chasing a phantom PR)."""
     t = thresholds or DEFAULT_THRESHOLDS
     details = collect_loose_ends_details(hubs, agent_id, step_num, t)
     return {
         "dirty_worktree": bool(details.get("dirty_files")),
-        "unpushed_commits": details.get("ahead", 0) > 0 and not details.get("has_open_pr"),
         "stale_claimed_tasks": bool(details.get("stale_claimed_tasks")),
         "forgotten_reviews": bool(details.get("forgotten_reviews")),
         "unhandled_breaking_changes": bool(details.get("unhandled_breaking_changes")),
+        # #35: conflict_prs_unresolved retired (PRs never enter conflict in commit-only mode).
         "conflict_prs_unresolved": bool(details.get("conflict_prs_unresolved")),
     }
 
@@ -90,9 +97,17 @@ def collect_loose_ends_details(hubs: Any, agent_id: str, step_num: int,
     return details
 
 
+# The categories that actually render a section. A retired/stale key (e.g. the #35
+# `unpushed_commits`) must NOT trip the header — only these gate rendering.
+_RENDERED_CATEGORIES = (
+    "dirty_worktree", "stale_claimed_tasks", "forgotten_reviews",
+    "unhandled_breaking_changes",
+)
+
+
 def build_commit_gate_prompt(loose: Dict[str, bool], details: Dict[str, Any]) -> Optional[str]:
-    """Render an INTEGRITY CHECK markdown block. Returns None if no loose end is set."""
-    if not any(loose.values()):
+    """Render an INTEGRITY CHECK markdown block. Returns None if no RENDERED loose end is set."""
+    if not any(loose.get(k) for k in _RENDERED_CATEGORIES):
         return None
     lines: List[str] = ["### INTEGRITY CHECK"]
     lines.append("")
@@ -103,12 +118,6 @@ def build_commit_gate_prompt(loose: Dict[str, bool], details: Dict[str, Any]) ->
         lines.append("**Dirty work tree** (uncommitted changes)")
         lines.append(f"  - {len(files)} file(s): {', '.join(files[:5])}{'...' if len(files) > 5 else ''}")
         lines.append("  -> next step: `codehub_commit(message=..., files=[...])`")
-        lines.append("")
-    if loose.get("unpushed_commits"):
-        ahead = details.get("ahead", 0)
-        branch = details.get("branch", "")
-        lines.append(f"**Branch has {ahead} commits but NO open PR** (on {branch})")
-        lines.append("  -> consider: `codehub_open_pr(branch=..., reviewers=[...], linked_tasks=[...])`")
         lines.append("")
     if loose.get("stale_claimed_tasks"):
         tasks = details.get("stale_claimed_tasks") or []
@@ -130,10 +139,7 @@ def build_commit_gate_prompt(loose: Dict[str, bool], details: Dict[str, Any]) ->
         for c in bc[:3]:
             lines.append(f"  - {c.get('endpoint_id', '?')}")
         lines.append("")
-    if loose.get("conflict_prs_unresolved"):
-        prs = details.get("conflict_prs_unresolved") or []
-        lines.append(f"**{len(prs)} of your PR(s) in conflict, unresolved**")
-        for pid in prs[:3]:
-            lines.append(f"  - {pid}")
-        lines.append("  -> `codehub_resolve_conflict(pr_id, resolution_files={...})`")
+    # #35: the conflict_prs_unresolved branch (advising codehub_resolve_conflict(pr_id))
+    # was removed — PRs never enter conflict in the commit-only pipeline and that tool is
+    # no longer surfaced. Branch/worktree conflicts surface via codehub_resolve_merge_conflict.
     return "\n".join(lines)
