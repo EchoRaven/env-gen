@@ -346,12 +346,17 @@ class HealPipeline:
         import asyncio
         orch = self._orch
         from .visual_fidelity import _service_host_port
+        from .validation_runner import _backend_host_port
         from .test_user_runner import (
             run_browser_test_user, format_feedback, judge_against_references)
         cwd = compose.parent
         fe_port = (_service_host_port(compose, cwd, "frontend")
                    or _service_host_port(compose, cwd, "ui") or 8080)
         base = f"http://localhost:{fe_port}"
+        # The backend base lets the test-user register its account via the API first, so it
+        # tests the LOGIN ui in isolation instead of false-flagging a working staged login.
+        be_port = _backend_host_port(compose, cwd) if compose.exists() else None
+        api_base = f"http://localhost:{be_port}" if be_port else None
         # pages to walk: the registered ui_pages with a real route (+ landing/login).
         pages = [{"name": "login", "route": "/login", "auth": False}]
         try:
@@ -366,7 +371,8 @@ class HealPipeline:
         except Exception:
             pass
         out_dir = proj / "design" / "test_user"
-        report = asyncio.run(run_browser_test_user(base, pages, out_dir, register=True))
+        report = asyncio.run(run_browser_test_user(
+            base, pages, out_dir, register=True, api_base_url=api_base))
         if not report.get("ran"):
             orch._logger.warning("BROWSER test-user (v%s): could not run — %s",
                                  version, report.get("summary"))

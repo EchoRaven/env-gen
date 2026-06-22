@@ -41,6 +41,101 @@ _PROBE = """() => {
 }"""
 
 
+_TOKEN_JS = "() => localStorage.getItem('access_token') || localStorage.getItem('token')"
+# A URL still on an auth route means the flow did not get the user into the app.
+_AUTH_ROUTE_SEGS = ("/login", "/signup", "/signin", "/register")
+
+
+def _api_register(api_base: str, creds: Mapping[str, str]) -> bool:
+    """Best-effort: ensure the test-user account EXISTS via the backend auth API so the
+    LOGIN ui can be tested in isolation. Driving a multi-step SIGNUP ui is flaky and
+    app-specific; the question the auth check answers — 'is the login form wired to the
+    API' — only needs a user that already exists. 4xx (incl. 409 already-exists) counts
+    as present; only a dead socket / 5xx is a miss. Never raises."""
+    import urllib.request
+    body = json.dumps({
+        "email": creds["email"], "password": creds["password"], "name": creds["name"],
+        "full_name": creds["name"].title(), "username": creds.get("username") or creds["name"],
+    }).encode()
+    for path in ("/auth/register", "/auth/signup"):
+        try:
+            req = urllib.request.Request(api_base.rstrip("/") + path, data=body,
+                                         headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=8) as r:
+                if 200 <= r.status < 500:
+                    return True
+        except urllib.error.HTTPError as he:  # 409 already-exists etc. — the user is present
+            if he.code < 500:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+async def _fill_visible_inputs(page: Any, creds: Mapping[str, str]) -> int:
+    """Fill every visible, empty input on the current step by detected role
+    (email / password / name / generic). Returns how many it filled — staged forms
+    expose one step at a time, so this is called once per step."""
+    filled = 0
+    try:
+        inputs = await page.locator("input:visible").all()
+    except Exception:
+        return 0
+    for inp in inputs:
+        try:
+            typ = ((await inp.get_attribute("type")) or "").lower()
+            if typ in ("hidden", "checkbox", "radio", "submit", "button"):
+                continue
+            if (await inp.input_value()):  # already filled (don't clobber a prior step)
+                continue
+            blob = (((await inp.get_attribute("placeholder")) or "") + " "
+                    + ((await inp.get_attribute("name")) or "")).lower()
+            if typ == "email" or "email" in blob or "mail" in blob:
+                await inp.fill(creds["email"])
+            elif typ == "password" or "pass" in blob:
+                await inp.fill(creds["password"])
+            elif "name" in blob:
+                await inp.fill(creds["name"])
+            else:
+                await inp.fill(creds["email"])  # username-style first field
+            filled += 1
+        except Exception:
+            pass
+    return filled
+
+
+async def _click_primary(page: Any) -> bool:
+    """Click the form's primary advance/submit control (Next / Sign in / Continue)."""
+    for sel in ("button[type=submit]", "form button", "button[type=button]", "button"):
+        try:
+            b = page.locator(sel).first
+            if await b.count() > 0 and await b.is_visible():
+                await b.click(timeout=2500)
+                return True
+        except Exception:
+            pass
+    return False
+
+
+async def _drive_auth_form(page: Any, creds: Mapping[str, str], *, max_steps: int = 4) -> Optional[str]:
+    """Drive a login/signup form to completion, single- OR multi-step. Each step: fill the
+    visible inputs, check for a stored token, else click the primary button and advance.
+    Handles the Microsoft/Google staged flow (email -> Next -> password -> Sign in) without
+    hardcoding any label. Returns the stored token (or None)."""
+    for _ in range(max_steps):
+        await _fill_visible_inputs(page, creds)
+        token = await page.evaluate(_TOKEN_JS)
+        if token:
+            return token
+        if not await _click_primary(page):
+            break
+        await page.wait_for_timeout(1800)
+        token = await page.evaluate(_TOKEN_JS)
+        if token:
+            return token
+    return await page.evaluate(_TOKEN_JS)
+
+
 async def run_browser_test_user(
     base_url: str,
     pages: List[Mapping[str, Any]],
@@ -49,6 +144,7 @@ async def run_browser_test_user(
     register: bool = True,
     demo_login: Optional[Mapping[str, str]] = None,
     chrome_path: Optional[str] = None,
+    api_base_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Drive a real browser through the app. ``pages`` is [{name, route, auth}].
     Returns {ran, steps:[{step,ok,note}], pages:[{name,route,ok,blank,console_errors,
@@ -78,54 +174,30 @@ async def run_browser_test_user(
                 page.on("console", lambda m: cerr.append(m.text) if m.type == "error" else None)
                 report["ran"] = True
 
-                # ---- 1. AUTH FLOW (real form, real submit) ----
+                # ---- 1. AUTH FLOW (staged-form aware, real submit) ----
                 token = None
                 creds = dict(demo_login) if demo_login else {
                     "email": "testuser_probe@example.com", "password": "Probe123!x", "name": "Test User"}
-                await page.goto(base_url + "/login", wait_until="networkidle", timeout=20000)
+                # Ensure the account exists (deterministic), then test the LOGIN ui in
+                # isolation — driving a multi-step SIGNUP ui is flaky; the real question is
+                # whether the login form is wired to the API (Microsoft/Google staged logins
+                # were false-flagged 'broken' when the engine fell through to logging in as a
+                # never-registered user). With no api_base we still drive the form best-effort.
+                if register and api_base_url:
+                    _api_register(api_base_url, creds)
                 try:
-                    if register:
-                        # try to switch the form into create-account mode if it offers it
-                        for label in ("Create one", "Create a free account", "New here", "Sign up", "Create account"):
-                            el = page.get_by_text(label, exact=False)
-                            if await el.count() > 0:
-                                try:
-                                    await el.first.click(timeout=1500)
-                                    await page.wait_for_timeout(400)
-                                except Exception:
-                                    pass
-                                break
-                    em = page.locator("input[type=email], input[name=email], input[placeholder*=mail i]").first
-                    pw_in = page.locator("input[type=password]").first
-                    if await em.count() > 0:
-                        await em.fill(creds["email"])
-                    # multi-step (email -> Next -> password) forms: click Next if password isn't visible
-                    if await pw_in.count() == 0:
-                        nxt = page.get_by_role("button", name="Next")
-                        if await nxt.count() > 0:
-                            await nxt.first.click(); await page.wait_for_timeout(500)
-                        pw_in = page.locator("input[type=password]").first
-                    name_in = page.locator("input[placeholder*=name i], input[name=name]").first
-                    if register and await name_in.count() > 0:
-                        try:
-                            await name_in.fill(creds["name"])
-                        except Exception:
-                            pass
-                    if await pw_in.count() > 0:
-                        await pw_in.fill(creds["password"])
-                    submit = page.locator("button[type=submit]").first
-                    has_submit = await submit.count() > 0
+                    await page.goto(base_url + "/login", wait_until="networkidle", timeout=20000)
+                    has_submit = await page.locator(
+                        "button[type=submit], form button, button").count() > 0
                     step("login form has a submit control", has_submit,
-                         "" if has_submit else "no button[type=submit] — the auth form is not usable")
-                    if has_submit:
-                        await submit.click()
-                        await page.wait_for_timeout(2500)
-                    token = await page.evaluate("() => localStorage.getItem('access_token') || localStorage.getItem('token')")
+                         "" if has_submit else "no clickable submit — the auth form is not usable")
+                    token = await _drive_auth_form(page, creds)
                     url = page.url
-                    navigated = "/login" not in url.split("?", 1)[0]
+                    path = url.split("?", 1)[0]
+                    navigated = not any(seg in path for seg in _AUTH_ROUTE_SEGS)
                     ok_auth = bool(token) and navigated
                     step("auth flow stores a token + navigates into the app", ok_auth,
-                         "" if ok_auth else f"submit did nothing: token={bool(token)} url={url} — the form is not wired to the API")
+                         "" if ok_auth else f"login did nothing: token={bool(token)} url={url} — the form is not wired to the API")
                 except Exception as exc:
                     step("auth flow", False, f"exception: {exc}")
 
