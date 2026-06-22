@@ -346,7 +346,8 @@ class HealPipeline:
         import asyncio
         orch = self._orch
         from .visual_fidelity import _service_host_port
-        from .test_user_runner import run_browser_test_user, format_feedback
+        from .test_user_runner import (
+            run_browser_test_user, format_feedback, judge_against_references)
         cwd = compose.parent
         fe_port = (_service_host_port(compose, cwd, "frontend")
                    or _service_host_port(compose, cwd, "ui") or 8080)
@@ -370,12 +371,27 @@ class HealPipeline:
             orch._logger.warning("BROWSER test-user (v%s): could not run — %s",
                                  version, report.get("summary"))
             return
-        orch._logger.warning("BROWSER test-user (v%s): %s", version, report.get("summary"))
-        # Route concrete UI defects (dead auth form / blank pages / console errors) back
-        # to the frontend lane as a P0 task — the "give feedback, keep fixing" step. (The
-        # task is the durable signal the lane claims; the message_bus send is skipped here
-        # because this runs in a worker thread off the orchestrator's event loop.)
-        broken = (not report.get("auth_ok")) or report.get("blank_pages") or report.get("error_pages")
+        # KEY-NODE vs REFERENCE: LLM-compare each captured page screenshot to the reference
+        # image that depicts that route, so the feedback says "inbox doesn't match
+        # outlook_inbox.png — missing folder rail", not merely "blank/console-error". The
+        # browser captured a screenshot of the REAL logged-in app per route; this folds the
+        # visual verdict into the same report (PIPELINE_HANDOFF §5/§8.1). Best-effort.
+        refs = list(getattr(orch, "_reference_images", None) or [])
+        llm = getattr(orch, "llm", None)
+        if refs and llm is not None:
+            try:
+                asyncio.run(judge_against_references(report, refs, llm))
+            except Exception as _vexc:
+                orch._logger.debug("test-user visual judging skipped: %s", _vexc)
+        orch._logger.warning("BROWSER test-user (v%s): %s; visual_mismatches=%s",
+                             version, report.get("summary"), report.get("visual_mismatches") or "∅")
+        # Route concrete UI defects (dead auth form / blank pages / console errors / a screen
+        # that does not match its reference) back to the frontend lane as a P0 task — the
+        # "give feedback, keep fixing" step. (The task is the durable signal the lane claims;
+        # the message_bus send is skipped here because this runs in a worker thread off the
+        # orchestrator's event loop.)
+        broken = ((not report.get("auth_ok")) or report.get("blank_pages")
+                  or report.get("error_pages") or report.get("visual_mismatches"))
         if broken:
             try:
                 fb = format_feedback(report)
@@ -386,8 +402,9 @@ class HealPipeline:
                     assignee="frontend", agent="orchestrator", priority="P0")
                 orch._logger.warning(
                     "BROWSER test-user dispatched a P0 fix task to frontend: auth_ok=%s "
-                    "blank=%s console_errors=%s", report.get("auth_ok"),
-                    report.get("blank_pages"), report.get("error_pages"))
+                    "blank=%s console_errors=%s visual_mismatches=%s", report.get("auth_ok"),
+                    report.get("blank_pages"), report.get("error_pages"),
+                    report.get("visual_mismatches"))
             except Exception as _dexc:
                 orch._logger.error("browser test-user feedback dispatch failed: %s", _dexc)
 

@@ -25,8 +25,9 @@ error, never raising into the validation loop. Chromium is the Playwright-bundle
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 _VIEWPORT = {"width": 1280, "height": 800}
 # A page that rendered almost nothing (a stub heading) — used to flag "blank page".
@@ -171,6 +172,71 @@ async def run_browser_test_user(
     return report
 
 
+async def judge_against_references(
+    report: Dict[str, Any],
+    reference_images: List[Any],
+    llm: Any,
+    *,
+    judge_fn: Optional[Callable] = None,
+    min_similarity: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Wire the visual-fidelity judge into the browser test-user (PIPELINE_HANDOFF §5/§8.1).
+
+    The browser walkthrough already captured a screenshot per route; here we LLM-compare
+    each captured page to the reference image that depicts that route (matched by route via
+    ``visual_fidelity.map_reference_screens``) so the feedback the lane gets is not just
+    "blank/console-error" but "inbox doesn't match outlook_inbox.png — missing folder rail".
+
+    Mutates + returns ``report``: each judged page gets ``page['visual'] =
+    {similarity, passed, deviations, summary}``; a rolled-up ``report['visual_mismatches']``
+    lists the page names that fell below threshold. Best-effort: no references, no captured
+    shots, or a judge that errors → the page is left unjudged, never raises into the loop."""
+    if min_similarity is None:
+        try:
+            min_similarity = float(os.environ.get("ENVGEN_VISUAL_MIN", "0.65"))
+        except Exception:
+            min_similarity = 0.65
+    report.setdefault("visual_mismatches", [])
+    refs = list(reference_images or [])
+    pages = report.get("pages") or []
+    if not refs or not pages:
+        return report
+    try:
+        from .visual_fidelity import map_reference_screens, judge_screen_pair
+    except Exception:  # pragma: no cover - import guard
+        return report
+    judge = judge_fn or judge_screen_pair
+    # Routes we actually walked are the only ones that can have a screenshot to judge.
+    walked = {str(p.get("route") or "").strip() for p in pages if p.get("route")}
+    by_route = {str(p.get("route") or "").strip(): p for p in pages if p.get("shot")}
+    screens = map_reference_screens(refs, walked)
+    mismatches: List[str] = []
+    for screen in screens:
+        route = str(screen.get("route") or "").strip()
+        if not route:
+            continue
+        page = by_route.get(route)
+        if not page or not page.get("shot"):
+            continue
+        try:
+            verdict = await judge(llm, screen, page["shot"])
+        except Exception as exc:  # a broken judge must not crash the loop
+            verdict = {"similarity": 0.0, "deviations": [f"judge error: {exc}"[:160]], "summary": ""}
+        sim = float(verdict.get("similarity") or 0.0)
+        passed = sim >= min_similarity
+        page["visual"] = {
+            "reference": Path(str(screen.get("path") or "")).name,
+            "similarity": sim,
+            "passed": passed,
+            "deviations": [str(x)[:200] for x in (verdict.get("deviations") or [])][:8],
+            "summary": str(verdict.get("summary", ""))[:200],
+        }
+        if not passed:
+            mismatches.append(str(page.get("name") or route))
+    report["visual_mismatches"] = mismatches
+    return report
+
+
 def format_feedback(report: Mapping[str, Any]) -> str:
     """Render the test-user report as a remediation message the orchestrator routes
     back to the frontend lane (the 'give feedback, keep fixing' step)."""
@@ -187,4 +253,11 @@ def format_feedback(report: Mapping[str, Any]) -> str:
             flags.append("console errors: " + "; ".join(p["console_errors"])[:120])
         if flags:
             lines.append(f"  [{p['route']}] " + " · ".join(flags))
+        vis = p.get("visual")
+        if vis and not vis.get("passed"):
+            ref = vis.get("reference") or "the reference"
+            lines.append(f"  [{p['route']}] VISUAL {vis.get('similarity', 0):.2f} — does NOT "
+                         f"match reference {ref}:")
+            for d in (vis.get("deviations") or [])[:6]:
+                lines.append(f"      - {d}")
     return "\n".join(lines)
