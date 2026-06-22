@@ -165,15 +165,32 @@ def map_reference_screens(
         if not p.is_file():
             continue
         stem = re.sub(r"[^a-z0-9]+", "_", p.stem.lower())
+        segs = [s for s in stem.split("_") if s]
         route, auth = None, True
-        cands = (f"/{stem}", f"/{stem}s", f"/{stem.rstrip('s')}",
-                 "/" + stem.replace("_", "-"), "/" + stem.replace("_", ""))
+        # Candidates from the full stem AND every TRAILING suffix of its segments.
+        # Reference files are conventionally named ``<appname>_<screen>`` (e.g.
+        # ``outlook_inbox``, ``outlook_calendar_event``); the leading app-name segment
+        # is NOT part of the route, so ``outlook_inbox`` must match ``/inbox`` and
+        # ``outlook_calendar`` ``/calendar`` (run #8: the full-stem-only match mapped
+        # 2/9 outlook references → the visual gate was blind to inbox/calendar/landing).
+        cands: List[str] = []
+        def _add(tok: str) -> None:
+            for v in (f"/{tok}", f"/{tok}s", f"/{tok.rstrip('s')}",
+                      "/" + tok.replace("_", "-"), "/" + tok.replace("_", ""),
+                      "/" + tok.replace("_", "/")):
+                if v and v not in cands:
+                    cands.append(v)
+        _add(stem)
+        for i in range(1, len(segs)):
+            _add("_".join(segs[i:]))   # drop leading segment(s) — the app name
+        if segs:
+            _add(segs[-1])             # the trailing screen token alone
         # GENERIC FIRST (domain-agnostic): match the screenshot filename to a
         # declared route, or "/" for a home/landing screen — so an arbitrary app's
         # screens map without the social catalog biasing ambiguous names.
         if known:
             route = next((c for c in cands if c in known), None)
-            if route is None and stem in _HOME_STEMS and "/" in known:
+            if route is None and (stem in _HOME_STEMS or (segs and segs[-1] in _HOME_STEMS)) and "/" in known:
                 route = "/"
         # The keyword catalog still supplies the public/auth flag (a login/landing
         # screen is public) and fills the ROUTE only as a LAST resort (never
