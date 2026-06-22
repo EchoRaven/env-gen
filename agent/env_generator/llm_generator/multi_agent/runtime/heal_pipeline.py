@@ -360,7 +360,18 @@ class HealPipeline:
             # created (e.g. ./pages/MessagesInboxPage) → ``npm run build`` fails →
             # frontend container can't boot. Scaffold a valid stub for any dangling
             # local component import so the app always builds.
-            pages = scaffold_missing_local_pages(fe)
+            # Pass the registered ui_pages so a dangling PAGE import wired at a known
+            # route is projected as a REAL data page (matched to that route's contract
+            # endpoint + the shared nav), not a dead heading (outlook run #8: /inbox ->
+            # OutlookInbox shipped a bare <h2> while the good InboxPage sat unrouted).
+            _uip = None
+            try:
+                _rh = getattr(getattr(orch, "hubs", None), "registryhub", None)
+                if _rh is not None and hasattr(_rh, "list_ui_pages"):
+                    _uip = list((_rh.list_ui_pages() or {}).values())
+            except Exception:
+                _uip = None
+            pages = scaffold_missing_local_pages(fe, ui_pages=_uip)
             if pages.get("scaffolded"):
                 orch._logger.warning(
                     "Frontend dangling imports resolved by stub pages (lane "

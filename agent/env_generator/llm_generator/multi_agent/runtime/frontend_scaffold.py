@@ -544,21 +544,52 @@ export default function __COMP__() {
     return _mark_fallback_page(_stub_page_component(name))
 
 
-def scaffold_missing_local_pages(frontend_dir) -> Dict[str, object]:
-    """Scaffold a valid stub for any LOCAL default import whose target file is
+# <Route path="/x" element={<Comp .../>}> — used to recover the ROUTE a dangling
+# page import is wired at, so a missing page can be projected as a REAL data page
+# (matched to the registered ui_page at that route) instead of a dead heading.
+_ROUTE_ELEMENT = re.compile(
+    r'path\s*=\s*["\']([^"\']+)["\'][^>]*?element\s*=\s*\{\s*<\s*(\w+)')
+
+
+def _route_apis_map(ui_pages) -> Dict[str, list]:
+    """{normalized_route: apis_used} from the registered ui_pages, so a dangling page
+    import can be matched to its contract endpoint by ROUTE (the lane's App.jsx
+    component name often differs from the registered component name)."""
+    out: Dict[str, list] = {}
+    for pg in (ui_pages or []):
+        if not isinstance(pg, dict):
+            continue
+        r = str(pg.get("route") or pg.get("path") or "").strip().rstrip("/").lower()
+        if r and pg.get("apis_used"):
+            out.setdefault(r, list(pg.get("apis_used") or []))
+    return out
+
+
+def scaffold_missing_local_pages(frontend_dir, ui_pages=None) -> Dict[str, object]:
+    """Scaffold a valid component for any LOCAL default import whose target file is
     missing. Root fix for the frontend half of the hollow-release bug (instagram
     MM, 2026-06-08): the frontend lane wires a page import + route
     (``import MessagesInboxPage from './pages/MessagesInboxPage'``) but never
     creates the file, so ``npm run build`` fails ("Could not resolve") and the
-    frontend container can't boot. Build-integrity is framework-owned: project a
-    minimal default-exported stub at the expected path so the app always builds.
-    Restricted to component dirs (pages/components/views/screens/routes) so
-    hooks/utils are never mis-stubbed. Best-effort; never clobbers a real file."""
+    frontend container can't boot. Build-integrity is framework-owned.
+
+    ROUTED-PAGE QUALITY (outlook run #8): the lane routinely routes App.jsx to a
+    component name (``<Route path="/inbox" element={<OutlookInbox/>}>``) that is NOT
+    its registered ui_page (the contract page is e.g. ``InboxPage``), so the good
+    framework projection (light-list + nav) lands on the unrouted name while the
+    ROUTED name fell here and got a dead ``<h2>`` heading — the user saw a bare
+    stub at /inbox. Now: for a missing PAGE import we recover its ROUTE from the
+    importing file's ``<Route>`` and project a REAL data page via
+    ``_project_page_component`` (its apis_used matched to the registered ui_page at
+    that route + the shared nav across the app's routes). Non-page components, or
+    pages with no resolvable route, still get the minimal stub. Best-effort; never
+    clobbers a real file."""
     try:
         frontend_dir = Path(frontend_dir)
         src_root = (frontend_dir / "src").resolve()
         if not src_root.exists():
             return {"scaffolded": []}
+        route_apis = _route_apis_map(ui_pages)
         scaffolded: List[str] = []
         for f in src_root.glob("**/*"):
             if f.suffix.lower() not in _FRONT_EXTS or not f.is_file():
@@ -567,6 +598,22 @@ def scaffold_missing_local_pages(frontend_dir) -> Dict[str, object]:
                 text = f.read_text(encoding="utf-8")
             except Exception:
                 continue
+            # comp -> route + the app's business routes (for the shared nav), recovered
+            # from THIS file's <Route> table (App.jsx imports the page AND routes it).
+            comp_route = {c: p for (p, c) in _ROUTE_ELEMENT.findall(text)}
+            nav_routes = []
+            _seen = set()
+            for _p, _c in _ROUTE_ELEMENT.findall(text):
+                _r = _p.strip().rstrip("/")
+                low = _r.lower()
+                if (":" in _r or "{" in _r or _r in ("", "/")
+                        or low in ("/login", "/signup", "/signin", "/register")
+                        or "landing" in low or "welcome" in low or _r in _seen):
+                    continue
+                _seen.add(_r)
+                seg = _r.strip("/").split("/")[0]
+                nav_routes.append((re.sub(r"[-_]+", " ", seg).title() or seg, _r))
+            nav_routes = nav_routes[:7]
             for name, rel in _LOCAL_DEFAULT_IMPORT.findall(text):
                 if not _COMPONENT_DIR.search(rel):
                     continue
@@ -588,7 +635,20 @@ def scaffold_missing_local_pages(frontend_dir) -> Dict[str, object]:
                 if target.exists():
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(_stub_page_component(name), encoding="utf-8")
+                # A missing PAGE wired at a known route → project a REAL page (light-list
+                # + nav) keyed to the contract endpoint at that route, not a dead heading.
+                route = (comp_route.get(name) or "").strip().rstrip("/")
+                is_page = "/pages/" in rel.replace("\\", "/")
+                page_spec = None
+                if is_page and route:
+                    apis = route_apis.get(route.lower())
+                    page_spec = {"route": route, "id": name.lower(),
+                                 "apis_used": apis or []}
+                if page_spec is not None:
+                    body = _project_page_component(name, page_spec, nav_routes=nav_routes)
+                else:
+                    body = _stub_page_component(name)
+                target.write_text(body, encoding="utf-8")
                 scaffolded.append(str(target.relative_to(frontend_dir)))
         return {"scaffolded": sorted(set(scaffolded))}
     except Exception as exc:  # never break generation/validation
