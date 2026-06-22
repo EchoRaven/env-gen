@@ -240,87 +240,22 @@ def _api_test_user(base: str, api_paths: set,
         return entry
 
     tok_a = _register_or_login(base, "testuser_alpha@example.com", "alpha")
-    tok_b = _register_or_login(base, "testuser_beta@example.com", "beta")
     if not tok_a:
         steps.append({"action": "register/login userA", "method": "POST",
                       "path": "/auth/register", "status": None, "ok": False,
                       "kind": "broken", "note": "could not obtain a token — auth broken"})
         return {"steps": steps, "actor": None}
 
-    def me_username(tok: str) -> Optional[str]:
-        if not _has(api_paths, "/api/users/me"):
-            return None
-        r = _json(_http("GET", f"{base}/api/users/me", token=tok)) or {}
-        inner = r.get("item") if isinstance(r.get("item"), dict) else r
-        return (inner or {}).get("username")
+    # Contract-derived CRUD journey — domain-agnostic, works for ANY app. (This replaced a
+    # hardcoded instagram journey — posts/feed/follow/like/reels/DMs — that biased this
+    # check to one domain and did nothing for mail/docs/video apps.) Regression coverage is
+    # preserved without the social shape: the null-owner-on-create defect is caught here
+    # generically by _api_crud_journey's owner check, and a 5xx on ANY route (incl. nested
+    # sub-collections like /api/users/{id}/posts) is caught by api_smoke, which probes every
+    # registered endpoint.
+    _api_crud_journey(base, business_eps or [], tok_a, rec)
 
-    user_a = me_username(tok_a) or "alpha"
-    user_b = me_username(tok_b) if tok_b else None
-
-    post_id = None
-    # 1. A creates a post → owner FK must be populated (route_projector bug #2).
-    if _has(api_paths, "/api/posts"):
-        res = _http("POST", f"{base}/api/posts", token=tok_a,
-                    body={"media_url": "https://picsum.photos/600",
-                          "media_type": "image", "caption": "test-user post"})
-        def _check_owner(payload):
-            owner = _owner_value(payload)
-            if owner in (None, "__absent__"):
-                return False, "created post has NO owner (author_id null/absent) — create not attributed"
-            return True, f"author_id={owner}"
-        entry = rec("create a post", "POST", "/api/posts", res, _check_owner)
-        post_id = _first_id(_json(res))
-
-    # 2. A reads the home feed.
-    if _has(api_paths, "/api/feed"):
-        rec("read home feed", "GET", "/api/feed", _http("GET", f"{base}/api/feed", token=tok_a))
-
-    # 3. A views their own posts via the nested route (route_projector bug #1: 500).
-    if _has(api_paths, "/api/users/{username}/posts"):
-        res = _http("GET", f"{base}/api/users/{user_a}/posts", token=tok_a)
-        def _check_listed(payload):
-            items = payload if isinstance(payload, list) else (
-                (payload or {}).get("items") or (payload or {}).get("posts") or [])
-            return True, (f"{len(items)} post(s) listed" if items else "list empty (post not attributed?)")
-        rec("view my posts", "GET", "/api/users/{username}/posts", res, _check_listed)
-
-    # 4. B follows A.
-    if tok_b and _has(api_paths, "/api/users/{username}/follow"):
-        rec("follow another user", "POST", "/api/users/{username}/follow",
-            _http("POST", f"{base}/api/users/{user_a}/follow", token=tok_b))
-
-    # 5. B comments / likes / saves A's post.
-    if tok_b and post_id is not None:
-        if _has(api_paths, "/api/posts/{post_id}/comments"):
-            rec("comment on a post", "POST", "/api/posts/{post_id}/comments",
-                _http("POST", f"{base}/api/posts/{post_id}/comments", token=tok_b,
-                      body={"text": "great post!"}))
-        if _has(api_paths, "/api/posts/{post_id}/like"):
-            rec("like a post", "POST", "/api/posts/{post_id}/like",
-                _http("POST", f"{base}/api/posts/{post_id}/like", token=tok_b))
-        if _has(api_paths, "/api/posts/{post_id}/save"):
-            rec("save a post", "POST", "/api/posts/{post_id}/save",
-                _http("POST", f"{base}/api/posts/{post_id}/save", token=tok_b))
-
-    # 6. A browses discovery surfaces.
-    for path, action in (("/api/explore", "open explore"),
-                         ("/api/reels", "watch reels"),
-                         ("/api/users/suggested", "see suggested users"),
-                         ("/api/messages/conversations", "open messages")):
-        if _has(api_paths, path):
-            rec(action, "GET", path, _http("GET", f"{base}{path}", token=tok_a))
-
-    # 7. B sends A a direct message.
-    if tok_b and _has(api_paths, "/api/messages/{username}"):
-        rec("send a direct message", "POST", "/api/messages/{username}",
-            _http("POST", f"{base}/api/messages/{user_a}", token=tok_b,
-                  body={"text": "hello from the test user"}))
-
-    # 8. GENERIC CRUD journey — every app, not just social ones. The social block uses
-    #    /api/posts as its create target, so skip it here to avoid double-walking.
-    _api_crud_journey(base, business_eps or [], tok_a, rec, skip_bases={"/api/posts"})
-
-    return {"steps": steps, "actor": user_a}
+    return {"steps": steps, "actor": "alpha"}
 
 
 def _mcp_test_user(project_dir: Path, business_eps: List[Mapping[str, Any]]) -> Dict[str, Any]:
