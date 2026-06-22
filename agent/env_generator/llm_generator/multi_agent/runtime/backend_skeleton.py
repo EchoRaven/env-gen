@@ -376,18 +376,55 @@ def health():
 
 # LANE-OVERRIDE HOOK: custom_routes.py is the ONE backend file the lane owns —
 # genuinely custom business logic (beyond contract-projected CRUD) goes there.
-# The framework NEVER writes or overwrites it. This include is emitted BEFORE the
-# projected handlers: FastAPI/Starlette matches the FIRST-registered route for a
-# METHOD+path, so "override" REQUIRES the custom router to register first. When it
-# was appended in the footer (last), the projected stub WON every duplicate and the
-# lane's correct handler never ran — e.g. GET /api/auth/me shipped the projected
-# {"items":[]} list stub and POST /api/events/{id}/rsvp shipped a null-Event create,
-# both failing api_smoke forever while the lane's correct custom_routes handlers sat
-# shadowed (outlook run #2 abort). custom_routes imports only database/models/
-# auth_dependency (never main), so an early include carries no circular-import risk.
+# The framework NEVER writes or overwrites it.
+#
+# OVERRIDE SCOPE (outlook run #7): the custom router is included BEFORE the projected
+# handlers so it OVERRIDES them (Starlette matches the first-registered route) — but
+# ONLY for NON-STANDARD endpoints. The projected handlers for STANDARD CRUD (a bare
+# collection GET/POST, an item GET/PATCH/PUT/DELETE by trailing {param}, and the /me
+# singleton) are correct-by-construction over the real ORM columns AND wrapped in
+# try/except. A lane custom CRUD handler, by contrast, routinely uses WRONG column
+# names (run #7: POST /api/messages with sender/date/is_starred vs the model's
+# from_name/sent_at/is_flagged) and has NO error handling → 500 → business_endpoints
+# fails → the run wedges (the lane often can't even self-heal it). So for standard
+# CRUD the SAFE projected handler must win; custom_routes overrides ONLY the endpoints
+# the projector mis-handles — the /{id}/<action> verbs (rsvp/reply/forward/…) it
+# treats as a wrong create. That keeps the run #2 fixes (/auth/me via the projector's
+# own /me branch; /{id}/rsvp via custom) while removing the buggy-CRUD-handler 500s.
+# custom_routes imports only database/models/auth_dependency (never main) → no
+# circular-import risk from the early include.
 _CUSTOM_ROUTES_INCLUDE = '''
+def _custom_route_overrides_projected(method, path):
+    """A lane custom route may OVERRIDE the projected handler only for NON-standard-CRUD
+    endpoints — i.e. an action verb after a path param (/x/{id}/rsvp), search, or any
+    other novel shape. Standard CRUD (bare collection, item-by-{param}, /me) keeps the
+    safe projected handler, so a buggy lane CRUD handler can't 500-shadow it."""
+    segs = [s for s in str(path).strip("/").split("/") if s]
+    if segs and segs[0] == "api":
+        segs = segs[1:]
+    if not segs:
+        return True
+    last = segs[-1]
+    n_params = sum(1 for s in segs if s.startswith("{") or s.startswith(":"))
+    last_is_param = last.startswith("{") or last.startswith(":")
+    # standard CRUD shapes → projected wins (return False = do NOT let custom override):
+    if len(segs) == 1 and not last_is_param:          # collection: /messages
+        return False
+    if last_is_param and n_params == 1:               # item by id: /messages/{id}
+        return False
+    if last == "me":                                  # current-user singleton: /auth/me
+        return False
+    return True                                       # actions / search / novel → custom wins
+
 try:
     from custom_routes import router as _custom_router
+    # Keep only the custom routes that legitimately override (or add) — drop the ones
+    # duplicating a standard-CRUD endpoint so the safe projected handler serves those.
+    _custom_router.routes = [
+        _r for _r in list(getattr(_custom_router, "routes", []))
+        if _custom_route_overrides_projected(
+            next(iter(getattr(_r, "methods", []) or ["GET"])), getattr(_r, "path", ""))
+    ]
     app.include_router(_custom_router)
 except ImportError:
     pass
