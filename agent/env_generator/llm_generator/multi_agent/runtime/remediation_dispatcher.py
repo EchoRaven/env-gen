@@ -366,6 +366,80 @@ class RemediationDispatcher:
         except Exception as exc:
             orch._logger.error("ui-page-unwired dispatch failed: %s", exc)
 
+    async def dispatch_unbuilt_pages(self, components) -> None:
+        """Page-BUILD feedback loop (2026-06-22, user goal: real reference-faithful
+        UI, not the framework fallback). A declared business ui_page the lane never
+        authored ships as the framework FALLBACK (data-fallback marker) — it is wired
+        + functional so it passes ui_page_unwired / frontend_navigable / the whole
+        delivery gate, but it is NOT the real page the references show (outlook: the
+        inbox/calendar shipped as the generic placeholder list). The bounded page-build
+        gate (orchestrator) detects these and re-dispatches HERE: ONE P0 task + urgent
+        wake to the frontend, each fallback page with its route/component/apis_used +
+        reference image, so the lane authors the real UI. Best-effort; never raises."""
+        orch = self._orch
+        try:
+            comps = [str(c) for c in (components or []) if str(c).strip()]
+            if not comps:
+                return
+            try:
+                pages = orch.hubs.registryhub.list_ui_pages() or {}
+            except Exception:
+                pages = {}
+            _by_comp: Dict[str, dict] = {}
+            for _name, _pg in (pages.items() if isinstance(pages, dict) else []):
+                if isinstance(_pg, dict) and _pg.get("component"):
+                    _by_comp[str(_pg["component"])] = _pg
+            lines: List[str] = []
+            for comp in comps:
+                pg = _by_comp.get(comp, {})
+                route = pg.get("route") or pg.get("path") or "?"
+                apis = ", ".join(pg.get("apis_used") or []) or "(its declared apis_used)"
+                ref = pg.get("reference_image") or pg.get("reference") or ""
+                ref_hint = f" Match the reference screenshot {ref} (view_image it first)." if ref else \
+                    " view_image its reference screenshot first."
+                lines.append(
+                    f"  - {comp} (route {route}): currently the GENERIC framework "
+                    f"FALLBACK (a placeholder list, marked data-fallback). OPEN "
+                    f"app/frontend/src/pages/{comp}.jsx and write the REAL {comp}: render "
+                    f"[{apis}] via src/services/api.js (data.items / data.item) in the "
+                    f"layout the reference shows, with bound controls.{ref_hint}")
+            page_list = "\n".join(lines)
+            task = orch.hubs.workhub.create_task(
+                title="Replace framework-fallback pages with REAL UI (blocks delivery)",
+                description=(
+                    f"Delivery is DEFERRED: {len(comps)} business page(s) are still the "
+                    "framework FALLBACK (a generic placeholder list, not the real page). "
+                    "api_smoke is green, but these pages do not match the references. "
+                    "Author the REAL component for each, then finish:\n"
+                    f"{page_list}\n"
+                    "Each page must render its declared apis_used data in the layout the "
+                    "reference shows (view_image first). A gate tick re-checks; this is "
+                    "bounded — build them now."),
+                assignee="frontend",
+                agent="orchestrator",
+                priority="P0",
+            )
+            from tools.communication_tools import _create_message
+            await orch.message_bus.send(_create_message(
+                source_agent_id="orchestrator",
+                target_agent_id="frontend",
+                content=(
+                    f"URGENT: delivery deferred — {len(comps)} page(s) are still the "
+                    f"generic framework fallback, not the real UI. Claim task "
+                    f"{(task or {}).get('id')}: for each, view_image its reference, then "
+                    "OPEN app/frontend/src/pages/<Component>.jsx and write the REAL page "
+                    "(render its apis_used in the reference's layout), then finish."),
+                msg_type="task_ready",
+                priority="urgent",
+                persist=True,
+                tags=["ui_page_fallback", "remediation"],
+            ))
+            orch._logger.warning(
+                "PAGE-BUILD remediation dispatched to frontend (task %s): %s fallback "
+                "page(s): %s", (task or {}).get("id"), len(comps), ", ".join(comps))
+        except Exception as exc:
+            orch._logger.error("page-build dispatch failed: %s", exc)
+
     async def dispatch_gate_level_checks(self, failed_checks) -> None:
         """PROPOSAL #49 (user: a gate-detected problem must route back to the OWNING
         lane for repair, not silently dead-end). The DELIVERY-GATE-level failed_checks

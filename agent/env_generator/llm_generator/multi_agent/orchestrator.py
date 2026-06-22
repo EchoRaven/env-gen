@@ -870,6 +870,10 @@ class Orchestrator:
                     # total-judgment backstop to THIS milestone (PIPE-C3 — within a
                     # milestone neither is reset by lane churn).
                     self._vf_gate.reset_for_milestone()
+                    # Per-milestone page-build deferral state (mirror of the visual
+                    # gate): the deferral clock + attempt count anchor to THIS milestone.
+                    self._pages_gate_deferred_since = None
+                    self._pages_gate_attempts = 0
                     # This milestone's requirement slice → kickoff input. When
                     # milestones were NOT explicitly supplied, the single
                     # synthesized M1 MUST receive the exact legacy ``raw_req``
@@ -1710,6 +1714,10 @@ class Orchestrator:
         from .runtime.remediation_dispatcher import RemediationDispatcher
         await RemediationDispatcher(self).dispatch_unwired_ui_pages(blockers)
 
+    async def _dispatch_unbuilt_pages(self, components) -> None:
+        from .runtime.remediation_dispatcher import RemediationDispatcher
+        await RemediationDispatcher(self).dispatch_unbuilt_pages(components)
+
     def _detect_misplaced_frontend_root(self) -> Optional[Dict[str, Any]]:
         from .runtime.remediation_dispatcher import RemediationDispatcher
         return RemediationDispatcher(self).detect_misplaced_frontend_root()
@@ -1983,6 +1991,65 @@ class Orchestrator:
                     except Exception as _exc:
                         self._logger.error("unwired/misplaced frontend dispatch failed: %s", _exc)
                 return  # not deliverable yet
+            # PAGE-BUILD BLOCKING (2026-06-22, user goal: the UI must be the REAL
+            # reference pages, not the framework fallback). A declared business
+            # ui_page the lane never authored ships as the framework FALLBACK
+            # (data-fallback marker) — it is wired + functional so it passes
+            # ui_page_unwired / frontend_navigable / the whole delivery gate above,
+            # but it is NOT the real page (outlook: the inbox/calendar shipped as the
+            # generic placeholder list even though the lane viewed the references).
+            # When attempts remain, DEFER the final milestone's release and
+            # re-dispatch the frontend lane to BUILD the fallback pages (it now views
+            # the references + has write in edit_code). Bounded: <=3 attempts / 900s
+            # anchored to the FIRST defer, then ESCAPE and ship the (usable light-list)
+            # fallback — never deadlocks (mirrors the visual deferral). DEFAULT-OFF
+            # until validated; enable via ENVGEN_PAGES_BLOCKING=1.
+            if (os.environ.get("ENVGEN_PAGES_BLOCKING", "0").lower()
+                    in ("1", "true", "yes", "on")
+                    and getattr(self, "_is_final_milestone", True)):
+                _unbuilt: List[str] = []
+                try:
+                    from .runtime.page_build_gate import (
+                        frontend_unbuilt_pages, pages_release_decision)
+                    _app_root = self.output_dir / "app"
+                    if not _app_root.exists():
+                        _app_root = self.output_dir
+                    _rh = getattr(self.hubs, "registryhub", None)
+                    _unbuilt = frontend_unbuilt_pages(_rh, _app_root)
+                except Exception as _pb_exc:
+                    self._logger.error("page-build gate detect failed: %s", _pb_exc)
+                    _unbuilt = []
+                if _unbuilt:
+                    if getattr(self, "_pages_gate_deferred_since", None) is None:
+                        self._pages_gate_deferred_since = time.time()
+                    _now = time.time()
+                    _pb_decision = pages_release_decision(
+                        self._pages_gate_deferred_since,
+                        getattr(self, "_pages_gate_attempts", 0),
+                        _now,
+                    )
+                    if _pb_decision == "defer":
+                        self._pages_gate_attempts = getattr(
+                            self, "_pages_gate_attempts", 0) + 1
+                        self._logger.warning(
+                            "DELIVERY DEFERRED: %d business page(s) are still the "
+                            "framework fallback (attempt %s/3, %ss deferred) — "
+                            "re-dispatching the frontend lane to BUILD them: %s",
+                            len(_unbuilt), self._pages_gate_attempts,
+                            int(_now - self._pages_gate_deferred_since),
+                            ", ".join(_unbuilt))
+                        try:
+                            await self._dispatch_unbuilt_pages(_unbuilt)
+                        except Exception as _pb_d_exc:
+                            self._logger.error(
+                                "unbuilt-pages dispatch failed: %s", _pb_d_exc)
+                        return
+                    # release: escape fired — deliver with the fallback, loudly.
+                    self._logger.warning(
+                        "Page-build deferral RELEASED (escape after %ss / %s attempts) "
+                        "— delivering with the framework fallback for: %s",
+                        int(_now - self._pages_gate_deferred_since),
+                        getattr(self, "_pages_gate_attempts", 0), ", ".join(_unbuilt))
             # VISUAL-FIDELITY BLOCKING (2026-06-11, user goal: UI must be
             # near-indistinguishable from the references). Releases used to cut
             # the moment the functional gate cleared, so the lane NEVER paused

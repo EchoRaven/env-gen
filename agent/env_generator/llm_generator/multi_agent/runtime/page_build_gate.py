@@ -38,10 +38,18 @@ def frontend_unbuilt_pages(workhub: Any, app_root: Any) -> List[str]:
         from .frontend_scaffold import _page_component_name
     except Exception:
         return out
-    try:
-        pages = (workhub.get_ui_pages() or {}) if workhub is not None else {}
-    except Exception:
-        pages = {}
+    # ui_pages are a RegistryHub first-class contract (``list_ui_pages``); older
+    # callers passed a workhub with ``get_ui_pages``. Accept either source.
+    pages = {}
+    if workhub is not None:
+        for _meth in ("list_ui_pages", "get_ui_pages"):
+            _fn = getattr(workhub, _meth, None)
+            if callable(_fn):
+                try:
+                    pages = _fn() or {}
+                except Exception:
+                    pages = {}
+                break
     if not pages:
         return out
     src = Path(app_root) / "app" / "frontend" / "src" / "pages"
