@@ -474,6 +474,27 @@ def _sig_for_params(params: List[str], path: str, models: Dict[str, Dict[str, An
     return "".join(f"{p}: {_param_column_type(p, path, models)}, " for p in params)
 
 
+def _me_user_model(models: Dict[str, Dict[str, Any]]):
+    """The model backing a ``/me`` current-user endpoint — the users table.
+
+    A GET path ending in ``/me`` is ALWAYS the authenticated caller's own record,
+    so it resolves to the users model regardless of the path's resource segment
+    (``/api/auth/me`` → "auth" has no table, but the row is still a user). Returns
+    ``(class_name, cols)`` or ``None``. Prefers a conventionally-named users table,
+    else any model carrying an ``email``/``username`` column (user-like)."""
+    for name in ("users", "user", "accounts", "account"):
+        m = models.get(name)
+        if isinstance(m, dict) and m.get("cls"):
+            return m["cls"], (m.get("cols") or [])
+    for _m in models.values():
+        if not isinstance(_m, dict) or not _m.get("cls"):
+            continue
+        cols = _m.get("cols") or []
+        if "email" in cols or "username" in cols:
+            return _m["cls"], cols
+    return None
+
+
 def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict[str, Any]], idx: int, response_key: str = "") -> str:
     """Project a FastAPI handler. Functional for recognised CRUD + nested-resource
     patterns over a resolvable model; valid-shape stub otherwise. Never 404s."""
@@ -601,19 +622,31 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": query.count()}}",
         ]
         sig_params += 'q: str = "", '
-    elif cls and m == "GET" and path.endswith("/me"):
+    elif m == "GET" and path.endswith("/me"):
         # GET /<resource>/me → the CURRENT authenticated user as a single {item}.
-        # "me" is a STATIC segment, so without this case it falls through to the
-        # GET-collection branch below and returns EVERY row — a shape AND semantic
-        # bug (the profile page wants the current user, not a list of all users).
-        # Mirror the PUT/PATCH /me handler's "me" resolution (db.get(User, user.id)).
-        body_lines = [
-            ("    obj = db.get(User, user.id) if user is not None else None"
-             if auth else f"    obj = db.query({cls}).first()"),
-            "    if obj is None:",
-            '        raise HTTPException(status_code=404, detail="not found")',
-            f"    return {{\"item\": {_serialize_expr('obj', cols)}}}",
-        ]
+        # "me" is a STATIC segment (not a path param), so without this case it falls
+        # through to the GET-collection branch and returns EVERY row — a shape AND
+        # semantic bug. CRITICALLY this must NOT be gated on the path's resource
+        # segment resolving to a model: ``/api/auth/me`` has resource "auth" (no
+        # table) → cls is None → it used to skip this branch and hit the generic GET
+        # stub, which shipped a ``{"items":[],"total":0}`` LIST envelope whenever the
+        # contract's response_key wasn't "item" → business_endpoints_correct_shape
+        # failed forever ("returns a list but the contract is a single item"; outlook
+        # run #2, GET /api/auth/me). /me is ALWAYS the authenticated caller's own
+        # record, so resolve to the users model (so the row serializes with its real
+        # columns) regardless of the resource segment.
+        _me = _me_user_model(models) or ((cls, cols) if cls else None)
+        if _me and _me[0]:
+            _ucls, _ucols = _me
+            body_lines = [
+                (f"    obj = db.get({_ucls}, user.id) if user is not None else None"
+                 if auth else f"    obj = db.query({_ucls}).first()"),
+                "    if obj is None:",
+                '        raise HTTPException(status_code=404, detail="not found")',
+                f"    return {{\"item\": {_serialize_expr('obj', _ucols)}}}",
+            ]
+        else:
+            body_lines = ['    return {"item": {}}']
     elif cls and m == "GET":
         # GET collection
         body_lines = [
