@@ -116,6 +116,30 @@ class RemediationDispatcher:
             if getattr(orch, "_frontend_navigable_dispatched", None) == milestone:
                 return
             detail = str(check.get("detail") or "")
+            # Derive the screen list from the CONTRACT (the declared ui_pages), not a
+            # hardcoded social-app vocabulary — this instruction is what the frontend
+            # LLM lane reads and acts on, so a baked-in "feed/explore/reels/profile"
+            # enumeration would steer EVERY generated app toward an instagram shape
+            # (mirrors dispatch_unwired_ui_pages, which already builds from the contract).
+            try:
+                pages = orch.hubs.registryhub.list_ui_pages() or {}
+            except Exception:
+                pages = {}
+            lines: List[str] = []
+            for name, pg in (pages.items() if isinstance(pages, dict) else []):
+                if not isinstance(pg, dict):
+                    continue
+                route = pg.get("route") or pg.get("path") or "?"
+                comp = pg.get("component") or name or "?"
+                apis = ", ".join(pg.get("apis_used") or []) or "(its declared apis_used)"
+                lines.append(
+                    f"  - <Route path=\"{route}\" element={{<{comp}/>}} /> → {comp} "
+                    f"(calls [{apis}])")
+            # Domain-neutral fallback when the registry is empty (the gate can fire at
+            # 0 pages) — NEVER re-introduce social-screen examples here.
+            page_list = "\n".join(lines) or (
+                "  - a <Route> for EVERY screen depicted in the reference images "
+                "(design/reference_spec.json), each pointing at its page component")
             task = orch.hubs.workhub.create_task(
                 title="Frontend is a blank shell — wire routes + build the pages (blocks delivery)",
                 description=(
@@ -123,15 +147,14 @@ class RemediationDispatcher:
                     "The app renders blank because react-router routes are not "
                     "wired. Do ALL of the following, then finish:\n"
                     "1. In src/App.jsx set up react-router (BrowserRouter + Routes) "
-                    "with a <Route> for EVERY screen in the reference spec "
-                    "(design/reference_spec.json) — login, signup, feed/home, "
-                    "explore/search, create, reels, messages, profile — each "
-                    "pointing at its page component.\n"
-                    "2. Author any page components that don't exist yet (one per "
-                    "screen), reading data via src/services/api.js (data.items / "
+                    "with a <Route> for EVERY declared page below, each pointing at "
+                    "its page component:\n"
+                    f"{page_list}\n"
+                    "2. Author any page component that doesn't exist yet (one per "
+                    "route above), reading data via src/services/api.js (data.items / "
                     "data.item).\n"
-                    "3. A logged-out user lands on /login; an authed user lands on "
-                    "the home feed.\n"
+                    "3. A logged-out user lands on the auth/login page; an authed user "
+                    "lands on the page whose route is \"/\" (the declared default).\n"
                     "frontend_navigable requires >=1 page AND >=1 route; delivery "
                     "stays blocked until a validation pass shows a navigable UI."),
                 assignee="frontend",

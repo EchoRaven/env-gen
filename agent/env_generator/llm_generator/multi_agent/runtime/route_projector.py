@@ -609,11 +609,23 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 f"    return {{\"item\": {_serialize_expr('obj', cols)}}}",
             ]
     elif cls and m == "GET" and "search" in path:
+        # Search the model's TEXTUAL columns, derived from the contract's type map —
+        # not a hardcoded social/content name allowlist (which silently failed to
+        # search any column outside that vocabulary). Falls back to all columns when
+        # the type map is unavailable (raw-SQL app); the runtime hasattr() guards it.
+        _tmap = (meta.get("types") or {}) if res else {}
+        def _sensitive(_c):
+            _l = _c.lower()
+            return ("password" in _l or _l.endswith("_hash") or "secret" in _l or "token" in _l)
+        _search_cols = [c for c in cols if not _sensitive(c) and any(
+            k in str(_tmap.get(c, "")).lower() for k in ("char", "text", "string", "clob", "unicode"))]
+        if not _search_cols:
+            _search_cols = [c for c in cols if not _sensitive(c)]
         body_lines = [
             "    term = (q or \"\").strip()",
             f"    query = db.query({cls})",
             "    if term:",
-            f"        cols_to_search = [c for c in (\"username\", \"full_name\", \"name\", \"title\", \"caption\", \"description\", \"content\", \"body\", \"bio\", \"summary\", \"subject\", \"label\", \"message\", \"text\", \"slug\") if hasattr({cls}, c)]",
+            f"        cols_to_search = [c for c in {_search_cols!r} if hasattr({cls}, c)]",
             "        from sqlalchemy import or_ as _or",
             f"        conds = [getattr({cls}, c).ilike(f\"%{{term}}%\") for c in cols_to_search]",
             "        if conds:",
@@ -661,9 +673,14 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             f"    valid = {{k: v for k, v in payload.items() if hasattr({cls}, k)}}",
         ]
         if m in ("PUT", "PATCH") and path.endswith("/me"):
+            # mirror GET /me: resolve the user model DYNAMICALLY. Hardcoding `User`
+            # broke /me updates for any app whose user table isn't literally named
+            # User (accounts/profiles/members) — `NameError: User` at request time.
+            _me_u = _me_user_model(models) or ((cls, cols) if cls else None)
+            _ucls = (_me_u[0] if (_me_u and _me_u[0]) else None) or cls
             body_lines += [
                 "    try:",
-                "        obj = db.get(User, user.id)" if auth else f"        obj = db.query({cls}).first()",
+                f"        obj = db.get({_ucls}, user.id)" if auth else f"        obj = db.query({_ucls}).first()",
                 "        if obj is None:",
                 '            raise HTTPException(status_code=404, detail="not found")',
                 "        for k, v in valid.items():",
@@ -734,10 +751,12 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             # ANY app), else an honest 404 (the gate only checks 2xx shapes).
             _resolver = None
             for _mn, _mm in (models or {}).items():
-                _col_names = [c.get("name") for c in (_mm.get("columns") or [])
-                              if isinstance(c, dict) and c.get("name")]
+                # the models dict shape is {table: {"cls": str, "cols": [name,...]}} —
+                # the prior _mm.get("columns")/"class_name" keys never existed, so this
+                # resolver was dead (always 404). Read the real keys.
+                _col_names = list(_mm.get("cols") or [])
                 if last_param in _col_names:
-                    _resolver = (_mm.get("class_name") or _mn.capitalize(),
+                    _resolver = (_mm.get("cls") or _mn.capitalize(),
                                  last_param, _col_names)
                     break
             if _resolver:
