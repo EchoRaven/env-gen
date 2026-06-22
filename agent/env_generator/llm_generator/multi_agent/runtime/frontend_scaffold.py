@@ -227,8 +227,8 @@ def _stub_page_component(name: str) -> str:
     return (
         f"export default function {name}() {{\n"
         f"  return (\n"
-        f'    <div className="glass rounded-[2rem] border border-white/10 px-8 py-16 text-center">\n'
-        f'      <h2 className="text-xl font-semibold text-white">{label}</h2>\n'
+        f'    <div className="min-h-screen bg-zinc-50 text-zinc-900 px-8 py-16 text-center">\n'
+        f'      <h2 className="text-xl font-semibold">{label}</h2>\n'
         f"    </div>\n"
         f"  );\n"
         f"}}\n"
@@ -367,17 +367,23 @@ def _project_page_component(name: str, page: Mapping[str, Any]) -> str:
     post_ep = next((p for (m, p) in parsed if m == "POST"), None)
 
     if get_ep:
-        # Card/GRID render (not a raw key:value dump): detect an image/thumbnail/
-        # avatar field → <img>; a title/name field → heading; a few scalar fields →
-        # muted meta. Generic for ANY app, so the framework fallback is at least
-        # usable. data-fallback marks it as framework-generated (not lane-built) for
-        # the runtime page gate; it must NOT count as a real 'implemented' page.
+        # LIST render (not a raw key:value dump, NOT a 16:9 video-card grid): a light,
+        # neutral row list — leading avatar/thumbnail (or an initial), a title, a
+        # snippet/sender subtitle, and a few scalar meta fields. This is the universal
+        # business-app shape (email/message/contact/event lists, feeds) and reads as
+        # human-usable for the MAJORITY of apps — a far better FLOOR than the old dark
+        # aspect-video card grid (which only suited a video site and rendered emails as
+        # blank 16:9 tiles on black). The lane authors the real themed page on top; this
+        # only runs when the page file is missing. Fetches the page's OWN declared GET
+        # endpoint (apis_used → __PATH__), never a hardcoded one. data-fallback marks it
+        # framework-generated so the runtime page gate never counts it as 'implemented'.
         tpl = """import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 
 const _imgOf = (r) => { for (const k of ['thumbnail_url','image_url','avatar_url','banner_url','photo_url','cover_url','poster_url','image','thumbnail','avatar','url']) { if (r && r[k]) return r[k]; } return null; };
-const _titleOf = (r) => { for (const k of ['title','name','display_name','full_name','label','handle','subject']) { if (r && r[k]) return String(r[k]); } return (r && r.id != null) ? ('#' + r.id) : ''; };
-const _metaOf = (r) => Object.keys(r || {}).filter((k) => !['id','password','password_hash'].includes(k) && !/_url$|^url$|^image$|^thumbnail$|^avatar$|title|name|description/.test(k) && (typeof r[k] !== 'object')).slice(0, 3);
+const _titleOf = (r) => { for (const k of ['title','subject','name','display_name','full_name','label','handle','email']) { if (r && r[k]) return String(r[k]); } return (r && r.id != null) ? ('#' + r.id) : ''; };
+const _subOf = (r) => { for (const k of ['snippet','preview','summary','description','from_name','sender','body','caption','content','message','text']) { if (r && r[k]) return String(r[k]); } return ''; };
+const _metaOf = (r) => Object.keys(r || {}).filter((k) => !['id','password','password_hash'].includes(k) && !/_url$|^url$|^image$|^thumbnail$|^avatar$|title|subject|name|description|body|snippet/.test(k) && (typeof r[k] !== 'object')).slice(0, 3);
 
 export default function __COMP__() {
   const params = useParams();
@@ -394,24 +400,24 @@ export default function __COMP__() {
     ? data.items
     : (data && data.item ? [data.item] : (Array.isArray(data) ? data : []));
   return (
-    <div data-fallback="1" className="px-6 py-8">
-      <h2 className="text-xl font-semibold text-white mb-6">__LABEL__</h2>
-      {error ? <p className="text-sm text-red-400 mb-4">{error}</p> : null}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+    <div data-fallback="1" className="min-h-screen bg-zinc-50 text-zinc-900 px-6 py-6">
+      <h2 className="text-xl font-semibold mb-4">__LABEL__</h2>
+      {error ? <p className="text-sm text-red-600 mb-4">{error}</p> : null}
+      <div className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white shadow-sm">
         {rows.map((row, i) => (
-          <div key={(row && row.id) || i} className="rounded-xl overflow-hidden border border-white/10 bg-white/5 hover:bg-white/10 transition cursor-pointer">
+          <div key={(row && row.id) || i} className="flex items-start gap-3 px-4 py-3 hover:bg-zinc-50 transition cursor-pointer">
             {_imgOf(row)
-              ? <img src={_imgOf(row)} alt="" className="w-full aspect-video object-cover bg-white/10" />
-              : <div className="w-full aspect-video bg-gradient-to-br from-white/10 to-white/5" />}
-            <div className="p-3">
-              <div className="font-medium text-white text-sm line-clamp-2">{_titleOf(row)}</div>
-              {row && row.description ? <div className="text-xs text-zinc-400 mt-1 line-clamp-2">{String(row.description)}</div> : null}
-              {_metaOf(row).map((k) => (<div key={k} className="text-xs text-zinc-500 mt-1">{String(row[k])}</div>))}
+              ? <img src={_imgOf(row)} alt="" className="h-10 w-10 rounded-full object-cover bg-zinc-100 shrink-0" />
+              : <div className="h-10 w-10 rounded-full bg-blue-100 text-blue-700 shrink-0 flex items-center justify-center text-sm font-semibold">{(_titleOf(row).charAt(0) || '?').toUpperCase()}</div>}
+            <div className="min-w-0 flex-1">
+              <div className="font-medium text-sm truncate">{_titleOf(row)}</div>
+              {_subOf(row) ? <div className="text-sm text-zinc-500 truncate">{_subOf(row)}</div> : null}
+              {_metaOf(row).length ? <div className="text-xs text-zinc-400 mt-0.5 truncate">{_metaOf(row).map((k) => String(row[k])).join(' \\u00b7 ')}</div> : null}
             </div>
           </div>
         ))}
       </div>
-      {rows.length === 0 && !error ? <p className="mt-6 text-sm text-zinc-400">No data yet.</p> : null}
+      {rows.length === 0 && !error ? <p className="mt-6 text-sm text-zinc-500">No data yet.</p> : null}
     </div>
   );
 }
@@ -441,15 +447,17 @@ export default function __COMP__() {
     }
   };
   return (
-    <div data-fallback="1" className="glass rounded-[2rem] border border-white/10 px-8 py-12">
-      <h2 className="text-xl font-semibold text-white">__LABEL__</h2>
-      <form onSubmit={onSubmit} className="mt-6 space-y-4">
-        <input value={value} onChange={(e) => setValue(e.target.value)}
-               className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-2 text-white"
-               placeholder="Enter a value" />
-        <button type="submit" className="rounded-xl bg-white/10 px-5 py-2 text-white">Submit</button>
-      </form>
-      {status ? <p className="mt-3 text-sm text-zinc-300">{status}</p> : null}
+    <div data-fallback="1" className="min-h-screen bg-zinc-50 text-zinc-900 px-6 py-8">
+      <div className="max-w-lg rounded-xl border border-zinc-200 bg-white shadow-sm px-8 py-8">
+        <h2 className="text-xl font-semibold">__LABEL__</h2>
+        <form onSubmit={onSubmit} className="mt-6 space-y-4">
+          <input value={value} onChange={(e) => setValue(e.target.value)}
+                 className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                 placeholder="Enter a value" />
+          <button type="submit" className="rounded-lg bg-blue-600 px-5 py-2 font-medium text-white hover:bg-blue-700">Submit</button>
+        </form>
+        {status ? <p className="mt-3 text-sm text-zinc-500">{status}</p> : null}
+      </div>
     </div>
   );
 }
@@ -1030,22 +1038,22 @@ export default function App() {
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        <form onSubmit={submit} className="w-80 space-y-3 p-6 border border-gray-800 rounded-lg">
+      <div className="min-h-screen bg-zinc-50 text-zinc-900 flex items-center justify-center">
+        <form onSubmit={submit} className="w-80 space-y-3 p-6 border border-zinc-200 bg-white rounded-xl shadow-sm">
           <h1 className="text-3xl font-bold text-center mb-2">__APP_NAME__</h1>
-          <input className="w-full p-2 bg-gray-900 rounded border border-gray-700"
+          <input className="w-full p-2 bg-white rounded border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="username" value={form.username}
             onChange={e => setForm({ ...form, username: e.target.value })} />
-          <input className="w-full p-2 bg-gray-900 rounded border border-gray-700"
+          <input className="w-full p-2 bg-white rounded border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="email" value={form.email}
             onChange={e => setForm({ ...form, email: e.target.value })} />
-          <input className="w-full p-2 bg-gray-900 rounded border border-gray-700"
+          <input className="w-full p-2 bg-white rounded border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
             type="password" placeholder="password" value={form.password}
             onChange={e => setForm({ ...form, password: e.target.value })} />
-          <button className="w-full p-2 bg-blue-600 hover:bg-blue-500 rounded font-semibold">
+          <button className="w-full p-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold">
             {mode === 'register' ? 'Sign up' : 'Log in'}
           </button>
-          <button type="button" className="w-full text-sm text-blue-400"
+          <button type="button" className="w-full text-sm text-blue-600"
             onClick={() => setMode(mode === 'register' ? 'login' : 'register')}>
             {mode === 'register' ? 'Have an account? Log in' : 'New? Sign up'}
           </button>
@@ -1054,12 +1062,12 @@ export default function App() {
     )
   }
   return (
-    <div className="min-h-screen bg-black text-white">
-      <header className="flex justify-between items-center p-4 border-b border-gray-800 sticky top-0 bg-black">
+    <div className="min-h-screen bg-zinc-50 text-zinc-900">
+      <header className="flex justify-between items-center p-4 border-b border-zinc-200 sticky top-0 bg-white">
         <h1 className="text-xl font-bold">__APP_NAME__</h1>
-        <button className="text-sm text-blue-400" onClick={doLogout}>Log out</button>
+        <button className="text-sm text-blue-600" onClick={doLogout}>Log out</button>
       </header>
-      <main className="max-w-xl mx-auto p-8 text-center text-gray-400">
+      <main className="max-w-xl mx-auto p-8 text-center text-zinc-500">
         <p>You are signed in.</p>
       </main>
     </div>
