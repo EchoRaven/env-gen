@@ -108,8 +108,113 @@ def _register_or_login(base: str, email: str, name: str) -> Optional[str]:
     return None
 
 
-def _api_test_user(base: str, api_paths: set) -> Dict[str, Any]:
-    """Run a realistic two-user social journey; record each step."""
+def _resource_label(base_col: str) -> str:
+    """Human label for a collection path: ``/api/messages`` -> ``messages``."""
+    seg = base_col.rstrip("/").split("/")[-1]
+    return seg or "resource"
+
+
+def _api_crud_journey(base: str, business_eps: List[Mapping[str, Any]], token: Optional[str],
+                      rec, *, skip_bases=frozenset(), max_resources: int = 6) -> None:
+    """Contract-derived, domain-agnostic CRUD journey (PIPELINE_HANDOFF §5/§8.4).
+
+    The social steps above only fire for a social-shaped contract; a mail/docs/video app
+    was left almost untested. Here we group the business endpoints into resource collections
+    and, for each one that supports create, drive a real create -> list -> read -> update ->
+    delete lifecycle as the logged-in user — bodies synthesised from the registered request
+    schema (``validation_runner._probe_body``), path params filled by ``_path_with_params``.
+    Only 5xx/auth/null-owner is BROKEN; 404/405 is a softer 'missing'. Skips collections the
+    social block already covers so a social app isn't double-walked."""
+    from .validation_runner import _probe_body, _path_with_params
+
+    cols: Dict[str, Dict[str, Any]] = {}
+
+    def _col(p: str) -> Dict[str, Any]:
+        return cols.setdefault(p, {"post": None, "list": False, "item_get": None,
+                                   "item_update": None, "item_delete": None})
+
+    for ep in business_eps or []:
+        if not isinstance(ep, Mapping):
+            continue
+        path = str(ep.get("path") or "")
+        method = str(ep.get("method") or "GET").upper()
+        if not path.startswith("/api"):
+            continue
+        if not re.search(r"\{|\$\{|:[A-Za-z_]", path):       # collection-level (no params)
+            c = _col(path)
+            if method == "POST":
+                c["post"] = ep
+            elif method == "GET":
+                c["list"] = True
+            continue
+        # item-level = base + exactly ONE trailing param segment (/api/messages/{id}).
+        m = re.match(r"^(/api/[^/]+(?:/[^/{}$:]+)*)/(?:\{[^}]+\}|:\w+|\$\{[^}]+\})$", path)
+        if not m:
+            continue                                          # nested/social route — leave to the social block
+        c = _col(m.group(1))
+        if method == "GET":
+            c["item_get"] = path
+        elif method in ("PATCH", "PUT"):
+            c["item_update"] = c["item_update"] or (method, path)
+        elif method == "DELETE":
+            c["item_delete"] = path
+
+    done = 0
+    for base_col in sorted(cols):
+        if done >= max_resources:
+            break
+        c = cols[base_col]
+        if not c["post"] or base_col in skip_bases:
+            continue
+        res = _resource_label(base_col)
+        done += 1
+        cres = _http("POST", base + base_col, token=token, body=_probe_body(c["post"]))
+
+        def _owner_ck(payload, _res=res):
+            obj = payload
+            if isinstance(payload, dict):
+                for k in ("item", "data", "result"):
+                    if isinstance(payload.get(k), dict):
+                        obj = payload[k]
+                        break
+            if isinstance(obj, dict):
+                for k in ("author_id", "user_id", "owner_id", "created_by"):
+                    if k in obj:
+                        if obj[k] in (None, ""):
+                            return False, f"created {_res} has null {k} — create not attributed to the user"
+                        return True, f"{k}={obj[k]}"
+            return True, "created"
+
+        rec(f"create {res}", "POST", base_col, cres, _owner_ck)
+        new_id = _first_id(_json(cres))
+
+        if c["list"]:
+            def _appears(payload, _res=res, _id=new_id):
+                items = payload if isinstance(payload, list) else (
+                    (payload or {}).get("items") or (payload or {}).get("data")
+                    or (payload or {}).get("results") or [])
+                if _id is not None and isinstance(items, list) and any(
+                        isinstance(it, dict) and it.get("id") == _id for it in items):
+                    return True, f"created {_res} appears in the list"
+                return True, f"{len(items) if isinstance(items, list) else 0} {_res} listed"  # advisory
+            rec(f"list {res}", "GET", base_col, _http("GET", base + base_col, token=token), _appears)
+        if new_id is not None and c["item_get"]:
+            ip = _path_with_params(c["item_get"], str(new_id))
+            rec(f"read {res}", "GET", c["item_get"], _http("GET", base + ip, token=token))
+        if new_id is not None and c["item_update"]:
+            um, upath = c["item_update"]
+            ip = _path_with_params(upath, str(new_id))
+            rec(f"update {res}", um, upath, _http(um, base + ip, token=token, body=_probe_body(c["post"])))
+        if new_id is not None and c["item_delete"]:
+            ip = _path_with_params(c["item_delete"], str(new_id))
+            rec(f"delete {res}", "DELETE", c["item_delete"], _http("DELETE", base + ip, token=token))
+
+
+def _api_test_user(base: str, api_paths: set,
+                   business_eps: Optional[List[Mapping[str, Any]]] = None) -> Dict[str, Any]:
+    """Run a realistic two-user journey; record each step. Social-shaped contracts get the
+    targeted social steps (which guard the instagram route_projector regressions); EVERY app
+    additionally gets a generic contract-derived CRUD journey (``_api_crud_journey``)."""
     steps: List[Dict[str, Any]] = []
 
     def rec(action: str, method: str, path: str, res: Dict[str, Any],
@@ -210,6 +315,10 @@ def _api_test_user(base: str, api_paths: set) -> Dict[str, Any]:
         rec("send a direct message", "POST", "/api/messages/{username}",
             _http("POST", f"{base}/api/messages/{user_a}", token=tok_b,
                   body={"text": "hello from the test user"}))
+
+    # 8. GENERIC CRUD journey — every app, not just social ones. The social block uses
+    #    /api/posts as its create target, so skip it here to avoid double-walking.
+    _api_crud_journey(base, business_eps or [], tok_a, rec, skip_bases={"/api/posts"})
 
     return {"steps": steps, "actor": user_a}
 
@@ -385,7 +494,7 @@ def run_test_user_validation(
             report["summary"] = {"verdict": "ENV_UNAVAILABLE",
                                  "error": f"backend at {base} not reachable within 240s"}
             raise _EnvUnavailable()  # falls through to the shared persist
-        api = _api_test_user(base, api_paths)
+        api = _api_test_user(base, api_paths, list(business_endpoints or []))
         report["api"] = api
         report["mcp"] = _mcp_test_user(project_dir, list(business_endpoints or []))
         # usage-level: drive the real UI auth forms in a browser
