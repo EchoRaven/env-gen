@@ -572,16 +572,15 @@ def _seed_password_hash() -> str:
 
 
 _SEED_PEOPLE = ["Ava Chen", "Liam Patel", "Noah Kim", "Mia Garcia", "Ethan Brooks", "Sofia Rossi"]
-_SEED_TITLES = ["Sunrise Timelapse over the Bay", "How We Built It in a Weekend",
-                "A Calm Morning Routine", "Deep Dive: Getting Started",
-                "Field Notes from the Road", "Behind the Scenes"]
-_SEED_BRANDS = ["Pixel Forge", "Trailhead Studio", "North Loop", "Quiet Harbor", "Bright Atlas", "Cedar & Co"]
-_SEED_SENTENCES = ["A behind-the-scenes look at how it all came together.",
+# Neutral, domain-agnostic labels for name/title columns — read fine as a task title, a
+# document name, a board, a product, or a message subject (NOT video/media-platform shaped).
+_SEED_TITLES = ["Getting Started", "Project Overview", "Weekly Summary",
+                "Quarterly Plan", "Team Update", "Field Report"]
+_SEED_SENTENCES = ["A short overview of what this is and how it works.",
                    "Everything you need to get started, one step at a time.",
-                   "Quick highlights and a few things we learned this week.",
-                   "Thanks for following along — much more on the way.",
-                   "A relaxed walkthrough with notes you can follow."]
-_SEED_GENRES = ["Ambient", "Lo-fi", "Cinematic", "Acoustic", "Electronic"]
+                   "A few quick highlights and notes from this week.",
+                   "Thanks for following along — more to come.",
+                   "A brief walkthrough with notes you can follow."]
 _SEED_OMIT = object()
 
 
@@ -603,7 +602,7 @@ def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Di
         return _SEED_OMIT  # PK → SERIAL
     if n == "password_hash":
         return _seed_password_hash()
-    if n in ("created_at", "updated_at", "published_at", "watched_at") or n.endswith("_at"):
+    if n in ("created_at", "updated_at") or n.endswith("_at"):
         return _SEED_OMIT  # DB default now()/nullable — avoid datetime coercion
     if n == "email":
         return _seed_slug(_SEED_PEOPLE[i % len(_SEED_PEOPLE)]) + "@example.com"
@@ -616,24 +615,23 @@ def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Di
     if any(k in n for k in ("description", "bio", "summary", "about", "caption",
                             "content", "body", "message", "text", "comment")):
         return _SEED_SENTENCES[i % len(_SEED_SENTENCES)]
-    if n == "genre":
-        return _SEED_GENRES[i % len(_SEED_GENRES)]
-    if n == "artist":
-        return _SEED_PEOPLE[i % len(_SEED_PEOPLE)]
     if n in ("name", "title", "display_name", "full_name", "label") or n.endswith("_name") or n.endswith("_title"):
-        pool = _SEED_PEOPLE if table in ("users",) else (_SEED_BRANDS if table in ("channels", "tenants") else _SEED_TITLES)
+        pool = _SEED_PEOPLE if table == "users" else _SEED_TITLES
         return pool[i % len(pool)]
-    if any(k in n for k in ("views", "count", "subscriber", "likes", "total",
-                            "watch_time", "revenue", "quantity", "duration", "seconds", "position")):
+    if any(k in n for k in ("count", "total", "amount", "quantity", "number", "duration",
+                            "seconds", "position", "score", "rating", "price", "views",
+                            "likes", "subscriber", "watch_time", "revenue")):
         return (i + 1) * 1731 % 9800 + 42
-    if n in ("kind", "type"):
-        return ["video", "short"][i % 2]
-    if n == "visibility":
-        return ["public", "unlisted", "public"][i % 3]
     if n in ("status", "state"):
         return "active"
-    if n in ("value", "role"):
-        return ["like", "dislike"][i % 2] if n == "value" else "member"
+    if n == "role":
+        return "member"
+    if n in ("kind", "type", "category"):
+        # no enum/CHECK metadata in the contract → a NEUTRAL non-null token, never a
+        # domain literal like 'video'/'short' (which is wrong for non-video apps).
+        return "standard"
+    if n == "visibility":
+        return "public"
     if n.startswith("is_") or n.endswith("_flag") or n.endswith("_enabled") or n.startswith("has_") or n in ("active", "enabled", "is_read"):
         return (i % 2 == 0)
     return _SEED_OMIT

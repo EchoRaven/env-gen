@@ -693,7 +693,7 @@ tasks.map(...)              // ERROR! the body is {items: [...]}, not an array
 const tasks2 = data.tasks;  // ERROR! the projector emits data.items, not data.tasks → blank page
 ```
 
-Errors: `{error: {message: "..."}}` — extract `error.error?.message`.
+Errors: FastAPI returns `{"detail": "..."}` with the HTTP status — read `data.detail` (the api.js `request()` helper throws `(await res.json()).detail`). The `{error: {message}}` shape is NEVER emitted; do not read `error.error?.message`.
 </api_response_handling>
 
 
