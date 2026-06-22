@@ -423,6 +423,24 @@ def _extract_resource_id(payload: Any) -> Any:
 # A path placeholder the verifier left unresolved: ``${msg_id}`` / ``${var.x}`` or a
 # bare ``{id}`` (never a substituted value, since saved vars are replaced first).
 _UNRESOLVED_PLACEHOLDER = re.compile(r"\$\{[^}]+\}|\{[a-zA-Z_][^}]*\}")
+# Variable names a step REFERENCES: ${var}, ${var.name}, or bare {name} (path-param style).
+_VAR_REF = re.compile(r"\$\{(?:var\.)?(\w+)\}|\{(\w+)\}")
+
+
+def _step_refs(step: Mapping[str, Any]) -> set:
+    """Variable names a step depends on (path + body placeholders + its auth var) — used to
+    decide whether a step is reachable after an earlier step failed to save a variable."""
+    text = str(step.get("path") or "")
+    if step.get("body") is not None:
+        try:
+            text += " " + json.dumps(step.get("body"))
+        except Exception:
+            text += " " + str(step.get("body"))
+    refs = {m.group(1) or m.group(2) for m in _VAR_REF.finditer(text)}
+    refs.discard("rand")  # the framework always supplies ${rand}
+    if step.get("auth"):
+        refs.add(str(step.get("auth")))
+    return refs
 
 
 def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
@@ -431,8 +449,21 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     variables: Dict[str, str] = {"rand": str(int(time.time() * 1000))[-7:]}
     recorded: List[Dict[str, Any]] = []
     last_id: Any = None
+    unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
     for step in chain.get("steps") or []:
         method = str(step.get("method", "GET")).upper()
+        # A broken step no longer aborts the whole chain (it used to `break`, so only the
+        # FIRST failure was ever reported). Continue, but SKIP a step that depends on a
+        # variable a broken step was supposed to save — it would cascade-fail on a missing
+        # var and add noise. Independent later steps still run, so every real failure shows.
+        _dep = _step_refs(step) & unsatisfied
+        if _dep:
+            recorded.append({
+                "action": str(step.get("action") or step.get("path") or ""),
+                "method": method, "path": str(step.get("path") or ""),
+                "status": None, "ok": False, "kind": "skipped",
+                "note": "skipped — depends on " + ", ".join(sorted(_dep)) + " from a failed earlier step"})
+            continue
         path = str(_subst(step.get("path", ""), variables, bare=True))
         # UNRESOLVED-VARIABLE FALLBACK: verifier-authored chains routinely reference a
         # path var they never saved (outlook run #6: GET /api/messages/${msg_id} with no
@@ -506,7 +537,10 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                     if rev is not None:
                         variables[str(dotted)] = str(rev)
         if kind == "broken":
-            break  # later steps would cascade-fail on missing variables
+            # Don't abort — just mark the vars this step was supposed to provide as
+            # unsatisfied, so ONLY its dependents are skipped; independent steps run on.
+            if isinstance(step.get("save"), Mapping):
+                unsatisfied.update(str(k) for k in step["save"].keys())
     broken = [f"{s['method']} {s['path']} → {s['status']} ({s['note']})"
               for s in recorded if s["kind"] == "broken"]
     return {"name": str(chain.get("name") or "chain"), "steps": recorded,
