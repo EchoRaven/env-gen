@@ -59,29 +59,74 @@ def _page_dead_controls(text: str) -> bool:
     return interactive and not bound
 
 
-def _route_element(app_jsx: str, route: str) -> Optional[str]:
-    """The component identifier wired to ``route`` in App.jsx, or None.
+# Route-guard / layout wrappers that wrap the real PAGE in element={...} — the audit
+# resolves a route to its PAGE component, not the auth/layout shell around it.
+_ROUTE_WRAPPERS = frozenset({
+    "ProtectedRoute", "PrivateRoute", "PublicRoute", "RequireAuth", "RequireAdmin",
+    "AuthGuard", "RouteGuard", "Guard", "AuthRoute", "Layout", "AppLayout", "MainLayout",
+    "DashboardLayout", "Suspense", "ErrorBoundary", "Fragment", "React",
+})
 
-    e.g. ``<Route path="/" element={<Home />} />`` for route ``/`` → ``"Home"``.
-    The declared ui_page ``component`` is a LOGICAL name (``HomePage``); the lane
-    is free to render the route with any actual component file (``Home.jsx``).
-    The route→element wiring is the source of truth for *what renders this page*,
-    so the audit resolves the declared page to its real on-disk component THROUGH
-    the route element rather than insisting the file be named after the logical
-    component. Domain-agnostic; matches single- or double-quoted paths."""
+
+def _tag_span(app_jsx: str, pidx: int) -> str:
+    """The full ``<Route ...>`` tag enclosing the ``path=`` at ``pidx`` — bounded by the
+    first ``>`` at brace-depth 0, so a ``>`` inside ``element={...}`` (a JS expression, or
+    a nested ``<Wrapper><Page/></Wrapper>``) does NOT truncate the tag."""
+    start = app_jsx.rfind("<Route", 0, pidx)
+    if start == -1:
+        start = max(0, pidx - 200)
+    depth, i = 0, start
+    while i < len(app_jsx):
+        ch = app_jsx[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        elif ch == ">" and depth == 0:
+            return app_jsx[start:i + 1]
+        i += 1
+    return app_jsx[start:start + 400]
+
+
+def _route_element(app_jsx: str, route: str) -> Optional[str]:
+    """The PAGE component identifier wired to ``route`` in App.jsx, or None.
+
+    e.g. ``<Route path="/" element={<Home />} />`` for route ``/`` → ``"Home"``, and
+    ``element={<ProtectedRoute><InboxPage/></ProtectedRoute>}`` → ``"InboxPage"`` (the
+    PAGE, not the guard). The declared ui_page ``component`` is a LOGICAL name; the lane
+    may render the route with any actual component file, and the route→element wiring is
+    the source of truth for *what renders this page*. Parses the whole ``<Route>`` tag with
+    balanced-brace awareness (tolerates attribute order + a ``>`` inside the element
+    expression) and skips known route-guard/layout wrappers. Domain-agnostic; matches
+    single- or double-quoted paths."""
     if not route:
         return None
     for q in ('"', "'"):
-        # tolerate attribute order: scan from the path attr to the next element=
-        idx = app_jsx.find(f"path={q}{route}{q}")
-        while idx != -1:
-            # bound the search to this <Route ...> tag (up to the next '>')
-            end = app_jsx.find(">", idx)
-            segment = app_jsx[idx:end if end != -1 else idx + 400]
-            m = re.search(r"element=\{\s*<\s*([A-Za-z_]\w*)", segment)
-            if m:
-                return m.group(1)
-            idx = app_jsx.find(f"path={q}{route}{q}", idx + 1)
+        pat = f"path={q}{route}{q}"
+        pidx = app_jsx.find(pat)
+        while pidx != -1:
+            tag = _tag_span(app_jsx, pidx)
+            em = re.search(r"element=\s*\{", tag)
+            if em:
+                # capture the balanced element={...} expression
+                j = tag.find("{", em.start())
+                depth, k = 0, j
+                while k < len(tag):
+                    if tag[k] == "{":
+                        depth += 1
+                    elif tag[k] == "}":
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    k += 1
+                expr = tag[j:k + 1]
+                # opening-tag component names, in source order; the PAGE is the innermost
+                # (last) one after dropping known wrappers.
+                names = re.findall(r"<\s*([A-Za-z_]\w*)", expr)
+                page = [n for n in names if n not in _ROUTE_WRAPPERS] or names
+                if page:
+                    return page[-1]
+            pidx = app_jsx.find(pat, pidx + 1)
     return None
 
 
