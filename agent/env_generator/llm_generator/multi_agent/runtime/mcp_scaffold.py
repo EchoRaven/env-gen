@@ -307,6 +307,32 @@ exec uv run python main.py
 '''
 
 
+def _resolve_tool_names(endpoints: Dict[str, Any],
+                        tool_aliases: Dict[str, str] = None) -> List[tuple]:
+    """[(endpoint, unique_tool_name)] in contract order, GUARANTEED collision-free.
+
+    A base name (the spec alias, else ``tool_op_id``) that repeats gets a deterministic
+    numeric suffix (``_2``, ``_3``, …). This closes the real collision ``tool_op_id`` opens
+    by stripping both ``api/v1/`` and ``api/`` (``/api/tenants`` and ``/api/v1/tenants`` both
+    base to ``get_tenants``) — without it the server emits two same-named ``@mcp.tool``s (the
+    second shadows the first) and the registry double-counts, yielding an incomplete MCP
+    surface. The first occurrence keeps its base name, so non-colliding contracts are
+    unchanged."""
+    aliases = tool_aliases or {}
+    used: set = set()
+    out: List[tuple] = []
+    for ep in business_endpoints(endpoints):
+        base = aliases.get(_norm_ep_key(str(ep["method"]), str(ep["path"]))) \
+            or tool_op_id(str(ep["method"]), str(ep["path"]))
+        name, i = base, 1
+        while name in used:
+            i += 1
+            name = f"{base}_{i}"
+        used.add(name)
+        out.append((ep, name))
+    return out
+
+
 def render_mcp_server(endpoints: Dict[str, Any], env_name: str = "app",
                       tool_aliases: Dict[str, str] = None) -> str:
     """Render the full ``main.py``: fixed skeleton + one tool per business
@@ -317,9 +343,8 @@ def render_mcp_server(endpoints: Dict[str, Any], env_name: str = "app",
               .replace("__ENV_TITLE__", title)
               .replace("__ENV_NAME__", env_name))
     tools = "\n".join(
-        render_tool(ep, alias=(tool_aliases or {}).get(
-            _norm_ep_key(ep["method"], ep["path"])))
-        for ep in business_endpoints(endpoints))
+        render_tool(ep, alias=name)
+        for ep, name in _resolve_tool_names(endpoints, tool_aliases))
     return header + tools + _SKELETON_FOOTER
 
 
@@ -346,11 +371,10 @@ def mcp_tool_records(endpoints: Dict[str, Any],
     """The tool registration records (one per business endpoint) the
     orchestrator feeds to ``mcp_registry.register_mcp_tool``."""
     recs: List[Dict[str, Any]] = []
-    for ep in business_endpoints(endpoints):
+    for ep, name in _resolve_tool_names(endpoints, tool_aliases):
         method, path = str(ep["method"]).upper(), str(ep["path"])
         recs.append({
-            "tool_name": (tool_aliases or {}).get(
-                _norm_ep_key(method, path)) or tool_op_id(method, path),
+            "tool_name": name,  # collision-free across the whole contract
             "method": method,
             "path": path,
             "schema": {
