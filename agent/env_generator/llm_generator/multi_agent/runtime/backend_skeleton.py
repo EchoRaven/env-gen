@@ -374,12 +374,18 @@ def health():
     return {"status": "healthy"}
 '''
 
-_MAIN_FOOTER = '''
-
 # LANE-OVERRIDE HOOK: custom_routes.py is the ONE backend file the lane owns —
 # genuinely custom business logic (beyond contract-projected CRUD) goes there.
-# The framework NEVER writes or overwrites it. Routes registered there take
-# effect on top of the projected handlers (FastAPI matches them as defined).
+# The framework NEVER writes or overwrites it. This include is emitted BEFORE the
+# projected handlers: FastAPI/Starlette matches the FIRST-registered route for a
+# METHOD+path, so "override" REQUIRES the custom router to register first. When it
+# was appended in the footer (last), the projected stub WON every duplicate and the
+# lane's correct handler never ran — e.g. GET /api/auth/me shipped the projected
+# {"items":[]} list stub and POST /api/events/{id}/rsvp shipped a null-Event create,
+# both failing api_smoke forever while the lane's correct custom_routes handlers sat
+# shadowed (outlook run #2 abort). custom_routes imports only database/models/
+# auth_dependency (never main), so an early include carries no circular-import risk.
+_CUSTOM_ROUTES_INCLUDE = '''
 try:
     from custom_routes import router as _custom_router
     app.include_router(_custom_router)
@@ -388,6 +394,9 @@ except ImportError:
 except Exception as _custom_exc:  # pragma: no cover — a broken override must not kill boot
     import logging
     logging.getLogger("custom_routes").warning("custom_routes failed to load: %s", _custom_exc)
+'''
+
+_MAIN_FOOTER = '''
 
 if __name__ == "__main__":
     import uvicorn
@@ -421,7 +430,12 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
     # _AUTH_MIDDLEWARE references ``app`` + imports jwt/JSONResponse/jwt_manager; it is
     # inserted after the app is constructed and before the routes (static-first).
     mid = _AUTH_MIDDLEWARE.strip("\n")
+    # _CUSTOM_ROUTES_INCLUDE precedes the projected blocks so a lane custom_routes
+    # handler OVERRIDES the projected one for the same METHOD+path (first-registered
+    # wins in Starlette) — the documented lane-override intent, which the old footer
+    # placement silently inverted.
     body = (_MAIN_HEADER + "\n\n" + mid + "\n\n\n"
+            + _CUSTOM_ROUTES_INCLUDE + "\n\n\n"
             + "\n\n\n".join(static_blocks + param_blocks) + _MAIN_FOOTER)
     return body
 
