@@ -381,15 +381,41 @@ def _mark_fallback_page(src: str) -> str:
     return _PAGE_MARKER + "\n" + src
 
 
-def _project_page_component(name: str, page: Mapping[str, Any]) -> str:
+def _nav_links_jsx(nav_routes) -> str:
+    """A full-bleed top-nav bar linking the app's main business routes, so the
+    projected pages are NAVIGABLE — you can move between inbox/calendar/contacts/…
+    instead of each page being a disconnected dead-end (the #1 'app isn't usable'
+    symptom). Plain ``<a href>`` (router-agnostic) + a Sign out. Negative margins
+    cancel the page's ``px-6 py-6`` padding so the bar is full width at the top.
+    Returns '' when there are no other routes (single-page / auth / landing)."""
+    routes = [(str(l).strip(), str(r).strip()) for (l, r) in (nav_routes or []) if str(r).strip()]
+    if not routes:
+        return ""
+    links = "\n".join(
+        f'        <a href="{r}" className="rounded-md px-3 py-1.5 text-sm font-medium '
+        f'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900">{l}</a>'
+        for (l, r) in routes)
+    return (
+        '<nav className="-mx-6 -mt-6 mb-6 flex flex-wrap items-center gap-1 border-b '
+        'border-zinc-200 bg-white px-6 py-2">\n'
+        + links + "\n"
+        "        <button onClick={() => { localStorage.clear(); window.location.href = '/login'; }} "
+        'className="ml-auto rounded-md px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-100 '
+        'hover:text-zinc-900">Sign out</button>\n'
+        "      </nav>")
+
+
+def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None) -> str:
     """Project a MINIMALLY-FUNCTIONAL, data-driven page from the contract instead
     of an inert stub. Generic for ANY app: a page with a declared GET fetches it
     and renders the rows; a POST-only page renders a submit form; an api-less page
     is a clean static page. Uses bare ``fetch`` + the JWT from localStorage (no
     dependency on the lane's api.js export shape), so the page (a) carries a real
     handler/api call and no placeholder marker — passing the stub-detector — and
-    (b) actually exercises its declared endpoint. The lane may still overwrite it
-    with richer UI (this only runs when the page file is missing)."""
+    (b) actually exercises its declared endpoint. ``nav_routes`` (list of (label,
+    route)) injects a shared top-nav so the data pages are interconnected/navigable.
+    The lane may still overwrite it with richer UI (this only runs when missing)."""
+    _nav = _nav_links_jsx(nav_routes)
     # Auth pages get a REAL functional login/register form (framework owns
     # /auth/login + /auth/register) — never the generic single-input POST stub or
     # the inert no-api stub, which would ship a login page a user can't use.
@@ -448,6 +474,7 @@ export default function __COMP__() {
     : (data && data.item ? [data.item] : (Array.isArray(data) ? data : []));
   return (
     <div data-fallback="1" className="min-h-screen bg-zinc-50 text-zinc-900 px-6 py-6">
+      __NAV__
       <h2 className="text-xl font-semibold mb-4">__LABEL__</h2>
       {error ? <p className="text-sm text-red-600 mb-4">{error}</p> : null}
       <div className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white shadow-sm">
@@ -470,7 +497,8 @@ export default function __COMP__() {
 }
 """
         return _mark_fallback_page(tpl.replace("__COMP__", name).replace("__LABEL__", label)
-                                   .replace("__PATH__", _api_path_to_js(get_ep)))
+                                   .replace("__PATH__", _api_path_to_js(get_ep))
+                                   .replace("__NAV__", _nav))
 
     if post_ep:
         tpl = """import { useState } from 'react';
@@ -494,7 +522,8 @@ export default function __COMP__() {
     }
   };
   return (
-    <div data-fallback="1" className="min-h-screen bg-zinc-50 text-zinc-900 px-6 py-8">
+    <div data-fallback="1" className="min-h-screen bg-zinc-50 text-zinc-900 px-6 py-6">
+      __NAV__
       <div className="max-w-lg rounded-xl border border-zinc-200 bg-white shadow-sm px-8 py-8">
         <h2 className="text-xl font-semibold">__LABEL__</h2>
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
@@ -510,7 +539,7 @@ export default function __COMP__() {
 }
 """
         return _mark_fallback_page(tpl.replace("__COMP__", name).replace("__LABEL__", label)
-                                   .replace("__POST__", post_ep))
+                                   .replace("__POST__", post_ep).replace("__NAV__", _nav))
 
     return _mark_fallback_page(_stub_page_component(name))
 
@@ -775,6 +804,7 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
 
         scaffolded: List[str] = []
         entries: List[tuple] = []
+        plan: List[tuple] = []
         seen_components: Set[str] = set()
         used_routes: Set[str] = set()
         for i, page in enumerate(ui_pages or []):
@@ -796,7 +826,27 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                 n += 1
             used_routes.add(route)
             entries.append((comp, route))
+            plan.append((comp, route, page))
 
+        # Shared top-nav for the data pages: the main business routes (skip auth /
+        # landing / param-detail routes, dedup, cap), labelled from the route segment.
+        # Built from ALL entries FIRST so every projected page links to the same set —
+        # makes the app NAVIGABLE (the disconnected-pages symptom the user hit).
+        nav_routes: List[tuple] = []
+        _nav_seen: Set[str] = set()
+        for _c, _r, _pg in plan:
+            if (":" in _r or "{" in _r or _r in ("/", "")
+                    or _is_auth_page(_c, _pg) or _is_landing_page(_c, _pg)):
+                continue
+            if _r in _nav_seen:
+                continue
+            _nav_seen.add(_r)
+            _seg = _r.strip("/").split("/")[0]
+            _lbl = re.sub(r"[-_]+", " ", _seg).strip().title() or _seg
+            nav_routes.append((_lbl, _r))
+        nav_routes = nav_routes[:7]
+
+        for comp, route, page in plan:
             target = pages_dir / f"{comp}.jsx"
             # Auth pages are ALWAYS (over)written with the framework's wired auth
             # form — the lane consistently ships a dead/unwired login. Other pages
@@ -805,7 +855,8 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                 # Project a minimally-FUNCTIONAL page from the contract (fetches the
                 # declared endpoint + renders it), not an inert stub the audit then
                 # blocks. The lane may still overwrite it with richer UI.
-                target.write_text(_project_page_component(comp, page), encoding="utf-8")
+                target.write_text(_project_page_component(comp, page, nav_routes=nav_routes),
+                                  encoding="utf-8")
                 scaffolded.append(str(target.relative_to(frontend_dir)))
 
         app_wired = False
