@@ -245,9 +245,43 @@ def _http_json(url: str, payload: Optional[dict] = None, timeout: int = 10) -> t
         return 0, {}
 
 
-def _mint_token(backend_port: int, timeout_s: int = 60) -> Optional[str]:
-    """Register a throwaway user and return its bearer token (None on failure)."""
+def _seed_demo_login(project_dir: Any) -> Optional[Dict[str, str]]:
+    """Credentials of the SEEDED demo user (the first user in the generated seed_data.py,
+    whose password is the framework's fixed seed password). The QA tooling logs in AS this
+    user so it validates the POPULATED app — the references depict screens WITH data, and a
+    fresh throwaway user sees empty lists (multi-tenant read-scoping), making every page look
+    blank/mismatched. Domain-agnostic: reads whatever the seed generated. None if no seed."""
+    try:
+        import ast
+        sd = Path(project_dir) / "app" / "backend" / "seed_data.py"
+        if not sd.is_file():
+            return None
+        m = re.search(r"_SEED\s*=\s*(\{.*\})", sd.read_text(encoding="utf-8", errors="ignore"))
+        if not m:
+            return None
+        seed = ast.literal_eval(m.group(1))
+        users = (seed or {}).get("users") or []
+        email = users[0].get("email") if users and isinstance(users[0], dict) else None
+        if not email:
+            return None
+        return {"email": str(email), "password": "password",  # backend_skeleton._SEED_PASSWORD
+                "name": str((users[0].get("name") or "Demo"))}
+    except Exception:
+        return None
+
+
+def _mint_token(backend_port: int, timeout_s: int = 60,
+                demo: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    """A bearer token for screenshots. Prefer the SEEDED demo user (populated screens that
+    match the references); fall back to a throwaway register only if no demo user is known."""
     suffix = str(int(time.time()))[-7:]
+    if demo and demo.get("email"):
+        # the seeded user already exists — log in (don't register); it owns the seed data.
+        _st, _d = _http_json(f"http://localhost:{backend_port}/auth/login",
+                             {"email": demo["email"], "password": demo.get("password") or "password"})
+        _tok = _d.get("access_token") or _d.get("token")
+        if _tok:
+            return str(_tok)
     payload = {
         "email": f"vf_{suffix}@gate.local", "password": "VfGate123!",
         "username": f"vf_{suffix}", "full_name": "Visual Gate",
@@ -501,7 +535,9 @@ async def run_visual_fidelity(
         be_port = (_service_host_port(compose_file, cwd, "backend")
                    or _service_host_port(compose_file, cwd, "api") or 3001)
         auth_needed = any(s["auth"] for s in judged_screens)
-        token = _mint_token(be_port) if auth_needed else None
+        # Log in as the SEEDED demo user so authed screens render POPULATED (matching the
+        # references), not the empty lists a fresh throwaway user sees under tenant-scoping.
+        token = _mint_token(be_port, demo=_seed_demo_login(project_dir)) if auth_needed else None
         if auth_needed and not token:
             # Not a judgment: without a session every auth route renders the
             # login page. Report it; the orchestrator refunds the attempt.

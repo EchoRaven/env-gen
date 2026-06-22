@@ -371,8 +371,12 @@ class HealPipeline:
         except Exception:
             pass
         out_dir = proj / "design" / "test_user"
+        # Log in as the SEEDED demo user (populated screens that match the references) rather
+        # than a fresh user that, under tenant-scoping, sees empty lists on every page.
+        from .visual_fidelity import _seed_demo_login
         report = asyncio.run(run_browser_test_user(
-            base, pages, out_dir, register=True, api_base_url=api_base))
+            base, pages, out_dir, register=True, api_base_url=api_base,
+            demo_login=_seed_demo_login(proj)))
         if not report.get("ran"):
             orch._logger.warning("BROWSER test-user (v%s): could not run — %s",
                                  version, report.get("summary"))
