@@ -263,6 +263,47 @@ def _is_auth_page(name: str, page: Mapping[str, Any]) -> bool:
             or "login" in n or "signup" in n or n == "authpage")
 
 
+def _is_landing_page(name: str, page: Mapping[str, Any]) -> bool:
+    """A marketing/landing entry page (welcome → sign in/create account). Keyed on
+    the NAME/id/route saying 'landing'/'welcome' — NOT on route=='/' alone, since a
+    content app's home FEED also lives at '/' (and it has apis_used → a real list)."""
+    pid = str((page or {}).get("id") or "").strip().lower()
+    n = str(name or "").lower()
+    route = str((page or {}).get("route") or "").strip().lower().rstrip("/")
+    if (page or {}).get("apis_used"):
+        return False  # a data-driven home page is a list, not a marketing splash
+    return ("landing" in n or "welcome" in n or "landing" in pid or "welcome" in pid
+            or "landing" in route or "welcome" in route)
+
+
+# A real landing/entry page: app wordmark + hero + WORKING nav to /login and /signup
+# (plain <a> so it works with any router). Fixes "stuck on a dead 'Landing' heading
+# with no way in" — the no-api stub used to render just <h2>Landing</h2>. No
+# placeholder marker → counts as a real authored entry page.
+_LANDING_TEMPLATE = """export default function __COMP__() {
+  return (
+    <div className="min-h-screen bg-white text-zinc-900 flex flex-col">
+      <header className="flex items-center justify-between px-6 sm:px-10 py-4 border-b border-zinc-200">
+        <div className="text-lg font-semibold text-blue-700">__APP__</div>
+        <nav className="flex items-center gap-2">
+          <a href="/login" className="rounded-md px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100">Sign in</a>
+          <a href="/signup" className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Create free account</a>
+        </nav>
+      </header>
+      <main className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+        <h1 className="max-w-2xl text-4xl sm:text-5xl font-bold tracking-tight">__APP__</h1>
+        <p className="mt-4 max-w-xl text-lg text-zinc-500">Sign in to connect, organize, and get things done.</p>
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <a href="/login" className="rounded-lg bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700">Sign in</a>
+          <a href="/signup" className="rounded-lg border border-zinc-300 px-6 py-3 font-medium text-zinc-700 hover:bg-zinc-50">Create a free account</a>
+        </div>
+      </main>
+    </div>
+  );
+}
+"""
+
+
 def _is_register_mode(name: str, page: Mapping[str, Any]) -> bool:
     route = str((page or {}).get("route") or "").strip().lower()
     pid = str((page or {}).get("id") or "").strip().lower()
@@ -356,6 +397,12 @@ def _project_page_component(name: str, page: Mapping[str, Any]) -> str:
         return (_AUTH_PAGE_TEMPLATE.replace("__COMP__", name)
                 .replace("__IS_REGISTER__", "true" if _is_register_mode(name, page) else "false"))
     label = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").strip() or name
+    if _is_landing_page(name, page):
+        # Real entry page: wordmark/hero + WORKING sign-in/create-account nav. Derive
+        # the app name by stripping the landing/welcome words (OutlookLanding → Outlook;
+        # a bare LandingPage → "Welcome"). Never the dead <h2>Landing</h2> stub again.
+        app = re.sub(r"\b(landing|welcome|page)\b", "", label, flags=re.I).strip() or "Welcome"
+        return _LANDING_TEMPLATE.replace("__COMP__", name).replace("__APP__", app)
     parsed = []
     for a in (page.get("apis_used") or []):
         parts = str(a).strip().split(None, 1)
