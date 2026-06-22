@@ -351,10 +351,28 @@ class EnvGenAgent(
         "bug_list_open",
         "bug_list_assigned_to",
     }
+    # The FRONTEND lane's reference-screenshot read tools. frontend_agent.j2
+    # mandates "inspect them via view_image() and produce a visual_reference_analysis
+    # section ... list_reference_images ONCE in Phase A, then view_image() for every
+    # path — never guess the UI from memory" — i.e. the lane is supposed to LOOK at
+    # the references while authoring src/pages/*.jsx. But view_image / list_reference_images
+    # live in the "file" tool category (tools.py: _assemble_agent_tool_pool) and were
+    # NOT in edit_code's always-include, so the per-step ranker (top-N over ~150 tools)
+    # crowded them out: youtube run #20 AND outlook run #1 both show the frontend lane
+    # calling view_image ZERO times across the whole run (and pleading "I am missing
+    # ... view_image" to the orchestrator) — it never once saw the references it was
+    # told to match, so every projected page is a generic fallback. Same crowd-out
+    # class as _CONTRACT_READ / _CLAIM_FLOW / _BUG_FLOW. Force-offer in edit_code (the
+    # build stage); bundle-intersection means only lanes that bundle these (frontend)
+    # ever see them — backend/verifier are unaffected.
+    _REFERENCE_VIEW = {
+        "view_image",
+        "list_reference_images",
+    }
     ACTION_STAGE_ALWAYS_INCLUDE: Dict[str, Set[str]] = {
         "communicate": {"check_inbox", "send_message", "ask_agent", "broadcast", "report_progress", "finish"}
                         | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW,
-        "edit_code": {"read", "edit", "apply_patch", "write", "finish"} | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _CONTRACT_READ,
+        "edit_code": {"read", "edit", "apply_patch", "write", "finish"} | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _CONTRACT_READ | _REFERENCE_VIEW,
         "run_checks": {"lint", "test_api", "finish"} | _CLAIM_FLOW | _VALIDATION_FLOW | _CONTRACT_READ,
         "delegate_team": {"finish"},
         # ``submit_retro`` + ``deliverability_check`` are the pre-delivery gate
