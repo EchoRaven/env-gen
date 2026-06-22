@@ -141,6 +141,15 @@ def repair_frontend_api_exports(frontend_dir) -> Dict[str, object]:
 
 _LOCAL_DEFAULT_IMPORT = re.compile(
     r"""import\s+([A-Za-z_$][\w$]*)\s+from\s+['"](\.[^'"]+)['"]""")
+# A <Route> whose element is an INLINE placeholder <div> (e.g.
+# `element={<div>Login Page Stub</div>}`) instead of a real page component. The lane
+# sometimes inlines a stub div rather than routing to the page the framework already
+# projected — outlook run #9: /login -> "Login Page Stub" (login DEAD) while the
+# functional LoginPage.jsx sat unrouted. Captures: (1) prefix incl path + element={,
+# (2) the route path, (3) the closing }.
+_INLINE_STUB_ROUTE = re.compile(
+    r'(<Route\b[^>]*?\bpath\s*=\s*["\']([^"\']+)["\'][^>]*?\belement\s*=\s*\{\s*)'
+    r'<div\b[^>]*>[^<}]{0,60}</div>(\s*\}\s*/?>)')
 _COMPONENT_DIR = re.compile(r"/(pages|components|views|screens|routes)/")
 _LOCAL_NAMED_IMPORT = re.compile(
     r"""import\s*\{([^}]*)\}\s*from\s*(['"])(\.[^'"]+)\2""")
@@ -653,6 +662,86 @@ def scaffold_missing_local_pages(frontend_dir, ui_pages=None) -> Dict[str, objec
         return {"scaffolded": sorted(set(scaffolded))}
     except Exception as exc:  # never break generation/validation
         return {"scaffolded": [], "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _resolve_route_component(route: str, pages_dir: Path) -> Optional[str]:
+    """Pick the REAL page component in src/pages/ that should serve ``route`` — auth
+    routes → LoginPage/SignupPage; else the PascalCase page derived from the route's
+    first segment (``/inbox`` → InboxPage), accepting the first existing candidate
+    with non-trivial content (so a dead 8-line stub is never chosen over a real page)."""
+    low = route.strip().rstrip("/").lower()
+    seg = low.strip("/").split("/")[0] if low.strip("/") else ""
+    if low in ("/login", "/signin"):
+        cands = ["LoginPage"]
+    elif low in ("/signup", "/register"):
+        cands = ["SignupPage"]
+    elif not seg:
+        return None
+    else:
+        pasc = re.sub(r"[^a-z0-9]+", " ", seg).title().replace(" ", "")
+        cands = [pasc + "Page", pasc, pasc + "List", pasc + "ListPage"]
+    for c in cands:
+        f = pages_dir / f"{c}.jsx"
+        try:
+            if f.exists() and (f.stat().st_size > 200
+                               or "divide-y" in f.read_text(encoding="utf-8", errors="ignore")
+                               or "onSubmit" in f.read_text(encoding="utf-8", errors="ignore")):
+                return c
+        except Exception:
+            continue
+    # fallback: any existing page whose name contains the segment
+    if seg:
+        for f in sorted(pages_dir.glob("*.jsx")):
+            if seg in f.stem.lower() and f.stat().st_size > 200:
+                return f.stem
+    return None
+
+
+def reroute_inline_stub_routes(frontend_dir) -> Dict[str, object]:
+    """Re-point App.jsx routes whose element is an INLINE placeholder <div> (e.g.
+    ``element={<div>Login Page Stub</div>}``) to the REAL page component that already
+    exists in src/pages/ for that route. The lane sometimes inlines a stub div instead
+    of importing the page the framework projected — outlook run #9 shipped
+    ``/login -> <div>Login Page Stub</div>`` (login DEAD) and ``/inbox -> <div>Inbox
+    Page Stub</div>`` (blank) while the functional LoginPage.jsx + InboxPage.jsx sat
+    unrouted. Re-point each to its real component (+ import). Domain-agnostic; only
+    touches routes whose element is a literal placeholder div. Best-effort; never raises."""
+    try:
+        frontend_dir = Path(frontend_dir)
+        app = frontend_dir / "src" / "App.jsx"
+        pages_dir = frontend_dir / "src" / "pages"
+        if not app.exists() or not pages_dir.is_dir():
+            return {"rerouted": []}
+        src = app.read_text(encoding="utf-8")
+        rerouted: List[str] = []
+        needed_imports: Dict[str, str] = {}
+
+        def _sub(m):
+            route = m.group(2)
+            comp = _resolve_route_component(route, pages_dir)
+            if not comp:
+                return m.group(0)  # no real page to point at — leave the stub
+            needed_imports[comp] = f"./pages/{comp}"
+            rerouted.append(f"{route} -> {comp}")
+            return f"{m.group(1)}<{comp} />{m.group(3)}"
+
+        new_src = _INLINE_STUB_ROUTE.sub(_sub, src)
+        if not rerouted:
+            return {"rerouted": []}
+        # add any missing default imports at the top (after the last existing import)
+        add = [f"import {c} from '{p}';" for c, p in needed_imports.items()
+               if re.search(rf"\bimport\s+{re.escape(c)}\b", new_src) is None]
+        if add:
+            _imps = list(re.finditer(r"^import .*$", new_src, re.M))
+            if _imps:
+                at = _imps[-1].end()
+                new_src = new_src[:at] + "\n" + "\n".join(add) + new_src[at:]
+            else:
+                new_src = "\n".join(add) + "\n" + new_src
+        app.write_text(new_src, encoding="utf-8")
+        return {"rerouted": sorted(set(rerouted))}
+    except Exception as exc:  # never break generation/validation
+        return {"rerouted": [], "error": f"{type(exc).__name__}: {exc}"}
 
 
 def _pascal_case(name: str) -> str:

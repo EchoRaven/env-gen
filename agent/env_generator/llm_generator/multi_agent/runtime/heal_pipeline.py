@@ -340,7 +340,7 @@ class HealPipeline:
                 return
             from .frontend_scaffold import (
                 repair_frontend_api_exports, scaffold_missing_local_pages,
-                repair_frontend_named_default_imports)
+                repair_frontend_named_default_imports, reroute_inline_stub_routes)
             from pathlib import Path as _P
             fe = _P(out_dir) / "app" / "frontend"
             rep = repair_frontend_api_exports(fe)
@@ -378,6 +378,15 @@ class HealPipeline:
                     "imported components it never created): %s",
                     pages.get("scaffolded"),
                 )
+            # Usability: the lane sometimes routes App.jsx to an INLINE placeholder div
+            # (`element={<div>Login Page Stub</div>}`) instead of the real page that
+            # already exists on disk → /login dead, /inbox blank (outlook run #9). Re-point
+            # such routes to their real component so the routed pages are the real ones.
+            _rr = reroute_inline_stub_routes(fe)
+            if _rr.get("rerouted"):
+                orch._logger.warning(
+                    "Frontend inline-stub routes re-pointed to real pages: %s",
+                    _rr.get("rerouted"))
         except Exception as exc:
             orch._logger.debug("frontend api repair skipped: %s", exc)
 
