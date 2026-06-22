@@ -839,6 +839,10 @@ docker_down()            # Stop containers
 
 <api_testing_template>
 ```python
+# SHAPE ONLY — registryhub_list_endpoints is the source of truth. Substitute THIS app's
+# real base URL + host port (run-specific; see your wake metadata / docker-compose host
+# ports) and its OWN resources. The /login and /posts paths below are a generic illustration
+# from an unrelated domain, NOT this app's contract — never test endpoints this app lacks.
 # Health check
 test_api(method="GET", url="http://localhost:8080/health")
 
