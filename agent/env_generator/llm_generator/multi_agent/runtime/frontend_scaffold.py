@@ -675,6 +675,11 @@ def _resolve_route_component(route: str, pages_dir: Path) -> Optional[str]:
         cands = ["LoginPage"]
     elif low in ("/signup", "/register"):
         cands = ["SignupPage"]
+    elif low in ("", "/"):
+        # the root / landing route — point at the real landing/home page (the lane
+        # leaves /  as `element={<div>Landing Page Stub</div>}` while LandingPage.jsx
+        # sits unrouted; outlook run #9).
+        cands = ["LandingPage", "HomePage", "Home", "Dashboard", "DashboardPage"]
     elif not seg:
         return None
     else:
