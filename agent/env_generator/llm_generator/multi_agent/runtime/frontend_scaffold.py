@@ -446,7 +446,11 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None)
         elif parts and str(parts[0]).startswith("/"):
             parsed.append(("GET", str(parts[0]).strip()))
     get_ep = next((p for (m, p) in parsed if m == "GET"), None)
-    post_ep = next((p for (m, p) in parsed if m == "POST"), None)
+    # ANY write verb (POST/PUT/PATCH/DELETE) renders a functional form — a page whose
+    # apis_used are write-only (e.g. a settings page that only PUTs) must NOT degrade to
+    # the inert no-api stub. POST is preferred (a create form), else the first write verb.
+    write_ep = next(((m, p) for (m, p) in parsed if m == "POST"), None) \
+        or next(((m, p) for (m, p) in parsed if m in ("PUT", "PATCH", "DELETE")), None)
 
     if get_ep:
         # LIST render (not a raw key:value dump, NOT a 16:9 video-card grid): a light,
@@ -509,7 +513,8 @@ export default function __COMP__() {
                                    .replace("__PATH__", _api_path_to_js(get_ep))
                                    .replace("__NAV__", _nav))
 
-    if post_ep:
+    if write_ep:
+        write_method, write_path = write_ep
         tpl = """import { useState } from 'react';
 
 export default function __COMP__() {
@@ -520,7 +525,7 @@ export default function __COMP__() {
     const token = (localStorage.getItem('access_token') || localStorage.getItem('token'));
     try {
       const r = await fetch('__POST__', {
-        method: 'POST',
+        method: '__METHOD__',
         headers: Object.assign({ 'Content-Type': 'application/json' },
           token ? { Authorization: 'Bearer ' + token } : {}),
         body: JSON.stringify({ title: value, name: value, content: value, body: value }),
@@ -548,7 +553,8 @@ export default function __COMP__() {
 }
 """
         return _mark_fallback_page(tpl.replace("__COMP__", name).replace("__LABEL__", label)
-                                   .replace("__POST__", post_ep).replace("__NAV__", _nav))
+                                   .replace("__METHOD__", write_method)
+                                   .replace("__POST__", write_path).replace("__NAV__", _nav))
 
     return _mark_fallback_page(_stub_page_component(name))
 
