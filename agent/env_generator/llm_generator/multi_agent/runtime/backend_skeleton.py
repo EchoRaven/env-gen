@@ -302,6 +302,7 @@ def _models_meta(tables: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     def add(table: str, cols: List[Dict[str, Any]]) -> None:
         names, fks = [], {}
         have_pk = False
+        pk_name, pk_type = None, "integer"
         for c in cols:
             if _is_constraint_pseudo_column(c):
                 continue
@@ -311,12 +312,17 @@ def _models_meta(tables: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
             names.append(n)
             if c.get("primary_key") or c.get("pk"):
                 have_pk = True
+                pk_name = n
+                pk_type = str(c.get("type") or "integer")
             tgt = _fk_target(c)
             if tgt:
                 fks[n] = tgt.split(".")[0]
         if not have_pk and "id" not in names:
             names.insert(0, "id")
-        meta[table] = {"cls": _class_name(table), "cols": names, "fks": fks}
+        if pk_name is None:
+            pk_name = "id"  # synthesized SERIAL id
+        meta[table] = {"cls": _class_name(table), "cols": names, "fks": fks,
+                       "pk": pk_name, "pk_type": pk_type}
 
     add("tenants", _merge_cols(_SPINE_TENANT_COLS, by_name.get("tenants", [])))
     add("users", _merge_cols(_SPINE_USER_COLS, by_name.get("users", [])))
@@ -588,18 +594,52 @@ def _seed_slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(s).lower()) or "demo"
 
 
-def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Dict[str, int]):
+def _pk_type_cat(t: Optional[str]) -> str:
+    """Coarse PK type category, domain-agnostic: integer (SERIAL) / uuid / text."""
+    s = str(t or "").lower()
+    if "uuid" in s or "guid" in s:
+        return "uuid"
+    if any(k in s for k in ("int", "serial", "bigint", "smallint", "number")):
+        return "integer"
+    if any(k in s for k in ("char", "text", "string", "str", "slug", "varchar", "clob")):
+        return "text"
+    return "integer"  # unknown → assume SERIAL (the common case)
+
+
+def _seed_pk_value(table: str, n: int, pk_type: Optional[str]):
+    """Deterministic PK value for parent row ``n`` (0-based) when its PK is NOT an integer
+    SERIAL — so a child FK can reference the exact same key. Integer PKs return None (the
+    caller leaves them to SERIAL / index+1)."""
+    cat = _pk_type_cat(pk_type)
+    if cat == "uuid":
+        import uuid as _uuid
+        return str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"{table}-{n + 1}"))
+    if cat == "text":
+        return f"{_seed_slug(table)[:12]}-{n + 1}"
+    return None
+
+
+def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Dict[str, int],
+               pk_name: Optional[str] = None, pk_type: Optional[str] = None,
+               pk_types: Optional[Dict[str, str]] = None):
     """A realistic, deterministic value for one column of seed row ``i`` — or
     ``_SEED_OMIT`` to leave it (PK/timestamp/unknown → DB default/null). Value is
-    chosen by COLUMN NAME first (domain-agnostic), then type-ish fallbacks."""
+    chosen by COLUMN NAME first (domain-agnostic), then type-ish fallbacks.
+    ``pk_types`` maps each parent table to its PK type so a FK is seeded with the parent's
+    ACTUAL key type (integer SERIAL 1..N, or a deterministic text/uuid key)."""
     n = col.lower()
     if fk_table:
         if fk_table == "tenants":
             return "default"
         m = max(1, int(counts.get(fk_table, 1)))
-        return (i % m) + 1  # reference an existing parent row (SERIAL 1..N)
+        idx = i % m
+        _ppk = _seed_pk_value(fk_table, idx, (pk_types or {}).get(fk_table))
+        return _ppk if _ppk is not None else idx + 1  # text/uuid parent key, else SERIAL 1..N
+    if pk_name is not None and col == pk_name:
+        _own = _seed_pk_value(table, i, pk_type)
+        return _own if _own is not None else _SEED_OMIT  # deterministic text/uuid PK, else SERIAL
     if n in ("id",):
-        return _SEED_OMIT  # PK → SERIAL
+        return _SEED_OMIT  # PK → SERIAL (fallback when pk metadata isn't threaded)
     if n == "password_hash":
         return _seed_password_hash()
     if n in ("created_at", "updated_at") or n.endswith("_at"):
@@ -669,17 +709,21 @@ def render_seed_data(tables: Dict[str, Any]) -> str:
     counts: Dict[str, int] = {"users": n_users, "tenants": 1}
     for t in order:
         counts.setdefault(t, 6)
+    # PK type per table so a FK is seeded with the parent's ACTUAL key type.
+    pk_types = {t: meta[t].get("pk_type") for t in meta}
     # users first (login-able), then business tables in FK order.
     seed: Dict[str, List[Dict[str, Any]]] = {}
     full_order = (["users"] if "users" in meta else []) + [t for t in order if t != "users"]
     for t in full_order:
         cols = [c for c in (meta[t].get("cols") or []) if c]
         fks = meta[t].get("fks") or {}
+        _pk_name, _pk_type = meta[t].get("pk"), meta[t].get("pk_type")
         rows: List[Dict[str, Any]] = []
         for i in range(counts.get(t, 6)):
             row: Dict[str, Any] = {}
             for c in cols:
-                v = _seed_cell(c, t, i, fks.get(c), counts)
+                v = _seed_cell(c, t, i, fks.get(c), counts,
+                               pk_name=_pk_name, pk_type=_pk_type, pk_types=pk_types)
                 if v is not _SEED_OMIT:
                     row[c] = v
             if t == "users":
