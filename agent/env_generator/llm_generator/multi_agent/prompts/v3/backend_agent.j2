@@ -252,6 +252,7 @@ You (backend) have been woken by a `kickoff_request` event for milestone **M{{ m
    ```
    {{ requirements }}
    ```
+1b. **INSPECT REFERENCE MATERIAL when any is provided (do this BEFORE authoring your data_model).** Read `design/reference_spec.json` (required screens / endpoints / entities / MCP tools — BINDING gates), then call `list_reference_images()` and `view_image(<path>)` for every screen returned. The screens are a SPECIFICATION of your contract: every visible datum implies a table COLUMN (a sender name + avatar + timestamp + unread dot ⇒ those columns on the row), and every actionable control implies an ENDPOINT — often more precise than the prose requirements. Derive `data_model` + `endpoints` from what the screens actually show, not from memory of a generic app. If `list_reference_images()` returns nothing, proceed from the requirements text.
 2. If `milestone_index > 1` ({{ milestone_index }} > 1 → {{ "yes" if milestone_index > 1 else "no" }}): call `registryhub_list_endpoints()` + `registryhub_list_tables()` to read M{{ milestone_index - 1 if milestone_index > 1 else 0 }} artifacts already in RegistryHub so your new endpoints extend (not collide with) what landed last milestone. Cross-reference any open meeting decisions from prior milestones via `workhub_get_document(page_id=...)` if a handle is in your inbox context.
 
 **Step 2 — Author your `{{ expected_section }}` section**

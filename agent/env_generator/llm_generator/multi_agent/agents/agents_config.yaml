@@ -292,6 +292,18 @@ profiles:
         - workhub_list_documents
         - workhub_comment
         - read
+        # The backend authors its data_model + endpoints AT KICKOFF, and the
+        # contract is "derived from the screens, not just the requirements text"
+        # (see tool_categories comment above: every visible datum implies a column,
+        # every actionable control implies an endpoint). The system prompt's
+        # "Reference-driven contract design" block instructs list_reference_images /
+        # view_image + reading design/reference_spec.json BEFORE authoring — but those
+        # tools were missing from this kickoff allowlist, so the instruction was DEAD
+        # (engine-blocked) exactly where the contract is decided. Mirrors the
+        # frontend's PROPOSAL #12. Bundle-intersected (backend has vision/reference +
+        # include_vision), so this only re-enables an already-bundled, prompt-mandated use.
+        - list_reference_images
+        - view_image
         # PROPOSAL #9: file-search tools (glob/grep/list_generated_files) are NOT
         # exposed in kickoff — nothing is built yet (the lane only DECLARES its
         # contract slice), so they have no use here and only widen the surface that

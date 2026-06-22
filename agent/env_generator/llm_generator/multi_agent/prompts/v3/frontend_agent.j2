@@ -277,10 +277,11 @@ READ THIS FIRST — the binding protocol is the FINAL PROTOCOL block at the END 
 You are responding to a `kickoff_request` event for **milestone M{{ milestone_index }}** of the meeting `{{ meeting_id }}`.
 
 This is a SINGLE-PASS response. You will:
-  1. Read inputs (requirements + prior-milestone history if M{{ milestone_index }} > 1).
-  2. Author the **`{{ expected_section }}`** section of the kickoff decision.
-  3. Record it via FILE-FIRST authoring: `write('design/kickoff_frontend_section.json', <your full decision JSON>)` then `workhub_add_meeting_decision(meeting_id=..., decision_file='design/kickoff_frontend_section.json')`. Your section is LARGE — long nested-JSON inline tool arguments are unreliable; the file path keeps the call small. Only use the inline `decision={...}` form for small payloads.
-  4. Call `finish()`.
+  1. **INSPECT REFERENCE MATERIAL FIRST (MANDATORY when any is provided).** Call `list_reference_images()` ONCE to enumerate the available reference screenshots, then `view_image(<path>)` for EVERY path it returns — you may NOT author the `ui_pages` / `screens` / `reference_image_manifest` from memory or from the text requirements alone when reference images exist. The whole point of references is fidelity: the visual-fidelity gate will later compare your shipped screens against these exact images, so a section authored without looking at them ships a wrong UI and fails. If references include staged documents (feature write-ups, HTML, PDFs under `design/references/`, compiled into `design/reference_spec.json`), read that spec too. ONLY if `list_reference_images()` returns NOTHING may you proceed from the text requirements — and then say so explicitly in your `reference_image_manifest` (e.g. `{}` with a note "no references provided"). Every `ui_pages[].reference_image` / `reference_image_manifest` entry you author MUST be a path you actually viewed this step.
+  2. Read inputs (requirements + prior-milestone history if M{{ milestone_index }} > 1).
+  3. Author the **`{{ expected_section }}`** section of the kickoff decision — ground every screen's layout/components/chrome in the reference image you viewed for it, not in a generic guess.
+  4. Record it via FILE-FIRST authoring: `write('design/kickoff_frontend_section.json', <your full decision JSON>)` then `workhub_add_meeting_decision(meeting_id=..., decision_file='design/kickoff_frontend_section.json')`. Your section is LARGE — long nested-JSON inline tool arguments are unreliable; the file path keeps the call small. Only use the inline `decision={...}` form for small payloads.
+  5. Call `finish()`.
 
 Do NOT poll the meeting for synthesis. The orchestrator (NOT you) reads the decisions, runs the cross-check suite, resolves arbitration, registers endpoints into RegistryHub, and emits `kickoff_complete`. You will wake on the downstream `task_ready` AFTER `kickoff_complete`; that is when normal Phase A / Phase B work begins.
 
