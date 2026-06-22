@@ -326,8 +326,70 @@ class HealPipeline:
                     "TEST-USER validation (v%s): %s — %s/%s journey steps passed; "
                     "BROKEN: %s", version, summ.get("verdict"),
                     summ.get("api_passed"), summ.get("api_steps"), summ.get("broken"))
+            # BROWSER test-user (2026-06-22): drive a real browser through the frontend
+            # — the auth FLOW (catches a dead login form) + every declared page route
+            # (screenshot + blank/console-error checks). The structured feedback is
+            # logged AND routed to the frontend lane as remediation, then re-tested next
+            # milestone — the user's intended "recruit -> test via web tools -> key-node
+            # screenshots -> feedback -> fix" loop. Best-effort; never blocks.
+            try:
+                self._run_browser_test_user(proj, compose, registryhub, version)
+            except Exception as _bexc:
+                orch._logger.debug("browser test-user skipped: %s", _bexc)
         except Exception as exc:
             orch._logger.debug("test-user validation skipped: %s", exc)
+
+    def _run_browser_test_user(self, proj, compose, registryhub, version) -> None:
+        """Recruit the browser test-user against the running FRONTEND: auth flow +
+        per-page screenshot/blank/console checks; log feedback + route blank/broken
+        pages back to the frontend lane for repair. Best-effort; never raises out."""
+        import asyncio
+        orch = self._orch
+        from .visual_fidelity import _service_host_port
+        from .test_user_runner import run_browser_test_user, format_feedback
+        cwd = compose.parent
+        fe_port = (_service_host_port(compose, cwd, "frontend")
+                   or _service_host_port(compose, cwd, "ui") or 8080)
+        base = f"http://localhost:{fe_port}"
+        # pages to walk: the registered ui_pages with a real route (+ landing/login).
+        pages = [{"name": "login", "route": "/login", "auth": False}]
+        try:
+            for name, pg in (registryhub.list_ui_pages() or {}).items():
+                if not isinstance(pg, dict):
+                    continue
+                route = str(pg.get("route") or pg.get("path") or "").strip()
+                if route:
+                    low = route.rstrip("/").lower()
+                    pages.append({"name": str(name), "route": route,
+                                  "auth": low not in ("/login", "/signup", "/signin", "/register", "", "/")})
+        except Exception:
+            pass
+        out_dir = proj / "design" / "test_user"
+        report = asyncio.run(run_browser_test_user(base, pages, out_dir, register=True))
+        if not report.get("ran"):
+            orch._logger.warning("BROWSER test-user (v%s): could not run — %s",
+                                 version, report.get("summary"))
+            return
+        orch._logger.warning("BROWSER test-user (v%s): %s", version, report.get("summary"))
+        # Route concrete UI defects (dead auth form / blank pages / console errors) back
+        # to the frontend lane as a P0 task — the "give feedback, keep fixing" step. (The
+        # task is the durable signal the lane claims; the message_bus send is skipped here
+        # because this runs in a worker thread off the orchestrator's event loop.)
+        broken = (not report.get("auth_ok")) or report.get("blank_pages") or report.get("error_pages")
+        if broken:
+            try:
+                fb = format_feedback(report)
+                orch.hubs.workhub.create_task(
+                    title="Test-user found UI defects (browser walkthrough) — fix",
+                    description=("A real-browser test-user walked the running app and found "
+                                 "issues. Fix EACH, then finish:\n" + fb),
+                    assignee="frontend", agent="orchestrator", priority="P0")
+                orch._logger.warning(
+                    "BROWSER test-user dispatched a P0 fix task to frontend: auth_ok=%s "
+                    "blank=%s console_errors=%s", report.get("auth_ok"),
+                    report.get("blank_pages"), report.get("error_pages"))
+            except Exception as _dexc:
+                orch._logger.error("browser test-user feedback dispatch failed: %s", _dexc)
 
     def repair_frontend_api(self) -> None:
         """FIX #37: reconcile frontend api.js exports with component imports on the
