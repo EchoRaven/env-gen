@@ -1004,6 +1004,20 @@ def pull_main_into_worktree(
             # This breaks the May 29 stall loop where every subsequent
             # step_start_pull re-hit the same stash.
             _run_git(["checkout", "--theirs", "."], cwd=wt)
+            # Make the discard NON-silent: list any tracked files whose stashed WIP is
+            # being dropped (the worktree's merged state is authoritative, so that WIP is
+            # lost). Surfacing it in the logs turns a silent loss into a diagnosable one.
+            try:
+                _ss_rc, _ss_out, _ss_err = _run_git(
+                    ["stash", "show", "--name-only", "stash@{0}"], cwd=wt)
+                _lost = [ln for ln in (_ss_out or "").splitlines() if ln.strip()]
+                if _lost:
+                    _LOG.warning(
+                        "pull_main_into_worktree: stash-pop conflicted; dropping stash — "
+                        "stashed WIP discarded for %d tracked file(s): %s",
+                        len(_lost), _lost[:20])
+            except Exception:
+                pass
             _run_git(["stash", "drop"], cwd=wt)
             # Continue — don't fail the pull. Worktree is in the
             # merged state; agent proceeds.
