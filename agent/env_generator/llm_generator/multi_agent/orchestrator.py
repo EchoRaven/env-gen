@@ -723,7 +723,7 @@ class Orchestrator:
                         f"Delivery gate failed on resumed-complete checkpoint.\n{report}"
                     )
                 self._enter_project_phase("done", reason="delivery gate passed (resumed)")
-                phases_completed = ["requirements", "design", "code", "docker", "testing"]
+                phases_completed = ["requirements", "kickoff", "code", "docker", "testing"]
                 success = True
             else:
                 self.progress.emit(EventType.PHASE_START, "Agent Workflow", {})
@@ -1462,7 +1462,7 @@ class Orchestrator:
                             "FINAL DELIVERY: gate clear → cut release v%s", _ver)
                 except Exception as _fin_rel_err:  # best-effort observability
                     self._logger.warning("final-gate release cut failed: %s", _fin_rel_err)
-                phases_completed = ["requirements", "design", "code", "docker", "testing"]
+                phases_completed = ["requirements", "kickoff", "code", "docker", "testing"]
                 self.progress.emit(EventType.PHASE_COMPLETE, "Agent Workflow", {})
                 self.checkpoint.complete_phase("agent_workflow")
                 self.checkpoint.complete_generation(success=True)

@@ -292,6 +292,7 @@ def run_smoke_validation(
     import fcntl as _fcntl
     import time as _time
     _lock_fh = None
+    _lock_acquired = False
     try:
         cwd.mkdir(parents=True, exist_ok=True)
         _lock_fh = open(cwd / ".smoke_validation.lock", "w")
@@ -299,13 +300,26 @@ def run_smoke_validation(
         while True:
             try:
                 _fcntl.flock(_lock_fh.fileno(), _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+                _lock_acquired = True
                 break
             except OSError:
                 if _time.time() - _wait_start > 600:
-                    break  # best-effort: proceed after a long wait rather than hang forever
+                    break  # gave up waiting (do NOT proceed unlocked — see guard below)
                 _time.sleep(2)
     except Exception:
         _lock_fh = None
+    # FIX #36-bis: if we could NOT acquire the lock within the wait window, another
+    # validation has held it that whole time and is presumably mid `down -v`/`up`.
+    # Proceeding here would run `down -v && up` CONCURRENTLY against the SAME compose
+    # project → both tear each other's containers down → both report docker_up FAIL
+    # (the exact race FIX #36's lock exists to prevent). Trading a hang for a race is
+    # worse. Defer instead: surface a non-fatal lock_timeout so the framework retries
+    # this validation once the lock frees, rather than corrupting a deliverable app.
+    if not _lock_acquired:
+        _add("docker_up", False,
+             "smoke-validation lock not acquired within 600s — another validation is "
+             "holding it; deferring to avoid a concurrent docker down/up race (will retry).")
+        return _finalize(checks, None, endpoint_results)
     try:
         # 1. Clean boot (no stale postgres volume — see DockerUpTool fresh=True).
         _compose(compose_file, "down", "-v", "--remove-orphans", cwd=cwd, timeout=120)

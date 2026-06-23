@@ -467,7 +467,12 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
         seen.add((method, _norm_path(path)))
         emeta = ep.get("metadata") if isinstance(ep.get("metadata"), Mapping) else {}
         auth = bool(ep.get("auth_required", emeta.get("auth_required", True)))
-        block = _generate_handler(method, path, auth, meta, i)
+        # Pass the declared response_key through so single-item endpoints get {item}
+        # (not the collection {items,total}); mirrors route_projector.project_missing_routes.
+        _eschema = ep.get("schema") if isinstance(ep.get("schema"), Mapping) else {}
+        response_key = str(ep.get("response_key") or _eschema.get("response_key")
+                           or emeta.get("response_key") or "").strip()
+        block = _generate_handler(method, path, auth, meta, i, response_key)
         (param_blocks if "{" in path else static_blocks).append(block)
 
     # _AUTH_MIDDLEWARE references ``app`` + imports jwt/JSONResponse/jwt_manager; it is

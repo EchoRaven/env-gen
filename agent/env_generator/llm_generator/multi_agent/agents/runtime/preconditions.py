@@ -331,6 +331,12 @@ def endpoints_implemented_with_code(
         # ad-hoc kind literal that missed kind='oauth'.
         if not is_business(ep):
             continue
+        if ep.get("status") == "deprecated":
+            # deprecated endpoints are retired from the contract and have NO legal
+            # transition back to implemented — demanding route code for them would
+            # wedge finish forever. The status gate already treats deprecated as
+            # terminal; the code-presence layer must skip it too.
+            continue
         if ep.get("status") not in _FINISH_TERMINAL_STATUSES:
             continue  # status layer already handled non-terminal
         token = _endpoint_resource_token(ep.get("path") or ep_id)
