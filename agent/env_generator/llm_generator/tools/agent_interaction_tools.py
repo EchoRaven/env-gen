@@ -243,17 +243,22 @@ class UpdateMemoryBankTool(BaseTool):
     """
 
     NAME = "update_memory_bank"
-    DESCRIPTION = """Update your agent-local Memory Bank with structured project context.
+    DESCRIPTION = """Write to YOUR NOTEBOOK — the agent-owned half of the Memory Bank.
 
-Use this near the end of a meaningful step or milestone. Keep entries concise and durable:
-- focus: what you are currently working on
-- next_step: the next concrete action
-- completed: completed milestones or artifacts
-- issues: blockers, validation failures, or unresolved risks
+This writes ONLY to your private, writable notebook.md (it persists across all your
+wakes and is never committed). It does NOT touch the framework-maintained files
+(project_brief / tech_context / system_patterns / active_context / progress) — those
+are read-only truth you see in the auto-provided digest.
+
+Use this near the end of a meaningful step to record what your NEXT wake should not
+have to re-derive. Keep entries concise and durable:
 - decisions: design/API/schema/implementation decisions with rationale
+- issues: gotchas, blockers, validation failures, or unresolved risks
 - tech_notes: durable setup, dependency, command, port, or architecture notes
+- next_step: the next concrete action
+- focus / recent_change / completed: a running log line of what you did
 
-Do not use this for transient chain-of-thought. Store only information that should help your future steps.
+Do not use this for transient chain-of-thought. Store only what helps your future steps.
 """
 
     def __init__(self):
@@ -322,40 +327,26 @@ Do not use this for transient chain-of-thought. Store only information that shou
         if not memory_bank:
             return ToolResult(success=False, error_message="Agent Memory Bank is not available")
 
-        updated = []
         try:
-            if focus or next_step or recent_change:
-                memory_bank.update_active_context(
-                    focus=focus,
-                    recent_change=recent_change,
-                    next_step=next_step,
-                )
-                updated.append("active_context")
-
-            for item in completed or []:
-                memory_bank.append_to_progress(item, category="completed")
-            if completed:
-                updated.append("progress.completed")
-
-            for item in issues or []:
-                memory_bank.append_to_progress(item, category="issues")
-            if issues:
-                updated.append("progress.issues")
-
-            for item in decisions or []:
-                memory_bank.append_decision(item)
-            if decisions:
-                updated.append("system_patterns.decisions")
-
-            for item in tech_notes or []:
-                memory_bank.append_tech_note(item)
-            if tech_notes:
-                updated.append("tech_context.notes")
+            # Write ONLY to the agent-owned notebook — the SEPARATE, writable
+            # half of the bank. The framework-synced CORE files (active_context /
+            # progress / system_patterns / tech_context) are NOT touched here;
+            # they stay read-only truth (user requirement: the file an agent
+            # edits must not be the file the framework auto-syncs).
+            updated = memory_bank.append_notebook(
+                focus=focus,
+                next_step=next_step,
+                recent_change=recent_change,
+                completed=completed,
+                issues=issues,
+                decisions=decisions,
+                tech_notes=tech_notes,
+            )
 
             if not updated:
                 return ToolResult(
                     success=True,
-                    data={"updated": [], "info": "No memory updates were provided."},
+                    data={"updated": [], "info": "No notebook updates were provided."},
                 )
 
             return ToolResult(
@@ -363,11 +354,12 @@ Do not use this for transient chain-of-thought. Store only information that shou
                 data={
                     "updated": updated,
                     "memory_dir": str(getattr(memory_bank, "memory_dir", "")),
-                    "info": "Memory Bank updated.",
+                    "info": f"Notebook updated (sections: {', '.join(updated)}). "
+                            "Framework-synced files were not touched.",
                 },
             )
         except Exception as e:
-            return ToolResult(success=False, error_message=f"Failed to update Memory Bank: {e}")
+            return ToolResult(success=False, error_message=f"Failed to update notebook: {e}")
 
 
 # ============================================================================

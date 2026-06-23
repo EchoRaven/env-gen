@@ -19,7 +19,7 @@ Structure:
 import logging
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Any
+from typing import Dict, List, Optional, Any
 from datetime import datetime
 import re
 
@@ -188,8 +188,42 @@ Working on: initialization
 ## Deployment Status
 [Deployment state]
 """
+        },
+        "notebook": {
+            "filename": "notebook.md",
+            "description": "Agent-writable working memory (journal). NOT framework-synced; NOT committed.",
+            "template": """# Lane Notebook
+
+> THIS FILE IS YOURS. You maintain it with `update_memory_bank(...)`; the framework
+> never overwrites it, and it is NOT committed. It PERSISTS across all of your wakes —
+> record here what your NEXT wake should not have to re-derive: decisions you made,
+> gotchas you hit, where things live, and the next thing to do.
+>
+> The OTHER memory-bank files (project_brief / tech_context / system_patterns /
+> active_context / progress) are FRAMEWORK-MAINTAINED and READ-ONLY to you — they hold
+> the objective truth (your current focus + real progress). Read them via the
+> auto-provided digest or `read_memory_bank`; do not hand-edit them.
+
+## Decisions
+
+## Gotchas & Issues
+
+## Tech Notes
+
+## Next / TODO
+
+## Log
+"""
         }
     }
+
+    # The agent-WRITABLE half of the bank (free-form journal; framework never
+    # auto-syncs it). Everything else in CORE_FILES is FRAMEWORK-SYNCED and
+    # read-only to the lane. Kept as named constants so the read/write split is
+    # visible in one place (user requirement: modifiable files != synced files).
+    NOTEBOOK_KEY = "notebook"
+    SYNCED_KEYS = ("project_brief", "tech_context", "system_patterns",
+                   "active_context", "progress")
     
     def __post_init__(self):
         """Initialize memory files."""
@@ -602,6 +636,71 @@ Working on: initialization
             max_items=20,
         )
 
+    def append_notebook(
+        self,
+        *,
+        focus: str = None,
+        next_step: str = None,
+        recent_change: str = None,
+        completed: Optional[List[str]] = None,
+        issues: Optional[List[str]] = None,
+        decisions: Optional[List[str]] = None,
+        tech_notes: Optional[List[str]] = None,
+    ) -> List[str]:
+        """Append the agent's OWN durable notes to its writable notebook
+        (notebook.md) — the SEPARATE, agent-owned half of the bank. Never
+        touches the framework-synced CORE files (active_context / progress /
+        system_patterns / tech_context). De-duplicated + capped per section via
+        ``_append_unique_bullet``. Returns the section names touched.
+
+        This is the write target for the ``update_memory_bank`` tool: a lane
+        edits ONLY its notebook; the synced files stay framework-owned and
+        read-only (user requirement: modifiable files != auto-synced files)."""
+        if self.NOTEBOOK_KEY not in self._files:
+            return []
+        touched: List[str] = []
+        for d in (decisions or []):
+            self._append_unique_bullet(self.NOTEBOOK_KEY, "## Decisions", d)
+        if decisions:
+            touched.append("Decisions")
+        for it in (issues or []):
+            self._append_unique_bullet(self.NOTEBOOK_KEY, "## Gotchas & Issues", it)
+        if issues:
+            touched.append("Gotchas & Issues")
+        for t in (tech_notes or []):
+            self._append_unique_bullet(self.NOTEBOOK_KEY, "## Tech Notes", t)
+        if tech_notes:
+            touched.append("Tech Notes")
+        if next_step:
+            self._append_unique_bullet(self.NOTEBOOK_KEY, "## Next / TODO", next_step)
+            touched.append("Next / TODO")
+        # focus / recent_change / completed form the running ## Log — the agent's
+        # journal of what it did, so a later wake has continuity.
+        log_bits: List[str] = []
+        if focus:
+            log_bits.append(f"focus: {focus}")
+        if recent_change:
+            log_bits.append(recent_change)
+        log_bits.extend(f"done: {c}" for c in (completed or []))
+        for b in log_bits:
+            self._append_unique_bullet(self.NOTEBOOK_KEY, "## Log", b)
+        if log_bits:
+            touched.append("Log")
+        return touched
+
+    def get_notebook(self, max_chars: int = 1600) -> str:
+        """Return the agent's writable notebook content (trimmed)."""
+        nb = self.get_file(self.NOTEBOOK_KEY) or ""
+        # Drop the read-only-contract preamble (the > blockquote) from the
+        # digest view — the agent already knows it owns this file.
+        body = "\n".join(
+            ln for ln in nb.splitlines()
+            if not ln.lstrip().startswith(">") and not ln.startswith("# Lane Notebook")
+        ).strip()
+        if len(body) > max_chars:
+            return body[: max_chars - 20] + "\n...(truncated)\n"
+        return body
+
     def _append_unique_bullet(self, key: str, section_header: str, item: str, max_items: int = 20) -> None:
         """Prepend a de-duplicated bullet to a markdown section."""
         if key not in self._files:
@@ -710,8 +809,12 @@ Working on: initialization
                 break
         tech_block = "\n".join([ln for ln in tech_lines if ln]) or "(see tech_context.md)"
 
+        notebook = self.get_notebook()
+
         out = "\n".join([
             "MEMORY BANK DIGEST",
+            "",
+            "── FRAMEWORK-MAINTAINED (read-only; the objective truth) ──",
             "",
             "Current Focus:",
             focus or "(unknown)",
@@ -733,6 +836,10 @@ Working on: initialization
             "",
             "Tech Notes (high-signal):",
             tech_block,
+            "",
+            "── YOUR NOTEBOOK (you own this; write it with update_memory_bank; persists across your wakes) ──",
+            "",
+            notebook or "(empty — record decisions/gotchas/next-steps your future wakes will need)",
         ]).strip() + "\n"
 
         if len(out) > max_chars:
