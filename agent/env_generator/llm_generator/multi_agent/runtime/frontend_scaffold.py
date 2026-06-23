@@ -205,6 +205,96 @@ def reconcile_frontend_api_paths(frontend_dir, registered_paths) -> Dict[str, ob
     return result
 
 
+_REL_NAMED_IMPORT_RE = re.compile(
+    r"import\s+(?:[A-Za-z0-9_$]+\s*,\s*)?\{([^}]*)\}\s*from\s*['\"](\.\.?/[^'\"]+)['\"]")
+
+
+def _resolve_local_module(importer: Path, rel: str):
+    """Resolve a relative import specifier to an on-disk module file, or None."""
+    base = importer.parent / rel
+    if base.suffix and base.exists():
+        return base
+    for ext in (".jsx", ".js", ".tsx", ".ts"):
+        c = base.with_name(base.name + ext) if not base.suffix else base.with_suffix(ext)
+        if c.exists():
+            return c
+    for ext in (".jsx", ".js", ".tsx", ".ts"):
+        c = base / ("index" + ext)
+        if c.exists():
+            return c
+    return None
+
+
+def repair_frontend_missing_local_exports(frontend_dir) -> Dict[str, object]:
+    """Build-integrity: a NAMED import from a LOCAL module that EXISTS but doesn't
+    export that name HARD-fails the Rollup/Vite build ('X is not exported by Y' →
+    findVariable error → frontend container won't build → docker_up FAIL → NO
+    successful validation run → no delivery; instagram_v5: the lane imported
+    ``PlusSquareIcon`` an icons module never exported). repair_frontend_api_exports
+    does this only for ``api.js``; generalize it to ANY local module.
+
+    For each genuinely-missing export, append a stub to the TARGET module — a no-op
+    component ``() => null`` for a Capitalized name (component/icon — safe to RENDER,
+    unlike a throw-stub), else a throw-fn. MAXIMALLY conservative: only stub a name
+    that appears NOWHERE in the target module's source (so a parser miss can never
+    cause a duplicate-declaration build break). GENERAL, idempotent; never raises."""
+    result: Dict[str, object] = {"repaired": []}
+    try:
+        fe = Path(frontend_dir)
+        src_dir = fe / "src"
+        if not src_dir.exists():
+            return result
+        to_add: Dict[Path, set] = {}
+        for f in src_dir.glob("**/*"):
+            if f.suffix.lower() not in _FRONT_EXTS or "node_modules" in str(f):
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            for names_blob, rel in _REL_NAMED_IMPORT_RE.findall(text):
+                target = _resolve_local_module(f, rel)
+                # a MISSING module is scaffold_missing_local_pages' job, not ours
+                if target is None or target.resolve() == f.resolve():
+                    continue
+                names = [n.strip().split(" as ")[0].strip() for n in names_blob.split(",")]
+                names = [n for n in names if n and n.isidentifier()]
+                if not names:
+                    continue
+                try:
+                    tgt_src = target.read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    continue
+                exported = _exported_names(tgt_src)
+                for n in names:
+                    # missing export AND the symbol appears NOWHERE in the target
+                    # (conservative — never risk re-declaring an existing symbol)
+                    if n not in exported and not re.search(r"\b" + re.escape(n) + r"\b", tgt_src):
+                        to_add.setdefault(target, set()).add(n)
+        for target, names in to_add.items():
+            try:
+                tgt_src = target.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            add = sorted(n for n in names
+                         if not re.search(r"\b" + re.escape(n) + r"\b", tgt_src))
+            if not add:
+                continue
+            lines = ["", "// auto-reconciled missing exports (lane import/export drift)."]
+            for n in add:
+                if n[:1].isupper():
+                    lines.append(f"export const {n} = (props) => null;  // auto-stub component")
+                else:
+                    lines.append(
+                        f"export const {n} = (...args) => {{ "
+                        f"throw new Error('{n} not implemented (auto-stub)'); }};")
+            target.write_text(tgt_src.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
+            result["repaired"].append((target.name, add))
+    except Exception as exc:
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
 _LOCAL_DEFAULT_IMPORT = re.compile(
     r"""import\s+([A-Za-z_$][\w$]*)\s+from\s+['"](\.[^'"]+)['"]""")
 # A <Route> whose element is an INLINE placeholder <div> (e.g.

@@ -429,7 +429,8 @@ class HealPipeline:
                 return
             from .frontend_scaffold import (
                 repair_frontend_api_exports, scaffold_missing_local_pages,
-                repair_frontend_named_default_imports, reroute_inline_stub_routes)
+                repair_frontend_named_default_imports, reroute_inline_stub_routes,
+                repair_frontend_missing_local_exports)
             from pathlib import Path as _P
             fe = _P(out_dir) / "app" / "frontend"
             rep = repair_frontend_api_exports(fe)
@@ -438,6 +439,15 @@ class HealPipeline:
                     "Frontend api.js reconciled: aliased=%s stubbed=%s",
                     rep.get("aliased"), rep.get("stubbed"),
                 )
+            # Generalize export reconciliation to ALL local modules (not just api.js):
+            # a named import from a local module that doesn't export it HARD-fails the
+            # Vite/rollup build (instagram_v5: PlusSquareIcon) → frontend won't build →
+            # docker_up FAIL → no successful run → no delivery. Stub the missing export.
+            _me = repair_frontend_missing_local_exports(fe)
+            if _me.get("repaired"):
+                orch._logger.warning(
+                    "Frontend missing local exports stubbed (lane import/export drift): %s",
+                    _me.get("repaired"))
             # Build-integrity: a page doing `import { X } from './Comp'` against a
             # default-only Comp HARD-fails the Rollup build (live: NotesListPage
             # imported { NavBar } from a default-export NavBar.jsx → docker_up FAIL).
