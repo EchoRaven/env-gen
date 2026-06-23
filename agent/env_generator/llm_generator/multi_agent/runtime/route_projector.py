@@ -567,6 +567,36 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             '        raise HTTPException(status_code=404, detail="not found")',
             f"    return {{\"item\": {_serialize_expr('obj', cols)}}}",
         ]
+    elif (cls and m == "DELETE" and not _ends_in_param(path) and parent_ctx
+          and _target_fk(meta, parent_table, parent_singular)):
+        # CHILD-COLLECTION TOGGLE-OFF: DELETE /api/<parent>/{parent_id}/<child>
+        # (unlike / unsave / unfollow) removes the CALLER's row in <child> scoped to
+        # the parent. The old branch did db.get(<child>, parent_id) — but parent_id is
+        # the PARENT's id, NOT the child row's PK, so it deleted the wrong row / 404'd /
+        # 500'd (instagram_v6: DELETE /api/posts/{post_id}/like|save + /users/{username}/
+        # follow all 500 → delivery wedged). Find by (target_fk==parent.id [, owner_fk==
+        # user.id]) and delete idempotently (a no-op delete still succeeds — toggles are
+        # safe to repeat). Uses _target_fk (the create-bind FK) NOT _scope_fk so a
+        # self-referential join (follows: follower_id + following_id both → users)
+        # filters the FOLLOWED side (following_id==parent.id) against the OWNER side
+        # (follower_id==user.id) — mirrors the create handler's bind.
+        _sfk = _target_fk(meta, parent_table, parent_singular)
+        body_lines = [
+            f'    parent = db.query({parent_cls}).filter(getattr({parent_cls}, "{parent_field}") == {parent_param}).first()',
+            "    if parent is None:",
+            '        raise HTTPException(status_code=404, detail="not found")',
+            f'    _q = db.query({cls}).filter(getattr({cls}, "{_sfk}") == parent.id)',
+        ]
+        if owner_fk:
+            body_lines.append(
+                f'    _q = _q.filter(getattr({cls}, "{owner_fk}") == user.id)')
+        body_lines += [
+            "    obj = _q.first()",
+            "    if obj is not None:",
+            "        db.delete(obj)",
+            "        db.commit()",
+            '    return {"item": {"deleted": True}}',
+        ]
     elif cls and m == "DELETE" and last_param and _is_id_param(last_param):
         body_lines = [
             f"    obj = db.get({cls}, {last_param})",
