@@ -572,6 +572,24 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                             loose = collect_loose_ends(
                                 hubs, self.agent_id, step, thresholds
                             )
+                            # KICKOFF: the dirty_worktree nag advises
+                            # ``codehub_commit(...)``, but the kickoff-phase toolset
+                            # withholds file/commit tools (see the mid-kickoff editing
+                            # guard below) — the agent has no such tool. memory-bank/ +
+                            # .agent_home churn during kickoff is committed by the
+                            # framework at kickoff finalize and flushed by the heal
+                            # pipeline at merge, never by the authoring agent. Surfacing
+                            # it sent verifier/frontend chasing a tool they don't have,
+                            # yielding turn after turn without recording their kickoff
+                            # section → the meeting stalled in phase=initial until the
+                            # ~240s stall-escape reconciled it, every run. Drop the
+                            # unactionable flag so the gate only surfaces loose ends a
+                            # kickoff agent can actually clear. Phase-scoped: byte-
+                            # identical for every non-kickoff step.
+                            if (getattr(self, "_active_phase", None) == "kickoff"
+                                    and loose.get("dirty_worktree")):
+                                loose["dirty_worktree"] = False
+                                details["dirty_files"] = []
                             gate_prompt = build_commit_gate_prompt(loose, details)
                             if gate_prompt:
                                 # Roll forward to next step's hub_pulse rendering —
