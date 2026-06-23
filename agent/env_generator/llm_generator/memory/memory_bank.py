@@ -424,10 +424,46 @@ Working on: initialization
         """
         if key not in self._files:
             raise ValueError(f"Unknown memory file: {key}")
-        
+
         self._files[key].save(content)
         self._logger.info(f"Updated {key}")
-    
+
+    def set_current_focus(self, focus: str) -> None:
+        """Deterministically rewrite ONLY the ``## Current Focus`` section of
+        active_context (preserving Recent Changes / Next Steps / Decisions / Blockers).
+
+        The bank's active_context promised to be '(auto-updated during generation)' but
+        nothing ever wrote it — agents read a frozen 'Working on: initialization' that
+        contradicted their real phase, feeding drift/idle. The framework knows the live
+        phase (agent._active_phase) + lane; this keeps the bank's STATE in sync so a
+        read_memory_bank reflects where the run actually is. Best-effort; never raises."""
+        try:
+            ac = self._files.get("active_context")
+            if ac is None:
+                return
+            lines = ac.load().splitlines()
+            out, i, n = [], 0, len(lines)
+            replaced = False
+            while i < n:
+                ln = lines[i]
+                if ln.strip().lower() == "## current focus":
+                    out.append(ln)
+                    out.append(f"Working on: {focus}")
+                    out.append("")
+                    i += 1
+                    # skip the old body up to the next "## " header (or EOF)
+                    while i < n and not lines[i].lstrip().startswith("## "):
+                        i += 1
+                    replaced = True
+                    continue
+                out.append(ln)
+                i += 1
+            if not replaced:  # no section yet — prepend one
+                out = ["## Current Focus", f"Working on: {focus}", ""] + out
+            ac.save("\n".join(out).strip() + "\n")
+        except Exception:
+            pass
+
     def append_to_progress(self, item: str, category: str = "completed") -> None:
         """
         Append an item to the progress file.

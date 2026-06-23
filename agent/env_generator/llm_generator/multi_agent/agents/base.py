@@ -737,6 +737,18 @@ class EnvGenAgent(
                    or task_data.get("phase") == "test_fix"
                    or bool(task_data.get("bug_id") or task_data.get("is_remediation")))
         self._active_phase = "test_fix" if _is_fix else "implementation"
+        # Keep the memory bank's live STATE in sync so a read_memory_bank reflects the
+        # actual phase / lane / task — the active_context was frozen at init ("Working
+        # on: initialization") and contradicted the agent's real phase, feeding drift.
+        try:
+            if getattr(self, "memory_bank", None) is not None:
+                _foc = f"{self._active_phase} phase · lane={self._agent_id}"
+                _tt = task_data.get("title") or task_data.get("task_name") or task_data.get("id")
+                if _tt:
+                    _foc += f" · task: {str(_tt)[:80]}"
+                self.memory_bank.set_current_focus(_foc)
+        except Exception:
+            pass
         try:
             # Run agentic loop
             result = await self.execute(task_data)
