@@ -115,12 +115,36 @@ def _render_column(col: Dict[str, Any]) -> Optional[str]:
     default = col.get("default")
     if default is not None:
         d = str(default).strip()
+        # server_default writes the DEFAULT into the CREATE TABLE DDL that
+        # Base.metadata.create_all() emits. ``default=`` ALONE is a Python/ORM-side
+        # value applied only when a row is inserted THROUGH the ORM — it never
+        # reaches the DDL, so a raw-SQL insert (e.g. the AS seeding the 'default'
+        # tenant, or any INSERT omitting the column) hits a bare ``NOT NULL`` and
+        # Postgres rejects it. instagram_fresh aborted exactly here: tenants.status
+        # had ``default='active'`` (ORM-only) → DDL was ``status TEXT NOT NULL`` with
+        # no DB default → register's raw tenant insert failed the not-null constraint
+        # every validation cycle. Emit BOTH: ORM-side for ORM creates, server_default
+        # so the column is safe for inserts that omit it.
         if d.lower() in ("now()", "current_timestamp"):
             args.append("default=datetime.utcnow")
+            kw.append("server_default=text('now()')")
         elif not (col.get("primary_key") or col.get("pk")):
-            lit = d if (d.startswith(("'", '"')) or d.replace(".", "").isdigit()
-                        or d.lower() in ("true", "false")) else repr(d)
+            # ORM-side literal. ``true``/``false`` must become Python ``True``/``False``
+            # (a bare ``default=false`` is a NameError that breaks ``import models``).
+            if d.lower() in ("true", "false"):
+                lit = "True" if d.lower() == "true" else "False"
+            elif d.startswith(("'", '"')) or d.replace(".", "").isdigit():
+                lit = d
+            else:
+                lit = repr(d)
             kw.append(f"default={lit}")
+            # SQL literal for the DDL DEFAULT: quoted strings / numbers / bools pass
+            # through; a bare word is wrapped as a quoted string literal.
+            if d.startswith(("'", '"')) or d.replace(".", "").isdigit() or d.lower() in ("true", "false"):
+                _sd_sql = d
+            else:
+                _sd_sql = "'" + d.replace("'", "''") + "'"
+            kw.append(f"server_default=text({_sd_sql!r})")
     return f"    {name} = Column({', '.join(args + kw)})"
 
 
@@ -260,7 +284,8 @@ def render_models(tables: Dict[str, Any]) -> str:
         'hand-edit: this is regenerated deterministically from the contract."""\n'
         "from datetime import datetime\n\n"
         "from sqlalchemy import (Column, Integer, BigInteger, String, Text, Boolean,\n"
-        "                        DateTime, Date, Time, Float, Numeric, JSON, ForeignKey)\n"
+        "                        DateTime, Date, Time, Float, Numeric, JSON, ForeignKey,\n"
+        "                        text)\n"
         "from database import Base\n\n\n"
     )
     return header + "\n\n\n".join(blocks) + "\n"
