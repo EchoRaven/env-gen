@@ -1229,19 +1229,14 @@ class ListReferenceImagesTool(BaseTool):
     
     NAME = "list_reference_images"
     
-    DESCRIPTION = """List available reference images from the screenshot library.
+    DESCRIPTION = """List the reference images provided for the app you are building.
 
-The screenshot library contains design references, UI mockups, and component examples
-that can be used as reference for generating web pages.
+Takes no arguments. Returns the design references / UI mockups for THIS app,
+found under `screenshots/` in your project root. View any of them with
+view_image("screenshots/<name>.png").
 
-Examples:
-    list_reference_images                        # List runtime workspace screenshots and bundled projects
-    list_reference_images "screenshots"          # List images copied into the current workspace
-    list_reference_images "atlassian_home"       # List bundled library project images
-
-When the run starts with --reference-dir, images are already copied into
-workspace/screenshots. Prefer view_image("screenshots/<name>.png") for those.
-Use copy_reference_image only for bundled library images that are not yet in the workspace.
+If it returns no images, this app shipped without visual references — build
+from the written spec/requirements.
 """
     
     # Default screenshot library path (relative to llm_generator)
@@ -1264,77 +1259,44 @@ Use copy_reference_image only for bundled library images that are not yet in the
             description=self.DESCRIPTION,
             parameters={
                 "type": "object",
-                "properties": {
-                    "project": {
-                        "type": "string",
-                        "description": "Project name to list images for (optional, lists all projects if not provided)"
-                    }
-                },
+                "properties": {},
                 "required": []
             }
         )
     
     def execute(self, project: str = None) -> ToolResult:
-        if not self.screenshot_lib.exists():
+        # `project` is accepted for backward-compat but intentionally IGNORED:
+        # this tool always lists the reference images for the environment being
+        # built right now — the ones staged into workspace/screenshots by
+        # --reference-dir. It never enumerates the bundled demo library
+        # (Fandango/jira/airbnb/...): surfacing unrelated repos confuses agents
+        # into viewing the wrong project's screenshots. Bundled library images
+        # remain reachable only via the explicit copy_reference_image tool.
+        workspace_screenshots = self.workspace.resolve("screenshots")
+        if not (workspace_screenshots.exists() and workspace_screenshots.is_dir()):
             return ToolResult(
-                success=False,
-                error_message=f"Screenshot library not found: {self.screenshot_lib}"
+                success=True,
+                data={
+                    "projects": {},
+                    "total_images": 0,
+                    "note": (
+                        "No reference images were provided for this app. "
+                        "Build from the written spec/requirements."
+                    ),
+                },
             )
-        
-        result = {"projects": {}}
-        
-        if project:
-            project_path = self._resolve_reference_project(project)
-            if project_path and project_path.exists() and project_path.is_dir():
-                images = self._list_images(project_path)
-                result["projects"][project] = images
-                result["total_images"] = len(images)
-                result["source"] = str(project_path)
-                return ToolResult(success=True, data=result)
 
-            # Project not found via the contained resolver (workspace +
-            # bundled screenshot_lib). Do NOT fall back to a raw
-            # ``self.screenshot_lib / project`` join — for absolute or
-            # ``..``-bearing inputs that join collapses to an
-            # out-of-workspace path and would silently enumerate the
-            # host filesystem (the bypass we are closing in fix #4).
-            try:
-                avail = [d.name for d in self.screenshot_lib.iterdir() if d.is_dir()]
-            except Exception:
-                avail = []
-            return ToolResult(
-                success=False,
-                error_message=(
-                    f"Project not found: {project}. "
-                    f"Available library projects: {avail}. "
-                    "For runtime reference screenshots, use list_reference_images() with no project and view_image('screenshots/<name>')."
-                )
-            )
-        else:
-            # Runtime references copied by --reference-dir live in the current
-            # workspace. Surface them first so agents do not confuse page names
-            # with bundled screenshot-library project names.
-            workspace_screenshots = self.workspace.resolve("screenshots")
-            if workspace_screenshots.exists() and workspace_screenshots.is_dir():
-                images = self._list_images(workspace_screenshots)
-                if images:
-                    result["projects"]["screenshots"] = images
-                    result["total_images"] = len(images)
-                    result["source"] = str(workspace_screenshots)
-                    return ToolResult(success=True, data=result)
-
-            # List all bundled library projects and their images
-            total = 0
-            for proj_dir in sorted(self.screenshot_lib.iterdir()):
-                if proj_dir.is_dir() and not proj_dir.name.startswith('.'):
-                    images = self._list_images(proj_dir)
-                    result["projects"][proj_dir.name] = images
-                    total += len(images)
-            result["total_images"] = total
-        
+        images = self._list_images(workspace_screenshots)
         return ToolResult(
             success=True,
-            data=result
+            data={
+                # paths are ALWAYS workspace-relative — never leak the host's
+                # absolute layout (no `source` field). Reference images live at
+                # `screenshots/<name>`; that's the only path an agent ever needs.
+                "projects": {"screenshots": images},
+                "total_images": len(images),
+                "note": "view any of these with view_image('screenshots/<name>')",
+            },
         )
 
     def _resolve_reference_project(self, project: str) -> Optional[Path]:

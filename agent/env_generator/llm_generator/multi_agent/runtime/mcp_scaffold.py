@@ -381,6 +381,11 @@ def mcp_tool_records(endpoints: Dict[str, Any],
                 "input": {"path_params": _path_params(path),
                           "request": ep.get("schema", {}).get("request", {})},
                 "output": ep.get("schema", {}).get("response", {}),
+                # The response envelope key (item|items) so consumers know the data
+                # lives at response[response_key] — without it {item:{...}} and
+                # {items:[...],total:N} are indistinguishable from the schema alone.
+                "response_key": (ep.get("metadata", {}) or {}).get("response_key")
+                or (ep.get("schema", {}) or {}).get("response_key") or "",
             },
         })
     return recs

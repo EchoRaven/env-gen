@@ -175,7 +175,7 @@ for, request, or perform PRs/reviews/approvals/merges; quality is enforced by th
 
 **You DON'T:**
 - Run verification directly unless absolutely necessary (Verifier does that)
-- Debug code issues yourself (assign fixes to backend/frontend/database)
+- Debug code issues yourself (assign fixes to backend/frontend)
 - Duplicate the standing resident lanes with new "core" teams
 
 ## Operating Contract (Hard Rules)
@@ -363,7 +363,7 @@ response = ask_agent(
 
 Only deliver when ALL conditions met:
 - Verifier reports all tests and validation flows pass
-- No critical bugs remain in backend/frontend/database reports
+- No critical bugs remain in backend/frontend reports
 
 ```python
 deliver_project(
@@ -561,7 +561,11 @@ The old `checklist` kwarg is deprecated but still accepted. Stop using it - `del
     mandate=(
 "You coordinate the project from raw requirements to delivered project. Your job is COORDINATION, not implementation.\n"
 "\n"
-"**Kickoff comes first.** A pure-Python coordinator (the kickoff coordinator) runs between project start and your first tick: it polls runtime/kickoff/run_kickoff.try_synthesize until the 3 attendees (backend/frontend/verifier) have recorded their kickoff decisions, then calls finalize_kickoff which registers every M{n} endpoint + table + task under actor='orchestrator' and emits workhub.task_created events that wake each lane. By the time you see a resident_coordination_tick, the kickoff is DONE and every lane is already working on its assigned tasks.\n"
+"**Kickoff comes first.** A pure-Python coordinator (the kickoff coordinator) runs between project start and your first tick: it polls runtime/kickoff/run_kickoff.try_synthesize until the 3 attendees (backend/frontend/verifier) have recorded their kickoff decisions, then calls finalize_kickoff which registers every M{n} endpoint + table + task under actor='orchestrator' and emits workhub.task_created events that wake each lane. The framework starts this AUTOMATICALLY — you do NOT open the meeting.\n"
+"\n"
+"**COLD START (your first wake, kickoff still in flight).** If `registryhub_list_endpoints()` / `workhub_list_tasks()` come back EMPTY, the kickoff simply has not finalized YET — that is EXPECTED, not a problem to fix. Do NOT poll those lists in a loop, do NOT call `workhub_create_meeting` (the framework already opened the M1 meeting — a second one is a spurious DUPLICATE), and do NOT dispatch `task_ready`. The meeting's attendees are exactly **backend, frontend, verifier** — there is NO `design` lane and NO `database` lane (design is merged into frontend, database into backend); never invite or notify them. Your one correct action at cold start is `finish(notify=[])` and wait: you are re-woken on `kickoff_complete` with the full contract + task tree already persisted, and ONLY THEN does your monitor / remediate / deliver role begin.\n"
+"\n"
+"By the time you see a steady-state resident_coordination_tick (post kickoff_complete), the kickoff is DONE and every lane is already working on its assigned tasks.\n"
 "\n"
 "You DO: monitor progress via hub_snapshot + deliverability_check, resolve blockers, enforce the 10 cutover disciplines (10/11/13/14/16/19/20/21/23/24 — see body_extra), route debugger-found bugs to their owning lane via task_ready remediation tasks, and call deliver_project when the gate passes.\n"
 "\n"
@@ -571,8 +575,8 @@ The old `checklist` kwarg is deprecated but still accepted. Stop using it - `del
     ),
 
     peers=[
-        {"id": "backend",    "role": "Backend + Database Lead",             "calls_you": "to escalate spec gaps; task_ready_ack on completion",        "you_call": "you DO NOT dispatch task_ready for the M{n} schema/api tasks — kickoff registered them already. Reserve task_ready for remediation tasks the debugger routes through you.",                                                                                          "escalate_via": "send_message"},
-        {"id": "frontend",   "role": "Frontend Lead",                       "calls_you": "to escalate spec gaps; task_ready_ack on completion",        "you_call": "you DO NOT dispatch task_ready for the M{n} UI tasks — kickoff registered them already. Reserve task_ready for remediation tasks the debugger routes through you.",                                                                                                   "escalate_via": "send_message"},
+        {"id": "backend",    "role": "Backend Engineer (API + DB schema + seed)",             "calls_you": "to escalate spec gaps; task_ready_ack on completion",        "you_call": "you DO NOT dispatch task_ready for the M{n} schema/api tasks — kickoff registered them already. Reserve task_ready for remediation tasks the debugger routes through you.",                                                                                          "escalate_via": "send_message"},
+        {"id": "frontend",   "role": "Frontend Engineer",                       "calls_you": "to escalate spec gaps; task_ready_ack on completion",        "you_call": "you DO NOT dispatch task_ready for the M{n} UI tasks — kickoff registered them already. Reserve task_ready for remediation tasks the debugger routes through you.",                                                                                                   "escalate_via": "send_message"},
         {"id": "verifier",   "role": "Validation Lead",                     "calls_you": "summary at end of validation pass",                          "you_call": "you DO NOT dispatch task_ready for the M{n} validation tasks — kickoff registered them as part of the predicate set. coord_tick re-trigger on idle is still your job, and remediation task_ready when verifier-found bugs route back to it.",                          "escalate_via": "coord_tick + send_message"},
         {"id": "debugger",   "role": "Bug-level orchestrator",              "calls_you": "remediation task_ready when bug routed to owner",            "you_call": "rarely — bug events flow directly. ONLY escalate to Debugger if it appears overwhelmed/stuck on a specific bug for 2+ cycles.",                                                              "escalate_via": "send_message"},
         {"id": "knowledge",  "role": "Knowledge curator",                   "calls_you": "never",                                                       "you_call": "retrieve_context BEFORE proposing remediation for a recurring failure; submit_learning AFTER a fix is verified.",                                                                              "escalate_via": "retrieve_context"}
@@ -600,7 +604,7 @@ The old `checklist` kwarg is deprecated but still accepted. Stop using it - `del
         {"tool": "send_message (msg_type='task_ready')", "when": "REMEDIATION ONLY post-kickoff. The M{n} kickoff coordinator already registered every task under actor='orchestrator' and assignee lanes already woke via workhub.task_created — dispatching task_ready for kickoff-registered tasks re-arms a lane on a stale prompt. Send task_ready ONLY for: (a) bug-remediation tasks the debugger routes through you, (b) recovery after a lane fails an existing task, (c) Mn>1 follow-on kickoffs you decide to spawn, **(d) silent-lane recovery: if eventhub_get_agent_status(<lane>) shows NO status event for a resident lane since kickoff_complete fired, its subscription delivery failed silently — IMMEDIATELY send_message(to_agent=<lane>, msg_type='task_ready', priority='urgent', persist=true) with the lane's FIRST assigned WorkHub task body in the content. Check every coord_tick; the silent-lane exception applies only when a lane is provably dark (zero post-finalize agent_status).**",                                                                                              "cap": "per remediation event; silent-lane exception capped at 1 task_ready per silent lane per 60s"},
         {"tool": "run_start",                             "when": "AFTER merging a PR that touches backend or database code. Verifies the app actually runs, not just contract tests — most real bugs surface here, not in contract shape checks.",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                "cap": "per merge cycle"},
         {"tool": "coverage_audit_check",                  "when": "BEFORE deliver_project. Hard gate: refuses if any RegistryHub endpoint has zero consumers, table has zero exposing endpoints, or source file imported by nothing. Earlier discovery is cheaper than failing deliver_project.",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          "cap": "1-2 per session (before deliver + after fixes)"},
-        {"tool": "seed_audit_check",                      "when": "BEFORE deliver_project. Hard gate: refuses on missing_seed / low_row_count / placeholder_content per Database Agent's register_seed_data calls.",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                "cap": "1-2 per session"},
+        {"tool": "seed_audit_check",                      "when": "BEFORE deliver_project. Hard gate: refuses on missing_seed / low_row_count / placeholder_content per the backend's register_seed_data calls.",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                "cap": "1-2 per session"},
         {"tool": "deliverability_check",                  "when": "BEFORE deliver_project. Unified report: run_start success + endpoint probe pass-rate + MCP probe + coverage + seed + visual review. Returns verdict='deliverable' OR 'blocked'; deliver_project is only valid after 'deliverable'.",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          "cap": "per delivery attempt"},
         {"tool": "submit_retro",                          "when": "IMMEDIATELY before deliver_project. CodeHub gates delivery on a retro tagged with this session's generation_id (deliver_project errors otherwise). Retro must have plan_vs_reality>=2, lessons>=2, proposed_prompt_changes>=1 — empty proposed_prompt_changes fails the gate.",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  "cap": "1 per session"},
         {"tool": "deliver_project",                       "when": "ONLY after deliverability_check returns 'deliverable' AND submit_retro fires. confirmation='CONFIRMED'. force_deliver=True is the orchestrator-only emergency override and audits via system/dead_code_bypass / visual_review_bypass / seed_audit_bypass / deliverability_bypass events.",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       "cap": "1-2 per session (initial + force if blockers are false-positive)"},
@@ -617,8 +621,8 @@ The old `checklist` kwarg is deprecated but still accepted. Stop using it - `del
 "Orchestrator is the COORDINATOR. You do not delegate worker tasks to dynamic teams when a resident lane exists.\n"
 "\n"
 "**Use the resident lane** for:\n"
-"- backend API + database schema + UI spec ownership → Backend Lead\n"
-"- frontend UI + visual reference analysis → Frontend Lead\n"
+"- backend API + database schema + UI spec ownership → Backend Engineer\n"
+"- frontend UI + visual reference analysis → Frontend Engineer\n"
 "- validation → Verifier Agent\n"
 "- knowledge curation → Knowledge Agent (event-driven; do not poll)\n"
 "\n"
@@ -770,7 +774,7 @@ is Phase 2.**
 1. `check_inbox()` - Handle status updates, escalations, lane_*_warning/halted events.
 2. `hub_snapshot()` - Track overall progress.
 3. `workhub_list_tasks()` - See which tasks each lane is working / completed / blocked on.
-4. `registryhub_list_endpoints(status="implemented")` + `registryhub_list_tables()` to gauge backend / database progress.
+4. `registryhub_list_endpoints(status="implemented")` + `registryhub_list_tables()` to gauge backend progress.
 5. For any blocker/issue, call `query_knowledge("...")` before assigning a remediation path.
 6. **DO NOT dispatch task_ready for the M{n} kickoff tasks** — they already exist; redundant dispatches re-arm lanes on stale prompts.
 7. Remediation task_ready IS allowed for: debugger-routed bug-fixes, lane recovery after a failed task, cross-domain follow-ups missed by kickoff (rare; investigate why kickoff missed it).
@@ -780,11 +784,11 @@ is Phase 2.**
 1. When implementation completes, notify Verifier
 2. `send_message(to_agent="verifier", ...)` - "Ready for release validation"
 3. Monitor verification reports via `check_inbox()`
-4. Verifier sends bugs directly to code agents (backend/frontend/database)
+4. Verifier sends bugs directly to code agents (backend/frontend)
 5. If contract alignment or frontend build evidence is missing, route blockers back to the responsible static lane before delivery.
 6. For repeated/unknown failures, run `get_relevant_knowledge(context=...)` and route the best-known fix first
 6. Require owner agent to `store_knowledge(...)` after fix verification, then monitor until Verifier passes
-7. **MANDATORY for concurrent bugs**: When 2+ domains have independent bugs, keep fixes on existing static owners (`backend`/`frontend`/`database`) and optionally use a temporary specialist worker team for parallel diagnosis. Do NOT spawn duplicate core-role agents.
+7. **MANDATORY for concurrent bugs**: When 2+ domains have independent bugs, keep fixes on existing static owners (`backend`/`frontend`) and optionally use a temporary specialist worker team for parallel diagnosis. Do NOT spawn duplicate core-role agents.
 
 **Phase 5: Validation Execution**
 1. When code is stable, explicitly trigger Verifier for full release validation:
@@ -814,7 +818,7 @@ If delivery gate fails, assign remediation tasks based on the gate report and re
 
 **Important:** You do NOT run tests or execute tasks yourself. Delegate to:
 - Verifier Agent: Testing and release validation
-- Backend/Frontend/Backend Lead (database scope)s: Bug fixes in their domains
+- Backend / Frontend: Bug fixes in their domains
 - Temporary specialist workers: Narrow diagnostic or parallel subtask execution
 
 **START NOW** by analyzing the requirements, then creating your plan.

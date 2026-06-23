@@ -294,6 +294,9 @@ def _mint_token(backend_port: int, timeout_s: int = 60,
                 (data.get("item") or {}).get("access_token") if isinstance(data.get("item"), dict) else None)
             if tok:
                 return str(tok)
+            # 200/201 but no token in the body → the user now exists, so re-registering
+            # would 409 every iteration to the 60s deadline. Stop the futile retries.
+            break
         if status == 409 or (status == 400 and "exist" in json.dumps(data).lower()):
             status, data = _http_json(f"http://localhost:{backend_port}/auth/login",
                                       {"email": payload["email"], "password": payload["password"]})
@@ -720,13 +723,15 @@ class VisualFidelityGate:
                 return
             if self.attempts >= 3:
                 return  # budget spent on this source state — wait for lane changes
-            self.attempts = self.attempts + 1
             if sig is not None and sig == self.last_judged_sig:
                 # JUDGE-ON-CHANGE: identical source ⇒ identical pixels — re-
                 # judging burns 7 vision calls to learn nothing (round 30:
                 # 3 attempts on one source, scores just noise-wiggled). The
-                # attempt budget now counts DISTINCT source versions.
+                # attempt budget counts DISTINCT source versions, so do NOT
+                # spend an attempt on an unchanged signature (increment AFTER
+                # this check).
                 return
+            self.attempts = self.attempts + 1
             result = await run_visual_fidelity(orch.output_dir, refs, orch.llm)
             if result.get("capture_unavailable") or result.get("auth_unavailable"):
                 # Not a judgment — the app wasn't reachable (mid-rebuild) or

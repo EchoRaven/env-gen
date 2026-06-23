@@ -230,7 +230,7 @@ Use this to check what already exists before generating new files.
                 "properties": {
                     "category": {
                         "type": "string",
-                        "enum": ["all", "frontend", "backend", "database", "env", "design", "docker"],
+                        "enum": ["all", "frontend", "backend", "env", "docker"],
                         "description": "Filter by category (default: all)"
                     }
                 },

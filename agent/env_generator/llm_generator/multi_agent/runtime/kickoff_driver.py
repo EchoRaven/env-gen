@@ -125,6 +125,14 @@ class KickoffDriver:
         # restarts mid-meeting (it doesn't today), we'd have to persist
         # this in workhub but for now in-process is fine.
         broadcasts_fired: set = set()
+        # FIX (deep-review 🟡#3): re-nudge the facilitator. The facilitator turn fires
+        # kickoff_facilitate_request once; if the orchestrator-LLM hangs/drops it the
+        # note never lands and the loop polls silently to the 1200s outer timeout. Track
+        # the poll at which we last (re-)requested facilitation per round and RE-FIRE
+        # every _FACILITATOR_RENUDGE_POLLS (request_facilitation just re-publishes the
+        # event — idempotent), so a stuck facilitator recovers in ~150s, not ~1200s.
+        _facilitator_fired_poll: dict = {}
+        _FACILITATOR_RENUDGE_POLLS = 30  # × KICKOFF_POLL_INTERVAL_SEC (5s) ≈ 150s
         # PROPOSAL #28 (C-recovery): track substantive-section progress while the
         # meeting is stuck in phase=initial, so a lane that can never emit a clean
         # section doesn't pin the run for the full 1200s timeout.
@@ -297,7 +305,8 @@ class KickoffDriver:
                 # Not ready — fire kickoff_facilitate_request once, then wait
                 # for orchestrator's facilitator_note to resolve the conflict.
                 key = (cur_round, "facilitator")
-                if key not in broadcasts_fired:
+                _last_fired = _facilitator_fired_poll.get(key)
+                if _last_fired is None or (poll_count - _last_fired) >= _FACILITATOR_RENUDGE_POLLS:
                     try:
                         synthesis = run_kickoff.try_synthesize(
                             self._orch.hubs, kickoff_handle,
@@ -311,13 +320,15 @@ class KickoffDriver:
                         raise
                     self._orch._logger.info(
                         "Kickoff phase=facilitator (round %d, poll %s, "
-                        "%.0fs, synth=%s); requesting facilitation.",
+                        "%.0fs, synth=%s); %s facilitation.",
                         cur_round, poll_count, elapsed,
                         synthesis.get("status"),
+                        "re-requesting" if _last_fired is not None else "requesting",
                     )
                     facilitate.request_facilitation(
                         self._orch.hubs, kickoff_handle, synthesis,
                     )
+                    _facilitator_fired_poll[key] = poll_count
                     broadcasts_fired.add(key)
                 await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
                 continue

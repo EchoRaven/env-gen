@@ -592,7 +592,7 @@ class HealPipeline:
         if repo is None:
             return
         from pathlib import Path as _P
-        for lane in ("backend", "database", "frontend"):
+        for lane in ("backend", "frontend"):
             # FLUSH FIRST: commit any uncommitted/untracked app work in the lane's
             # worktree so it's part of agent/<lane> before we merge. Without this,
             # files the lane WROTE but never finish-committed (e.g. the frontend's

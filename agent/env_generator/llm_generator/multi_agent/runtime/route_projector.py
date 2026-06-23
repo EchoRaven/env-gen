@@ -874,6 +874,17 @@ def project_missing_routes(
             "    from models import *  # noqa: F401,F403\n"
             "except Exception:\n"
             "    pass\n"
+            # Projected AUTH handlers reference get_current_user (user=Depends(get_current_user))
+            # and get_db — guard their imports too, so an app whose main.py didn't already
+            # import them (raw-SQL/malformed worktree) doesn't NameError-crash on an auth route.
+            "try:\n"
+            "    from auth_dependency import get_current_user  # noqa: F401,F811\n"
+            "except Exception:\n"
+            "    pass\n"
+            "try:\n"
+            "    from database import get_db  # noqa: F401,F811\n"
+            "except Exception:\n"
+            "    pass\n"
         )
         # STATIC routes (no path param) match an exact path only, so they can never
         # shadow anything — but a lane catch-all like /api/users/{username} WILL shadow

@@ -57,7 +57,7 @@ def get_seed_knowledge() -> list:
     output_file="app/database/init/03_real_data.sql"
 )  # WRONG: Missing field_mapping!""",
             tags=["data-engine", "huggingface", "database", "seed-data", "generate_seed_sql", "critical"],
-            applies_to=["database"]
+            applies_to=["backend"]
         ),
         
         Knowledge(
@@ -81,7 +81,7 @@ def get_seed_knowledge() -> list:
 SELF-CHECK: If you called preview_dataset(), did you also call generate_seed_sql()?
 - If NO → GO BACK AND CALL generate_seed_sql() NOW!""",
             tags=["data-engine", "workflow", "seed-data", "preview_dataset"],
-            applies_to=["database"]
+            applies_to=["backend"]
         ),
         
         Knowledge(
@@ -106,7 +106,7 @@ Known working datasets:
 - Music: maharshipandya/spotify-tracks-dataset
 - Products: Amazon products, e-commerce""",
             tags=["data-engine", "huggingface", "dataset-search"],
-            applies_to=["design", "database"]
+            applies_to=["backend"]
         ),
 
         Knowledge(
@@ -142,7 +142,7 @@ generate_seed_sql(
     limit=200
 )""",
             tags=["database", "seed-data", "images", "external-urls", "critical"],
-            applies_to=["database"]
+            applies_to=["backend"]
         ),
 
         # =====================================================================
@@ -159,7 +159,7 @@ FROM postgres:16-alpine
 
 If you must change versions, users need to delete volumes: docker compose down -v""",
             tags=["database", "postgresql", "docker", "volumes"],
-            applies_to=["database"]
+            applies_to=["backend"]
         ),
 
         Knowledge(
@@ -176,7 +176,7 @@ app/database/init/
 
 SQL files execute in alphabetical order, so 01_ runs before 02_.""",
             tags=["database", "postgresql", "init-scripts"],
-            applies_to=["database"]
+            applies_to=["backend"]
         ),
 
         Knowledge(
@@ -190,7 +190,7 @@ price_cents INTEGER NOT NULL  -- $19.99 stored as 1999
 
 Frontend converts: displayPrice = price_cents / 100""",
             tags=["database", "money", "prices"],
-            applies_to=["database", "backend", "frontend"]
+            applies_to=["backend", "frontend"]
         ),
 
         Knowledge(
@@ -208,7 +208,7 @@ ON CONFLICT (email) DO UPDATE SET
 
 This makes seed files idempotent - safe to run multiple times.""",
             tags=["database", "postgresql", "seed-data", "upsert"],
-            applies_to=["database"]
+            applies_to=["backend"]
         ),
 
         Knowledge(
@@ -231,7 +231,7 @@ WHERE id IN (SELECT id FROM games WHERE is_free = false ORDER BY RANDOM() LIMIT 
 UPDATE games SET is_featured = true
 WHERE id IN (SELECT id FROM games ORDER BY popularity_score DESC LIMIT 12);""",
             tags=["database", "seed-data", "testing", "filters"],
-            applies_to=["database"]
+            applies_to=["backend"]
         ),
 
         Knowledge(
@@ -255,7 +255,7 @@ FROM games g
 WHERE NOT EXISTS (SELECT 1 FROM game_genres gg WHERE gg.game_id = g.id)
 ON CONFLICT DO NOTHING;""",
             tags=["database", "seed-data", "junction-tables", "associations"],
-            applies_to=["database"]
+            applies_to=["backend"]
         ),
 
         # =====================================================================
@@ -880,7 +880,7 @@ export const toCamel = (value) => {
       database:
         condition: service_healthy""",
             tags=["docker", "docker-compose", "healthcheck"],
-            applies_to=["database", "backend"]
+            applies_to=["backend"]
         ),
 
         Knowledge(

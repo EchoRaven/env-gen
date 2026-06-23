@@ -41,3 +41,4 @@ forgingground_gen.db
 # Dev run/launch scripts — kept local only, not pipeline code.
 run_*.sh
 launch_*.sh
+.env

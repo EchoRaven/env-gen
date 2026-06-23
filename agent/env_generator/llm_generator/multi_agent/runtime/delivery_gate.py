@@ -319,6 +319,12 @@ def incomplete_required_tasks(hubs) -> List[Dict[str, Any]]:
     for k, v in endpoints.items():
         if k == "_meta" or not isinstance(v, dict):
             continue
+        # Deprecated endpoints are retired from the contract — do NOT count them as
+        # "required" here. lifecycle.business_endpoints (and validation_ready) already
+        # filter them out, so counting them only here makes delivery block on an
+        # endpoint validation considers done (the deprecated-asymmetry: ready-yet-blocked).
+        if v.get("status") == "deprecated":
+            continue
         clean = (
             f"{(v.get('method') or '').upper()} {v.get('path') or ''}".strip()
             if v.get("method") else str(k)

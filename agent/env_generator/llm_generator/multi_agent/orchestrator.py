@@ -723,7 +723,7 @@ class Orchestrator:
                         f"Delivery gate failed on resumed-complete checkpoint.\n{report}"
                     )
                 self._enter_project_phase("done", reason="delivery gate passed (resumed)")
-                phases_completed = ["requirements", "design", "code", "docker", "testing"]
+                phases_completed = ["requirements", "kickoff", "code", "docker", "testing"]
                 success = True
             else:
                 self.progress.emit(EventType.PHASE_START, "Agent Workflow", {})
@@ -1462,7 +1462,7 @@ class Orchestrator:
                             "FINAL DELIVERY: gate clear → cut release v%s", _ver)
                 except Exception as _fin_rel_err:  # best-effort observability
                     self._logger.warning("final-gate release cut failed: %s", _fin_rel_err)
-                phases_completed = ["requirements", "design", "code", "docker", "testing"]
+                phases_completed = ["requirements", "kickoff", "code", "docker", "testing"]
                 self.progress.emit(EventType.PHASE_COMPLETE, "Agent Workflow", {})
                 self.checkpoint.complete_phase("agent_workflow")
                 self.checkpoint.complete_generation(success=True)
@@ -1593,7 +1593,7 @@ class Orchestrator:
             except:
                 pass
         
-        for agent_id in ["database", "backend", "frontend"]:
+        for agent_id in ["backend", "frontend"]:
             self._agents[agent_id].set_design_docs(docs)
 
     # ── Kickoff driver (PROPOSAL #8/#16 — KickoffDriver) ──
@@ -2145,7 +2145,8 @@ class Orchestrator:
                     getattr(self, "_tu_squad_attempts", 0), _now)
                 if _tu_decision == "defer":
                     try:
-                        _tu_result = await run_squad_for_delivery(self, release_tag)
+                        _tu_result = await run_squad_for_delivery(
+                            self, getattr(self, "_current_milestone_version", "1.0.0"))
                     except Exception as _tu_exc:
                         self._logger.debug("test-user squad gate run failed: %s", _tu_exc)
                         _tu_result = {"ran": False}

@@ -7,28 +7,28 @@ place so tool schemas and orchestration helpers do not drift independently.
 
 from __future__ import annotations
 
+# The 6 resident lanes (design merged into frontend, database into backend).
 RESIDENT_LANE_IDS = (
     "orchestrator",
-    "database",
     "backend",
     "frontend",
     "verifier",
+    "debugger",
     "knowledge",
 )
 
 
 ROLE_DESCRIPTIONS = {
     "orchestrator": "Leads planning, coordination, and delivery",
-    "database": "Handles database schema and seed data",
-    "backend": "Implements backend APIs and logic",
-    "frontend": "Builds UI components and frontend flows",
+    "backend": "Implements backend APIs, DB schema, and seed data",
+    "frontend": "Builds UI design + components and frontend flows",
     "verifier": "Runs validation and routes issues",
+    "debugger": "Triages verifier-found bugs to their owning lane",
     "knowledge": "Collects reusable knowledge and decisions",
 }
 
 
 DEV_TASK_DOMAINS = (
-    "database",
     "backend",
     "frontend",
     "verifier",

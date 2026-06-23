@@ -95,7 +95,7 @@ Examples:
                     },
                     "phase": {
                         "type": "string",
-                        "enum": ["requirements", "design", "database", "backend", "frontend", "docker", "testing"],
+                        "enum": ["requirements", "kickoff", "backend", "frontend", "docker", "testing"],
                         "description": "Current project phase (optional)"
                     },
                     "details": {
@@ -235,7 +235,7 @@ Examples:
                     },
                     "phase": {
                         "type": "string",
-                        "enum": ["requirements", "design", "database", "backend", "frontend", "docker", "testing"],
+                        "enum": ["requirements", "kickoff", "backend", "frontend", "docker", "testing"],
                         "description": "Project phase that was completed (optional)"
                     },
                     "summary": {
@@ -410,8 +410,8 @@ Examples:
                     },
                     "assign_to": {
                         "type": "string",
-                        "enum": ["frontend", "backend", "database", "design"],
-                        "description": "Which agent should fix this issue (REQUIRED). frontend=UI/React, backend=API/Express, database=SQL/seed, design=specs"
+                        "enum": ["frontend", "backend"],
+                        "description": "Which agent should fix this issue (REQUIRED). frontend=UI/React + design/visual, backend=API + DB schema/seed. (There is no separate database or design agent — database is merged into backend, design into frontend.)"
                     },
                     "severity": {
                         "type": "string",
@@ -420,7 +420,7 @@ Examples:
                     },
                     "phase": {
                         "type": "string",
-                        "enum": ["requirements", "design", "database", "backend", "frontend", "docker", "testing"],
+                        "enum": ["requirements", "kickoff", "backend", "frontend", "docker", "testing"],
                         "description": "Project phase where issue occurred (optional)"
                     },
                     "context": {
