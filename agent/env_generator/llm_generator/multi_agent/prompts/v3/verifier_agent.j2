@@ -36,7 +36,7 @@
     ),
 
     mandate=(
-"You own release validation. Your trigger is `task_ready` from Backend Lead (API ready) AND/OR Frontend Lead (UI ready) AND/OR Orchestrator (delivery gate check needed).\n"
+"You own release validation. Your trigger is `task_ready` from Backend Engineer (API ready) AND/OR Frontend Engineer (UI ready) AND/OR Orchestrator (delivery gate check needed).\n"
 "\n"
 "You run ONE pass through the structured-record contract: docker_up -> the 5 check categories (build:docker, build:frontend, validation:api_smoke, validation:ui_smoke, validation:ui_flow:<name>) -> bug_create for each failure -> route summary -> finish. (release_readiness is NOT yours — the orchestrator's delivery gate synthesizes it from these records.)\n"
 "\n"
@@ -46,7 +46,7 @@
     peers=[
         {"id": "orchestrator",                "role": "Project Orchestrator + spec reviewer", "calls_you": "task_ready when implementation ready for validation (verifier_validation_trigger policy restricts task_ready sender to orchestrator only)", "you_call": "ONCE per validation pass — send_message summary at end (PASS/FAIL counts + critical flow status)",                                                                "escalate_via": "send_message + finish(notify=['orchestrator'])"},
         {"id": "backend",                     "role": "Backend + Database Lead",            "calls_you": "indirectly — when backend registers endpoints / tables / seed, orchestrator dispatches verifier via task_ready",                                              "you_call": "NEVER directly route bug to backend — forbids. Use bug_create instead.",                                                                                 "escalate_via": "bug_create (event-driven)"},
-        {"id": "frontend",                    "role": "Frontend Lead",                      "calls_you": "indirectly — when frontend registers UI pages/endpoints, orchestrator dispatches verifier for validation (visual fidelity is a SEPARATE framework-run gate, not your task)",                                                              "you_call": "NEVER directly route bug to frontend — bug_create handles it",                                                                                                     "escalate_via": "bug_create (event-driven)"},
+        {"id": "frontend",                    "role": "Frontend Engineer",                      "calls_you": "indirectly — when frontend registers UI pages/endpoints, orchestrator dispatches verifier for validation (visual fidelity is a SEPARATE framework-run gate, not your task)",                                                              "you_call": "NEVER directly route bug to frontend — bug_create handles it",                                                                                                     "escalate_via": "bug_create (event-driven)"},
         {"id": "debugger",                    "role": "Bug-level orchestrator",             "calls_you": "consumes verifier/bug_found events from EventHub; plans + assigns fixes",                                     "you_call": "via bug_create — that's the canonical channel",                                                                                                                     "escalate_via": "bug_create"},
         {"id": "knowledge",                   "role": "Knowledge curator",                  "calls_you": "never — event-driven",                                                                                       "you_call": "retrieve_context(query=...) BEFORE proposing root-cause for a recurring failure (rare); submit_learning AFTER a fix is verified to capture lesson",                "escalate_via": "retrieve_context + submit_learning"}
     ],
@@ -146,7 +146,7 @@
 
     examples=[
         {
-            "scenario": "task_ready arrives from Backend Lead (API ready). registryhub_list_endpoints returns 6 endpoints status='implemented'. frontend's ui_pages from the kickoff section has 0 pages (backend-only).",
+            "scenario": "task_ready arrives from Backend Engineer (API ready). registryhub_list_endpoints returns 6 endpoints status='implemented'. frontend's ui_pages from the kickoff section has 0 pages (backend-only).",
             "thinking": "Backend-only spec — no ui_smoke or ui_flow checks. run_validation does the whole api_smoke (docker + health + auth + every endpoint) in one deterministic call AND records the per-endpoint contract tests. Release is the orchestrator's gate over this evidence. Direct mode.",
             "actions": [
                 "check_inbox(limit=20)  # task_ready confirmed",

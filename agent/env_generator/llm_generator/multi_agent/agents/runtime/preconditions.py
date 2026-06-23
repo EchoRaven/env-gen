@@ -92,6 +92,27 @@ def kickoff_endpoints_implemented(
     lane = _agent_owning_lane(agent)
     if not lane:
         return None
+    # STATUS AUTO-SYNC (env-gated ENVGEN_SYNC_STATUS_AT_FINISH, default-off): the
+    # framework PROJECTS working CRUD handlers for every contract endpoint into the
+    # skeleton main.py the lane branches from, but the CODE-TRUTH audit that flips
+    # defined→implemented (backend_audit.sync_endpoint_statuses) only runs post-merge
+    # in the heal pipeline. So during the lane's OWN phase every projected endpoint
+    # sits at 'defined' even though its route is already SERVED in the worktree, and
+    # this gate then wrongly orders the lane to "write the route" for code the
+    # framework owns and the lane cannot touch (main.py is framework-owned). When the
+    # flag is set, run that SAME audit against the lane's worktree HERE so served
+    # (projected OR custom_routes) routes flip to 'implemented' first — the gate then
+    # blocks only on genuinely-unserved endpoints (a missing custom route / a contract
+    # path that no served route matches), which is exactly what the lane can act on.
+    import os as _os
+    if _os.environ.get("ENVGEN_SYNC_STATUS_AT_FINISH"):
+        _wt = getattr(agent, "_worktree_dir", None)
+        if _wt:
+            try:
+                from ...runtime.backend_audit import sync_endpoint_statuses
+                sync_endpoint_statuses(_wt, registryhub)
+            except Exception:
+                pass
     endpoints = registryhub.get_endpoints() or {}
     # PROPOSAL #30 S1: skip the FRAMEWORK-OWNED fixed surface (auth/oauth/infra/spine)
     # via the canonical lifecycle.is_business — the SAME predicate
@@ -120,6 +141,24 @@ def kickoff_endpoints_implemented(
     if not pending:
         return None
     pending.sort()
+    if _os.environ.get("ENVGEN_SYNC_STATUS_AT_FINISH"):
+        # Auto-sync already flipped every SERVED route to 'implemented', so a
+        # still-pending endpoint genuinely has no served handler. Tell the lane the
+        # truth about the projection model — do NOT send it to rewrite main.py.
+        return (
+            f"finish blocked: {len(pending)} endpoint(s) you own have NO served "
+            f"route yet: {pending}. The framework AUTO-PROJECTS a working handler "
+            f"for every STANDARD CRUD endpoint in your contract (you do NOT and "
+            f"CANNOT write those — main.py is framework-owned), so a still-pending "
+            f"endpoint is one of: (a) a NON-standard endpoint (action verb like "
+            f"/x/{{id}}/send, custom search, a computed/aggregate result the "
+            f"projector can't express) — implement it in app/backend/custom_routes.py "
+            f"(an APIRouter named `router`); or (b) a CONTRACT gap — the registered "
+            f"method/path matches no served route (e.g. its table was never "
+            f"registered, or the path is wrong), so FIX THE CONTRACT "
+            f"(registryhub_register_table / re-register the endpoint at the correct "
+            f"path). Do NOT re-implement standard CRUD."
+        )
     return (
         f"finish blocked: {len(pending)} endpoint(s) you own are not "
         f"yet implemented: {pending}. For EACH: (1) WRITE the FastAPI route "

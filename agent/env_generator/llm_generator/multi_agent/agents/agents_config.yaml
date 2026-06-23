@@ -194,7 +194,7 @@ profiles:
   # ``frontend``, database merged into ``backend``.
 
   backend:
-    name: "Backend Lead Agent"
+    name: "Backend Engineer Agent"
     reasoning_effort: "high"  # Backend owns API+DB contract — the most reasoning-heavy contract-authoring role. Tunable live via live_monitor.
     description: "Backend team lead (v3): task_ready triggered, single-pass claim->read->plan->implement->register->finish. No polling, no wait."
     # "progress": report_progress is an always-include base tool registered
@@ -467,7 +467,7 @@ profiles:
         knowledge_sync: 1
 
   frontend:
-    name: "Frontend Lead Agent"
+    name: "Frontend Engineer Agent"
     reasoning_effort: "high"  # frontend owns design specs + UI implementation + flow coverage; reasoning-heavy.
     description: "Frontend team lead (v3): task_ready triggered, two-phase (static UI when Design ready, API integration when Backend ready). No polling, no wait."
     tool_categories: ["file", "reasoning", "runtime", "vision", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "visual_review", "mcp_registry", "team_spawn", "api_contract", "dependency", "reference", "image_search", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "design"]

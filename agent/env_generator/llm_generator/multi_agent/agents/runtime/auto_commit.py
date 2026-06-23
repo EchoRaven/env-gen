@@ -254,14 +254,25 @@ _BACKEND_LANE_OWNED = frozenset({"custom_routes.py"})
 # injects declared routes into it via #19 project_missing_ui_routes, which re-runs
 # every heal tick + at release), so App.jsx resolves to the LANE; the framework owns
 # the build/infra files it pins (main.jsx entry, vite/tailwind/postcss config,
-# Dockerfile/nginx/start, package manifests). Lane-authored src/pages/* + src/api.js
-# are NOT in the map → if they ever conflict, abort (never guess).
+# Dockerfile/nginx/start, package manifests).
 _FRONTEND_FRAMEWORK_OWNED = frozenset({
     "main.jsx", "vite.config.js", "tailwind.config.js", "postcss.config.js",
     "index.html", "Dockerfile", "nginx.conf", "nginx.conf.template", "start.sh",
     "package.json", "package-lock.json",
 })
 _FRONTEND_LANE_OWNED = frozenset({"App.jsx"})
+# The frontend lane AUTHORS everything under these dirs — pages, components, the api
+# service layer, and the client-logic free zones. The framework only projects FALLBACK
+# stubs for declared pages; when the lane authored a real file the framework also
+# stubbed, an add/add conflict arises on merge — resolve it to the LANE (the agent's
+# real file supersedes the stub). Prefix-matched (per-page basenames are unknowable up
+# front). Without this the resolver aborted on src/pages/* (basename not in the owned
+# set) → the frontend's work was stranded out of integration → the run STALLED (the
+# verifier waits on frontend, which never merged).
+_FRONTEND_LANE_OWNED_DIRS = (
+    "src/pages/", "src/components/", "src/services/",
+    "src/hooks/", "src/contexts/", "src/lib/", "src/utils/",
+)
 # lane → (path prefix, framework-owned basenames, lane-owned basenames)
 _OWNERSHIP = {
     "backend": ("app/backend/", _BACKEND_FRAMEWORK_OWNED, _BACKEND_LANE_OWNED),
@@ -306,9 +317,13 @@ def _resolve_conflict_by_ownership(repo: Path, *, lane: str,
         resolved: List[str] = []
         for p in paths:
             base = p.rsplit("/", 1)[-1]
+            rel = p[len(prefix):] if p.startswith(prefix) else ""
             if p.startswith(prefix) and base in framework_owned:
                 side, who = framework_side, "framework"
-            elif p.startswith(prefix) and base in lane_owned:
+            elif p.startswith(prefix) and (
+                    base in lane_owned
+                    or (lane == "frontend"
+                        and rel.startswith(_FRONTEND_LANE_OWNED_DIRS))):
                 side, who = lane_side, "lane"
             else:
                 return False, f"conflict path outside {lane}-owned set: {p}"
@@ -485,39 +500,39 @@ def merge_agent_branch_to_main(
             ["merge", "--squash", "--no-commit", agent_branch], cwd=repo,
         )
     if mc != 0:
-        # PROPOSAL #22: for the BACKEND lane only, try a deterministic per-path
-        # ownership resolution BEFORE aborting — framework-owned skeleton files take
-        # integration's by-construction version, custom_routes.py takes the lane's.
-        # This unblocks the agent/backend→integration merge that otherwise deadlocks
-        # delivery (the orchestrator LLM can't reliably resolve it). Scoped to
-        # agent/backend AND only when EVERY conflicted path is backend-owned; any
-        # other branch — or a backend conflict touching an unknown path — keeps the
-        # abort+event behavior so a lane that legitimately owns its tree is never
-        # corrupted.
-        if agent_branch == "agent/backend":
-            res_ok, res_info = _resolve_backend_conflict_by_ownership(repo, superseded_out)
-            if res_ok:
-                # conflicts resolved + staged → fall through to Step 4 (commit).
-                # superseded_out (if passed) now carries the framework-superseded
-                # paths for the caller to notify the lane (PROPOSAL #26 N2).
-                pass
-            else:
-                _run_git(["merge", "--abort"], cwd=repo)
-                try:
-                    _run_git(["reset", "--hard", "HEAD"], cwd=repo)
-                except Exception:
-                    pass
-                return False, (f"conflict merging {agent_branch} → {main_branch}: "
-                               f"{me.strip()} [{res_info}]")
+        # PROPOSAL #22/#23: for an OWNED lane (backend + frontend), try a deterministic
+        # per-path ownership resolution BEFORE aborting — framework-owned skeleton/infra
+        # files keep integration's by-construction version; lane-owned files take the
+        # lane's authored version (backend → custom_routes.py; frontend → App.jsx +
+        # src/pages|components|services|hooks|contexts|lib|utils). This unblocks the
+        # agent/<lane>→integration merge that otherwise deadlocks delivery: the framework
+        # projects FALLBACK page stubs into integration, the frontend authors the real
+        # pages, and the resulting add/add conflict used to abort → the frontend's work
+        # was stranded out of integration → run STALL (the verifier waits on frontend,
+        # which never merged). Any conflict touching a path OUTSIDE the lane's owned set
+        # still aborts (the resolver returns False) so a lane that legitimately owns an
+        # unmapped path is never corrupted.
+        _lane = agent_branch.split("/", 1)[1] if agent_branch.startswith("agent/") else ""
+        res_ok, res_info = False, ""
+        if _lane in _OWNERSHIP:
+            res_ok, res_info = _resolve_conflict_by_ownership(
+                repo, lane=_lane, framework_side="--ours", superseded_out=superseded_out)
+        if res_ok:
+            # conflicts resolved + staged → fall through to Step 4 (commit).
+            # superseded_out (if passed) now carries the framework-superseded
+            # paths for the caller to notify the lane (PROPOSAL #26 N2).
+            pass
         else:
-            # Real conflict on a non-backend lane — abort cleanly and report
-            # (frontend/verifier legitimately own their trees; do NOT auto-resolve).
+            # non-owned lane (verifier/debugger/…) OR a conflict on an unmapped path —
+            # abort cleanly and report; the orchestrator/humans decide.
             _run_git(["merge", "--abort"], cwd=repo)
             try:
                 _run_git(["reset", "--hard", "HEAD"], cwd=repo)
             except Exception:
                 pass
-            return False, f"conflict merging {agent_branch} → {main_branch}: {me.strip()}"
+            _suffix = f" [{res_info}]" if res_info else ""
+            return False, (f"conflict merging {agent_branch} → {main_branch}: "
+                           f"{me.strip()}{_suffix}")
 
     # Step 4 — commit with agent author.
     author = agent_id or agent_branch.split("/")[-1]

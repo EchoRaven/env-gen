@@ -1593,7 +1593,7 @@ class Orchestrator:
             except:
                 pass
         
-        for agent_id in ["database", "backend", "frontend"]:
+        for agent_id in ["backend", "frontend"]:
             self._agents[agent_id].set_design_docs(docs)
 
     # ── Kickoff driver (PROPOSAL #8/#16 — KickoffDriver) ──

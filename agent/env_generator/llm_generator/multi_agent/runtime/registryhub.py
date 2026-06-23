@@ -237,6 +237,39 @@ class RegistryHub:
         actor = agent or provider or "registryhub"
         now = time.time()
         old = self._endpoints.get(endpoint_id)
+        # RESERVED-SURFACE GUARD (env-gated ENVGEN_RESERVED_PATH_GUARD, default-off):
+        # the fixed framework surface (/health, /auth/*, /oauth/*, /.well-known/*, the
+        # tenant control plane) is registered by the orchestrator and SERVED by the
+        # runtime AS/control-plane — not by lane code. register_endpoint is otherwise a
+        # silent last-write-wins upsert, so a lane re-registering one of these
+        # (method, path) silently CLOBBERS the framework's entry (wrong kind / owner /
+        # response_key) and desyncs system↔agent. When the flag is set, reject any
+        # concrete NON-orchestrator actor that touches the reserved surface — a lane
+        # registers ONLY its own /api business endpoints; the framework owns the rest.
+        import os as _os
+        _guard_actor = (agent or provider or "").strip().lower()
+        if (_os.environ.get("ENVGEN_RESERVED_PATH_GUARD")
+                and _guard_actor and _guard_actor != "orchestrator"):
+            _p = self._canonical_path(path)
+            _old_kind = str(((old or {}).get("metadata") or {}).get("kind") or "").strip().lower()
+            _reserved_kind = _old_kind in {
+                "auth", "oauth", "infra", "spine", "control_plane", "control", "health"}
+            _reserved_path = (
+                _p in ("/", "/health", "/auth", "/oauth")
+                or _p.startswith(("/auth/", "/oauth/", "/.well-known"))
+                or _p.startswith("/api/v1/tenants")
+                or _p.startswith("/api/v1/admin")
+                or _p in ("/api/v1/init-tenant", "/api/v1/reset")
+            )
+            if _reserved_kind or _reserved_path:
+                raise PermissionError(
+                    f"register_endpoint refused: {str(method or '').upper()} {_p} is part "
+                    f"of the FRAMEWORK-OWNED fixed surface (health / auth / oauth / "
+                    f".well-known / tenant control-plane). The orchestrator registers these "
+                    f"and the runtime SERVES them — a lane must NOT re-register them (it "
+                    f"would clobber the framework's entry). Register ONLY your own /api "
+                    f"business endpoints."
+                )
         endpoint = {
             **(old or {}),
             "id": endpoint_id,

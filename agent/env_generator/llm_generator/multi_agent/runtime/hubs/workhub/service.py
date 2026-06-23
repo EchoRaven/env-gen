@@ -1105,6 +1105,16 @@ class WorkHub:
             raise ValueError("create_meeting requires non-empty agenda")
         if not attendees:
             raise ValueError("create_meeting requires non-empty attendees")
+        # Defunct-lane guard: `design` was merged into frontend and `database` into
+        # backend — neither is a live agent. Drop them so a hallucinated roster can
+        # never create a meeting that invites/notifies a lane that no longer exists
+        # (the dead-attendee bug). Real lanes: backend / frontend / verifier.
+        attendees = [a for a in attendees
+                     if str(a).strip().lower() not in {"design", "database"}]
+        if not attendees:
+            raise ValueError(
+                "create_meeting attendees were all defunct lanes (design/database); "
+                "real lanes are backend/frontend/verifier")
         if not agent:
             raise ValueError("create_meeting requires non-empty agent")
         if not isinstance(milestone_index, int) or isinstance(milestone_index, bool):

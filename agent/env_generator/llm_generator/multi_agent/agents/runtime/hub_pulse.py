@@ -32,7 +32,7 @@ _PHASE_ROLE = {
     ("debugger", "KICKOFF"): "stand by — there is no code to debug during kickoff.",
     ("debugger", "IMPLEMENTATION"): "stand by until a real validation run completes; do not file bugs against an empty/partial build.",
     ("debugger", "VALIDATION"): "triage real failing validation runs to the owning lane.",
-    ("orchestrator", "KICKOFF"): "chair the kickoff meeting; drive every lane to declare its contract section + reach finalize_kickoff. Do NOT validate/deliver yet.",
+    ("orchestrator", "KICKOFF"): "the framework already OPENED the M1 kickoff meeting (attendees: backend, frontend, verifier) and its coordinator drives synthesis to finalize_kickoff. Do NOT create a meeting, invite attendees, or dispatch tasks — you only FACILITATE when a kickoff_facilitate_request event arrives; otherwise wait for kickoff_complete. Do NOT validate/deliver yet.",
     ("orchestrator", "IMPLEMENTATION"): "monitor the lanes, answer questions, keep work flowing; the framework validates/delivers automatically once endpoints are implemented.",
     ("orchestrator", "VALIDATION"): "compose the delivery gate; dispatch failing checks to owners; deliver once green.",
 }
