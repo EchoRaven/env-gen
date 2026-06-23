@@ -328,9 +328,23 @@ volumes:
             except Exception:
                 pass
             rel_paths.append("app/backend/reset.sh")
+        # Author + commit docker-compose.yml in the BASE bootstrap commit too. Ports are
+        # allocated at init (before this runs), so the compose can be written now. Without
+        # it in the base, the compose only lands in a LATE framework-delivery commit, and
+        # the integration tree's HEAD can lack it at the moment framework validation checks
+        # compose_present → the 7-cycle compose_present wedge that aborted instagram_fresh
+        # (committed in a framework-delivery commit, yet absent from integration HEAD). In
+        # the root commit it's inherited by every worktree + integration HEAD from t=0; the
+        # later generate_docker() rewrites it byte-identically (idempotent).
+        try:
+            await self.generate_docker()
+            if (orch.output_dir / "docker" / "docker-compose.yml").exists():
+                rel_paths.append("docker/docker-compose.yml")
+        except Exception as _dc_err:
+            orch._logger.warning("base-scaffold compose write failed: %s", _dc_err)
         sha = orch.hubs.codehub.commit_runtime_scaffold(
             rel_paths,
-            "bootstrap: embedded OAuth2 AS modules + base main.py (runtime-owned)",
+            "bootstrap: embedded OAuth2 AS modules + base main.py + docker-compose (runtime-owned)",
         )
         orch._logger.info(
             "Seeded base scaffold (commit %s): %s",
