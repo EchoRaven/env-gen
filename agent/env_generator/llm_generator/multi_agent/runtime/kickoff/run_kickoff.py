@@ -1366,8 +1366,22 @@ def try_synthesize(
 
     decisions = _read_meeting_decisions(hubs, meeting_id)
 
-    # 1. Quorum check.
-    missing = _missing_attendees(decisions, expected_attendees)
+    # 1. Quorum check. In revision rounds (N>=2) ONLY the revisers named by the prior
+    # round's facilitator_note are expected to re-author — counting the FULL attendee set
+    # wedges synthesis in 'awaiting' forever on non-revisers who were correctly never
+    # woken (Round 8h Fix #G already filters facilitate.current_phase this way; the
+    # quorum check here must match or revision rounds never reach 'ready'). Round 1 uses
+    # the full set, and any error falls back to it, so round-1 behavior is unchanged.
+    _quorum_attendees = expected_attendees
+    try:
+        from . import facilitate as _facilitate
+        _round_n = _facilitate.current_round(hubs, meeting_id)
+        if _round_n and _round_n >= 2:
+            _quorum_attendees = _facilitate.expected_attendees_for_round(
+                decisions, _round_n, expected_attendees) or expected_attendees
+    except Exception:
+        _quorum_attendees = expected_attendees
+    missing = _missing_attendees(decisions, _quorum_attendees)
     if missing:
         return {
             "status": "awaiting",
