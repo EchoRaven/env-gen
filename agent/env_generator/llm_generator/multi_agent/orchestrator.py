@@ -2145,7 +2145,8 @@ class Orchestrator:
                     getattr(self, "_tu_squad_attempts", 0), _now)
                 if _tu_decision == "defer":
                     try:
-                        _tu_result = await run_squad_for_delivery(self, release_tag)
+                        _tu_result = await run_squad_for_delivery(
+                            self, getattr(self, "_current_milestone_version", "1.0.0"))
                     except Exception as _tu_exc:
                         self._logger.debug("test-user squad gate run failed: %s", _tu_exc)
                         _tu_result = {"ran": False}
