@@ -398,26 +398,55 @@ def _agent_log_activity(gen: Path, role: str):
     return (label, newest.stat().st_mtime, list(reversed(acts)))
 
 
+def _run_is_live(gen: Path, within: float = 240.0) -> bool:
+    """True iff the generation is actively RUNNING — its main log advanced within
+    ``within`` seconds. The main ``logs/generation_*.log`` ticks on every LLM call /
+    tool call / orchestrator poll, so it's the reliable 'the system is working' signal
+    even during a long step (LLM call, docker build, validation) where an individual
+    lane emits no tool-call to its OWN jsonl. Goes False only when the run is genuinely
+    stuck/finished — which is exactly when 'idle' is the honest label."""
+    try:
+        ldir = gen / "logs"
+        logs = list(ldir.glob("generation_*.log")) if ldir.is_dir() else []
+        if not logs:
+            return False
+        newest = max(logs, key=lambda p: p.stat().st_mtime)
+        return (datetime.now(timezone.utc).timestamp() - newest.stat().st_mtime) < within
+    except Exception:
+        return False
+
+
 def _agents(h: Path) -> list[dict]:
     """Per-agent status + action history from the AUTHORITATIVE source: each agent's
     own ``.agent_logs/<role> Agent/*.jsonl`` step log. eventhub is deliberately NOT
     used — it is a hub-scoped coordination log (records which HUB emitted an event,
     not which agent), so it cannot attribute activity to an agent. An agent with no
-    log is reported idle with no history (honest 'no data', never a guess)."""
+    log is reported idle with no history (honest 'no data', never a guess).
+
+    An agent reads ``active`` when it acted recently (<180s) OR the RUN is live (main
+    log advancing): a lane is frequently between tool-calls during a long step (LLM
+    call, docker build, validation) yet the system IS working — flagging it ``idle``
+    then was misleading (user couldn't tell the agent was still running). It only goes
+    ``idle`` once the run itself stops ticking (genuinely stuck/done)."""
     gen = h.parent.parent  # h == <gen>/shared/hubs
     now = datetime.now(timezone.utc).timestamp()
+    run_live = _run_is_live(gen)
     out = []
     for aid, role in CORE_AGENTS:
         act = _agent_log_activity(gen, role)
         if act:
             label, mtime, recent = act
+            recent_self = (now - mtime) < 180
             out.append({"id": aid, "role": role,
-                        "status": "active" if (now - mtime) < 180 else "idle",
+                        "status": "active" if (recent_self or run_live) else "idle",
                         "last_action": label or "—", "last_active_at": _iso(mtime),
                         "recent_actions": recent})
         else:
-            out.append({"id": aid, "role": role, "status": "idle",
-                        "last_action": "—", "last_active_at": "", "recent_actions": []})
+            # no jsonl yet: if the run is live the lane is spinning up, not idle
+            out.append({"id": aid, "role": role,
+                        "status": "active" if run_live else "idle",
+                        "last_action": ("starting…" if run_live else "—"),
+                        "last_active_at": "", "recent_actions": []})
     return out
 
 
