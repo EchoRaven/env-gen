@@ -518,6 +518,10 @@ class EnvGenAgent(
         # Skills consulted via get_skill this run (read by SkillConsultGate;
         # populated at the tool chokepoint — skill_consult.py).
         self._consulted_skills: Set[str] = set()
+        # §5: reference images this agent actually loaded via view_image this run. The
+        # frontend kickoff substance gate can require every reference_image_manifest path to
+        # be in this set (so a manifest can't be authored from memory). Populated by ViewImageTool.
+        self._viewed_reference_paths: Set[str] = set()
         # Tool instances for LLM tool calling
         self._tool_instances: Dict[str, BaseTool] = {}
         self._register_env_gen_tools()
@@ -722,7 +726,17 @@ class EnvGenAgent(
         # affects allowlist lookup (tooling.py:493, step_pipeline/tooling.py:112);
         # profiles without an ``implementation:*`` entry are unaffected.
         _prev_phase = getattr(self, "_active_phase", None)
-        self._active_phase = "implementation"
+        # TEST-FIX vs IMPLEMENTATION: a remediation/bug-fix task runs in the test-fix
+        # phase (close the reported defect; don't start new features), not initial build.
+        # Detect via explicit markers the orchestrator/debugger set on a fix task; default to
+        # implementation so normal build tasks are unaffected. Pins the phase for the
+        # ``test_fix:*`` stage_tool_allowlist (falls through to the full toolset if a profile
+        # has no such entry — safe).
+        _wf = str(task_data.get("workflow") or "").lower()
+        _is_fix = (_wf in ("fix", "remediation", "test_fix")
+                   or task_data.get("phase") == "test_fix"
+                   or bool(task_data.get("bug_id") or task_data.get("is_remediation")))
+        self._active_phase = "test_fix" if _is_fix else "implementation"
         try:
             # Run agentic loop
             result = await self.execute(task_data)

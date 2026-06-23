@@ -663,6 +663,12 @@ Start by thinking about what might cause this issue.
 
         prev_state = self._processing_state
         self._processing_state = ProcessingState.PROCESSING_TASK
+        # An issue/bug reported to this lane is the TEST-FIX phase of the lifecycle
+        # (close the reported defect; do not start new features). Pin _active_phase so the
+        # profile's ``test_fix:*`` stage_tool_allowlist applies (falls through to the full
+        # toolset for profiles without one — safe). Restored in finally.
+        prev_phase = getattr(self, "_active_phase", None)
+        self._active_phase = "test_fix"
 
         try:
             system_prompt = self._compose_system_prompt()
@@ -691,6 +697,7 @@ Start by thinking about what might cause this issue.
                 await self._external_bus.send(error_msg)
         finally:
             self._processing_state = prev_state
+            self._active_phase = prev_phase
             await self._drain_deferred_task_ready_messages()
 
     async def _handle_task_ready(self, message: BaseMessage) -> None:

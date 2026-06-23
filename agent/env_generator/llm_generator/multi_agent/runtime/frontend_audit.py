@@ -46,6 +46,38 @@ from .route_projector import _express_to_fastapi, _norm_path
 _HANDLER_TOKENS = ("onSubmit", "onClick", "fetch(", "apiGet", "apiPost",
                    "apiPut", "apiDelete", "axios", "api.", "await api")
 
+# §2 gate-hardening: a real data page CALLS the api client — it does not merely IMPORT it.
+# The old check passed any file containing the string `services/api`, so a page that did
+# `import { getTasks } from '../services/api'` but never invoked getTasks() cleared the stub
+# gate. Require an actual call EXPRESSION instead.
+_API_CALL_RE = re.compile(
+    r"\b(?:await\s+)?(?:api|axios)\s*\.\s*(?:get|post|put|patch|delete)\s*\(|"
+    r"\bfetch\s*\(|\b(?:apiGet|apiPost|apiPut|apiDelete)\s*\(")
+
+
+def _names_from_service_import(text: str) -> set:
+    """Named identifiers imported from a `services/api` module:
+    ``import { getTasks, createTask } from '../services/api'`` → {getTasks, createTask}."""
+    out: set = set()
+    for m in re.finditer(
+            r"import\s*\{([^}]*)\}\s*from\s*['\"][^'\"]*services/api[^'\"]*['\"]", text):
+        for tok in m.group(1).split(","):
+            tok = tok.split(" as ")[-1].strip()
+            if re.match(r"^[A-Za-z_$][\w$]*$", tok):
+                out.add(tok)
+    return out
+
+
+def _has_real_api_call(text: str) -> bool:
+    """True iff the file CALLS the api client (default `api.get(`/`fetch(`/`apiGet(`, or a
+    NAMED helper imported from services/api AND actually invoked) — not merely imports it."""
+    if _API_CALL_RE.search(text):
+        return True
+    for n in _names_from_service_import(text):
+        if re.search(r"\b" + re.escape(n) + r"\s*\(", text):
+            return True
+    return False
+
 
 def _norm_api(entry: str) -> str:
     """'GET /api/posts' → '/api/posts'; '/api/posts' stays."""
@@ -294,15 +326,15 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         _placeholder = any(p in _low for p in (
             "this section is being set up", "under construction",
             "coming soon", "placeholder page", "todo: implement"))
-        # PROPOSAL #55-v2: #55 added the `api.<verb>()` default-import style, but the
-        # frontend prompt's PRIMARY page template uses NAMED service functions
-        # (`import { getTasks } from '../services/api'` → `getTasks()`), which match no
-        # _HANDLER_TOKEN — so a real list/detail page using the framework's own MANDATED
-        # style was still false-flagged "placeholder stub". A genuine stub never imports
-        # the api client; a real data page always does (default OR named import). So a
-        # file that imports from `services/api` is doing real work → not inert.
-        _imports_api_service = "services/api" in comp_file_text
-        _declared_but_inert = bool(apis) and not _imports_api_service and not any(
+        # PROPOSAL #55-v2 + §2 gate-hardening: a declared-data page is INERT unless it
+        # actually CALLS the api client. #55 recognized the named-helper style
+        # (`import { getTasks } from '../services/api'` → `getTasks()`), but the old test
+        # only checked for the IMPORT substring `services/api`, so a page that imported a
+        # helper yet never invoked it cleared the stub gate. Now require a real call
+        # expression (default `api.get(`/`fetch(`/`apiGet(`, or a named services/api helper
+        # that is invoked) — a genuine stub imports nothing and calls nothing.
+        _has_call = _has_real_api_call(comp_file_text)
+        _declared_but_inert = bool(apis) and not _has_call and not any(
             tok in comp_file_text for tok in _HANDLER_TOKENS)
         if _placeholder or _declared_but_inert:
             missing.append(

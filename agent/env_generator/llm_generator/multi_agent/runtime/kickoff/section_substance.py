@@ -77,6 +77,41 @@ def non_contract_keys(content: Any, section: str) -> list:
     return wrong
 
 
+def _norm_ref_path(p: Any) -> str:
+    """Normalize a reference-image path for comparison (strip, './', backslashes)."""
+    return str(p or "").strip().replace("\\", "/").lstrip("./")
+
+
+def manifest_paths(content: Any) -> list:
+    """Reference-image paths a frontend section DECLARES — manifest dict keys, or items if a
+    list/`{path:...}` form was submitted. [] when absent/empty (incl. the '{}' no-refs stub)."""
+    if not isinstance(content, Mapping):
+        return []
+    m = content.get("reference_image_manifest")
+    if isinstance(m, Mapping):
+        return [_norm_ref_path(k) for k in m.keys() if str(k).strip()]
+    if isinstance(m, (list, tuple)):
+        out = []
+        for it in m:
+            if isinstance(it, str) and it.strip():
+                out.append(_norm_ref_path(it))
+            elif isinstance(it, Mapping) and it.get("path"):
+                out.append(_norm_ref_path(it.get("path")))
+        return out
+    return []
+
+
+def unviewed_manifest_paths(content: Any, viewed: Any) -> list:
+    """§5: sorted manifest paths NOT in the agent's viewed-set. [] when nothing is declared,
+    when no viewed-set is supplied (enforcement off — e.g. the facilitator has no handle), or
+    when the manifest is the explicit '{}' no-references stub. PURE — unit-testable."""
+    declared = manifest_paths(content)
+    if not declared or viewed is None:
+        return []
+    seen = {_norm_ref_path(v) for v in viewed}
+    return sorted(p for p in declared if p not in seen)
+
+
 def real_items(seq: Any) -> int:
     """Count NON-EMPTY items — mappings OR non-empty strings.
 

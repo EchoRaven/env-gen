@@ -6,9 +6,34 @@ Replaces the LLM-judged checklist with an evidence-based unified report.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
+
+
+# §2 gate-hardening (2026-06-22): the api_smoke RunHub run that sets
+# ``functionally_validated`` probes the BACKEND only and never opens a frontend page, so a
+# real-backend / blank-UI app currently gets the coverage/seed/visual/ui_flow gates waived.
+# When ENVGEN_REQUIRE_UI_EVIDENCE is enabled, the UI-facing gates additionally require at
+# least ONE passing browser/UI validation record before they may be downgraded — closing the
+# "api_smoke green, blank screen shipped" class. Default-off (byte-identical) until validated
+# on a live run, then flip it on.
+_UI_EVIDENCE_CHECKS = {"ui_flow", "ui_smoke", "ui_page_reachable", "test_user"}
+
+
+def _has_passing_ui_evidence(hub_registry) -> bool:
+    """True iff at least one passing UI/browser/test-user validation record exists."""
+    try:
+        results = hub_registry.get_validation_results(limit=1000) or []
+    except Exception:
+        return False
+    for r in results:
+        if not isinstance(r, dict) or r.get("status") != "passed":
+            continue
+        if (r.get("metadata") or {}).get("check") in _UI_EVIDENCE_CHECKS:
+            return True
+    return False
 
 
 @dataclass
@@ -228,6 +253,13 @@ def compute_deliverability(hub_registry, app_root,
         and ep_counts.get("failed", 0) == 0
         and mcp_counts.get("failed", 0) == 0
     )
+    # UI-facing gates (visual / ui_flow) may downgrade only when the app is functionally
+    # validated AND (when ENVGEN_REQUIRE_UI_EVIDENCE is on) at least one UI/browser/test-user
+    # record passed — so a backend-only-validated, blank-UI app no longer waives them.
+    # Default-off ⇒ ui_validated == functionally_validated (byte-identical).
+    _require_ui = os.environ.get("ENVGEN_REQUIRE_UI_EVIDENCE", "0").lower() in ("1", "true", "yes", "on")
+    ui_validated = functionally_validated and (
+        _has_passing_ui_evidence(hub_registry) if _require_ui else True)
 
     coverage = _coverage_summary(hub_registry, app_root)
     if not coverage.get("is_clean", True) and not functionally_validated:
@@ -262,7 +294,7 @@ def compute_deliverability(hub_registry, app_root,
             f"{extra} table(s) with low row count or placeholder seed (Cutover 21 gate)")
 
     visual = _visual_summary(hub_registry)
-    if visual.get("pending", 0) > 0 and not functionally_validated:
+    if visual.get("pending", 0) > 0 and not ui_validated:
         blockers.append(
             f"{visual['pending']} critical visual review(s) pending (Cutover 20 gate)")
     if visual.get("needs_revision", 0) > 0:
@@ -291,7 +323,7 @@ def compute_deliverability(hub_registry, app_root,
     # recover_missing_password and the invalid-declaration blocker
     # ("missing `name`/`id`") are NOT suppressed.
     flow_coverage, flow_blockers = _flow_coverage_summary(hub_registry, app_root)
-    if functionally_validated:
+    if ui_validated:
         flow_blockers = [b for b in flow_blockers if "ui flow(s) missing" not in b.lower()]
     blockers.extend(flow_blockers)
 

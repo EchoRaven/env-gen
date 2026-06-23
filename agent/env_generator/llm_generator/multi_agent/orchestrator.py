@@ -866,6 +866,9 @@ class Orchestrator:
                     # ones still judge + file remediation (advisory) so the
                     # lane converges throughout. Deferral clock resets too.
                     self._is_final_milestone = (_m_idx == len(milestones))
+                    # §4: expose the current milestone dict (its acceptance[] + slice) so the
+                    # delivery gate + the test-user squad can scope to THIS milestone.
+                    self._current_milestone = _milestone if isinstance(_milestone, dict) else {}
                     # Per-milestone visual state: anchor the deferral clock and the
                     # total-judgment backstop to THIS milestone (PIPE-C3 — within a
                     # milestone neither is reset by lane churn).
@@ -874,6 +877,12 @@ class Orchestrator:
                     # gate): the deferral clock + attempt count anchor to THIS milestone.
                     self._pages_gate_deferred_since = None
                     self._pages_gate_attempts = 0
+                    # Per-milestone TEST-USER SQUAD gate state (§3.5). Unlike the visual
+                    # gate, this runs EVERY milestone (the verify->fix loop the user's flow
+                    # diagram puts inside each milestone), bounded by squad_release_decision.
+                    self._tu_squad_passed = False
+                    self._tu_squad_deferred_since = None
+                    self._tu_squad_attempts = 0
                     # This milestone's requirement slice → kickoff input. When
                     # milestones were NOT explicitly supplied, the single
                     # synthesized M1 MUST receive the exact legacy ``raw_req``
@@ -2008,14 +2017,30 @@ class Orchestrator:
                     in ("1", "true", "yes", "on")
                     and getattr(self, "_is_final_milestone", True)):
                 _unbuilt: List[str] = []
+                _ref_unbuilt: List[str] = []
                 try:
                     from .runtime.page_build_gate import (
-                        frontend_unbuilt_pages, pages_release_decision)
+                        frontend_unbuilt_pages, pages_release_decision,
+                        referenced_unbuilt_pages)
                     _app_root = self.output_dir / "app"
                     if not _app_root.exists():
                         _app_root = self.output_dir
                     _rh = getattr(self.hubs, "registryhub", None)
                     _unbuilt = frontend_unbuilt_pages(_rh, _app_root)
+                    # §2 gate-hardening: which unbuilt pages do the REFERENCE images depict?
+                    # Those must ship as the REAL page, not the fallback — block harder on them.
+                    if _unbuilt and getattr(self, "_reference_images", None):
+                        try:
+                            from .runtime.visual_fidelity import map_reference_screens
+                            _known_routes = set()
+                            for _pg in (_rh.list_ui_pages() or {}).values() if _rh else []:
+                                if isinstance(_pg, dict) and _pg.get("route"):
+                                    _known_routes.add(str(_pg["route"]))
+                            _ref_routes = {str(s.get("route")) for s in map_reference_screens(
+                                list(self._reference_images), _known_routes) if s.get("route")}
+                            _ref_unbuilt = referenced_unbuilt_pages(_rh, _app_root, _ref_routes)
+                        except Exception as _ru_exc:
+                            self._logger.debug("referenced-unbuilt detect skipped: %s", _ru_exc)
                 except Exception as _pb_exc:
                     self._logger.error("page-build gate detect failed: %s", _pb_exc)
                     _unbuilt = []
@@ -2027,6 +2052,7 @@ class Orchestrator:
                         self._pages_gate_deferred_since,
                         getattr(self, "_pages_gate_attempts", 0),
                         _now,
+                        has_referenced_unbuilt=bool(_ref_unbuilt),
                     )
                     if _pb_decision == "defer":
                         self._pages_gate_attempts = getattr(
@@ -2100,6 +2126,47 @@ class Orchestrator:
                     int(_now - self._vf_gate.deferred_since),
                     self._vf_gate.attempts,
                     self._vf_gate.total_judgments)
+            # TEST-USER SQUAD BLOCKING GATE (§3.5, 2026-06-22): the verify->fix loop the
+            # user's flow diagram puts INSIDE each milestone. The app is up (api_smoke
+            # booted it; the visual gate just shot it), so spawn the three modality
+            # test-user agents (api/mcp/browser) to drive it as real users and file P0
+            # defects via bug_create (-> debugger -> owning lane). While open P0s remain
+            # and attempts/wall-clock are not exhausted, DEFER the release (return) so the
+            # fixes land before this milestone ships; then escape (never deadlock), loudly.
+            # Env-gated (default-off) until validated on a live run.
+            if (os.environ.get("ENVGEN_TESTUSER_SQUAD", "0").lower() in ("1", "true", "yes", "on")
+                    and not getattr(self, "_tu_squad_passed", False)):
+                from .runtime.test_user_squad import run_squad_for_delivery, squad_release_decision
+                _now = time.time()
+                if getattr(self, "_tu_squad_deferred_since", None) is None:
+                    self._tu_squad_deferred_since = _now
+                _tu_decision = squad_release_decision(
+                    self._tu_squad_deferred_since,
+                    getattr(self, "_tu_squad_attempts", 0), _now)
+                if _tu_decision == "defer":
+                    try:
+                        _tu_result = await run_squad_for_delivery(self, release_tag)
+                    except Exception as _tu_exc:
+                        self._logger.debug("test-user squad gate run failed: %s", _tu_exc)
+                        _tu_result = {"ran": False}
+                    self._tu_squad_attempts = getattr(self, "_tu_squad_attempts", 0) + 1
+                    _p0 = int((_tu_result.get("bugs") or {}).get("p0", 0))
+                    if _tu_result.get("ran") and _p0 == 0:
+                        self._tu_squad_passed = True  # clean -> fall through to release
+                    else:
+                        self._logger.warning(
+                            "DELIVERY DEFERRED: test-user squad found %d P0 defect(s) "
+                            "(attempt %s, %ss deferred) — filed to the debugger/owning lane; "
+                            "re-testing after the fix lands. modalities=%s", _p0,
+                            self._tu_squad_attempts, int(_now - self._tu_squad_deferred_since),
+                            _tu_result.get("modalities"))
+                        return  # block this milestone's release until the defects clear
+                else:
+                    self._logger.warning(
+                        "Test-user squad gate RELEASED (escape after %ss / %s attempts) — "
+                        "delivering with possibly-open test-user defects.",
+                        int(_now - self._tu_squad_deferred_since),
+                        getattr(self, "_tu_squad_attempts", 0))
             # Flush any committed-but-unmerged lane work into integration BEFORE
             # snapshotting the release. Observed (instagram MM, 2026-06-08): the
             # backend committed the final milestone's routes to agent/backend 11s
@@ -2170,6 +2237,10 @@ class Orchestrator:
                 await _asyncio.to_thread(self._run_test_user_validation, release_tag)
             except Exception as _tu_err:
                 self._logger.debug("test-user phase dispatch failed: %s", _tu_err)
+            # NOTE: the multi-agent TEST-USER SQUAD now runs as a BLOCKING PRE-RELEASE gate
+            # ABOVE (before create_release), not here — its bug_create defects gate the
+            # milestone that produced them (the verify->fix loop). The deterministic
+            # _run_test_user_validation above stays as the post-release safety net.
             self._project_delivered = True
             ev = getattr(self, "_project_delivered_event", None)
             if ev is not None:
@@ -2221,13 +2292,27 @@ class Orchestrator:
     def _validate_delivery_gate(self) -> Dict[str, Any]:
         from .runtime.delivery_gate import validate_delivery_gate
         import logging as _lg
+        # §4 (env-gated, default-off): on an INTERMEDIATE milestone, scope the structural-task
+        # gate to THIS milestone's declared endpoints so it isn't blocked on later-milestone
+        # surface. Default-off ⇒ milestone_scope=None ⇒ full-app gate (byte-identical). Empty
+        # parsed scope also falls back to full-app (never gates on an empty set).
+        _scope = None
+        if (os.environ.get("ENVGEN_MILESTONE_SCOPED_GATE", "0").lower() in ("1", "true", "yes", "on")
+                and not getattr(self, "_is_final_milestone", True)):
+            _ms = getattr(self, "_current_milestone", None) or {}
+            _slice = str(_ms.get("description_slice") or "")
+            _paths = re.findall(r"(?:GET|POST|PUT|PATCH|DELETE)\s+(/\S+)", _slice) \
+                or re.findall(r"(/api/[A-Za-z0-9_./{}:-]+)", _slice)
+            if _paths:
+                _scope = {"endpoint_paths": sorted(set(_paths))}
         return validate_delivery_gate(
             self.output_dir, self.hubs,
             getattr(self, "_session_start_ts", 0.0),
             getattr(self, "_logger", None) or _lg.getLogger("DeliveryGate"),
             scaffold_design_readme=self._scaffold_design_readme,
             get_validation_results=self._get_validation_results,
-            get_validation_summary=self._get_validation_summary)
+            get_validation_summary=self._get_validation_summary,
+            milestone_scope=_scope)
     def _validate_contract_alignment(self) -> Dict[str, Any]:
         from .runtime.delivery_gate import validate_contract_alignment
         return validate_contract_alignment(self.output_dir, self.hubs)

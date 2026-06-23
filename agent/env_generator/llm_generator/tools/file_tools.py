@@ -1040,13 +1040,19 @@ Examples:
 By default, this tool returns ONLY metadata (path, size, mime) to avoid exploding LLM context.
 If you truly need the raw base64 payload, pass include_base64=true (WARNING: huge).
 """
-    
+
     def __init__(self, *, workspace: Workspace):
         super().__init__(name=self.NAME, category=ToolCategory.FILE)
         if workspace is None:
             raise ValueError(f"{self.NAME}: workspace is required (no bypass construction)")
         self.workspace = workspace
-    
+        self._agent = None
+
+    def set_agent(self, agent) -> None:
+        # §5: bound at registration (tooling.py) so a successful view records the reference
+        # path on the agent — the kickoff substance gate checks the manifest against this set.
+        self._agent = agent
+
     @property
     def tool_definition(self):
         return self.get_tool_param()
@@ -1193,15 +1199,24 @@ If you truly need the raw base64 payload, pass include_base64=true (WARNING: hug
             payload["note"] = ("image could not be inlined (SVG, or >6MB even "
                                "after compression) — only metadata returned")
 
+        _rel = _workspace_rel(self.workspace, image_path)
+        # §5: record the canonical viewed path on the owning agent (byte-identical to the
+        # path surfaced to the LLM, which it copies into reference_image_manifest keys).
+        _ag = getattr(self, "_agent", None)
+        if _ag is not None:
+            try:
+                _ag._viewed_reference_paths.add(_rel)
+            except AttributeError:
+                pass
         return ToolResult(
             success=True,
             data={
-                "path": _workspace_rel(self.workspace, image_path),
+                "path": _rel,
                 "mime_type": mime_type,
                 "size_bytes": file_size,
                 "size_display": f"{file_size / 1024:.1f}KB" if file_size < 1024*1024 else f"{file_size / 1024 / 1024:.1f}MB",
                 "description": description,
-                "message": f"Image loaded: {_workspace_rel(self.workspace, image_path)} ({mime_type}, {file_size / 1024:.1f}KB)",
+                "message": f"Image loaded: {_rel} ({mime_type}, {file_size / 1024:.1f}KB)",
                 **payload
             }
         )

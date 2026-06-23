@@ -1199,6 +1199,23 @@ class WorkhubAddMeetingDecisionTool(HubTool):
             _c = coerced or {}
             _sec = _c.get("section") or (_c.get("content") or {}).get("section")
             _content = _c.get("content") if isinstance(_c.get("content"), dict) else _c
+            # §5 (env-gated, default-off): reject a frontend section whose
+            # reference_image_manifest declares paths the agent never view_image'd this run
+            # (authored-from-memory). No-op when no viewed-set/handle or no references. The
+            # ToolResult.fail re-prompts the lane in its own loop to view + re-submit.
+            import os as _os
+            if (_os.environ.get("ENVGEN_ENFORCE_REF_VIEW", "0").lower() in ("1", "true", "yes", "on")
+                    and _sec == "frontend" and not _content.get("deferred")):
+                from multi_agent.runtime.kickoff.section_substance import unviewed_manifest_paths
+                _viewed = getattr(getattr(self, "_agent", None), "_viewed_reference_paths", None)
+                _unviewed = unviewed_manifest_paths(_content, _viewed)
+                if _unviewed:
+                    return ToolResult.fail(
+                        f"reference_image_manifest declares paths you did NOT view this run: "
+                        f"{_unviewed}. Call view_image('<path>') for EACH manifest entry FIRST "
+                        "(use list_reference_images() to discover paths), then re-submit the "
+                        "manifest with ONLY paths you actually loaded. If no references exist, "
+                        "submit reference_image_manifest={} with a note.")
             if (_sec in ("frontend", "backend", "verifier")
                     and not _content.get("deferred")
                     and not decision_has_substance(_c, _sec)):

@@ -56,7 +56,7 @@
         "retrieve_context": "OPTIONAL — ONE query if a recurring bug pattern (similar endpoint, similar error signature) might match a closed bug.",
         "action": "Read bug_artifacts → resolve owner via RegistryHub provider lookup → form root_cause hypothesis → bug_triage.",
         "hub_commit_gate": "After bug_triage: broadcast bug_triaged event so owner's next hub_pulse picks up the task.",
-        "knowledge_sync": "Default skip. submit_learning if triage surfaced a genuinely reusable pattern (e.g. 'NULL author_id on POST /posts → JWT decode missing user_id mapping')."
+        "knowledge_sync": "Default skip. submit_learning if triage surfaced a genuinely reusable pattern (e.g. 'NULL owner_id on a create endpoint → handler not stamping current_user.id from the auth dependency before insert')."
     },
 
     tool_policy=[
@@ -94,7 +94,7 @@
 
     constraints=[
         "NEVER write code. NO file-write tools. Triage = assign. Fix = owning agent.",
-        "ALWAYS state root_cause hypothesis before bug_triage. Low confidence is OK ('likely null check missing in feed handler'). MISSING hypothesis is NOT OK.",
+        "ALWAYS state root_cause hypothesis before bug_triage. Low confidence is OK ('likely a missing null-check in the create handler'). MISSING hypothesis is NOT OK.",
         "Owner resolution priority: (1) affected_endpoint → RegistryHub provider; (2) affected_table → RegistryHub provider; (3) affected_files[0] → path heuristic (backend/* / frontend/* / database/*); (4) ASK orchestrator via send_message. NEVER guess assignee when (1)-(3) all fail.",
         "Recurrence: if bug_artifacts match a closed bug's affected_endpoint or affected_files[0], set parent_bug_id. Recurrence = deeper design issue → consider escalating after the next failed fix.",
         "broadcast bug_triaged AFTER bug_triage. Without broadcast, owner may not see the task until their next coord_tick.",
@@ -111,35 +111,35 @@
 
     examples=[
         {
-            "scenario": "verifier/bug_found event arrives: POST /posts returns 500 'cannot insert into column author_id NOT NULL'. affected_endpoint='POST /posts', affected_files=['app/backend/src/routes/posts.js'].",
-            "thinking": "RegistryHub provider lookup on POST /posts. Resolve owner. Form root_cause. Triage.",
+            "scenario": "verifier/bug_found: POST /api/items returns 500 'null value in column \"owner_id\" violates not-null constraint'. affected_endpoint='POST /api/items', affected_files=['app/backend/custom_routes.py']. (Resource name is illustrative — use THIS run's real resource.)",
+            "thinking": "Provider lookup on POST /api/items resolves the owner lane. Form a root_cause hypothesis grounded in the FastAPI stack, then triage.",
             "actions": [
                 "check_inbox(limit=20)  # bug_found event noted",
                 "bug_list_open()  # 1 open bug",
-                "registryhub_get_endpoint(method='POST', path='/posts')  # provider='backend' (per design's registration)",
-                "# root_cause: 'POST /posts handler likely missing author_id assignment from JWT-decoded user_id before INSERT'",
-                "bug_triage(task_id=<id>, root_cause='POST /posts handler missing author_id assignment from JWT user_id before INSERT; route file at app/backend/src/routes/posts.js needs author_id=req.user.user_id (or similar) added to INSERT payload', assignee='backend')",
+                "registryhub_get_endpoint(method='POST', path='/api/items')  # provider='backend'",
+                "# root_cause: the create handler isn't stamping owner_id from the OAuth2/JWT-authenticated current_user before INSERT",
+                "bug_triage(task_id=<id>, root_cause='POST /api/items create handler does not set owner_id from the authenticated current_user (the FastAPI OAuth2/JWT dependency) before insert, so the NOT NULL owner FK fails; the handler in app/backend/custom_routes.py must assign owner_id=current_user.id', assignee='backend')",
                 "broadcast(source_hub='debugger', event_type='bug_triaged', payload={task_id:<id>, assignee:'backend'})",
                 "finish(notify=['verifier'])"
             ],
             "output": "(no structured response — bug routed to backend)"
         },
         {
-            "scenario": "Same bug reoccurs after backend's first fix attempt (assignee filed fix, verifier re-tested, still fails — fix_attempts=3 now).",
-            "thinking": "Third failure — escalate per escalation rule.",
+            "scenario": "Same bug reoccurs after backend's first fix (verifier re-tested, still 500; fix_attempts=3).",
+            "thinking": "Third failure — escalate per the escalation rule.",
             "actions": [
                 "bug_list_open()  # same bug, fix_attempts=3",
-                "bug_escalate(task_id=<id>, reason='Backend has attempted POST /posts author_id fix 3 times; latest still returns 500. Likely root cause is deeper (e.g. JWT payload missing user_id, or auth middleware bug). Need orchestrator review.')",
+                "bug_escalate(task_id=<id>, reason='Backend has attempted the POST /api/items owner_id fix 3 times; still 500. Likely deeper: the OAuth2 JWT payload may not carry a user id the handler can read, or the auth dependency returns no current_user. Need orchestrator review.')",
                 "finish(notify=['orchestrator'])"
             ],
             "output": "(implicit: orchestrator handles re-assignment / design rework)"
         },
         {
-            "scenario": "runhub/run_failed event: GET /posts returns 404. affected_endpoint='GET /posts', affected_files=[]. RegistryHub provider lookup empty (Backend hasn't registered status='implemented' yet).",
-            "thinking": "RegistryHub provider empty. Fallback to file-path heuristic. Backend lane is the typical owner for /posts but file-path is empty too. ASK orchestrator.",
+            "scenario": "runhub/run_failed: GET /api/items returns 404. affected_endpoint='GET /api/items', affected_files=[]. RegistryHub provider lookup empty (endpoint still status='defined', not implemented).",
+            "thinking": "Provider empty and no file hint — do NOT guess the owner; ASK the orchestrator.",
             "actions": [
-                "registryhub_get_endpoint(method='GET', path='/posts')  # returns {provider: null, status: 'defined'}",
-                "send_message(to_agent='orchestrator', content='runhub/run_failed on GET /posts but RegistryHub provider empty (endpoint registered defined-only, not implemented). Backend lane likely owner but cannot confirm without provider. Triage help needed.', msg_type='blocker')",
+                "registryhub_get_endpoint(method='GET', path='/api/items')  # returns {provider: null, status: 'defined'}",
+                "send_message(to_agent='orchestrator', content='runhub/run_failed on GET /api/items but RegistryHub provider is empty (endpoint registered defined-only, not implemented). Backend lane is the likely owner but cannot confirm without a provider. Triage help needed.', msg_type='blocker')",
                 "finish(notify=['orchestrator'])"
             ],
             "output": "(implicit: orchestrator decides assignment)"
