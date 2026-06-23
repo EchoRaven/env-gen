@@ -255,13 +255,17 @@ def _param_column_type(param: str, path: str, models: Dict[str, Dict[str, Any]])
             field = _lookup_field(param, target_meta)
             cols = target_meta.get("cols", [])
             param_is_id = _is_id_param(param)
-            # ``_lookup_field`` DEFAULTS to "id" when nothing matches. Only treat the
-            # param as the id column when that's a real match — i.e. the param NAME
-            # looks like an id, OR "id" is genuinely a column. A non-id-named param
-            # (``{username}``) over a model with no matching text column must stay
-            # ``str`` so the handler's graceful "non-numeric → 404" path is preserved
-            # (not a 422). Otherwise type to the resolved column.
-            if field == "id" and not (param_is_id or "id" in cols):
+            # ``_lookup_field`` DEFAULTS to "id" when nothing matches. A non-id-named
+            # param (``{username}``) whose name matched NO real column fell back to
+            # "id" — but it is NOT the resource's own id, it's a foreign natural key
+            # (e.g. ``POST /api/messages/{username}`` → look the recipient user up by
+            # username). It must stay ``str`` so FastAPI doesn't int-coerce it
+            # (``/api/messages/alice`` → 422) and the handler's by-name lookup works.
+            # The old ``or "id" in cols`` clause wrongly typed ``{username}`` as int
+            # whenever the matched table merely HAD an id column (messages does):
+            # instagram run #3 typed it int, the probe sent ``1``, the handler ran and
+            # 500'd on the insert. Gate on the PARAM name only, never the table's id.
+            if field == "id" and not param_is_id:
                 return "str"
             sa_type = (target_meta.get("types") or {}).get(field)
             if sa_type is not None:
@@ -734,9 +738,14 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             f"        return {{\"item\": {_serialize_expr('obj', cols)}}}",
             "    except HTTPException:",
             "        raise",
-            "    except Exception:",
+            "    except Exception as _exc:",
             "        db.rollback()",
-            "        return {\"item\": valid}",
+            "        # Surface the failure HONESTLY — do NOT return a fake 201 whose",
+            "        # body lacks the PK. A masked insert made a verification chain that",
+            "        # captures {id} from the create bind nothing, so ${...} reached the",
+            "        # next step (→ 422), and hid the real cause (e.g. a null-PK / NOT",
+            "        # NULL violation). A 500 lets the gate + the owning lane see it.",
+            "        raise HTTPException(status_code=500, detail=f\"create failed: {_exc}\")",
         ]
         sig_params += "body: dict = None, " if "body: dict" not in sig_params else ""
     else:
