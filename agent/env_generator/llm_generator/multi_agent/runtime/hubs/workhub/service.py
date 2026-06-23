@@ -252,6 +252,27 @@ class WorkHub:
             return {"error": f"Task not found: {task_id}"}
         if task.get("claimed_by") != agent:
             return {"error": "Only claimer can complete task", "claimed_by": task.get("claimed_by")}
+        # COMPLETION INTEGRITY (2026-06-23): 'complete' asserts the work PASSED.
+        # A result that explicitly signals a FAILED check (passed=False /
+        # verdict=fail) must NOT be recorded as 'completed' — that hides a
+        # failure as done and lets the assignee walk away instead of routing it
+        # for a fix (live v7: the verifier, DENIED 'fail' on orchestrator-created
+        # validate.ui_flow tasks, false-completed them with result.passed=False,
+        # suppressing the real "frontend is fallback pages" defect). Framework
+        # syncs complete with evidence only (no failing result), so this only
+        # ever catches a lane false-completing a failed check. GENERAL invariant.
+        _res = result if isinstance(result, dict) else {}
+        _passed = _res.get("passed")
+        _verdict = str(_res.get("verdict") or "").strip().lower()
+        if _passed is False or _verdict in {"fail", "failed", "error"}:
+            creator = str(task.get("created_by") or "") or "orchestrator"
+            return {"error": (
+                f"complete denied: result signals a FAILED check "
+                f"(passed={_passed!r}, verdict={_verdict or 'n/a'}). 'complete' "
+                "means the work PASSED — recording a failure as 'completed' hides "
+                "it. Route the failure instead: send_message the task's creator "
+                f"'{creator}' with the blocker, or bug_create → debugger for a "
+                "product defect. Re-complete only once it actually passes.")}
         now = time.time()
         updated = dict(task)
         updated["status"] = "completed"

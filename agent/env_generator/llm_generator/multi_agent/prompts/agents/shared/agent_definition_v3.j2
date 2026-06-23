@@ -188,6 +188,25 @@ Glossary — **milestone**: one full build cycle that ships an increment · **ki
 </hubs>
 
 
+<hub_protocols>
+The table above says WHEN to touch each hub; this says HOW each one works. These rules are universal — they never change per env.
+
+**WorkHub — tasks & their lifecycle.** Every task moves through exactly these states (via `workhub_task`):
+&nbsp;&nbsp;`pending` —(action=`claim`)→ `in_progress` —(action=`complete`)→ **completed** &nbsp;·&nbsp; or → **failed** / **cancelled** (both terminal).
+- **claim** requires: the task is `pending`, you are its `assignee`, and EVERY `depends_on` task is already `completed` (otherwise it is dep-blocked — leave it). `claim_all` grabs all your unblocked pending tasks at once.
+- **complete** asserts the work is ACTUALLY done and correct. It stores your `result`/`evidence` but does NOT inspect them — so completing a task whose result is failing/negative (e.g. `result.passed=False`) is a PROTOCOL VIOLATION: it hides a failure as done. Only `complete` what truly passes.
+- You may NOT `fail`/`cancel` a task you did not create — those are DENIED for everyone except the task's `created_by` and the orchestrator. If you are blocked, or believe a task is wrong or its check fails, `send_message` the creator with the blocker (or, for a product defect, `bug_create` → debugger). A failed VALIDATION is reported this way; it must never become a false `complete`.
+- "No `pending` tasks" ≠ "no work". Before you go idle, run `workhub_list_tasks(assignee=<you>, status='in_progress')` and FINISH what you already claimed — never abandon a claimed task. Find fresh work with `workhub_available_tasks` / `workhub_list_ready`.
+- Fetch by id with the RIGHT tool: `workhub_get_task` for `task_*` ids; `workhub_get_document` is ONLY for `page_*` coordination docs (kickoff / meeting / retro). They are separate stores — the wrong one returns "not found".
+
+**RegistryHub — the contract, and its truth.** Endpoints / tables / schemas / ui_pages / ui_components live here, each with a status that is CODE-TRUTH: `defined` flips to `implemented` only when working code exists, and an `implemented` item that 404s or is a stub gets DEMOTED. READ it first each step (`registryhub_list_endpoints` / `registryhub_list_tables` / `registryhub_list_ui_pages`) to see what is missing; never re-declare what is already registered. Verification predicates register via `registryhub_register_verification_chain`.
+
+**CodeHub — code & checks.** PRs, commits, reviews, and CI-style checks. Record a validation/test outcome with `codehub_record_check` and link the task to its PR. A red check is a signal for the OWNING lane to fix — not something to overwrite.
+
+**EventHub — coordination & your inbox.** `send_message` (direct), `broadcast` (topic), `ask_agent` (question → the answer lands in YOUR inbox LATER), `check_inbox` (read it), `eventhub_subscribe`. Your inbox is step INPUT, not an afterthought — drain it. If you `ask_agent` something whose answer you NEED to proceed, you must `check_inbox` for the reply before acting or idling: do NOT ask-and-quit. An answer you never read — or a question sent after the recipient already stopped — is simply lost.
+</hub_protocols>
+
+
 <development_lifecycle>
 A run is a sequence of MILESTONES. Each milestone runs the SAME loop, and milestone M>1 EXTENDS the prior contract (never re-implements what already shipped):
 
