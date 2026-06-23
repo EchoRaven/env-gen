@@ -211,32 +211,6 @@ volumes:
             "Authored app/database/ scaffold: %d table(s) → %s",
             paths["table_count"], paths["schema_sql"],
         )
-        # COMMIT it immediately. write_database_scaffold writes 01_init.sql to the
-        # output_dir working tree but leaves it UNCOMMITTED; the next per-tick
-        # agent→integration merge stashes+drops uncommitted writes, so the SQL
-        # vanishes before commit_framework_delivery's `git add -A -- app` ever sees
-        # it. The now-missing app/database/init is then recreated as ROOT by docker
-        # at compose-up (it's the bind-mount source) — which blocks any re-write —
-        # so 01_init.sql is gone for good and the delivery gate's
-        # ``database_sql_missing`` wedges delivery FOREVER (instagram_v2: api_smoke
-        # green, but never delivered — the gate's sole failed check). Commit on write
-        # (same basis as the base-bootstrap compose commit) so the SQL lands in
-        # integration HEAD + the release snapshot and the dir exists (haibo-owned,
-        # populated) before docker ever mounts it.
-        try:
-            from ..agents.runtime.auto_commit import _run_git
-            from pathlib import Path as _P
-            _repo = _P(orch.output_dir)
-            _run_git(["add", "-A", "--", "app/database"], cwd=_repo)
-            _rc, _o, _e = _run_git(
-                ["commit", "-m",
-                 "framework: database schema SQL (app/database/init/01_init.sql, runtime-owned)"],
-                cwd=_repo)
-            if _rc == 0:
-                orch._logger.info("Committed app/database/ schema SQL to integration.")
-            # _rc != 0 → nothing to commit (already current) — fine.
-        except Exception as _db_commit_err:
-            orch._logger.warning("database SQL commit failed: %s", _db_commit_err)
 
     def generate_backend_skeleton(self) -> None:
         """SKELETON根治 (2026-06-09, user-chosen): generate the ENTIRE backend
