@@ -68,7 +68,13 @@ class GenerationResult:
 _allocated_ports: set = set()
 
 def find_free_port(preferred: List[int] = None, range_start: int = 8000, range_end: int = 9000) -> int:
-    """Find an available port that hasn't been allocated yet."""
+    """Find an available port that hasn't been allocated yet.
+
+    Bind-tests on 0.0.0.0 (NOT localhost): docker publishes host ports on 0.0.0.0, so a
+    port free on 127.0.0.1 but already bound on 0.0.0.0 by another service would pass a
+    localhost check yet make `docker compose up` fail to bind it (the docker_up wedge seen
+    on busy shared hosts). Binding 0.0.0.0 here only hands out ports docker can actually use.
+    """
     global _allocated_ports
     preferred = preferred or []
     
@@ -77,7 +83,7 @@ def find_free_port(preferred: List[int] = None, range_start: int = 8000, range_e
             continue
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('localhost', port))
+                s.bind(('0.0.0.0', port))
                 _allocated_ports.add(port)
                 return port
         except OSError:
@@ -88,7 +94,7 @@ def find_free_port(preferred: List[int] = None, range_start: int = 8000, range_e
             continue
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('localhost', port))
+                s.bind(('0.0.0.0', port))
                 _allocated_ports.add(port)
                 return port
         except OSError:
@@ -584,7 +590,7 @@ class Orchestrator:
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(1)
-                    s.bind(('localhost', port))
+                    s.bind(('0.0.0.0', port))
             except OSError:
                 results["ports"]["blocked"].append(port)
         
