@@ -101,7 +101,7 @@
 "- Adversarial review needed (one worker implements, one worker reviews).\n"
 "\n"
 "Each parallel_execute worker MUST have:\n"
-"- `owned_files`: disjoint file list (e.g. `src/routes/auth.js`)\n"
+"- `owned_files`: disjoint file list (e.g. `app/backend/custom_routes.py`)\n"
 "- `forbidden_files`: shared infra (`main.py`, `database.py`, `models.py`) + the runtime-owned AS modules (`jwt_manager.py`, `oauth_store.py`, `oauth_routes.py` — NEVER touch)\n"
 "- `config_profile=\"backend\"`, `capabilities=[\"file_read\",\"file_write\",\"fastapi\",\"database\"]`\n"
 "- `inputs_from` (table names, endpoint specs) and `outputs_to` (which routers/endpoints registered in main.py)\n"

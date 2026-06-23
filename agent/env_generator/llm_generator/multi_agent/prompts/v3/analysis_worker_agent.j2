@@ -111,32 +111,31 @@
 
     examples=[
         {
-            "scenario": "task_data = {problem: 'POST /posts returns 500 author_id NOT NULL', hypothesis: 'JWT decode missing user_id mapping in auth middleware', files: ['app/backend/src/middleware/auth.js', 'app/backend/src/routes/posts.js']}",
-            "thinking": "Read both files. Look for whether middleware sets req.user.user_id or just req.user.id. Look at posts.js to see what field it consumes.",
+            "scenario": "task_data = {problem: 'POST /api/items returns 500 owner_id NOT NULL', hypothesis: 'the create handler never sets owner_id from the authenticated current_user', files: ['app/backend/custom_routes.py', 'app/backend/auth_dependency.py']} (resource illustrative).",
+            "thinking": "Read both files. Check whether the create handler reads current_user.id and assigns owner_id before insert, and what the OAuth2 auth dependency returns.",
             "actions": [
                 "check_inbox(limit=20)  # task_ready confirmed",
-                "read(file_path='app/backend/src/middleware/auth.js')",
-                "# evidence: middleware does jwt.verify and sets req.user = decoded — decoded contains user_id IF the JWT was signed with that field",
-                "read(file_path='app/backend/src/routes/posts.js')",
-                "# evidence: posts.js INSERT uses req.user.user_id — but if JWT was signed with 'id' instead of 'user_id', req.user.user_id is undefined → NOT NULL violation",
-                "grep(pattern='jwt.sign', path='app/backend/')",
-                "# evidence: login route signs JWT with {id: user.id} — NOT user_id. CONFIRMS hypothesis.",
-                "send_message(to_agent='debugger', content='Candidate: JWT field-name mismatch (auth signs id, posts reads user_id). Supporting evidence: auth.js:42 jwt.verify -> req.user; routes/posts.js:67 INSERT uses req.user.user_id; routes/auth.js:88 jwt.sign({id: user.id}, ...). Refuting evidence: searched for any req.user.user_id assignment in auth middleware — none. Confidence: 0.88. Verdict: SUPPORTS. Fix path: rename one side — either auth signs {user_id: user.id} or posts reads req.user.id.', msg_type='analysis_report')",
+                "read(file_path='app/backend/auth_dependency.py')",
+                "# evidence: get_current_user decodes the JWT and returns a User with .id",
+                "read(file_path='app/backend/custom_routes.py')",
+                "# evidence: the POST /api/items handler inserts the payload but never sets owner_id from current_user → the NOT NULL owner FK fails",
+                "grep(pattern='owner_id', path='app/backend/')",
+                "# evidence: no `owner_id=current_user.id` assignment anywhere in the create path. CONFIRMS hypothesis.",
+                "send_message(to_agent='debugger', content='Candidate: create handler omits the owner_id assignment. Supporting evidence: auth_dependency.py get_current_user returns User.id; custom_routes.py POST /api/items inserts without owner_id; grep finds no owner_id=current_user.id in the create path. Refuting evidence: none found. Confidence: 0.9. Verdict: SUPPORTS. Fix path: set owner_id=current_user.id before insert in custom_routes.py.', msg_type='analysis_report')",
                 "finish(notify=['debugger'])"
             ],
             "output": "(no structured response — report sent via send_message)"
         },
         {
-            "scenario": "task_data has debate_round=1 with peer findings: peer_A says 'race condition in feed cache invalidation', peer_B says 'wrong DB index on posts.author_id'.",
-            "thinking": "Challenge round. Probe peer A's race-condition claim (do they cite specific code? when's the cache invalidated?). Probe peer B's index claim (is the slow path actually a missing index?). Defend my own.",
+            "scenario": "task_data has debate_round=1 with peer findings: peer_A says 'race condition in a list cache', peer_B says 'missing DB index on items.owner_id'.",
+            "thinking": "Challenge round. Probe peer A's cache claim (is there any cache code?). Probe peer B's index claim (could a missing index even cause THIS error?). Defend my own.",
             "actions": [
-                "# read peer A's evidence — check for actual cache code",
+                "# read peer A's evidence — check for any cache code",
                 "grep(pattern='cache', path='app/backend/')",
-                "# peer A claimed race condition in feed cache invalidation but app has NO feed cache code — peer A's evidence is FABRICATED or based on misreading",
-                "# peer B's index claim — check if posts has an index on author_id",
-                "read(file_path='app/database/init/01_schema.sql')",
-                "# schema HAS idx_posts_author_id — peer B's claim is REFUTED by actual schema",
-                "send_message(to_agent='debugger', content='Challenge round update. Peer A (race cond): REFUTED — no cache code exists in this codebase. Peer B (missing index): REFUTED — schema.sql line X has idx_posts_author_id. My candidate (JWT field mismatch) remains best fit; updated confidence 0.93 after eliminating peers. Cited evidence unchanged.', msg_type='analysis_report_round_1')",
+                "# peer A claimed a race in a list cache but the app has NO cache code — peer A's evidence is unfounded",
+                "read(file_path='app/backend/models.py')  # the ORM models = the projected schema source of truth",
+                "# the failure is a NOT NULL violation, not a slow query — a missing index cannot cause it; peer B's claim is REFUTED",
+                "send_message(to_agent='debugger', content='Challenge round. Peer A (race cond): REFUTED — no cache code exists. Peer B (missing index): REFUTED — a missing index cannot cause a NOT NULL 500. My candidate (owner_id not stamped from current_user) remains best fit; confidence 0.93 after eliminating peers.', msg_type='analysis_report_round_1')",
                 "finish(notify=['debugger'])"
             ],
             "output": "(parent decides winner after all workers report)"

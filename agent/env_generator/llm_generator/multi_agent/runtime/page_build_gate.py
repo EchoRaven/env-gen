@@ -27,12 +27,11 @@ PAGES_DEFERRAL_ESCAPE_S = 900.0  # max wall-clock a milestone may defer on unbui
 PAGES_ATTEMPT_CAP = 3            # per-milestone re-dispatch attempts before escape
 
 
-def frontend_unbuilt_pages(workhub: Any, app_root: Any) -> List[str]:
-    """Return the component names of registered BUSINESS ui_pages the lane never
-    built — the page file is missing OR still carries the framework fallback marker
-    (_PAGE_MARKER). Auth pages (framework-owned) are excluded. Best-effort; on any
-    read error returns what it found so far (never raises into the deliver flow)."""
-    out: List[str] = []
+def _unbuilt_with_routes(workhub: Any, app_root: Any) -> List[tuple]:
+    """Core walk: (component_name, normalized_route) for each registered BUSINESS ui_page the
+    lane never built (file missing OR still the framework fallback marker). Auth pages
+    excluded. Best-effort; never raises."""
+    out: List[tuple] = []
     try:
         from .frontend_page_projector import _PAGE_MARKER
         from .frontend_scaffold import _page_component_name
@@ -64,24 +63,46 @@ def frontend_unbuilt_pages(workhub: Any, app_root: Any) -> List[str]:
         comp = _page_component_name(page) or str(name)
         f = src / f"{comp}.jsx"
         try:
-            if not f.exists():
-                out.append(comp)
-            elif _PAGE_MARKER in f.read_text(encoding="utf-8", errors="ignore"):
-                out.append(comp)
+            if not f.exists() or _PAGE_MARKER in f.read_text(encoding="utf-8", errors="ignore"):
+                out.append((comp, route))
         except Exception:
             continue
     return out
 
 
+def frontend_unbuilt_pages(workhub: Any, app_root: Any) -> List[str]:
+    """Component names of registered BUSINESS ui_pages the lane never built (file missing OR
+    still the framework fallback marker). Auth pages excluded. Best-effort, never raises."""
+    return [comp for comp, _route in _unbuilt_with_routes(workhub, app_root)]
+
+
+def referenced_unbuilt_pages(workhub: Any, app_root: Any, reference_routes: Any) -> List[str]:
+    """§2 gate-hardening: of the unbuilt pages, those whose route MATCHES a provided reference
+    image route. A page the references DEPICT must ship as the REAL page, not the framework
+    fallback — so the gate blocks harder on these (see pages_release_decision)."""
+    if not reference_routes:
+        return []
+    refset = {str(r).strip().lower().rstrip("/") for r in reference_routes}
+    return [comp for comp, route in _unbuilt_with_routes(workhub, app_root)
+            if route and route in refset]
+
+
 def pages_release_decision(deferred_since: Optional[float], attempts: int, now: float,
                            *, attempt_cap: int = PAGES_ATTEMPT_CAP,
-                           escape_s: float = PAGES_DEFERRAL_ESCAPE_S) -> str:
+                           escape_s: float = PAGES_DEFERRAL_ESCAPE_S,
+                           has_referenced_unbuilt: bool = False) -> str:
     """Bounded decision for the unbuilt-pages deferral. Returns:
       * ``"defer"``   — keep blocking the release; re-dispatch the lane to build.
       * ``"release"`` — escape: deliver with the card-floor fallback (no deadlock).
     Escapes (so the deferral ALWAYS terminates): wall-clock since the FIRST defer
     exceeds escape_s (anchored, not reset by lane churn), OR the attempt budget is
-    spent."""
+    spent. §2 gate-hardening: when an unbuilt page is one the REFERENCES depict
+    (``has_referenced_unbuilt``), block HARDER — double the attempt + wall-clock budget
+    so the lane gets more chances to ship the REAL page before falling back (still bounded;
+    never a hard deadlock)."""
+    if has_referenced_unbuilt:
+        attempt_cap *= 2
+        escape_s *= 2
     if deferred_since is not None and (now - deferred_since) > escape_s:
         return "release"
     if attempts >= attempt_cap:

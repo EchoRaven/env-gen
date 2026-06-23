@@ -50,6 +50,9 @@ from .inspection import (
     BrowserAccessibilityTreeTool,
 )
 
+# Control-exercise audit (§3.2): enumerate→click→assert-effect on a page.
+from .control_audit import BrowserExerciseControlsTool
+
 
 def create_browser_tools(workspace_root: Optional[Path] = None) -> List[BaseTool]:
     """Create all browser tools with shared browser manager.
@@ -95,7 +98,8 @@ def create_browser_tools(workspace_root: Optional[Path] = None) -> List[BaseTool
         BrowserEvaluateTool(browser_manager),
         BrowserCheckAccessibilityTool(browser_manager),
         BrowserAccessibilityTreeTool(browser_manager),
-        
+        BrowserExerciseControlsTool(browser_manager),
+
         # Lifecycle
         BrowserCloseTool(browser_manager),
     ]
@@ -134,7 +138,8 @@ __all__ = [
     "BrowserCheckVisibleTool",
     "BrowserCheckAccessibilityTool",
     "BrowserAccessibilityTreeTool",
-    
+    "BrowserExerciseControlsTool",
+
     # Factory
     "create_browser_tools",
 ]

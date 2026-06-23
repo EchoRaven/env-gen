@@ -113,28 +113,27 @@
 
     examples=[
         {
-            "scenario": "task_data = {role: 'risk_analyst', files: ['app/backend/src/routes/posts.js', 'app/backend/src/middleware/auth.js'], pr_id: 42}",
-            "thinking": "Read both files via codehub. Probe for SQL injection / auth bypass / sensitive-data exposure / weak defaults. Report via send_message.",
+            "scenario": "task_data = {role: 'risk_analyst', files: ['app/backend/custom_routes.py'], pr_id: 42} (lane-owned file; resource illustrative).",
+            "thinking": "Read the diff + file via codehub. Probe for SQL injection / missing owner-scope / sensitive-data exposure / weak defaults. Report via send_message.",
             "actions": [
                 "check_inbox(limit=20)  # task_ready confirmed",
                 "codehub_get_diff(pr_id=42)",
-                "codehub_get_file_content(pr_id=42, file_path='app/backend/src/routes/posts.js')",
-                "# finding: line 67 uses template literal in SQL: `WHERE title LIKE '${q}%'` — SQL injection risk",
-                "codehub_get_file_content(pr_id=42, file_path='app/backend/src/middleware/auth.js')",
-                "# finding: line 12 has weak fallback `JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'` — predictable default",
-                "send_message(to_agent='orchestrator', content='Risk review PR #42: 2 findings (1 SQL injection / 1 weak JWT_SECRET fallback). state=request_changes.', msg_type='review_summary')",
+                "codehub_get_file_content(pr_id=42, file_path='app/backend/custom_routes.py')",
+                "# finding: a raw f-string SQL query — db.execute(f\"... WHERE title LIKE '{q}%'\") — SQL injection risk; must use bound params / the ORM",
+                "# finding: the list handler returns rows without filtering by the authenticated current_user — cross-owner/tenant data exposure",
+                "send_message(to_agent='orchestrator', content='Risk review PR #42: 2 findings (1 SQL injection via f-string query / 1 missing owner-scope on the list handler → data exposure). state=request_changes.', msg_type='review_summary')",
                 "finish(notify=['orchestrator'])"
             ],
             "output": "(implicit: parent dispatches fixes from your findings)"
         },
         {
-            "scenario": "task_data = {role: 'quality_analyst', files: ['app/backend/src/routes/posts.js'], pr_id: 42}. Code is clean, ≥3 tests, edge cases covered.",
-            "thinking": "Clean code. Approve, but still cite ONE line + ONE alternative.",
+            "scenario": "task_data = {role: 'quality_analyst', files: ['app/backend/custom_routes.py'], pr_id: 42}. Code is clean, owner-scoped, edge cases covered.",
+            "thinking": "Clean code. Approve, but still cite the specifics you verified.",
             "actions": [
                 "codehub_get_diff(pr_id=42)",
-                "codehub_get_file_content(pr_id=42, file_path='app/backend/src/routes/posts.js')",
-                "# review: 3 tests covering happy / 404 / 401; pagination bounds tested; no missing error path",
-                "send_message(to_agent='orchestrator', content='Quality review PR #42: 0 issues. 3 tests cover happy/404/401. state=approve.', msg_type='review_summary')",
+                "codehub_get_file_content(pr_id=42, file_path='app/backend/custom_routes.py')",
+                "# review: handler is owner-scoped via the OAuth2 current_user; returns the registered response_key; 404 on missing id; 401 without a token",
+                "send_message(to_agent='orchestrator', content='Quality review PR #42: 0 issues. Handler owner-scoped via current_user, correct response_key, 404/401 paths present. state=approve.', msg_type='review_summary')",
                 "finish(notify=['orchestrator'])"
             ],
             "output": "(implicit: parent records the clean verdict)"

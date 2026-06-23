@@ -16,7 +16,32 @@ class constructed with (output_dir, hubs, logger) + the 3 cross-group callbacks
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+
+def _norm_gate_path(p: Any) -> str:
+    """Param-agnostic path key for milestone-scope matching: '/api/notes/{id}' ≡ '/api/notes/{}'."""
+    s = str(p or "").split("?", 1)[0]
+    s = re.sub(r"\{[^}]+\}|:[A-Za-z_][\w]*", "{}", s)
+    return s.rstrip("/") or "/"
+
+
+def scope_filter_incomplete(incomplete_tasks: List[Dict[str, Any]], scope_paths) -> List[Dict[str, Any]]:
+    """§4 milestone-scoped gate: keep only incomplete structural tasks whose endpoint is in
+    THIS milestone's slice; defer (drop) tasks for a clearly out-of-slice endpoint (a later
+    milestone's surface). A task with NO identifiable endpoint is KEPT (never wrongly deferred).
+    ``scope_paths`` empty/None ⇒ no filtering (full-app gate, byte-identical). PURE."""
+    if not scope_paths:
+        return incomplete_tasks
+    keep_keys = {_norm_gate_path(p) for p in scope_paths}
+    out: List[Dict[str, Any]] = []
+    for t in incomplete_tasks:
+        ep = (t.get("metadata") or {}).get("endpoint") or t.get("endpoint")
+        path = ep.get("path") if isinstance(ep, dict) else (ep if isinstance(ep, str) else None)
+        if path and _norm_gate_path(path) not in keep_keys:
+            continue  # out-of-slice structural task → deferred to its own milestone
+        out.append(t)
+    return out
 
 from .. import delivery as _contract
 
@@ -624,7 +649,8 @@ def validate_build_evidence(output_dir, get_validation_results) -> Dict[str, Any
 
 def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                            scaffold_design_readme, get_validation_results,
-                           get_validation_summary) -> Dict[str, Any]:
+                           get_validation_summary,
+                           milestone_scope: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Validate objective delivery readiness.
 
@@ -911,6 +937,16 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # left open. NOT relaxed by functionally_validated — an un-evidenced
     # implement_*/validate task is genuine incomplete work, not bookkeeping.
     incomplete_tasks = incomplete_required_tasks(hubs)
+    # §4: when a milestone slice is provided (intermediate milestone), defer structural tasks
+    # for a clearly out-of-slice endpoint — an intermediate milestone is gated on ITS OWN
+    # surface, not the whole app. Empty/None scope ⇒ no filtering (full-app, byte-identical).
+    if milestone_scope:
+        _before = len(incomplete_tasks)
+        incomplete_tasks = scope_filter_incomplete(
+            incomplete_tasks, (milestone_scope or {}).get("endpoint_paths"))
+        if logger and len(incomplete_tasks) != _before:
+            logger.warning("milestone-scoped delivery gate: deferred %d out-of-slice structural task(s)",
+                           _before - len(incomplete_tasks))
     if incomplete_tasks:
         failed_checks.append("incomplete_required_tasks")
 

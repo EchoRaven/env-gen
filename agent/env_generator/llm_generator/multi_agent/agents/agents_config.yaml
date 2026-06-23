@@ -369,6 +369,45 @@ profiles:
         - grep
         - list_generated_files
         - find_definition
+      # TEST-FIX phase (§6): a lane woken to FIX a reported defect uses the SAME scoped
+      # editing / diagnosis / registry toolset as implementation (a fix is implementation-like
+      # work), NOT the full coordination surface — so fix-mode keeps the anti-drift scoping
+      # rather than falling through to every tool.
+      "test_fix:action":
+        - read
+        - write
+        - edit
+        - apply_patch
+        - lint
+        - plan
+        - finish
+        - check_inbox
+        - send_message
+        - report_progress
+        - workhub_task
+        - workhub_list_tasks
+        - registryhub_register_ui_page
+        - workhub_create_document
+        - workhub_share_implementation
+        - workhub_fail_task
+        - registryhub_register_endpoint
+        - registryhub_register_table
+        - registryhub_register_consumer
+        - registryhub_update_schema
+        - registryhub_get_endpoint
+        - registryhub_list_endpoints
+        - registryhub_get_table_breaking_changes
+        - registryhub_list_tables
+        - mcp_registry_register_server
+        - mcp_registry_register_tool
+        - mcp_registry_register_consumer
+        - codehub_commit
+        - codehub_resolve_merge_conflict
+        - test_api
+        - glob
+        - grep
+        - list_generated_files
+        - find_definition
     workflow_policies:
       # Breaker first — see ordering note on ``design`` profile.
       - kind: lane_idle_circuit_breaker
@@ -1086,6 +1125,236 @@ profiles:
       stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
         planning: 1
+        hub_commit_gate: 0
+        knowledge_sync: 1
+
+  # THREE modality-specialised LLM test-users, spawned in MULTIPLES (one per workflow / tenant /
+  # user) to drive the RUNNING app and report what breaks — using the SAME tool chain as the
+  # lanes, not a fixed framework script. Each operates as a STATE MACHINE (predict -> act ->
+  # compare) and is DETECT-ONLY like the verifier: routes every defect via bug_create
+  # (-> EventHub -> debugger); never edits app code, authors the contract, or manages the env.
+  # Dynamic (spawn_worker config_key='<modality>_test_user'), so NOT resident lanes.
+  #   api_test_user     — HTTP API surface          mcp_test_user — MCP server (parity vs API)
+  #   browser_test_user — UI as a real person
+  # The shared deny-set is repeated per profile (yaml has no anchors here): owner-only registryhub
+  # writes (detect-only reads the contract), env teardown, and wait/wait_for_process.
+
+  api_test_user:
+    name: "API Test-User"
+    reasoning_effort: "high"
+    description: "Tests the running app's HTTP API as a client - CRUD lifecycle, status/shape, persistence read-back, auth/tenant scoping; files defects (detect-only)."
+    tool_categories: ["api", "reasoning", "file", "communication", "memory", "project", "analysis", "knowledge_read", "verification", "task_definition", "runtime", "logs", "workhub", "registryhub", "eventhub", "hub", "bug", "progress"]
+    include_vision: false
+    timeout: 2400
+    prompts:
+      template: "v3/test_user_agent.j2"
+      system_macro: "api_test_user_system_prompt"
+      task_macro: "api_test_user_task_prompt"
+      context_vars: ["api_port", "ui_port"]
+    flags:
+      dynamic: true
+      can_spawn: false
+    skills: []
+    tool_bundles:
+      - reasoning_tools
+      - project_tools
+      - analysis_tools
+      - knowledge_read_tools
+      - api_test
+      - runtime_full
+      - task_definition_tools
+      - execute_task_suite
+      - verification_tools
+      - log_tools
+      - workhub_tools
+      - meeting_tools
+      - registryhub_tools
+      - eventhub_tools
+      - bug_tools
+    deny_tools:
+      - wait
+      - wait_for_process
+      - codehub_force_merge
+      - registryhub_register_endpoint
+      - registryhub_register_table
+      - registryhub_register_table_consumer
+      - registryhub_update_table_schema
+      - registryhub_update_schema
+      - registryhub_deprecate_endpoint
+      - docker_down
+      - docker_restart
+    stage_tool_allowlist:
+      "implementation:action":
+        - read
+        - finish
+        - plan
+        - check_inbox
+        - report_progress
+        - registryhub_list_endpoints
+        - registryhub_get_endpoint
+        - registryhub_list_tables
+        - test_api
+        - execute_task_suite
+        - bug_create
+        - glob
+        - grep
+        - list_generated_files
+    execution_pipeline:
+      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      max_tool_calls_per_stage:
+        planning: 1
+        retrieve_context: 2
+        hub_commit_gate: 0
+        knowledge_sync: 1
+
+  mcp_test_user:
+    name: "MCP Test-User"
+    reasoning_effort: "high"
+    description: "Tests the running app's MCP server - completeness (a tool per endpoint) + parity with the API + auth; files defects (detect-only)."
+    tool_categories: ["api", "reasoning", "file", "communication", "memory", "project", "analysis", "knowledge_read", "verification", "task_definition", "runtime", "logs", "workhub", "registryhub", "eventhub", "hub", "bug", "progress"]
+    include_vision: false
+    timeout: 2400
+    prompts:
+      template: "v3/test_user_agent.j2"
+      system_macro: "mcp_test_user_system_prompt"
+      task_macro: "mcp_test_user_task_prompt"
+      context_vars: ["api_port", "ui_port"]
+    flags:
+      dynamic: true
+      can_spawn: false
+    skills: []
+    tool_bundles:
+      - reasoning_tools
+      - project_tools
+      - analysis_tools
+      - knowledge_read_tools
+      - api_test                # parity oracle: compare MCP results to the equivalent HTTP call
+      - mcp_client_tools        # mcp_connect / mcp_list_tools / mcp_call
+      - runtime_full
+      - verification_tools
+      - log_tools
+      - workhub_tools
+      - meeting_tools
+      - registryhub_tools
+      - eventhub_tools
+      - bug_tools
+    deny_tools:
+      - wait
+      - wait_for_process
+      - codehub_force_merge
+      - registryhub_register_endpoint
+      - registryhub_register_table
+      - registryhub_register_table_consumer
+      - registryhub_update_table_schema
+      - registryhub_update_schema
+      - registryhub_deprecate_endpoint
+      - docker_down
+      - docker_restart
+    stage_tool_allowlist:
+      "implementation:action":
+        - read
+        - finish
+        - plan
+        - check_inbox
+        - report_progress
+        - registryhub_list_endpoints
+        - registryhub_get_endpoint
+        - mcp_connect
+        - mcp_list_tools
+        - mcp_call
+        - test_api
+        - bug_create
+        - glob
+        - grep
+        - list_generated_files
+    execution_pipeline:
+      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      max_tool_calls_per_stage:
+        planning: 1
+        retrieve_context: 2
+        hub_commit_gate: 0
+        knowledge_sync: 1
+
+  browser_test_user:
+    name: "Browser Test-User"
+    reasoning_effort: "high"
+    description: "Drives the UI in a real browser like a person - multi-step workflows, control-effect assertion, blank/console checks, visual; confirms server state via API; files defects (detect-only)."
+    tool_categories: ["browser", "vision", "api", "reasoning", "file", "communication", "memory", "project", "analysis", "knowledge_read", "verification", "task_definition", "runtime", "logs", "workhub", "registryhub", "eventhub", "hub", "bug", "progress"]
+    include_vision: true
+    timeout: 2700
+    prompts:
+      template: "v3/test_user_agent.j2"
+      system_macro: "browser_test_user_system_prompt"
+      task_macro: "browser_test_user_task_prompt"
+      context_vars: ["api_port", "ui_port"]
+    flags:
+      dynamic: true
+      can_spawn: false
+    skills: []
+    tool_bundles:
+      - reasoning_tools
+      - project_tools
+      - analysis_tools
+      - knowledge_read_tools
+      - api_test                # confirm server state behind a UI write
+      - runtime_full
+      - verification_tools
+      - log_tools
+      - browser_tools
+      - vision_tools
+      - workhub_tools
+      - meeting_tools
+      - registryhub_tools
+      - eventhub_tools
+      - bug_tools
+    deny_tools:
+      - wait
+      - wait_for_process
+      - codehub_force_merge
+      - registryhub_register_endpoint
+      - registryhub_register_table
+      - registryhub_register_table_consumer
+      - registryhub_update_table_schema
+      - registryhub_update_schema
+      - registryhub_deprecate_endpoint
+      - docker_down
+      - docker_restart
+    stage_tool_allowlist:
+      "implementation:action":
+        - read
+        - finish
+        - plan
+        - check_inbox
+        - report_progress
+        - registryhub_list_ui_pages
+        - registryhub_list_endpoints
+        - registryhub_get_endpoint
+        - browser_navigate
+        - browser_find
+        - browser_a11y_tree
+        - browser_elements
+        - browser_get_text
+        - browser_click
+        - browser_fill
+        - browser_select
+        - browser_press_key
+        - browser_get_url
+        - browser_eval
+        - browser_console
+        - browser_network_errors
+        - browser_screenshot
+        - browser_exercise_controls
+        - browser_close
+        - test_api
+        - bug_create
+        - glob
+        - grep
+        - list_generated_files
+    execution_pipeline:
+      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      max_tool_calls_per_stage:
+        planning: 1
+        retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
 

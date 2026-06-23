@@ -103,25 +103,25 @@
 
     examples=[
         {
-            "scenario": "task_data = {task: 'Implement src/routes/auth.js with /login + /register endpoints', owned_files: ['app/backend/src/routes/auth.js'], forbidden_files: ['app/backend/src/server.js'], parent_id: 'backend'}",
-            "thinking": "Read the registered contract from RegistryHub, implement routes, lint, report.",
+            "scenario": "task_data = {task: 'Implement the non-CRUD action POST /api/items/{id}/publish in custom_routes.py per the registered contract', owned_files: ['app/backend/custom_routes.py'], forbidden_files: ['app/backend/main.py'], parent_id: 'backend'} (resource name illustrative — use THIS run's contract).",
+            "thinking": "Read the registered contract from RegistryHub, implement the custom handler in the LANE-OWNED file (main.py is framework-projected), lint, commit, report.",
             "actions": [
                 "check_inbox(limit=20)  # task_ready confirmed",
-                "registryhub_list_endpoints()  # registered endpoint contract incl. response_key",
-                "registryhub_list_tables()  # exact column names for users",
-                "write(file_path='app/backend/src/routes/auth.js', content='// /login + /register implementation per contract ...')",
-                "lint(file_path='app/backend/src/routes/auth.js')",
-                "codehub_commit(message='feat(auth): /login + /register routes')",
-                "send_message(to_agent='backend', content='Status: completed. Files: app/backend/src/routes/auth.js. Acceptance: /login implemented w/ bcrypt verify + jwt sign; /register implemented w/ bcrypt hash + INSERT into users. Lint clean.', msg_type='task_complete')",
+                "registryhub_list_endpoints()  # the registered endpoint contract incl. its response_key",
+                "registryhub_list_tables()  # exact column names for the items table",
+                "write(file_path='app/backend/custom_routes.py', content='# POST /api/items/{id}/publish: scope to the OAuth2 current_user, flip status, return the registered response_key ...')",
+                "lint(file_path='app/backend/custom_routes.py')",
+                "codehub_commit(message='feat(items): publish action in custom_routes')",
+                "send_message(to_agent='backend', content='Status: completed. Files: app/backend/custom_routes.py. Acceptance: POST /api/items/{id}/publish implemented, owner-scoped via the OAuth2 current_user dependency, returns the registered response_key. Lint clean.', msg_type='task_complete')",
                 "finish(notify=['backend'])"
             ],
             "output": "(no structured response — parent integrates)"
         },
         {
-            "scenario": "task_data references owned_files=['app/backend/src/routes/auth.js'] but implementing auth requires writing src/server.js to mount the routes — and server.js is in forbidden_files.",
-            "thinking": "Scope conflict. Don't unilaterally expand. Ask parent.",
+            "scenario": "task_data owns ['app/backend/custom_routes.py'] but wiring the action looks like it needs editing app/backend/main.py — which is FRAMEWORK-OWNED (and in forbidden_files).",
+            "thinking": "main.py is projected by the framework (it auto-includes custom_routes.py), so no main.py edit should be needed. Don't unilaterally touch a framework-owned file — confirm with the parent.",
             "actions": [
-                "ask_agent(to_agent='backend', question='task says owned_files=[routes/auth.js] forbidden_files=[server.js], but mounting the new routes requires editing server.js. Should I (a) only write routes/auth.js and you mount in server.js, OR (b) extend my scope to include server.js mount line?', timeout=60)",
+                "ask_agent(to_agent='backend', question='I own custom_routes.py, forbidden main.py. The framework auto-includes custom_routes.py, so I should not need to touch main.py — confirm I just write custom_routes.py and the framework mounts it, or is there an extra step you want?', timeout=60)",
                 "# wait for response, then proceed accordingly"
             ],
             "output": "(implicit: parent clarifies scope)"

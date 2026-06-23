@@ -435,9 +435,11 @@ valid roadmaps — pick (or invent) the split that fits THIS app's spec:
    behavior); M2 = action X and its notifications; M3 = the summary view
    and derived counters.
 
-Respond with ONLY a JSON array:
-[{"name": "M1-<slug>", "version": "1.0.0", "description_slice": "<text>"},
- {"name": "M2-<slug>", "version": "1.1.0", "description_slice": "<text>"}, ...]
+Respond with ONLY a JSON array (each milestone MAY include an "acceptance" list of
+2-4 machine-checkable criteria that define DONE for THAT milestone's slice):
+[{"name": "M1-<slug>", "version": "1.0.0", "description_slice": "<text>",
+  "acceptance": ["<criterion the test-user can verify, e.g. 'a created item appears in its list'>", ...]},
+ {"name": "M2-<slug>", "version": "1.1.0", "description_slice": "<text>", "acceptance": [...]}, ...]
 Versions increment the minor part per milestone (1.0.0, 1.1.0, 1.2.0, ...)."""
 
 
@@ -474,8 +476,12 @@ async def plan_milestones(llm: Any, raw_requirements: str,
             slice_ = str(entry.get("description_slice") or "").strip()
             if not slice_:
                 return None
+            # §4: carry optional per-milestone acceptance criteria (best-effort; the
+            # test-user squad scopes its goals to THIS milestone's acceptance when present).
+            _acc = entry.get("acceptance")
+            acc = [str(a) for a in _acc] if isinstance(_acc, list) else []
             out.append({"name": name, "version": version,
-                        "description_slice": slice_})
+                        "description_slice": slice_, "acceptance": acc})
         return out
     except Exception:
         return None

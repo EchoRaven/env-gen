@@ -450,40 +450,57 @@ def run_smoke_validation(
         # "201 but nothing stored" (in-memory handler, dropped txn) passed every
         # earlier gate. Conservative: only asserted for the first POST /api/<col>
         # whose POST returned 2xx with an {item:{id}} and whose GET returns a list.
+        # §2 gate-hardening: the FIRST verifiable POST still drives the BLOCKING gate exactly
+        # as before (no new hard blocks). Additionally, probe the OTHER parameterless POSTs and
+        # surface non-blocking WARNINGS — a 2xx create whose collection GET is EMPTY or doesn't
+        # contain the new id (the "201 but nothing stored" / 200-but-empty class), or a skip
+        # that used to pass silently — so they're visible in the report instead of invisible.
+        post_eps = [e for e in (business_endpoints or [])
+                    if str(e.get("method", "")).upper() == "POST" and "{" not in str(e.get("path", ""))]
         persist_detail = "no parameterless POST endpoint to probe"
         persist_ok = True
-        post_ep = next(
-            (e for e in (business_endpoints or [])
-             if str(e.get("method", "")).upper() == "POST" and "{" not in str(e.get("path", ""))),
-            None)
-        if post_ep:
+        persist_warnings: list = []
+        _first_scored = False
+        for post_ep in post_eps[:8]:  # cap to bound probe time
             ppath = str(post_ep["path"])
             pres = _http("POST", base + ppath, token=token, body=_probe_body(post_ep))
-            if pres["status"] and 200 <= pres["status"] < 300:
-                try:
-                    new_id = (json.loads(pres["body_text"]) or {}).get("item", {}).get("id")
-                except Exception:
-                    new_id = None
-                if new_id is not None:
-                    back = _http("GET", base + ppath, token=token)
-                    try:
-                        payload = json.loads(back["body_text"] or "{}")
-                        rows = payload.get("items") if isinstance(payload, dict) else None
-                    except Exception:
-                        rows = None
-                    if isinstance(rows, list):
-                        persist_ok = any(
-                            isinstance(r, dict) and r.get("id") == new_id for r in rows)
-                        persist_detail = (
-                            f"POST {ppath} → id={new_id}; GET readback "
-                            + ("contains it" if persist_ok else
-                               f"does NOT contain it ({len(rows)} row(s)) — write not persisted"))
-                    else:
-                        persist_detail = f"POST {ppath} ok; GET not a list — skipped"
-                else:
-                    persist_detail = f"POST {ppath} 2xx without item.id — skipped"
+            if not (pres["status"] and 200 <= pres["status"] < 300):
+                persist_warnings.append(f"POST {ppath} → {pres['status'] or pres['error']} — write not verified")
+                continue
+            try:
+                new_id = (json.loads(pres["body_text"]) or {}).get("item", {}).get("id")
+            except Exception:
+                new_id = None
+            back = _http("GET", base + ppath, token=token)
+            try:
+                payload = json.loads(back["body_text"] or "{}")
+                rows = payload.get("items") if isinstance(payload, dict) else None
+            except Exception:
+                rows = None
+            if not isinstance(rows, list):
+                persist_warnings.append(f"POST {ppath} ok but GET readback is not an items[] list — persistence not verifiable")
+                continue
+            if new_id is not None:
+                contains = any(isinstance(r, dict) and r.get("id") == new_id for r in rows)
+                if not _first_scored:
+                    # FIRST verifiable POST = the blocking gate (byte-identical to prior behavior).
+                    persist_ok = contains
+                    persist_detail = (
+                        f"POST {ppath} → id={new_id}; GET readback "
+                        + ("contains it" if contains else
+                           f"does NOT contain it ({len(rows)} row(s)) — write not persisted"))
+                    _first_scored = True
+                elif not contains:
+                    persist_warnings.append(
+                        f"POST {ppath} → id={new_id} NOT in readback ({len(rows)} row(s)) — possible non-persist")
             else:
-                persist_detail = f"POST {ppath} → {pres['status'] or pres['error']} — skipped"
+                if len(rows) == 0:
+                    persist_warnings.append(
+                        f"POST {ppath} returned 2xx but the collection GET is EMPTY — possible non-persisting write")
+                elif not _first_scored:
+                    persist_detail = f"POST {ppath} 2xx ({len(rows)} row(s)); no item.id to match — skipped"
+        if persist_warnings:
+            persist_detail += " | warnings: " + "; ".join(persist_warnings)
         _add("business_writes_persist", persist_ok, persist_detail)
 
         # 5. Auth enforced: a business endpoint without a token → 401.

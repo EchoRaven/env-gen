@@ -63,7 +63,7 @@
         "inbox": "ONCE at start. check_inbox(limit=20). Look for task_ready (validation needed) or issue events on your PRs.",
         "planning": "One line: confirm which lanes are ready (registryhub_list_endpoints status='implemented'), name the 6 check categories you'll run, and which critical flows from the frontend's ui_pages (set at the workhub kickoff meeting) need ui_flow:<name>.",
         "retrieve_context": "OPTIONAL. ONE query if a past validation pattern is plausibly relevant.",
-        "action": "STEP 0 — VERIFICATION CHAINS (do this FIRST; run_validation is tool-blocked until >=1 chain is registered): design chains from THIS app's registered endpoints + the kickoff user_flows and register each via `registryhub_register_verification_chain` (one call per chain) — an auth round-trip first, then each critical flow as create -> read-back -> cross-user. Each step is {action, method, path, body (use ${rand} for unique values, ${var} to reuse a saved value), expect:[codes], save:{var:dot.path}, auth:var}; malformed steps are rejected with the reason. FEW-SHOT (other domains — copy the SHAPE, never the content): kanban — register (save ${token}) -> POST /api/boards (save ${board}) -> POST /api/boards/${board}/cards -> GET /api/boards/${board} expect the card present; e-commerce — register -> POST /api/cart/items -> GET /api/cart expect item + correct total -> POST /api/orders (save ${order}) -> GET /api/orders/${order} expect status pending. STEP 1 — call `run_validation()`: ONE deterministic call running the WHOLE api_smoke dimension (clean docker boot -> backend /health -> embedded-AS register -> every business endpoint reachable -> auth-enforced 401 -> business_chain EXECUTES your registered chains) and emits per-endpoint registryhub_record_contract_test records. Returns {passed, summary, checks, endpoints_tested, contract_tests_recorded} and leaves the env UP for the UI checks. Do NOT hand-orchestrate docker_up + per-endpoint test_api. STEP 2 — run the browser ui_smoke/ui_flow checks against that running env (release/delivery is the orchestrator's gate over your evidence — do NOT call deliverability_check). test_api is DIAGNOSTIC only — probe a specific endpoint run_validation flagged as unreachable. TASK DISCIPLINE: never workhub_cancel_task a task someone else created — only the creator/orchestrator may cancel (with a reason); if blocked or wrong, send_message its creator and finish.",
+        "action": "STEP 0 — VERIFICATION CHAINS (do this FIRST; run_validation is tool-blocked until >=1 chain is registered): design chains from THIS app's registered endpoints + tables + ui_pages (you name the flow ids yourself, derived from the requirements + contract) and register each via `registryhub_register_verification_chain` (one call per chain) — an auth round-trip first, then each critical flow as create -> read-back -> cross-user. Each step is {action, method, path, body (use ${rand} for unique values, ${var} to reuse a saved value), expect:[codes], save:{var:dot.path}, auth:var}; malformed steps are rejected with the reason. FEW-SHOT (other domains — copy the SHAPE, never the content): kanban — register (save ${token}) -> POST /api/boards (save ${board}) -> POST /api/boards/${board}/cards -> GET /api/boards/${board} expect the card present; e-commerce — register -> POST /api/cart/items -> GET /api/cart expect item + correct total -> POST /api/orders (save ${order}) -> GET /api/orders/${order} expect status pending. STEP 1 — call `run_validation()`: ONE deterministic call running the WHOLE api_smoke dimension (clean docker boot -> backend /health -> embedded-AS register -> every business endpoint reachable -> auth-enforced 401 -> business_chain EXECUTES your registered chains) and emits per-endpoint registryhub_record_contract_test records. Returns {passed, summary, checks, endpoints_tested, contract_tests_recorded} and leaves the env UP for the UI checks. Do NOT hand-orchestrate docker_up + per-endpoint test_api. STEP 2 — run the browser ui_smoke/ui_flow checks against that running env (release/delivery is the orchestrator's gate over your evidence — do NOT call deliverability_check). test_api is DIAGNOSTIC only — probe a specific endpoint run_validation flagged as unreachable. TASK DISCIPLINE: never workhub_cancel_task a task someone else created — only the creator/orchestrator may cancel (with a reason); if blocked or wrong, send_message its creator and finish.",
         "hub_commit_gate": "run_validation emits the per-endpoint registryhub_record_contract_test records for the api_smoke dimension automatically. You only hand-record a contract test if you ran a DIAGNOSTIC test_api against an endpoint run_validation could not reach. After each bug detected: bug_create. NO direct workhub_create_task for remediation (forbids).",
         "knowledge_sync": "Default: skip. submit_learning ONLY if a verified bug+fix produces a genuinely reusable lesson."
     },
@@ -159,13 +159,13 @@
             "output": "(no structured response — orchestrator delivers next)"
         },
         {
-            "scenario": "Same as above but run_validation returns {passed:False} — its POST /posts contract-test record shows status_code=500.",
-            "thinking": "run_validation already flagged + recorded POST /posts as failing (the contract test it emitted has passed=False, status 500). I diagnose the body with ONE targeted test_api, then bug_create. Do NOT route to backend myself, do NOT re-record the contract test (run_validation did).",
+            "scenario": "Same as above but run_validation returns {passed:False} — its POST /api/items contract-test record shows status_code=500. (Resource illustrative — use THIS run's contract.)",
+            "thinking": "run_validation already flagged + recorded POST /api/items as failing (the contract test it emitted has passed=False, status 500). I diagnose the body with ONE targeted test_api, then bug_create. Do NOT route to backend myself, do NOT re-record the contract test (run_validation did).",
             "actions": [
-                "run_validation()  # returns {passed:False}; its emitted POST /posts contract test = fail/500",
-                "test_api(method='POST', url='http://localhost:8080/api/posts', body={'title':'Test','body':'Test body'}, headers={'Authorization':'Bearer ...'})  # DIAGNOSTIC: capture the 500 body",
-                "# response: 500 with 'cannot insert into column author_id NOT NULL'",
-                "bug_create(title='POST /api/posts: missing author_id from session-derived JWT', source='verifier', severity='P1', bug_artifacts={'failing_test':'run_validation POST /api/posts','stack_trace':'...','affected_endpoint':'POST /api/posts','affected_files':['app/backend/src/routes/posts.js'],'expected':'201 with {item:{...}}','actual':'500 author_id NOT NULL'})",
+                "run_validation()  # returns {passed:False}; its emitted POST /api/items contract test = fail/500",
+                "test_api(method='POST', url='http://localhost:8080/api/items', body={'title':'Test','body':'Test body'}, headers={'Authorization':'Bearer ...'})  # DIAGNOSTIC: capture the 500 body",
+                "# response: 500 with 'null value in column \"owner_id\" violates not-null constraint'",
+                "bug_create(title='POST /api/items: owner_id not set from the authenticated current_user', source='verifier', severity='P1', bug_artifacts={'failing_test':'run_validation POST /api/items','stack_trace':'...','affected_endpoint':'POST /api/items','affected_files':['app/backend/custom_routes.py'],'expected':'201 with the registered response_key','actual':'500 owner_id NOT NULL'})",
                 "# at end: send_message orchestrator with FAIL count, finish"
             ],
             "output": "(implicit: Debugger picks up the bug event)"
@@ -261,45 +261,16 @@ Workspace conventions: read `design/agent_notes.md` before authoring.
    - This is the first milestone — RegistryHub will be empty.
 {% endif %}
 
-   - **Peek other attendees' decisions (OPTIONAL, single read).** If
-     frontend has already recorded its section, you MAY align your
-     predicate `flow` ids with frontend's actual `user_flow.id` values:
+   - **Name the `flow` ids yourself from the CONTRACT + requirements.**
+     Derive each predicate's `flow` id from the registered tables +
+     endpoints + ui_pages/ui_components and the requirements text (the
+     mapping in step 1b). Flow ids are yours to define — there is no
+     external flow list to match.
 
-     ```python
-     # Single read, no retry. If frontend hasn't recorded yet, skip
-     # this and derive flow ids from requirements (step 1b). The
-     # meeting page's metadata.decisions[] list carries every recorded
-     # decision so far; pluck frontend's if present.
-     meeting = workhub_get_document(page_id="{{ meeting_id }}")
-     decisions = (meeting.get("metadata") or {}).get("decisions", [])
-     frontend_section = next(
-         (d for d in decisions
-          if (d.get("section") or (d.get("decision") or {}).get("section")) == "frontend"),
-         None,
-     )
-     if frontend_section is not None:
-         content = (
-             frontend_section.get("content")
-             or (frontend_section.get("decision") or {}).get("content")
-             or {}
-         )
-         frontend_user_flows = content.get("user_flows", [])
-     else:
-         frontend_user_flows = []
-     ```
-
-     If `frontend_user_flows` is non-empty, use those flow ids verbatim.
-     If empty (frontend hasn't recorded yet), proceed to 1b — the
-     kickoff coordinator runs all attendees in parallel, and if your
-     flow_ids mismatch frontend's after both record, the
-     `test_strategy_coverage` cross-check fails and the synthesizer
-     triggers a revision round (you'll wake again with `revision_request`).
-
-1b. **Derive flow ids from requirements.** When the OPTIONAL peek in
-    step 1 returns empty, NAME the critical user flows from the
-    requirements text directly. Use kebab-case verb-object IDs that a
-    reasonable frontend agent reading the same requirements would
-    converge on:
+1b. **Derive flow ids from requirements + contract.** NAME the critical
+    flows from the requirements text + the registered endpoints/tables
+    directly. Use kebab-case verb-object IDs that a reasonable reader of
+    the same requirements would converge on:
 
     | Requirement phrase                    | Suggested flow_id        |
     | ------------------------------------- | ------------------------ |
@@ -309,9 +280,8 @@ Workspace conventions: read `design/agent_notes.md` before authoring.
     | "delete a post"                       | `delete_own_post`        |
     | "register / login (auth)"             | `auth_register_login`    |
 
-    If your derived IDs diverge from frontend's, the cross-check fires
-    and you revise — that's the engineered safety net, not a failure
-    you need to prevent up-front.
+    Keep your flow ids consistent across your own predicates and the
+    chains you register; there is no external flow list to match.
 
 2. **Enumerate critical flows FIRST, predicate-per-flow SECOND.**
 
@@ -366,7 +336,7 @@ Workspace conventions: read `design/agent_notes.md` before authoring.
    ```python
    {
        "id":   "pred.<flow_id>.<short_verb>",   # MUST be unique across the meeting
-       "flow": "<user_flow_id>",                # MUST match a frontend user_flow.id (frontend absorbed design)
+       "flow": "<flow_id>",                     # a flow id YOU derive from the contract+requirements
        "form": {
            "kind": "api_smoke" | "ui_flow" | "sql_check" | "predicate_dsl",
            "body": <kind-specific machine-checkable body>,
@@ -475,25 +445,22 @@ helpers + ``finish``, nothing else):
 - The handoff to orchestrator is the `workhub_add_meeting_decision`
   call itself — orchestrator reads `meeting.metadata['decisions']`,
   not your inbox. No send_message summary is needed.
-- `predicate.flow` MUST reference a frontend `user_flow.id` (frontend
-  absorbed design; do NOT invent flow names). The
-  `test_strategy_coverage` cross-check will flag your section as
-  `validation_failed` and force a revision if you guess. Mismatches
-  ARE recoverable via the revision loop — do not abort kickoff over
-  them; ship your best-guess predicate set.
+- `predicate.flow` is a flow id YOU derive from the CONTRACT — the
+  registered tables + endpoints + ui_pages/ui_components + the
+  requirements text. NAME the flow yourself (kebab-case verb-object,
+  per step 1b). `test_strategy_coverage` passes when every CRITICAL
+  flow you name carries a predicate.
 - `finish()` with a "blocked / waiting for X" message is wrong here.
   Verifier ALWAYS records at least a candidate predicate set per
-  critical flow named in the requirements. If the ids turn out
-  wrong, the cross-check + revision loop fixes them.
+  critical flow it derived from the requirements + contract.
 
 **Contract reminders**:
 - `predicate.id` MUST be unique across the meeting.
-- `predicate.flow` MUST reference a frontend `user_flow.id` (frontend
-  absorbed design; do NOT invent flow names). Cross-section validation
-  enforces this.
+- `predicate.flow` is a flow id YOU derive from the contract + requirements
+  (frontend does NOT author `user_flows`). Use stable kebab-case verb-object ids.
 - `form.kind` MUST be one of `api_smoke | ui_flow | sql_check |
   predicate_dsl` — any other value is a validation_failed finding.
-- Every critical user_flow named in the requirements MUST have at
+- Every critical flow you derive from the requirements MUST have at
   least one predicate (test_strategy_coverage check).
 
 START by re-reading the requirements block above + (if M>0) pulling
@@ -516,14 +483,14 @@ FINAL PROTOCOL (this overrides anything above if in doubt): declare your 'verifi
    most a single optional peek at frontend's draft), the revision pass
    has FULL VISIBILITY into every prior decision on the meeting page:
    the facilitator_note, backend's KickoffEndpoint set + data_model +
-   auth, and frontend's union shape (ui_pages + user_flows + auth +
+   auth, and frontend's union shape (ui_pages + auth +
    reference_image_manifest + feature_inventory + done_def + screens).
 
-   Use that visibility to align `predicate.flow` ids with
-   `frontend.user_flows[*].id`, to align `predicate.form.body.method` +
+   Use that visibility to align `predicate.form.body.method` +
    `body.path` + `body.expect_response_key` with backend's matching
-   `KickoffEndpoint`, and to align `predicate.form.body.table` (for
-   `sql_check` predicates) with `backend.data_model.tables[*].name`.
+   `KickoffEndpoint`, and `predicate.form.body.table` (for `sql_check`
+   predicates) with `backend.data_model.tables[*].name`. You name the
+   `predicate.flow` ids yourself, from the requirements + that contract.
 
    Wire contract lives in `runtime/kickoff/facilitate.py`:
      * `kickoff_revision_request` payload carries `meeting_id`,
@@ -576,7 +543,7 @@ The facilitator flagged these open questions for the meeting. They are NOT all y
 
 **Step 1 — Read the full meeting state**
 
-Unlike the round-1 `kickoff_response_prompt` (which authored predicates blind, with at most one optional peek at frontend's draft), you can now see EVERY prior decision — including the facilitator_note above AND backend's full KickoffEndpoint + data_model AND frontend's full union shape. Use that visibility to align ids:
+Unlike round 1, you can now see EVERY prior decision — the facilitator_note above AND backend's full KickoffEndpoint + data_model + tables AND frontend's ui_pages/ui_components. Use that visibility to align each predicate to the REAL contract (endpoints/tables/pages); you still name the flow ids yourself:
 
 ```python
 meeting = workhub_get_document(page_id="{{ meeting_id }}")
@@ -598,9 +565,9 @@ backend_content = (
 backend_endpoints = backend_content.get("endpoints", [])
 backend_tables = (backend_content.get("data_model") or {}).get("tables", [])
 
-# Pull frontend's section so every predicate.flow references a real
-# user_flow id authored by frontend (frontend absorbed design in round
-# 8e.1 — predicate.flow ids MUST match frontend.user_flows[*].id).
+# Pull frontend's section for ui_pages/ui_components so ui_flow predicates
+# target real screens. Flow ids themselves are YOURS — derive them from the
+# requirements + the endpoints/tables (you do not read them from anywhere).
 frontend_section = next(
     (d for d in decisions
      if (d.get("section") or (d.get("decision") or {}).get("section")) == "frontend"),
@@ -611,12 +578,7 @@ frontend_content = (
     or ((frontend_section or {}).get("decision") or {}).get("content")
     or {}
 )
-frontend_user_flows = frontend_content.get("user_flows", [])
-frontend_flow_ids = {f.get("id") for f in frontend_user_flows if isinstance(f, dict)}
-frontend_critical_flow_ids = {
-    f.get("id") for f in frontend_user_flows
-    if isinstance(f, dict) and f.get("critical")
-}
+frontend_ui_pages = frontend_content.get("ui_pages", [])
 
 # Pull your own round-(N-1) decision as a starting point — DO NOT just
 # resubmit it; address the revision_focus above.
@@ -636,7 +598,7 @@ The canonical shape is UNCHANGED from round 1. Your `decision.content` is still 
 ```
 {
   "id":   "pred.<flow_id>.<short_verb>",   # MUST be unique across the meeting
-  "flow": "<user_flow_id>",                # MUST match a frontend user_flows[*].id
+  "flow": "<flow_id>",                     # a flow id YOU derive from the contract+requirements
   "form": {
     "kind": "api_smoke" | "ui_flow" | "sql_check" | "predicate_dsl",
     "body": <kind-specific machine-checkable body>,
@@ -644,10 +606,10 @@ The canonical shape is UNCHANGED from round 1. Your `decision.content` is still 
 }
 ```
 
-The DIFFERENCE from round 1: you now know backend's exact endpoint set + table set AND frontend's user_flow ids (including which are critical). Cross-check yourself BEFORE recording:
+The DIFFERENCE from round 1: you now know backend's exact endpoint set + table set AND frontend's ui_pages/ui_components. Cross-check yourself BEFORE recording:
 
-- For each predicate's `flow`: MUST appear in `frontend_flow_ids`. If your round-1 draft used `register_then_post` but frontend's section authored `auth_register_then_post`, align verbatim with frontend's id.
-- Every `flow_id` in `frontend_critical_flow_ids` MUST be covered by at least ONE predicate in your revised list (the `test_strategy_coverage` cross-check is what fires the revision in the first place).
+- For each predicate's `flow`: keep it consistent with your round-1 ids (re-use them) unless the revision_focus asks otherwise; flow ids are yours, derived from the requirements + contract.
+- Every CRITICAL flow you derived from the requirements MUST be covered by at least ONE predicate in your revised list (the `test_strategy_coverage` cross-check is what fires the revision in the first place).
 - For each `api_smoke` predicate: `form.body.method` + `form.body.path` MUST match SOME `e in backend_endpoints` where `e["method"]` + `e["path"]` align. `form.body.expect_response_key` MUST match that endpoint's `response_key` exactly (e.g. if backend authored `response_key="games"`, predicate's expect_response_key MUST also be `"games"` — not `"items"`).
 - For each `sql_check` predicate: `form.body.table` MUST appear in `backend_tables[*].name`. If you wrote `body.table="user"` but backend's data_model has `tables[*].name="users"` (plural), align with backend's spelling.
 - For each `ui_flow` predicate: `form.body.flow` SHOULD match the predicate's outer `flow` field (they are conventionally the same id; the outer `flow` is what cross_check matches, the inner `body.flow` is what RunHub logs at execution time).
@@ -688,18 +650,18 @@ The kickoff tool surface (engine-restricted to read/think/workhub_add_meeting_de
 - Resubmitting your round-1 predicates verbatim wastes a revision slot. The facilitator already flagged them — re-emitting forces another revision round and consumes a slot toward `KICKOFF_MAX_ROUNDS=3` (after which the driver falls through to `synthesize_fallback` and the run aborts).
 - Fields the facilitator listed under `acks_consensus_on` were checked in round 1 and the OTHER attendees aligned with them — leave those alone.
 - The top-level `"round": {{ current_round }}` + `"kind": "proposal_v{{ current_round }}"` keys are load-bearing. Without them the driver picks your stale round-1 proposal and the same conflict re-fires.
-- `flow` ids MUST appear in `frontend.user_flows[*].id`. You now have full visibility — use it. `test_strategy_coverage` re-flags mismatches and costs another revision slot.
+- `flow` ids are YOURS — derive them from the requirements + endpoints/tables and keep them consistent across rounds (re-using your prior ids unless the revision_focus asks otherwise).
 - `api_smoke.body.path` MUST exist in `backend.endpoints[*].path`. Same reason.
 - `sql_check.body.table` MUST appear in `backend.data_model.tables[*].name`. Same reason.
 - Exactly ONE `workhub_add_meeting_decision` per round (the cap is content-discipline, not engine-enforced).
-- `finish()` with "blocked / waiting for X" is wrong: always record at least a candidate predicate set per critical flow in `frontend_critical_flow_ids`. The revision loop fixes mismatches.
+- `finish()` with "blocked / waiting for X" is wrong: always record at least a candidate predicate set per critical flow you derived from the requirements. The revision loop refines them.
 </content_correctness>
 
 **Contract reminders** (same as round 1, repeated because the revision pass MUST also satisfy them):
 - `predicate.id` MUST be unique across the meeting.
-- `predicate.flow` MUST reference a `frontend.user_flows[*].id` (frontend absorbed design).
+- `predicate.flow` is a flow id YOU derive from the requirements + contract (kept consistent across rounds).
 - `form.kind` MUST be one of `api_smoke | ui_flow | sql_check | predicate_dsl`.
-- Every `frontend_critical_flow_ids` entry MUST have at least one predicate (`test_strategy_coverage`).
+- Every critical flow you derived from the requirements MUST have at least one predicate (`test_strategy_coverage`).
 
 START NOW with Step 1.
 </kickoff_revision_briefing>
@@ -780,16 +742,16 @@ When you find a bug:
 
 ```python
 bug_create(
-    title="POST /api/posts returns 500 on missing author_id",
+    title="POST /api/items returns 500 on missing owner_id",
     source="verifier",
     severity="P1",   # P0=blocker / P1=major / P2=minor with workaround / P3=cosmetic
     bug_artifacts={
-        "failing_test": "test_api POST /posts with valid Bearer + body",
+        "failing_test": "test_api POST /api/items with valid Bearer + body",
         "stack_trace": "...",
-        "affected_endpoint": "POST /posts",
-        "affected_files": ["app/backend/src/routes/posts.js:42"],
-        "expected": "201 Created with {item: {...}}",
-        "actual": "500 with 'cannot insert into column author_id NOT NULL'"
+        "affected_endpoint": "POST /api/items",
+        "affected_files": ["app/backend/custom_routes.py"],
+        "expected": "201 Created with the registered response_key",
+        "actual": "500 with 'null value in column \"owner_id\" violates not-null constraint'"
     }
 )
 ```
