@@ -869,6 +869,17 @@ class Orchestrator:
                     # §4: expose the current milestone dict (its acceptance[] + slice) so the
                     # delivery gate + the test-user squad can scope to THIS milestone.
                     self._current_milestone = _milestone if isinstance(_milestone, dict) else {}
+                    # Stamp milestone-completeness onto the orchestrator AGENT so the
+                    # deliver_project tool can reject a premature FINAL delivery during an
+                    # earlier milestone (deliver_project ends the run; earlier milestones
+                    # cut a per-milestone release + advance — they must NOT final-deliver).
+                    _orch_agent_ms = self._agents.get("orchestrator")
+                    if _orch_agent_ms is not None:
+                        try:
+                            _orch_agent_ms._is_final_milestone = self._is_final_milestone
+                            _orch_agent_ms._milestone_progress = (_m_idx, len(milestones))
+                        except Exception:
+                            pass
                     # Per-milestone visual state: anchor the deferral clock and the
                     # total-judgment backstop to THIS milestone (PIPE-C3 — within a
                     # milestone neither is reset by lane churn).

@@ -705,7 +705,53 @@ Args:
                 error_message=f"Cannot deliver project. Failed checks: {failed_checks}. "
                               "Please ensure all criteria are met before delivery."
             )
-        
+
+        # GUARD 1 (milestone-completeness, ALWAYS-ON): deliver_project is the FINAL
+        # delivery — it ENDS the run. During an earlier milestone of a multi-milestone
+        # plan it must NOT fire; the framework cuts that milestone's release and advances
+        # to the next milestone. Default True (single-milestone / unknown → allowed, so
+        # byte-identical for single-milestone runs). The orchestrator runtime stamps
+        # ``_is_final_milestone`` + ``_milestone_progress`` onto this agent per milestone.
+        _is_final = getattr(self.agent, "_is_final_milestone", True) if self.agent else True
+        if not _is_final:
+            _prog = getattr(self.agent, "_milestone_progress", None) if self.agent else None
+            _prog_s = (f" (currently milestone {_prog[0]} of {_prog[1]})"
+                       if isinstance(_prog, (tuple, list)) and len(_prog) == 2 else "")
+            return ToolResult(
+                success=False,
+                error_message=(
+                    f"deliver_project is the FINAL delivery and ENDS the run, but this is "
+                    f"NOT the last milestone{_prog_s}. Do NOT call deliver_project yet — the "
+                    f"framework cuts this milestone's release and advances to the next "
+                    f"milestone automatically. deliver_project is valid ONLY on the final "
+                    f"milestone, once every milestone's work is complete."
+                ),
+            )
+
+        # GUARD 2 (independent deliverability gate, env-gated ENVGEN_DELIVER_GATE): the
+        # checklist above is SELF-ASSERTED by the LLM. Re-verify against the LIVE
+        # RegistryHub so an optimistic/premature checklist can't ship an incomplete
+        # contract. Default-off (byte-identical) until enabled; never blocks on an error.
+        import os as _os
+        if _os.environ.get("ENVGEN_DELIVER_GATE") and self.agent is not None:
+            try:
+                _hubs = getattr(self.agent, "_hubs", None)
+                _rh = getattr(_hubs, "registryhub", None) if _hubs is not None else None
+                if _rh is not None and hasattr(_rh, "get_endpoints"):
+                    from multi_agent.runtime.lifecycle import all_business_endpoints_implemented
+                    if not all_business_endpoints_implemented(_rh.get_endpoints() or {}):
+                        return ToolResult(
+                            success=False,
+                            error_message=(
+                                "deliver_project blocked (ENVGEN_DELIVER_GATE): not every "
+                                "business endpoint is 'implemented' in RegistryHub. The "
+                                "checklist is self-asserted, but the live contract is not "
+                                "yet complete — finish implementation + validation first."
+                            ),
+                        )
+            except Exception:
+                pass  # never block delivery on a gate-eval error
+
         # Set delivered flag
         self._delivered = True
         
