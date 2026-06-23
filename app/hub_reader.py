@@ -16,8 +16,10 @@ from pathlib import Path
 from typing import Any
 
 CORE_AGENTS = [
-    ("orchestrator", "Orchestrator"), ("backend", "Backend Lead"),
-    ("frontend", "Frontend Lead"), ("verifier", "Verifier"),
+    # role MUST match the agent's display name (the .agent_logs/<role> Agent/ dir):
+    # backend/frontend were renamed Lead→Engineer, so these must track that.
+    ("orchestrator", "Orchestrator"), ("backend", "Backend Engineer"),
+    ("frontend", "Frontend Engineer"), ("verifier", "Verifier"),
     ("debugger", "Debugger"), ("knowledge", "Knowledge"),
 ]
 
