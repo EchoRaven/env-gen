@@ -139,6 +139,72 @@ def repair_frontend_api_exports(frontend_dir) -> Dict[str, object]:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+_API_CALL_PATH_RE = re.compile(r"(\b(?:request|fetch)\(\s*[`'\"])(/[A-Za-z0-9_\-/]+)([`'\"])")
+
+
+def reconcile_frontend_api_paths(frontend_dir, registered_paths) -> Dict[str, object]:
+    """Rewrite frontend api-call PATHS that match NO registered endpoint to the
+    unique registered path the lane clearly meant. The lane hand-authors api.js and
+    routinely drifts a path from the contract (instagram_v5: it wrote
+    ``request('/api/posts/feed')`` while the contract serves ``/api/feed`` →
+    runtime 404 on the feed/explore/reels pages AND the delivery-gate
+    ``frontend calls unregistered endpoint`` hard-block). repair_frontend_api_exports
+    only reconciles export NAMES, never the request PATHS — so the drift survived.
+
+    Conservative + GENERAL (no env-specific paths): only a STATIC (param-less) called
+    path that is unregistered AND has EXACTLY ONE static registered path whose segments
+    are a subsequence of it AND share its last segment is rewritten (the lane inserted
+    extra segments, e.g. ``posts``). Deterministic; never raises.
+
+    ``registered_paths``: set of param-agnostic registered PATHS (no method)."""
+    result: Dict[str, object] = {"rewritten": []}
+    try:
+        fe = Path(frontend_dir)
+        if not fe.exists():
+            return result
+        reg_set = set(registered_paths or ())
+        def _segs(p: str):
+            return [s for s in p.strip("/").split("/") if s]
+        reg_static = [p for p in reg_set if "{" not in p and ":" not in p and "/" in p]
+        def _is_subseq(short, long):
+            it = iter(long)
+            return all(s in it for s in short)
+        rewrites = []
+        for ext in ("js", "jsx", "ts", "tsx"):
+            for fpath in fe.glob(f"**/*.{ext}"):
+                if "node_modules" in str(fpath):
+                    continue
+                try:
+                    text = fpath.read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    continue
+                local = []
+                def _sub(m):
+                    pre, called, post = m.group(1), m.group(2), m.group(3)
+                    if called in reg_set:           # already a registered path
+                        return m.group(0)
+                    cs = _segs(called)
+                    if not cs:
+                        return m.group(0)
+                    cands = sorted({
+                        r for r in reg_static
+                        if _segs(r) and _segs(r)[-1] == cs[-1]
+                        and _is_subseq(_segs(r), cs) and r != called
+                    })
+                    if len(cands) == 1:
+                        local.append((called, cands[0], fpath.name))
+                        return pre + cands[0] + post
+                    return m.group(0)
+                new = _API_CALL_PATH_RE.sub(_sub, text)
+                if local:
+                    fpath.write_text(new, encoding="utf-8")
+                    rewrites.extend(local)
+        result["rewritten"] = rewrites
+    except Exception as exc:
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
 _LOCAL_DEFAULT_IMPORT = re.compile(
     r"""import\s+([A-Za-z_$][\w$]*)\s+from\s+['"](\.[^'"]+)['"]""")
 # A <Route> whose element is an INLINE placeholder <div> (e.g.

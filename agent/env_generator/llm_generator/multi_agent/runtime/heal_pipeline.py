@@ -476,6 +476,32 @@ class HealPipeline:
                 orch._logger.warning(
                     "Frontend inline-stub routes re-pointed to real pages: %s",
                     _rr.get("rerouted"))
+            # Reconcile api-call PATHS to the registered contract (not just export
+            # NAMES above): the lane drifts a path (instagram_v5: '/api/posts/feed'
+            # vs the contract's '/api/feed') → runtime 404 on those pages AND the
+            # delivery-gate 'frontend calls unregistered endpoint' hard-block. Rewrite
+            # a unique near-miss to the registered path. GENERAL; conservative; best-effort.
+            try:
+                from .frontend_scaffold import reconcile_frontend_api_paths
+                from ..delivery.contract_extract import param_agnostic
+                _rh = getattr(getattr(orch, "hubs", None), "registryhub", None)
+                _reg_paths = set()
+                if _rh is not None:
+                    for _k, _v in (_rh.get_endpoints() or {}).items():
+                        if _k == "_meta" or not isinstance(_v, dict):
+                            continue
+                        _p = _v.get("path") or ""
+                        if _p:
+                            _pa = param_agnostic(f"{_v.get('method') or 'GET'} {_p}")
+                            _reg_paths.add(_pa.split(" ", 1)[1] if " " in _pa else _pa)
+                if _reg_paths:
+                    _pr = reconcile_frontend_api_paths(fe, _reg_paths)
+                    if _pr.get("rewritten"):
+                        orch._logger.warning(
+                            "Frontend api PATHS reconciled to contract: %s",
+                            _pr.get("rewritten")[:10])
+            except Exception as _pp_exc:
+                orch._logger.debug("frontend api-path reconcile skipped: %s", _pp_exc)
         except Exception as exc:
             orch._logger.debug("frontend api repair skipped: %s", exc)
 
