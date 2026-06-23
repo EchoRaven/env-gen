@@ -312,7 +312,7 @@ def write_workspace_file(workspace: Workspace, file_path: str, content: str, too
                 else:
                     _atomic_write_text(file_path_resolved, old_content, encoding="utf-8")
                 # PROPOSAL #30 S4: workspace-relative path in agent-visible lint errors.
-                error_msg = format_lint_error(_workspace_rel(workspace, file_path_resolved), lint_errors, content, old_content)
+                error_msg = format_lint_error(_workspace_rel(workspace, file_path_resolved), _scrub_ws_paths(workspace, lint_errors), content, old_content)
                 return ToolResult(success=False, error_message=error_msg)
         _record_file_write(file_path_resolved, content)
         sync_hub_write(
@@ -378,7 +378,7 @@ def _write_with_lint_guard(
                     success=False,
                     error_message=format_lint_error(
                         _workspace_rel(workspace, path),  # PROPOSAL #30 S4: workspace-relative
-                        lint_errors,
+                        _scrub_ws_paths(workspace, lint_errors),
                         updated_content,
                         original_content,
                     ),
@@ -405,6 +405,26 @@ def _redact_ws(workspace: Workspace, e: object) -> str:
         return str(e).replace(str(workspace.base_root), "<workspace>")
     except Exception:
         return str(e)
+
+
+def _scrub_ws_paths(workspace: Workspace, text: object) -> str:
+    """Make any absolute path in an agent-visible string workspace-relative. Lint /
+    compiler output (``py_compile``, ``node --check``) embeds the ABSOLUTE file path —
+    ``File "<root>/app/backend/x.py", line N`` — which leaks the host layout AND the
+    worktree internals. Strip the agent's workspace ROOT so it reads
+    ``File "app/backend/x.py"`` (the agent sees its worktree as root); fall back to
+    redacting base_root → <workspace> for any residual path above the root."""
+    try:
+        s = str(text)
+        root = getattr(workspace, "root", None)
+        if root:
+            s = s.replace(str(root) + "/", "").replace(str(root) + "\\", "")
+        base = getattr(workspace, "base_root", None)
+        if base:
+            s = s.replace(str(base), "<workspace>")
+        return s
+    except Exception:
+        return str(text)
 
 
 def _parse_patch(patch: str) -> List[_PatchOperation]:
