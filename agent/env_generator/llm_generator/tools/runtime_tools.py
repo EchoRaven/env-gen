@@ -2151,6 +2151,12 @@ class TestAPITool(BaseTool):
 Examples:
     test_api("GET", "http://localhost:8000/health")
     test_api("POST", "http://localhost:8000/api/items", body='{"name": "test"}')
+
+Auth: protected endpoints return 401/403 without a token (that is CORRECT, not a bug).
+To test them, get a token first, then pass it as a header:
+    test_api("POST", "http://localhost:8000/auth/login", body='{"username":"...","password":"..."}')
+    test_api("GET", "http://localhost:8000/api/messages/conversations",
+             headers={"Authorization": "Bearer <token-from-login>"})
 """
     
     def __init__(self):
@@ -2231,10 +2237,25 @@ Examples:
                     
             except urllib.error.HTTPError as e:
                 content = e.read().decode()
+                hint = ""
+                if e.code in (401, 403) and not (headers and any(
+                        str(k).lower() == "authorization" for k in headers)):
+                    # A tokenless call to a protected endpoint returning 401/403 is
+                    # CORRECT auth behaviour, not a broken endpoint — but the bare
+                    # "HTTP Error: 401" reads as a failure and the agent retries it
+                    # blindly (run v11: the backend burned steps re-hitting protected
+                    # routes with no token). Teach the auth round-trip explicitly.
+                    hint = (
+                        " — this endpoint requires AUTH. A tokenless request is SUPPOSED "
+                        "to be rejected. To test it: POST to your register/login endpoint "
+                        "(e.g. /auth/login) to obtain a token, then pass "
+                        "headers={'Authorization': 'Bearer <token>'}. Protected-endpoint "
+                        "round-trips belong in the verifier's business_chain (auth step)."
+                    )
                 return ToolResult(
                     success=False,
                     data={"status": e.code, "response": f"Status: {e.code}\n{content}"},
-                    error_message=f"HTTP Error: {e.code}"
+                    error_message=f"HTTP Error: {e.code}{hint}"
                 )
                 
         except Exception as e:

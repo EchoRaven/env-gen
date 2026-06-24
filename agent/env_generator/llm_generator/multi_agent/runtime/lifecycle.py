@@ -92,10 +92,21 @@ def _status(rec: Mapping[str, Any]) -> str:
 
 # ── queries (the substrate for §6/§7 hub-query triggers) ──────────────────────
 def business_endpoints(endpoints: Mapping[str, Mapping[str, Any]]) -> List[Mapping[str, Any]]:
-    """Non-deprecated BUSINESS endpoints from an ``registryhub.get_endpoints()`` map."""
+    """Non-deprecated BUSINESS endpoints from an ``registryhub.get_endpoints()`` map.
+
+    Skips non-endpoint records: a real endpoint always has a ``path``. The
+    json_store ``_meta`` bookkeeping key (version/last_modified_*) and any
+    malformed/phantom record have no path — and since they carry no ``kind``,
+    ``is_business`` would treat them as a business endpoint stuck at the default
+    ``defined`` status, making ``all_business_endpoints_implemented`` False
+    FOREVER (it would block the §6 validation_ready trigger). get_endpoints()
+    strips _meta today, but every other consumer (delivery_gate, chain_executor,
+    heal_pipeline) defends against it independently — this query must too, so a
+    raw-dict caller can never silently wedge the validation trigger."""
     return [
         ep for ep in (endpoints or {}).values()
-        if isinstance(ep, Mapping) and is_business(ep) and _status(ep) != "deprecated"
+        if isinstance(ep, Mapping) and str(ep.get("path") or "").strip()
+        and is_business(ep) and _status(ep) != "deprecated"
     ]
 
 

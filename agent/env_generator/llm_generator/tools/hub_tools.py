@@ -1240,7 +1240,7 @@ class WorkhubAddMeetingDecisionTool(HubTool):
         # Failing HERE puts the guidance in the model's face immediately.
         try:
             from multi_agent.runtime.kickoff.section_substance import (
-                decision_has_substance, non_contract_keys)
+                decision_has_substance, non_contract_keys, has_aux_content)
             _c = coerced or {}
             _sec = _c.get("section") or (_c.get("content") or {}).get("section")
             _content = _c.get("content") if isinstance(_c.get("content"), dict) else _c
@@ -1287,30 +1287,40 @@ class WorkhubAddMeetingDecisionTool(HubTool):
                         "the framework supplies it. Declare your real contract "
                         f"({_keys}) via the dedicated kickoff_declare_* tools (e.g. "
                         f"{_eg}). Do NOT re-submit this decision.")
-                # Mangle detection: a recognized key present as a SCALAR (e.g.
-                # endpoints=-128) means Gemini truncated a large inline payload in
-                # transit — NOT an empty draft. Flag it so the model switches to the
-                # small, mangle-proof dedicated tools instead of resending the blob.
-                _recognized = {"frontend": ("ui_pages", "screens", "user_flows", "ui_components"),
-                               "backend": ("endpoints", "data_model"),
-                               "verifier": ("predicates",)}.get(_sec, ())
-                _mangled = [k for k in _recognized
-                            if k in _content and not isinstance(_content.get(k), (list, dict, str))]
-                _mangle_note = (
-                    f" ⚠ MANGLED PAYLOAD: {_mangled} arrived as a non-list scalar "
-                    f"(e.g. {_content.get(_mangled[0])!r}) — your large inline JSON was "
-                    "TRUNCATED in transit. Do NOT resend the big blob: use the dedicated "
-                    "kickoff_declare_* tools (ONE small item per call), which never mangle."
-                    if _mangled else "")
-                return ToolResult.fail(
-                    f"decision for section '{_sec}' has NO non-empty content in any "
-                    f"recognized key ({_keys}) — every recognized list was empty/null." + _mangle_note +
-                    " If a large inline payload got truncated, SUBMIT IN PARTS: call "
-                    "this tool SEVERAL times, each with a SMALL piece (e.g. decision="
-                    f"{{'section': '{_sec}', 'content': {_eg}}}); the meeting MERGES "
-                    "your pieces. Prefer the dedicated kickoff_declare_* tools (one "
-                    "item per call). Or write the full JSON to "
-                    f"design/kickoff_{_sec}_section.json and pass decision_file=...")
+                # AUX-ONLY ACCEPT (2026-06-24): a decision with no buildable substance
+                # but carrying legit AUX keys (done_def / feature_inventory /
+                # reference_image_manifest / task_tree) MUST be accepted + recorded — the
+                # buildable ui_pages/endpoints/predicates arrive via the dedicated
+                # kickoff_declare_* tools (separate calls). Without this the aux-only
+                # decision hit the hard 'no recognized key' reject below (v11: the
+                # frontend's done_def+feature_inventory decision was rejected; the
+                # reconcile READS those aux fields, so the reject is a pure regression).
+                # The wrong-keys (auth) reject above still fires first.
+                if not has_aux_content(_content, _sec):
+                    # Mangle detection: a recognized key present as a SCALAR (e.g.
+                    # endpoints=-128) means Gemini truncated a large inline payload in
+                    # transit — NOT an empty draft. Flag it so the model switches to the
+                    # small, mangle-proof dedicated tools instead of resending the blob.
+                    _recognized = {"frontend": ("ui_pages", "screens", "user_flows", "ui_components"),
+                                   "backend": ("endpoints", "data_model"),
+                                   "verifier": ("predicates",)}.get(_sec, ())
+                    _mangled = [k for k in _recognized
+                                if k in _content and not isinstance(_content.get(k), (list, dict, str))]
+                    _mangle_note = (
+                        f" ⚠ MANGLED PAYLOAD: {_mangled} arrived as a non-list scalar "
+                        f"(e.g. {_content.get(_mangled[0])!r}) — your large inline JSON was "
+                        "TRUNCATED in transit. Do NOT resend the big blob: use the dedicated "
+                        "kickoff_declare_* tools (ONE small item per call), which never mangle."
+                        if _mangled else "")
+                    return ToolResult.fail(
+                        f"decision for section '{_sec}' has NO non-empty content in any "
+                        f"recognized key ({_keys}) — every recognized list was empty/null." + _mangle_note +
+                        " If a large inline payload got truncated, SUBMIT IN PARTS: call "
+                        "this tool SEVERAL times, each with a SMALL piece (e.g. decision="
+                        f"{{'section': '{_sec}', 'content': {_eg}}}); the meeting MERGES "
+                        "your pieces. Prefer the dedicated kickoff_declare_* tools (one "
+                        "item per call). Or write the full JSON to "
+                        f"design/kickoff_{_sec}_section.json and pass decision_file=...")
         except ImportError:
             pass
         try:

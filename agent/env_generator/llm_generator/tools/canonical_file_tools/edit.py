@@ -90,7 +90,7 @@ If `old_string` is empty and the file does not exist, a new file is created.
         except Exception as e:
             return ToolResult(success=False, error_message=f"edit: read failed: {e}")
 
-        stale_err = _check_stale_write_guard(resolved, current_content)
+        stale_err = _check_stale_write_guard(resolved, current_content, self.workspace)
         if stale_err:
             return ToolResult(success=False, error_message=stale_err)
 

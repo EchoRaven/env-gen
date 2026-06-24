@@ -71,7 +71,12 @@ DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
         # loop), so a LIVE sub re-woke the backend each tick (amplification). inbox_only
         # keeps the backend INFORMED (seen at next hub_pulse) without the wakeup churn.
         ("registryhub", "table_implemented", "normal"),
-        ("workhub", "task_created", "high"),
+        # NOTE: NO broad ("workhub","task_created") subscription. create_task already
+        # emits task_created with recipients=[assignee], so the OWNING lane is woken
+        # directly. A blanket subscription re-delivered EVERY lane's task_created to
+        # backend (run v11: 93 items, only 42 its own — 51 pure noise) and the
+        # for-self wakeup gate then suppressed the rest anyway. The 1-in-94 unassigned
+        # task is surfaced in the workhub pulse (pending tasks), not via inbox flood.
         ("codehub", "review_requested", "high"),
         # Kickoff loop.
         ("orchestrator", "kickoff_request", "high"),
@@ -96,7 +101,10 @@ DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
         # as the endpoint_* registryhub subscriptions above).
         ("registryhub", "ui_page_registered", "normal"),
         ("registryhub", "ui_page_implemented", "normal"),
-        ("workhub", "task_created", "high"),
+        # NOTE: NO broad ("workhub","task_created") subscription — see backend above.
+        # create_task emits task_created with recipients=[assignee], so the frontend is
+        # woken for its OWN tasks directly; the blanket sub only re-delivered other
+        # lanes' tasks (run v11: 93 items, 24 its own) which the for-self gate suppressed.
         ("codehub", "review_requested", "high"),
         # Kickoff loop.
         ("orchestrator", "kickoff_request", "high"),
