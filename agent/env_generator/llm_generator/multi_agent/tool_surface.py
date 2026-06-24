@@ -61,6 +61,7 @@ KNOWN_TOOL_CATEGORIES: Set[str] = {
     "run",
     "design",
     "bug",
+    "milestone",  # orchestrator-only milestone roadmap tools (milestone_tools bundle)
 }
 
 

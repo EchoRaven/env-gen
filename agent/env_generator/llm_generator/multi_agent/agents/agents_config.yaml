@@ -72,7 +72,7 @@ profiles:
     # report_completion are gated on release_readiness_consulted (stage_tool_preconditions
     # below), which instructs the agent to call get_skill — so the tool MUST be granted or
     # the gate is unsatisfiable (run #21: 14× deliver_project loop = BUG#5 / PROPOSAL #14).
-    tool_categories: ["reasoning", "file", "progress", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "knowledge_skill", "observability", "coverage", "visual_review", "seed", "delivery", "mcp_registry", "team_spawn", "team_lifecycle", "team_reasoning", "team_planning", "runtime", "api", "docker", "logs", "database", "browser", "verification", "web", "codehub", "workhub", "registryhub", "eventhub", "run", "hub"]
+    tool_categories: ["reasoning", "file", "progress", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "knowledge_skill", "observability", "coverage", "visual_review", "seed", "delivery", "mcp_registry", "team_spawn", "team_lifecycle", "team_reasoning", "team_planning", "runtime", "api", "docker", "logs", "database", "browser", "verification", "web", "codehub", "workhub", "registryhub", "eventhub", "run", "hub", "milestone"]
     include_vision: false
     timeout: 7200
     prompts:
