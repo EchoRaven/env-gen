@@ -135,6 +135,13 @@ FWVAL_SLOW_INTERVAL_S = 300  # past the cap, retry at most once per this interva
 # instead of churning to wall-clock.
 FWVAL_STUCK_REDISPATCH_AFTER = 2   # validations on the same failure set (past cap) → re-dispatch owner
 FWVAL_STUCK_TERMINAL_AFTER = 4     # validations on the same failure set (past cap) → surface stuck signal
+FWVAL_NO_DELIVER_ABORT_S = int(os.environ.get("ENVGEN_NO_DELIVER_ABORT_S", "4500"))  # 75min
+#   convergence backstop: the exact-stuck FWVAL ladder resets on ANY churn (file/chain
+#   changes), so a run that stays active but OSCILLATES among delivery-gate checks without
+#   ever clearing them (run v18: ~76min cycling business_chain_failing ↔ api_coverage ↔
+#   verification_checklist) never fail-fasts and livelocks toward the 6h wall. If delivery
+#   has not succeeded within this window AFTER the contract is built (first gate decline),
+#   abort — generous (3-5× the observed clear time), well under the 6h wallclock backstop.
 FWVAL_STUCK_ABORT_AFTER = 7        # …then FAIL FAST: redispatch+terminal didn't help on an
 #   unchanged failure set with no lane progress → abort early with the root surfaced, instead
 #   of limping to the wall-clock cap (PROPOSAL #5). ~1 slow-retry interval past the cap (~11 min)
@@ -2017,6 +2024,24 @@ class Orchestrator:
                         "api_smoke passed — no lane is making progress; failing fast instead "
                         "of spinning to wall-clock.")
                     self._logger.error("DELIVERY-GATE STUCK-ABORT: %s", self._fwval_abort_reason)
+                # CONVERGENCE backstop (run v18): the exact-stuck check above resets on ANY
+                # churn, so an ACTIVE-but-oscillating run (gates cycle, agents keep editing,
+                # nothing ever fully clears) never trips it and livelocks toward the 6h wall.
+                # Stamp the first decline; if delivery hasn't succeeded within
+                # FWVAL_NO_DELIVER_ABORT_S of it, fail fast — the contract is built but the
+                # lanes are not converging on a clean gate.
+                _now2 = time.time()
+                if not getattr(self, "_fwdeliver_first_decline_ts", 0.0):
+                    self._fwdeliver_first_decline_ts = _now2
+                if ((_now2 - self._fwdeliver_first_decline_ts) > FWVAL_NO_DELIVER_ABORT_S
+                        and not getattr(self, "_fwval_abort_reason", None)):
+                    self._fwval_abort_reason = (
+                        f"delivery gate has not gone green in "
+                        f"{int((_now2 - self._fwdeliver_first_decline_ts)/60)}min since the "
+                        f"contract built (now failing {_failed}) — the lanes are active but "
+                        "not converging on a clean gate; failing fast instead of livelocking "
+                        "to wall-clock.")
+                    self._logger.error("DELIVERY-GATE NO-CONVERGENCE ABORT: %s", self._fwval_abort_reason)
                 # PROPOSAL #49 (user): route each lane-owned gate-level failed_check back
                 # to its owner for repair (guarded per-milestone) — and log any uncovered
                 # one — so a gate blocker never silently dead-ends. Complements the bespoke
