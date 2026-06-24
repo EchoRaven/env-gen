@@ -1541,7 +1541,7 @@ Start by thinking about what might cause this issue.
         if not rendered:
             _rm = "\n".join(
                 f"  M{m.get('index')} [{m.get('name')}@{m.get('version')}] {m.get('status')}: "
-                f"{str(m.get('description_slice',''))[:200]}" for m in roadmap)
+                f"{str(m.get('description_slice',''))}" for m in roadmap)
             rendered = (
                 f"## Milestone {milestone_index} kickoff — author the phase brief\n\n"
                 f"You are entering milestone {milestone_index} of {len(roadmap)}. FIRST call "
@@ -1554,7 +1554,7 @@ Start by thinking about what might cause this issue.
                 f"components / data this phase ADDS, the acceptance, and what's already shipped "
                 f"(do NOT rebuild). Then `finish()`.\n\n"
                 f"OVERALL GOAL (context only — do NOT build it all this phase):\n"
-                f"{str(raw_requirements)[:6000]}\n\nROADMAP:\n{_rm}\n")
+                f"{str(raw_requirements)}\n\nROADMAP:\n{_rm}\n")
 
         self._logger.info(
             f"[{self.agent_id}] kickoff_brief_request (M{milestone_index}, id={milestone_id}); "

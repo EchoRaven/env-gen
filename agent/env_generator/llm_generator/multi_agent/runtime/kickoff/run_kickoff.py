@@ -915,7 +915,7 @@ async def author_milestone_brief(
             source_hub="orchestrator",
             event_type="kickoff_brief_request",
             payload={"milestone_index": milestone_index, "milestone_id": mid,
-                     "raw_requirements": str(raw_req or "")[:14_000]},
+                     "raw_requirements": str(raw_req or "")},
             recipients=["orchestrator"], priority="high", caller="orchestrator")
     except Exception:
         return ""

@@ -1014,11 +1014,12 @@ class EnvGenAgent(
         chat_files_created: List[str] = []
         chat_files_modified: List[str] = []
 
-        # Tool-result text cap: mirrors FinishContinuePolicy's 10000-char
-        # bound. Without this, a single tool returning a large dict (e.g.
-        # listing a 50k-file workspace) blows the next LLM call's context
-        # window.
-        _TOOL_RESULT_CAP = 10000
+        # NO tool-result cap (user decision 2026-06-24): tool output MUST reach the
+        # agent COMPLETE — a truncated result is a correctness hazard (the agent acts
+        # on a half-truth) and must never be obstructed. The run model's large context
+        # absorbs full results; tools that could be enormous (file reads, listings)
+        # already paginate at their own layer, so the full result here is bounded in
+        # practice. (Was a 10000-char cap that silently cut large reads/dumps.)
 
         for step in range(max_steps):
             # Respect shutdown signals between rounds — matches the
@@ -1246,13 +1247,9 @@ class EnvGenAgent(
                 # context window on the very next round, surfacing as
                 # a cryptic 'LLM error during chat' to the user.
                 try:
-                    text_blob = str(result_payload)
-                    if len(text_blob) > _TOOL_RESULT_CAP:
-                        text_blob = (
-                            text_blob[: _TOOL_RESULT_CAP - 64]
-                            + f"\n…[truncated; original length={len(text_blob)} chars]"
-                        )
-                    messages.append(Message.tool(text_blob, tool_call_id))
+                    # NO cap — append the FULL tool result (user decision 2026-06-24:
+                    # tool output must never be truncated/obstructed).
+                    messages.append(Message.tool(str(result_payload), tool_call_id))
                 except Exception:
                     pass
 

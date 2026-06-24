@@ -494,7 +494,7 @@ async def plan_milestones(llm: Any, raw_requirements: str,
             ensure_ascii=False)[:24_000]
     prompt = (_PLAN_INSTRUCTIONS
               + _milestone_count_guidance()
-              + "\n\n## REQUIREMENTS\n" + str(raw_requirements or "")[:16_000]
+              + "\n\n## REQUIREMENTS\n" + str(raw_requirements or "")
               + spec_text)
     try:
         client = getattr(llm, "_client", llm)

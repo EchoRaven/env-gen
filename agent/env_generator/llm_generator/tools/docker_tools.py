@@ -337,12 +337,12 @@ Example:
                     if env_cache:
                         env_cache.record_failure("docker_daemon", "Cannot connect to Docker daemon")
                     return ToolResult.fail(
-                        f"Docker daemon unavailable:\n{result.stderr[:500]}\n\n"
+                        f"Docker daemon unavailable:\n{result.stderr}\n\n"
                         "This failure has been cached. Will skip docker operations for 5 minutes.\n"
                         "Start Docker Desktop or use non-Docker testing."
                     )
                 return ToolResult.fail(
-                    f"Build failed:\n{result.stderr[:1000]}"
+                    f"Build failed:\n{result.stderr}"
                 )
             
             # Mark Docker as available on success
@@ -498,14 +498,14 @@ Example:
                 port_hint = _compose_port_conflict_hint(result.stderr or "", compose_file)
                 if port_hint:
                     return ToolResult.fail(
-                        f"Failed to start:\n{result.stderr[:1000]}\n\n{port_hint}",
+                        f"Failed to start:\n{result.stderr}\n\n{port_hint}",
                         error_code="docker_port_conflict",
                         compose_file=str(compose_file),
-                        stderr=result.stderr[:2000],
+                        stderr=result.stderr,
                         hint=port_hint,
                     )
                 return ToolResult.fail(
-                    f"Failed to start:\n{result.stderr[:1000]}"
+                    f"Failed to start:\n{result.stderr}"
                 )
             
             return ToolResult.ok(data={
@@ -1240,7 +1240,7 @@ Example:
                         timeout=600,
                     )
                     if build_result.returncode != 0:
-                        errors.append(f"Build failed: {build_result.stderr[:500]}")
+                        errors.append(f"Build failed: {build_result.stderr}")
                     else:
                         steps_completed.append(f"docker compose build --no-cache")
                 
@@ -1253,7 +1253,7 @@ Example:
                 )
                 
                 if up_result.returncode != 0:
-                    errors.append(f"Start failed: {up_result.stderr[:500]}")
+                    errors.append(f"Start failed: {up_result.stderr}")
                 else:
                     steps_completed.append(f"docker compose -p {project_name} up -d")
                 

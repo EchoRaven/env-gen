@@ -416,7 +416,8 @@ class FinishContinuePolicy(BaseWorkflowPolicy):
         result_str = result.data if result.success else f"Error: {result.error_message}"
         if isinstance(result_str, dict):
             result_str = json.dumps(result_str, indent=2)
-        messages.append(Message.tool(str(result_str)[:10000], tool_call_id))
+        # NO cap (user decision 2026-06-24): the full tool result must reach the agent.
+        messages.append(Message.tool(str(result_str), tool_call_id))
         if self.followup_message:
             messages.append(Message.user(self.followup_message))
         return {"action": "continue"}
