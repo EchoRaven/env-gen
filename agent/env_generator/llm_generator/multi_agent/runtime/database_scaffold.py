@@ -330,9 +330,24 @@ def _render_column(table_name: str, col: Any) -> str:
         raise ValueError(
             f"database_scaffold: column {cname!r} in table {table_name!r} has no type"
         )
-    parts = [_quote_ident(cname), _sql_type(ctype)]
+    _sqlt = _sql_type(ctype)
+    _is_pk = bool(col.get("primary_key") or col.get("pk"))
+    # A bare integer PRIMARY KEY does NOT auto-increment on Postgres (unlike
+    # SQLite): ``id INTEGER PRIMARY KEY`` forces every INSERT to supply id, so the
+    # framework's projected CRUD handlers (which never send id) hit
+    # ``null value in column "id" violates not-null`` → 500 on EVERY business
+    # create (posts / messages / comments / likes / ...). instagram run #3 aborted
+    # exactly here: POST /api/messages/{username} → 500, and the posts chain's
+    # create returned no id → ``${api_posts_id}`` reached GET/DELETE → 422. Promote
+    # a bare integer PK to SERIAL/BIGSERIAL so it auto-assigns — matching the spine
+    # (users.id SERIAL) and what the ORM's create_all emits for an int PK anyway.
+    if _is_pk and _sqlt.upper() in ("INTEGER", "INT", "INT4"):
+        _sqlt = "SERIAL"
+    elif _is_pk and _sqlt.upper() in ("BIGINT", "INT8"):
+        _sqlt = "BIGSERIAL"
+    parts = [_quote_ident(cname), _sqlt]
     # Optional constraints — honored ONLY when explicitly declared.
-    if col.get("primary_key") or col.get("pk"):
+    if _is_pk:
         parts.append("PRIMARY KEY")
     if col.get("nullable") is False or col.get("not_null"):
         parts.append("NOT NULL")

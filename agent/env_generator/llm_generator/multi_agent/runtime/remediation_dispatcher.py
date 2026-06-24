@@ -489,6 +489,32 @@ class RemediationDispatcher:
                 "implemented backend routes don't match the registered endpoint contract "
                 "(path/method/shape drift). Reconcile app/backend so every registered "
                 "endpoint is served at its declared path + shape."),
+            # DELIVERY-QUALITY (user 2026-06-24): a real, passing, verifier-authored
+            # business-flow chain covering every critical flow is REQUIRED to ship.
+            # All three business_chain_* gate checks route back to the verifier (it
+            # owns release validation; the synthesized default does not satisfy delivery).
+            "business_chain_missing": (
+                "verifier", "Author business-flow verification chains (blocks delivery)",
+                "NO verifier-authored verification chain is registered — delivery requires "
+                "real business-flow verification, not just api_smoke, and the synthesized "
+                "default does not count. Register chains via registryhub_register_verification_chain "
+                "(auth round-trip first, then one chain per critical flow: create -> read-back -> "
+                "cross-user), then run_validation to execute them."),
+            "business_chain_failing": (
+                "verifier", "Make business_chain pass (blocks delivery)",
+                "a registered verification chain is NOT passing. run_validation must show "
+                "business_chain green before delivery — read the broken step, fix the chain "
+                "(or bug_create for the endpoint it exposed), then re-run run_validation."),
+            "business_chain_api_coverage": (
+                "verifier", "Cover every API endpoint with a verification chain (blocks delivery)",
+                "some registered business API endpoints are exercised by NO verification chain "
+                "— the union of all your chains must hit every endpoint at least once. Add "
+                "steps to existing chains (or author a new chain) for the uncovered endpoints, "
+                "then re-run run_validation."),
+            "business_chain_coverage": (
+                "verifier", "Cover every critical flow with a verification chain (blocks delivery)",
+                "fewer verification chains than declared critical flows — author one "
+                "business-flow chain per critical flow so each is covered, then re-run run_validation."),
         }
         # Owned by a bespoke helper, or framework-deterministic (re-runs/records itself),
         # or routed via the task's own assignee — NOT dead-ends, so don't log as uncovered.

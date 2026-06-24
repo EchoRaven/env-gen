@@ -844,7 +844,25 @@ class ClaimAssignedTasksPolicy(BaseWorkflowPolicy):
             self._last_blocking_set.pop(agent.agent_id, None)
             return None
 
-        # Retry-cap bookkeeping — SHRINK-TOLERANT counting.
+        # DEP-BLOCKED tasks are NOT actionable and must NOT be cancelled. claim_task
+        # hard-rejects a task with incomplete deps, and a dep-blocked task is LEGITIMATE
+        # work waiting on its deps — it unblocks the moment they complete. Gate ONLY on
+        # CLAIMABLE work: if the lane's only unclaimed tasks are dep-blocked, let finish
+        # through (the lane re-wakes when deps complete). Previously the gate blocked here
+        # and told the lane to "cancel" the dep-blocked ones; a lane that can't cancel
+        # (not the creator) escalated "please cancel my dep-blocked tasks" to the
+        # orchestrator — which complied, and instagram_v8 PERMANENTLY LOST 4 core pages
+        # (home_feed/explore/reels/post_detail) whose component deps completed seconds
+        # later. Cancellation is for work that should NOT be done at all, never for
+        # "waiting on deps".
+        actionable, dep_blocked = self._split_dep_blocked(workhub, unclaimed)
+        if not actionable:
+            self._consecutive_blocks.pop(agent.agent_id, None)
+            self._last_blocking_set.pop(agent.agent_id, None)
+            return None
+
+        # Retry-cap bookkeeping — SHRINK-TOLERANT counting (on the ACTIONABLE set only;
+        # dep-blocked tasks never enter the blocking set).
         #
         # The escape hatch (``_MAX_CONSECUTIVE_BLOCKS`` consecutive
         # blocks → let finish through) must NOT be reset by the agent's
@@ -862,7 +880,7 @@ class ClaimAssignedTasksPolicy(BaseWorkflowPolicy):
         # queue, which resets the counter. Subset (``current <= last``)
         # captures both "shrank" and "unchanged"; anything else is a
         # superset or a disjoint-with-new-ids change → reset.
-        current_set = frozenset(t.get("id") for t in unclaimed if t.get("id"))
+        current_set = frozenset(t.get("id") for t in actionable if t.get("id"))
         last_set = self._last_blocking_set.get(agent.agent_id)
         if last_set is not None and current_set <= last_set:
             # Same or shrinking blocking set → claim progress (or no
@@ -895,7 +913,7 @@ class ClaimAssignedTasksPolicy(BaseWorkflowPolicy):
                 agent._logger.warning(
                     f"[{agent.agent_id}] claim-gate retry cap exceeded after "
                     f"{self._MAX_CONSECUTIVE_BLOCKS} consecutive blocks — "
-                    f"finish allowed; {len(unclaimed)} task(s) left PENDING "
+                    f"finish allowed; {len(actionable)} claimable task(s) left PENDING "
                     "for the contract-sync to complete (no auto-cancel)."
                 )
             except Exception:
@@ -904,103 +922,62 @@ class ClaimAssignedTasksPolicy(BaseWorkflowPolicy):
             self._last_blocking_set.pop(agent.agent_id, None)
             return None
 
-        # Split into claimable vs dep-blocked. claim_task() rejects
-        # tasks with incomplete deps (service.py:494-500), so
-        # telling the agent to "claim" a dep-blocked task is a
-        # guaranteed-fail loop. Mark them separately.
-        actionable, dep_blocked = self._split_dep_blocked(workhub, unclaimed)
-
-        listed = unclaimed[: self._MAX_LISTED]
-        remainder = len(unclaimed) - len(listed)
-        dep_blocked_ids = {t.get("id") for t in dep_blocked}
+        # actionable / dep_blocked already split above; we only reach here when
+        # actionable is non-empty. The blocking set is the CLAIMABLE tasks; dep-blocked
+        # tasks are merely NOTED as waiting (never listed as cancel targets).
+        listed = actionable[: self._MAX_LISTED]
+        remainder = len(actionable) - len(listed)
         lines = []
         for t in listed:
             tid = t.get("id") or "<no id>"
             title = (t.get("title") or "").strip() or "<no title>"
             meta = t.get("metadata") or {}
             sev = meta.get("severity") or meta.get("priority") or "-"
-            # PR 2.5-fix-2 (2026-05-29, reviewer follow-up):
-            # emit a POSITIVE ``[claimable]`` tag alongside the
-            # ``[dep-blocked: only cancel works]`` tag. The previous
-            # cut only tagged dep-blocked tasks, leaving claimable
-            # ones bare; the rejection text then referenced "for
-            # [claimable] tasks" but the marker was never rendered,
-            # so an agent grepping for the literal token found
-            # nothing.
-            tag = (
-                " [dep-blocked: only cancel works]"
-                if tid in dep_blocked_ids
-                else " [claimable]"
-            )
-            lines.append(f"- {tid} [{sev}] {title}{tag}")
+            lines.append(f"- {tid} [{sev}] {title} [claimable]")
         bullet = "\n".join(lines)
         more = f"\n  (+{remainder} more not shown)" if remainder > 0 else ""
-        # Retry-cap warning fires exactly on the LAST blocking round —
-        # the next block with a same-or-shrinking set will RELEASE the
-        # gate (finish allowed, remaining tasks left pending; no
-        # auto-cancel — see the retry-cap branch above). Fires on round
-        # cap itself; on round cap+1 we never reach this branch (the
-        # release above returned).
+        # Retry-cap warning fires on the LAST blocking round — the next block with a
+        # same-or-shrinking set RELEASES the gate (finish allowed, remaining claimable
+        # tasks left pending; no auto-cancel).
         attempt_n = self._consecutive_blocks[agent.agent_id]
         warn = ""
         if attempt_n >= self._MAX_CONSECUTIVE_BLOCKS:
             warn = (
                 f"\n\n⚠️ This is the LAST block attempt "
-                f"({attempt_n}/{self._MAX_CONSECUTIVE_BLOCKS}). On the "
-                "next block, finish will be ALLOWED through and any "
-                "remaining tasks are left pending (not cancelled). "
-                "Claiming a task does NOT reset this counter, so you "
-                "can keep claiming and still reach this release."
+                f"({attempt_n}/{self._MAX_CONSECUTIVE_BLOCKS}). On the next block, "
+                "finish will be ALLOWED through and any remaining claimable tasks are "
+                "left pending (not cancelled). Claiming a task does NOT reset this "
+                "counter, so you can keep claiming and still reach this release."
             )
-        # PR 2.5-fix-2 (2026-05-29): branch the rejection text when
-        # ALL unclaimed are dep-blocked. The previous text always
-        # described both option (a) and option (b); when actionable
-        # was empty option (a) was a dead instruction the agent
-        # could still try (and get a guaranteed-fail loop until the
-        # retry cap kicked in). Now we emit cancel-only guidance.
-        if actionable:
-            action_text = (
-                "Before calling finish() you must, for EACH listed task:\n"
-                "  (a) for tasks tagged ``[claimable]``: call "
-                "``workhub_task(action='claim', task_id=...)`` and do "
-                "the work — or claim ALL of your claimable tasks at once "
-                "with a single ``workhub_task(action='claim_all')`` "
-                "call, OR\n"
-                "  (b) for tasks tagged ``[dep-blocked: only cancel "
-                "works]`` (and for any claimable task you genuinely "
-                "want to drop): call ``workhub_cancel_task("
-                "task_id=..., reason='<why>')``."
-            )
-        else:
-            action_text = (
-                "Every listed task is dep-blocked — their dependencies "
-                "are not yet completed and ``workhub_task(action="
-                "'claim', ...)`` will hard-reject them. Before calling "
-                "finish() you must call "
-                "``workhub_cancel_task(task_id=..., reason='<why>')`` "
-                "for EACH listed task. There is no claim option this "
-                "round."
+        # Dep-blocked tasks are NOTED but must be LEFT ALONE — they unblock automatically
+        # when their deps complete. NEVER instruct cancellation (the destructive
+        # instagram_v8 behavior: lanes asked the orchestrator to cancel dep-blocked pages
+        # whose deps finished seconds later, permanently losing the pages).
+        dep_note = ""
+        if dep_blocked:
+            dep_note = (
+                f"\n\n({len(dep_blocked)} more assigned task(s) are DEP-BLOCKED — waiting "
+                "on deps not yet completed. LEAVE them pending: they unblock automatically "
+                "when their deps finish and you re-wake to claim them. Do NOT cancel them, "
+                "and do NOT ask anyone else to cancel them — they are real work.)"
             )
         block_text = (
             "🚫 finish() blocked by claim-assigned-tasks gate.\n\n"
-            f"You have {len(unclaimed)} task(s) assigned to you that are "
-            f"still pending and unclaimed "
-            f"({len(dep_blocked)} dep-blocked, "
-            f"{len(actionable)} claimable):\n"
+            f"You have {len(actionable)} CLAIMABLE task(s) assigned to you that are still "
+            "pending and unclaimed — claim and do them before finishing:\n"
             f"{bullet}{more}\n\n"
-            f"{action_text}\n\n"
-            "Silently leaving these in your queue causes the lane to "
-            "show 'idle' to the rest of the team — that's the deadlock "
-            "the tier-3 circuit breaker cancels reactively. Resolve "
-            "them at the source."
+            "For EACH: call ``workhub_task(action='claim', task_id=...)`` and do the work "
+            "— or grab them all at once with ``workhub_task(action='claim_all')``. (If a "
+            "task is genuinely WRONG / should not exist, send_message its creator; never "
+            "cancel work that is merely waiting on deps.)"
+            f"{dep_note}"
             f"{warn}"
         )
         messages.append(Message.assistant(tool_calls=[tool_call]))
         messages.append(Message.tool(block_text, tool_call_id))
         messages.append(Message.user(
-            "Claim-assigned-tasks gate fired. Address every listed task "
-            "(claim or cancel). Do not finish until your assigned queue "
-            "is empty of unclaimed pending work."
+            "Claim-assigned-tasks gate fired. Claim (or claim_all) your CLAIMABLE pending "
+            "tasks and do the work. Dep-blocked tasks just wait — do NOT cancel them."
         ))
         try:
             agent._logger.warning(
@@ -1080,6 +1057,220 @@ class ClaimAssignedTasksPolicy(BaseWorkflowPolicy):
             return (order.get(prio, 99), t.get("created_at", 0.0))
         out.sort(key=_key)
         return out
+
+
+class LaneWindDownPolicy(BaseWorkflowPolicy):
+    """Block ``finish()`` while the lane still holds OPEN work it owns —
+    the *complement* to ``ClaimAssignedTasksPolicy`` (which covers pending
+    UNCLAIMED assigned tasks). This gate covers the two wind-down holes
+    that the claim gate does not:
+
+      (a) IN_PROGRESS tasks the lane CLAIMED but never completed — the
+          abandon-on-empty stall. Live instagram v7: the frontend claimed
+          two visual-gate tasks (-> in_progress), then queried for
+          ``status=pending``, saw none, and finished — walking away from
+          its own claimed work while it sat unfinished.
+      (b) UNREAD directed inbox messages — dropped coordination. v7: the
+          backend stopped polling its inbox 84s BEFORE the frontend's
+          ``ask_agent`` arrived, then finished, so the question died with
+          no answer and the frontend stalled waiting.
+
+    Together with ``ClaimAssignedTasksPolicy`` a lane cannot wind down
+    while leaving claimed work unfinished OR a peer's message/question
+    unread. GENERAL / env-agnostic — pure lane-lifecycle discipline.
+
+    Retry-cap escape (same shape + rationale as ``ClaimAssignedTasksPolicy``):
+    after ``_MAX_CONSECUTIVE_BLOCKS`` same-or-shrinking blocks the gate
+    stops enforcing and lets finish through, so a lane that genuinely
+    cannot make progress (e.g. an in_progress task it is blocked on and
+    has already messaged the creator about) is never trapped — the idle
+    circuit breaker and the contract-sync handle the residue. Completing an
+    in_progress task shrinks the set but still counts toward the escape;
+    only a genuinely NEW in_progress task resets the counter.
+    """
+
+    _MAX_LISTED = 8
+    _MAX_CONSECUTIVE_BLOCKS = 3
+
+    def __init__(self):
+        self._consecutive_blocks: Dict[str, int] = {}
+        self._last_blocking_set: Dict[str, frozenset] = {}
+
+    @staticmethod
+    def _unread_inbox(agent: Any) -> int:
+        """Count unread DIRECTED durable messages (send_message / ask_agent)
+        in this lane's eventhub inbox. Pure read — ``list_inbox`` does not
+        mutate read-state (``mark_read`` is separate; a normal
+        ``check_inbox(clear=True)`` is what marks them read and clears the
+        block). Topic/broadcast noise is intentionally not counted — only
+        directed messages a peer is waiting on. Returns 0 on any error so a
+        hub hiccup can never trap a finish."""
+        try:
+            hubs = getattr(agent, "_hubs", None)
+            eh = getattr(hubs, "eventhub", None) if hubs is not None else None
+            if eh is None or not hasattr(eh, "list_inbox"):
+                return 0
+            return len(eh.list_inbox(agent.agent_id, unread_only=True) or [])
+        except Exception:
+            return 0
+
+    @staticmethod
+    def _collect_in_progress_claimed(
+        workhub: Any, agent_id: str
+    ) -> List[Dict[str, Any]]:
+        """Tasks this lane CLAIMED (``claimed_by == agent_id``) that are
+        still ``in_progress``. Tolerant of store-shape; ``[]`` on error so a
+        misconfigured hub can't itself block finish."""
+        try:
+            stores = getattr(workhub, "stores", None)
+            store = getattr(stores, "tasks", None) if stores else None
+            value = store.value() if (store is not None and hasattr(store, "value")) else store
+        except Exception:
+            return []
+        if not isinstance(value, dict):
+            return []
+        out: List[Dict[str, Any]] = []
+        for task in value.values():
+            if not isinstance(task, dict):
+                continue
+            if task.get("status") != "in_progress":
+                continue
+            if task.get("claimed_by") != agent_id:
+                continue
+            out.append(task)
+        order = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+        def _key(t: Dict[str, Any]):
+            meta = t.get("metadata") or {}
+            prio = meta.get("priority") or meta.get("severity") or "P2"
+            return (order.get(prio, 99), t.get("created_at", 0.0))
+        out.sort(key=_key)
+        return out
+
+    async def handle_finish(
+        self,
+        agent: Any,
+        *,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        tool_call: Any,
+        tool_call_id: str,
+        messages: List[Any],
+        files_created: List[str],
+        files_modified: List[str],
+    ) -> Optional[Dict[str, Any]]:
+        if tool_name != "finish":
+            return None
+        # POST-kickoff concern: during kickoff the lane only declares its
+        # contract slice (no claim/complete tools), and directed messages ARE
+        # the kickoff protocol. Match ClaimAssignedTasksPolicy and skip it.
+        if getattr(agent, "_active_phase", None) == "kickoff":
+            return None
+        hubs = getattr(agent, "_hubs", None)
+        workhub = getattr(hubs, "workhub", None) if hubs is not None else None
+        if workhub is None:
+            return None
+        aid = agent.agent_id
+
+        in_progress = self._collect_in_progress_claimed(workhub, aid)
+        unread = self._unread_inbox(agent)
+        if not in_progress and unread <= 0:
+            # Clean wind-down — reset trackers and let finish through.
+            self._consecutive_blocks.pop(aid, None)
+            self._last_blocking_set.pop(aid, None)
+            return None
+
+        # Retry-cap bookkeeping — SHRINK-TOLERANT on the in_progress set
+        # (mirrors ClaimAssignedTasksPolicy). Completing an in_progress task
+        # shrinks the set but keeps counting toward the escape; only a NEW
+        # in_progress task (set grows / new ids) resets it. Unread inbox alone
+        # still advances toward the escape — a normal check_inbox(clear=True)
+        # marks directed messages read and clears the block, the deterministic
+        # way out.
+        current_set = frozenset(t.get("id") for t in in_progress if t.get("id"))
+        last_set = self._last_blocking_set.get(aid)
+        if last_set is not None and current_set <= last_set:
+            self._consecutive_blocks[aid] = self._consecutive_blocks.get(aid, 0) + 1
+        else:
+            self._consecutive_blocks[aid] = 1
+        self._last_blocking_set[aid] = current_set
+
+        if self._consecutive_blocks[aid] > self._MAX_CONSECUTIVE_BLOCKS:
+            try:
+                agent._logger.warning(
+                    f"[{aid}] wind-down gate retry cap exceeded after "
+                    f"{self._MAX_CONSECUTIVE_BLOCKS} blocks — finish allowed; "
+                    f"{len(in_progress)} in_progress task(s) + {unread} unread "
+                    "message(s) left for the idle breaker / contract-sync."
+                )
+            except Exception:
+                pass
+            self._consecutive_blocks.pop(aid, None)
+            self._last_blocking_set.pop(aid, None)
+            return None
+
+        parts = [
+            "⏳ Not done yet — you still hold claimed work / unread coordination. "
+            "This is NOT an error and you are NOT stuck.\n"
+        ]
+        if in_progress:
+            listed = in_progress[: self._MAX_LISTED]
+            more = len(in_progress) - len(listed)
+            lines = [
+                f"  - {t.get('id') or '<no id>'}  "
+                f"{(t.get('title') or '').strip() or '<no title>'}"
+                for t in listed
+            ]
+            tail = f"\n    (+{more} more)" if more > 0 else ""
+            parts.append(
+                f"\n{len(in_progress)} task(s) you CLAIMED are still in_progress — "
+                "KEEP WORKING them THIS wake:\n"
+                + "\n".join(lines) + tail + "\n"
+                "  → Do the next one NOW. You do NOT need to finish() to advance — the "
+                "loop shows your next step automatically; just keep building/validating "
+                "until they are genuinely done (the framework AUTO-COMPLETES impl tasks "
+                "as your code registers, so this count drains itself as you work). Do NOT "
+                "finish() yet, do NOT write dummy/stub handlers to clear them, do NOT "
+                "cancel them, and do NOT escalate to the orchestrator merely because you "
+                "hold them — they are YOURS to complete by doing the REAL work. Message "
+                "the creator ONLY if blocked on a SPECIFIC external dependency you can "
+                "name (then keep going on the others meanwhile).\n"
+            )
+        if unread > 0:
+            parts.append(
+                f"\n{unread} unread message(s) in your inbox — a peer may be "
+                "waiting on you (e.g. an ask_agent question):\n"
+                "  → check_inbox() and act on them before idling. An answer "
+                "you never read, or a question you never answer, is lost.\n"
+            )
+        parts.append(
+            "\nWind-down discipline: a lane never goes idle while it holds "
+            "claimed work or unread coordination — that silent gap is exactly "
+            "the stall the team sees as a wedge."
+        )
+        if self._consecutive_blocks[aid] >= self._MAX_CONSECUTIVE_BLOCKS:
+            parts.append(
+                f"\n\n⚠️ LAST block attempt "
+                f"({self._consecutive_blocks[aid]}/{self._MAX_CONSECUTIVE_BLOCKS}); "
+                "on the next finish it will be ALLOWED through. If you are "
+                "genuinely blocked, be sure you have messaged the creator first."
+            )
+        block_text = "".join(parts)
+        messages.append(Message.assistant(tool_calls=[tool_call]))
+        messages.append(Message.tool(block_text, tool_call_id))
+        messages.append(Message.user(
+            "Wind-down gate fired. Complete or hand back your in_progress "
+            "tasks and drain your inbox before calling finish()."
+        ))
+        try:
+            agent._logger.warning(
+                f"[{aid}] finish blocked by wind-down gate: "
+                f"{len(in_progress)} in_progress, {unread} unread "
+                f"(attempt {self._consecutive_blocks[aid]}/"
+                f"{self._MAX_CONSECUTIVE_BLOCKS})"
+            )
+        except Exception:
+            pass
+        return {"action": "continue"}
 
 
 class RequiredFilesPolicy(BaseWorkflowPolicy):
@@ -1840,6 +2031,7 @@ STARVER_POLICY_KINDS: FrozenSet[str] = frozenset({
     "finish_continue",
     "hub_consistency_gate",
     "claim_assigned_tasks",
+    "lane_wind_down",
     "retro_before_deliver",
     "required_files",
     # NOTE (PR 2.5-fix-2 re-verify x2, 2026-05-29): intentionally
@@ -1989,6 +2181,8 @@ def create_workflow_policies(agent_cfg: Dict[str, Any]) -> List[BaseWorkflowPoli
             policies.append(RetroBeforeDeliverPolicy())
         elif kind == "claim_assigned_tasks":
             policies.append(ClaimAssignedTasksPolicy())
+        elif kind == "lane_wind_down":
+            policies.append(LaneWindDownPolicy())
         elif kind == "required_files":
             policies.append(
                 RequiredFilesPolicy(

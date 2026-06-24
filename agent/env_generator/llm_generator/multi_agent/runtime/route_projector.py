@@ -255,13 +255,17 @@ def _param_column_type(param: str, path: str, models: Dict[str, Dict[str, Any]])
             field = _lookup_field(param, target_meta)
             cols = target_meta.get("cols", [])
             param_is_id = _is_id_param(param)
-            # ``_lookup_field`` DEFAULTS to "id" when nothing matches. Only treat the
-            # param as the id column when that's a real match — i.e. the param NAME
-            # looks like an id, OR "id" is genuinely a column. A non-id-named param
-            # (``{username}``) over a model with no matching text column must stay
-            # ``str`` so the handler's graceful "non-numeric → 404" path is preserved
-            # (not a 422). Otherwise type to the resolved column.
-            if field == "id" and not (param_is_id or "id" in cols):
+            # ``_lookup_field`` DEFAULTS to "id" when nothing matches. A non-id-named
+            # param (``{username}``) whose name matched NO real column fell back to
+            # "id" — but it is NOT the resource's own id, it's a foreign natural key
+            # (e.g. ``POST /api/messages/{username}`` → look the recipient user up by
+            # username). It must stay ``str`` so FastAPI doesn't int-coerce it
+            # (``/api/messages/alice`` → 422) and the handler's by-name lookup works.
+            # The old ``or "id" in cols`` clause wrongly typed ``{username}`` as int
+            # whenever the matched table merely HAD an id column (messages does):
+            # instagram run #3 typed it int, the probe sent ``1``, the handler ran and
+            # 500'd on the insert. Gate on the PARAM name only, never the table's id.
+            if field == "id" and not param_is_id:
                 return "str"
             sa_type = (target_meta.get("types") or {}).get(field)
             if sa_type is not None:
@@ -563,6 +567,36 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             '        raise HTTPException(status_code=404, detail="not found")',
             f"    return {{\"item\": {_serialize_expr('obj', cols)}}}",
         ]
+    elif (cls and m == "DELETE" and not _ends_in_param(path) and parent_ctx
+          and _target_fk(meta, parent_table, parent_singular)):
+        # CHILD-COLLECTION TOGGLE-OFF: DELETE /api/<parent>/{parent_id}/<child>
+        # (unlike / unsave / unfollow) removes the CALLER's row in <child> scoped to
+        # the parent. The old branch did db.get(<child>, parent_id) — but parent_id is
+        # the PARENT's id, NOT the child row's PK, so it deleted the wrong row / 404'd /
+        # 500'd (instagram_v6: DELETE /api/posts/{post_id}/like|save + /users/{username}/
+        # follow all 500 → delivery wedged). Find by (target_fk==parent.id [, owner_fk==
+        # user.id]) and delete idempotently (a no-op delete still succeeds — toggles are
+        # safe to repeat). Uses _target_fk (the create-bind FK) NOT _scope_fk so a
+        # self-referential join (follows: follower_id + following_id both → users)
+        # filters the FOLLOWED side (following_id==parent.id) against the OWNER side
+        # (follower_id==user.id) — mirrors the create handler's bind.
+        _sfk = _target_fk(meta, parent_table, parent_singular)
+        body_lines = [
+            f'    parent = db.query({parent_cls}).filter(getattr({parent_cls}, "{parent_field}") == {parent_param}).first()',
+            "    if parent is None:",
+            '        raise HTTPException(status_code=404, detail="not found")',
+            f'    _q = db.query({cls}).filter(getattr({cls}, "{_sfk}") == parent.id)',
+        ]
+        if owner_fk:
+            body_lines.append(
+                f'    _q = _q.filter(getattr({cls}, "{owner_fk}") == user.id)')
+        body_lines += [
+            "    obj = _q.first()",
+            "    if obj is not None:",
+            "        db.delete(obj)",
+            "        db.commit()",
+            '    return {"item": {"deleted": True}}',
+        ]
     elif cls and m == "DELETE" and last_param and _is_id_param(last_param):
         body_lines = [
             f"    obj = db.get({cls}, {last_param})",
@@ -734,9 +768,14 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             f"        return {{\"item\": {_serialize_expr('obj', cols)}}}",
             "    except HTTPException:",
             "        raise",
-            "    except Exception:",
+            "    except Exception as _exc:",
             "        db.rollback()",
-            "        return {\"item\": valid}",
+            "        # Surface the failure HONESTLY — do NOT return a fake 201 whose",
+            "        # body lacks the PK. A masked insert made a verification chain that",
+            "        # captures {id} from the create bind nothing, so ${...} reached the",
+            "        # next step (→ 422), and hid the real cause (e.g. a null-PK / NOT",
+            "        # NULL violation). A 500 lets the gate + the owning lane see it.",
+            "        raise HTTPException(status_code=500, detail=f\"create failed: {_exc}\")",
         ]
         sig_params += "body: dict = None, " if "body: dict" not in sig_params else ""
     else:

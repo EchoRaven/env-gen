@@ -429,7 +429,8 @@ class HealPipeline:
                 return
             from .frontend_scaffold import (
                 repair_frontend_api_exports, scaffold_missing_local_pages,
-                repair_frontend_named_default_imports, reroute_inline_stub_routes)
+                repair_frontend_named_default_imports, reroute_inline_stub_routes,
+                repair_frontend_missing_local_exports)
             from pathlib import Path as _P
             fe = _P(out_dir) / "app" / "frontend"
             rep = repair_frontend_api_exports(fe)
@@ -438,6 +439,15 @@ class HealPipeline:
                     "Frontend api.js reconciled: aliased=%s stubbed=%s",
                     rep.get("aliased"), rep.get("stubbed"),
                 )
+            # Generalize export reconciliation to ALL local modules (not just api.js):
+            # a named import from a local module that doesn't export it HARD-fails the
+            # Vite/rollup build (instagram_v5: PlusSquareIcon) → frontend won't build →
+            # docker_up FAIL → no successful run → no delivery. Stub the missing export.
+            _me = repair_frontend_missing_local_exports(fe)
+            if _me.get("repaired"):
+                orch._logger.warning(
+                    "Frontend missing local exports stubbed (lane import/export drift): %s",
+                    _me.get("repaired"))
             # Build-integrity: a page doing `import { X } from './Comp'` against a
             # default-only Comp HARD-fails the Rollup build (live: NotesListPage
             # imported { NavBar } from a default-export NavBar.jsx → docker_up FAIL).
@@ -476,6 +486,32 @@ class HealPipeline:
                 orch._logger.warning(
                     "Frontend inline-stub routes re-pointed to real pages: %s",
                     _rr.get("rerouted"))
+            # Reconcile api-call PATHS to the registered contract (not just export
+            # NAMES above): the lane drifts a path (instagram_v5: '/api/posts/feed'
+            # vs the contract's '/api/feed') → runtime 404 on those pages AND the
+            # delivery-gate 'frontend calls unregistered endpoint' hard-block. Rewrite
+            # a unique near-miss to the registered path. GENERAL; conservative; best-effort.
+            try:
+                from .frontend_scaffold import reconcile_frontend_api_paths
+                from ..delivery.contract_extract import param_agnostic
+                _rh = getattr(getattr(orch, "hubs", None), "registryhub", None)
+                _reg_paths = set()
+                if _rh is not None:
+                    for _k, _v in (_rh.get_endpoints() or {}).items():
+                        if _k == "_meta" or not isinstance(_v, dict):
+                            continue
+                        _p = _v.get("path") or ""
+                        if _p:
+                            _pa = param_agnostic(f"{_v.get('method') or 'GET'} {_p}")
+                            _reg_paths.add(_pa.split(" ", 1)[1] if " " in _pa else _pa)
+                if _reg_paths:
+                    _pr = reconcile_frontend_api_paths(fe, _reg_paths)
+                    if _pr.get("rewritten"):
+                        orch._logger.warning(
+                            "Frontend api PATHS reconciled to contract: %s",
+                            _pr.get("rewritten")[:10])
+            except Exception as _pp_exc:
+                orch._logger.debug("frontend api-path reconcile skipped: %s", _pp_exc)
         except Exception as exc:
             orch._logger.debug("frontend api repair skipped: %s", exc)
 

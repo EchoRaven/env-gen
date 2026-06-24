@@ -243,17 +243,22 @@ class UpdateMemoryBankTool(BaseTool):
     """
 
     NAME = "update_memory_bank"
-    DESCRIPTION = """Update your agent-local Memory Bank with structured project context.
+    DESCRIPTION = """Write to YOUR NOTEBOOK — the agent-owned half of the Memory Bank.
 
-Use this near the end of a meaningful step or milestone. Keep entries concise and durable:
-- focus: what you are currently working on
-- next_step: the next concrete action
-- completed: completed milestones or artifacts
-- issues: blockers, validation failures, or unresolved risks
+This writes ONLY to your private, writable notebook.md (it persists across all your
+wakes and is never committed). It does NOT touch the framework-maintained files
+(project_brief / tech_context / system_patterns / active_context / progress) — those
+are read-only truth you see in the auto-provided digest.
+
+Use this near the end of a meaningful step to record what your NEXT wake should not
+have to re-derive. Keep entries concise and durable:
 - decisions: design/API/schema/implementation decisions with rationale
+- issues: gotchas, blockers, validation failures, or unresolved risks
 - tech_notes: durable setup, dependency, command, port, or architecture notes
+- next_step: the next concrete action
+- focus / recent_change / completed: a running log line of what you did
 
-Do not use this for transient chain-of-thought. Store only information that should help your future steps.
+Do not use this for transient chain-of-thought. Store only what helps your future steps.
 """
 
     def __init__(self):
@@ -322,40 +327,26 @@ Do not use this for transient chain-of-thought. Store only information that shou
         if not memory_bank:
             return ToolResult(success=False, error_message="Agent Memory Bank is not available")
 
-        updated = []
         try:
-            if focus or next_step or recent_change:
-                memory_bank.update_active_context(
-                    focus=focus,
-                    recent_change=recent_change,
-                    next_step=next_step,
-                )
-                updated.append("active_context")
-
-            for item in completed or []:
-                memory_bank.append_to_progress(item, category="completed")
-            if completed:
-                updated.append("progress.completed")
-
-            for item in issues or []:
-                memory_bank.append_to_progress(item, category="issues")
-            if issues:
-                updated.append("progress.issues")
-
-            for item in decisions or []:
-                memory_bank.append_decision(item)
-            if decisions:
-                updated.append("system_patterns.decisions")
-
-            for item in tech_notes or []:
-                memory_bank.append_tech_note(item)
-            if tech_notes:
-                updated.append("tech_context.notes")
+            # Write ONLY to the agent-owned notebook — the SEPARATE, writable
+            # half of the bank. The framework-synced CORE files (active_context /
+            # progress / system_patterns / tech_context) are NOT touched here;
+            # they stay read-only truth (user requirement: the file an agent
+            # edits must not be the file the framework auto-syncs).
+            updated = memory_bank.append_notebook(
+                focus=focus,
+                next_step=next_step,
+                recent_change=recent_change,
+                completed=completed,
+                issues=issues,
+                decisions=decisions,
+                tech_notes=tech_notes,
+            )
 
             if not updated:
                 return ToolResult(
                     success=True,
-                    data={"updated": [], "info": "No memory updates were provided."},
+                    data={"updated": [], "info": "No notebook updates were provided."},
                 )
 
             return ToolResult(
@@ -363,11 +354,12 @@ Do not use this for transient chain-of-thought. Store only information that shou
                 data={
                     "updated": updated,
                     "memory_dir": str(getattr(memory_bank, "memory_dir", "")),
-                    "info": "Memory Bank updated.",
+                    "info": f"Notebook updated (sections: {', '.join(updated)}). "
+                            "Framework-synced files were not touched.",
                 },
             )
         except Exception as e:
-            return ToolResult(success=False, error_message=f"Failed to update Memory Bank: {e}")
+            return ToolResult(success=False, error_message=f"Failed to update notebook: {e}")
 
 
 # ============================================================================
@@ -705,7 +697,53 @@ Args:
                 error_message=f"Cannot deliver project. Failed checks: {failed_checks}. "
                               "Please ensure all criteria are met before delivery."
             )
-        
+
+        # GUARD 1 (milestone-completeness, ALWAYS-ON): deliver_project is the FINAL
+        # delivery — it ENDS the run. During an earlier milestone of a multi-milestone
+        # plan it must NOT fire; the framework cuts that milestone's release and advances
+        # to the next milestone. Default True (single-milestone / unknown → allowed, so
+        # byte-identical for single-milestone runs). The orchestrator runtime stamps
+        # ``_is_final_milestone`` + ``_milestone_progress`` onto this agent per milestone.
+        _is_final = getattr(self.agent, "_is_final_milestone", True) if self.agent else True
+        if not _is_final:
+            _prog = getattr(self.agent, "_milestone_progress", None) if self.agent else None
+            _prog_s = (f" (currently milestone {_prog[0]} of {_prog[1]})"
+                       if isinstance(_prog, (tuple, list)) and len(_prog) == 2 else "")
+            return ToolResult(
+                success=False,
+                error_message=(
+                    f"deliver_project is the FINAL delivery and ENDS the run, but this is "
+                    f"NOT the last milestone{_prog_s}. Do NOT call deliver_project yet — the "
+                    f"framework cuts this milestone's release and advances to the next "
+                    f"milestone automatically. deliver_project is valid ONLY on the final "
+                    f"milestone, once every milestone's work is complete."
+                ),
+            )
+
+        # GUARD 2 (independent deliverability gate, env-gated ENVGEN_DELIVER_GATE): the
+        # checklist above is SELF-ASSERTED by the LLM. Re-verify against the LIVE
+        # RegistryHub so an optimistic/premature checklist can't ship an incomplete
+        # contract. Default-off (byte-identical) until enabled; never blocks on an error.
+        import os as _os
+        if _os.environ.get("ENVGEN_DELIVER_GATE") and self.agent is not None:
+            try:
+                _hubs = getattr(self.agent, "_hubs", None)
+                _rh = getattr(_hubs, "registryhub", None) if _hubs is not None else None
+                if _rh is not None and hasattr(_rh, "get_endpoints"):
+                    from multi_agent.runtime.lifecycle import all_business_endpoints_implemented
+                    if not all_business_endpoints_implemented(_rh.get_endpoints() or {}):
+                        return ToolResult(
+                            success=False,
+                            error_message=(
+                                "deliver_project blocked (ENVGEN_DELIVER_GATE): not every "
+                                "business endpoint is 'implemented' in RegistryHub. The "
+                                "checklist is self-asserted, but the live contract is not "
+                                "yet complete — finish implementation + validation first."
+                            ),
+                        )
+            except Exception:
+                pass  # never block delivery on a gate-eval error
+
         # Set delivered flag
         self._delivered = True
         

@@ -68,7 +68,13 @@ class GenerationResult:
 _allocated_ports: set = set()
 
 def find_free_port(preferred: List[int] = None, range_start: int = 8000, range_end: int = 9000) -> int:
-    """Find an available port that hasn't been allocated yet."""
+    """Find an available port that hasn't been allocated yet.
+
+    Bind-tests on 0.0.0.0 (NOT localhost): docker publishes host ports on 0.0.0.0, so a
+    port free on 127.0.0.1 but already bound on 0.0.0.0 by another service would pass a
+    localhost check yet make `docker compose up` fail to bind it (the docker_up wedge seen
+    on busy shared hosts). Binding 0.0.0.0 here only hands out ports docker can actually use.
+    """
     global _allocated_ports
     preferred = preferred or []
     
@@ -77,7 +83,7 @@ def find_free_port(preferred: List[int] = None, range_start: int = 8000, range_e
             continue
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('localhost', port))
+                s.bind(('0.0.0.0', port))
                 _allocated_ports.add(port)
                 return port
         except OSError:
@@ -88,7 +94,7 @@ def find_free_port(preferred: List[int] = None, range_start: int = 8000, range_e
             continue
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('localhost', port))
+                s.bind(('0.0.0.0', port))
                 _allocated_ports.add(port)
                 return port
         except OSError:
@@ -584,7 +590,7 @@ class Orchestrator:
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(1)
-                    s.bind(('localhost', port))
+                    s.bind(('0.0.0.0', port))
             except OSError:
                 results["ports"]["blocked"].append(port)
         
@@ -809,7 +815,25 @@ class Orchestrator:
                 # a small app stays ONE milestone, a large one splits into ≤6
                 # coherent slices. User-provided milestones always win; planner
                 # failure falls back to the single synthesized milestone.
-                if not _milestones_explicit:
+                # STABILITY (ENVGEN_SINGLE_MILESTONE, default-off): force the whole
+                # app into ONE milestone instead of the agent-planned ≤6 split.
+                # Multi-milestone is a major wedge surface — every milestone past M1
+                # opens its OWN kickoff, and a THIN later slice (e.g. an M2 with no new
+                # backend endpoints) leaves backend/verifier with nothing to declare:
+                # they never record a section, the deterministic reconcile can't derive
+                # one from an empty slice, and the 1200s kickoff timeout HARD-ABORTS the
+                # whole run (instagram_v4: M1 nearly delivered, M2 kickoff timed out
+                # Missing=['backend','verifier'] → abort). Worse, M2 kickoff ran
+                # concurrently with unfinished M1 delivery. Collapsing to one milestone
+                # (the existing single-milestone fallback path, whole requirements as the
+                # slice) removes that surface entirely. GENERAL, not env-specific: any env
+                # just builds in one kickoff/delivery; byte-identical when the flag is off.
+                _force_single_ms = bool(os.environ.get("ENVGEN_SINGLE_MILESTONE"))
+                if _force_single_ms:
+                    self._logger.warning(
+                        "MILESTONE PLAN: single-milestone mode (ENVGEN_SINGLE_MILESTONE) — "
+                        "whole app in ONE kickoff+delivery; multi-milestone planning skipped.")
+                if not _milestones_explicit and not _force_single_ms:
                     try:
                         from .runtime.reference_materials import plan_milestones
                         _planned = await plan_milestones(
@@ -869,6 +893,17 @@ class Orchestrator:
                     # §4: expose the current milestone dict (its acceptance[] + slice) so the
                     # delivery gate + the test-user squad can scope to THIS milestone.
                     self._current_milestone = _milestone if isinstance(_milestone, dict) else {}
+                    # Stamp milestone-completeness onto the orchestrator AGENT so the
+                    # deliver_project tool can reject a premature FINAL delivery during an
+                    # earlier milestone (deliver_project ends the run; earlier milestones
+                    # cut a per-milestone release + advance — they must NOT final-deliver).
+                    _orch_agent_ms = self._agents.get("orchestrator")
+                    if _orch_agent_ms is not None:
+                        try:
+                            _orch_agent_ms._is_final_milestone = self._is_final_milestone
+                            _orch_agent_ms._milestone_progress = (_m_idx, len(milestones))
+                        except Exception:
+                            pass
                     # Per-milestone visual state: anchor the deferral clock and the
                     # total-judgment backstop to THIS milestone (PIPE-C3 — within a
                     # milestone neither is reset by lane churn).

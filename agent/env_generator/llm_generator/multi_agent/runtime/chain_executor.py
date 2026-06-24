@@ -47,6 +47,36 @@ from .validation_runner import _http
 CHAINS_STORE_RELPATH = Path("shared") / "hubs" / "registryhub_verification_chains.json"
 
 
+def _coerce_save(save: Any) -> Dict[str, Any]:
+    """Coerce a step's ``save`` (canonical: ``{var: "response.dotpath"}``) from any
+    shape the verifier authors into a dict, WITHOUT raising. Tolerates: a dict
+    (pass-through), a JSON-string dict, a ``'var->path'`` / ``'var=>path'`` /
+    ``'var:path'`` arrow/colon shorthand, or a bare ``'var'`` (-> ``{var: var}``).
+    Anything unparseable returns ``{}`` (dropped, not crashed). Prevents the cryptic
+    ``dict(<string>)`` failure that blocked chain registration (v10)."""
+    if isinstance(save, Mapping):
+        return dict(save)
+    if isinstance(save, str):
+        s = save.strip()
+        if not s:
+            return {}
+        if s.startswith("{"):
+            try:
+                _p = json.loads(s)
+                if isinstance(_p, Mapping):
+                    return dict(_p)
+            except Exception:
+                pass
+        for _sep in ("->", "=>", ":"):
+            if _sep in s:
+                _a, _, _b = s.partition(_sep)
+                _a, _b = _a.strip(), _b.strip()
+                if _a and _b:
+                    return {_a: _b}
+        return {s: s}
+    return {}
+
+
 def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
     """Normalize step variants → canonical {method, path, body, expect, save,
     auth}. Returns (normalized, errors). SCHEMA TOLERANCE (round 35): accept
@@ -82,6 +112,16 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
                         st["body"] = _parsed
                 except Exception:
                     pass
+        # SCHEMA TOLERANCE (2026-06-24): the verifier frequently authors `save` as a
+        # STRING shorthand ('access_token->auth.token', 'token:access_token') or a
+        # JSON string, not the canonical {var: "dot.path"} dict. The downstream
+        # `dict(st["save"])` then threw a CRYPTIC "dictionary update sequence element
+        # #0 has length 1; 2 is required", and the verifier burned ~7 of 10
+        # register_verification_chain attempts guessing the format (v10). Coerce any
+        # save shape to a dict here so it NEVER crashes registration — best-effort,
+        # never raises. (Canonical dict still authoritative; string is a fallback.)
+        if "save" in st:
+            st["save"] = _coerce_save(st.get("save"))
         if not (st.get("path") and st.get("method")):
             errors.append(f"step[{i}] lacks method+path (or endpoint='METHOD /path')")
             continue

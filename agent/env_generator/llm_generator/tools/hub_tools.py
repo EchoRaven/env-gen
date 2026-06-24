@@ -675,6 +675,51 @@ class WorkHubTaskTool(HubTool):
         if action == "claim_all":
             return self._claim_all()
         if action == "complete":
+            # CODE-TRUTH GUARD (2026-06-24): a lane may NOT manually 'complete' an
+            # impl.* task whose registry artifact is still 'defined' (NOT
+            # 'implemented'). impl tasks are AUTO-COMPLETED by the framework's
+            # code-truth sync WHEN the audit flips the artifact to 'implemented'; a
+            # lane completing one manually (result={}) over an unbuilt / stub
+            # artifact FALSE-COMPLETES it. v9 wedge: the frontend bulk-completed 11
+            # page + 8 component tasks with result={} while the audit showed them all
+            # still 'defined' → 0 pending tasks → never re-woken → run wedged. The
+            # framework sync calls workhub.complete_task DIRECTLY (bypassing this
+            # tool), so this only catches the lane path. Best-effort + fail-open:
+            # blocks ONLY when the artifact is resolvable AND not implemented.
+            _blocked_status = None
+            try:
+                _tid = str(task_id or "")
+                _rh = getattr(self._hubs, "registryhub", None)
+                _amap = None
+                _akey = None
+                for _pfx, _getter in (
+                    ("impl.page.", "list_ui_pages"),
+                    ("impl.component.", "list_ui_components"),
+                    ("impl.table.", "list_tables"),
+                ):
+                    if _tid.startswith(_pfx) and _rh is not None and hasattr(_rh, _getter):
+                        _amap = getattr(_rh, _getter)() or {}
+                        _akey = _tid[len(_pfx):]
+                        break
+                if _amap is not None and _akey:
+                    _rec = _amap.get(_akey)
+                    _s = _rec.get("status") if isinstance(_rec, dict) else None
+                    if _s and _s != "implemented":
+                        _blocked_status = _s
+            except Exception:
+                _blocked_status = None
+            if _blocked_status:
+                return ToolResult(success=False, error_message=(
+                    f"complete denied: impl task '{task_id}' — its artifact is still "
+                    f"'{_blocked_status}' (NOT 'implemented') in the registry. impl.* "
+                    "tasks are AUTO-COMPLETED by the framework when the code-truth audit "
+                    "confirms your code makes the artifact REAL. Do NOT complete them "
+                    "manually: BUILD the real page/component/table (a stub or "
+                    "placeholder does NOT count — the audit demotes it), and the task "
+                    "completes ITSELF when the artifact flips to 'implemented'. Manually "
+                    "completing an unbuilt artifact is a false-complete that wedges the "
+                    "run (status diverges from code-truth + the task drops off your "
+                    "queue so you're never re-woken to finish it)."))
             hub_result = self._hubs.workhub.complete_task(task_id, self._agent_id, result=result or {}, evidence=evidence or {})
             _detach_plantool_on_terminal(self._agent_id, hub_result)
             return ToolResult(data=hub_result)

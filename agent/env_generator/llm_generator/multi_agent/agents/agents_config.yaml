@@ -289,6 +289,7 @@ profiles:
         - kickoff_declare_table
         - workhub_add_meeting_decision
         - workhub_get_document
+        - workhub_get_task
         - workhub_list_documents
         - workhub_comment
         - read
@@ -458,6 +459,7 @@ profiles:
           - "urls.py"
         min_modifications_for_codehub: 5
       - kind: claim_assigned_tasks
+      - kind: lane_wind_down
     execution_pipeline:
       stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
@@ -554,9 +556,9 @@ profiles:
         # the flat tools take explicit id/route/purpose scalars instead.
         - kickoff_declare_ui_page
         - kickoff_declare_ui_component
-        - kickoff_declare_user_flow
         - workhub_add_meeting_decision
         - workhub_get_document
+        - workhub_get_task
         - workhub_list_documents
         - workhub_comment
         - read
@@ -634,6 +636,7 @@ profiles:
           - "src/api/"
         min_modifications_for_codehub: 5
       - kind: claim_assigned_tasks
+      - kind: lane_wind_down
     execution_pipeline:
       stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
@@ -747,6 +750,7 @@ profiles:
         - kickoff_declare_predicate
         - workhub_add_meeting_decision
         - workhub_get_document
+        - workhub_get_task
         - workhub_list_documents
         - workhub_comment
         - read
@@ -776,6 +780,7 @@ profiles:
         - workhub_list_tasks
         - workhub_cancel_task
         - workhub_get_document
+        - workhub_get_task
         - workhub_list_documents
         - registryhub_list_endpoints
         - registryhub_get_endpoint
@@ -853,6 +858,10 @@ profiles:
         warn_after_idle_steps: 5
         failforward_after_idle_steps: 9
         halt_after_idle_steps: 14
+      # Verifier owns release validation: it must not wind down leaving
+      # validate.* tasks it claimed in_progress (false-completing a failed
+      # check is now blocked at the source) or a peer's question unread.
+      - kind: lane_wind_down
     execution_pipeline:
       stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
@@ -925,6 +934,9 @@ profiles:
       # exactly as it already does for the impl lanes. Closes the LOGGED case.
       - kind: kickoff_bootstrap_gate
         allowed_starters: [orchestrator]
+      # Debugger must finish the fix tasks it claims (in_progress) and answer
+      # owning-lane questions before idling — no abandon-on-empty.
+      - kind: lane_wind_down
     stage_tool_preconditions:
       action:
         # Additionally block the bug TOOLS until the IMPL→VALIDATION boundary, so a

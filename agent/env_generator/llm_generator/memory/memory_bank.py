@@ -19,7 +19,7 @@ Structure:
 import logging
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Any
+from typing import Dict, List, Optional, Any
 from datetime import datetime
 import re
 
@@ -188,8 +188,42 @@ Working on: initialization
 ## Deployment Status
 [Deployment state]
 """
+        },
+        "notebook": {
+            "filename": "notebook.md",
+            "description": "Agent-writable working memory (journal). NOT framework-synced; NOT committed.",
+            "template": """# Lane Notebook
+
+> THIS FILE IS YOURS. You maintain it with `update_memory_bank(...)`; the framework
+> never overwrites it, and it is NOT committed. It PERSISTS across all of your wakes —
+> record here what your NEXT wake should not have to re-derive: decisions you made,
+> gotchas you hit, where things live, and the next thing to do.
+>
+> The OTHER memory-bank files (project_brief / tech_context / system_patterns /
+> active_context / progress) are FRAMEWORK-MAINTAINED and READ-ONLY to you — they hold
+> the objective truth (your current focus + real progress). Read them via the
+> auto-provided digest or `read_memory_bank`; do not hand-edit them.
+
+## Decisions
+
+## Gotchas & Issues
+
+## Tech Notes
+
+## Next / TODO
+
+## Log
+"""
         }
     }
+
+    # The agent-WRITABLE half of the bank (free-form journal; framework never
+    # auto-syncs it). Everything else in CORE_FILES is FRAMEWORK-SYNCED and
+    # read-only to the lane. Kept as named constants so the read/write split is
+    # visible in one place (user requirement: modifiable files != synced files).
+    NOTEBOOK_KEY = "notebook"
+    SYNCED_KEYS = ("project_brief", "tech_context", "system_patterns",
+                   "active_context", "progress")
     
     def __post_init__(self):
         """Initialize memory files."""
@@ -424,10 +458,108 @@ Working on: initialization
         """
         if key not in self._files:
             raise ValueError(f"Unknown memory file: {key}")
-        
+
         self._files[key].save(content)
         self._logger.info(f"Updated {key}")
-    
+
+    def set_current_focus(self, focus: str) -> None:
+        """Deterministically rewrite ONLY the ``## Current Focus`` section of
+        active_context (preserving Recent Changes / Next Steps / Decisions / Blockers).
+
+        The bank's active_context promised to be '(auto-updated during generation)' but
+        nothing ever wrote it — agents read a frozen 'Working on: initialization' that
+        contradicted their real phase, feeding drift/idle. The framework knows the live
+        phase (agent._active_phase) + lane; this keeps the bank's STATE in sync so a
+        read_memory_bank reflects where the run actually is. Best-effort; never raises."""
+        try:
+            ac = self._files.get("active_context")
+            if ac is None:
+                return
+            lines = ac.load().splitlines()
+            out, i, n = [], 0, len(lines)
+            replaced = False
+            while i < n:
+                ln = lines[i]
+                if ln.strip().lower() == "## current focus":
+                    out.append(ln)
+                    out.append(f"Working on: {focus}")
+                    out.append("")
+                    i += 1
+                    # skip the old body up to the next "## " header (or EOF)
+                    while i < n and not lines[i].lstrip().startswith("## "):
+                        i += 1
+                    replaced = True
+                    continue
+                out.append(ln)
+                i += 1
+            if not replaced:  # no section yet — prepend one
+                out = ["## Current Focus", f"Working on: {focus}", ""] + out
+            ac.save("\n".join(out).strip() + "\n")
+        except Exception:
+            pass
+
+    def _set_section(self, file_key: str, header: str,
+                     body_lines: List[str], max_items: int = 12) -> None:
+        """Deterministically REPLACE the body of ``## <header>`` in ``file_key``
+        with ``body_lines`` (truth-sync semantics: replace, not append — the
+        section is a live snapshot of current state). Creates the section if
+        absent. Best-effort; never raises. Mirrors ``set_current_focus``'s
+        section-rewrite so framework state stays a single source of truth."""
+        try:
+            f = self._files.get(file_key)
+            if f is None:
+                return
+            body = [str(b).strip() for b in (body_lines or []) if str(b).strip()][:max_items]
+            if not body:
+                body = ["(none)"]
+            body = [b if b.startswith(("- ", "[", "1.", "2.", "3.", "4.", "5.",
+                                       "6.", "7.", "8.", "9.")) else f"- {b}"
+                    for b in body]
+            lines = f.load().splitlines()
+            out, i, n, replaced = [], 0, len(lines), False
+            target = header.strip().lower()
+            while i < n:
+                ln = lines[i]
+                if ln.strip().lower() == target:
+                    out.append(ln)
+                    out.extend(body)
+                    out.append("")
+                    i += 1
+                    while i < n and not lines[i].lstrip().startswith("## "):
+                        i += 1
+                    replaced = True
+                    continue
+                out.append(ln)
+                i += 1
+            if not replaced:
+                out = out + ["", header] + body + [""]
+            f.save("\n".join(out).strip() + "\n")
+        except Exception:
+            pass
+
+    def sync_framework_state(self, *, completed: Optional[List[str]] = None,
+                             in_progress: Optional[List[str]] = None,
+                             next_steps: Optional[List[str]] = None,
+                             blockers: Optional[List[str]] = None,
+                             known_issues: Optional[List[str]] = None) -> None:
+        """FRAMEWORK auto-sync (authoritative hub truth → the READ-ONLY files):
+        REPLACE the derived sections of active_context + progress so the digest
+        reflects real progress / next / blockers without depending on the agent
+        calling report_progress (whose feeder path was dead). Each arg is a live
+        snapshot; pass None to leave a section untouched. Best-effort; never raises.
+        Current Focus stays owned by ``set_current_focus``; the notebook stays the
+        agent's own writable half — untouched here."""
+        if next_steps is not None:
+            self._set_section("active_context", "## Next Steps", next_steps)
+        if blockers is not None:
+            self._set_section("active_context", "## Blockers", blockers)
+        if completed is not None:
+            self._set_section("progress", "## Completed Features", completed, max_items=20)
+        if in_progress is not None:
+            self._set_section("progress", "## In Progress", in_progress)
+        if known_issues is not None:
+            self._set_section("progress", "## Known Issues", known_issues)
+
     def append_to_progress(self, item: str, category: str = "completed") -> None:
         """
         Append an item to the progress file.
@@ -566,6 +698,71 @@ Working on: initialization
             max_items=20,
         )
 
+    def append_notebook(
+        self,
+        *,
+        focus: str = None,
+        next_step: str = None,
+        recent_change: str = None,
+        completed: Optional[List[str]] = None,
+        issues: Optional[List[str]] = None,
+        decisions: Optional[List[str]] = None,
+        tech_notes: Optional[List[str]] = None,
+    ) -> List[str]:
+        """Append the agent's OWN durable notes to its writable notebook
+        (notebook.md) — the SEPARATE, agent-owned half of the bank. Never
+        touches the framework-synced CORE files (active_context / progress /
+        system_patterns / tech_context). De-duplicated + capped per section via
+        ``_append_unique_bullet``. Returns the section names touched.
+
+        This is the write target for the ``update_memory_bank`` tool: a lane
+        edits ONLY its notebook; the synced files stay framework-owned and
+        read-only (user requirement: modifiable files != auto-synced files)."""
+        if self.NOTEBOOK_KEY not in self._files:
+            return []
+        touched: List[str] = []
+        for d in (decisions or []):
+            self._append_unique_bullet(self.NOTEBOOK_KEY, "## Decisions", d)
+        if decisions:
+            touched.append("Decisions")
+        for it in (issues or []):
+            self._append_unique_bullet(self.NOTEBOOK_KEY, "## Gotchas & Issues", it)
+        if issues:
+            touched.append("Gotchas & Issues")
+        for t in (tech_notes or []):
+            self._append_unique_bullet(self.NOTEBOOK_KEY, "## Tech Notes", t)
+        if tech_notes:
+            touched.append("Tech Notes")
+        if next_step:
+            self._append_unique_bullet(self.NOTEBOOK_KEY, "## Next / TODO", next_step)
+            touched.append("Next / TODO")
+        # focus / recent_change / completed form the running ## Log — the agent's
+        # journal of what it did, so a later wake has continuity.
+        log_bits: List[str] = []
+        if focus:
+            log_bits.append(f"focus: {focus}")
+        if recent_change:
+            log_bits.append(recent_change)
+        log_bits.extend(f"done: {c}" for c in (completed or []))
+        for b in log_bits:
+            self._append_unique_bullet(self.NOTEBOOK_KEY, "## Log", b)
+        if log_bits:
+            touched.append("Log")
+        return touched
+
+    def get_notebook(self, max_chars: int = 1600) -> str:
+        """Return the agent's writable notebook content (trimmed)."""
+        nb = self.get_file(self.NOTEBOOK_KEY) or ""
+        # Drop the read-only-contract preamble (the > blockquote) from the
+        # digest view — the agent already knows it owns this file.
+        body = "\n".join(
+            ln for ln in nb.splitlines()
+            if not ln.lstrip().startswith(">") and not ln.startswith("# Lane Notebook")
+        ).strip()
+        if len(body) > max_chars:
+            return body[: max_chars - 20] + "\n...(truncated)\n"
+        return body
+
     def _append_unique_bullet(self, key: str, section_header: str, item: str, max_items: int = 20) -> None:
         """Prepend a de-duplicated bullet to a markdown section."""
         if key not in self._files:
@@ -662,7 +859,11 @@ Working on: initialization
         recent = _section(active, "Recent Changes")
         next_steps = _section(active, "Next Steps")
         completed = _section(progress, "Completed Features")
-        issues = _section(progress, "Known Issues")
+        # "Known Issues / Blockers" merges progress.Known Issues (open bugs) with
+        # active_context.Blockers (dep-blocked tasks) — both are framework-synced.
+        _issues = _section(progress, "Known Issues")
+        _blockers = _section(active, "Blockers")
+        issues = "\n".join([s for s in (_blockers, _issues) if s and s != "(none)"]).strip()
         decisions = _section(patterns, "Key Technical Decisions")
 
         # Pull a few high-signal tech lines (ports/compose paths often end up here)
@@ -674,8 +875,12 @@ Working on: initialization
                 break
         tech_block = "\n".join([ln for ln in tech_lines if ln]) or "(see tech_context.md)"
 
+        notebook = self.get_notebook()
+
         out = "\n".join([
             "MEMORY BANK DIGEST",
+            "",
+            "── FRAMEWORK-MAINTAINED (read-only; the objective truth) ──",
             "",
             "Current Focus:",
             focus or "(unknown)",
@@ -697,6 +902,10 @@ Working on: initialization
             "",
             "Tech Notes (high-signal):",
             tech_block,
+            "",
+            "── YOUR NOTEBOOK (you own this; write it with update_memory_bank; persists across your wakes) ──",
+            "",
+            notebook or "(empty — record decisions/gotchas/next-steps your future wakes will need)",
         ]).strip() + "\n"
 
         if len(out) > max_chars:

@@ -172,6 +172,20 @@ class FrameworkValidation:
                 # a correct skeleton (kept as a safety net); the frontend repairs still
                 # matter (skeleton is backend-only).
                 orch._generate_backend_skeleton()
+                # Regenerate the DB schema SQL onto integration EVERY tick too — the
+                # backend/frontend analogue. _generate_database (orchestrator startup,
+                # post-kickoff) wrote app/database/init/01_init.sql ONCE while output_dir
+                # was on `main`, so it never reached the `integration` tree the delivery
+                # gate globs / create_release snapshots; the per-tick merge then dropped
+                # the working-tree copy and docker recreated the bind-mount dir as ROOT,
+                # so database_has_sql() stayed False → database_sql_missing wedged
+                # delivery FOREVER (instagram_v2/v3: api_smoke green, never delivered).
+                # Writing it HERE (on integration, pre-docker) means _commit_framework_
+                # delivery below ships it AND docker mounts a populated haibo-owned dir.
+                try:
+                    await orch._generate_database()
+                except Exception as _db_exc:
+                    orch._logger.warning("per-tick database scaffold failed: %s", _db_exc)
                 orch._scaffold_frontend_baseline()
                 orch._repair_frontend_api()
                 # FRONTEND SKELETON (PROPOSAL #19 — now actually wired; this was a

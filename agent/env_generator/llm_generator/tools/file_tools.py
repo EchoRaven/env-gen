@@ -35,6 +35,50 @@ def _workspace_rel(workspace: Workspace, abs_path: Path) -> str:
         return str(abs_path)
 
 
+def _workspace_filename_matches(workspace: Workspace, raw_path: str, limit: int = 6) -> list:
+    """Workspace-wide search for files whose NAME matches the requested one — so a
+    wrong-DIRECTORY guess (``frontend/src/pages/calendar.jsx``) still points the agent at
+    the REAL file (``app/frontend/src/pages/CalendarPage.jsx``). The nearest-existing-dir
+    hint only helps when the dir is right; this helps when the dir AND name are guessed.
+    Bounded walk (prunes vcs/deps/build + caps scanned files) so it never hangs; returns
+    workspace-relative paths, exact-name matches first, then stem-fuzzy. Best-effort."""
+    import os as _os
+    try:
+        want = Path(raw_path).name.lower()
+        want_stem = Path(raw_path).stem.lower()
+        want_ext = Path(raw_path).suffix.lower()
+        if not want_stem:
+            return []
+        root = workspace.root
+        _PRUNE = {".git", "node_modules", ".venv", "__pycache__", "dist", "build",
+                  ".next", ".agents", ".agent_logs", "worktrees", ".memory"}
+        exact, fuzzy_ext, fuzzy = [], [], []
+        scanned = 0
+        for dirpath, dirnames, filenames in _os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in _PRUNE and not d.startswith(".")]
+            for fn in filenames:
+                scanned += 1
+                if fn.startswith("."):
+                    continue
+                low = fn.lower()
+                try:
+                    rel = str((Path(dirpath) / fn).relative_to(root))
+                except Exception:
+                    continue
+                if low == want:
+                    exact.append(rel)
+                elif len(want_stem) >= 3 and (want_stem in Path(fn).stem.lower()
+                                              or Path(fn).stem.lower() in want_stem):
+                    # prefer same-extension matches so a code-file guess (.jsx) ranks
+                    # CalendarPage.jsx above outlook_calendar.png / docker-compose.yml.
+                    (fuzzy_ext if Path(fn).suffix.lower() == want_ext else fuzzy).append(rel)
+            if scanned > 20000 or len(exact) >= limit:
+                break
+        return (exact or fuzzy_ext or fuzzy)[:limit]
+    except Exception:
+        return []
+
+
 def _path_not_found_hint(workspace: Workspace, resolved: Path, raw_path: str) -> str:
     """A 'did-you-mean' hint for a missing path.
 
@@ -47,26 +91,34 @@ def _path_not_found_hint(workspace: Workspace, resolved: Path, raw_path: str) ->
     """
     try:
         root = workspace.root
+        # Workspace-wide name match FIRST — the most useful signal when the DIRECTORY
+        # guess is also wrong (the requested dir doesn't exist), so the nearest-dir
+        # listing below is unrelated to what the agent actually wants.
+        _ws = _workspace_filename_matches(workspace, raw_path)
+        ws_hint = (
+            f" — file(s) matching '{Path(raw_path).name}' exist in the workspace at: "
+            f"{', '.join(_ws)} (use one of THESE exact paths)"
+        ) if _ws else ""
         anc = resolved.parent
         # Climb to the nearest existing directory, never above the workspace root
         # (resolve() guarantees `resolved` is inside root, so this terminates).
         while not anc.exists() and anc != root:
             anc = anc.parent
         if not anc.exists() or not anc.is_dir():
-            return ""
+            return ws_hint
         entries = sorted(
             p.name + ("/" if p.is_dir() else "")
             for p in anc.iterdir() if not p.name.startswith(".")
         )
         rel = _workspace_rel(workspace, anc) or "."
         if not entries:
-            return f" (nearest existing dir '{rel}/' is empty)"
+            return f" (nearest existing dir '{rel}/' is empty){ws_hint}"
         shown = entries[:40]
         more = f" …(+{len(entries) - len(shown)} more)" if len(entries) > len(shown) else ""
         names = [e.rstrip("/") for e in entries]
         close = difflib.get_close_matches(Path(raw_path).name, names, n=1, cutoff=0.6)
         did = f"; did you mean '{close[0]}'?" if close else ""
-        return f" (nearest existing dir '{rel}/' contains: {', '.join(shown)}{more}{did})"
+        return f" (nearest existing dir '{rel}/' contains: {', '.join(shown)}{more}{did}){ws_hint}"
     except Exception:
         return ""
 

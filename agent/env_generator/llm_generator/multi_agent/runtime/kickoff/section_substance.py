@@ -21,7 +21,11 @@ _META_KEYS = ("section", "kind", "recorded_by", "agent", "recorded_at",
 # framework-owned auth_model) apart from a truncated/empty one — see
 # ``non_contract_keys``.
 _RECOGNIZED_KEYS = {
-    "frontend": ("ui_pages", "screens", "user_flows", "ui_components"),
+    # user_flows RETIRED from the frontend section (user directive 2026-06-22): a
+    # user_flow is NOT a frontend-kickoff artifact — critical flows are derived from
+    # the registered CONTRACT (ui_pages + endpoints), see test_user_squad +
+    # flow_coverage. The frontend declares ui_pages + ui_components only.
+    "frontend": ("ui_pages", "screens", "ui_components"),
     "backend": ("endpoints", "data_model", "tables"),
     "verifier": ("predicates",),
 }

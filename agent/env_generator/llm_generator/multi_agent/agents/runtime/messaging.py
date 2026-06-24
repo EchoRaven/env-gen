@@ -116,7 +116,13 @@ class AgentMessaging:
             return
 
         msg_type = str(inbox_msg.get("type") or "").lower()
-        if msg_type in {"ack", "status", "shutdown"}:
+        # ``info`` is non-actionable per-step NARRATION ("Writing tailwind…",
+        # "Continuing scaffolding…") — it must NOT wake a resident lane. v9: the
+        # frontend sent 39 info messages to the orchestrator, each waking it →
+        # the orchestrator churned 78 near-empty finish cycles. Real work uses
+        # issue / question / task_ready / blocker, which still wake. (ack/status/
+        # shutdown were already excluded; info joins them.)
+        if msg_type in {"ack", "status", "shutdown", "info"}:
             return
         # task_ready / issue / question / answer are DIRECT work-for-this-lane
         # signals. They used to be UNCONDITIONALLY excluded here and delegated

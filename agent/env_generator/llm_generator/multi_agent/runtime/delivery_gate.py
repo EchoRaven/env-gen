@@ -79,6 +79,25 @@ def delivery_gate_suggestions(gate: Dict[str, Any]) -> List[str]:
         suggestions.append("Mark at least one table as implemented via `update_table(name=..., status='implemented')`.")
     if "verification_checklist_not_ready" in failed_checks:
         suggestions.append("Run and record verification/build checks until checklist is ready for delivery.")
+    if "business_chain_missing" in failed_checks:
+        suggestions.append(
+            "Verifier: register real business-flow verification chains via "
+            "`registryhub_register_verification_chain` (auth round-trip + one chain "
+            "per critical flow: create -> read-back -> cross-user). The synthesized "
+            "default does NOT satisfy delivery.")
+    if "business_chain_failing" in failed_checks:
+        suggestions.append(
+            "Verifier: a registered verification chain is not passing — run_validation "
+            "must show business_chain green. Fix the broken step or the endpoint, then re-run.")
+    if "business_chain_api_coverage" in failed_checks:
+        suggestions.append(
+            "Verifier: every registered API endpoint must be exercised by at least one "
+            "verification chain step. Add steps (or a new chain) until the union of all "
+            "chains covers the whole API surface.")
+    if "business_chain_coverage" in failed_checks:
+        suggestions.append(
+            "Verifier: author one business-flow verification chain per declared critical "
+            "flow so every critical flow is covered (not just a subset).")
     if "validation_retry_pending" in failed_checks:
         suggestions.append(
             "Automatic smoke retry is still pending. Wait for retry completion and rerun delivery gate."
@@ -435,6 +454,122 @@ def incomplete_required_tasks(hubs) -> List[Dict[str, Any]]:
             "reason": reason,
         })
     return incomplete
+
+
+def _declared_critical_flows(hubs) -> List[str]:
+    """Names of the DECLARED critical flows (the authoritative set the verifier
+    must cover). Reuses ``compute_flow_coverage``'s inventory. Returns [] on any
+    error so the coverage check degrades to a no-op rather than wedging the gate."""
+    try:
+        from .flow_coverage import compute_flow_coverage
+        rep = compute_flow_coverage(hubs, None)
+        return list(getattr(rep, "required", []) or [])
+    except Exception:
+        return []
+
+
+def _uncovered_business_endpoints(rh, authored_chains: List[Dict[str, Any]]) -> List[str]:
+    """Business endpoints (``METHOD /path``) NOT exercised by ANY authored chain
+    step. Reuses ``registryhub.endpoint_id`` + the ``${var}``->``{x}`` collapse
+    that ``register_verification_chain`` validates steps with, so a chain step
+    ``/api/posts/${id}`` matches the registered ``/api/posts/{post_id}``
+    (param-name-agnostic). Returns [] on any error so the check degrades to a
+    no-op rather than wedging the gate."""
+    try:
+        from .lifecycle import business_endpoints
+        required: Dict[str, str] = {}  # endpoint_id -> readable "METHOD /path"
+        for ep in business_endpoints(rh.get_endpoints() or {}):
+            m = str(ep.get("method") or "").upper()
+            p = str(ep.get("path") or "")
+            if m and p:
+                required[rh.endpoint_id(m, p)] = f"{m} {p}"
+        if not required:
+            return []
+        covered = set()
+        for ch in authored_chains:
+            for st in (ch.get("steps") or []):
+                p = str(st.get("path") or "")
+                if not p:
+                    continue
+                p = re.sub(r"\$\{[^}]+\}", "{x}", p)
+                covered.add(rh.endpoint_id(str(st.get("method") or "GET"), p))
+        return sorted(lbl for eid, lbl in required.items() if eid not in covered)
+    except Exception:
+        return []
+
+
+def business_chain_blockers(hubs) -> Dict[str, Any]:
+    """DELIVERY-QUALITY GATE (user 2026-06-24): what ships must be verified by a
+    REAL business-flow verification chain, not just per-endpoint api_smoke. The
+    verifier MUST author chains (``registryhub_register_verification_chain``) that
+    exercise the business flows end-to-end. The framework's synthesized DEFAULT
+    chain is a ``run_validation`` deadlock-breaker only — it is NEVER stored in the
+    chain registry, so an empty ``get_verification_chains()`` proves the verifier
+    authored none, and the default can never satisfy this gate.
+
+    Returns ``{}`` when satisfied, else ``{"reason": <check>, "detail": <msg>, ...}``.
+    Strictest tier (user choice): three blocking conditions —
+      * ``business_chain_missing``  — verifier authored NO chain (registry empty)
+      * ``business_chain_failing``  — an authored chain has not PASSED (never run,
+                                      or last run left steps broken)
+      * ``business_chain_coverage`` — fewer authored chains than declared critical
+                                      flows (must cover every critical flow)
+    """
+    rh = getattr(hubs, "registryhub", None)
+    if rh is None or not hasattr(rh, "get_verification_chains"):
+        return {}
+    try:
+        chains = rh.get_verification_chains() or {}
+    except Exception:
+        return {}
+    authored = [
+        rec for name, rec in chains.items()
+        if name != "_meta" and isinstance(rec, dict) and rec.get("steps")
+    ]
+    if not authored:
+        return {
+            "reason": "business_chain_missing", "authored": 0,
+            "detail": ("no verifier-authored verification chain is registered — the "
+                       "synthesized default does NOT satisfy delivery. The verifier "
+                       "must register business-flow chains via "
+                       "registryhub_register_verification_chain."),
+        }
+    not_passing = [
+        str(rec.get("name") or rec.get("id"))
+        for rec in authored
+        if rec.get("status") != "passing"
+        or (rec.get("last_result") or {}).get("broken")
+    ]
+    if not_passing:
+        return {
+            "reason": "business_chain_failing", "authored": len(authored),
+            "chains": not_passing,
+            "detail": (f"{len(not_passing)} verification chain(s) have NOT passed: "
+                       + ", ".join(not_passing[:8]) + ". run_validation must show "
+                       "business_chain green (re-author the broken step or fix the "
+                       "endpoint) before delivery."),
+        }
+    # HARD RULE (user 2026-06-24): the UNION of all authored chains must exercise
+    # EVERY business API endpoint at least once — the chains collectively cover the
+    # whole API surface, not just happy-path flows. A registered endpoint that no
+    # chain step touches is unverified and blocks delivery.
+    uncovered = _uncovered_business_endpoints(rh, authored)
+    if uncovered:
+        return {
+            "reason": "business_chain_api_coverage", "authored": len(authored),
+            "uncovered": uncovered,
+            "detail": (f"{len(uncovered)} registered API endpoint(s) are NOT exercised by "
+                       "ANY verification chain — every business endpoint must appear in at "
+                       "least one chain step: " + ", ".join(uncovered[:12])
+                       + ("" if len(uncovered) <= 12 else f" (+{len(uncovered) - 12} more)")
+                       + ". Add steps to existing chains or author a new chain to cover them."),
+        }
+    # NOTE: the per-flow chain-COUNT check was retired alongside the user_flow
+    # migration (2026-06-22) — critical flows are now page-derived, so a count proxy
+    # (chains >= flows) is no longer meaningful. The per-API coverage above is the
+    # robust, concrete coverage guarantee (every endpoint exercised); authored+passing
+    # + full API coverage is what delivery requires.
+    return {}
 
 
 def noncanonical_business_response_keys(hubs) -> List[Dict[str, Any]]:
@@ -964,6 +1099,14 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     if noncanonical_response_keys:
         failed_checks.append("business_response_key_noncanonical")
 
+    # DELIVERY-QUALITY (user 2026-06-24): what ships must be verified by a REAL,
+    # PASSING, verifier-authored business-flow chain covering every critical flow
+    # — not just shallow api_smoke, and never the synthesized default. The verifier
+    # MUST author it; a miss blocks delivery and routes back (dispatch_gate_level_checks).
+    business_chain_block = business_chain_blockers(hubs)
+    if business_chain_block:
+        failed_checks.append(business_chain_block["reason"])
+
     ok = not (missing_files or missing_dirs or invalid_json or failed_checks)
     soft_fail_only = (
         bool(failed_checks)
@@ -981,6 +1124,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         "failed_checks": failed_checks,
         "incomplete_required_tasks": incomplete_tasks,
         "noncanonical_response_keys": noncanonical_response_keys,
+        "business_chain": business_chain_block,
         "hub_counts": {
             "endpoints": len(endpoints),
             "tables": len(tables),
@@ -1013,5 +1157,6 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
 
 __all__ = ["format_delivery_gate_report", "delivery_gate_suggestions",
            "incomplete_required_tasks", "noncanonical_business_response_keys",
+           "business_chain_blockers",
            "extract_spec_tables", "validate_contract_alignment", "validate_build_evidence",
            "validate_delivery_gate"]

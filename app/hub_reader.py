@@ -16,8 +16,10 @@ from pathlib import Path
 from typing import Any
 
 CORE_AGENTS = [
-    ("orchestrator", "Orchestrator"), ("backend", "Backend Lead"),
-    ("frontend", "Frontend Lead"), ("verifier", "Verifier"),
+    # role MUST match the agent's display name (the .agent_logs/<role> Agent/ dir):
+    # backend/frontend were renamed Lead→Engineer, so these must track that.
+    ("orchestrator", "Orchestrator"), ("backend", "Backend Engineer"),
+    ("frontend", "Frontend Engineer"), ("verifier", "Verifier"),
     ("debugger", "Debugger"), ("knowledge", "Knowledge"),
 ]
 
@@ -396,26 +398,79 @@ def _agent_log_activity(gen: Path, role: str):
     return (label, newest.stat().st_mtime, list(reversed(acts)))
 
 
+def _agent_status_map(gen: Path) -> dict:
+    """{agent_id: (created_at, status, current_task)} for the LATEST ``agent_status``
+    event per agent, from eventhub_events.json. Unlike most eventhub events these ARE
+    per-agent (payload.agent_id + status), and they fire from step 1 of EVERY loop —
+    including the kickoff-response loop that does not write .agent_logs until its first
+    tool call. So this closes the early-kickoff blind window where a lane is genuinely
+    working but its per-agent log file doesn't exist yet. Best-effort; {} on any error."""
+    f = gen / "shared" / "hubs" / "eventhub_events.json"
+    if not f.is_file():
+        return {}
+    try:
+        data = json.loads(f.read_text(encoding="utf-8", errors="ignore"))
+    except Exception:
+        return {}
+    evs = data if isinstance(data, list) else (list(data.values()) if isinstance(data, dict) else [])
+    out: dict = {}
+    for e in evs:
+        if not isinstance(e, dict) or e.get("event_type") != "agent_status":
+            continue
+        p = e.get("payload") or {}
+        aid = p.get("agent_id")
+        if not aid:
+            continue
+        ts = float(e.get("created_at") or 0.0)
+        prev = out.get(aid)
+        if prev is None or ts >= prev[0]:
+            out[aid] = (ts, str(p.get("status") or ""), str(p.get("current_task") or ""))
+    return out
+
+
 def _agents(h: Path) -> list[dict]:
     """Per-agent status + action history from the AUTHORITATIVE source: each agent's
     own ``.agent_logs/<role> Agent/*.jsonl`` step log. eventhub is deliberately NOT
     used — it is a hub-scoped coordination log (records which HUB emitted an event,
     not which agent), so it cannot attribute activity to an agent. An agent with no
-    log is reported idle with no history (honest 'no data', never a guess)."""
+    log is reported idle with no history (honest 'no data', never a guess).
+
+    ``active`` = this lane emitted to its OWN log within 5min — generous enough to span
+    a long step (LLM call, docker build, validation) so a genuinely-working lane never
+    flickers to ``idle``, yet PER-LANE so a STUCK lane reads ``idle`` even while the
+    overall run keeps ticking. (A global run-liveness override briefly hid a frontend
+    lane that had been stuck 26min as ``active`` — 2026-06-23; reverted.) Run-liveness
+    is conveyed by the orchestrator's OWN status + the env ``generating`` badge, not by
+    faking every lane active. ``last_active_at`` shows how long since the lane acted, so
+    a stall is visible at a glance."""
     gen = h.parent.parent  # h == <gen>/shared/hubs
     now = datetime.now(timezone.utc).timestamp()
+    status_map = _agent_status_map(gen)  # per-lane liveness (covers kickoff window)
     out = []
     for aid, role in CORE_AGENTS:
         act = _agent_log_activity(gen, role)
-        if act:
-            label, mtime, recent = act
-            out.append({"id": aid, "role": role,
-                        "status": "active" if (now - mtime) < 180 else "idle",
-                        "last_action": label or "—", "last_active_at": _iso(mtime),
-                        "recent_actions": recent})
+        log_label, log_mtime, recent = act if act else (None, 0.0, [])
+        st = status_map.get(aid)            # (ts, status, current_task) | None
+        st_ts = st[0] if st else 0.0
+        st_status = (st[1] if st else "") or ""
+        st_task = (st[2] if st else "") or ""
+        last_active = max(log_mtime, st_ts)
+        # Liveness: the lane is ACTIVE if it touched its log OR emitted a non-idle
+        # agent_status within 5min. EXPLICIT idle wins (a lane that just emitted
+        # status='idle'/'completed' as its newest signal is idle even if recent), so a
+        # STUCK lane (last signal stale) still reads idle — preserving the per-lane
+        # honesty (no global run-liveness override that hid a 26min-stuck lane).
+        if st and st_ts >= log_mtime and st_status in ("idle", "completed"):
+            status = "idle"
+        elif last_active and (now - last_active) < 300:
+            status = "active"
         else:
-            out.append({"id": aid, "role": role, "status": "idle",
-                        "last_action": "—", "last_active_at": "", "recent_actions": []})
+            status = "idle"
+        label = log_label or ((f"{st_status}: {st_task}".strip(": ") or "—") if st else "—")
+        out.append({"id": aid, "role": role, "status": status,
+                    "last_action": label or "—",
+                    "last_active_at": _iso(last_active) if last_active else "",
+                    "recent_actions": recent})
     return out
 
 

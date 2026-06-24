@@ -215,6 +215,26 @@ def _extract_required_flows(spec: dict) -> Tuple[List[str], str]:
     if critical_names:
         return critical_names, "critical_pages"
 
+    # CONTRACT-DERIVED FALLBACK (user directive 2026-06-22 — flows come from the
+    # registered CONTRACT, not authored user_flows): with no explicit critical_flows
+    # and no critical:true pages, treat EVERY declared ui_page as a flow to validate.
+    # Keeps the ui_flow gate non-empty after user_flows retirement (matches
+    # test_user_squad's per-page coverage). ui_flow MISSING stays a warning on a
+    # functionally-validated app, so this widens coverage without hard-blocking.
+    all_names: List[str] = []
+    seen_all = set()
+    for fallback_name, page in page_entries:
+        name = (page.get("name") or page.get("id")
+                or fallback_name or page.get("path"))
+        if not name:
+            continue
+        name = str(name).strip()
+        if name and name not in seen_all:
+            seen_all.add(name)
+            all_names.append(name)
+    if all_names:
+        return all_names, "pages"
+
     return [], "none"
 
 
