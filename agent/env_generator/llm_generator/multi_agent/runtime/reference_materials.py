@@ -27,12 +27,43 @@ import json
 import os
 import re
 
-# Upper bound on auto-planned milestones — a runaway guard, NOT a target. The
-# planner chooses K itself (a small app = 1 milestone; a complex one may be many).
-# Was a hard data[:6] that silently truncated richer roadmaps even though the
-# planner instructions say "choose K yourself" — complex tasks legitimately need
-# more phases. Generous default; override via ENVGEN_MAX_MILESTONES.
-_MAX_MILESTONES = max(1, int(os.environ.get("ENVGEN_MAX_MILESTONES", "20")))
+# Milestone COUNT is user-controlled, not capped. The ENVGEN_MILESTONES
+# hyperparameter (unset by default) lets the caller steer how many milestones the
+# planner produces — no artificial ceiling:
+#   ENVGEN_MILESTONES="5"    → FORCE exactly 5 milestones (hard constraint).
+#   ENVGEN_MILESTONES="3-5"  → RECOMMEND ~3-5 (soft guidance; planner may deviate).
+#   unset / ""               → FREE: the planner chooses K itself, no cap.
+# (Was a hard data[:6] truncation that silently dropped a complex task's later
+# phases even though the planner instructions say "choose K yourself".)
+def _milestone_target() -> "Tuple[str, Optional[int], Optional[int]]":
+    """Parse ENVGEN_MILESTONES → (mode, lo, hi). mode ∈ {force, recommend, free}."""
+    raw = (os.environ.get("ENVGEN_MILESTONES") or "").strip()
+    if not raw:
+        return ("free", None, None)
+    m = re.fullmatch(r"(\d+)\s*-\s*(\d+)", raw)
+    if m:
+        lo, hi = int(m.group(1)), int(m.group(2))
+        if lo > hi:
+            lo, hi = hi, lo
+        return ("recommend", max(1, lo), max(1, hi))
+    if raw.isdigit() and int(raw) >= 1:
+        n = int(raw)
+        return ("force", n, n)
+    return ("free", None, None)  # unparseable → free
+
+
+def _milestone_count_guidance() -> str:
+    """Prompt fragment steering the planner's milestone COUNT per the hyperparameter."""
+    mode, lo, hi = _milestone_target()
+    if mode == "force":
+        return (f"\n\n## MILESTONE COUNT — HARD CONSTRAINT\nProduce EXACTLY {lo} "
+                f"milestone(s) — no more, no fewer. Partition the build to fit {lo} "
+                f"coherent phases.")
+    if mode == "recommend":
+        span = f"{lo}" if lo == hi else f"{lo}-{hi}"
+        return (f"\n\n## MILESTONE COUNT — RECOMMENDATION\nAim for about {span} "
+                f"milestone(s). Deviate only if the task clearly needs to.")
+    return ""  # free: planner decides, no guidance, no cap
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
@@ -462,6 +493,7 @@ async def plan_milestones(llm: Any, raw_requirements: str,
             {k: spec.get(k) for k in ("screens", "endpoints", "entities")},
             ensure_ascii=False)[:24_000]
     prompt = (_PLAN_INSTRUCTIONS
+              + _milestone_count_guidance()
               + "\n\n## REQUIREMENTS\n" + str(raw_requirements or "")[:16_000]
               + spec_text)
     try:
@@ -475,8 +507,13 @@ async def plan_milestones(llm: Any, raw_requirements: str,
         data = json.loads(m.group(0))
         if not isinstance(data, list) or not data:
             return None
+        # Truncate ONLY when the count is FORCED (enforce exactly N); recommend/free
+        # leave the planner's K untouched — no artificial ceiling.
+        _mode, _lo, _hi = _milestone_target()
+        if _mode == "force":
+            data = data[:_hi]
         out: List[Dict[str, str]] = []
-        for i, entry in enumerate(data[:_MAX_MILESTONES]):
+        for i, entry in enumerate(data):
             if not isinstance(entry, Mapping):
                 return None
             name = str(entry.get("name") or f"M{i+1}").strip()
