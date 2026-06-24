@@ -150,6 +150,18 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
             _save = dict(st.get("save") or {})
             _save.setdefault("token", "access_token")
             st["save"] = _save
+        if pth == "/auth/register":
+            # 409-tolerance parity with the framework's OWN synthesized register
+            # (expect [200,201,409] — "user already exists → still loginable"). Per-step
+            # ${rand} already keeps distinct register steps distinct, but a chain that
+            # re-registers the same identity (or a platform that 409s a dup) must not fail
+            # the whole chain on an already-exists.
+            _re = st.get("expect")
+            _re = ([200, 201] if not _re else
+                   list(_re) if isinstance(_re, (list, tuple)) else [_re])
+            if 409 not in _re:
+                _re.append(409)
+            st["expect"] = _re
         # AUTH BODY DEFAULT (round 47): an /auth/register|login step with NO body
         # (verifier authored the step from just an endpoint id, body=None) sends an
         # empty request → the framework AS returns 422 "email and password are
@@ -486,11 +498,22 @@ def _step_refs(step: Mapping[str, Any]) -> set:
 def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     """Run one chain; returns {name, steps: [...], broken: [...]}.
     Deterministic wiring; never raises."""
-    variables: Dict[str, str] = {"rand": str(int(time.time() * 1000))[-7:]}
+    # ${rand} mints a UNIQUE value PER STEP (the prompt's contract: "${rand} mints a
+    # unique value, ${var} reuses a saved one"). It used to be minted ONCE per execution
+    # — so the canonical multi-user pattern (register user A → … → register user B), which
+    # the verifier prompt mandates and few-shots, gave BOTH registers the SAME
+    # ${rand} email → step 2 collided on the unique-email constraint (409) → its token was
+    # never saved → every downstream step skipped → business_chain_failing FOREVER on a
+    # functionally-correct app (run v12: chain `post_creation_and_visibility`). Fresh per
+    # STEP (not per occurrence) keeps a single step's email+username consistent while
+    # making distinct steps distinct; cross-step REUSE is via ${var} (saved), per the prompt.
+    _rand_base = str(int(time.time() * 1000))[-7:]
+    variables: Dict[str, str] = {}
     recorded: List[Dict[str, Any]] = []
     last_id: Any = None
     unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
-    for step in chain.get("steps") or []:
+    for idx, step in enumerate(chain.get("steps") or []):
+        variables["rand"] = f"{_rand_base}{idx:02d}"
         method = str(step.get("method", "GET")).upper()
         # A broken step no longer aborts the whole chain (it used to `break`, so only the
         # FIRST failure was ever reported). Continue, but SKIP a step that depends on a
@@ -579,8 +602,13 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
         if kind == "broken":
             # Don't abort — just mark the vars this step was supposed to provide as
             # unsatisfied, so ONLY its dependents are skipped; independent steps run on.
+            # But do NOT poison a var an EARLIER step already saved (e.g. a broken
+            # register-B step that re-declares save:{token} must not invalidate the valid
+            # tokenA captured by register-A → downstream auth=tokenA steps were wrongly
+            # skipped, run v12). Only newly-unprovided keys become unsatisfied.
             if isinstance(step.get("save"), Mapping):
-                unsatisfied.update(str(k) for k in step["save"].keys())
+                unsatisfied.update(str(k) for k in step["save"].keys()
+                                   if str(k) not in variables)
     broken = [f"{s['method']} {s['path']} → {s['status']} ({s['note']})"
               for s in recorded if s["kind"] == "broken"]
     return {"name": str(chain.get("name") or "chain"), "steps": recorded,
