@@ -879,6 +879,37 @@ def _conflict_from_finding(
 # ---------------------------------------------------------------------------
 
 
+async def author_milestone_brief(
+    hubs: Any,
+    orch_agent: Any,
+    milestone_index: int,
+    *,
+    raw_req: str = "",
+    timeout_s: float = 240.0,
+) -> str:
+    """Run the orchestrator's KICKOFF-BRIEF turn for ``milestone_index``, returning
+    the authored brief (or ``""`` to fall back to the rough slice).
+
+    Component 3 wires the real turn: fire a ``kickoff_brief_request`` to the
+    orchestrator AGENT (it reviews the roadmap, may revise FUTURE phases, and sets
+    THIS phase's detailed brief via the ``milestone_*`` tools — full system-prompt +
+    hub context), then AWAIT (bounded) until ``hubs.milestones`` shows the brief set.
+
+    For now (component 4 landed first) this is a STUB that returns ``""`` immediately
+    — no event fired, no wait — so the loop is store-driven + carries the overall-goal
+    context while the brief falls back to the rough slice. NEVER hangs the run."""
+    ms = getattr(hubs, "milestones", None)
+    if ms is None:
+        return ""
+    try:
+        cur = ms.get_by_index(milestone_index) or ms.get_current()
+    except Exception:
+        cur = None
+    if isinstance(cur, dict) and str(cur.get("brief") or "").strip():
+        return cur["brief"]  # already authored (resume) — reuse
+    return ""
+
+
 def start_kickoff(
     hubs: Any,
     milestone_index: int,
