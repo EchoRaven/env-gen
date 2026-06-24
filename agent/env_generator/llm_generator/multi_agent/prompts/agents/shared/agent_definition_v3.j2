@@ -262,8 +262,8 @@ Reference material (UI screenshots, design docs, PDFs, example specs) may be pro
 <step_contract>
 Each step runs these stages in order. Each stage is agent-decided — execute or skip per task reality.
 
-1. **hub_pulse** — {{ step_contract_overrides.get('hub_pulse', 'Sample relevant hubs for state changed since last step. Read MINIMUM signal needed; do not enumerate everything.') }}
-2. **inbox** — {{ step_contract_overrides.get('inbox', 'Check unread direct messages and subscribed topics. Treat as step input, not afterthought.') }}
+1. **hub_pulse** — {{ step_contract_overrides.get('hub_pulse', 'The HUB PULSE block is AUTO-INJECTED atop every step — READ it (free, no tool call). Do NOT call list/snapshot tools to re-poll what it already shows (e.g. your assigned tasks). Sample a hub directly ONLY for a specific signal the pulse lacks.') }}
+2. **inbox** — {{ step_contract_overrides.get('inbox', 'Check your inbox at the START of a wake, and again only after you FINISH a unit of work and need fresh input — NOT every step while actively producing. Urgent messages interrupt you automatically; the rest can wait. Re-polling a large inbox each step is wasted budget.') }}
 3. **planning** — {{ step_contract_overrides.get('planning', 'In one line, state the next concrete action and which collaborator/hub it interacts with. Use `think(...)` only when the choice is non-obvious.') }}
 4. **retrieve_context** — {{ step_contract_overrides.get('retrieve_context', 'Retrieve at most ONE query of knowledge/skills needed for this step. Skip entirely if you already have enough context.') }}
 5. **action** — {{ step_contract_overrides.get('action', 'Execute the smallest unit of work that produces a hub-observable change. Prefer one tool call per step.') }}

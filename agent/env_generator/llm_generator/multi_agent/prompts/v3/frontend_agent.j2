@@ -73,8 +73,8 @@
     ],
 
     step_contract_overrides={
-        "hub_pulse": "ONCE at start of step, read the auto-injected HUB PULSE block. It shows: tasks assigned to frontend, PRs needing review, breaking changes on endpoints you consume, unread @mentions. Do NOT call hub_snapshot() unless the pulse is broken.",
-        "inbox": "ONCE at start of step. check_inbox(limit=20). Look for: task_ready (your trigger — note which upstream sent it: Orchestrator with raw_requirements = Phase A available, Backend = Phase B available), issue events on your PRs, send_message from Backend with response shape summary.",
+        "hub_pulse": "The HUB PULSE block is AUTO-INJECTED atop EVERY step — just READ it (free, no tool call). It shows your assigned tasks + their status, PRs, breaking changes, unread @mentions. Do NOT call workhub_list_tasks / hub_snapshot to re-poll what the pulse already shows — that wastes a whole step. While building, trust the pulse and write the next artifact.",
+        "inbox": "check_inbox(limit=20) ONCE at the START OF YOUR WAKE — then do NOT re-check it every step while you are actively building. Urgent messages interrupt you automatically; non-urgent ones can wait until you finish your current unit of work. Re-polling a large inbox each step is wasted budget (v10: 275-msg inbox re-checked every step). Look for: task_ready (your trigger), issue events on your PRs, Backend's response-shape summary.",
         "planning": "ONE-line strategy: pick the deepest phase reachable given upstream state (registryhub_list_endpoints + workhub_list_documents tell you which), then which pages+components you'll build this pass. You build them all yourself — no worker delegation.",
         "retrieve_context": "OPTIONAL. ONE retrieve_context query if a past React/Tailwind pattern is plausibly relevant. Default: skip — your spec + reference images carry most of the signal.",
         "action": "Execute the implementation step. PREFER one tool call per step, but a tightly-coupled batch (api.js + one page + lint together) is acceptable.",

@@ -69,8 +69,8 @@
     ],
 
     step_contract_overrides={
-        "hub_pulse": "ONCE at start of step, read the auto-injected HUB PULSE block at the top of your message. It already tells you: tasks assigned to you, PRs needing your review, breaking changes on endpoints you consume, unread @mentions. Do NOT call hub_snapshot() unless the pulse is broken.",
-        "inbox": "ONCE at start of step. check_inbox(limit=20). Look for: task_ready (your trigger), issue events on your PRs (need inline-comment fix cycle), send_message from peers asking for endpoint clarification.",
+        "hub_pulse": "The HUB PULSE block is AUTO-INJECTED atop EVERY step — just READ it (free, no tool call). It shows your assigned tasks + status, PRs needing review, breaking changes, unread @mentions. Do NOT call workhub_list_tasks / hub_snapshot to re-poll what it already shows — that wastes a step. While building, trust the pulse and register/implement the next endpoint or table.",
+        "inbox": "check_inbox(limit=20) ONCE at the START OF YOUR WAKE — then do NOT re-check it every step while you are actively implementing. Urgent messages interrupt you automatically; non-urgent ones wait until you finish your current unit. Re-polling each step is wasted budget. Look for: task_ready (your trigger), issue events on your PRs, peers asking for endpoint clarification.",
         "planning": "Briefly state your strategy in one line: which of your endpoints+tables you'll complete this session and which need custom (non-CRUD) logic in custom_routes.py. You build the whole slice yourself — no worker delegation.",
         "retrieve_context": "OPTIONAL. ONE retrieve_context query if a past API pattern is plausibly relevant. Default to skip — your spec + DB schema usually contain enough.",
         "action": "Execute the implementation step: register endpoints/tables to the contract, write custom business logic in custom_routes.py, send messages. The framework GENERATES main.py/models.py/schemas.py/database.py/Dockerfile/pyproject from your contract — do NOT write those (the write is denied + discarded). custom_routes.py is your one editable code file.",
