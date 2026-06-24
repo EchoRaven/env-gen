@@ -83,6 +83,20 @@ class BugCreateTool(HubTool):
             _owner = resolve_owning_agent(self._hubs, bug_artifacts or {})
         except Exception:
             _owner = None
+        if not _owner:
+            # Fallback for a bug with NO resolvable endpoint/table/file artifact — e.g. a
+            # build failure ("Frontend build fails: npm run build returns code 1", run v15)
+            # whose artifacts are a stack trace, not a route. Infer the owning lane from the
+            # source/title keywords so it still routes to a fixer instead of sitting
+            # unassigned (the debugger does not reliably wake to triage it). Frontend vs
+            # backend by domain words; leave None only if genuinely ambiguous.
+            _hay = f"{source} {title} {description}".lower()
+            _fe = any(w in _hay for w in ("frontend", "npm", "vite", "jsx", "tsx", "react", "tailwind", " ui ", "ui_", "build fail"))
+            _be = any(w in _hay for w in ("backend", "fastapi", "pydantic", "sqlalchemy", "/api/", "endpoint", " sql", "psycopg", "database", "migration"))
+            if _fe and not _be:
+                _owner = "frontend"
+            elif _be and not _fe:
+                _owner = "backend"
         task = self._hubs.workhub.create_task(
             title=title,
             description=description,
