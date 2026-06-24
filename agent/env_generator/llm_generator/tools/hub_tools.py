@@ -2209,10 +2209,10 @@ class KickoffDeclareUiPageTool(_KickoffDeclareBase):
                    **_extra: Any) -> ToolResult:
         page = {"id": id, "route": route}
         if purpose: page["purpose"] = purpose
-        if components: page["components"] = [str(c) for c in components][:15]
-        if must_have: page["must_have"] = [str(m) for m in must_have][:15]
+        if components: page["components"] = [str(c) for c in components][:60]
+        if must_have: page["must_have"] = [str(m) for m in must_have][:60]
         if component: page["component"] = str(component)
-        if apis_used: page["apis_used"] = [str(a) for a in apis_used][:20]
+        if apis_used: page["apis_used"] = [str(a) for a in apis_used][:60]
         return self._declare(meeting_id, {"ui_pages": [page]}, milestone_index)
 
 
@@ -2250,8 +2250,8 @@ class KickoffDeclareUiComponentTool(_KickoffDeclareBase):
         if component: comp["component"] = str(component)
         if kind: comp["kind"] = str(kind)
         if purpose: comp["purpose"] = purpose
-        if apis_used: comp["apis_used"] = [str(a) for a in apis_used][:20]
-        if children: comp["children"] = [str(c) for c in children][:15]
+        if apis_used: comp["apis_used"] = [str(a) for a in apis_used][:60]
+        if children: comp["children"] = [str(c) for c in children][:60]
         return self._declare(meeting_id, {"ui_components": [comp]}, milestone_index)
 
 
@@ -2275,7 +2275,7 @@ class KickoffDeclareUserFlowTool(_KickoffDeclareBase):
                    milestone_index: Optional[int] = None,
                    **_extra: Any) -> ToolResult:
         flow = {"id": id, "description": description}
-        if steps: flow["steps"] = [str(x) for x in steps][:15]
+        if steps: flow["steps"] = [str(x) for x in steps][:60]
         if critical is not None: flow["critical"] = bool(critical)
         return self._declare(meeting_id, {"user_flows": [flow]}, milestone_index)
 
