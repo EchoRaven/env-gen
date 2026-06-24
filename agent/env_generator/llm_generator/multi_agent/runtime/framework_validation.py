@@ -237,6 +237,49 @@ class FrameworkValidation:
             if not (all_business_endpoints_implemented(registryhub.get_endpoints())
                     or orch._all_business_endpoints_have_route_code()):
                 return
+            # CHAIN-AUTHORING proactive trigger (root fix for "verifier never authors
+            # chains", run v11): business_chains are CONTRACT-derived — the verifier can
+            # author them the moment the backend contract is implemented, WITHOUT a booting
+            # app or a finished frontend. The canonical ``validation_ready`` emission is
+            # one-shot (fires on the single status-transition that completes the contract)
+            # and was missed in v11; the docker-gated verifier trigger below only fires once
+            # the stack BOOTS, which a frontend stall blocks — so the verifier sat idle and
+            # delivery failed on ``business_chain_missing`` with the contract fully built.
+            # Here: contract is complete (we passed the gate above) — if NO chain is
+            # registered yet, wake the verifier with an ACCEPTED signal
+            # (validation_phase=True is honored by VerifierValidationTriggerPolicy with zero
+            # dependence on env tags/phases). Re-armable while chains stay missing, with a
+            # wall-clock dedup so it never storms. Domain-agnostic.
+            try:
+                _vc = getattr(registryhub, "_verification_chains", None)
+                _have_chains = bool(_vc.value()) if _vc is not None else True
+                _last_ct = getattr(orch, "_chain_authoring_trigger_ts", 0.0)
+                if (not _have_chains) and (time.time() - _last_ct) > 90.0:
+                    orch._chain_authoring_trigger_ts = time.time()
+                    from tools.communication_tools import _create_message
+                    _cmsg = _create_message(
+                        source_agent_id="orchestrator", target_agent_id="verifier",
+                        content=(
+                            "Backend contract is FULLY IMPLEMENTED but NO verification "
+                            "chains are registered — delivery will fail on business_chain. "
+                            "Author them NOW from the registered endpoints "
+                            "(registryhub_list_endpoints): one business_chain per critical "
+                            "flow (auth round-trip -> create -> read-back -> cross-user "
+                            "isolation), register each via "
+                            "registryhub_register_verification_chain. This does NOT need a "
+                            "running app or a finished frontend — author against the "
+                            "contract, then run_validation when the stack is up."),
+                        msg_type="task_ready", priority="urgent", persist=True,
+                        tags=["verification_chains", "author_proactive"],
+                    )
+                    # _create_message has NO metadata kwarg; inject post-construction.
+                    _cmsg.metadata["validation_phase"] = True
+                    await orch.message_bus.send(_cmsg)
+                    orch._logger.info(
+                        "CHAIN-AUTHORING proactive trigger sent to verifier "
+                        "(contract complete, no chains registered yet).")
+            except Exception as _cae:
+                orch._logger.debug("chain-authoring proactive trigger skipped: %s", _cae)
             session_ts = getattr(orch, "_session_start_ts", 0.0) or 0.0
             runhub = getattr(orch.hubs, "runhub", None)
             if runhub is not None and hasattr(runhub, "last_successful_run_since"):
@@ -521,7 +564,7 @@ class FrameworkValidation:
                     # the first wake). Re-nudge, urgent, no duplicate task.
                     try:
                         from tools.communication_tools import _create_message
-                        await orch.message_bus.send(_create_message(
+                        _rmsg = _create_message(
                             source_agent_id="orchestrator",
                             target_agent_id="verifier",
                             content=(
@@ -533,7 +576,16 @@ class FrameworkValidation:
                                 "run_validation."),
                             msg_type="task_ready", priority="urgent",
                             persist=True, tags=["verification_chains", "renudge"],
-                        ))
+                        )
+                        # CRITICAL (v11 root cause): without validation_phase=True the
+                        # verifier's VerifierValidationTriggerPolicy REJECTS this task_ready
+                        # ("requires explicit validation-phase trigger") — the re-nudge was
+                        # silently ignored every time (run v11: "Ignoring task_ready from
+                        # orchestrator" at 03:47:53, 30s before the gate). tags alone don't
+                        # satisfy the policy unless env-configured into accepted_tags;
+                        # validation_phase=True always does (workflow_policies.py:346).
+                        _rmsg.metadata["validation_phase"] = True
+                        await orch.message_bus.send(_rmsg)
                         orch._logger.warning(
                             "CHAIN-AUTHORING re-nudge sent to verifier.")
                     except Exception:
