@@ -525,20 +525,35 @@ def _status_ok(status: Any, expect: List[int]) -> bool:
     return (status in expect) if expect else bool(status and 200 <= status < 300)
 
 
-def _missing_body_fields(body_text: Optional[str]) -> List[str]:
-    """Leaf field names a FastAPI/Pydantic 422 (or 400) reports as MISSING, read
-    from ``detail[].loc``. Lets a chain write step auto-fill exactly what the LIVE
-    handler requires even when the endpoint's REGISTERED request schema is empty
-    (contract drift — observed v19: POST /api/posts/{id}/comments has
-    request:{} yet the handler 422s "field required"). Returns [] when the body
-    isn't a recognizable validation error. Domain-agnostic: reads the server's own
-    error, never app knowledge."""
+# A plain-string 4xx detail ('text is required', 'missing field email') — some
+# hand-authored handlers raise HTTPException(400, "text is required") instead of
+# letting Pydantic emit the structured 422 loc[] list. Extract the field name so a
+# write step can still auto-fill it (observed v22: POST /api/posts/{id}/comments
+# → 400 "text is required" — this backend's comment field is `text`, not `content`).
+_REQUIRED_FIELD_RE = re.compile(
+    r"(?:field\s+)?['\"]?([A-Za-z_]\w*)['\"]?\s+(?:is\s+)?required"
+    r"|missing\s+(?:required\s+)?(?:field\s+)?['\"]?([A-Za-z_]\w*)",
+    re.IGNORECASE)
+
+
+def _missing_required_fields(body_text: Optional[str],
+                             method: str) -> "tuple[List[str], List[str]]":
+    """``(body_fields, query_fields)`` the LIVE handler reports MISSING from a 4xx,
+    so a chain step can auto-fill exactly what's required even when the endpoint's
+    REGISTERED request schema is empty (contract drift — v19: POST
+    /api/posts/{id}/comments has request:{} yet 422s "field required"). Structured
+    FastAPI 422 buckets each ``detail[].loc`` by its frame (``body``/``form`` →
+    body, ``query`` → query param, e.g. v22 GET /api/search/users → 422 missing
+    ``query.q``). A plain-STRING detail ('text is required') is attributed to the
+    BODY for a write method (only writes carry one). Domain-agnostic: reads the
+    server's own error, never app knowledge."""
+    body: List[str] = []
+    query: List[str] = []
     try:
         d = json.loads(body_text or "{}")
     except Exception:
-        return []
+        return body, query
     det = d.get("detail") if isinstance(d, Mapping) else None
-    out: List[str] = []
     if isinstance(det, list):
         for e in det:
             if not isinstance(e, Mapping):
@@ -546,13 +561,27 @@ def _missing_body_fields(body_text: Optional[str]) -> List[str]:
             if str(e.get("type", "")).lower() not in ("missing", "value_error.missing"):
                 continue
             loc = e.get("loc")
-            if isinstance(loc, (list, tuple)) and loc:
-                # skip the leading 'body'/'query'/'form' frame → take the field segment
-                seg = (loc[1] if len(loc) > 1 and str(loc[0]) in ("body", "query", "form")
-                       else loc[-1])
-                if isinstance(seg, str) and seg and seg not in out:
-                    out.append(seg)
-    return out
+            if not (isinstance(loc, (list, tuple)) and loc):
+                continue
+            frame = str(loc[0])
+            seg = (loc[1] if len(loc) > 1 and frame in ("body", "query", "form")
+                   else loc[-1])
+            if not (isinstance(seg, str) and seg):
+                continue
+            if frame == "query":
+                if seg not in query:
+                    query.append(seg)
+            elif seg not in body:
+                body.append(seg)
+    elif isinstance(det, str) and method in ("POST", "PUT", "PATCH"):
+        for m in _REQUIRED_FIELD_RE.finditer(det):
+            f = m.group(1) or m.group(2)
+            # never treat an auth/permission word as a missing body field (a 401/403
+            # message like "missing or invalid token" is NOT a body-shape problem).
+            if f and f.lower() not in ("token", "authorization", "auth", "bearer", "credentials") \
+                    and f not in body:
+                body.append(f)
+    return body, query
 
 
 def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
@@ -628,19 +657,32 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
         # mirrors the auth-body-default / unresolved-var fallbacks. A wrong-typed or
         # genuinely-broken field still surfaces: the retry either resolves it or the
         # original failure is recorded (the type-mismatch retry just 422s again).
-        if (not ok and status in (400, 422)
-                and method in ("POST", "PUT", "PATCH")):
-            _missing = [f for f in _missing_body_fields(res.get("body_text"))
-                        if not (isinstance(body, Mapping) and f in body)]
-            if _missing:
-                _repaired = dict(body) if isinstance(body, Mapping) else {}
+        if not ok and status in (400, 422):
+            _miss_body, _miss_query = _missing_required_fields(res.get("body_text"), method)
+            _miss_body = [f for f in _miss_body
+                          if not (isinstance(body, Mapping) and f in body)]
+            # a required QUERY param the step didn't send (v22: GET /api/search/users
+            # → missing `q`) — append it to the path's query string. Skip any already
+            # present in the path so an authored `?q=` is never doubled.
+            _qs_present = (path.split("?", 1)[1] if "?" in path else "")
+            _miss_query = [f for f in _miss_query if (f + "=") not in _qs_present]
+            if _miss_body or _miss_query:
                 _filler = f"chain-{variables.get('rand', '0')}"
-                for f in _missing:
+                _repaired = dict(body) if isinstance(body, Mapping) else (
+                    body if not _miss_body else {})
+                for f in _miss_body:
                     _repaired[f] = _filler
-                _res2 = _http(method, base + path, token=token, body=_repaired)
+                _rpath = path
+                if _miss_query:
+                    _rpath += ("&" if "?" in _rpath else "?") + "&".join(
+                        f"{f}={_filler}" for f in _miss_query)
+                _res2 = _http(method, base + _rpath, token=token, body=_repaired)
                 if _status_ok(_res2.get("status"), expect):
-                    res, status, ok, body, autofilled = (
-                        _res2, _res2.get("status"), True, _repaired, _missing)
+                    res, status, ok = _res2, _res2.get("status"), True
+                    body = _repaired
+                    if _miss_query:
+                        path = _rpath
+                    autofilled = _miss_body + [f"query:{f}" for f in _miss_query]
         kind = "ok"
         note = ""
         if not ok:
