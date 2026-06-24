@@ -89,6 +89,11 @@ def delivery_gate_suggestions(gate: Dict[str, Any]) -> List[str]:
         suggestions.append(
             "Verifier: a registered verification chain is not passing — run_validation "
             "must show business_chain green. Fix the broken step or the endpoint, then re-run.")
+    if "business_chain_api_coverage" in failed_checks:
+        suggestions.append(
+            "Verifier: every registered API endpoint must be exercised by at least one "
+            "verification chain step. Add steps (or a new chain) until the union of all "
+            "chains covers the whole API surface.")
     if "business_chain_coverage" in failed_checks:
         suggestions.append(
             "Verifier: author one business-flow verification chain per declared critical "
@@ -463,6 +468,36 @@ def _declared_critical_flows(hubs) -> List[str]:
         return []
 
 
+def _uncovered_business_endpoints(rh, authored_chains: List[Dict[str, Any]]) -> List[str]:
+    """Business endpoints (``METHOD /path``) NOT exercised by ANY authored chain
+    step. Reuses ``registryhub.endpoint_id`` + the ``${var}``->``{x}`` collapse
+    that ``register_verification_chain`` validates steps with, so a chain step
+    ``/api/posts/${id}`` matches the registered ``/api/posts/{post_id}``
+    (param-name-agnostic). Returns [] on any error so the check degrades to a
+    no-op rather than wedging the gate."""
+    try:
+        from .lifecycle import business_endpoints
+        required: Dict[str, str] = {}  # endpoint_id -> readable "METHOD /path"
+        for ep in business_endpoints(rh.get_endpoints() or {}):
+            m = str(ep.get("method") or "").upper()
+            p = str(ep.get("path") or "")
+            if m and p:
+                required[rh.endpoint_id(m, p)] = f"{m} {p}"
+        if not required:
+            return []
+        covered = set()
+        for ch in authored_chains:
+            for st in (ch.get("steps") or []):
+                p = str(st.get("path") or "")
+                if not p:
+                    continue
+                p = re.sub(r"\$\{[^}]+\}", "{x}", p)
+                covered.add(rh.endpoint_id(str(st.get("method") or "GET"), p))
+        return sorted(lbl for eid, lbl in required.items() if eid not in covered)
+    except Exception:
+        return []
+
+
 def business_chain_blockers(hubs) -> Dict[str, Any]:
     """DELIVERY-QUALITY GATE (user 2026-06-24): what ships must be verified by a
     REAL business-flow verification chain, not just per-endpoint api_smoke. The
@@ -513,6 +548,21 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
                        + ", ".join(not_passing[:8]) + ". run_validation must show "
                        "business_chain green (re-author the broken step or fix the "
                        "endpoint) before delivery."),
+        }
+    # HARD RULE (user 2026-06-24): the UNION of all authored chains must exercise
+    # EVERY business API endpoint at least once — the chains collectively cover the
+    # whole API surface, not just happy-path flows. A registered endpoint that no
+    # chain step touches is unverified and blocks delivery.
+    uncovered = _uncovered_business_endpoints(rh, authored)
+    if uncovered:
+        return {
+            "reason": "business_chain_api_coverage", "authored": len(authored),
+            "uncovered": uncovered,
+            "detail": (f"{len(uncovered)} registered API endpoint(s) are NOT exercised by "
+                       "ANY verification chain — every business endpoint must appear in at "
+                       "least one chain step: " + ", ".join(uncovered[:12])
+                       + ("" if len(uncovered) <= 12 else f" (+{len(uncovered) - 12} more)")
+                       + ". Add steps to existing chains or author a new chain to cover them."),
         }
     flows = _declared_critical_flows(hubs)
     if flows and len(authored) < len(flows):

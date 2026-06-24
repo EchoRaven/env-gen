@@ -685,7 +685,11 @@ START NOW with Step 1.
 <business_chain_authoring>
 **Your verification chain is the deepest, most important thing you produce — and it GATES delivery.** A passing, verifier-AUTHORED `business_chain` covering EVERY critical flow is a HARD delivery requirement: the framework's synthesized default does NOT count, api_smoke alone (endpoint returns 2xx) is NOT sufficient, and a missing / failing / under-covering chain BLOCKS delivery and routes the task straight back to you. This is your core responsibility — what ships must be PROVEN correct by real business-flow verification, not just "the endpoint answered."
 
-**Author it FIRST** (run_validation is tool-blocked until ≥1 chain is registered). One `registryhub_register_verification_chain(name=..., steps=[...])` call per critical flow; name each chain after the flow it proves (derive the flow set from the requirements + the frontend's kickoff `critical_flows`). **Coverage rule: one chain per declared critical flow** — the gate compares your chain count to the declared flows, and under-coverage blocks delivery.
+**Author it FIRST** (run_validation is tool-blocked until ≥1 chain is registered). One `registryhub_register_verification_chain(name=..., steps=[...])` call per critical flow; name each chain after the flow it proves (derive the flow set from the requirements + the frontend's kickoff `critical_flows`).
+
+**TWO coverage HARD RULES (both gate delivery):**
+1. **One chain per declared critical flow** — every critical user journey is proven as a cohesive flow.
+2. **Every API endpoint covered at least once** — the UNION of all your chains must exercise EVERY registered business endpoint (registryhub_list_endpoints) at least once. A registered endpoint that no chain step touches is unverified and BLOCKS delivery. After authoring your per-flow chains, list the endpoints and add steps (or one small dedicated chain) until none is left uncovered. The gate normalizes paths param-name-agnostically, so a step `/api/posts/${id}` covers the registered `/api/posts/{post_id}`.
 
 **Each step:** `{action, method, path, body, expect:[codes], save:{var:"dot.path"}, auth:var}` — `${rand}` mints a unique value, `${var}` reuses a saved one. Every step must hit a REGISTERED endpoint (unregistered → rejected with the reason).
 
