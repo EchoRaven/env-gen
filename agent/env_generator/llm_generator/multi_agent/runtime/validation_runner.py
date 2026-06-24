@@ -246,6 +246,7 @@ def run_smoke_validation(
     cwd = project_dir / "docker"
     checks: List[Dict[str, Any]] = []
     endpoint_results: List[Dict[str, Any]] = []
+    chain_results: List[Dict[str, Any]] = []
 
     def _add(name: str, ok: bool, detail: str = "") -> None:
         checks.append({"name": name, "status": "pass" if ok else "fail", "detail": detail})
@@ -534,6 +535,13 @@ def run_smoke_validation(
         try:
             from .chain_executor import run_chains
             _chain = run_chains(base, project_dir, list(business_endpoints or []))
+            # Surface the PER-CHAIN results so the run_validation tool can sync each
+            # chain's verdict back through the LIVE registryhub (record_chain_result)
+            # to the MAIN registry the delivery gate reads. run_chains' own status
+            # write-back goes to project_dir's hub file — which, when validation runs
+            # inside a lane WORKTREE, is NOT the registry the gate audits (run v20:
+            # chains pass live but the gate sees stale 'registered' → deadlock).
+            chain_results = _chain.get("chains") or []
             _add("business_chain", not _chain["broken"],
                  ("; ".join(_chain["broken"]))[:800] if _chain["broken"]
                  else f"{_chain['total_steps']} step(s) across "
@@ -586,10 +594,10 @@ def run_smoke_validation(
                  "could not resolve the frontend service's published port "
                  "(container not running?)")
 
-        return _finalize(checks, backend_port, endpoint_results)
+        return _finalize(checks, backend_port, endpoint_results, chain_results)
     except Exception as exc:
         _add("runner_error", False, f"{type(exc).__name__}: {exc}")
-        return _finalize(checks, backend_port, endpoint_results)
+        return _finalize(checks, backend_port, endpoint_results, chain_results)
     finally:
         if teardown:
             try:
@@ -609,12 +617,14 @@ def run_smoke_validation(
 
 
 def _finalize(checks: List[Dict[str, Any]], backend_port: Optional[int],
-              endpoint_results: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+              endpoint_results: Optional[List[Dict[str, Any]]] = None,
+              chain_results: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     passed = bool(checks) and all(c["status"] == "pass" for c in checks)
     fails = [c["name"] for c in checks if c["status"] != "pass"]
     summary = "all api_smoke checks passed" if passed else f"FAILED: {', '.join(fails)}"
     return {"passed": passed, "summary": summary, "checks": checks,
-            "backend_port": backend_port, "endpoints": endpoint_results or []}
+            "backend_port": backend_port, "endpoints": endpoint_results or [],
+            "chains": chain_results or []}
 
 
 __all__ = ["run_smoke_validation"]
