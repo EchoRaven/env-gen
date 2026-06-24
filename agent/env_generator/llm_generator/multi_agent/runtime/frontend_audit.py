@@ -74,7 +74,16 @@ def _has_real_api_call(text: str) -> bool:
     if _API_CALL_RE.search(text):
         return True
     for n in _names_from_service_import(text):
-        if re.search(r"\b" + re.escape(n) + r"\s*\(", text):
+        # Accept BOTH a direct call `helper(` AND a method call on an imported
+        # SERVICE OBJECT `helper.get(` / `feed.list(`. The api.js service-object
+        # pattern (`export const feed = {get: () => api.get('/api/feed')}`;
+        # `import {feed} from '../services/api'`; `feed.get()`) is the most common
+        # React shape — the direct-call-only check false-flagged every page using
+        # it as a "placeholder stub" (run v11: HomeFeedPage called feed.get() /
+        # users.getSuggested(), shipped REAL content, yet ui_page_unwired blocked
+        # delivery on a non-existent stub). Requires a trailing `(` so a bare
+        # property read (`feed.length`) still doesn't count as a call.
+        if re.search(r"\b" + re.escape(n) + r"\s*(?:\(|\.\s*\w+\s*\()", text):
             return True
     return False
 
