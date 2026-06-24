@@ -749,6 +749,10 @@ class EnvGenAgent(
                 self.memory_bank.set_current_focus(_foc)
         except Exception:
             pass
+        # Full hub-truth auto-sync: refresh the READ-ONLY memory-bank sections
+        # (progress / next / blockers / issues) from authoritative hub state so the
+        # digest is real without depending on the agent calling report_progress.
+        self._sync_memory_bank_state()
         try:
             # Run agentic loop
             result = await self.execute(task_data)
@@ -775,7 +779,67 @@ class EnvGenAgent(
                         agent_manager.set_runtime_agent_lifecycle(self._agent_id, "idle")
                 except Exception:
                     pass
-    
+
+    def _sync_memory_bank_state(self) -> None:
+        """FRAMEWORK auto-sync: rebuild the READ-ONLY memory-bank sections from
+        authoritative hub state for THIS lane, so the digest reflects real
+        progress / next / blockers / issues without depending on the agent
+        calling report_progress (whose GeneratorMemory feeder path was dead).
+        Derives from WorkHub task state + open bugs; REPLACES sections (live
+        snapshot). Best-effort; never raises."""
+        try:
+            mb = getattr(self, "memory_bank", None)
+            hubs = getattr(self, "_hubs", None)
+            wh = getattr(hubs, "workhub", None) if hubs is not None else None
+            if mb is None or wh is None or not hasattr(wh, "list_tasks"):
+                return
+            aid = self._agent_id
+
+            def _title(t):
+                return str((t or {}).get("title") or (t or {}).get("id") or "")[:90]
+
+            try:
+                mine = [t for t in (wh.list_tasks(assignee=aid) or []) if isinstance(t, dict)]
+            except Exception:
+                mine = []
+            completed = [_title(t) for t in mine if t.get("status") == "completed"]
+            in_progress = [_title(t) for t in mine if t.get("status") == "in_progress"]
+            pending = [t for t in mine if t.get("status") == "pending"]
+
+            # next vs blocked: a pending task is READY iff every dep is completed.
+            try:
+                all_tasks = wh.stores.tasks.value() or {}
+            except Exception:
+                all_tasks = {}
+
+            def _dep_ok(t):
+                for d in (t.get("depends_on") or []):
+                    dep = all_tasks.get(d)
+                    if not isinstance(dep, dict) or dep.get("status") != "completed":
+                        return False
+                return True
+
+            next_steps = [_title(t) for t in pending if _dep_ok(t)]
+            blockers = [f"{_title(t)} — blocked on incomplete deps"
+                        for t in pending if not _dep_ok(t)]
+
+            # Open bugs: all-open → Known Issues; bugs owned by THIS lane → also blockers.
+            known_issues = []
+            try:
+                for b in (wh.list_open_bugs() or []):
+                    st = (b.get("metadata") or {}).get("bug_state", "open")
+                    known_issues.append(f"[{st}] {_title(b)}")
+                for b in (wh.list_bugs_assigned_to(aid) or []):
+                    blockers.append(f"bug: {_title(b)}")
+            except Exception:
+                pass
+
+            mb.sync_framework_state(
+                completed=completed, in_progress=in_progress,
+                next_steps=next_steps, blockers=blockers, known_issues=known_issues)
+        except Exception:
+            pass
+
     async def execute(self, task: Dict) -> Dict:
         """Execute task via agentic loop."""
         system_prompt = self._compose_system_prompt()

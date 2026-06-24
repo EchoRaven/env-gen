@@ -498,6 +498,68 @@ Working on: initialization
         except Exception:
             pass
 
+    def _set_section(self, file_key: str, header: str,
+                     body_lines: List[str], max_items: int = 12) -> None:
+        """Deterministically REPLACE the body of ``## <header>`` in ``file_key``
+        with ``body_lines`` (truth-sync semantics: replace, not append — the
+        section is a live snapshot of current state). Creates the section if
+        absent. Best-effort; never raises. Mirrors ``set_current_focus``'s
+        section-rewrite so framework state stays a single source of truth."""
+        try:
+            f = self._files.get(file_key)
+            if f is None:
+                return
+            body = [str(b).strip() for b in (body_lines or []) if str(b).strip()][:max_items]
+            if not body:
+                body = ["(none)"]
+            body = [b if b.startswith(("- ", "[", "1.", "2.", "3.", "4.", "5.",
+                                       "6.", "7.", "8.", "9.")) else f"- {b}"
+                    for b in body]
+            lines = f.load().splitlines()
+            out, i, n, replaced = [], 0, len(lines), False
+            target = header.strip().lower()
+            while i < n:
+                ln = lines[i]
+                if ln.strip().lower() == target:
+                    out.append(ln)
+                    out.extend(body)
+                    out.append("")
+                    i += 1
+                    while i < n and not lines[i].lstrip().startswith("## "):
+                        i += 1
+                    replaced = True
+                    continue
+                out.append(ln)
+                i += 1
+            if not replaced:
+                out = out + ["", header] + body + [""]
+            f.save("\n".join(out).strip() + "\n")
+        except Exception:
+            pass
+
+    def sync_framework_state(self, *, completed: Optional[List[str]] = None,
+                             in_progress: Optional[List[str]] = None,
+                             next_steps: Optional[List[str]] = None,
+                             blockers: Optional[List[str]] = None,
+                             known_issues: Optional[List[str]] = None) -> None:
+        """FRAMEWORK auto-sync (authoritative hub truth → the READ-ONLY files):
+        REPLACE the derived sections of active_context + progress so the digest
+        reflects real progress / next / blockers without depending on the agent
+        calling report_progress (whose feeder path was dead). Each arg is a live
+        snapshot; pass None to leave a section untouched. Best-effort; never raises.
+        Current Focus stays owned by ``set_current_focus``; the notebook stays the
+        agent's own writable half — untouched here."""
+        if next_steps is not None:
+            self._set_section("active_context", "## Next Steps", next_steps)
+        if blockers is not None:
+            self._set_section("active_context", "## Blockers", blockers)
+        if completed is not None:
+            self._set_section("progress", "## Completed Features", completed, max_items=20)
+        if in_progress is not None:
+            self._set_section("progress", "## In Progress", in_progress)
+        if known_issues is not None:
+            self._set_section("progress", "## Known Issues", known_issues)
+
     def append_to_progress(self, item: str, category: str = "completed") -> None:
         """
         Append an item to the progress file.
@@ -797,7 +859,11 @@ Working on: initialization
         recent = _section(active, "Recent Changes")
         next_steps = _section(active, "Next Steps")
         completed = _section(progress, "Completed Features")
-        issues = _section(progress, "Known Issues")
+        # "Known Issues / Blockers" merges progress.Known Issues (open bugs) with
+        # active_context.Blockers (dep-blocked tasks) — both are framework-synced.
+        _issues = _section(progress, "Known Issues")
+        _blockers = _section(active, "Blockers")
+        issues = "\n".join([s for s in (_blockers, _issues) if s and s != "(none)"]).strip()
         decisions = _section(patterns, "Key Technical Decisions")
 
         # Pull a few high-signal tech lines (ports/compose paths often end up here)
