@@ -949,20 +949,28 @@ class Orchestrator:
                         # per milestone (repeats the DATA MODEL, lists only that
                         # phase's NEW endpoints/pages); honor it.
                         _milestone_req = _slice or raw_req
-                        # The compiled REFERENCE SPEC enumerates the FULL endpoint/
-                        # screen surface. Appending it to a PARTIAL slice makes that
-                        # milestone over-declare LATER milestones' surface (smoke-notes
-                        # 2026-06-19: M1's "auth-and-list" slice got all 8 endpoints
-                        # marked binding → declared the whole CRUD → M2 had 0 new
-                        # surface → its frontend submitted empty `screens` → substance-
-                        # gate rejection). The full spec is only needed at M1 (where the
-                        # whole data model legitimately ships); M2+ scope to their self-
-                        # contained slice (the planner guarantees each slice repeats the
-                        # full DATA MODEL + lists ONLY its NEW endpoints/pages). When
-                        # there is no slice (single synthesized milestone) the spec still
-                        # backstops as before.
+                        # ARCHITECTURE (user 2026-06-24): the OVERALL requirement +
+                        # full endpoint/screen surface is given ONCE as standing
+                        # context — the compiled reference spec (design/
+                        # reference_spec.json) staged at run start + the milestone
+                        # ROADMAP the orchestrator records once (kind=milestone_plan).
+                        # Each milestone KICKOFF must carry ONLY its PHASE requirement,
+                        # NOT the whole surface — else the lanes see "all the content"
+                        # every milestone and plan/build as if finishing the ENTIRE app
+                        # each phase (no real staging; a likely driver of the late
+                        # rebuild/oscillation). This is also what the system's own
+                        # over-declaration guard wants: appending the FULL spec to a
+                        # PARTIAL slice makes that milestone over-declare later
+                        # milestones' surface (smoke-notes 2026-06-19: M1's slice got
+                        # all 8 endpoints marked binding → M2 had 0 new surface). M1
+                        # does NOT need the full surface — the planner's slice already
+                        # repeats the full DATA MODEL (so the schema/foundation ships at
+                        # M1) and lists only that phase's NEW endpoints/pages. So inject
+                        # the full spec ONLY as a backstop when there is NO slice at all
+                        # (degenerate/single synthesized milestone); a sliced milestone
+                        # — including M1 — stays scoped to its phase.
                         _spec_block = getattr(self, "_reference_spec_summary", "")
-                        if _spec_block and (_m_idx == 1 or not _slice) \
+                        if _spec_block and not _slice \
                                 and _spec_block not in _milestone_req:
                             _milestone_req = _milestone_req + _spec_block
 
