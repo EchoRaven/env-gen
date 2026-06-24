@@ -418,7 +418,7 @@ def _bundle_workhub_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext
             "workhub_link_task_to_pr",
             "workhub_link_task_to_apis",
             "workhub_update_block",
-            "workhub_archive_page",
+            "workhub_archive_document",
             "workhub_record_decision",
             "workhub_comments_for",
             "workhub_invite_attendee",

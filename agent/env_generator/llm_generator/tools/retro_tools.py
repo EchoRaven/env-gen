@@ -151,9 +151,9 @@ class SubmitRetroTool(_RetroToolBase):
             "proposed_prompt_changes": proposed_prompt_changes,
             **stats.to_dict(),
         }
-        page = self.hub_registry.workhub.create_page(
+        document = self.hub_registry.workhub.create_document(
             title=title, agent="orchestrator", kind="retro", metadata=metadata)
-        return ToolResult(success=True, data={"id": page["id"], "title": page["title"]})
+        return ToolResult(success=True, data={"id": document["id"], "title": document["title"]})
 
 
 class ListRetrosTool(_RetroToolBase):

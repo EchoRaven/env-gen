@@ -331,7 +331,7 @@ check_inbox()
 # Check readiness snapshots from HubRegistry (RegistryHub, WorkHub)
 tables = registryhub_list_tables()
 endpoints = registryhub_list_endpoints(status="implemented")
-pages = workhub_list_documents()
+documents = workhub_list_documents()
 validation = deliverability_summary()
 ```
 
@@ -762,12 +762,12 @@ sections came in, then called `finalize_kickoff` which:
 - registered every M{n} endpoint via registryhub.register_endpoint (actor='orchestrator')
 - registered every M{n} table via schema_hub.register_table (actor='orchestrator')
 - created every M{n} task via workhub.create_task (firing task_created -> wakes assignee)
-- persisted the predicate set on the meeting page
+- persisted the predicate set on the meeting document
 - closed the meeting + emitted `kickoff_complete`
 
 By the time you see a `resident_coordination_tick`: every lane already
 has its M{n} task in its inbox, the contract is registered in RegistryHub,
-and the predicate set is on the meeting page. **Your job from tick 1
+and the predicate set is on the meeting document. **Your job from tick 1
 is Phase 2.**
 
 **Phase 2: Monitor Implementation**
@@ -936,7 +936,7 @@ receipt = run_kickoff.finalize_kickoff(
 2. Registers every contract table via `schema_hub.register_table`.
 3. Spawns every task in `synthesis["task_tree"]` via
    `workhub.create_task` (carries `owner` -> `assignee` + `depends_on`).
-4. Persists the predicate set on the meeting page via
+4. Persists the predicate set on the meeting document via
    `workhub_add_meeting_decision`.
 5. Closes the meeting via `workhub.close_meeting`.
 6. Emits `kickoff_complete` on EventHub — wakes backend/frontend/
@@ -1000,8 +1000,8 @@ events to revisers after reading your decision.
 **Step 1 — Read the meeting state**
 
 ```
-page = workhub_get_document(page_id="{{ meeting_id }}")
-decisions = (page.get("metadata") or {}).get("decisions") or []
+document = workhub_get_document(document_id="{{ meeting_id }}")
+decisions = (document.get("metadata") or {}).get("decisions") or []
 ```
 
 From `decisions`, pull out the three attendee sections recorded for

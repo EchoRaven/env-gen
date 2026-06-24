@@ -988,7 +988,7 @@ Start by thinking about what might cause this issue.
         try:
             workhub = getattr(self._hubs, "workhub", None)
             pages_store = getattr(workhub, "stores", None)
-            pages = getattr(pages_store, "pages", None) if pages_store else None
+            pages = getattr(pages_store, "documents", None) if pages_store else None
             page = pages.value().get(meeting_id) if (pages and hasattr(pages, "value")) else None
             if not isinstance(page, Mapping):
                 return False
@@ -1038,7 +1038,7 @@ Start by thinking about what might cause this issue.
             # because the initial-section check needs section-name (not
             # round_n + phase) keying.
             pages_store = getattr(workhub, "stores", None)
-            pages = getattr(pages_store, "pages", None) if pages_store else None
+            pages = getattr(pages_store, "documents", None) if pages_store else None
             page = None
             if pages and hasattr(pages, "value"):
                 page = pages.value().get(meeting_id)
@@ -1291,7 +1291,7 @@ Start by thinking about what might cause this issue.
             if workhub is None or not hasattr(workhub, "add_meeting_decision"):
                 return
             pages_store = getattr(workhub, "stores", None)
-            pages = getattr(pages_store, "pages", None) if pages_store else None
+            pages = getattr(pages_store, "documents", None) if pages_store else None
             page = None
             if pages and hasattr(pages, "value"):
                 page = pages.value().get(meeting_id)
@@ -1527,7 +1527,7 @@ Start by thinking about what might cause this issue.
             # for round_n has any action token, do NOT write the backup.
             workhub_check = getattr(self._hubs, "workhub", None)
             pages_store = getattr(workhub_check, "stores", None)
-            pages = getattr(pages_store, "pages", None) if pages_store else None
+            pages = getattr(pages_store, "documents", None) if pages_store else None
             existing_action: Optional[str] = None
             if pages and hasattr(pages, "value"):
                 page = pages.value().get(meeting_id)

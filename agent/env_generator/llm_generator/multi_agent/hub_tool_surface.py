@@ -59,7 +59,7 @@ HUB_TOOL_SURFACE: Dict[str, Dict[str, Set[str]]] = {
             "workhub_list_ui_components",
         },
         "writes": {
-            "workhub_archive_page",
+            "workhub_archive_document",
             "workhub_cancel_task",
             "workhub_comment",
             "workhub_create_document",

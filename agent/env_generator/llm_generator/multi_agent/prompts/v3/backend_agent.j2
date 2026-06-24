@@ -63,7 +63,7 @@
 
     hubs=[
         {"name": "RegistryHub",   "read_when": "ONCE per step: registryhub_list_tables (column names from the kickoff contract registered to RegistryHub by the kickoff coordinator (you own the schema; the registered tables are the source of truth)), registryhub_list_endpoints (any other backend lane already built). Before building an endpoint that calls another agent's endpoint: registryhub_register_consumer.", "write_when": "registryhub_register_endpoint for EACH endpoint you implement, with response_key in schema (defined -> implemented as work progresses). registryhub_register_consumer when you depend on another agent's endpoint. mcp_registry_register_server + _register_tool when implementing an MCP server.", "tools": "registryhub_list_tables, registryhub_list_endpoints, registryhub_register_endpoint, registryhub_register_consumer, registryhub_get_breaking_changes, mcp_registry_*"},
-        {"name": "WorkHub",  "read_when": "Rarely — backend is event-triggered via task_ready, NOT via task-claim. Use workhub_list_documents only if you need cross-team context (e.g. design page for the slice you're implementing).",                                       "write_when": "workhub_record_decision on architectural choices worth preserving for downstream (e.g. 'used bcrypt rounds=12 for password hashing'). workhub_comment when leaving cross-team notes on a page.",                                                                                                                                                                                                  "tools": "workhub_record_decision, workhub_comment, workhub_list_documents, workhub_get_document"},
+        {"name": "WorkHub",  "read_when": "Rarely — backend is event-triggered via task_ready, NOT via task-claim. Use workhub_list_documents only if you need cross-team context (e.g. design document for the slice you're implementing).",                                       "write_when": "workhub_record_decision on architectural choices worth preserving for downstream (e.g. 'used bcrypt rounds=12 for password hashing'). workhub_comment when leaving cross-team notes on a document.",                                                                                                                                                                                                  "tools": "workhub_record_decision, workhub_comment, workhub_list_documents, workhub_get_document"},
         {"name": "CodeHub",  "read_when": "After verifier reports an issue, codehub_list_inline_comments to read line-level feedback (a bare check_inbox summary does NOT show inline comments).",                                                       "write_when": "Commit your work with codehub_commit — the framework integrates committed work to the integration branch automatically; you do NOT open a PR.",                                                                                                                                                                                                                                       "tools": "codehub_list_inline_comments, codehub_commit"},
         {"name": "EventHub", "read_when": "task_ready event from upstream (Database or Orchestrator) is your wake trigger. issue events from verifier signal a remediation cycle.",                                                                                          "write_when": "EventHub is READ-ONLY from this agent's perspective — only the orchestrator + observer agents emit. You consume via eventhub_inbox + eventhub_get_thread.",                                                                                                                                                                                                                                       "tools": "eventhub_inbox, eventhub_get_thread, eventhub_subscribe"}
     ],
@@ -235,7 +235,7 @@ You (backend) have been woken by a `kickoff_request` event for milestone **M{{ m
    {{ requirements }}
    ```
 1b. **INSPECT REFERENCE MATERIAL when any is provided (do this BEFORE authoring your data_model).** Read `design/reference_spec.json` (required screens / endpoints / entities / MCP tools — BINDING gates), then call `list_reference_images()` and `view_image(<path>)` for every screen returned. The screens are a SPECIFICATION of your contract: every visible datum implies a table COLUMN (a sender name + avatar + timestamp + unread dot ⇒ those columns on the row), and every actionable control implies an ENDPOINT — often more precise than the prose requirements. Derive `data_model` + `endpoints` from what the screens actually show, not from memory of a generic app. If `list_reference_images()` returns nothing, proceed from the requirements text.
-2. If `milestone_index > 1` ({{ milestone_index }} > 1 → {{ "yes" if milestone_index > 1 else "no" }}): call `registryhub_list_endpoints()` + `registryhub_list_tables()` to read M{{ milestone_index - 1 if milestone_index > 1 else 0 }} artifacts already in RegistryHub so your new endpoints extend (not collide with) what landed last milestone. Cross-reference any open meeting decisions from prior milestones via `workhub_get_document(page_id=...)` if a handle is in your inbox context.
+2. If `milestone_index > 1` ({{ milestone_index }} > 1 → {{ "yes" if milestone_index > 1 else "no" }}): call `registryhub_list_endpoints()` + `registryhub_list_tables()` to read M{{ milestone_index - 1 if milestone_index > 1 else 0 }} artifacts already in RegistryHub so your new endpoints extend (not collide with) what landed last milestone. Cross-reference any open meeting decisions from prior milestones via `workhub_get_document(document_id=...)` if a handle is in your inbox context.
 
 **Step 2 — Author your `{{ expected_section }}` section**
 
@@ -378,7 +378,7 @@ FINAL PROTOCOL (this overrides anything above if in doubt): declare your 'backen
    `backend` in the reviser set. UNLIKE `kickoff_response_prompt` (which
    authors its section blind, in parallel with sibling attendees), the
    revision pass has FULL VISIBILITY into every prior decision recorded
-   on the meeting page — the facilitator_note + frontend's section +
+   on the meeting document — the facilitator_note + frontend's section +
    verifier's section are all readable via workhub_get_document. Use that
    visibility to align endpoint ids, response_keys, table names with
    what frontend's screens.api_calls and verifier's predicates already
@@ -444,7 +444,7 @@ The facilitator flagged these open questions for the meeting. They are NOT all y
 Unlike the round-1 `kickoff_response_prompt` (which authors blind), you can now see EVERY prior decision — including the facilitator_note above AND the other attendees' sections. Use that visibility to align ids:
 
 ```python
-meeting = workhub_get_document(page_id="{{ meeting_id }}")
+meeting = workhub_get_document(document_id="{{ meeting_id }}")
 decisions = (meeting.get("metadata") or {}).get("decisions") or []
 
 # Pull frontend's section so you can align api_endpoints[].endpoint_id

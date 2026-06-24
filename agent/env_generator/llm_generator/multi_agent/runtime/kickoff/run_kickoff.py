@@ -325,15 +325,15 @@ def _read_meeting_decisions(hubs: Any, meeting_id: str) -> List[Mapping[str, Any
     # Two callable shapes are tolerated so tests can mock either:
     # (a) ``workhub.get_meeting_decisions(meeting_id) -> list`` —
     #     preferred (gives the test author an obvious mock point),
-    # (b) ``workhub.stores.pages.value()[meeting_id]`` — the live
+    # (b) ``workhub.stores.documents.value()[meeting_id]`` — the live
     #     persistence path.
     getter = getattr(workhub, "get_meeting_decisions", None)
     if callable(getter):
         decisions = getter(meeting_id) or []
         return list(decisions)
-    pages = workhub.stores.pages.value()
-    page = pages.get(meeting_id) or {}
-    meta = page.get("metadata") or {}
+    documents = workhub.stores.documents.value()
+    document = documents.get(meeting_id) or {}
+    meta = document.get("metadata") or {}
     return list(meta.get("decisions") or [])
 
 

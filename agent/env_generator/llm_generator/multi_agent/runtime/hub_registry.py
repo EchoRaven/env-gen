@@ -116,8 +116,8 @@ class HubRegistry:
         # ``attach_mcp_registry`` setter stays.
         from .gate_registry import GateRegistry
         self.gate_registry = GateRegistry(
-            pages_store=self.workhub.stores.pages,
-            create_page_fn=self.workhub.create_page,
+            pages_store=self.workhub.stores.documents,
+            create_page_fn=self.workhub.create_document,
             eventhub=self.eventhub,
         )
         from .mcp_registry import MCPRegistry

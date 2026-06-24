@@ -362,7 +362,7 @@ meeting where you actually discuss with peers.
 
 1. **Read the meeting state.**
    ```python
-   meeting = workhub_get_document(page_id="{{ meeting_id }}")
+   meeting = workhub_get_document(document_id="{{ meeting_id }}")
    decisions = (meeting.get("metadata") or {}).get("decisions") or []
    # Filter to round {{ current_round }} initial proposals from OTHER attendees.
    others_drafts = [
@@ -444,7 +444,7 @@ revise your draft, or ack.
 
 1. **Read the meeting state and filter to comments targeting your section.**
    ```python
-   meeting = workhub_get_document(page_id="{{ meeting_id }}")
+   meeting = workhub_get_document(document_id="{{ meeting_id }}")
    decisions = (meeting.get("metadata") or {}).get("decisions") or []
    my_comments = [
        d for d in decisions

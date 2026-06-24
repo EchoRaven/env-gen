@@ -56,8 +56,8 @@ def _debug_active(file_path: Path) -> bool:
         return False
     if flag in ("1", "true", "yes", "all"):
         return True
-    # Substring match: ENVGEN_DEBUG_JSON_STORE=workhub_pages → fires
-    # only on workhub_pages.json.
+    # Substring match: ENVGEN_DEBUG_JSON_STORE=workhub_documents → fires
+    # only on workhub_documents.json.
     return flag in str(file_path)
 
 

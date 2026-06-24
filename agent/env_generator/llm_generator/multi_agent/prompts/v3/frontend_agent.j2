@@ -124,7 +124,7 @@
     ],
 
     output_contract=(
-"The Frontend Engineer does not produce structured JSON — its deliverable is the implementation in `app/frontend/` + WorkHub page decisions + VisualReview registrations. The terminal `finish(notify=...)` call is the success signal.\n"
+"The Frontend Engineer does not produce structured JSON — its deliverable is the implementation in `app/frontend/` + WorkHub document decisions + VisualReview registrations. The terminal `finish(notify=...)` call is the success signal.\n"
 "\n"
 "Visible artifacts on success:\n"
 "- `app/frontend/index.html` + `app/frontend/src/main.jsx` (the Vite entry — index.html loads /src/main.jsx which mounts <App/>; Vite build FAILS without both)\n"
@@ -474,7 +474,7 @@ FINAL PROTOCOL (this overrides anything above if in doubt): declare your section
    `frontend` in the reviser set. UNLIKE `kickoff_response_prompt` (which
    authors blind in parallel with sibling attendees), the revision pass
    has FULL VISIBILITY into the facilitator_note + every prior decision
-   already recorded on the meeting page — backend's KickoffEndpoint set,
+   already recorded on the meeting document — backend's KickoffEndpoint set,
    verifier's predicates, your own round-(N-1) draft. Use that to align
    `screens[*].api_calls[*].endpoint_id` with backend's `f"{method} {path}"`
    and to make `user_flows[*].id` match what verifier's `predicates[*].flow`
@@ -536,7 +536,7 @@ The facilitator flagged these open questions for the meeting. They are NOT all y
 Unlike the round-1 `kickoff_response_prompt` (which authored blind), you can now see EVERY prior decision — including the facilitator_note above AND backend's KickoffEndpoint list AND verifier's predicate set. Use that visibility to align ids:
 
 ```python
-meeting = workhub_get_document(page_id="{{ meeting_id }}")
+meeting = workhub_get_document(document_id="{{ meeting_id }}")
 decisions = (meeting.get("metadata") or {}).get("decisions") or []
 
 # Pull backend's section so each screen.api_calls[i].endpoint_id matches

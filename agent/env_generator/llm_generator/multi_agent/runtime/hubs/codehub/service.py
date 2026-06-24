@@ -307,7 +307,7 @@ class CodeHub:
         if linked_pages and workhub is not None:
             unknown_pages = [
                 p for p in linked_pages
-                if workhub.get_page(p, with_blocks=False) is None
+                if workhub.get_document(p, with_blocks=False) is None
             ]
             if unknown_pages:
                 return {

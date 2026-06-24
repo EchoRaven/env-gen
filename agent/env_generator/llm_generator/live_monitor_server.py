@@ -1580,7 +1580,13 @@ def build_milestones(workspace: Path) -> dict:
     plan: list = []
     kickoffs: dict = {}
     try:
-        pages = json.loads((hubs_dir / "workhub_pages.json").read_text(encoding="utf-8"))
+        _docs_path = hubs_dir / "workhub_documents.json"
+        # page→document rename: prefer the new file; fall back to the legacy
+        # ``workhub_pages.json`` for runs that pre-date the rename (or that the
+        # hub layer has not yet migrated on this machine).
+        if not _docs_path.exists():
+            _docs_path = hubs_dir / "workhub_pages.json"
+        pages = json.loads(_docs_path.read_text(encoding="utf-8"))
     except Exception:
         pages = {}
     for pid, pg in pages.items():
@@ -3728,7 +3734,7 @@ def workhub_set_priority_call(workspaces_root: Path, project_id: str, task_id: s
     return updated
 
 
-def workhub_create_page_call(workspaces_root: Path, project_id: str, body: dict) -> dict:
+def workhub_create_document_call(workspaces_root: Path, project_id: str, body: dict) -> dict:
     """POST /api/projects/<id>/workhub/pages — create a WorkHub coordination document."""
     reg, err = _resolve_hubs(workspaces_root, project_id)
     if err:
@@ -3736,7 +3742,7 @@ def workhub_create_page_call(workspaces_root: Path, project_id: str, body: dict)
     title = (body.get("title") or "").strip()
     if not title:
         return {"error": "title is required"}
-    return reg.workhub.create_page(
+    return reg.workhub.create_document(
         title=title,
         kind=body.get("kind") or "general",
         attendees=body.get("attendees") or [],
@@ -5473,7 +5479,7 @@ class MonitorHandler(SimpleHTTPRequestHandler):
                     self._write_json(handler(self._workspaces_root, pid, parts[3], body))
                     return
                 if parts[2] == "pages" and len(parts) == 3:
-                    self._write_json(workhub_create_page_call(self._workspaces_root, pid, body))
+                    self._write_json(workhub_create_document_call(self._workspaces_root, pid, body))
                     return
                 if parts[2] == "pages" and len(parts) == 5 and parts[4] == "visual_review":
                     self._write_json(workhub_submit_visual_review_call(self._workspaces_root, pid, parts[3], body))

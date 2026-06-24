@@ -672,20 +672,20 @@ def request_reply_phase(
 
 
 def _read_meeting_page(hubs: Any, meeting_id: str) -> Mapping[str, Any]:
-    """Read the meeting page directly from workhub. Returns {} if missing.
+    """Read the meeting document directly from workhub. Returns {} if missing.
 
     The kickoff coordinator does NOT depend on a tool wrapper — it goes
-    straight to the workhub primitive (stores.pages.value) to avoid
+    straight to the workhub primitive (stores.documents.value) to avoid
     bouncing through a tool registry the driver doesn't need.
     """
     try:
-        pages = hubs.workhub.stores.pages.value() or {}
+        documents = hubs.workhub.stores.documents.value() or {}
     except Exception:
         return {}
-    page = pages.get(meeting_id) or {}
-    if not isinstance(page, Mapping):
+    document = documents.get(meeting_id) or {}
+    if not isinstance(document, Mapping):
         return {}
-    return page
+    return document
 
 
 def _decision_section(d: Mapping[str, Any]) -> Optional[str]:

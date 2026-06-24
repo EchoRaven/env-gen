@@ -594,7 +594,7 @@ class CodeHubCreateReleaseTool(HubTool):
         return ToolResult(data=self._hubs.codehub.create_release(tag, source=source, notes=notes, agent=self._agent_id))
 
 
-class WorkHubCreatePageTool(HubTool):
+class WorkHubCreateDocumentTool(HubTool):
     NAME = "workhub_create_document"
     DESCRIPTION = (
         "Create a Notion-like WorkHub coordination document (kickoff/meeting/"
@@ -604,7 +604,7 @@ class WorkHubCreatePageTool(HubTool):
     PARAMETERS = {"type": "object", "properties": {"title": {"type": "string"}, "parent": {"type": "string"}, "attendees": {"type": "array", "items": {"type": "string"}}}, "required": ["title"]}
 
     async def _run(self, title: str, parent: str = None, attendees: list = None) -> ToolResult:
-        return ToolResult(data=self._hubs.workhub.create_page(title, parent=parent, attendees=attendees or [], agent=self._agent_id))
+        return ToolResult(data=self._hubs.workhub.create_document(title, parent=parent, attendees=attendees or [], agent=self._agent_id))
 
 
 class WorkHubUpdatePageTool(HubTool):
@@ -964,25 +964,25 @@ class WorkhubListBlockedTool(HubTool):
         return ToolResult(data={"blocked": blocked})
 
 
-class WorkHubGetPageTool(HubTool):
+class WorkHubGetDocumentTool(HubTool):
     NAME = "workhub_get_document"
     DESCRIPTION = "Get a WorkHub coordination document (kickoff/meeting/retro/project) by id, optionally including its blocks."
-    PARAMETERS = {"type": "object", "properties": {"page_id": {"type": "string"}, "with_blocks": {"type": "boolean"}}, "required": ["page_id"]}
+    PARAMETERS = {"type": "object", "properties": {"document_id": {"type": "string"}, "with_blocks": {"type": "boolean"}}, "required": ["document_id"]}
 
-    async def _run(self, page_id: str, with_blocks: bool = True) -> ToolResult:
-        page = self._hubs.workhub.get_page(page_id, with_blocks=with_blocks)
-        if page is None:
-            return ToolResult(success=False, error_message=f"Page not found: {page_id}")
-        return ToolResult(data=page)
+    async def _run(self, document_id: str, with_blocks: bool = True) -> ToolResult:
+        document = self._hubs.workhub.get_document(document_id, with_blocks=with_blocks)
+        if document is None:
+            return ToolResult(success=False, error_message=f"Document not found: {document_id}")
+        return ToolResult(data=document)
 
 
-class WorkHubListPagesTool(HubTool):
+class WorkHubListDocumentsTool(HubTool):
     NAME = "workhub_list_documents"
     DESCRIPTION = "List WorkHub coordination documents, optionally filtered by kind or status."
     PARAMETERS = {"type": "object", "properties": {"kind": {"type": "string"}, "status": {"type": "string"}}}
 
     async def _run(self, kind: str = None, status: str = None) -> ToolResult:
-        return ToolResult(data={"pages": self._hubs.workhub.list_pages(kind=kind, status=status)})
+        return ToolResult(data={"documents": self._hubs.workhub.list_documents(kind=kind, status=status)})
 
 
 class WorkHubLinkTaskToPrTool(HubTool):
@@ -1012,32 +1012,32 @@ class WorkHubUpdateBlockTool(HubTool):
         return ToolResult(data=self._hubs.workhub.update_block(block_id, content, agent=self._agent_id))
 
 
-class WorkHubArchivePageTool(HubTool):
-    NAME = "workhub_archive_page"
-    DESCRIPTION = "Set a WorkHub page status to 'archived'."
-    PARAMETERS = {"type": "object", "properties": {"page_id": {"type": "string"}}, "required": ["page_id"]}
+class WorkHubArchiveDocumentTool(HubTool):
+    NAME = "workhub_archive_document"
+    DESCRIPTION = "Set a WorkHub document status to 'archived'."
+    PARAMETERS = {"type": "object", "properties": {"document_id": {"type": "string"}}, "required": ["document_id"]}
 
-    async def _run(self, page_id: str) -> ToolResult:
-        return ToolResult(data=self._hubs.workhub.archive_page(page_id, agent=self._agent_id))
+    async def _run(self, document_id: str) -> ToolResult:
+        return ToolResult(data=self._hubs.workhub.archive_document(document_id, agent=self._agent_id))
 
 
 class WorkHubRecordDecisionTool(HubTool):
     NAME = "workhub_record_decision"
-    DESCRIPTION = "Append a decision block to a WorkHub page and record it in the decisions store."
+    DESCRIPTION = "Append a decision block to a WorkHub document and record it in the decisions store."
     PARAMETERS = {
         "type": "object",
         "properties": {
-            "page_id": {"type": "string"},
+            "document_id": {"type": "string"},
             "title": {"type": "string"},
             "options": {"type": "array", "items": {"type": "string"}},
             "chosen": {"type": "string"},
             "reason": {"type": "string"},
         },
-        "required": ["page_id", "title", "options", "chosen", "reason"],
+        "required": ["document_id", "title", "options", "chosen", "reason"],
     }
 
-    async def _run(self, page_id: str, title: str, options: list, chosen: str, reason: str) -> ToolResult:
-        return ToolResult(data=self._hubs.workhub.record_decision(page_id, title, options, chosen, reason, agent=self._agent_id))
+    async def _run(self, document_id: str, title: str, options: list, chosen: str, reason: str) -> ToolResult:
+        return ToolResult(data=self._hubs.workhub.record_decision(document_id, title, options, chosen, reason, agent=self._agent_id))
 
 
 class WorkHubCommentsForTool(HubTool):
@@ -2412,7 +2412,7 @@ HUB_TOOL_CLASSES = [
     CodeHubResolveConflictTool,
     CodeHubResolveMergeConflictTool,
     CodeHubRevertCommitTool,
-    WorkHubCreatePageTool,
+    WorkHubCreateDocumentTool,
     WorkHubUpdatePageTool,
     WorkHubTaskTool,
     WorkHubFailTaskTool,
@@ -2423,12 +2423,12 @@ HUB_TOOL_CLASSES = [
     WorkhubSetPriorityTool,
     WorkhubListReadyTool,
     WorkhubListBlockedTool,
-    WorkHubGetPageTool,
-    WorkHubListPagesTool,
+    WorkHubGetDocumentTool,
+    WorkHubListDocumentsTool,
     WorkHubLinkTaskToPrTool,
     WorkHubLinkTaskToApisTool,
     WorkHubUpdateBlockTool,
-    WorkHubArchivePageTool,
+    WorkHubArchiveDocumentTool,
     WorkHubRecordDecisionTool,
     WorkHubCommentsForTool,
     WorkhubCreateMeetingTool,
