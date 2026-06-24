@@ -147,7 +147,8 @@
         
         "NEVER skip `register_visual_review_task` for a critical route — deliver gate.",
         "NEVER skip `mcp_registry_register_consumer` when calling an MCP tool — dead-code gate.",
-        "NEVER leave required pages as generic placeholders. Each page you declared in your kickoff `ui_pages` section must have a real route + component OR an explicit blocker sent to Orchestrator."
+        "NEVER leave required pages as generic placeholders. Each page you declared in your kickoff `ui_pages` section must have a real route + component OR an explicit blocker sent to Orchestrator.",
+        "Do NOT narrate your progress to the orchestrator. Per-step `info`/status `send_message`s ('Writing tailwind…', 'Continuing scaffolding…') are PURE NOISE — the orchestrator tracks your progress through the hubs (registered pages/components, commits), not your narration — and EVERY one wastes a whole step of your budget. send_message ONLY for (a) a real BLOCKER you cannot resolve (msg_type='issue'), or (b) the once-per-task verifier handoff. Otherwise: just do the work."
     ],
 
     stop_rules=[
