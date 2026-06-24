@@ -143,6 +143,30 @@ class Coordination:
                 self._orch._silent_lane_nudges.pop(lane_id, None)
                 continue
 
+            # Don't nudge a lane that has NO actionable work. The nudge orders the lane to
+            # "pick up your assigned kickoff task_tree entries" — but idle-BY-DESIGN lanes
+            # (knowledge = observer; debugger before any bug_found) have ZERO assigned
+            # tasks, so the instruction is provably impossible to act on and just burns a
+            # full LLM step + floods the inbox (audit #8 / run v12: knowledge 133s, debugger
+            # 3513s on an impossible instruction; kickoff_driver already models knowledge as
+            # an observer + impl_lanes={backend,frontend}). Only nudge a silent lane that
+            # actually holds claimable / in-progress work. Best-effort: never let the
+            # work-check break escalation.
+            try:
+                _wh = self._orch.hubs.workhub
+                _has_work = bool(
+                    (_wh.list_tasks(assignee=lane_id, status="pending") or [])
+                    or (_wh.list_tasks(assignee=lane_id, status="in_progress") or [])
+                )
+                if not _has_work:
+                    self._orch._logger.debug(
+                        "Stall escalation: lane %s has no assigned pending/in_progress "
+                        "tasks — idle by design; not nudging.", lane_id,
+                    )
+                    continue
+            except Exception:
+                pass
+
             prior_nudges = self._orch._silent_lane_nudges.get(lane_id, 0)
             # FIX #41 (speed): cap stall nudges per lane per stall-episode. A lane
             # silent after several urgent nudges is STUCK (long LLM self-loop or
