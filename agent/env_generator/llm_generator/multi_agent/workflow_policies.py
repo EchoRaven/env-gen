@@ -1209,8 +1209,8 @@ class LaneWindDownPolicy(BaseWorkflowPolicy):
             return None
 
         parts = [
-            "🚫 finish() blocked by lane wind-down gate — you still hold "
-            "OPEN work that the rest of the team is waiting on.\n"
+            "⏳ Not done yet — you still hold claimed work / unread coordination. "
+            "This is NOT an error and you are NOT stuck.\n"
         ]
         if in_progress:
             listed = in_progress[: self._MAX_LISTED]
@@ -1222,14 +1222,18 @@ class LaneWindDownPolicy(BaseWorkflowPolicy):
             ]
             tail = f"\n    (+{more} more)" if more > 0 else ""
             parts.append(
-                f"\n{len(in_progress)} task(s) you CLAIMED are still "
-                "in_progress — do NOT abandon them:\n"
+                f"\n{len(in_progress)} task(s) you CLAIMED are still in_progress — "
+                "KEEP WORKING them THIS wake:\n"
                 + "\n".join(lines) + tail + "\n"
-                "  → COMPLETE each once it truly passes "
-                "(workhub_task(action='complete', task_id=..., result=...)). "
-                "If you are blocked or the check FAILED, do NOT false-complete "
-                "— send_message the task's creator with the blocker, or "
-                "bug_create -> debugger for a product defect.\n"
+                "  → Do the next one NOW. You do NOT need to finish() to advance — the "
+                "loop shows your next step automatically; just keep building/validating "
+                "until they are genuinely done (the framework AUTO-COMPLETES impl tasks "
+                "as your code registers, so this count drains itself as you work). Do NOT "
+                "finish() yet, do NOT write dummy/stub handlers to clear them, do NOT "
+                "cancel them, and do NOT escalate to the orchestrator merely because you "
+                "hold them — they are YOURS to complete by doing the REAL work. Message "
+                "the creator ONLY if blocked on a SPECIFIC external dependency you can "
+                "name (then keep going on the others meanwhile).\n"
             )
         if unread > 0:
             parts.append(

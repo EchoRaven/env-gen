@@ -289,6 +289,7 @@ profiles:
         - kickoff_declare_table
         - workhub_add_meeting_decision
         - workhub_get_document
+        - workhub_get_task
         - workhub_list_documents
         - workhub_comment
         - read
@@ -558,6 +559,7 @@ profiles:
         - kickoff_declare_user_flow
         - workhub_add_meeting_decision
         - workhub_get_document
+        - workhub_get_task
         - workhub_list_documents
         - workhub_comment
         - read
@@ -749,6 +751,7 @@ profiles:
         - kickoff_declare_predicate
         - workhub_add_meeting_decision
         - workhub_get_document
+        - workhub_get_task
         - workhub_list_documents
         - workhub_comment
         - read
@@ -778,6 +781,7 @@ profiles:
         - workhub_list_tasks
         - workhub_cancel_task
         - workhub_get_document
+        - workhub_get_task
         - workhub_list_documents
         - registryhub_list_endpoints
         - registryhub_get_endpoint
