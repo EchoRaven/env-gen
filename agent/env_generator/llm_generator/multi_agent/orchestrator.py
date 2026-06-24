@@ -931,10 +931,23 @@ class Orchestrator:
                     # (byte-for-byte transparency at N=1). For explicit
                     # milestones, use the slice, falling back to raw_req only if
                     # a slice is empty.
-                    if not _milestones_explicit:
+                    _slice = str(_milestone.get("description_slice") or "").strip()
+                    if not _milestones_explicit and len(milestones) <= 1:
+                        # Genuine SINGLE synthesized milestone (N=1): the exact
+                        # legacy raw_req, byte-for-byte transparency.
                         _milestone_req = raw_req
                     else:
-                        _slice = str(_milestone.get("description_slice") or "").strip()
+                        # MULTIPLE milestones — whether the caller supplied them
+                        # explicitly OR plan_milestones auto-derived them — each
+                        # phase uses its OWN description_slice so the milestones are
+                        # genuinely staged. BUG (pre-2026-06-24): the old
+                        # ``if not _milestones_explicit: raw_req`` conflated
+                        # "not explicit" with "single milestone", so an AUTO-PLANNED
+                        # multi-milestone run fed the FULL raw_req to EVERY milestone
+                        # → M1..Mn kickoff docs were byte-identical full-goal copies
+                        # (no phased scope). plan_milestones emits a distinct slice
+                        # per milestone (repeats the DATA MODEL, lists only that
+                        # phase's NEW endpoints/pages); honor it.
                         _milestone_req = _slice or raw_req
                         # The compiled REFERENCE SPEC enumerates the FULL endpoint/
                         # screen surface. Appending it to a PARTIAL slice makes that
