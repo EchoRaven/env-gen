@@ -70,10 +70,25 @@ class BugCreateTool(HubTool):
                                    "one of failing_test, stack_trace, affected_endpoint, "
                                    "affected_files, expected, actual."
                                ))
+        # Route the bug to its OWNING lane on creation so a real fixer is woken directly
+        # (assigned task_created → for-self wakeup), instead of leaving it unassigned+pending
+        # for a debugger that may never wake. Run v14: the verifier filed the DELETE
+        # /api/posts/{id} FK-500 bug, but bug_found's source_hub (=source, e.g.
+        # "business_chain") didn't match the debugger's ('verifier','bug_found') subscription
+        # → the debugger stayed idle → the bug sat unassigned 7 cycles → fail-fast abort, no
+        # delivery. resolve_owning_agent maps affected_endpoint/table/files → the lane; the
+        # debugger still receives bug_found (below) to triage/reassign. Best-effort.
+        try:
+            from multi_agent.runtime.bug_triage import resolve_owning_agent
+            _owner = resolve_owning_agent(self._hubs, bug_artifacts or {})
+        except Exception:
+            _owner = None
         task = self._hubs.workhub.create_task(
             title=title,
             description=description,
             agent=self._agent_id,
+            assignee=_owner,
+            priority=severity if severity in ("P0", "P1", "P2", "P3") else "P2",
             kind=bug_schema.KIND,
             severity=severity,
             bug_state=bug_schema.STATE_INITIAL,

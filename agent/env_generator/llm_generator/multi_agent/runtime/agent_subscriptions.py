@@ -132,9 +132,12 @@ DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
         ("orchestrator", "kickoff_complete", "high"),
     ],
     "debugger": [
-        # Bug-level orchestrator. Wakes on verifier bug_found + runhub
-        # failures; analyzes root cause, assigns remediation tasks.
-        ("verifier", "bug_found", "low"),
+        # Bug-level orchestrator. Wakes on bug_found + runhub failures; analyzes root
+        # cause, assigns remediation tasks. Source is "*" not "verifier": bug_create emits
+        # bug_found with source_hub=<source> (e.g. "business_chain"/"api_smoke"), so a
+        # ("verifier","bug_found") sub silently missed every chain-filed bug and the
+        # debugger never woke (run v14: DELETE FK-500 bug went untriaged → no delivery).
+        ("*", "bug_found", "low"),
         ("runhub", "run_failed", "low"),
         ("runhub", "run_completed", "normal"),
         # Kickoff_complete is informational — debugger learns which
