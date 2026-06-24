@@ -91,22 +91,32 @@ def resolve_max_output_tokens(model: str,
 # slice. Prefix-matched like the output table.
 SAFE_DEFAULT_CONTEXT_WINDOW = 128000
 
+# Documented INPUT context windows, verified against provider docs (June 2026).
+# Specific prefixes MUST precede general ones (first match wins).
 _CONTEXT_WINDOW_TABLE: list[tuple[str, int]] = [
-    # --- Anthropic (200k standard; 1M-beta not assumed) ---
-    ("claude-opus-4", 200000),
-    ("claude-sonnet-4", 200000),
-    ("claude-haiku-4", 200000),
-    ("claude-3", 200000),
-    # --- OpenAI ---
-    ("gpt-5", 400000),
+    # --- Anthropic: 1M GA for Opus/Sonnet 4.6+ (claude.com/blog/1m-context-ga,
+    #     Mar 2026, no price multiplier); earlier 4.x + Claude 3 are 200k.
+    ("claude-opus-4-8", 1_000_000),
+    ("claude-opus-4-7", 1_000_000),
+    ("claude-opus-4-6", 1_000_000),
+    ("claude-sonnet-4-6", 1_000_000),
+    ("claude-opus-4", 200_000),
+    ("claude-sonnet-4", 200_000),
+    ("claude-haiku-4", 200_000),
+    ("claude-3", 200_000),
+    # --- OpenAI: GPT-5.5 ~1.05M; GPT-5/5.4 standard input 272k (1M is opt-in
+    #     experimental, not assumed); GPT-4.1 1M; GPT-4o/4 128k.
+    ("gpt-5.5", 1_050_000),
+    ("gpt-5", 272_000),
     ("gpt-4.1", 1_047_576),
-    ("o1", 200000),
-    ("o3", 200000),
-    ("o4", 200000),
-    ("gpt-4o", 128000),
-    ("gpt-4", 128000),
-    # --- Google Gemini (1,048,576-token window) ---
-    ("gemini-3", 1_048_576),
+    ("o1", 200_000),
+    ("o3", 200_000),
+    ("o4", 200_000),
+    ("gpt-4o", 128_000),
+    ("gpt-4", 128_000),
+    # --- Google Gemini: 3.x Pro = 1,000,000-token input window (ai.google.dev /
+    #     Vertex docs; 64k output); 2.5/2.0/1.5 = 1,048,576.
+    ("gemini-3", 1_000_000),
     ("gemini-2.5", 1_048_576),
     ("gemini-2.0", 1_048_576),
     ("gemini-1.5", 1_048_576),
