@@ -545,10 +545,32 @@ class RemediationDispatcher:
                 if guard.get(name) == milestone:
                     continue  # one dispatch per milestone (storm control)
                 owner, title, how = spec
+                _extra = ""
+                if name == "business_chain_api_coverage":
+                    # Hand the verifier the EXACT uncovered endpoints. The generic "cover the
+                    # uncovered endpoints" left it guessing — run v17 got business_chain green
+                    # + ui_page_unwired cleared, then stalled on api_coverage (3 chains / 32
+                    # endpoints) and fail-fast aborted because it never knew WHICH endpoints
+                    # were still uncovered. Re-derive the set exactly as the gate does.
+                    try:
+                        from .delivery_gate import _uncovered_business_endpoints
+                        _rh = orch.hubs.registryhub
+                        _chains = (_rh._verification_chains.value() or {})
+                        _authored = [rec for n, rec in _chains.items()
+                                     if n != "_meta" and isinstance(rec, dict) and rec.get("steps")]
+                        _unc = _uncovered_business_endpoints(_rh, _authored)
+                        if _unc:
+                            _extra = (
+                                "\n\nThese endpoints are exercised by NO chain yet — author ONE "
+                                "dedicated coverage chain (auth round-trip first, then a step per "
+                                "endpoint) that hits EACH of them, register it, and re-run "
+                                "run_validation:\n- " + "\n- ".join(_unc))
+                    except Exception:
+                        pass
                 task = orch.hubs.workhub.create_task(
                     title=title,
                     description=(
-                        f"The `{name}` delivery-gate check FAILED.\n{how}\n"
+                        f"The `{name}` delivery-gate check FAILED.\n{how}{_extra}\n"
                         "Delivery stays blocked until a gate tick shows this check "
                         "green. Fix it, then finish."),
                     assignee=owner, agent="orchestrator", priority="P0")
