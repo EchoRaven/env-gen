@@ -24,7 +24,15 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
+
+# Upper bound on auto-planned milestones — a runaway guard, NOT a target. The
+# planner chooses K itself (a small app = 1 milestone; a complex one may be many).
+# Was a hard data[:6] that silently truncated richer roadmaps even though the
+# planner instructions say "choose K yourself" — complex tasks legitimately need
+# more phases. Generous default; override via ENVGEN_MAX_MILESTONES.
+_MAX_MILESTONES = max(1, int(os.environ.get("ENVGEN_MAX_MILESTONES", "20")))
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
@@ -468,7 +476,7 @@ async def plan_milestones(llm: Any, raw_requirements: str,
         if not isinstance(data, list) or not data:
             return None
         out: List[Dict[str, str]] = []
-        for i, entry in enumerate(data[:6]):
+        for i, entry in enumerate(data[:_MAX_MILESTONES]):
             if not isinstance(entry, Mapping):
                 return None
             name = str(entry.get("name") or f"M{i+1}").strip()
