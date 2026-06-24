@@ -844,7 +844,25 @@ class ClaimAssignedTasksPolicy(BaseWorkflowPolicy):
             self._last_blocking_set.pop(agent.agent_id, None)
             return None
 
-        # Retry-cap bookkeeping — SHRINK-TOLERANT counting.
+        # DEP-BLOCKED tasks are NOT actionable and must NOT be cancelled. claim_task
+        # hard-rejects a task with incomplete deps, and a dep-blocked task is LEGITIMATE
+        # work waiting on its deps — it unblocks the moment they complete. Gate ONLY on
+        # CLAIMABLE work: if the lane's only unclaimed tasks are dep-blocked, let finish
+        # through (the lane re-wakes when deps complete). Previously the gate blocked here
+        # and told the lane to "cancel" the dep-blocked ones; a lane that can't cancel
+        # (not the creator) escalated "please cancel my dep-blocked tasks" to the
+        # orchestrator — which complied, and instagram_v8 PERMANENTLY LOST 4 core pages
+        # (home_feed/explore/reels/post_detail) whose component deps completed seconds
+        # later. Cancellation is for work that should NOT be done at all, never for
+        # "waiting on deps".
+        actionable, dep_blocked = self._split_dep_blocked(workhub, unclaimed)
+        if not actionable:
+            self._consecutive_blocks.pop(agent.agent_id, None)
+            self._last_blocking_set.pop(agent.agent_id, None)
+            return None
+
+        # Retry-cap bookkeeping — SHRINK-TOLERANT counting (on the ACTIONABLE set only;
+        # dep-blocked tasks never enter the blocking set).
         #
         # The escape hatch (``_MAX_CONSECUTIVE_BLOCKS`` consecutive
         # blocks → let finish through) must NOT be reset by the agent's
@@ -862,7 +880,7 @@ class ClaimAssignedTasksPolicy(BaseWorkflowPolicy):
         # queue, which resets the counter. Subset (``current <= last``)
         # captures both "shrank" and "unchanged"; anything else is a
         # superset or a disjoint-with-new-ids change → reset.
-        current_set = frozenset(t.get("id") for t in unclaimed if t.get("id"))
+        current_set = frozenset(t.get("id") for t in actionable if t.get("id"))
         last_set = self._last_blocking_set.get(agent.agent_id)
         if last_set is not None and current_set <= last_set:
             # Same or shrinking blocking set → claim progress (or no
@@ -895,7 +913,7 @@ class ClaimAssignedTasksPolicy(BaseWorkflowPolicy):
                 agent._logger.warning(
                     f"[{agent.agent_id}] claim-gate retry cap exceeded after "
                     f"{self._MAX_CONSECUTIVE_BLOCKS} consecutive blocks — "
-                    f"finish allowed; {len(unclaimed)} task(s) left PENDING "
+                    f"finish allowed; {len(actionable)} claimable task(s) left PENDING "
                     "for the contract-sync to complete (no auto-cancel)."
                 )
             except Exception:
@@ -904,103 +922,62 @@ class ClaimAssignedTasksPolicy(BaseWorkflowPolicy):
             self._last_blocking_set.pop(agent.agent_id, None)
             return None
 
-        # Split into claimable vs dep-blocked. claim_task() rejects
-        # tasks with incomplete deps (service.py:494-500), so
-        # telling the agent to "claim" a dep-blocked task is a
-        # guaranteed-fail loop. Mark them separately.
-        actionable, dep_blocked = self._split_dep_blocked(workhub, unclaimed)
-
-        listed = unclaimed[: self._MAX_LISTED]
-        remainder = len(unclaimed) - len(listed)
-        dep_blocked_ids = {t.get("id") for t in dep_blocked}
+        # actionable / dep_blocked already split above; we only reach here when
+        # actionable is non-empty. The blocking set is the CLAIMABLE tasks; dep-blocked
+        # tasks are merely NOTED as waiting (never listed as cancel targets).
+        listed = actionable[: self._MAX_LISTED]
+        remainder = len(actionable) - len(listed)
         lines = []
         for t in listed:
             tid = t.get("id") or "<no id>"
             title = (t.get("title") or "").strip() or "<no title>"
             meta = t.get("metadata") or {}
             sev = meta.get("severity") or meta.get("priority") or "-"
-            # PR 2.5-fix-2 (2026-05-29, reviewer follow-up):
-            # emit a POSITIVE ``[claimable]`` tag alongside the
-            # ``[dep-blocked: only cancel works]`` tag. The previous
-            # cut only tagged dep-blocked tasks, leaving claimable
-            # ones bare; the rejection text then referenced "for
-            # [claimable] tasks" but the marker was never rendered,
-            # so an agent grepping for the literal token found
-            # nothing.
-            tag = (
-                " [dep-blocked: only cancel works]"
-                if tid in dep_blocked_ids
-                else " [claimable]"
-            )
-            lines.append(f"- {tid} [{sev}] {title}{tag}")
+            lines.append(f"- {tid} [{sev}] {title} [claimable]")
         bullet = "\n".join(lines)
         more = f"\n  (+{remainder} more not shown)" if remainder > 0 else ""
-        # Retry-cap warning fires exactly on the LAST blocking round —
-        # the next block with a same-or-shrinking set will RELEASE the
-        # gate (finish allowed, remaining tasks left pending; no
-        # auto-cancel — see the retry-cap branch above). Fires on round
-        # cap itself; on round cap+1 we never reach this branch (the
-        # release above returned).
+        # Retry-cap warning fires on the LAST blocking round — the next block with a
+        # same-or-shrinking set RELEASES the gate (finish allowed, remaining claimable
+        # tasks left pending; no auto-cancel).
         attempt_n = self._consecutive_blocks[agent.agent_id]
         warn = ""
         if attempt_n >= self._MAX_CONSECUTIVE_BLOCKS:
             warn = (
                 f"\n\n⚠️ This is the LAST block attempt "
-                f"({attempt_n}/{self._MAX_CONSECUTIVE_BLOCKS}). On the "
-                "next block, finish will be ALLOWED through and any "
-                "remaining tasks are left pending (not cancelled). "
-                "Claiming a task does NOT reset this counter, so you "
-                "can keep claiming and still reach this release."
+                f"({attempt_n}/{self._MAX_CONSECUTIVE_BLOCKS}). On the next block, "
+                "finish will be ALLOWED through and any remaining claimable tasks are "
+                "left pending (not cancelled). Claiming a task does NOT reset this "
+                "counter, so you can keep claiming and still reach this release."
             )
-        # PR 2.5-fix-2 (2026-05-29): branch the rejection text when
-        # ALL unclaimed are dep-blocked. The previous text always
-        # described both option (a) and option (b); when actionable
-        # was empty option (a) was a dead instruction the agent
-        # could still try (and get a guaranteed-fail loop until the
-        # retry cap kicked in). Now we emit cancel-only guidance.
-        if actionable:
-            action_text = (
-                "Before calling finish() you must, for EACH listed task:\n"
-                "  (a) for tasks tagged ``[claimable]``: call "
-                "``workhub_task(action='claim', task_id=...)`` and do "
-                "the work — or claim ALL of your claimable tasks at once "
-                "with a single ``workhub_task(action='claim_all')`` "
-                "call, OR\n"
-                "  (b) for tasks tagged ``[dep-blocked: only cancel "
-                "works]`` (and for any claimable task you genuinely "
-                "want to drop): call ``workhub_cancel_task("
-                "task_id=..., reason='<why>')``."
-            )
-        else:
-            action_text = (
-                "Every listed task is dep-blocked — their dependencies "
-                "are not yet completed and ``workhub_task(action="
-                "'claim', ...)`` will hard-reject them. Before calling "
-                "finish() you must call "
-                "``workhub_cancel_task(task_id=..., reason='<why>')`` "
-                "for EACH listed task. There is no claim option this "
-                "round."
+        # Dep-blocked tasks are NOTED but must be LEFT ALONE — they unblock automatically
+        # when their deps complete. NEVER instruct cancellation (the destructive
+        # instagram_v8 behavior: lanes asked the orchestrator to cancel dep-blocked pages
+        # whose deps finished seconds later, permanently losing the pages).
+        dep_note = ""
+        if dep_blocked:
+            dep_note = (
+                f"\n\n({len(dep_blocked)} more assigned task(s) are DEP-BLOCKED — waiting "
+                "on deps not yet completed. LEAVE them pending: they unblock automatically "
+                "when their deps finish and you re-wake to claim them. Do NOT cancel them, "
+                "and do NOT ask anyone else to cancel them — they are real work.)"
             )
         block_text = (
             "🚫 finish() blocked by claim-assigned-tasks gate.\n\n"
-            f"You have {len(unclaimed)} task(s) assigned to you that are "
-            f"still pending and unclaimed "
-            f"({len(dep_blocked)} dep-blocked, "
-            f"{len(actionable)} claimable):\n"
+            f"You have {len(actionable)} CLAIMABLE task(s) assigned to you that are still "
+            "pending and unclaimed — claim and do them before finishing:\n"
             f"{bullet}{more}\n\n"
-            f"{action_text}\n\n"
-            "Silently leaving these in your queue causes the lane to "
-            "show 'idle' to the rest of the team — that's the deadlock "
-            "the tier-3 circuit breaker cancels reactively. Resolve "
-            "them at the source."
+            "For EACH: call ``workhub_task(action='claim', task_id=...)`` and do the work "
+            "— or grab them all at once with ``workhub_task(action='claim_all')``. (If a "
+            "task is genuinely WRONG / should not exist, send_message its creator; never "
+            "cancel work that is merely waiting on deps.)"
+            f"{dep_note}"
             f"{warn}"
         )
         messages.append(Message.assistant(tool_calls=[tool_call]))
         messages.append(Message.tool(block_text, tool_call_id))
         messages.append(Message.user(
-            "Claim-assigned-tasks gate fired. Address every listed task "
-            "(claim or cancel). Do not finish until your assigned queue "
-            "is empty of unclaimed pending work."
+            "Claim-assigned-tasks gate fired. Claim (or claim_all) your CLAIMABLE pending "
+            "tasks and do the work. Dep-blocked tasks just wait — do NOT cancel them."
         ))
         try:
             agent._logger.warning(
