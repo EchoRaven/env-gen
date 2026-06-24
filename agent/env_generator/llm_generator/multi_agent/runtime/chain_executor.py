@@ -600,6 +600,7 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     variables: Dict[str, str] = {}
     recorded: List[Dict[str, Any]] = []
     last_id: Any = None
+    last_reg_creds: Dict[str, Any] = {}  # creds of the last successful /auth/register → reused if a later /auth/login 401s
     unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
     for idx, step in enumerate(chain.get("steps") or []):
         variables["rand"] = f"{_rand_base}{idx:02d}"
@@ -683,6 +684,27 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                     if _miss_query:
                         path = _rpath
                     autofilled = _miss_body + [f"query:{f}" for f in _miss_query]
+        # LOGIN-CREDS CARRY-FORWARD (run v22): a /auth/login that 401s "invalid
+        # credentials" right after a /auth/register almost always means the chain
+        # authored the login with ${rand}-based creds that DON'T match the register
+        # — ${rand} mints PER STEP (the v12 multi-user fix), so register's
+        # user_<base>00 and login's user_<base>01 differ → that user never existed.
+        # The auth round-trip is a platform invariant (you log in with the creds you
+        # just registered), so retry the login with the most recent successful
+        # register's ACTUAL (substituted) email/username/password. Idempotent; only
+        # when the login isn't already expected to fail. Mirrors the
+        # ensure-user-before-login / auth-body-default fixes.
+        if (not ok and status in (400, 401)
+                and str(step.get("path", "")).rstrip("/") == "/auth/login"
+                and last_reg_creds):
+            _lb = dict(body) if isinstance(body, Mapping) else {}
+            for _ck in ("email", "username", "password"):
+                if last_reg_creds.get(_ck):
+                    _lb[_ck] = last_reg_creds[_ck]
+            _res3 = _http(method, base + path, token=token, body=_lb)
+            if _status_ok(_res3.get("status"), expect):
+                res, status, ok, body = _res3, _res3.get("status"), True, _lb
+                autofilled = (autofilled or []) + ["login-creds<-register"]
         kind = "ok"
         note = ""
         if not ok:
@@ -705,6 +727,13 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                     last_id = _cid
             except Exception:
                 pass
+            # Capture the SUBSTITUTED creds of a successful /auth/register so a later
+            # /auth/login that 401s (mismatched ${rand}, see carry-forward above) can
+            # retry with the identity that actually exists.
+            if str(step.get("path", "")).rstrip("/") == "/auth/register" \
+                    and isinstance(body, Mapping):
+                last_reg_creds = {_k: body[_k] for _k in ("email", "username", "password")
+                                  if body.get(_k)}
         if ok and isinstance(step.get("save"), Mapping):
             try:
                 payload = json.loads(res.get("body_text") or "{}")
