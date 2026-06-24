@@ -31,6 +31,7 @@ from tools.deliverability_tools import create_deliverability_tools
 from tools.mcp_registry_tools import create_mcp_registry_tools
 import time as _time
 from tools.bug_tools import create_bug_tools
+from tools.milestone_tools import create_milestone_tools
 from tools.design_tools import create_design_tools
 from tools.run_tools import create_run_tools
 from tools.hub_tools import create_hub_tools
@@ -525,6 +526,17 @@ def _bundle_bug_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext) ->
     builder.add(tools, "bug", "hub")
 
 
+def _bundle_milestone_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext) -> None:
+    """Milestone roadmap management (hubs.milestones) — the orchestrator's kickoff
+    surface to revise FUTURE phases (add/update/remove) + set the current phase's
+    detailed brief. Orchestrator-only; delivered milestones are frozen."""
+    tools = create_milestone_tools(
+        agent_id=context.agent_id or context.agent_type,
+        hub_workspace=context.hub_workspace,
+    )
+    builder.add(tools, "milestone", "hub")
+
+
 def _bundle_run_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext) -> None:
     tools = create_run_tools(
         agent_id=context.agent_id or context.agent_type,
@@ -666,6 +678,7 @@ TOOL_BUNDLE_REGISTRY: Dict[str, BundleApplier] = {
     "verifier_contract_tools": _bundle_verifier_contract_tools,
     "eventhub_tools": _bundle_eventhub_tools,
     "bug_tools": _bundle_bug_tools,
+    "milestone_tools": _bundle_milestone_tools,
     "run_tools": _bundle_run_tools,
     "design_tools": _bundle_design_tools,
     "team_spawn_tools": _bundle_team_spawn,
@@ -734,6 +747,7 @@ TOOL_BUNDLE_REQUIREMENTS: Dict[str, set[str]] = {
     "verifier_contract_tools": {"registryhub"},
     "eventhub_tools": {"eventhub"},
     "bug_tools": {"bug"},
+    "milestone_tools": {"milestone"},
     "run_tools": {"run"},
     # `design_tools` registers under the "design" tool_category
     # (see _bundle_design_tools above). Post-2026-06-02 kickoff-refactor

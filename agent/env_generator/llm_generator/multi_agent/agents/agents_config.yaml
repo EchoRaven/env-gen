@@ -127,6 +127,7 @@ profiles:
       - codehub_admin_tools
       - workhub_tools
       - meeting_tools  # Round-8g Fix #E: orchestrator chairs the kickoff meeting and the facilitator turn must call workhub_add_meeting_decision (Round-8d Fix #6 added this to backend/frontend/verifier but missed orchestrator — meeting_tools is intentionally a separate bundle from workhub_tools, see tool_bundles._bundle_meeting_tools docstring).
+      - milestone_tools  # 2026-06-24: orchestrator-only — manages the milestone roadmap (hubs.milestones) at kickoff: revise FUTURE phases (add/update/remove) + set the current phase's detailed brief. Delivered phases frozen.
       - registryhub_tools
       - eventhub_tools
       - run_tools
