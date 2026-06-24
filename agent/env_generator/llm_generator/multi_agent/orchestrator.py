@@ -1982,6 +1982,41 @@ class Orchestrator:
                         "Framework deliver declined: delivery gate has %d failed check(s): %s",
                         len(_failed), _failed,
                     )
+                # FORWARD-PROGRESS GUARANTEE for POST-api_smoke gate blockers (audit #2).
+                # The deterministic stuck-abort ladder lives in the api_smoke-FAILING branch
+                # of _maybe_run_framework_validation, so once api_smoke passes, a delivery-gate
+                # blocker that api_smoke doesn't cover (business_chain_failing, ui_page_unwired)
+                # loops UNCHANGED to the 6h wall — there was NO deterministic escape (run v12).
+                # Track a stuck signature = (failed-check set, app source signature, registry +
+                # verification-chain versions). It advances ONLY when ALL are unchanged — i.e.
+                # the gate is still red AND no lane has edited code or (re-)registered any
+                # contract/chain — so an actively-progressing run NEVER trips it. After
+                # FWVAL_STUCK_ABORT_AFTER such cycles, set the run loop's FAIL-FAST signal
+                # (_fwval_abort_reason, consumed at run()-loop) so a genuine wedge fails fast.
+                try:
+                    _vc = getattr(registryhub, "_verification_chains", None)
+                    _progress = (
+                        self._compute_app_source_signature(),
+                        tuple(sorted((registryhub.get_versions() or {}).items()))
+                        if hasattr(registryhub, "get_versions") else None,
+                        _vc.get_version() if (_vc is not None and hasattr(_vc, "get_version")) else 0,
+                    )
+                except Exception:
+                    _progress = None
+                _stuck_key = (tuple(_failed), _progress)
+                if _progress is not None and _stuck_key == getattr(self, "_fwdeliver_stuck_key", None):
+                    self._fwdeliver_stuck_count = getattr(self, "_fwdeliver_stuck_count", 0) + 1
+                else:
+                    self._fwdeliver_stuck_key = _stuck_key
+                    self._fwdeliver_stuck_count = 1
+                if (self._fwdeliver_stuck_count >= FWVAL_STUCK_ABORT_AFTER
+                        and not getattr(self, "_fwval_abort_reason", None)):
+                    self._fwval_abort_reason = (
+                        f"delivery gate stuck on {_failed} for {self._fwdeliver_stuck_count} "
+                        "consecutive cycles with NO source/contract/chain change after "
+                        "api_smoke passed — no lane is making progress; failing fast instead "
+                        "of spinning to wall-clock.")
+                    self._logger.error("DELIVERY-GATE STUCK-ABORT: %s", self._fwval_abort_reason)
                 # PROPOSAL #49 (user): route each lane-owned gate-level failed_check back
                 # to its owner for repair (guarded per-milestone) — and log any uncovered
                 # one — so a gate blocker never silently dead-ends. Complements the bespoke
