@@ -159,6 +159,10 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                 return step == 0
             return stage_name in enabled_stages
 
+        # Per-wake reset: the hub_pulse is re-injected ONLY when it CHANGES since the
+        # last step (see the hub_pulse stage). Reset the tracker each wake so the FIRST
+        # pulse of a fresh wake always renders (orientation), then dedups within the wake.
+        self._last_hub_pulse_prompt = None
         try:
             for step in range(max_steps):
                 if self._shutdown_requested:
@@ -425,8 +429,15 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                         if hubs is not None:
                             pulse = collect_hub_pulse(hubs, self.agent_id, step_num=step, agent=self)
                             hub_pulse_prompt = build_hub_pulse_prompt(pulse)
-                            if hub_pulse_prompt:
+                            # Inject ONLY when the pulse CHANGED since the last step. The
+                            # pulse is re-collected every step but is identical while a lane
+                            # is heads-down building; re-appending the same block each step
+                            # bloated context (prior pulse is still in the conversation) and
+                            # read as 'forced task enumeration every step' (v10). A changed
+                            # pulse (task done, new bug, phase shift) always re-renders.
+                            if hub_pulse_prompt and hub_pulse_prompt != getattr(self, "_last_hub_pulse_prompt", None):
                                 messages.append(Message.user(hub_pulse_prompt))
+                                self._last_hub_pulse_prompt = hub_pulse_prompt
                         _mark_stage(
                             "hub_pulse",
                             executed=True,
