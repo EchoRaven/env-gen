@@ -108,6 +108,7 @@
         "build:docker record present and PASSED.",
         "build:frontend record present and PASSED (if frontend exists).",
         "validation:api_smoke: run_validation() returned + emitted one registryhub_record_contract_test per business endpoint (contract_tests_recorded == endpoints_tested). A passed=False verdict means one or more endpoints failed — bug_create per failure, do NOT skip.",
+        "business_chain: a verifier-AUTHORED chain per critical flow is registered AND passing (run_validation shows business_chain green). DELIVERY HARD-REQUIRES this — the framework's synthesized default does NOT count, and api_smoke alone (endpoint returns 2xx) is NOT sufficient. If you register none / too few / a failing chain, delivery is blocked and the task routes back to you. This is YOUR core responsibility: what ships must be proven by real business-flow verification.",
         "validation:ui_smoke: every page in the frontend's ui_pages (from the kickoff section) has a browser_navigate + browser_screenshot.",
         "validation:ui_flow:<name>: EVERY critical_flows[] entry in the frontend's ui_pages (from the kickoff section) (or every critical:true page as fallback) has a full multi-step journey recorded with metadata={'check':'ui_flow','flow':'<name>'} AND zero unexpected console/network errors.",
         "bug_create fired for EACH failed check (NOT workhub_create_task — DETECT-only rule).",
