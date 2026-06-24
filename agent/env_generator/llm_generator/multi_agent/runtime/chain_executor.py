@@ -77,6 +77,16 @@ def _coerce_save(save: Any) -> Dict[str, Any]:
     return {}
 
 
+# JWT response-field synonyms a verifier may (mis)use as the token save-path. The
+# framework's auth skeleton returns the access token under "access_token"; any of
+# these as a save VALUE on an /auth step is normalized to that canonical path so the
+# saved var actually populates (else an /api step using it sends an empty bearer → 401).
+_TOKEN_RESP_SYNONYMS = frozenset({
+    "token", "access_token", "accesstoken", "jwt", "auth_token", "authtoken",
+    "bearer_token", "bearertoken", "jwt_token", "id_token",
+})
+
+
 def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
     """Normalize step variants → canonical {method, path, body, expect, save,
     auth}. Returns (normalized, errors). SCHEMA TOLERANCE (round 35): accept
@@ -148,6 +158,20 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
         # (the custom var stays saved, so steps using it keep working).
         if pth in ("/auth/register", "/auth/login"):
             _save = dict(st.get("save") or {})
+            # TOKEN RESPONSE-PATH NORMALIZATION (run v21): verifiers author the token
+            # save with a WRONG response path — save:{"tokenA": "token"} expecting a
+            # response field "token", but the framework's auth skeleton returns the JWT
+            # under "access_token" (there is NO "token" field). The var (tokenA) then
+            # resolves to None, and the /api step using auth="tokenA" sends an EMPTY
+            # bearer → 401 → business_chain fails (v21: 3/8 chains 401'd exactly this
+            # way, while the chains that wrote "access_token" passed). The token ALWAYS
+            # comes from access_token (a platform invariant of the OAuth2 skeleton), so
+            # rewrite any save whose VALUE is a token synonym to the canonical
+            # "access_token" path. Preserves multi-user identity (tokenA←A's token,
+            # tokenB←B's), unlike a blanket repoint to the single canonical "token".
+            for _k, _v in list(_save.items()):
+                if str(_v).strip().lower() in _TOKEN_RESP_SYNONYMS:
+                    _save[_k] = "access_token"
             _save.setdefault("token", "access_token")
             st["save"] = _save
         if pth == "/auth/register":
