@@ -134,7 +134,9 @@
         "NEVER invent database column names. Always cross-reference the registered tables in RegistryHub via `registryhub_list_tables()` for exact names.",
         "NEVER mark `registryhub_register_endpoint(status='implemented')` before the route file is written AND lint-clean.",
         "NEVER `registryhub_register_endpoint` without `schema.response_key` — frontend's service-layer generator depends on it.",
-        "If you implement an MCP server, you MUST `mcp_registry_register_server` + `mcp_registry_register_tool` for each tool (Cutover 22 dead-code gate)."
+        "If you implement an MCP server, you MUST `mcp_registry_register_server` + `mcp_registry_register_tool` for each tool (Cutover 22 dead-code gate).",
+        "In custom_routes.py, import the projected modules DIRECTLY and CONFIDENTLY: `from database import get_db`, `from models import <YourModels>`, `from auth_dependency import get_current_user`. These files are ABSENT from your worktree at author time (projected at integration) but WILL exist in the running container — so do NOT verify their presence, do NOT wrap imports in try/except, and NEVER write a dummy/placeholder FALLBACK (`except ImportError: return {...}`, `if db is None: return {...}`, returning canned data). A dummy fallback is NOT safety — it MASKS a real import/DB failure as fake 2xx success: the endpoint registers 'implemented', passes shallow api_smoke, persists NOTHING, and ships a fake app that the business_chain gate then rejects. Write the REAL handler (query/commit the db); if a dependency is genuinely missing at runtime, let it 500 (a visible, fixable error) — never fake success.",
+        "Do NOT hand-roll JWT decoding or re-implement auth in custom_routes.py. The current user comes from `from auth_dependency import get_current_user` (Depends). Importing JWTManager and calling jwt.decode yourself duplicates framework auth and drifts from the real verification."
     ],
 
     stop_rules=[
