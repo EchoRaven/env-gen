@@ -515,6 +515,13 @@ class RemediationDispatcher:
                 "verifier", "Cover every critical flow with a verification chain (blocks delivery)",
                 "fewer verification chains than declared critical flows — author one "
                 "business-flow chain per critical flow so each is covered, then re-run run_validation."),
+            "verification_checklist_not_ready": (
+                "verifier", "Record a green verification/build checklist (blocks delivery)",
+                "the build checklist is NOT all-green — it needs the CodeHub checks "
+                "build:database, build:docker, build:frontend, build:backend all = success. "
+                "run_validation to RUN and RECORD them; if one is just unrecorded (pending), "
+                "run_validation records it; if one FAILS, bug_create for the failing component "
+                "(it routes to the owning lane) and re-run once fixed. Re-run until ready."),
         }
         # Owned by a bespoke helper, or framework-deterministic (re-runs/records itself),
         # or routed via the task's own assignee — NOT dead-ends, so don't log as uncovered.
