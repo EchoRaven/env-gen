@@ -495,6 +495,14 @@ class AgentMessaging:
             await self._handle_kickoff_facilitate_request(urgent_msg)
             return True
 
+        # Per-milestone KICKOFF-BRIEF turn (2026-06-24): author this phase's detailed
+        # brief + (optionally) revise FUTURE milestones via the milestone_* tools,
+        # BEFORE the lanes draft. Structural mirror of facilitate; macro
+        # ``kickoff_milestone_brief_prompt``.
+        if msg_type == "kickoff_brief_request":
+            await self._handle_kickoff_brief_request(urgent_msg)
+            return True
+
         # Round-8f.1: facilitator-driven single-pass revision. After
         # round 1 the orchestrator (as meeting facilitator) records a
         # facilitator_note flagging a subset of attendees as ``revisers``
@@ -1481,6 +1489,101 @@ Start by thinking about what might cause this issue.
                 round_n=current_round,
                 last_synthesis_status=last_synthesis_status,
             )
+
+    async def _handle_kickoff_brief_request(self, message: BaseMessage) -> None:
+        """Per-milestone KICKOFF-BRIEF turn (2026-06-24). Fired by
+        ``run_kickoff.author_milestone_brief`` at milestone ENTRY, BEFORE the lanes
+        draft. The orchestrator (full system prompt + hub context + the ``milestone_*``
+        tools) reviews the roadmap, MAY revise FUTURE phases (milestone_add/update/
+        remove — delivered+active frozen), and MUST set THIS phase's detailed brief
+        (milestone_set_brief). Renders ``kickoff_milestone_brief_prompt``; structural
+        mirror of ``_handle_kickoff_facilitate_request``.
+
+        Closed-by-construction: if the turn ends with no brief on the current phase,
+        fall back to its rough slice so the main loop's bounded await resolves
+        immediately (the kickoff never stalls)."""
+        payload = message.payload if isinstance(message.payload, Mapping) else {}
+        milestone_index = payload.get("milestone_index") if isinstance(payload, Mapping) else None
+        milestone_id = payload.get("milestone_id") if isinstance(payload, Mapping) else None
+        raw_requirements = (payload.get("raw_requirements") if isinstance(payload, Mapping) else "") or ""
+
+        ms = getattr(self, "_hubs", None)
+        ms = getattr(ms, "milestones", None)
+        roadmap, current = [], None
+        if ms is not None:
+            try:
+                roadmap = ms.list_milestones()
+                current = ((ms.get(milestone_id) if milestone_id else None)
+                           or ms.get_by_index(milestone_index) or ms.get_current())
+            except Exception:
+                roadmap, current = [], None
+        if current is None:
+            self._logger.warning(
+                f"[{self.agent_id}] kickoff_brief_request without a resolvable milestone "
+                f"(payload={payload!r}); ignoring.")
+            return
+        milestone_id = current.get("id")
+
+        prompt_cfg = getattr(self, "_prompt_cfg", None) or {}
+        template = prompt_cfg.get("template") if isinstance(prompt_cfg, Mapping) else None
+        rendered: Optional[str] = None
+        if template and hasattr(self, "render_macro"):
+            try:
+                rendered = self.render_macro(
+                    template, "kickoff_milestone_brief_prompt",
+                    milestone_index=milestone_index, milestone_id=milestone_id,
+                    current=current, roadmap=roadmap, raw_requirements=raw_requirements)
+            except Exception as exc:
+                self._logger.warning(
+                    f"[{self.agent_id}] kickoff_milestone_brief_prompt render failed "
+                    f"({exc}); falling back to plain-text prompt.")
+                rendered = None
+        if not rendered:
+            _rm = "\n".join(
+                f"  M{m.get('index')} [{m.get('name')}@{m.get('version')}] {m.get('status')}: "
+                f"{str(m.get('description_slice',''))[:200]}" for m in roadmap)
+            rendered = (
+                f"## Milestone {milestone_index} kickoff — author the phase brief\n\n"
+                f"You are entering milestone {milestone_index} of {len(roadmap)}. FIRST call "
+                f"`milestone_list`. Review the roadmap below against what's DELIVERED. You MAY "
+                f"revise the FUTURE (not-yet-started) phases via `milestone_add` / "
+                f"`milestone_update` / `milestone_remove` (delivered + active are frozen) — a "
+                f"no-op is fine. Then you MUST call "
+                f"`milestone_set_brief(milestone='{milestone_index}', brief=...)` with a "
+                f"concrete, bounded brief for THIS phase: exactly which endpoints / pages / "
+                f"components / data this phase ADDS, the acceptance, and what's already shipped "
+                f"(do NOT rebuild). Then `finish()`.\n\n"
+                f"OVERALL GOAL (context only — do NOT build it all this phase):\n"
+                f"{str(raw_requirements)[:6000]}\n\nROADMAP:\n{_rm}\n")
+
+        self._logger.info(
+            f"[{self.agent_id}] kickoff_brief_request (M{milestone_index}, id={milestone_id}); "
+            "rendering kickoff_milestone_brief_prompt and running one agentic loop.")
+        self._processing_state = ProcessingState.PROCESSING_TASK
+        prev_active_phase = getattr(self, "_active_phase", None)
+        self._active_phase = "kickoff"
+        try:
+            system_prompt = self._compose_system_prompt()
+            await self.run_agentic_loop(
+                system_prompt=system_prompt, initial_prompt=rendered, max_steps=16)
+        except Exception as e:
+            self._logger.error(f"[{self.agent_id}] kickoff_brief agentic loop failed: {e}")
+        finally:
+            self._processing_state = ProcessingState.IDLE
+            self._active_phase = prev_active_phase
+            # closed-by-construction: guarantee a brief so the main loop's bounded await
+            # resolves (fall back to the rough slice if the orchestrator set none).
+            try:
+                cur = ms.get(milestone_id) if ms is not None else None
+                if cur is not None and not str(cur.get("brief") or "").strip():
+                    _fb = str(cur.get("description_slice") or "").strip()
+                    if _fb:
+                        ms.set_brief(milestone_id, _fb, agent="orchestrator")
+                        self._logger.info(
+                            f"[{self.agent_id}] kickoff_brief: no brief authored — fell back "
+                            f"to the rough slice for M{milestone_index}.")
+            except Exception:
+                pass
 
     def _ensure_facilitator_note(
         self,

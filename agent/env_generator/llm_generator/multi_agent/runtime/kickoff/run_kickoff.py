@@ -890,24 +890,49 @@ async def author_milestone_brief(
     """Run the orchestrator's KICKOFF-BRIEF turn for ``milestone_index``, returning
     the authored brief (or ``""`` to fall back to the rough slice).
 
-    Component 3 wires the real turn: fire a ``kickoff_brief_request`` to the
-    orchestrator AGENT (it reviews the roadmap, may revise FUTURE phases, and sets
-    THIS phase's detailed brief via the ``milestone_*`` tools — full system-prompt +
-    hub context), then AWAIT (bounded) until ``hubs.milestones`` shows the brief set.
-
-    For now (component 4 landed first) this is a STUB that returns ``""`` immediately
-    — no event fired, no wait — so the loop is store-driven + carries the overall-goal
-    context while the brief falls back to the rough slice. NEVER hangs the run."""
+    Fires a ``kickoff_brief_request`` to the orchestrator AGENT (it reviews the
+    roadmap, may revise FUTURE phases, and sets THIS phase's detailed brief via the
+    ``milestone_*`` tools — with its full system prompt + hub context), then AWAITS
+    (bounded) until ``hubs.milestones`` shows the brief set. The handler's
+    closed-by-construction fallback guarantees a brief within the turn; the timeout
+    is a hard safety cap. NEVER hangs the run — on timeout returns ``""`` and the
+    caller falls back to the rough slice."""
+    import asyncio
     ms = getattr(hubs, "milestones", None)
-    if ms is None:
-        return ""
+    if ms is None or orch_agent is None:
+        return ""  # no store / no orchestrator agent to author — caller uses the slice
     try:
         cur = ms.get_by_index(milestone_index) or ms.get_current()
     except Exception:
         cur = None
-    if isinstance(cur, dict) and str(cur.get("brief") or "").strip():
+    if not isinstance(cur, dict):
+        return ""
+    if str(cur.get("brief") or "").strip():
         return cur["brief"]  # already authored (resume) — reuse
-    return ""
+    mid = cur.get("id")
+    try:
+        hubs.eventhub.publish_event(
+            source_hub="orchestrator",
+            event_type="kickoff_brief_request",
+            payload={"milestone_index": milestone_index, "milestone_id": mid,
+                     "raw_requirements": str(raw_req or "")[:14_000]},
+            recipients=["orchestrator"], priority="high", caller="orchestrator")
+    except Exception:
+        return ""
+    # Bounded poll: the orchestrator handler (separate task) authors the brief +
+    # may revise future phases, then sets the brief on the store; this resolves once
+    # it appears. asyncio.sleep yields so the orchestrator task runs concurrently.
+    waited, step = 0.0, 3.0
+    while waited < timeout_s:
+        await asyncio.sleep(step)
+        waited += step
+        try:
+            c = ms.get(mid)
+        except Exception:
+            c = None
+        if isinstance(c, dict) and str(c.get("brief") or "").strip():
+            return c["brief"]
+    return ""  # timed out → caller falls back to the rough slice
 
 
 def start_kickoff(
