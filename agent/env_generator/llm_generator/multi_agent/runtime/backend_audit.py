@@ -28,10 +28,15 @@ worktree). Mirrors ``frontend_audit.sync_ui_page_statuses``.
 from __future__ import annotations
 
 import ast
+import logging
 from pathlib import Path
 from typing import Any, Dict, Set, Tuple
 
-from .route_projector import _existing_routes, _express_to_fastapi, _norm_path
+from .route_projector import (
+    _duplicate_routes, _existing_routes, _express_to_fastapi, _norm_path,
+)
+
+_logger = logging.getLogger(__name__)
 
 # Fixed runtime-owned contract surface — registered by the orchestrator, not the
 # lane's business code, and served by the AS / control plane (not the audited
@@ -147,6 +152,35 @@ def served_routes(backend_dir: Path) -> Set[Tuple[str, str]]:
     return served
 
 
+def duplicated_routes(backend_dir: Path) -> Set[Tuple[str, str]]:
+    """(METHOD, normpath) routes defined 2+ times WITHIN a single served module —
+    intra-module collisions FastAPI silently shadows (it mounts only the FIRST). A
+    cross-module override (main.py's projected handler + a custom_routes.py override)
+    is NOT flagged — only same-file duplicates, which are always a lane bug. See
+    route_projector._duplicate_routes / audit #6."""
+    dups: Set[Tuple[str, str]] = set()
+    main_py = backend_dir / "main.py"
+    if not main_py.exists():
+        return dups
+    try:
+        main_src = main_py.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return dups
+    dups |= _duplicate_routes(main_src)
+    for mod, prefix in _included_modules(main_src).items():
+        modfile = backend_dir / f"{mod}.py"
+        if not modfile.exists():
+            continue
+        try:
+            msrc = modfile.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        eff_prefix = (prefix or "") + _apirouter_prefix(msrc)
+        for method, path in _duplicate_routes(msrc):
+            dups.add((method, _norm_path(eff_prefix + path) if eff_prefix else path))
+    return dups
+
+
 def sync_endpoint_statuses(project_dir: Any, registryhub: Any) -> Dict[str, Any]:
     """Audit every registered BUSINESS endpoint against the served code; flip its
     status through ``register_endpoint`` (orchestrator actor — fires
@@ -159,6 +193,7 @@ def sync_endpoint_statuses(project_dir: Any, registryhub: Any) -> Dict[str, Any]
         if registryhub is None or not backend_dir.is_dir():
             return out
         served = served_routes(backend_dir)
+        dups = duplicated_routes(backend_dir)
         endpoints = registryhub.get_endpoints() or {}
         for ep in endpoints.values():
             md = ep.get("metadata") or {}
@@ -169,8 +204,19 @@ def sync_endpoint_statuses(project_dir: Any, registryhub: Any) -> Dict[str, Any]
             if not method or not path:
                 continue
             status = str(ep.get("status") or "").lower()
-            is_served = _norm_route(method, path) in served
-            if is_served and status != "implemented":
+            _nr = _norm_route(method, path)
+            is_served = _nr in served
+            if _nr in dups:
+                # Intra-module DUPLICATE route: FastAPI mounts only the first def and
+                # shadows the rest, so which handler actually serves is ambiguous and a
+                # broken first def would ship green (audit #6). Refuse to credit it as
+                # implemented — demote if it was — so the gate + remediation force the
+                # lane to remove the duplicate. Behavior-based, not presence-based.
+                if status == "implemented":
+                    registryhub.register_endpoint(
+                        method, path, agent="orchestrator", status="defined")
+                out.setdefault("duplicated", []).append(f"{method} {path}")
+            elif is_served and status != "implemented":
                 registryhub.register_endpoint(
                     method, path, agent="orchestrator", status="implemented")
                 out["implemented"].append(f"{method} {path}")
@@ -180,6 +226,12 @@ def sync_endpoint_statuses(project_dir: Any, registryhub: Any) -> Dict[str, Any]
                 out["regressed"].append(f"{method} {path}")
             elif not is_served:
                 out["pending"].append(f"{method} {path}")
+        if out.get("duplicated"):
+            _logger.warning(
+                "backend_audit: %d endpoint(s) have DUPLICATE/shadowed route defs "
+                "(FastAPI serves only the first — remove the dup in custom_routes.py): %s",
+                len(out["duplicated"]), out["duplicated"],
+            )
     except Exception:
         pass
     return out

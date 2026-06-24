@@ -117,6 +117,38 @@ def _existing_routes(src: str) -> set:
     return routes
 
 
+def _duplicate_routes(src: str) -> set:
+    """``(METHOD, normalised_path)`` pairs decorated MORE THAN ONCE in *src* — an
+    intra-module route collision. FastAPI mounts the FIRST matching definition and
+    silently shadows the rest, so a BROKEN first handler ships while its correct twin
+    is dead code — yet ``_existing_routes`` collapses both into one set entry, so the
+    code-truth audit flips the endpoint ``implemented`` on decorator-presence alone,
+    blind to which handler actually serves (audit #6, run v12: custom_routes.py defined
+    the same route twice; the first 500'd, the audit went green). Returns the collided
+    keys so the audit can refuse to credit them."""
+    from collections import Counter
+    counts: Counter = Counter()
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for dec in node.decorator_list:
+            if not isinstance(dec, ast.Call):
+                continue
+            func = dec.func
+            if not isinstance(func, ast.Attribute) or func.attr not in _HTTP_METHODS:
+                continue
+            if not dec.args:
+                continue
+            arg0 = dec.args[0]
+            if isinstance(arg0, ast.Constant) and isinstance(arg0.value, str):
+                counts[(func.attr.upper(), _norm_path(_express_to_fastapi(arg0.value)))] += 1
+    return {k for k, n in counts.items() if n >= 2}
+
+
 def _column_sa_type(call: ast.Call) -> Optional[str]:
     """The SQLAlchemy type name of a ``Column(<Type>, ...)`` declaration, e.g.
     ``Column(Integer, primary_key=True)`` → ``"Integer"`` and ``Column(String(255))``
