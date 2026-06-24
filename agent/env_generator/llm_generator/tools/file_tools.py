@@ -365,25 +365,36 @@ def _record_file_write(path: Path, content: str) -> None:
     )
 
 
-def _check_stale_write_guard(path: Path, current_content: str) -> Optional[str]:
+def _check_stale_write_guard(
+    path: Path, current_content: str, workspace: Optional["Workspace"] = None
+) -> Optional[str]:
     """
     Guard against blind overwrite:
     - Existing file must be read before write
     - If file changed after last read, reject unless full-read content still matches
+
+    ``workspace`` (when supplied) relativizes the path in the agent-facing
+    message. The PATH FIREWALL (step_pipeline scrubber) only strips the
+    LLM-bound message; this guard string is ALSO logged raw into
+    ``.agent_logs/*.jsonl`` (pre-scrub) and surfaced verbatim in the
+    dashboard, so it must carry a workspace-relative path AT THE SOURCE —
+    otherwise the host abs path (``/home/.../worktrees/<lane>/app/...``)
+    leaks into the trace even though the model never sees it.
     """
     if not path.exists():
         return None
+    disp = _workspace_rel(workspace, path) if workspace is not None else str(path)
     snap = _file_read_state.get(str(path))
     if not snap:
         return (
-            f"Refusing to overwrite existing file without prior read: {path}. "
+            f"Refusing to overwrite existing file without prior read: {disp}. "
             "Call `read` on this file first, then retry."
         )
     current_mtime = _get_file_mtime(path)
     if current_mtime > snap.timestamp:
         if not snap.full_read or snap.content != current_content:
             return (
-                f"File changed since last read: {path}. "
+                f"File changed since last read: {disp}. "
                 "Re-read the file and retry to avoid clobbering concurrent edits."
             )
     return None
@@ -720,13 +731,13 @@ Examples:
             return ToolResult(success=False, error_message=f"Failed to apply JSON edit: {apply_err}")
 
         _file_history.save(str(file_path), old_content)
-        stale_err = _check_stale_write_guard(file_path, old_content)
+        stale_err = _check_stale_write_guard(file_path, old_content, self.workspace)
         if stale_err:
             return ToolResult(success=False, error_message=stale_err)
         try:
             new_content = json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
             with _FileLock(file_path):
-                stale_err = _check_stale_write_guard(file_path, old_content)
+                stale_err = _check_stale_write_guard(file_path, old_content, self.workspace)
                 if stale_err:
                     return ToolResult(success=False, error_message=stale_err)
                 _atomic_write_text(file_path, new_content, encoding="utf-8")
@@ -949,7 +960,7 @@ Actions:
             if not new_content.endswith("\n"):
                 new_content += "\n"
             with _FileLock(file_path):
-                stale_err = _check_stale_write_guard(file_path, old_content)
+                stale_err = _check_stale_write_guard(file_path, old_content, self.workspace)
                 if stale_err:
                     return ToolResult(success=False, error_message=stale_err)
                 _atomic_write_text(file_path, new_content, encoding="utf-8")

@@ -293,7 +293,7 @@ def write_workspace_file(workspace: Workspace, file_path: str, content: str, too
         if not is_new:
             old_content = file_path_resolved.read_text(encoding="utf-8")
             _file_history.save(str(file_path_resolved), old_content)
-            stale_err = _check_stale_write_guard(file_path_resolved, old_content)
+            stale_err = _check_stale_write_guard(file_path_resolved, old_content, workspace)
             if stale_err:
                 return ToolResult(success=False, error_message=stale_err)
 
