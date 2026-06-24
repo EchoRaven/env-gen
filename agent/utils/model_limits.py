@@ -83,4 +83,69 @@ def resolve_max_output_tokens(model: str,
     return default
 
 
-__all__ = ["resolve_max_output_tokens", "SAFE_DEFAULT_MAX_OUTPUT"]
+# --- Context WINDOW (input) per model family -------------------------------
+# The model's documented INPUT context window (tokens). Used to size the live
+# context manager / in-context memory to the model's RECOMMENDED WORKING LENGTH
+# rather than a tiny hardcoded default — an agent on a large-context model (e.g.
+# Gemini's ~1M) should USE that window, not truncate its history/memory to a small
+# slice. Prefix-matched like the output table.
+SAFE_DEFAULT_CONTEXT_WINDOW = 128000
+
+_CONTEXT_WINDOW_TABLE: list[tuple[str, int]] = [
+    # --- Anthropic (200k standard; 1M-beta not assumed) ---
+    ("claude-opus-4", 200000),
+    ("claude-sonnet-4", 200000),
+    ("claude-haiku-4", 200000),
+    ("claude-3", 200000),
+    # --- OpenAI ---
+    ("gpt-5", 400000),
+    ("gpt-4.1", 1_047_576),
+    ("o1", 200000),
+    ("o3", 200000),
+    ("o4", 200000),
+    ("gpt-4o", 128000),
+    ("gpt-4", 128000),
+    # --- Google Gemini (1,048,576-token window) ---
+    ("gemini-3", 1_048_576),
+    ("gemini-2.5", 1_048_576),
+    ("gemini-2.0", 1_048_576),
+    ("gemini-1.5", 1_048_576),
+]
+
+
+def resolve_context_window(model: str,
+                           default: int = SAFE_DEFAULT_CONTEXT_WINDOW) -> int:
+    """Return the INPUT context window (tokens) for ``model`` (prefix match)."""
+    if not model:
+        return default
+    name = model.strip().lower()
+    candidates = [name]
+    if "/" in name:
+        candidates.append(name.rsplit("/", 1)[1])
+    for candidate in candidates:
+        for prefix, win in _CONTEXT_WINDOW_TABLE:
+            if candidate.startswith(prefix):
+                return win
+    return default
+
+
+def resolve_ctx_working_chars(model: str,
+                              default: int = SAFE_DEFAULT_CONTEXT_WINDOW) -> int:
+    """RECOMMENDED working char budget for the live context (accumulated history +
+    in-context memory), from the model's window with response headroom: ~3.5
+    chars/token x 0.7 of the window. Override via ENVGEN_CTX_WORKING_CHARS. A
+    Gemini-class 1M-token model yields a ~2.5M-char budget (normal runs never
+    truncated); a small model stays modest."""
+    import os
+    env = os.environ.get("ENVGEN_CTX_WORKING_CHARS")
+    if env:
+        try:
+            return max(2000, int(env))
+        except ValueError:
+            pass
+    return int(resolve_context_window(model, default) * 3.5 * 0.7)
+
+
+__all__ = ["resolve_max_output_tokens", "SAFE_DEFAULT_MAX_OUTPUT",
+           "resolve_context_window", "resolve_ctx_working_chars",
+           "SAFE_DEFAULT_CONTEXT_WINDOW"]

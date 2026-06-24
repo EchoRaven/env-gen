@@ -190,12 +190,31 @@ def _ctx_cfg():
     return max(keep, 1), max(cap, 500)
 
 
-def _mask_old_observations(messages: list) -> list:
-    """Truncate the bulky text content of stale messages to bound per-call input."""
+def _mask_old_observations(messages: list, model: str = None) -> list:
+    """Truncate the bulky text content of stale messages to bound per-call input —
+    but ONLY when the full history would exceed the model's RECOMMENDED WORKING
+    window. A large-context model (e.g. Gemini's ~1M) keeps its COMPLETE history
+    (no info loss); trimming kicks in only to avoid genuine overflow. (Was: always
+    trimmed to keep_recent + max_old regardless of model, wasting a big window while
+    cutting old info.)"""
     cfg = _ctx_cfg()
     if not cfg or not messages:
         return messages
     keep_recent, max_old = cfg
+    # MODEL-AWARE budget: if everything fits the model's working window, keep it ALL.
+    try:
+        from utils.model_limits import resolve_ctx_working_chars
+        budget = resolve_ctx_working_chars(model) if model else 0
+    except Exception:
+        budget = 0
+    if budget:
+        total = 0
+        for m in messages:
+            c = getattr(m, "content", None)
+            if isinstance(c, str):
+                total += len(c)
+        if total <= budget:
+            return messages
     n = len(messages)
     if n <= keep_recent:
         return messages
@@ -845,7 +864,7 @@ class OpenAIClient(BaseLLMClient):
         # Always sanitize outgoing content (redact keys/tokens/password-like lines).
         safe_messages: list[Message] = [
             Message(role=m.role, content=_sanitize_message_content(m.content), name=m.name, function_call=m.function_call, tool_calls=m.tool_calls, tool_call_id=m.tool_call_id)
-            for m in _mask_old_observations(messages)
+            for m in _mask_old_observations(messages, self.config.model_name)
         ]
         
         # Determine token parameter name based on model. Reasoning-class models
@@ -1572,7 +1591,7 @@ class GoogleClient(BaseLLMClient):
         """
         from google.genai import types
 
-        messages = _mask_old_observations(messages)  # bound per-call input growth
+        messages = _mask_old_observations(messages, self.config.model_name)  # bound per-call input growth
         system_instruction = None
         contents = []
 
@@ -1707,7 +1726,7 @@ class GoogleClient(BaseLLMClient):
         # Always sanitize outgoing content
         safe_messages: list[Message] = [
             Message(role=m.role, content=_sanitize_message_content(m.content), name=m.name, function_call=m.function_call, tool_calls=m.tool_calls, tool_call_id=m.tool_call_id)
-            for m in _mask_old_observations(messages)
+            for m in _mask_old_observations(messages, self.config.model_name)
         ]
         
         # Convert messages to Google format

@@ -17,11 +17,18 @@ Structure:
 """
 
 import logging
+import os
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import re
+
+# In-context MEMORY budget (user 2026-06-24): sized generously / customizable, not a
+# tiny hardcoded default — a large-context model has ample room for fuller memory.
+# Override via ENVGEN_MEMORY_DIGEST_CHARS / ENVGEN_MEMORY_NOTEBOOK_CHARS.
+_DIGEST_CHARS = max(2000, int(os.environ.get("ENVGEN_MEMORY_DIGEST_CHARS", "16000")))
+_NOTEBOOK_CHARS = max(800, int(os.environ.get("ENVGEN_MEMORY_NOTEBOOK_CHARS", "6000")))
 
 
 @dataclass
@@ -750,7 +757,7 @@ Working on: initialization
             touched.append("Log")
         return touched
 
-    def get_notebook(self, max_chars: int = 1600) -> str:
+    def get_notebook(self, max_chars: int = _NOTEBOOK_CHARS) -> str:
         """Return the agent's writable notebook content (trimmed)."""
         nb = self.get_file(self.NOTEBOOK_KEY) or ""
         # Drop the read-only-contract preamble (the > blockquote) from the
@@ -828,7 +835,7 @@ Working on: initialization
         
         return f"Memory Bank: {self.memory_dir}\n" + "\n".join(files_status)
 
-    def get_digest(self, max_chars: int = 4000) -> str:
+    def get_digest(self, max_chars: int = _DIGEST_CHARS) -> str:
         """
         Return a concise, actionable digest of the Memory Bank.
 
