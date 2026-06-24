@@ -1251,10 +1251,19 @@ class WorkHub:
 
         self.stores.pages.update(_mutate, change_info={"agent": agent})
         page_after = self.stores.pages.value().get(meeting_id) or {}
+        # Deliver via SUBSCRIPTION, not an all-attendees broadcast. The ONLY
+        # consumer of meeting_decision_added is the orchestrator (kickoff synthesis
+        # trigger — its lone subscriber, agent_subscriptions.py). The other
+        # attendees authored their OWN decisions and wake on kickoff phase/revision
+        # requests, never on each other's decisions — so broadcasting to all
+        # attendees just floods every lane's inbox (run v11: 84 decisions × 4
+        # attendees = 336 inbox items, 252 of them pure noise). recipients=[] lets
+        # publish_event fan out to subscribers only (the orchestrator). The
+        # decisions themselves remain on the meeting page for anyone who queries it.
         self._emit(
             "meeting_decision_added",
             {"meeting_id": meeting_id, "decision": decision_entry},
-            recipients=page_after.get("attendees", []),
+            recipients=[],
         )
         return page_after
 
