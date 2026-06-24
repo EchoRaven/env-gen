@@ -556,7 +556,6 @@ profiles:
         # the flat tools take explicit id/route/purpose scalars instead.
         - kickoff_declare_ui_page
         - kickoff_declare_ui_component
-        - kickoff_declare_user_flow
         - workhub_add_meeting_decision
         - workhub_get_document
         - workhub_get_task

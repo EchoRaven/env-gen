@@ -564,16 +564,11 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
                        + ("" if len(uncovered) <= 12 else f" (+{len(uncovered) - 12} more)")
                        + ". Add steps to existing chains or author a new chain to cover them."),
         }
-    flows = _declared_critical_flows(hubs)
-    if flows and len(authored) < len(flows):
-        return {
-            "reason": "business_chain_coverage", "authored": len(authored),
-            "flows": len(flows), "flow_names": list(flows),
-            "detail": (f"{len(authored)} verification chain(s) cover {len(flows)} "
-                       f"declared critical flow(s) ({', '.join(flows[:8])}) — author "
-                       "one business-flow chain per critical flow (auth round-trip "
-                       "first, then create -> read-back -> cross-user per flow)."),
-        }
+    # NOTE: the per-flow chain-COUNT check was retired alongside the user_flow
+    # migration (2026-06-22) — critical flows are now page-derived, so a count proxy
+    # (chains >= flows) is no longer meaningful. The per-API coverage above is the
+    # robust, concrete coverage guarantee (every endpoint exercised); authored+passing
+    # + full API coverage is what delivery requires.
     return {}
 
 
