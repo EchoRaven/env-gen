@@ -1350,12 +1350,27 @@ export default defineConfig({
 })
 """
 
-_BASELINE_TAILWIND = """export default {
+# tailwind.config.js is framework-PINNED (FIX #44: lanes broke dep VERSIONS). But the
+# THEME (design tokens — the colors the lane @apply's, e.g. `bg-ig-bg`) is legitimately
+# the frontend's to own, and a pinned EMPTY theme made `@apply <custom-class>` fail the
+# build with NO way for the lane to fix it (write to this file is denied → build fails
+# forever; run v15/v16: index.css `@apply bg-ig-bg` → "class does not exist"). So this
+# pinned config IMPORTS the theme tokens from a frontend-WRITABLE `tailwind.theme.js`
+# (create-if-missing, never force-overwritten), separating locked tooling from the lane's
+# design palette. Missing/empty theme → {} (no custom tokens; standard utilities still work).
+_BASELINE_TAILWIND = """import theme from './tailwind.theme.js'
+export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
-  theme: { extend: {} },
+  theme: { extend: theme || {} },
   plugins: [],
 }
 """
+
+# Frontend-WRITABLE design tokens (NOT in _FRONTEND_FORCE_INFRA, NOT write-denied). The
+# lane defines its palette here — e.g. `export default { colors: { 'ig-bg': '#000000',
+# 'ig-text': '#f5f5f5', 'ig-blue': '#0095F6' } }` — and tailwind.config.js imports it,
+# so `@apply bg-ig-bg` resolves. Projected empty once; the lane fills it; preserved.
+_BASELINE_TAILWIND_THEME = "export default {}\n"
 
 _BASELINE_POSTCSS = """export default { plugins: { tailwindcss: {}, autoprefixer: {} } }
 """
@@ -1518,6 +1533,7 @@ _BASELINE_FILES = {
     "package.json": _BASELINE_PACKAGE_JSON,
     "vite.config.js": _BASELINE_VITE,
     "tailwind.config.js": _BASELINE_TAILWIND,
+    "tailwind.theme.js": _BASELINE_TAILWIND_THEME,
     "postcss.config.js": _BASELINE_POSTCSS,
     "index.html": _BASELINE_INDEX_HTML,
     "src/index.css": _BASELINE_INDEX_CSS,
@@ -1636,6 +1652,13 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text(content, encoding="utf-8")
                 changed.append(rel)
+        # The pinned tailwind.config.js IMPORTS ./tailwind.theme.js — guarantee that
+        # frontend-writable token file EXISTS (create-if-missing) so the config never
+        # fails to load on a fresh tree. Do NOT overwrite it: the lane owns its palette.
+        _theme_p = fe / "tailwind.theme.js"
+        if not _theme_p.exists():
+            _theme_p.write_text(_BASELINE_TAILWIND_THEME, encoding="utf-8")
+            changed.append("tailwind.theme.js (created)")
         # CSS wiring is infra too: a lane-written src/main.jsx that omits
         # ``import './index.css'`` ships a bundle with NO stylesheet at all —
         # Tailwind never runs and every page renders as plain links on white
