@@ -948,31 +948,63 @@ class Orchestrator:
                         # (no phased scope). plan_milestones emits a distinct slice
                         # per milestone (repeats the DATA MODEL, lists only that
                         # phase's NEW endpoints/pages); honor it.
+                        # MULTIPLE milestones (explicit OR auto-planned): this phase is
+                        # scoped to its own slice, never the full goal (pre-2026-06-24
+                        # bug: every milestone got the full raw_req → identical kickoffs +
+                        # over-scoping). plan_milestones emits a distinct slice per phase.
                         _milestone_req = _slice or raw_req
-                        # ARCHITECTURE (user 2026-06-24): the OVERALL requirement +
-                        # full endpoint/screen surface is given ONCE as standing
-                        # context — the compiled reference spec (design/
-                        # reference_spec.json) staged at run start + the milestone
-                        # ROADMAP the orchestrator records once (kind=milestone_plan).
-                        # Each milestone KICKOFF must carry ONLY its PHASE requirement,
-                        # NOT the whole surface — else the lanes see "all the content"
-                        # every milestone and plan/build as if finishing the ENTIRE app
-                        # each phase (no real staging; a likely driver of the late
-                        # rebuild/oscillation). This is also what the system's own
-                        # over-declaration guard wants: appending the FULL spec to a
-                        # PARTIAL slice makes that milestone over-declare later
-                        # milestones' surface (smoke-notes 2026-06-19: M1's slice got
-                        # all 8 endpoints marked binding → M2 had 0 new surface). M1
-                        # does NOT need the full surface — the planner's slice already
-                        # repeats the full DATA MODEL (so the schema/foundation ships at
-                        # M1) and lists only that phase's NEW endpoints/pages. So inject
-                        # the full spec ONLY as a backstop when there is NO slice at all
-                        # (degenerate/single synthesized milestone); a sliced milestone
-                        # — including M1 — stays scoped to its phase.
-                        _spec_block = getattr(self, "_reference_spec_summary", "")
-                        if _spec_block and not _slice \
-                                and _spec_block not in _milestone_req:
-                            _milestone_req = _milestone_req + _spec_block
+                        # PER-MILESTONE PLANNING (user 2026-06-24, P1+P2+P4): at each
+                        # milestone ENTRY the orchestrator authors a DETAILED brief for
+                        # THIS milestone from the overall goal + the rough slice + what's
+                        # already delivered, and MAY revise the REMAINING roadmap. The
+                        # step ALWAYS runs (the flow is mandatory); whether to revise is
+                        # the orchestrator's call (a no-op is valid). The kickoff then
+                        # carries the brief as the phase TASK + the full overall goal as
+                        # labeled CONTEXT — so every freshly-spawned lane is GUARANTEED
+                        # the complete end-target while its task stays phase-scoped. The
+                        # brief LEADS the requirement text so the meeting TITLE is the
+                        # phase, not the goal (avoids the V23 "all titles = full goal").
+                        _plan = None
+                        try:
+                            from .runtime.reference_materials import plan_current_milestone
+                            _delivered = "; ".join(
+                                f"M{_j + 1} {_pm.get('name')}: "
+                                f"{str(_pm.get('description_slice', ''))[:160]}"
+                                for _j, _pm in enumerate(milestones[:_m_idx - 1])
+                            ) if _m_idx > 1 else ""
+                            _plan = await plan_current_milestone(
+                                self.llm, raw_req, list(milestones), _m_idx,
+                                _slice or raw_req, _delivered)
+                        except Exception as _pc_exc:
+                            self._logger.warning("per-milestone planning raised: %s", _pc_exc)
+                            _plan = None
+                        if _plan and _plan.get("brief"):
+                            _milestone_req = (
+                                _plan["brief"]
+                                + "\n\n## OVERALL PROJECT TARGET (context only — the full "
+                                  "end goal; build ONLY this milestone's scope above)\n"
+                                + raw_req)
+                            self._logger.warning(
+                                "M%s: orchestrator authored a detailed milestone brief "
+                                "(%d chars) + overall-goal context.",
+                                _m_idx, len(_plan["brief"]))
+                            _rev = _plan.get("revised_remaining")
+                            if _rev:
+                                # P2: orchestrator revised the FUTURE (not-yet-started)
+                                # milestones; delivered + current are FROZEN. In-place so
+                                # the running loop picks up the revised remaining phases.
+                                milestones[_m_idx:] = _rev
+                                self._logger.warning(
+                                    "MILESTONE ROADMAP REVISED at M%s: remaining → %s",
+                                    _m_idx, [m.get("name") for m in _rev])
+                        else:
+                            # Planner unavailable → static slice; the full reference spec
+                            # backstops ONLY when there is NO slice (degenerate single
+                            # synthesized case). A sliced milestone stays phase-scoped.
+                            _spec_block = getattr(self, "_reference_spec_summary", "")
+                            if _spec_block and not _slice \
+                                    and _spec_block not in _milestone_req:
+                                _milestone_req = _milestone_req + _spec_block
 
                     if _m_idx > 1:
                         # New milestone: reset per-milestone delivery state so the
