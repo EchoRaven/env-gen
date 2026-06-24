@@ -54,6 +54,31 @@ def _is_aux_key(key: str, section: str) -> bool:
                for aux in _AUX_KICKOFF_KEYS.get(section, ()))
 
 
+def has_aux_content(content: Any, section: str) -> bool:
+    """True if the decision ``content`` carries a NON-EMPTY auxiliary kickoff key
+    (done_def / feature_inventory / reference_image_manifest / task_tree). These have
+    NO dedicated kickoff_declare_* tool, so a section RECORDS them via
+    workhub_add_meeting_decision. They are NOT buildable substance (don't advance the
+    phase), but a decision carrying ONLY them must be ACCEPTED — the buildable
+    ui_pages/endpoints/predicates arrive separately via the declare tools. Without this
+    the tool hard-rejected an aux-only decision with 'no recognized key' (the 18×
+    resend loop this module's design exists to prevent)."""
+    if not isinstance(content, Mapping):
+        return False
+    for k, v in content.items():
+        if k in _META_KEYS or not _is_aux_key(k, section):
+            continue
+        if isinstance(v, (list, tuple, Mapping)):
+            if v:
+                return True
+        elif isinstance(v, str):
+            if v.strip():
+                return True
+        elif v is not None:
+            return True
+    return False
+
+
 def non_contract_keys(content: Any, section: str) -> list:
     """Return the sorted non-meta keys a decision carried that are NOT part of
     this section's kickoff contract — but ONLY when no recognized key is present
