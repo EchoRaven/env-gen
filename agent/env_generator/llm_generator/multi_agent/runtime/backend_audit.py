@@ -35,13 +35,31 @@ from typing import Any, Dict, Set, Tuple
 from .route_projector import (
     _duplicate_routes, _existing_routes, _express_to_fastapi, _norm_path,
 )
+# Part B: the ONE shared fixed-surface definition (see kickoff/contract.py).
+# Previously this file redefined ``_FIXED_KINDS`` as {auth,oauth,spine,control,
+# health} — MISSING ``infra``, the kind the tenant/health control plane actually
+# registers under (control_plane.CONTROL_SURFACE_ENDPOINTS) — so this auditor
+# (unlike lifecycle / database_scaffold / cross_check_suite, which carried
+# ``infra``) did NOT skip the control surface and repeatedly demoted it to
+# ``regressed`` + hand-reimplemented it. Now every gate points at the same set.
+from .kickoff.contract import (
+    FIXED_ENDPOINT_KINDS as _FIXED_KINDS,
+    is_control_surface_path,
+)
 
 _logger = logging.getLogger(__name__)
 
-# Fixed runtime-owned contract surface — registered by the orchestrator, not the
-# lane's business code, and served by the AS / control plane (not the audited
-# route modules). Never regress these.
-_FIXED_KINDS = {"auth", "oauth", "spine", "control", "health"}
+
+class BackendAuditError(RuntimeError):
+    """Raised when ``sync_endpoint_statuses`` fails mid-audit (part C).
+
+    The endpoint lifecycle this auditor maintains is a GATE input: a downstream
+    delivery gate reads the resulting endpoint statuses as PASS/BLOCK. The body
+    used to be wrapped in ``except Exception: pass`` and return a success-shaped
+    (empty / partially-mutated) result — so a crashed audit looked like a clean
+    PASS and shipped a contract lie. We now fail LOUD: log ERROR+traceback and
+    raise this, so no caller can mistake a degraded audit for a clean lifecycle.
+    """
 
 
 def _norm_route(method: Any, path: Any) -> Tuple[str, str]:
@@ -197,10 +215,17 @@ def sync_endpoint_statuses(project_dir: Any, registryhub: Any) -> Dict[str, Any]
         endpoints = registryhub.get_endpoints() or {}
         for ep in endpoints.values():
             md = ep.get("metadata") or {}
-            if str(md.get("kind") or "").lower() in _FIXED_KINDS:
-                continue  # fixed AS/auth/spine/control surface — not lane business
             method = str(ep.get("method") or "").upper()
             path = ep.get("path") or ""
+            # Skip the fixed runtime-owned surface by KIND (shared set incl. infra/
+            # control) OR by PATH (behavior net, part A): the tenant/health/admin
+            # control plane (/health, /api/v1/admin/*, /api/v1/reset, /api/v1/tenants*,
+            # init-tenant) is served by the control plane — never a lane business
+            # endpoint — so it must not be demoted/regressed even if its ``kind`` tag
+            # is absent or wrong.
+            if (str(md.get("kind") or "").lower() in _FIXED_KINDS
+                    or is_control_surface_path(path)):
+                continue
             if not method or not path:
                 continue
             status = str(ep.get("status") or "").lower()
@@ -232,9 +257,25 @@ def sync_endpoint_statuses(project_dir: Any, registryhub: Any) -> Dict[str, Any]
                 "(FastAPI serves only the first — remove the dup in custom_routes.py): %s",
                 len(out["duplicated"]), out["duplicated"],
             )
-    except Exception:
-        pass
+    except Exception as exc:
+        # Part C — FAIL LOUD. This audit's output is a GATE input: a swallowed
+        # failure used to return a success-shaped (empty / partially-mutated)
+        # lifecycle that the delivery gate read as PASS, shipping a contract lie.
+        # Log the real cause WITH traceback at ERROR, mark the result degraded,
+        # and re-raise a typed BackendAuditError so the caller cannot treat a
+        # crashed/partial audit as a clean run. (No silent fallback.)
+        out["degraded"] = True
+        out["error"] = repr(exc)
+        _logger.error(
+            "backend_audit.sync_endpoint_statuses FAILED mid-audit (endpoint "
+            "lifecycle is DEGRADED/partial — must not be read as PASS): %s",
+            exc, exc_info=True,
+        )
+        raise BackendAuditError(
+            "backend endpoint-status audit failed; endpoint lifecycle is "
+            f"degraded and must not be trusted as a delivery-gate PASS: {exc!r}"
+        ) from exc
     return out
 
 
-__all__ = ["served_routes", "sync_endpoint_statuses"]
+__all__ = ["served_routes", "sync_endpoint_statuses", "BackendAuditError"]

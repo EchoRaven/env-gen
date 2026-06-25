@@ -388,6 +388,30 @@ class EnvGenAgent(
         "milestone_remove",
         "milestone_set_detail",
     }
+    # The ORCHESTRATOR's audit / monitoring / delivery-gate tools. They are GRANTED
+    # (tool_categories delivery/memory/coverage/seed/run + bundles deliverability_tools /
+    # retro_tools / coverage_tools / seed_tools / run_tools) AND the orchestrator prompt
+    # MANDATES them: coverage_audit_check + seed_audit_check are the hard pre-flight gates
+    # DeliverProjectTool runs before delivery, get_retro_stats feeds the mandatory
+    # submit_retro, deliverability_summary is the "quick check" counterpart to
+    # deliverability_check, and run_list/run_get are the prompt's named way to monitor
+    # validation runs probe-by-probe. But their categories (delivery, memory, coverage,
+    # seed, run) appear in NO ACTION_STAGE_CATEGORY_HINTS stage and their names were in NO
+    # _FLOW / ACTION_STAGE_ALWAYS_INCLUDE set — so they registered into the tool map yet were
+    # NEVER offered to the LLM in any action stage. EXACT same never-offered class as the
+    # _MILESTONE_FLOW bug (V25: the model emitted a call for a tool absent from the offered
+    # set → MALFORMED_FUNCTION_CALL, kickoff wedged). Force-offer in the deliver stage (the
+    # pre-delivery gates + retro stats) AND the generic action stage (run_list/run_get
+    # monitoring + deliverability_summary throughout the resident loop); bundle-intersected,
+    # so ONLY the orchestrator (which bundles all five families) ever sees them.
+    _ORCH_AUDIT_FLOW = {
+        "deliverability_summary",
+        "get_retro_stats",
+        "coverage_audit_check",
+        "seed_audit_check",
+        "run_list",
+        "run_get",
+    }
     ACTION_STAGE_ALWAYS_INCLUDE: Dict[str, Set[str]] = {
         "communicate": {"check_inbox", "send_message", "ask_agent", "broadcast", "report_progress", "finish"}
                         | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _MILESTONE_FLOW,
@@ -408,8 +432,8 @@ class EnvGenAgent(
         # ranker crowded it out of ~150 tools → the orchestrator could never consult the
         # skill → deliver_project blocked (run #28: 33× wedge). Bundle-intersected, so
         # only the orchestrator (which bundles knowledge_skill_tools) ever sees it.
-        "deliver": {"finish", "deliver_project", "report_completion", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW,
-        "action": {"finish", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW | _BUG_FLOW | _MILESTONE_FLOW,
+        "deliver": {"finish", "deliver_project", "report_completion", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW | _ORCH_AUDIT_FLOW,
+        "action": {"finish", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW | _BUG_FLOW | _MILESTONE_FLOW | _ORCH_AUDIT_FLOW,
     }
 
     # PROPOSAL #28 F2 — validation/delivery tools that are MEANINGLESS during KICKOFF

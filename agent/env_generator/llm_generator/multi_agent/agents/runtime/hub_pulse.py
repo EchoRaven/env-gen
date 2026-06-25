@@ -214,14 +214,71 @@ def _pulse_stale_tasks(hubs: Any, agent_id: str) -> List[Dict[str, Any]]:
     return stale[:5]
 
 
+# Per-artifact-kind ownership: which lane keyword OWNS the artifact a drift check
+# concerns. The self-audit may ONLY flag a drift kind for its owning lane — the
+# orchestrator's integration/merge branch carries every lane's files, so an
+# ungated check makes the orchestrator hallucinate it authored backend routes /
+# ui pages and try to register them (group-signal bug). This mirrors the role
+# gate in ``_pulse_stale_tasks`` (orchestrator/debugger-only): there the role IS
+# the owner; here the owners are the producing lanes, so orchestrator + debugger
+# are excluded by construction. Keyed by lane keyword so spawned workers
+# (backend_worker_xyz) resolve via ``_lane_keyword``.
+_DRIFT_ARTIFACT_OWNER = {
+    "api_drift": "backend",
+    "ui_drift": "frontend",
+}
+
+
+def _owns_artifact(agent_id: str, drift_kind: str) -> bool:
+    """True iff this agent's lane OWNS the artifact kind a drift check concerns.
+
+    Ownership is by PRODUCING LANE (backend owns API routes, frontend owns ui
+    pages), NOT by ``provider==agent_id`` — the latter would still fire on the
+    orchestrator whose integration branch carries the backend lane's files. The
+    orchestrator + debugger lanes own neither artifact kind and are excluded."""
+    return _lane_keyword(agent_id) == _DRIFT_ARTIFACT_OWNER.get(drift_kind)
+
+
+def _on_integration_or_merge_branch(agent_id: str, branch_status: Dict[str, Any]) -> bool:
+    """Best-effort: True if the audit context looks like an integration/merge
+    branch rather than an agent's own lane worktree. Drift on such a branch is
+    NOT the agent's own un-registered work — it's other lanes' merged files — so
+    the self-audit must skip it. Degrades to False (no skip) when undetectable.
+
+    An agent's pulse runs against its own ``worktrees/<agent_id>`` (branch
+    ``agent/<agent_id>``), so the detectable signal is the identity: a pseudo-actor
+    named ``integration``/``merge`` (or a ``branch`` key, if a backend ever adds
+    one to branch_status) must not be drift-audited against another lane's files."""
+    try:
+        aid = str(agent_id or "").lower()
+        if "integration" in aid or "merge" in aid:
+            return True
+        branch = str((branch_status or {}).get("branch") or "").lower()
+        if "integration" in branch or "merge" in branch:
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _pulse_self_audit(hubs: Any, agent_id: str) -> Dict[str, Any]:
     """Compare the agent's worktree writes against what they've registered
     in the hubs. Surfaces "you wrote code but forgot to register it"
     drift BEFORE the agent finishes — long-context recovery hint.
 
+    Each drift kind is ROLE-GATED to its owning producer lane (see
+    ``_owns_artifact``): the orchestrator's integration/merge branch carries
+    every lane's files, so an ungated check made the orchestrator hallucinate it
+    authored backend routes and try to register them. The orchestrator + debugger
+    own neither artifact kind and are skipped here by construction.
+
     Returns a small dict the renderer can interpret. Empty dict means
     nothing to flag.
     """
+    # No drift kind has an owner that includes orchestrator/debugger, so they can
+    # never flag anything here — short-circuit before any git/hub read.
+    if not (_owns_artifact(agent_id, "api_drift") or _owns_artifact(agent_id, "ui_drift")):
+        return {}
     # Resolve worktree-side evidence: dirty (uncommitted) + committed-
     # but-on-this-branch. The latter catches the "I wrote AND committed
     # the route but forgot to register it" case where dirty_files is
@@ -232,6 +289,10 @@ def _pulse_self_audit(hubs: Any, agent_id: str) -> Dict[str, Any]:
     try:
         bs = ch.get_branch_status(agent_id) or {}
     except Exception:
+        return {}
+    # Skip drift entirely on an integration/merge branch: the files there are
+    # other lanes' merged work, not this agent's own un-registered code.
+    if _on_integration_or_merge_branch(agent_id, bs):
         return {}
     dirty = list(bs.get("dirty_files") or [])
     committed: List[str] = []
@@ -256,9 +317,10 @@ def _pulse_self_audit(hubs: Any, agent_id: str) -> Dict[str, Any]:
 
     out: Dict[str, Any] = {}
     # API drift — any app/backend/* code present but registryhub shows no
-    # endpoints owned by this agent.
+    # endpoints owned by this agent. Gated to the backend lane (the owner of the
+    # api_drift artifact kind) so a non-backend lane never flags it.
     api_paths = [p for p in code_paths if "backend" in p or "routes/" in p or "controllers/" in p or "/api/" in p]
-    if api_paths:
+    if api_paths and _owns_artifact(agent_id, "api_drift"):
         ah = getattr(hubs, "registryhub", None)
         owned = 0
         if ah is not None and hasattr(ah, "get_endpoints"):
@@ -273,9 +335,11 @@ def _pulse_self_audit(hubs: Any, agent_id: str) -> Dict[str, Any]:
                 "owned_endpoints": 0,
             }
 
-    # UI drift — any page/component file but workhub has no ui_pages owned by this agent.
+    # UI drift — any page/component file but workhub has no ui_pages owned by this
+    # agent. Gated to the frontend lane (the owner of the ui_drift artifact kind)
+    # so a non-frontend lane never flags it.
     ui_paths = [p for p in code_paths if any(s in p for s in ("/pages/", ".jsx", ".tsx", ".vue"))]
-    if ui_paths:
+    if ui_paths and _owns_artifact(agent_id, "ui_drift"):
         rh = getattr(hubs, "registryhub", None)
         owned_pages = 0
         if rh is not None and hasattr(rh, "list_ui_pages"):
@@ -783,19 +847,24 @@ def build_hub_pulse_prompt(pulse: Dict[str, Any]) -> Optional[str]:
         if api_drift:
             sample = ", ".join(api_drift.get("code_paths_sample") or [])
             count = api_drift.get("code_paths_count", 0)
+            # Word this as a FILE count, never a ROUTE count: a single file may
+            # define many routes (or none yet). The agent must register each
+            # endpoint it actually DEFINED — not blindly "N routes".
             lines.append(
-                f"- You've written {count} backend/route file(s) "
+                f"- {count} backend/route DEFINITIONS file(s) found on your branch "
                 f"(e.g. {sample}) but RegistryHub shows **0 endpoints owned by you**. "
-                f"Call `registryhub_register_endpoint(...)` for each route before finish()."
+                f"For each endpoint you defined in those files, call "
+                f"`registryhub_register_endpoint(...)` before finish()."
             )
         ui_drift = sa.get("ui_drift")
         if ui_drift:
             sample = ", ".join(ui_drift.get("code_paths_sample") or [])
             count = ui_drift.get("code_paths_count", 0)
+            # FILE count, not page count — register each ui_page actually authored.
             lines.append(
-                f"- You've written {count} page/component file(s) "
+                f"- {count} page/component file(s) found on your branch "
                 f"(e.g. {sample}) but RegistryHub shows **0 ui_pages owned by you**. "
-                f"Call `registryhub_register_ui_page(...)` for each."
+                f"For each ui_page you authored, call `registryhub_register_ui_page(...)`."
             )
 
     stale = pulse.get("stale_tasks") or []

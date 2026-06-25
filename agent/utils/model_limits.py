@@ -30,6 +30,7 @@ SAFE_DEFAULT_MAX_OUTPUT = 8192
 # specific prefixes MUST come before more general ones.
 _MAX_OUTPUT_TABLE: list[tuple[str, int]] = [
     # --- Anthropic ---
+    ("claude-opus-4-8", 128000),
     ("claude-opus-4-7", 128000),
     ("claude-opus-4-6", 128000),
     ("claude-opus-4-5", 64000),

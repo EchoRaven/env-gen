@@ -1254,6 +1254,8 @@ class AnthropicClient(BaseLLMClient):
 
         # Extract system message and convert content to Anthropic format
         # (maps OpenAI-style image_url parts to Anthropic image blocks).
+        # NOTE: observation masking is OpenAI/Google-only — Anthropic deliberately
+        # sends the FULL history and relies on the condenser + the 1M context window.
         system_content, chat_messages = self._convert_messages_to_anthropic(messages)
 
         request_params = {
@@ -1591,7 +1593,9 @@ class GoogleClient(BaseLLMClient):
         """
         from google.genai import types
 
-        messages = _mask_old_observations(messages, self.config.model_name)  # bound per-call input growth
+        # NOTE: observation masking is applied ONCE by the callers (chat/chat_stream)
+        # before they hand messages here. Masking again at this layer double-trimmed
+        # every call; the redundant call was removed (user 2026-06-24).
         system_instruction = None
         contents = []
 
@@ -1964,10 +1968,12 @@ class GoogleClient(BaseLLMClient):
         """Stream chat response from Gemini"""
         client = self._get_client()
         from google.genai import types
-        
-        # Convert messages
-        system_instruction, contents = self._convert_messages_to_google(messages)
-        
+
+        # Convert messages (mask ONCE here — _convert_messages_to_google no longer masks)
+        system_instruction, contents = self._convert_messages_to_google(
+            _mask_old_observations(messages, self.config.model_name)
+        )
+
         gen_config = types.GenerateContentConfig(
             temperature=temperature or self.config.temperature,
             max_output_tokens=max_tokens or self.config.max_tokens,

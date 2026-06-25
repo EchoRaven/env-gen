@@ -179,7 +179,10 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                 # this every-step boundary condensation is the sole bound, and it
                 # keeps context ~28-100, far under the ~770 saturation.)
                 if step > 0:
-                    messages = _mask_old_observations(messages)
+                    messages = _mask_old_observations(
+                        messages,
+                        model=getattr(getattr(self, "config", None), "model_name", None),
+                    )
                 if step > 0 and hasattr(self, "memory"):
                     if self.memory.should_condense_messages(messages):
                         self._logger.info(f"[{self.agent_id}] Condensing messages (len={len(messages)})")
@@ -731,17 +734,41 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                 pass
 
 
-def _mask_old_observations(messages, keep_last: int = 8, head_chars: int = 300):
+def _mask_old_observations(messages, model: str = None,
+                           keep_last: int = 8, head_chars: int = 300):
     """OBSERVATION MASKING (harness-engineering): keep the call record but
     truncate the BODIES of old tool outputs — only the most recent
     ``keep_last`` tool results stay full. Old observations dominate context
     (a single read/grep result can be tens of KB) while the model rarely
     needs more than "what did I call and roughly what came back"; it can
     re-run the tool when it does. Deterministic and idempotent; disabled via
-    ENVGEN_OBS_MASK=0."""
+    ENVGEN_OBS_MASK=0.
+
+    MODEL-AWARE (user 2026-06-24): gate behind the SAME working-char budget the
+    llm.py layer uses (``resolve_ctx_working_chars(model)``). If the FULL message
+    history fits the model's recommended working window, do NOT mask at all — a
+    1M-context model keeps its complete tool outputs (no info loss). Trimming
+    kicks in only when history would actually overflow. Without a model we cannot
+    size the budget, so we fall through to the legacy unconditional masking."""
     import os
     if os.environ.get("ENVGEN_OBS_MASK", "1").lower() in ("0", "false", "no", "off"):
         return messages
+    # If the whole history fits the model's working budget, skip masking entirely
+    # (mirrors utils.llm._mask_old_observations so both layers agree on the gate).
+    if model:
+        try:
+            from utils.model_limits import resolve_ctx_working_chars
+            budget = resolve_ctx_working_chars(model)
+        except Exception:
+            budget = 0
+        if budget:
+            total = 0
+            for m in messages:
+                c = getattr(m, "content", None)
+                if isinstance(c, str):
+                    total += len(c)
+            if total <= budget:
+                return messages
     tool_idxs = [i for i, m in enumerate(messages)
                  if getattr(m, "role", None) == "tool"]
     if len(tool_idxs) <= keep_last:

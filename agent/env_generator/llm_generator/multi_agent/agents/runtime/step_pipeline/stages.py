@@ -205,12 +205,78 @@ class AgentStepStageMixin(AgentActionStageMixin):
                 },
             )
         except Exception as e:
-            self._logger.warning(f"[{self.agent_id}] planning stage skipped: {e}")
+            # MALFORMED silent-skip FIX: an exhausted-retry Gemini
+            # MALFORMED_FUNCTION_CALL (utils/llm raises
+            # ``RuntimeError("gemini returned MALFORMED_FUNCTION_CALL ...")`` once
+            # _retry_with_backoff gives up) used to be swallowed here as a plain
+            # [W] "planning stage skipped" and the step proceeded with NO plan — a
+            # silent fallback that hides a whole planning turn the model failed to
+            # produce. Make the exhausted-retry MALFORMED case LOUD: log at ERROR
+            # naming the role + stage, and record a degraded-step signal (a flag +
+            # an eventhub event + step-trace metadata) so the orchestrator / a
+            # gate can SEE that this lane skipped planning, instead of inferring a
+            # clean step. Non-MALFORMED transient errors stay at WARNING (they are
+            # genuinely retryable / recoverable and shouldn't cry wolf).
+            _err = str(e)
+            _is_malformed = "MALFORMED" in _err.upper()
+            _role = (
+                getattr(self, "role", None)
+                or getattr(self, "agent_type", None)
+                or self.agent_id
+            )
+            _degraded_meta = None
+            if _is_malformed:
+                self._logger.error(
+                    f"[{self.agent_id}] DEGRADED STEP: planning stage FAILED with "
+                    f"exhausted-retry MALFORMED (role={_role}, stage=planning, "
+                    f"step={step}) — the model produced NO plan after all re-rolls; "
+                    f"the step proceeds WITHOUT a planning turn. error: {_err}"
+                )
+                # Degraded-step signal #1: a flag the orchestrator/gate can poll.
+                try:
+                    self._last_degraded_stage = "planning"
+                    self._planning_stage_degraded = True
+                    self._degraded_stage_count = (
+                        int(getattr(self, "_degraded_stage_count", 0)) + 1
+                    )
+                except Exception:
+                    pass
+                # Degraded-step signal #2: emit an event so an out-of-band
+                # observer (orchestrator / gate) sees the silently-skipped
+                # planning stage. Best-effort — a hub failure must not mask the
+                # already-loud ERROR log above.
+                try:
+                    hubs = getattr(self, "_hubs", None)
+                    eventhub = getattr(hubs, "eventhub", None) if hubs is not None else None
+                    if eventhub is not None and hasattr(eventhub, "publish_event"):
+                        eventhub.publish_event(
+                            source_hub="system",
+                            event_type="stage_degraded",
+                            payload={
+                                "agent_id": self.agent_id,
+                                "role": _role,
+                                "stage": "planning",
+                                "step": step,
+                                "phase": getattr(self, "_active_phase", None),
+                                "reason": "exhausted_retry_malformed",
+                                "error": _err,
+                            },
+                            recipients=[self.agent_id],
+                            priority="high",
+                        )
+                except Exception:
+                    pass
+                # Degraded-step signal #3: surface it in the step-trace metadata
+                # so the trace itself records the skip (not just the log).
+                _degraded_meta = {"degraded": True, "reason": "exhausted_retry_malformed"}
+            else:
+                self._logger.warning(f"[{self.agent_id}] planning stage skipped: {e}")
             mark_stage(
                 "planning",
                 executed=False,
                 duration_ms=int((loop_time() - stage_start) * 1000),
                 skip_reason=f"error: {e}",
+                **({"metadata": _degraded_meta} if _degraded_meta else {}),
             )
         return None
 
