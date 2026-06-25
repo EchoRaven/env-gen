@@ -709,7 +709,28 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
         note = ""
         if not ok:
             note = (res.get("error") or res.get("body_text") or "")[:160]
-            kind = "missing" if status in (404, 405) else "broken"
+            if status in (404, 405):
+                # 404/405 is normally 'missing' (endpoint not built yet → soft, so the
+                # whole chain isn't failed on a not-yet-implemented endpoint). BUT a 404
+                # from a BUILT route carries a CUSTOM detail (e.g. {"detail":"User not
+                # found"}), unlike Starlette's default {"detail":"Not Found"} for an
+                # UNREGISTERED path — that is a REAL flow failure (the endpoint exists and
+                # rejected the request), so it must count as 'broken'. Without this a chain
+                # ships status='passing' while its user-scoped steps 404 (V29 coverage_chain
+                # bug: 4× '404 User not found' steps, yet broken=[] / status='passing').
+                _built_404 = False
+                if status == 404:
+                    _bt = (res.get("body_text") or "").strip()
+                    _d = _bt
+                    if _bt.startswith("{"):
+                        try:
+                            _d = (json.loads(_bt) or {}).get("detail")
+                        except Exception:
+                            _d = _bt
+                    _built_404 = isinstance(_d, str) and _d.strip().lower() not in ("not found", "")
+                kind = "broken" if _built_404 else "missing"
+            else:
+                kind = "broken"
         entry = {"action": str(step.get("action") or path), "method": method,
                  "path": path, "status": status, "ok": ok, "kind": kind,
                  "note": note}
