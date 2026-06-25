@@ -879,7 +879,7 @@ def _conflict_from_finding(
 # ---------------------------------------------------------------------------
 
 
-async def author_milestone_brief(
+async def author_milestone_detail(
     hubs: Any,
     orch_agent: Any,
     milestone_index: int,
@@ -887,16 +887,18 @@ async def author_milestone_brief(
     raw_req: str = "",
     timeout_s: float = 240.0,
 ) -> str:
-    """Run the orchestrator's KICKOFF-BRIEF turn for ``milestone_index``, returning
-    the authored brief (or ``""`` to fall back to the rough slice).
+    """Run the orchestrator's KICKOFF-DETAIL turn for ``milestone_index``, returning
+    the authored detail (or ``""`` to fall back to the rough slice).
 
-    Fires a ``kickoff_brief_request`` to the orchestrator AGENT (it reviews the
-    roadmap, may revise FUTURE phases, and sets THIS phase's detailed brief via the
+    Fires a ``kickoff_detail_request`` to the orchestrator AGENT (it reviews the
+    roadmap, may revise FUTURE phases, and sets THIS phase's detailed detail via the
     ``milestone_*`` tools — with its full system prompt + hub context), then AWAITS
-    (bounded) until ``hubs.milestones`` shows the brief set. The handler's
-    closed-by-construction fallback guarantees a brief within the turn; the timeout
-    is a hard safety cap. NEVER hangs the run — on timeout returns ``""`` and the
-    caller falls back to the rough slice."""
+    (bounded) until ``hubs.milestones`` reports the kickoff-detail TURN COMPLETE
+    (``is_detail_authored``). Waiting for turn COMPLETION (not the first non-empty
+    write) closes the double-author race: the handler may set the detail then refine
+    it within the same turn, and only marks ``detail_authored`` in its finally block.
+    NEVER hangs the run — the timeout is a hard safety cap; on timeout returns ``""``
+    and the caller falls back to the rough slice."""
     import asyncio
     ms = getattr(hubs, "milestones", None)
     if ms is None or orch_agent is None:
@@ -907,31 +909,33 @@ async def author_milestone_brief(
         cur = None
     if not isinstance(cur, dict):
         return ""
-    if str(cur.get("brief") or "").strip():
-        return cur["brief"]  # already authored (resume) — reuse
     mid = cur.get("id")
+    if ms.is_detail_authored(mid):
+        return str(cur.get("detail") or "")  # already authored (resume) — reuse
     try:
         hubs.eventhub.publish_event(
             source_hub="orchestrator",
-            event_type="kickoff_brief_request",
+            event_type="kickoff_detail_request",
             payload={"milestone_index": milestone_index, "milestone_id": mid,
                      "raw_requirements": str(raw_req or "")},
             recipients=["orchestrator"], priority="high", caller="orchestrator")
     except Exception:
         return ""
-    # Bounded poll: the orchestrator handler (separate task) authors the brief +
-    # may revise future phases, then sets the brief on the store; this resolves once
-    # it appears. asyncio.sleep yields so the orchestrator task runs concurrently.
+    # Bounded poll: the orchestrator handler (separate task) authors the detail +
+    # may revise future phases, then marks the TURN complete (detail_authored) in its
+    # finally block. This resolves on turn COMPLETION — not on the first non-empty
+    # write — so a refined second write within the turn is never missed. asyncio.sleep
+    # yields so the orchestrator task runs concurrently.
     waited, step = 0.0, 3.0
     while waited < timeout_s:
         await asyncio.sleep(step)
         waited += step
         try:
-            c = ms.get(mid)
+            if ms.is_detail_authored(mid):
+                c = ms.get(mid)
+                return str(c.get("detail") or "") if isinstance(c, dict) else ""
         except Exception:
-            c = None
-        if isinstance(c, dict) and str(c.get("brief") or "").strip():
-            return c["brief"]
+            pass
     return ""  # timed out → caller falls back to the rough slice
 
 

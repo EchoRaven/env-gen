@@ -4,7 +4,7 @@
 Used during KICKOFF: on the kickoff signal the orchestrator (with its full system
 prompt + hub context) reviews the roadmap and MAY revise the FUTURE (not-yet-started)
 milestones — add / update / remove — and MUST set the CURRENT milestone's detailed
-brief. DELIVERED milestones are frozen; the active one cannot be removed.
+plan (its milestone detail). DELIVERED milestones are frozen; the active one cannot be removed.
 
 Follows the ``HubTool`` convention (see tools/bug_tools.py): async ``_run`` returning
 ``ToolResult``, hubs via ``self._hubs.milestones``, identity via ``self._agent_id``.
@@ -21,7 +21,7 @@ class MilestoneListTool(HubTool):
     NAME = "milestone_list"
     DESCRIPTION = (
         "List the milestone roadmap: each phase's index, name, version, status "
-        "(pending/active/delivered), rough scope, and whether a detailed brief is set. "
+        "(pending/active/delivered), rough scope, and whether a milestone detail is set. "
         "Read this FIRST at kickoff to see the plan and what's already delivered."
     )
     PARAMETERS = {"type": "object", "properties": {}}
@@ -32,7 +32,7 @@ class MilestoneListTool(HubTool):
             {"index": m.get("index"), "id": m.get("id"), "name": m.get("name"),
              "version": m.get("version"), "status": m.get("status"),
              "description_slice": m.get("description_slice"),
-             "has_brief": bool(m.get("brief"))}
+             "has_detail": bool(m.get("detail"))}
             for m in ms]})
 
 
@@ -120,10 +120,10 @@ class MilestoneRemoveTool(HubTool):
         return ToolResult(data=rec)
 
 
-class MilestoneSetBriefTool(HubTool):
-    NAME = "milestone_set_brief"
+class MilestoneSetDetailTool(HubTool):
+    NAME = "milestone_set_detail"
     DESCRIPTION = (
-        "Set the DETAILED brief for a milestone — the concrete, actionable plan the "
+        "Set the DETAILED plan (the milestone detail) for a milestone — the concrete, actionable plan the "
         "build lanes execute THIS phase: exactly which endpoints / pages / components "
         "/ data to ADD, the acceptance, and what is ALREADY shipped (don't rebuild). "
         "REQUIRED for the current milestone at kickoff (it becomes the lanes' scope)."
@@ -132,13 +132,13 @@ class MilestoneSetBriefTool(HubTool):
         "type": "object",
         "properties": {
             "milestone": {"type": "string", "description": "milestone index or id"},
-            "brief": {"type": "string", "description": "the detailed phase brief (markdown ok)"},
+            "detail": {"type": "string", "description": "the detailed phase detail (markdown ok)"},
         },
-        "required": ["milestone", "brief"],
+        "required": ["milestone", "detail"],
     }
 
-    async def _run(self, milestone: str, brief: str) -> ToolResult:
-        rec = self._hubs.milestones.set_brief(milestone, brief, agent=self._agent_id)
+    async def _run(self, milestone: str, detail: str) -> ToolResult:
+        rec = self._hubs.milestones.set_detail(milestone, detail, agent=self._agent_id)
         if isinstance(rec, dict) and rec.get("error"):
             return ToolResult(success=False, error_message=rec["error"])
         return ToolResult(data=rec)
@@ -146,7 +146,7 @@ class MilestoneSetBriefTool(HubTool):
 
 MILESTONE_TOOL_CLASSES = [
     MilestoneListTool, MilestoneAddTool, MilestoneUpdateTool,
-    MilestoneRemoveTool, MilestoneSetBriefTool,
+    MilestoneRemoveTool, MilestoneSetDetailTool,
 ]
 
 _finalize_hub_tools(MILESTONE_TOOL_CLASSES)
@@ -163,6 +163,6 @@ def create_milestone_tools(agent_id: str = "", hub_workspace: Any = None,
 
 __all__ = [
     "MilestoneListTool", "MilestoneAddTool", "MilestoneUpdateTool",
-    "MilestoneRemoveTool", "MilestoneSetBriefTool",
+    "MilestoneRemoveTool", "MilestoneSetDetailTool",
     "MILESTONE_TOOL_CLASSES", "create_milestone_tools",
 ]

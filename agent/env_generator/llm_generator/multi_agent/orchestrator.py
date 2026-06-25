@@ -861,7 +861,7 @@ class Orchestrator:
 
                 # MILESTONES AS FIRST-CLASS STATE (2026-06-24): seed the roadmap into
                 # hubs.milestones so it is queryable/persistent and the orchestrator can
-                # revise FUTURE phases + author each phase's detailed brief via the
+                # revise FUTURE phases + author each phase's milestone detail via the
                 # milestone_* tools at kickoff. The store is the source of truth from here:
                 # the loop marks active/delivered + re-syncs the remaining phases from it
                 # (so an orchestrator add/remove of a future milestone takes effect).
@@ -949,15 +949,15 @@ class Orchestrator:
                         _milestone_req = raw_req
                     else:
                         # MULTIPLE milestones (explicit OR auto-planned): this phase is
-                        # scoped to its own slice/brief, never the full goal. The store
+                        # scoped to its own slice/detail, never the full goal. The store
                         # (hubs.milestones) is the source of truth.
                         #
                         # PER-MILESTONE PLANNING (user 2026-06-24, P1/P2/P4): mark THIS
-                        # phase active, then run the orchestrator's KICKOFF-BRIEF turn —
+                        # phase active, then run the orchestrator's KICKOFF-DETAIL turn —
                         # the orchestrator AGENT (its full system prompt + hub context +
                         # the milestone_* tools) reviews the roadmap, MAY revise FUTURE
                         # phases (add/update/remove; delivered+active frozen), and authors
-                        # THIS phase's DETAILED brief — BEFORE the lanes draft. Bounded +
+                        # THIS phase's DETAILED detail — BEFORE the lanes draft. Bounded +
                         # best-effort: on timeout/decline it falls back to the rough slice
                         # (never hangs the run).
                         try:
@@ -967,15 +967,15 @@ class Orchestrator:
                             self.hubs.milestones.mark_status(_m_idx, "active", agent="orchestrator")
                         except Exception:
                             pass
-                        _brief = ""
+                        _detail = ""
                         try:
-                            from .runtime.kickoff.run_kickoff import author_milestone_brief
-                            _brief = await author_milestone_brief(
+                            from .runtime.kickoff.run_kickoff import author_milestone_detail
+                            _detail = await author_milestone_detail(
                                 self.hubs, self._agents.get("orchestrator"),
                                 _m_idx, raw_req=raw_req)
                         except Exception as _br_exc:
-                            self._logger.warning("milestone-brief turn raised: %s", _br_exc)
-                            _brief = ""
+                            self._logger.warning("milestone-detail turn raised: %s", _br_exc)
+                            _detail = ""
                         # P2: the orchestrator may have added/updated/removed FUTURE phases
                         # via the tools — re-sync the not-yet-started tail from the store so
                         # the running loop honors the revision (delivered+current frozen).
@@ -990,21 +990,28 @@ class Orchestrator:
                                 _orch_agent_ms._milestone_progress = (_m_idx, len(milestones))
                         except Exception:
                             pass
-                        # P1+P4: kickoff requirement = the detailed brief (phase TASK) +
-                        # the overall goal as labeled CONTEXT. Brief LEADS so the meeting
-                        # TITLE is the phase. Fall back to the rough slice if the brief turn
+                        # P1+P4: kickoff requirement = the detailed detail (phase TASK) +
+                        # the overall goal as labeled CONTEXT. Detail LEADS so the meeting
+                        # TITLE is the phase. Fall back to the rough slice if the detail turn
                         # produced nothing (bounded await timed out / orchestrator declined).
-                        _phase = _brief.strip() if (_brief and _brief.strip()) else (_slice or raw_req)
+                        if _detail and _detail.strip():
+                            self._logger.warning(
+                                "M%s: orchestrator authored a detailed milestone detail "
+                                "(%d chars) + overall-goal context.", _m_idx, len(_detail))
+                        else:
+                            # LOUD, not silent: an empty detail means the kickoff-detail turn
+                            # produced nothing. We still fall back to the rough slice so the
+                            # run never hard-crashes, but surface it for investigation.
+                            self._logger.error(
+                                "M%s: orchestrator authored NO milestone detail — falling "
+                                "back to the rough slice; INVESTIGATE.", _m_idx)
+                        _phase = _detail.strip() if (_detail and _detail.strip()) else (_slice or raw_req)
                         _milestone_req = (
                             _phase
                             + "\n\n## OVERALL PROJECT TARGET (context only — the full end "
                               "goal; build ONLY this milestone's scope above)\n" + raw_req)
-                        if _brief and _brief.strip():
-                            self._logger.warning(
-                                "M%s: orchestrator authored a detailed milestone brief "
-                                "(%d chars) + overall-goal context.", _m_idx, len(_brief))
-                        # Spec backstop ONLY when there's neither a brief NOR a slice.
-                        if not (_brief and _brief.strip()) and not _slice:
+                        # Spec backstop ONLY when there's neither a detail NOR a slice.
+                        if not (_detail and _detail.strip()) and not _slice:
                             _spec_block = getattr(self, "_reference_spec_summary", "")
                             if _spec_block and _spec_block not in _milestone_req:
                                 _milestone_req = _milestone_req + _spec_block

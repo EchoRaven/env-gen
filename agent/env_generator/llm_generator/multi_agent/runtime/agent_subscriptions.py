@@ -48,11 +48,11 @@ DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
         # request_revision / escalate). Handled by
         # ``_handle_kickoff_facilitate_request`` in messaging.py.
         ("orchestrator", "kickoff_facilitate_request", "high"),
-        # Per-milestone KICKOFF-BRIEF turn (2026-06-24): fired at milestone entry
-        # (run_kickoff.author_milestone_brief) BEFORE the lanes draft. The orchestrator
+        # Per-milestone KICKOFF-DETAIL turn (2026-06-24): fired at milestone entry
+        # (run_kickoff.author_milestone_detail) BEFORE the lanes draft. The orchestrator
         # reviews the roadmap, may revise FUTURE phases + sets THIS phase's detailed
-        # brief via the milestone_* tools. Handled by _handle_kickoff_brief_request.
-        ("orchestrator", "kickoff_brief_request", "high"),
+        # detail via the milestone_* tools. Handled by _handle_kickoff_detail_request.
+        ("orchestrator", "kickoff_detail_request", "high"),
         # Step B circuit-breaker escalation. Use "*" for source_hub
         # because each lane publishes from its own agent_id.
         ("*", "lane_idle_warning", "normal"),

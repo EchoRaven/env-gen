@@ -373,10 +373,10 @@ class EnvGenAgent(
     # "milestone"). They were added to the orchestrator's tool_categories + bundle but
     # NOT to any action stage's category hints or always-include — so they registered
     # into the 223-tool map yet were NEVER offered to the LLM in any action stage. The
-    # per-milestone KICKOFF-BRIEF turn then ordered the orchestrator to call
-    # milestone_list / milestone_set_brief; the model emitted a call for a tool absent
+    # per-milestone KICKOFF-DETAIL turn then ordered the orchestrator to call
+    # milestone_list / milestone_set_detail; the model emitted a call for a tool absent
     # from the offered set and gemini returned MALFORMED_FUNCTION_CALL every time → the
-    # brief was never authored and the whole kickoff wedged (V25, lanes never woken).
+    # detail was never authored and the whole kickoff wedged (V25, lanes never woken).
     # Same crowd-out / never-offered class as _CONTRACT_READ / _REFERENCE_VIEW. Force-
     # offer in the communicate stage (roadmap coordination + the broadcast it leads to)
     # and the generic action stage; bundle-intersected, so ONLY the orchestrator (which
@@ -386,7 +386,7 @@ class EnvGenAgent(
         "milestone_add",
         "milestone_update",
         "milestone_remove",
-        "milestone_set_brief",
+        "milestone_set_detail",
     }
     ACTION_STAGE_ALWAYS_INCLUDE: Dict[str, Set[str]] = {
         "communicate": {"check_inbox", "send_message", "ask_agent", "broadcast", "report_progress", "finish"}

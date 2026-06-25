@@ -6,24 +6,32 @@ so neither the orchestrator agent nor the monitor could INSPECT or MODIFY them
 through the normal tool surface. This makes them first-class: a queryable,
 persistent store the orchestrator drives via dedicated ``milestone_*`` tools at
 kickoff (add / update / remove a FUTURE phase, set the current phase's detailed
-brief). DELIVERED milestones are FROZEN — the orchestrator may only re-scope the
+detail). DELIVERED milestones are FROZEN — the orchestrator may only re-scope the
 not-yet-started ones.
 
 Record shape (keyed by a stable ``id``):
-  {id, index (1-based order), name, version, description_slice, brief,
-   acceptance: [...], status: "pending" | "active" | "delivered"}
+  {id, index (1-based order), name, version, description_slice, detail,
+   detail_authored, acceptance: [...],
+   status: "pending" | "active" | "delivered"}
 
 ``description_slice`` = the rough phase scope (from plan_milestones at run start).
-``brief``            = the DETAILED current-phase brief the orchestrator authors at
+``detail``           = the DETAILED current-phase detail the orchestrator authors at
                         kickoff (what to build THIS phase, acceptance, what's frozen).
+``detail_authored``  = True once the kickoff-detail TURN has COMPLETED for this phase
+                        (set on turn finalization, NOT on the first store write) — the
+                        main-loop poll resolves on this flag so it never races a
+                        half-finished detail.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .json_store import JsonStore
+
+_log = logging.getLogger(__name__)
 
 # Statuses a structural edit (update/remove/re-scope) may NOT touch.
 _FROZEN_STATUSES = {"delivered"}
@@ -76,7 +84,8 @@ class MilestoneRegistry:
             "name": str(spec.get("name") or f"M{index}").strip(),
             "version": str(spec.get("version") or f"1.{index}.0").strip(),
             "description_slice": str(spec.get("description_slice") or "").strip(),
-            "brief": str(spec.get("brief") or "").strip(),
+            "detail": str(spec.get("detail") or "").strip(),
+            "detail_authored": bool(spec.get("detail_authored")),
             "acceptance": [str(a) for a in (spec.get("acceptance") or [])
                            if str(a).strip()],
             "status": st if st in _VALID_STATUSES else "pending",
@@ -205,15 +214,48 @@ class MilestoneRegistry:
         self._emit("milestone_removed", {"id": rec["id"]})
         return {"removed": rec["id"]}
 
-    def set_brief(self, ref: Any, brief: str, agent: str = "") -> Dict[str, Any]:
-        """Set the DETAILED brief for a milestone (the orchestrator's per-phase plan)."""
+    def set_detail(self, ref: Any, detail: str, agent: str = "") -> Dict[str, Any]:
+        """Set the DETAILED detail for a milestone (the orchestrator's per-phase plan).
+
+        RACE GUARD (2026-06-25): once the kickoff-detail TURN has COMPLETED for this
+        phase (``detail_authored == True``), refuse to OVERWRITE — the orchestrator
+        MAIN resident loop independently re-authored the detail AFTER the kickoff turn
+        finalized, clobbering the turn's authored detail with a re-run. The first
+        finalized write wins; a later write to an already-authored phase is logged and
+        dropped (the record is returned unchanged)."""
         rec = self._resolve(ref)
         if not rec:
             return {"error": f"milestone not found: {ref}"}
-        upd = {**rec, "brief": str(brief or "").strip()}
+        if rec.get("detail_authored"):
+            _log.info(
+                "milestone M%s detail already authored; not overwriting",
+                rec.get("index"))
+            return rec
+        upd = {**rec, "detail": str(detail or "").strip()}
         self._store.set(upd["id"], upd, agent or "orchestrator")
-        self._emit("milestone_brief_set", {"id": upd["id"], "chars": len(upd["brief"])})
+        self._emit("milestone_detail_set", {"id": upd["id"], "chars": len(upd["detail"])})
         return upd
+
+    def mark_detail_authored(self, ref: Any, agent: str = "") -> Dict[str, Any]:
+        """Mark this phase's kickoff-detail TURN as COMPLETE (``detail_authored=True``).
+
+        Called from the kickoff-detail handler's FINALLY block on turn completion (NOT
+        on the first store write), so the main-loop poll resolves on turn COMPLETION
+        rather than racing a half-finished detail. Uses the same MapView-free mutator
+        pattern as the other simple mutators (``set_detail``/``mark_status``) — reads
+        via ``_resolve`` then a single ``self._store.set``; does NOT re-enter the store
+        lock."""
+        rec = self._resolve(ref)
+        if not rec:
+            return {"error": f"milestone not found: {ref}"}
+        upd = {**rec, "detail_authored": True}
+        self._store.set(upd["id"], upd, agent or "orchestrator")
+        return upd
+
+    def is_detail_authored(self, ref: Any) -> bool:
+        """True once the kickoff-detail turn for this phase has COMPLETED."""
+        rec = self._resolve(ref)
+        return bool(rec.get("detail_authored")) if isinstance(rec, dict) else False
 
     def mark_status(self, ref: Any, status: str, agent: str = "") -> Dict[str, Any]:
         rec = self._resolve(ref)
