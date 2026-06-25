@@ -540,6 +540,19 @@ class RemediationDispatcher:
             if not isinstance(guard, dict):
                 guard = {}
                 orch._gatecheck_owner_dispatched = guard
+            # PERSISTENCE RE-ARM (V29 stall): the guard below is one-shot per milestone.
+            # If a dispatched wake doesn't resolve the check — the owning lane's turn
+            # failed/idled, or (the v11/V29 bug fixed above) the verifier wake was
+            # rejected — the one-shot guard blocked every retry and the gate spun to
+            # fail-fast. Re-fire a STILL-failing owned check every _GATECHECK_REFIRE
+            # declines instead of never (the stuck-abort is at 7 declines, so this yields
+            # real retries first). Dup remediation tasks are kind=None, so they never
+            # inflate the incomplete_required_tasks gate.
+            _persist = getattr(orch, "_gatecheck_persist", None)
+            if not isinstance(_persist, dict):
+                _persist = {}
+                orch._gatecheck_persist = _persist
+            _GATECHECK_REFIRE = 3
             from tools.communication_tools import _create_message
             uncovered: List[str] = []
             for raw in failed_checks:
@@ -550,7 +563,14 @@ class RemediationDispatcher:
                         uncovered.append(name)
                     continue
                 if guard.get(name) == milestone:
-                    continue  # one dispatch per milestone (storm control)
+                    # already dispatched this milestone — but re-fire a PERSISTING blocker
+                    # every _GATECHECK_REFIRE declines so a wake that didn't land gets
+                    # retried (V29: the verifier wake bounced and was never re-attempted).
+                    _persist[name] = _persist.get(name, 0) + 1
+                    if _persist[name] % _GATECHECK_REFIRE != 0:
+                        continue  # storm control between re-fires
+                else:
+                    _persist[name] = 0
                 owner, title, how = spec
                 _extra = ""
                 if name == "business_chain_api_coverage":
@@ -582,16 +602,75 @@ class RemediationDispatcher:
                         "green. Fix it, then finish."),
                     assignee=owner, agent="orchestrator", priority="P0")
                 guard[name] = milestone
-                await orch.message_bus.send(_create_message(
+                _persist[name] = 0  # reset the decline counter on a (re-)dispatch
+                _gmsg = _create_message(
                     source_agent_id="orchestrator", target_agent_id=owner,
                     content=(
                         f"URGENT: delivery is blocked on the `{name}` gate check. Claim "
                         f"task {(task or {}).get('id')} and fix it NOW, then finish."),
                     msg_type="task_ready", priority="urgent", persist=True,
-                    tags=[name, "remediation"]))
+                    tags=[name, "remediation"])
+                # CRITICAL (v11 root cause, mirrors framework_validation.py:587): the
+                # verifier's VerifierValidationTriggerPolicy REJECTS a task_ready that
+                # lacks metadata["validation_phase"]=True ("requires explicit validation-
+                # phase trigger", workflow_policies.py:369) — its tags [name,"remediation"]
+                # do not intersect accepted_tags. V29: the gate-check coverage re-dispatch
+                # to the verifier bounced 38× and the run STUCK-ABORTed with NO delivery.
+                # The flag always satisfies the policy (workflow_policies.py:346); harmless
+                # for non-verifier owners, so set it whenever the wake targets the verifier.
+                if owner == "verifier":
+                    _gmsg.metadata["validation_phase"] = True
+                await orch.message_bus.send(_gmsg)
                 orch._logger.warning(
                     "GATE-CHECK remediation dispatched to %s (task %s): %s",
                     owner, (task or {}).get("id"), name)
+            # FIX C (V29 stall): incomplete_required_tasks is in _COVERED_ELSEWHERE
+            # ("routed via the task's own assignee") — but the assignee may have FINISHED
+            # and gone idle WITHOUT producing the task's required evidence (V29: the verifier
+            # finished without re-running run_validation, so 3 validate_api_smoke tasks stayed
+            # pending with NO driver -> co-stalled the gate). Re-wake the assignee of each
+            # still-incomplete structural task (the tasks already exist — no new task) so an
+            # idle owner is re-engaged. Same persistence re-fire + validation_phase injection
+            # (verifier) as the gate-check dispatch above.
+            if "incomplete_required_tasks" in failed_checks:
+                _itn = "incomplete_required_tasks"
+                _fire = True
+                if guard.get(_itn) == milestone:
+                    _persist[_itn] = _persist.get(_itn, 0) + 1
+                    _fire = (_persist[_itn] % _GATECHECK_REFIRE == 0)
+                else:
+                    _persist[_itn] = 0
+                if _fire:
+                    try:
+                        from .delivery_gate import incomplete_required_tasks as _irt
+                        _by_assignee = {}
+                        for _t in (_irt(orch.hubs) or []):
+                            _a = str(_t.get("assignee") or "").strip()
+                            if _a:
+                                _by_assignee.setdefault(_a, []).append(_t)
+                        for _a, _ts in _by_assignee.items():
+                            _ids = ", ".join(str(t.get("id")) for t in _ts[:8])
+                            _wmsg = _create_message(
+                                source_agent_id="orchestrator", target_agent_id=_a,
+                                content=(
+                                    f"URGENT: delivery is blocked — you have {len(_ts)} "
+                                    f"unfinished required task(s) whose evidence is still "
+                                    f"missing ({_ids}). Claim + COMPLETE them now (verifier: "
+                                    "re-run run_validation to record the missing per-endpoint "
+                                    "contract tests), then finish."),
+                                msg_type="task_ready", priority="urgent", persist=True,
+                                tags=[_itn, "remediation"])
+                            if _a == "verifier":
+                                _wmsg.metadata["validation_phase"] = True
+                            await orch.message_bus.send(_wmsg)
+                        if _by_assignee:
+                            guard[_itn] = milestone
+                            _persist[_itn] = 0
+                            orch._logger.warning(
+                                "INCOMPLETE-TASK remediation re-woke %d assignee(s): %s",
+                                len(_by_assignee), ", ".join(sorted(_by_assignee)))
+                    except Exception:
+                        pass
             # Dedup to once-per-CHANGE (mirrors #45) — _maybe_framework_deliver runs every
             # ≤60s loop, so an undeduped log would spam while the same checks persist.
             _uncov = sorted(uncovered)

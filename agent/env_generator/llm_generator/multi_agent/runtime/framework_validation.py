@@ -122,6 +122,17 @@ class FrameworkValidation:
             self._orch._check_owner_dispatched = {}
         except Exception:
             pass
+        # V29 STALL: the gate-LEVEL owner-dispatch guard (dispatch_gate_level_checks,
+        # one entry per delivery-gate check id) is ALSO a one-shot-per-milestone dict
+        # that this rearm omitted — so a delivery-gate blocker stranded by a LATE-
+        # registered endpoint (V29: 3 endpoints registered AFTER the coverage chain)
+        # never re-dispatched its owner. Clear it (and its decline counter) too; same
+        # idempotence guarantee (each dispatch only acts while its check still fails).
+        try:
+            self._orch._gatecheck_owner_dispatched = {}
+            self._orch._gatecheck_persist = {}
+        except Exception:
+            pass
 
     async def maybe_run(self) -> None:
         """Deterministically run api_smoke + record the RunHub run when the
