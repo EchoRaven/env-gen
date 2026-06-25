@@ -35,6 +35,18 @@ def _records(d: dict) -> list[dict]:
     return [v for k, v in (d or {}).items() if k != "_meta" and isinstance(v, dict)]
 
 
+# Per-agent context-usage ring budget. The runtime compresses an agent's context once
+# it exceeds the model's WORKING char budget (resolve_ctx_working_chars ≈ window x 3.5
+# chars/tok x 0.7), i.e. ~0.7 x the window in TOKENS. The default run model
+# gemini-3.1-pro has a 1,000,000-token window -> ~700,000-token working budget, so a
+# ring at 100% means compression is imminent. (Override via ENVGEN_CTX_BUDGET_TOKENS.)
+import os as _os
+try:
+    _CTX_BUDGET_TOKENS = max(50_000, int(_os.environ.get("ENVGEN_CTX_BUDGET_TOKENS") or 700_000))
+except ValueError:
+    _CTX_BUDGET_TOKENS = 700_000
+
+
 def _iso(ts: Any) -> str:
     try:
         if isinstance(ts, (int, float)):
@@ -383,11 +395,20 @@ def _agent_log_activity(gen: Path, role: str):
     except OSError:
         return None
     acts = []
+    toks = []
     for ln in lines[-25:]:
         try:
             e = json.loads(ln)
         except Exception:
             continue
+        # Context-usage ring: a 'response' entry carries the LLM call's token count in
+        # metadata.tokens; the recent PEAK approximates how full the agent's (resident-
+        # loop) context is, so the UI can show a fill ring + flag impending compression.
+        if e.get("event_type") == "response":
+            try:
+                toks.append(int((e.get("metadata") or {}).get("tokens") or 0))
+            except Exception:
+                pass
         acts.append(_parse_action_entry(e))
     if not acts:
         return None
@@ -395,7 +416,8 @@ def _agent_log_activity(gen: Path, role: str):
     # Overview shows this as a compact label — keep it to the clean tool/action
     # name only (the full args/result live in the agent drawer's action history).
     label = (last["tool"] or last["type"] or "—")[:80]
-    return (label, newest.stat().st_mtime, list(reversed(acts)))
+    ctx_tokens = max(toks) if toks else 0
+    return (label, newest.stat().st_mtime, list(reversed(acts)), ctx_tokens)
 
 
 def _agent_status_map(gen: Path) -> dict:
@@ -449,7 +471,7 @@ def _agents(h: Path) -> list[dict]:
     out = []
     for aid, role in CORE_AGENTS:
         act = _agent_log_activity(gen, role)
-        log_label, log_mtime, recent = act if act else (None, 0.0, [])
+        log_label, log_mtime, recent, ctx_tokens = act if act else (None, 0.0, [], 0)
         st = status_map.get(aid)            # (ts, status, current_task) | None
         st_ts = st[0] if st else 0.0
         st_status = (st[1] if st else "") or ""
@@ -470,6 +492,10 @@ def _agents(h: Path) -> list[dict]:
         out.append({"id": aid, "role": role, "status": status,
                     "last_action": label or "—",
                     "last_active_at": _iso(last_active) if last_active else "",
+                    # Context-usage ring (like Claude Code): how full this agent's
+                    # context is vs the model's working budget — 100% ≈ compression.
+                    "context_tokens": ctx_tokens,
+                    "context_pct": min(100, round(100 * ctx_tokens / _CTX_BUDGET_TOKENS)) if ctx_tokens else 0,
                     "recent_actions": recent})
     return out
 
