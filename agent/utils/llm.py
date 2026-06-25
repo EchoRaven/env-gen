@@ -1925,9 +1925,16 @@ class GoogleClient(BaseLLMClient):
         # Get usage stats
         prompt_tokens = 0
         completion_tokens = 0
+        cached_tokens = 0
         if hasattr(response, 'usage_metadata') and response.usage_metadata:
             prompt_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0) or 0
             completion_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0) or 0
+            # gemini IMPLICIT caching (2.5+/3 auto-caches a stable prefix incl. the
+            # system_instruction; the cached portion is billed ~4x cheaper). Capture +
+            # log it so cache effectiveness is VISIBLE (it was silently dropped). A
+            # cached_tokens that stays 0 every turn => no cache hits (the prefix isn't
+            # stable) => consider EXPLICIT cached_content for the system prompt.
+            cached_tokens = getattr(response.usage_metadata, 'cached_content_token_count', 0) or 0
         
         has_tool_calls = bool(tool_calls)
         if has_tool_calls:
@@ -1940,7 +1947,7 @@ class GoogleClient(BaseLLMClient):
         if _thinking:
             self._logger.info(f"[LLM thinking] {_thinking[:1500]}")
 
-        self._logger.info(f"[LLM Response] latency={latency:.1f}s, prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={finish_reason}")
+        self._logger.info(f"[LLM Response] latency={latency:.1f}s, prompt_tokens={prompt_tokens}, cached_tokens={cached_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={finish_reason}")
 
         return LLMResponse(
             content=content,
