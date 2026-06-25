@@ -142,7 +142,7 @@ FWVAL_NO_DELIVER_ABORT_S = int(os.environ.get("ENVGEN_NO_DELIVER_ABORT_S", "4500
 #   verification_checklist) never fail-fasts and livelocks toward the 6h wall. If delivery
 #   has not succeeded within this window AFTER the contract is built (first gate decline),
 #   abort — generous (3-5× the observed clear time), well under the 6h wallclock backstop.
-FWVAL_STUCK_ABORT_AFTER = 7        # …then FAIL FAST: redispatch+terminal didn't help on an
+FWVAL_STUCK_ABORT_AFTER = max(3, int(os.environ.get("ENVGEN_DELIVERY_STUCK_ABORT_AFTER") or "7"))  # env-gated (default 7); …then FAIL FAST: redispatch+terminal didn't help on an
 #   unchanged failure set with no lane progress → abort early with the root surfaced, instead
 #   of limping to the wall-clock cap (PROPOSAL #5). ~1 slow-retry interval past the cap (~11 min)
 #   vs the 2h budget. Paced by the post-cap slow interval, not the 60s tick — tune against
@@ -1516,11 +1516,12 @@ class Orchestrator:
                     if stuck_abort_reason and not orchestrator_lane._project_delivered_event.is_set():
                         raise RuntimeError(
                             f"STUCK — generation aborted without delivery after {tick_count} "
-                            f"coordination ticks: {stuck_abort_reason} This is very likely an "
-                            f"UNRECOVERABLE framework-generation bug that the in-run agents "
-                            f"cannot self-heal (the framework regenerates the same artifact "
-                            f"every cycle), so raising ENVGEN_MAX_* will NOT help — fix the "
-                            f"root shown above, then re-run."
+                            f"coordination ticks: {stuck_abort_reason} The gate blocker did not "
+                            f"clear after re-dispatch — either a RECOVERABLE lane-phase desync "
+                            f"(an owning lane went idle/unreachable and the remediation wake did "
+                            f"not land) or a framework artifact regenerated every cycle. Raising "
+                            f"ENVGEN_MAX_* will NOT help — inspect the gate blocker + the owning "
+                            f"lane shown above, then re-run."
                         )
                     # Deterministic failure when the run budget was hit before delivery.
                     if budget_exceeded and not orchestrator_lane._project_delivered_event.is_set():
