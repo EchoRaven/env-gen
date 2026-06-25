@@ -158,7 +158,7 @@ class EnvGenAgent(
         "deliver",
     )
     ACTION_STAGE_CATEGORY_HINTS: Dict[str, Set[str]] = {
-        "communicate": {"communication", "progress", "knowledge_write"},
+        "communicate": {"communication", "progress", "knowledge_write", "milestone"},
         "edit_code": {"file", "project", "analysis", "memory", "reference", "image_search"},
         "run_checks": {
             "runtime",
@@ -369,9 +369,28 @@ class EnvGenAgent(
         "view_image",
         "list_reference_images",
     }
+    # The ORCHESTRATOR's milestone-roadmap tools (milestone_tools bundle, category
+    # "milestone"). They were added to the orchestrator's tool_categories + bundle but
+    # NOT to any action stage's category hints or always-include — so they registered
+    # into the 223-tool map yet were NEVER offered to the LLM in any action stage. The
+    # per-milestone KICKOFF-BRIEF turn then ordered the orchestrator to call
+    # milestone_list / milestone_set_brief; the model emitted a call for a tool absent
+    # from the offered set and gemini returned MALFORMED_FUNCTION_CALL every time → the
+    # brief was never authored and the whole kickoff wedged (V25, lanes never woken).
+    # Same crowd-out / never-offered class as _CONTRACT_READ / _REFERENCE_VIEW. Force-
+    # offer in the communicate stage (roadmap coordination + the broadcast it leads to)
+    # and the generic action stage; bundle-intersected, so ONLY the orchestrator (which
+    # bundles milestone_tools) ever sees them.
+    _MILESTONE_FLOW = {
+        "milestone_list",
+        "milestone_add",
+        "milestone_update",
+        "milestone_remove",
+        "milestone_set_brief",
+    }
     ACTION_STAGE_ALWAYS_INCLUDE: Dict[str, Set[str]] = {
         "communicate": {"check_inbox", "send_message", "ask_agent", "broadcast", "report_progress", "finish"}
-                        | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW,
+                        | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _MILESTONE_FLOW,
         "edit_code": {"read", "edit", "apply_patch", "write", "finish"} | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _CONTRACT_READ | _REFERENCE_VIEW,
         "run_checks": {"lint", "test_api", "finish"} | _CLAIM_FLOW | _VALIDATION_FLOW | _CONTRACT_READ,
         "delegate_team": {"finish"},
@@ -390,7 +409,7 @@ class EnvGenAgent(
         # skill → deliver_project blocked (run #28: 33× wedge). Bundle-intersected, so
         # only the orchestrator (which bundles knowledge_skill_tools) ever sees it.
         "deliver": {"finish", "deliver_project", "report_completion", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW,
-        "action": {"finish", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW | _BUG_FLOW,
+        "action": {"finish", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW | _BUG_FLOW | _MILESTONE_FLOW,
     }
 
     # PROPOSAL #28 F2 — validation/delivery tools that are MEANINGLESS during KICKOFF
