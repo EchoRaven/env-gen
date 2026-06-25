@@ -363,7 +363,7 @@ def _parse_action_entry(e: dict) -> dict:
             result = s
     return {"at": str(e.get("timestamp", "")), "type": str(e.get("event_type", "")),
             "tool": tool, "args": args[:400], "args_obj": args_obj,
-            "result": result[:400], "content": content[:400], "ok": ok}
+            "result": result[:400], "content": content[:2000], "ok": ok}
 
 
 def _agent_log_activity(gen: Path, role: str):
@@ -524,14 +524,35 @@ def _pages(h: Path) -> list[dict]:
     return [{"id": v.get("id", ""), "title": v.get("title", ""), "kind": v.get("kind", ""),
              "status": v.get("status", ""), "description": _doc_body(v),
              "attendees": [str(a) for a in (v.get("attendees") or [])]}
-            for v in _records(_load(h / "workhub_pages.json"))
+            for v in _records(_load(h / "workhub_documents.json") or _load(h / "workhub_pages.json"))
             if v.get("kind") not in ("ui_page", "ui_component")]
 
 
 def _milestones(h: Path) -> list[dict]:
-    """Port of the monitor's build_milestones: roadmap from milestone_plan
-    decisions + per-milestone 'M<n> kickoff' pages + cut releases."""
+    """Roadmap for the monitoring UI.
+
+    PRIMARY source: the first-class MilestoneRegistry store (milestones.json) —
+    the authoritative roadmap since milestones became managed state. The legacy
+    path below (milestone_plan decisions + 'M<n> kickoff' pages + cut releases in
+    workhub_pages.json) is now only a FALLBACK for pre-registry runs, since that
+    store was renamed to workhub_documents.json and current runs leave it absent —
+    which is why this returned [] and the UI showed no roadmap."""
     import re as _re
+    # PRIMARY: the first-class milestone store. Map registry status -> UI enum.
+    _SMAP = {"delivered": "released", "active": "active", "pending": "planned"}
+    _ms_recs = _records(_load(h / "milestones.json"))
+    if _ms_recs:
+        _ms_recs = sorted(_ms_recs, key=lambda v: int(v.get("index", 0) or 0))
+        return [{"version": str(v.get("version") or f"1.{max(0, int(v.get('index', 1) or 1) - 1)}.0"),
+                 "title": str(v.get("name") or v.get("title") or f"M{v.get('index')}"),
+                 "status": _SMAP.get(str(v.get("status") or ""), "planned"),
+                 "index": int(v.get("index", 0) or 0),
+                 # 'detail' is the renamed 'brief' (the full phase spec); read either
+                 # so this works across the rename. Surfaced for a detail view.
+                 "detail": str(v.get("detail") or v.get("brief") or ""),
+                 "acceptance": [str(a) for a in (v.get("acceptance") or [])]}
+                for v in _ms_recs]
+    # FALLBACK (legacy / pre-registry runs):
     pages = _load(h / "workhub_pages.json")
     plan: list = []
     kickoffs: dict[int, dict] = {}
