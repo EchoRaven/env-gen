@@ -231,9 +231,21 @@ class MilestoneRegistry:
                 "milestone M%s detail already authored; not overwriting",
                 rec.get("index"))
             return rec
-        upd = {**rec, "detail": str(detail or "").strip()}
+        _detail = str(detail or "").strip()
+        upd = {**rec, "detail": _detail}
+        # RESOLVE-ON-CONTENT (2026-06-25): mark detail_authored on the FIRST NON-EMPTY
+        # write, so the main-loop poll (is_detail_authored) resolves the moment a real
+        # detail exists — NOT only when the whole handler turn finishes. V28 wedge: the
+        # orchestrator DID author the detail (set_detail succeeded) but its turn then
+        # dawdled past the 240s poll (gemini MALFORMED re-rolls + extra milestone_list
+        # steps), so detail_authored (marked in the handler finally) never tripped in
+        # time and the detail fell back to the rough slice despite being authored. The
+        # no-overwrite guard above still suppresses the resident loop's re-author (first
+        # COMPLETE write wins; the prompt mandates a single set_detail then finish).
+        if _detail:
+            upd["detail_authored"] = True
         self._store.set(upd["id"], upd, agent or "orchestrator")
-        self._emit("milestone_detail_set", {"id": upd["id"], "chars": len(upd["detail"])})
+        self._emit("milestone_detail_set", {"id": upd["id"], "chars": len(_detail)})
         return upd
 
     def mark_detail_authored(self, ref: Any, agent: str = "") -> Dict[str, Any]:
