@@ -318,7 +318,13 @@ class AgentActionStageMixin:
         action_content = (getattr(action_resp, "content", "") or "")
         action_tool_calls = getattr(action_resp, "tool_calls", []) or []
         action_status = self._parse_action_status(action_content)
-        self.log_response(action_content, tokens=getattr(action_resp, "usage", {}).get("total_tokens", 0))
+        # Log the model's REASONING when the visible content is empty. On gemini
+        # tool-call turns .content is "" and the text lives in .reasoning (the
+        # [LLM thinking] stream) — logging only content made every such turn show up
+        # in the monitor as `response -> {tokens: N}` with NO visible reasoning. Prefer
+        # content, fall back to the thinking, so the action log shows WHAT the agent thought.
+        _logged_text = action_content or (getattr(action_resp, "reasoning", "") or "")
+        self.log_response(_logged_text, tokens=getattr(action_resp, "usage", {}).get("total_tokens", 0))
 
         if not action_tool_calls:
             if action_content:
