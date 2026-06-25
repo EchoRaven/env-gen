@@ -475,49 +475,37 @@ class AgentMessaging:
         # kickoff_response_prompt macro and runs ONE agentic loop —
         # the macro itself caps the response at "Run ONCE, then
         # finish(). Do NOT loop. Do NOT poll for synthesis."
-        # DUAL-LOOP DOUBLE-AUTHOR FIX: busy-guard the kickoff_* urgent
-        # handlers the SAME way task_ready is guarded at :544. Each handler
-        # below runs a FULL agentic loop (run_agentic_loop). If _processing_state
-        # is already PROCESSING_TASK (the resident main loop, OR another kickoff
-        # turn, is mid-flight), dispatching here would run a SECOND agentic loop
-        # CONCURRENTLY with no turn mutex — two loops authoring the SAME meeting
-        # section / milestone detail at once (the double-author race). Instead we
-        # DEFER the event to _deferred_kickoff_messages and re-handle it from
-        # _drain_deferred_task_ready_messages once the lane returns to IDLE — the
-        # same defer/drain mechanism task_ready uses. This is NOT a global lock:
-        # it only declines to START a concurrent loop; the deferred event is
-        # replayed the instant the current turn finishes, so nothing is dropped
-        # and there is no cross-lane lock that could deadlock.
+        # Kickoff handlers run IMMEDIATELY when received (the V26 behavior).
+        # HISTORY: a busy-guard that DEFERRED these (to avoid running a second
+        # agentic loop concurrently with the resident main loop) was tried and
+        # LIVELOCKED — the orchestrator's continuous resident wakeups out-raced the
+        # drain, so a deferred kickoff_detail_request sat unhandled for minutes while
+        # the lane idled "waiting for kickoff", the detail was never authored, and the
+        # poll fell back to the slice (V27 01:48-01:52). The concrete double-AUTHOR
+        # harm (two milestone_set_detail writes) is already prevented at the SOURCE:
+        # milestone_registry.set_detail no-ops once detail_authored is marked, and the
+        # author poll resolves on is_detail_authored (turn-complete). So dispatching
+        # directly is correct + unblocks the kickoff; the full per-agent turn mutex is
+        # the deferred structural fix for the (benign-in-practice) concurrent loop.
         if msg_type == "kickoff_request":
-            return await self._defer_or_handle_kickoff(urgent_msg, msg_type)
+            await self._handle_kickoff_request(urgent_msg)
+            return True
 
-        # Round-8f.1: facilitator handler — only the orchestrator
-        # subscribes to ``kickoff_facilitate_request`` (see
-        # ``agent_subscriptions.py``). The driver
-        # (``runtime/kickoff/facilitate.py:request_facilitation``)
-        # fires this event after ``try_synthesize`` returns
-        # ``ready``/``conflict``, asking the orchestrator's LLM to
-        # CHAIR the meeting: read all attendee decisions for the
-        # current round, then author ONE ``facilitator_note``
-        # decision declaring ``consensus``, ``request_revision``,
-        # or ``escalate``. Structural mirror of
-        # ``_handle_kickoff_request`` — different event_type +
-        # different macro name (``kickoff_facilitation_prompt``).
+        # Round-8f.1: facilitator handler — only the orchestrator subscribes to
+        # ``kickoff_facilitate_request``. The driver fires it after try_synthesize
+        # returns ready/conflict, asking the orchestrator to CHAIR the meeting: read
+        # all attendee decisions, author ONE facilitator_note (consensus /
+        # request_revision / escalate). Mirror of _handle_kickoff_request.
         if msg_type == "kickoff_facilitate_request":
-            # DUAL-LOOP DOUBLE-AUTHOR FIX: same busy-guard as kickoff_request.
-            return await self._defer_or_handle_kickoff(urgent_msg, msg_type)
+            await self._handle_kickoff_facilitate_request(urgent_msg)
+            return True
 
-        # Per-milestone KICKOFF-DETAIL turn (2026-06-24): author this phase's detailed
-        # detail + (optionally) revise FUTURE milestones via the milestone_* tools,
-        # BEFORE the lanes draft. Structural mirror of facilitate; macro
-        # ``kickoff_milestone_detail_prompt``.
+        # Per-milestone KICKOFF-DETAIL turn: author THIS phase's detailed milestone
+        # spec + (optionally) revise FUTURE milestones via the milestone_* tools,
+        # BEFORE the lanes draft. Mirror of facilitate; macro kickoff_milestone_detail_prompt.
         if msg_type == "kickoff_detail_request":
-            # DUAL-LOOP DOUBLE-AUTHOR FIX: same busy-guard as kickoff_request.
-            # The milestone-detail turn races the resident main loop hardest —
-            # author_milestone_detail polls is_detail_authored while the lane may
-            # already be mid-turn, so deferring is what prevents two loops both
-            # writing milestone detail.
-            return await self._defer_or_handle_kickoff(urgent_msg, msg_type)
+            await self._handle_kickoff_detail_request(urgent_msg)
+            return True
 
         # Round-8f.1: facilitator-driven single-pass revision. After
         # round 1 the orchestrator (as meeting facilitator) records a
