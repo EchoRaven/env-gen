@@ -45,6 +45,19 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
         - Output truncation/compression
         """
         self._processing_state = ProcessingState.PROCESSING_TASK
+        # V30 RE-ENTRANCY GUARD: track agentic-loop nesting depth so the urgent drain
+        # (messaging._check_and_handle_urgent) can refuse to start a NESTED run_agentic_loop.
+        # The shared _processing_state flag is reset to IDLE by a nested handler's finally,
+        # leaving a window where the urgent drain (step_runner step boundary) read IDLE and
+        # started a SECOND in-stack run_agentic_loop that deadlocked in setup (before step 1)
+        # and hung the frontend lane silently for 13min (V30). This monotonic depth counter
+        # is reset-proof; decremented in the finally below.
+        self._agentic_loop_depth = getattr(self, "_agentic_loop_depth", 0) + 1
+        # V30 liveness: log loop ENTER so a stall BEFORE the first step (the silent pre-step
+        # hang the frontend hit) is observable, and depth>1 surfaces unexpected nesting.
+        self._logger.info(
+            f"[{self.agent_id}] run_agentic_loop ENTER (depth={self._agentic_loop_depth}, "
+            f"max_steps={max_steps})")
         messages = [Message.system(system_prompt), Message.user(initial_prompt)]
 
         # Memory refinement (2026-06-09, user-asked): inject the Memory-Bank digest
@@ -712,6 +725,7 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
         finally:
             self._active_stage = "action"
             self._processing_state = ProcessingState.IDLE
+            self._agentic_loop_depth = max(0, getattr(self, "_agentic_loop_depth", 1) - 1)
             try:
                 self._auto_sync_hub_state(
                     step=max(0, len(step_traces) - 1),

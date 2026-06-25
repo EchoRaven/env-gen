@@ -545,7 +545,17 @@ class AgentMessaging:
                 )
                 return True
 
-            if self._processing_state == ProcessingState.IDLE:
+            # V30 RE-ENTRANCY GUARD: only start a task_ready handler (which runs a FULL
+            # nested run_agentic_loop) when we are NOT already inside an agentic loop. The
+            # shared _processing_state can read IDLE mid-outer-loop (a prior nested handler's
+            # finally reset it) — that window let the urgent drain start a SECOND in-stack
+            # run_agentic_loop, which deadlocked in setup and hung the frontend lane silently
+            # for 13min (V30). The depth counter (step_runner) is reset-proof. When already in
+            # a loop, fall through to the busy branch below -> defer to
+            # _deferred_task_ready_messages (drained, exactly as today, when the lane next
+            # goes IDLE). Lower-priority urgent work correctly waits for the in-flight task.
+            if (self._processing_state == ProcessingState.IDLE
+                    and getattr(self, "_agentic_loop_depth", 0) == 0):
                 await self._handle_task_ready(urgent_msg)
                 return True
 
