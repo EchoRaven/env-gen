@@ -1727,7 +1727,11 @@ class EnvGenAgent(
                     f"[{self.agent_id}] Failed to seed agent memory bank from shared legacy path ({shared_legacy_memory_dir}): {e}"
                 )
 
-        self.memory_bank = MemoryBank(root_dir=workspace_root, memory_dir=canonical_memory_dir)
+        self.memory_bank = MemoryBank(
+            root_dir=workspace_root,
+            memory_dir=canonical_memory_dir,
+            model=getattr(self.config, "model_name", None),
+        )
         self.memory_bank.initialize(project_info or {})
         
         # Bind MemoryBank to GeneratorMemory for auto-sync

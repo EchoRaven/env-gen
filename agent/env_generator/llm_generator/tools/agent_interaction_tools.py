@@ -64,10 +64,11 @@ Examples:
     read_memory_bank(file="active_context")
 """
     
-    def __init__(self, workspace: Workspace = None, agent_id: Optional[str] = None):
+    def __init__(self, workspace: Workspace = None, agent_id: Optional[str] = None, model: Optional[str] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.workspace = workspace
         self.agent_id = agent_id
+        self.model = model
     
     @property
     def tool_definition(self):
@@ -115,7 +116,7 @@ Examples:
             try:
                 from memory.memory_bank import MemoryBank
 
-                mb = MemoryBank(root_dir=self.workspace.code_root, memory_dir=memory_dir)
+                mb = MemoryBank(root_dir=self.workspace.code_root, memory_dir=memory_dir, model=self.model)
                 mb.initialize(
                     {
                         "name": self.workspace.name,
@@ -162,7 +163,7 @@ Examples:
                 # Digest mode: use MemoryBank's digest to avoid dumping huge context.
                 try:
                     from memory.memory_bank import MemoryBank
-                    mb = MemoryBank(root_dir=self.workspace.code_root, memory_dir=memory_dir)
+                    mb = MemoryBank(root_dir=self.workspace.code_root, memory_dir=memory_dir, model=self.model)
                     content_out = mb.get_digest()
                 except Exception:
                     # Fallback to active_context + progress only

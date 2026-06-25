@@ -469,15 +469,18 @@ def validate_orphaned_tool_offerings(profiles: Dict[str, Dict[str, Any]]) -> Non
                 always_include_names=always_include_names,
             )
             if orphans:
-                logger.warning(
-                    "ORPHAN TOOLS: profile '%s' GRANTS %d tool(s) that are NEVER "
-                    "offered to the LLM in any action stage — their category is in no "
-                    "ACTION_STAGE_CATEGORY_HINTS stage AND their name is in no "
-                    "ACTION_STAGE_ALWAYS_INCLUDE set, so a call for them returns "
-                    "MALFORMED_FUNCTION_CALL (same class as the milestone_tools / "
-                    "orchestrator-audit bugs). Pin each into an always-include _FLOW set "
-                    "or hint its category: %s",
-                    profile_id, len(orphans), ", ".join(orphans),
+                # The AND-heuristic over-reports: the action stage can still OFFER any
+                # granted tool via token-overlap ranking, so "not pinned/hinted" does
+                # NOT mean "never offerable". Emit ONE concise INFO summary per profile
+                # (count + up to 5 example names) instead of one WARN per orphan, so
+                # startup logs aren't flooded with false positives. Detection is
+                # unchanged; only the logging is downgraded. Never raises.
+                examples = ", ".join(orphans[:5])
+                more = "..." if len(orphans) > 5 else ""
+                logger.info(
+                    "tool-surface: profile '%s' has %d tool(s) not pinned/hinted to a "
+                    "stage (offerable via ranking): %s%s",
+                    profile_id, len(orphans), examples, more,
                 )
         except Exception as exc:
             logger.debug(

@@ -239,7 +239,11 @@ def _assemble_agent_tool_pool(context: ToolAssemblyContext) -> List[BaseTool]:
     # invited thrash — agents burned hundreds of LLM turns toggling focus.
     builder.add(
         [
-            ReadMemoryBankTool(workspace=workspace, agent_id=context.agent_id or agent_type),
+            ReadMemoryBankTool(
+                workspace=workspace,
+                agent_id=context.agent_id or agent_type,
+                model=getattr(context, "model_name", None) or getattr(context, "model", None),
+            ),
             UpdateMemoryBankTool(),
         ],
         always=True,

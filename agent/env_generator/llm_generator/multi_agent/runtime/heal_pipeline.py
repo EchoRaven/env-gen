@@ -218,8 +218,13 @@ class HealPipeline:
                         "ENDPOINT LIFECYCLE (code-truth): implemented=%s regressed=%s "
                         "pending=%s", _ea.get("implemented"), _ea.get("regressed"),
                         _ea.get("pending"))
-            except Exception:
-                pass
+            except Exception as exc:
+                # Non-fatal (don't crash the heal run) but LOUD: backend_audit raises
+                # BackendAuditError on a real failure and silently swallowing it
+                # re-hides the very signal it was added to surface.
+                orch._logger.error(
+                    "backend_audit.sync_endpoint_statuses FAILED (endpoint lifecycle "
+                    "NOT synced; flags may be stale): %s", exc)
         except Exception as exc:
             orch._logger.debug("route projection skipped: %s", exc)
 
