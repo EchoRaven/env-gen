@@ -412,9 +412,26 @@ class EnvGenAgent(
         "run_list",
         "run_get",
     }
+    # The KNOWLEDGE lane's structured-document tools (structured_knowledge_tools bundle,
+    # category "knowledge"). They are GRANTED — the bundle registers submit_adr /
+    # submit_runbook / submit_postmortem under category "knowledge" — and the knowledge
+    # agent prompt MANDATES them (knowledge_agent.j2: "submit_adr / submit_runbook /
+    # submit_postmortem when the triggering artifact exactly matches the document shape").
+    # But "knowledge" appears in NO ACTION_STAGE_CATEGORY_HINTS stage (the communicate
+    # stage hints knowledge_write, not knowledge) and their names were in NO _FLOW /
+    # ACTION_STAGE_ALWAYS_INCLUDE set — so they registered into the tool map yet were
+    # ONLY reachable via the low-priority ranker, i.e. never offered. EXACT same orphan /
+    # never-offered class as _MILESTONE_FLOW (V25) and _ORCH_AUDIT_FLOW. Force-offer in the
+    # communicate stage (where the knowledge lane writes its artifacts); bundle-intersected,
+    # so ONLY the knowledge agent (which bundles structured_knowledge_tools) ever sees them.
+    _KNOWLEDGE_DOC_FLOW = {
+        "submit_adr",
+        "submit_runbook",
+        "submit_postmortem",
+    }
     ACTION_STAGE_ALWAYS_INCLUDE: Dict[str, Set[str]] = {
         "communicate": {"check_inbox", "send_message", "ask_agent", "broadcast", "report_progress", "finish"}
-                        | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _MILESTONE_FLOW,
+                        | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _MILESTONE_FLOW | _KNOWLEDGE_DOC_FLOW,
         "edit_code": {"read", "edit", "apply_patch", "write", "finish"} | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _CONTRACT_READ | _REFERENCE_VIEW,
         "run_checks": {"lint", "test_api", "finish"} | _CLAIM_FLOW | _VALIDATION_FLOW | _CONTRACT_READ,
         "delegate_team": {"finish"},

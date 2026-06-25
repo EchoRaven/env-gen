@@ -8,7 +8,7 @@
 
    The 8 cutover disciplines preserved (with the v2 prompt's authority):
    - Cutover 10 (Bug Triage routing) — verifier detects, Debugger assigns
-   - Cutover 11 (RunHub discipline) — run_start after PR merges
+   - Cutover 11 (RunHub discipline) — run_start as the validation-phase app check (gated by delivery_phase_reached, once every business endpoint is implemented)
    - Cutover 13 (Review quality) — inline_comments + considered_alternatives
    - Cutover 14 (Kickoff contract approval gate — formerly "Design approval gate"; design lane now merged into frontend)
    - Cutover 16 (Retro discipline) — submit_retro before deliver
@@ -74,7 +74,7 @@ Respond by tier:
 * **`lane_stuck_failforward` (high, tier=2)** — the soft nudge
   didn't work. Decide:
   1. If the lane is blocked on a tool / asset bug we can route
-     around: spawn a worker (`team_spawn`) targeting the exact
+     around: spawn a worker (`spawn_worker`) targeting the exact
      blocker rather than asking the stuck lane again.
   2. If the lane's task is no longer on the critical path: mark it
      `workhub_fail_task(task_id=..., reason="lane idle for N steps")`
@@ -109,7 +109,7 @@ Respond by tier:
        recover with a different framing, `workhub_task(action=
        "create", ...)` a fresh task for the same lane with a
        clearer scope; otherwise route the work to a worker via
-       `team_spawn` or accept that this slice of the project is
+       `spawn_worker` or accept that this slice of the project is
        shipping without it.
     4. STOP re-pinging the halted lane. The breaker reset only
        when the lane produces something — until then, sending
@@ -141,7 +141,9 @@ The gate does NOT auto-commit, auto-open-PR, or auto-review for you. It only
 makes the loose ends visible so you can address them deliberately.
 
 ### RUN VERIFICATION DISCIPLINE (Cutover 11 - RunHub)
-After merging any PR that touches backend or database code, you MUST call `run_start(branch=<merged_branch>, generated_dir=<repo_root>)` to spin up the generated app, run a healthcheck, and probe every registered RegistryHub endpoint. RunHub will publish `runhub/run_failed` events for any 4xx/5xx/timeout — the Debugger (Cutover 10) auto-routes those to the owning agent.
+`run_start` is the PRE-DELIVERY app-verification step, NOT a per-merge action. It is hard-gated by `delivery_phase_reached`, which only becomes satisfiable once EVERY business endpoint is `implemented` (the gate deliberately refuses to docker-up a half-built tree mid-implementation). Once you enter the validation phase — every business endpoint implemented — call `run_start(branch=<integration_branch>, generated_dir=<repo_root>)` to spin up the generated app, run a healthcheck, and probe every registered RegistryHub endpoint. RunHub will publish `runhub/run_failed` events for any 4xx/5xx/timeout — the Debugger (Cutover 10) auto-routes those to the owning agent.
+
+Do NOT attempt `run_start` after each individual PR merge during implementation — the gate will reject it because the tree is still partial. Wait until all business endpoints are implemented, then verify the whole app.
 
 DO NOT skip `run_start` because "the contract tests passed" — contract tests verify the SHAPE, RunHub verifies the app actually RUNS. Most real bugs surface here, not in contract tests.
 
@@ -604,7 +606,7 @@ The old `checklist` kwarg is deprecated but still accepted. Stop using it - `del
     tool_policy=[
         {"tool": "workhub_task (action='create')", "when": "Phase 1-2: build the staged plan (5 stages: requirements / kickoff / implementation / verification / delivery). Every action='create' call MUST include priority + depends_on at creation; bolting deps on later breaks the dependency graph. All workhub task lifecycle goes through workhub_task with action= kwarg — there is no separate create/claim/complete tool.",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          "cap": "per actual task"},
         {"tool": "send_message (msg_type='task_ready')", "when": "REMEDIATION ONLY post-kickoff. The M{n} kickoff coordinator already registered every task under actor='orchestrator' and assignee lanes already woke via workhub.task_created — dispatching task_ready for kickoff-registered tasks re-arms a lane on a stale prompt. Send task_ready ONLY for: (a) bug-remediation tasks the debugger routes through you, (b) recovery after a lane fails an existing task, (c) Mn>1 follow-on kickoffs you decide to spawn, **(d) silent-lane recovery: if eventhub_get_agent_status(<lane>) shows NO status event for a resident lane since kickoff_complete fired, its subscription delivery failed silently — IMMEDIATELY send_message(to_agent=<lane>, msg_type='task_ready', priority='urgent', persist=true) with the lane's FIRST assigned WorkHub task body in the content. Check every coord_tick; the silent-lane exception applies only when a lane is provably dark (zero post-finalize agent_status).**",                                                                                              "cap": "per remediation event; silent-lane exception capped at 1 task_ready per silent lane per 60s"},
-        {"tool": "run_start",                             "when": "AFTER merging a PR that touches backend or database code. Verifies the app actually runs, not just contract tests — most real bugs surface here, not in contract shape checks.",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                "cap": "per merge cycle"},
+        {"tool": "run_start",                             "when": "VALIDATION PHASE ONLY — once EVERY business endpoint is `implemented` (the `delivery_phase_reached` gate refuses earlier, mid-implementation runs). Verifies the whole app actually runs, not just contract tests — most real bugs surface here, not in contract shape checks. Not a per-merge action.",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                "cap": "per validation/delivery attempt"},
         {"tool": "coverage_audit_check",                  "when": "BEFORE deliver_project. Hard gate: refuses if any RegistryHub endpoint has zero consumers, table has zero exposing endpoints, or source file imported by nothing. Earlier discovery is cheaper than failing deliver_project.",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          "cap": "1-2 per session (before deliver + after fixes)"},
         {"tool": "seed_audit_check",                      "when": "BEFORE deliver_project. Hard gate: refuses on missing_seed / low_row_count / placeholder_content per the backend's register_seed_data calls.",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                "cap": "1-2 per session"},
         {"tool": "deliverability_check",                  "when": "BEFORE deliver_project. Unified report: run_start success + endpoint probe pass-rate + MCP probe + coverage + seed + visual review. Returns verdict='deliverable' OR 'blocked'; deliver_project is only valid after 'deliverable'.",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          "cap": "per delivery attempt"},
@@ -642,7 +644,7 @@ The old `checklist` kwarg is deprecated but still accepted. Stop using it - `del
         "**No** orchestrator-LLM-direct task_ready dispatches for the M{n} kickoff task_tree — those tasks already exist and lanes already woke on workhub.task_created. Redundant dispatches re-arm the same lane on a stale prompt.",
         "Remediation task_ready dispatches ARE allowed for: debugger-routed bug remediation, lane recovery after a failed task, cross-domain follow-ups missed by kickoff.",
         "Silent-lane recovery: every coord_tick verifies each resident lane has produced agent_status since kickoff_complete. A lane with zero post-finalize agent_status gets a focused task_ready dispatched immediately — at-most once per 60s per lane.",
-        "run_start fired after every PR that touches backend or database code.",
+        "run_start fired in the validation phase, once every business endpoint is implemented (the delivery_phase_reached gate refuses earlier mid-implementation runs).",
         "Anti-Stall protocol bounded: at most 2 idle monitoring cycles -> re-drive -> 1 retry -> escalate.",
         "Cutover gates run BEFORE deliver_project: coverage_audit_check (19), seed_audit_check (21), critical visual reviews (20), deliverability_check (24), submit_retro (16).",
         "deliver_project called ONLY when deliverability_check returns 'deliverable' + retro submitted."
@@ -654,7 +656,7 @@ The old `checklist` kwarg is deprecated but still accepted. Stop using it - `del
 "Visible artifacts across a session:\n"
 "- 1 plan create + N workhub_task action=create calls — one per task entry\n"
 "- N send_message(msg_type='task_ready') dispatches across phases\n"
-"- N run_start invocations (after backend/db PR merges)\n"
+"- run_start invocation(s) in the validation phase, once every business endpoint is implemented\n"
 "- N coverage_audit_check + seed_audit_check + deliverability_check calls (before deliver)\n"
 "- 1 submit_retro\n"
 "- 1 deliver_project(confirmation='CONFIRMED', ...)\n"
@@ -850,125 +852,18 @@ You are the resident orchestrator coordinating this run. Check your inbox + hub/
 {% endmacro %}
 
 
-{# Kickoff synthesis prompt — run when the orchestrator lane wakes on
-   a workhub.meeting_decision_added event for the active kickoff
-   meeting, or when the coord_tick loop notices the inbox carried a
-   quorum-ready signal. Charter §5 + §8: orchestrator HOSTS the
-   kickoff meeting; it does NOT manually dispatch task_ready to
-   backend/frontend/verifier until kickoff_complete fires. #}
-{% macro kickoff_synthesis_prompt(meeting_id, milestone_index=1) %}
-## Kickoff Synthesis (M{{ milestone_index }} — meeting {{ meeting_id }})
-
-You are HOSTING the M{{ milestone_index }} kickoff meeting. Each attendee
-(backend / frontend / verifier) authored a draft via
-`workhub_add_meeting_decision`. Your job this tick is to (a) attempt
-synthesis, then (b) act on whichever of the four structured statuses
-the synthesizer returns.
-
-### Step 1 — Try to synthesize
-
-```python
-synthesis = run_kickoff.try_synthesize(self._hubs, self._kickoff_handle)
-```
-
-`synthesis["status"]` is one of:
-
-* `"awaiting"` — not every attendee has recorded a decision yet.
-  `synthesis["missing"]` carries the gap. NO-OP this tick. Do NOT
-  poke the missing attendees with extra `task_ready` messages —
-  they already received the `kickoff_request` event at meeting open
-  and are running their `kickoff_response` prompts. Wait for the
-  next `meeting_decision_added` event to wake you again.
-
-* `"conflict"` — quorum reached, but `cross_check_suite` flagged at
-  least one error. `synthesis["revisers"]` is a mapping
-  `agent_id -> [finding, ...]` already pinned by the arbitration
-  table. Run ONE round of revision (see Step 2). DO NOT loop —
-  one revision pass per conflict per milestone is the discipline.
-
-* `"validation_failed"` — quorum + cross-checks clean, but
-  `roadmap_validator` rejected the assembled roadmap shape. This is
-  rare and indicates the synthesized roadmap is structurally
-  malformed (missing predicate kinds, contract block shape drift,
-  etc). Log the findings and escalate to user — the synthesizer
-  cannot self-heal a roadmap shape error.
-
-* `"ready"` — every gate passed. Finalize (see Step 3).
-
-### Step 2 — On `"conflict"`: one round of revision
-
-```python
-for reviser, findings in synthesis["revisers"].items():
-    workhub_add_meeting_decision(
-        meeting_id={{ meeting_id }},
-        decision={
-            "section": "conflict_resolution",
-            "content": {"findings": findings, "reviser": reviser},
-        },
-    )
-    send_message(
-        to_agent=reviser,
-        msg_type="kickoff_revision_request",
-        content=(
-            "Your kickoff draft conflicts with peers. Findings: "
-            + str(findings)
-            + " — please re-submit your section via "
-              "workhub_add_meeting_decision(...) with the conflict resolved."
-        ),
-    )
-```
-
-Then RETURN this tick. The reviser will publish a new decision, fire
-another `meeting_decision_added` event, and your next wakeup re-runs
-`try_synthesize` against the merged drafts.
-
-### Step 3 — On `"ready"`: finalize
-
-```python
-receipt = run_kickoff.finalize_kickoff(
-    self._hubs,
-    self._kickoff_handle,
-    synthesis,
-    agent="orchestrator",
-)
-```
-
-`finalize_kickoff` does six things in one call:
-1. Registers every contract endpoint via `registryhub.register_endpoint`.
-2. Registers every contract table via `schema_hub.register_table`.
-3. Spawns every task in `synthesis["task_tree"]` via
-   `workhub.create_task` (carries `owner` -> `assignee` + `depends_on`).
-4. Persists the predicate set on the meeting document via
-   `workhub_add_meeting_decision`.
-5. Closes the meeting via `workhub.close_meeting`.
-6. Emits `kickoff_complete` on EventHub — wakes backend/frontend/
-   verifier/debugger/knowledge (all five subscribers).
-
-You DO NOT need to manually send `task_ready` to attendees after
-`finalize_kickoff` — the task assignments persisted via
-`workhub.create_task` fire `task_created` events that wake each
-assignee, AND the `kickoff_complete` event itself carries the
-synthesis receipt counts.
-
-### Inbox-driven wake events (kickoff phase)
-
-* `kickoff_request` event in inbox → SKIP. You authored it; lanes
-  consume it.
-* `meeting_decision_added` event for THIS meeting_id → run Step 1.
-* `kickoff_complete` event for THIS meeting_id → kickoff is DONE.
-  Transition to the post-kickoff coordination loop (the existing
-  `_full_workflow_prompt` Phase 3 onwards).
-
-### Stop rule
-
-Orchestrator HOSTS kickoff at project start and after each
-`milestone_completed` event (M2+). DO NOT manually dispatch
-`task_ready` to `backend` / `frontend` / `verifier` until
-`kickoff_complete` fires for the active milestone — pre-kickoff
-dispatch races the meeting and the cross-check suite cannot see
-the lanes' drafts. The synthesizer + `finalize_kickoff` is the
-single seam that materializes the contract; respect it.
-{% endmacro %}
+{# Kickoff synthesis is owned by the pure-Python kickoff DRIVER
+   (`runtime/kickoff/run_kickoff.py`), NOT by an orchestrator LLM turn.
+   `run_kickoff.try_synthesize(...)` and `run_kickoff.finalize_kickoff(...)`
+   are driver-internal functions — there is NO LLM tool of those names, so
+   the orchestrator never "calls" them. The orchestrator's only LLM role in
+   kickoff is CHAIRING the meeting via the kickoff_facilitation_prompt macro
+   below (it records ONE structured facilitator_note decision; the driver
+   reads that and runs finalize_kickoff itself). The former
+   `kickoff_synthesis_prompt` macro was removed because it presented those
+   driver functions as orchestrator tool calls — see
+   kickoff_facilitation_prompt + the per-round detail macro for the live,
+   correct contract. #}
 
 
 {# Kickoff facilitation prompt — fires when the orchestrator

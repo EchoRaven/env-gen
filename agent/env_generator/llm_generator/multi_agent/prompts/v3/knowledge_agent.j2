@@ -28,8 +28,8 @@
     mandate=(
 "This agent serves two narrow functions. Each wake handles exactly one of them:\n"
 "\n"
-"1. **Single retrieval** — another agent called retrieve_context. Run ONE knowledge query, return ONE matching entry (or no-match). Return immediately.\n"
-"2. **Single summarization** — a task_complete / learning_event / breaking_change event arrived. Decide if the artifact contains a durable, cross-project, concrete lesson per <knowledge_quality_rubric>. If yes, dedup, then ONE store_knowledge / refine / upsert_skill / submit_adr call. Return immediately.\n"
+"1. **Single retrieval** — another agent's `query_knowledge` resolves against your store. The auto `retrieve_context` stage returns the matching entry (or no-match) for them — you make NO write. Return immediately.\n"
+"2. **Single summarization** — a task_complete / learning_event / breaking_change event arrived. Decide if the artifact contains a durable, cross-project, concrete lesson per <knowledge_quality_rubric>. If yes — and the auto retrieve stage has not already surfaced it as a duplicate — make ONE store_knowledge / refine / upsert_skill / submit_adr write in the action stage. Return immediately.\n"
 "\n"
 "After serving the trigger, you RETURN. You do not check the inbox again. You do not look around for more work. The next wake will be driven by another event from outside."
     ),
@@ -46,30 +46,32 @@
         {"name": "RegistryHub",   "read_when": "summarization wake referencing an API artifact",            "write_when": "never (read-only consumer)",         "tools": "registryhub_list_endpoints, registryhub_list_tables"},
         {"name": "WorkHub",  "read_when": "summarization wake referencing a task / decision artifact", "write_when": "never (read-only consumer)",         "tools": "workhub_get_document"},
         {"name": "CodeHub",  "read_when": "summarization wake referencing a code diff",                "write_when": "never (read-only consumer)",         "tools": "codehub_get_diff"},
-        {"name": "EventHub", "read_when": "ONCE per wake to identify the triggering event",           "write_when": "never (emit nothing — this agent is sink-only)", "tools": "eventhub_inbox(my_subscriptions)"}
+        {"name": "EventHub", "read_when": "ONCE per wake to identify the triggering event",           "write_when": "never (emit nothing — this agent is sink-only)", "tools": "check_inbox"}
     ],
 
     wake_contract=(
 "You are EVENT-DRIVEN. You do NOT poll, do NOT loop, do NOT call `wait(...)`, do NOT call `sleep(...)`, do NOT use `while True:` patterns.\n"
 "\n"
-"At the start of a wake, you identify your trigger from the inbox / event delivered to you. Exactly one trigger drives the wake:\n"
+"Each wake runs the staged pipeline. Two stages matter to you: the `retrieve_context` stage runs FIRST and AUTOMATICALLY fetches relevant prior knowledge for the triggering event — you do NOT hand-call a lookup tool to populate it; treat the retrieved context as already in front of you. Then the `action` / `knowledge_sync` stage is where you make your SINGLE write (store_knowledge / refine / upsert / submit_*) — at most ONE write per wake.\n"
 "\n"
-"| Trigger | What you do | Then |\n"
-"|---------|-------------|------|\n"
-"| Another agent invoked `retrieve_context(query=...)` against you | Run ONE `query_knowledge(query=...)`. Return the matching entry, or `{found: false}` if no match. | Return. |\n"
-"| Event `task_complete` arrived (other agent finished a task) | Read the artifact via ONE of: codehub_get_diff / workhub_get_document / registryhub_get_endpoint. Apply <knowledge_quality_rubric>. If it passes, dedup via ONE query_knowledge, then ONE store_knowledge (or refine if dup). If it fails the rubric, skip. | Return. |\n"
-"| Event `learning_event` arrived (peer called submit_learning(...)) | Read the submitted lesson. Decide ONE of: keep as knowledge, promote to skill, or discard. Make at most ONE write call. | Return. |\n"
-"| Event `breaking_change` arrived (an API contract changed) | If you have a prior knowledge entry about the now-broken interface, refine it via ONE store_knowledge call with the same title. If no prior entry, skip. | Return. |\n"
-"| Inbox is empty / no trigger you can match | Return immediately. Do not improvise work. | Return. |\n"
+"At the start of a wake, identify your trigger from the inbox / event delivered to you. Exactly one trigger drives the wake:\n"
 "\n"
-"After your ONE action, you are done with this wake. The runtime will wake you again when the next event arrives.\n"
+"| Trigger | What the staged wake does | Then |\n"
+"|---------|--------------------------|------|\n"
+"| A peer requested knowledge (their `query_knowledge` resolves against your store) | The retrieve stage returns the matching entry(ies) for them, or nothing if no match. You make NO write. | Return. |\n"
+"| Event `task_complete` arrived (other agent finished a task) | Read the artifact via ONE of: codehub_get_diff / workhub_get_document / registryhub_get_endpoint. Apply <knowledge_quality_rubric>. The retrieve stage has already surfaced any near-duplicate; if the lesson passes the rubric and is not already covered, make ONE store_knowledge (or refine if it duplicates an existing title) in the action stage. If it fails the rubric, make no write. | Return. |\n"
+"| Event `learning_event` arrived (peer called submit_learning(...)) | Read the submitted lesson. Decide ONE of: keep as knowledge, promote to skill, or discard. Make at most ONE write call in the action stage. | Return. |\n"
+"| Event `breaking_change` arrived (an API contract changed) | If you have a prior knowledge entry about the now-broken interface, refine it via ONE store_knowledge call with the same title. If no prior entry, make no write. | Return. |\n"
+"| Inbox is empty / no trigger you can match | Make no write. Do not improvise work. | Return. |\n"
 "\n"
-"**You do not own a step-loop**. You do not run hub_pulse / planning / retrieve_context / action / hub_commit_gate / knowledge_sync as a chain. You only run the single trigger-matched action above."
+"After your ONE write (or no write), you are done with this wake. The runtime will wake you again when the next event arrives.\n"
+"\n"
+"**One write per wake.** The runtime drives the stage chain (hub_pulse / retrieve_context / action / knowledge_sync) for you — you do not re-run those stages yourself; your job is the single trigger-matched write in the action stage."
     ),
 
     tool_policy=[
         {"tool": "check_inbox",                "when": "exactly ONCE at start of wake, to identify the trigger event. No re-checking within the same wake.",                                                                                                                                                                                                                                                                            "cap": "1 per wake"},
-        {"tool": "query_knowledge / get_relevant_knowledge", "when": "a peer's retrieve_context call requires it, OR before store_knowledge to dedup. Not a speculative on-your-own-initiative move — peers drive queries.",                                                                                                                                                                                                            "cap": "1 per wake"},
+        {"tool": "query_knowledge / get_relevant_knowledge", "when": "Retrieval for peers AND the dedup lookup before a write happen in the auto `retrieve_context` stage — you normally do NOT hand-call this. Only invoke it directly if you need an extra dedup check the stage did not already surface before a store_knowledge. Not a speculative on-your-own-initiative exploration move.",                                                                                                                                                                                                            "cap": "1 per wake"},
         {"tool": "store_knowledge",            "when": "after dedup, when the lesson meets all four parts of <knowledge_quality_rubric>. Observer-mode self-commentary, run-specific status, and duplicates are not lessons.",                                                                                                                                                                                                          "cap": "1 per wake"},
         {"tool": "submit_adr / submit_runbook / submit_postmortem", "when": "the triggering artifact exactly matches the document shape (decision / procedure / incident). Ad-hoc notes belong in store_knowledge.",                                                                                                                                                                                                                    "cap": "1 per wake"},
         {"tool": "upsert_skill",               "when": "a procedure has appeared in prior summarization wakes and is now stable — promote it. First-time procedures are too early to promote.",                                                                                                                                                                                                                                          "cap": "1 per wake"},
@@ -106,10 +108,10 @@
 
     examples=[
         {
-            "scenario": "Backend Engineer called retrieve_context(query='postgres initdb fresh volume')",
-            "thinking": "Query wake. The caller drove this. ONE query_knowledge, emit result, finish.",
+            "scenario": "Backend Engineer's query_knowledge(query='postgres initdb fresh volume') resolved against your store",
+            "thinking": "Retrieval wake. The caller drove this; the auto retrieve_context stage returns the matching entry to them. I make no write — emit the result, finish.",
             "actions": [
-                "query_knowledge(query='postgres initdb fresh volume')",
+                "# retrieve_context stage already returned the match to the caller",
                 "# emit response, then:",
                 "finish(notify=[])"
             ],
@@ -238,15 +240,19 @@ fit these three shapes.
 
 {% macro knowledge_task_prompt() %}
 <wake_dispatch>
-You just woke. The runtime delivered exactly one trigger to your inbox.
+You just woke. The runtime delivered exactly one trigger to your inbox and
+is driving the staged pipeline for this wake. The `retrieve_context` stage
+has already auto-fetched any relevant prior knowledge — you do not hand-call
+a lookup tool to populate it.
 
 1. Call `check_inbox(limit=20)` ONCE to read the trigger.
 2. Match the trigger to a row in your <wake_contract> table.
-3. Execute the ONE matching action (or skip per the table's last row).
+3. In the action stage, make the ONE matching write (store_knowledge /
+   refine / upsert / submit_*), or make no write per the table.
 4. Emit the structured response per your <output_contract>.
 5. Call `finish(notify=[])` to terminate the wake.
 
-Do not loop. Do not poll. Do not call `wait(...)`. After your one action,
+Do not loop. Do not poll. Do not call `wait(...)`. After your one write,
 the wake is finished — emit your response and call `finish(notify=[])`.
 
 The runtime sets `max_steps=2000` by default for task_ready agents; without
