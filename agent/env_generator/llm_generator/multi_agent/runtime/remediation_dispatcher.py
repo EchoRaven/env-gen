@@ -515,6 +515,14 @@ class RemediationDispatcher:
                 "verifier", "Cover every critical flow with a verification chain (blocks delivery)",
                 "fewer verification chains than declared critical flows — author one "
                 "business-flow chain per critical flow so each is covered, then re-run run_validation."),
+            "business_chain_isolation": (
+                "verifier", "Add a cross-user isolation/negative assertion (blocks delivery)",
+                "your chains are a pure 2xx happy-path sweep — that cannot tell a real, "
+                "tenancy-enforcing backend from one returning dummy 2xx. Add at least one "
+                "NEGATIVE step proving ownership/tenant isolation is ENFORCED: a SECOND user "
+                "(or an unauthenticated request) reading/modifying another user's resource MUST "
+                "be refused (expect 401/403). Author the isolation step, register the chain, "
+                "re-run run_validation."),
             "verification_checklist_not_ready": (
                 "verifier", "Record a green verification/build checklist (blocks delivery)",
                 "the build checklist is NOT all-green — it needs the CodeHub checks "

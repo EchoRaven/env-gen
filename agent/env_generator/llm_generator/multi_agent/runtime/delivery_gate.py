@@ -564,6 +564,43 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
                        + ("" if len(uncovered) <= 12 else f" (+{len(uncovered) - 12} more)")
                        + ". Add steps to existing chains or author a new chain to cover them."),
         }
+    # ISOLATION/INVARIANT requirement (#2, user 2026-06-25): coverage above proves every
+    # endpoint is HIT, but a pure 2xx happy-path sweep proves nothing about tenancy/ownership
+    # — a backend returning dummy 2xx for every route would clear it (V29: 11 dummy no-op
+    # routes shipped). Require >=1 NEGATIVE assertion: a step expecting a denial (401/403),
+    # i.e. an unauth or cross-user/cross-tenant access that MUST be refused. Routed to the
+    # verifier via _GATE_OWNER["business_chain_isolation"]. Env-gated (default-off) until the
+    # drive fix is validated end-to-end, then enable by default.
+    import os as _os
+    if _os.environ.get("ENVGEN_ISOLATION_GATE", "0").lower() in ("1", "true", "yes", "on"):
+        _denial = {401, 403}
+        _has_isolation = False
+        for _rec in authored:
+            for _st in (_rec.get("steps") or []):
+                _exp = _st.get("expect")
+                if isinstance(_exp, (list, tuple)):
+                    _codes = {int(x) for x in _exp if str(x).isdigit()}
+                elif str(_exp).strip().isdigit():
+                    _codes = {int(str(_exp).strip())}
+                else:
+                    _codes = set()
+                if _codes & _denial:
+                    _has_isolation = True
+                    break
+            if _has_isolation:
+                break
+        if not _has_isolation:
+            return {
+                "reason": "business_chain_isolation", "authored": len(authored),
+                "detail": ("verification chains are a pure 2xx happy-path sweep with NO "
+                           "negative/isolation assertion — that cannot distinguish a real, "
+                           "tenancy-enforcing backend from one returning dummy 2xx. Add at "
+                           "least one step proving ownership/tenant isolation is ENFORCED: a "
+                           "second user (or an unauthenticated request) attempting to read or "
+                           "modify another user's resource MUST be refused (expect 401/403). "
+                           "Author the cross-user isolation step, register it, re-run "
+                           "run_validation."),
+            }
     # NOTE: the per-flow chain-COUNT check was retired alongside the user_flow
     # migration (2026-06-22) — critical flows are now page-derived, so a count proxy
     # (chains >= flows) is no longer meaningful. The per-API coverage above is the
