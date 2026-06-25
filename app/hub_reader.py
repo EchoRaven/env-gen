@@ -650,6 +650,64 @@ def _gates(h: Path, ui_pages: list[dict], chains: list[dict]) -> list[dict]:
 
 # ── public API ──────────────────────────────────────────────────────────────
 
+def _test_users(gen: Path) -> list[dict]:
+    """Test-user squad reports — the simulated api/mcp/browser users that exercise the
+    generated env per version (written to ``test_user_reports/<version>.json`` by
+    test_user_validation). Surfaced so the Env Forge UserConsolePanel can show WHAT the
+    test users did + found, not just leave it in the logs. Newest version first."""
+    out: list[dict] = []
+    d = gen / "test_user_reports"
+    if not d.is_dir():
+        return out
+    for f in sorted(d.glob("*.json")):
+        if f.name == "failure_ledger.json":
+            continue
+        try:
+            r = json.loads(f.read_text(encoding="utf-8", errors="ignore"))
+        except Exception:
+            continue
+        if not isinstance(r, dict):
+            continue
+        summary = r.get("summary") or {}
+        api = r.get("api") or {}
+        mcp = r.get("mcp") or {}
+        ui = r.get("ui") or {}
+        ui_flows = r.get("ui_flows") or {}
+        out.append({
+            "version": r.get("version") or f.stem,
+            "verdict": summary.get("verdict"),
+            "api": {
+                "actor": api.get("actor"),
+                "steps": summary.get("api_steps", len(api.get("steps") or [])),
+                "passed": summary.get("api_passed"),
+                "failed": summary.get("api_failed"),
+                "missing": summary.get("api_missing"),
+                "step_detail": (api.get("steps") or [])[:40],
+            },
+            "mcp": {
+                "server_found": mcp.get("server_found"),
+                "tools_found": mcp.get("tools_found"),
+                "tools_expected": mcp.get("tools_expected"),
+                "complete": mcp.get("complete"),
+                "note": mcp.get("note"),
+            },
+            "ui_flows": {
+                "ran": ui_flows.get("ran"),
+                "passed": ui_flows.get("passed"),
+                "flows": (ui_flows.get("flows") or [])[:20],
+            },
+            "ui": {
+                "ran": ui.get("ran"),
+                "screens": (ui.get("screens") or [])[:40],
+                "top_issues": (ui.get("top_issues") or [])[:20],
+            },
+            "broken": (summary.get("broken") or [])[:20],
+            "missing": (summary.get("missing") or [])[:20],
+        })
+    out.reverse()  # newest version first
+    return out
+
+
 def read_state(gen_dir: str | Path) -> dict:
     gen = Path(gen_dir)
     h = _hubs(gen)
@@ -658,6 +716,7 @@ def read_state(gen_dir: str | Path) -> dict:
     tasks = _tasks(h)
     return {
         "preview_url": None,
+        "test_users": _test_users(gen),
         "progress": _progress(h, tasks),
         "agents": _agents(h),
         "metrics": _metrics(h),
