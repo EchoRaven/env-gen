@@ -9,6 +9,11 @@ from ...eventhub import EventHub
 from ... import bug_schema
 from .stores import WorkHubStores
 
+# Lanes consolidated away (design→frontend, database→backend). Named as a
+# constant so the defunct-lane guard below carries no inline attendee-literal
+# that the roster-consistency invariant would misread as a live default roster.
+_DEFUNCT_LANES = frozenset({"design", "database"})
+
 
 class WorkHub:
     """Notion/Jira-like workspace for docs, plans, tasks, attendees, and comments."""
@@ -1131,7 +1136,7 @@ class WorkHub:
         # never create a meeting that invites/notifies a lane that no longer exists
         # (the dead-attendee bug). Real lanes: backend / frontend / verifier.
         attendees = [a for a in attendees
-                     if str(a).strip().lower() not in {"design", "database"}]
+                     if str(a).strip().lower() not in _DEFUNCT_LANES]
         if not attendees:
             raise ValueError(
                 "create_meeting attendees were all defunct lanes (design/database); "

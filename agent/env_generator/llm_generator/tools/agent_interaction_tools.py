@@ -721,25 +721,48 @@ Args:
                 ),
             )
 
-        # GUARD 2 (independent deliverability gate, env-gated ENVGEN_DELIVER_GATE): the
-        # checklist above is SELF-ASSERTED by the LLM. Re-verify against the LIVE
-        # RegistryHub so an optimistic/premature checklist can't ship an incomplete
-        # contract. Default-off (byte-identical) until enabled; never blocks on an error.
+        # GUARD 2 (LIVE deliverability gate, DEFAULT-ON — 2026-07-01): the checklist above is
+        # SELF-ASSERTED by the LLM. On the FINAL milestone deliver_project ENDS the run — it
+        # sets ``_project_delivered_event`` and EXITS the coordination loop. A PREMATURE call
+        # (the milestone's backend/validation not yet converged) then FAILS the orchestrator's
+        # post-loop hard gate → ``RuntimeError("Delivery gate failed")`` → shutdown watchdog
+        # kills the run (run-18 delivered M1 then died at M4 exactly this way; run-20 delivered
+        # M1+M2+M3 then died at M4 the same way). Re-verify against the LIVE hubs and REJECT a
+        # premature deliver — returning a ToolResult(success=False) keeps the run CONVERGING the
+        # milestone (as the non-final milestones already do) instead of exiting into a failed
+        # gate. Checks the two things the post-loop gate catches from hubs alone: every business
+        # endpoint 'implemented', and business_chain green (missing/failing/coverage/isolation);
+        # a chain that never ran on an unvalidated milestone is 'failing', so this also catches
+        # "no successful run". Never blocks on an eval error; ENVGEN_DELIVER_GATE=0 disables.
         import os as _os
-        if _os.environ.get("ENVGEN_DELIVER_GATE") and self.agent is not None:
+        if (_os.environ.get("ENVGEN_DELIVER_GATE", "1").strip().lower()
+                not in ("0", "false", "no", "off")) and self.agent is not None:
             try:
                 _hubs = getattr(self.agent, "_hubs", None)
                 _rh = getattr(_hubs, "registryhub", None) if _hubs is not None else None
                 if _rh is not None and hasattr(_rh, "get_endpoints"):
                     from multi_agent.runtime.lifecycle import all_business_endpoints_implemented
+                    from multi_agent.runtime.delivery_gate import business_chain_blockers
+                    _blockers = []
                     if not all_business_endpoints_implemented(_rh.get_endpoints() or {}):
+                        _blockers.append("not every business endpoint is 'implemented'")
+                    try:
+                        _bc = business_chain_blockers(_hubs)
+                        if isinstance(_bc, dict) and _bc.get("reason"):
+                            _blockers.append(str(_bc["reason"]))
+                    except Exception:
+                        pass
+                    if _blockers:
                         return ToolResult(
                             success=False,
                             error_message=(
-                                "deliver_project blocked (ENVGEN_DELIVER_GATE): not every "
-                                "business endpoint is 'implemented' in RegistryHub. The "
-                                "checklist is self-asserted, but the live contract is not "
-                                "yet complete — finish implementation + validation first."
+                                "deliver_project BLOCKED — the checklist is self-asserted but "
+                                "the LIVE delivery gate is NOT clear: " + "; ".join(_blockers)
+                                + ". This is the FINAL milestone, so delivering now would exit "
+                                "the run straight into a failed post-loop gate (watchdog kill). "
+                                "Keep going: finish implementation and re-run run_validation until "
+                                "every endpoint is 'implemented' and business_chain is GREEN, THEN "
+                                "call deliver_project."
                             ),
                         )
             except Exception:

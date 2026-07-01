@@ -35,7 +35,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 _HTTP_METHODS = ("get", "post", "put", "delete", "patch")
 
@@ -531,9 +531,17 @@ def _me_user_model(models: Dict[str, Dict[str, Any]]):
     return None
 
 
-def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict[str, Any]], idx: int, response_key: str = "") -> str:
+def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict[str, Any]], idx: int, response_key: str = "", owner_scoped_reads: bool = False, owner_scoped_tables: Optional[Iterable[str]] = None) -> str:
     """Project a FastAPI handler. Functional for recognised CRUD + nested-resource
-    patterns over a resolvable model; valid-shape stub otherwise. Never 404s."""
+    patterns over a resolvable model; valid-shape stub otherwise. Never 404s.
+
+    ``owner_scoped_reads``: OPT-IN per-resource signal (default off). When set AND
+    the model has an owner FK AND the route is authenticated, the by-id GET, flat
+    collection GET, and search are scoped to ``owner_fk == user.id`` — mirroring
+    the PUT/DELETE write authz. This is how a per-user-PRIVATE resource (notes,
+    email, calendar, drafts) gets correct read isolation BY CONSTRUCTION, instead
+    of a remediation loop the lane can't win (projected wins for CRUD, fd56c2e).
+    Default off keeps the reference public-feed behaviour (anyone GETs any row)."""
     fn = "_projected_" + re.sub(r"[^a-zA-Z0-9]+", "_", f"{method}_{path}").strip("_").lower() + f"_{idx}"
     res = _resource_model(path, models)
     # No type annotations on the dependency params: a ``: User`` / ``: Session``
@@ -567,11 +575,21 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
     # Nested parent: /api/users/{username}/posts → parent users(User) via {username}.
     parent_ctx = _parent_context(path, models, table) if cls else None
     parent_cls = parent_table = parent_singular = parent_param = parent_field = None
+    # NESTED-RESOURCE ISOLATION: when the PARENT table is per-user-private (owner-scoped
+    # reads), a nested route (/api/projects/{id}/tasks) must owner-check the parent — else
+    # a user reaches another user's children via the nested path (smoke-proj: GET
+    # /api/projects/{otherId}/tasks → 200 leaked another user's tasks). The parent lookup
+    # then filters by its owner FK == user.id, so a non-owned parent resolves to None → 404.
+    _parent_owner_filter = ""
     if parent_ctx:
         parent_table, parent_meta, parent_param = parent_ctx
         parent_cls = parent_meta["cls"]
         parent_singular = parent_table.rstrip("s")
         parent_field = _lookup_field(parent_param, parent_meta)
+        if auth and owner_scoped_tables and parent_table in set(owner_scoped_tables):
+            _p_ofk = _owner_fk(parent_meta)
+            if _p_ofk:
+                _parent_owner_filter = f'.filter(getattr({parent_cls}, "{_p_ofk}") == user.id)'
 
     body_lines: List[str] = []
     m = method.upper()
@@ -585,7 +603,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
     if cls and m == "GET" and not _ends_in_param(path) and parent_ctx and scope_fk:
         # NESTED COLLECTION: resolve the parent, list the child scoped by its FK.
         body_lines = [
-            f'    parent = db.query({parent_cls}).filter(getattr({parent_cls}, "{parent_field}") == {parent_param}).first()',
+            f'    parent = db.query({parent_cls}).filter(getattr({parent_cls}, "{parent_field}") == {parent_param}){_parent_owner_filter}.first()',
             "    if parent is None:",
             '        raise HTTPException(status_code=404, detail="not found")',
             f'    rows = db.query({cls}).filter(getattr({cls}, "{scope_fk}") == parent.id).limit(100).all()',
@@ -597,6 +615,16 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             f"    obj = db.get({cls}, {last_param})",
             "    if obj is None:",
             '        raise HTTPException(status_code=404, detail="not found")',
+        ]
+        if owner_scoped_reads and owner_fk:
+            # PRIVATE resource: a non-owner read is a 404 (not 403 — don't even
+            # leak existence), exactly like the PUT/DELETE owner gate. Opt-in via
+            # the resource's owner_scoped_reads contract signal; open by default.
+            body_lines += [
+                f'    if getattr(obj, "{owner_fk}", None) != user.id:',
+                '        raise HTTPException(status_code=404, detail="not found")',
+            ]
+        body_lines += [
             f"    return {{\"item\": {_serialize_expr('obj', cols)}}}",
         ]
     elif (cls and m == "DELETE" and not _ends_in_param(path) and parent_ctx
@@ -614,7 +642,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         # (follower_id==user.id) — mirrors the create handler's bind.
         _sfk = _target_fk(meta, parent_table, parent_singular)
         body_lines = [
-            f'    parent = db.query({parent_cls}).filter(getattr({parent_cls}, "{parent_field}") == {parent_param}).first()',
+            f'    parent = db.query({parent_cls}).filter(getattr({parent_cls}, "{parent_field}") == {parent_param}){_parent_owner_filter}.first()',
             "    if parent is None:",
             '        raise HTTPException(status_code=404, detail="not found")',
             f'    _q = db.query({cls}).filter(getattr({cls}, "{_sfk}") == parent.id)',
@@ -690,10 +718,20 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         body_lines = [
             "    term = (q or \"\").strip()",
             f"    query = db.query({cls})",
+        ]
+        if owner_scoped_reads and owner_fk:
+            body_lines.append(
+                f'    query = query.filter(getattr({cls}, "{owner_fk}") == user.id)')
+        body_lines += [
             "    if term:",
             f"        cols_to_search = [c for c in {_search_cols!r} if hasattr({cls}, c)]",
-            "        from sqlalchemy import or_ as _or",
-            f"        conds = [getattr({cls}, c).ilike(f\"%{{term}}%\") for c in cols_to_search]",
+            "        from sqlalchemy import or_ as _or, String as _Str, Text as _Txt",
+            # ``ilike`` is only valid on a STRING/TEXT column. When the type map was
+            # unavailable the projector falls back to ALL columns, so a runtime type
+            # guard is REQUIRED — calling ``.ilike`` on an Integer/Boolean/DateTime
+            # column raises (outlook GET /api/messages/search → 500). Skip non-text cols.
+            f"        conds = [getattr({cls}, c).ilike(f\"%{{term}}%\") for c in cols_to_search"
+            f" if isinstance(getattr(getattr({cls}, c), 'type', None), (_Str, _Txt))]",
             "        if conds:",
             "            query = query.filter(_or(*conds))",
             "    rows = query.limit(50).all()",
@@ -727,16 +765,34 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             body_lines = ['    return {"item": {}}']
     elif cls and m == "GET":
         # GET collection
-        body_lines = [
-            f"    rows = db.query({cls}).limit(100).all()",
-            f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": len(rows)}}",
-        ]
+        if owner_scoped_reads and owner_fk:
+            # PRIVATE resource: the list is the caller's own rows only.
+            body_lines = [
+                f'    rows = db.query({cls}).filter(getattr({cls}, "{owner_fk}") == user.id).limit(100).all()',
+                f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": len(rows)}}",
+            ]
+        else:
+            body_lines = [
+                f"    rows = db.query({cls}).limit(100).all()",
+                f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": len(rows)}}",
+            ]
     elif cls and m in ("POST", "PUT", "PATCH"):
         # DB mutations are wrapped: a relational create the projector can't fully
         # wire (e.g. a missing NOT-NULL FK) must not 500 — roll back + answer.
         body_lines = [
             "    payload = body if isinstance(body, dict) else {}",
             f"    valid = {{k: v for k, v in payload.items() if hasattr({cls}, k)}}",
+            # DROP unresolved verification-chain placeholders ("${calendar_id}" / "{calendar_id}")
+            # before constructing the ORM row. A chain that cannot bind an FK var — e.g. the app
+            # exposes no POST for the parent resource (outlook: GET /api/calendars but no POST), so
+            # ${calendar_id} never resolves — otherwise sends the LITERAL token, which the projected
+            # insert passes to the typed column → psycopg InvalidTextRepresentation ("invalid input
+            # syntax for type integer: \"${calendar_id}\"") → 500 that wedges business_chain (run-14).
+            # Skipping it lets a NULLABLE FK stay null and the create succeed (a required FK still
+            # errors honestly). Whole-value tokens only, so real data (e.g. a JSON string) is kept.
+            "    valid = {k: v for k, v in valid.items() if not ("
+            "isinstance(v, str) and v.endswith(\"}\") and (v.startswith(\"${\") or "
+            "(v.startswith(\"{\") and v[1:-1].isidentifier())))}",
         ]
         if m in ("PUT", "PATCH") and path.endswith("/me"):
             # mirror GET /me: resolve the user model DYNAMICALLY. Hardcoding `User`
@@ -780,7 +836,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 tfk = _target_fk(meta, parent_table, parent_singular)
                 if tfk:
                     body_lines += [
-                        f'    _parent = db.query({parent_cls}).filter(getattr({parent_cls}, "{parent_field}") == {parent_param}).first()',
+                        f'    _parent = db.query({parent_cls}).filter(getattr({parent_cls}, "{parent_field}") == {parent_param}){_parent_owner_filter}.first()',
                         "    if _parent is not None:",
                         f'        valid["{tfk}"] = _parent.id',
                     ]
@@ -887,15 +943,30 @@ def _insert_before_main_guard(src: str, block: str) -> str:
     return src[:idx].rstrip() + "\n\n\n" + block + "\n\n\n" + src[idx:]
 
 
+def _truthy(v: Any) -> bool:
+    """Tolerant truthiness for a contract flag that may arrive as a real bool, a
+    JSON string ("true"/"1"/"yes"), or already-coerced — the hub round-trips
+    metadata through JSON and lane/LLM writers are inconsistent."""
+    if isinstance(v, str):
+        return v.strip().lower() in {"true", "1", "yes", "y", "on"}
+    return bool(v)
+
+
 def project_missing_routes(
     backend_dir: Any,
     declared_endpoints: List[Mapping[str, Any]],
+    owner_scoped_tables: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
     """Append a projected handler to ``main.py`` for every declared business
     endpoint that has no route. Returns ``{"projected": [...], "already": int}``.
 
     ``declared_endpoints``: ``[{method, path, auth_required?}]`` — the contract the
-    lanes were supposed to implement (RegistryHub business endpoints)."""
+    lanes were supposed to implement (RegistryHub business endpoints).
+
+    ``owner_scoped_tables``: table names the CONTRACT marked per-user-private
+    (``owner_scoped_reads`` in the table metadata). Their reads are owner-scoped
+    by construction. This is the RELIABLE source — one decision per table at
+    kickoff — and is unioned with any per-endpoint ``owner_scoped_reads`` flag."""
     backend_dir = Path(backend_dir)
     main_py = backend_dir / "main.py"
     if not main_py.exists():
@@ -903,6 +974,20 @@ def project_missing_routes(
     src = main_py.read_text(encoding="utf-8")
     existing = _existing_routes(src)
     models = _orm_models(backend_dir)
+
+    # Per-RESOURCE read-visibility: a resource is read-isolated if ANY of its
+    # declared endpoints carries the owner_scoped_reads signal (the contract may
+    # mark only the collection or only the item — apply it to EVERY read of the
+    # resource). Empty ⇒ all reads open (public-feed reference behaviour, default).
+    scoped_read_tables: set = set(owner_scoped_tables or ())
+    for ep in declared_endpoints:
+        md = ep.get("metadata") if isinstance(ep.get("metadata"), Mapping) else {}
+        _sch = ep.get("schema") if isinstance(ep.get("schema"), Mapping) else {}
+        if (_truthy(ep.get("owner_scoped_reads")) or _truthy(md.get("owner_scoped_reads"))
+                or _truthy(_sch.get("owner_scoped_reads"))):
+            rm = _resource_model(_express_to_fastapi(str(ep.get("path", ""))), models)
+            if rm:
+                scoped_read_tables.add(rm[0])
 
     projected: List[str] = []
     block_info: List[Tuple[str, str]] = []  # (path, handler source)
@@ -930,7 +1015,9 @@ def project_missing_routes(
             or meta.get("response_key")
             or ""
         ).strip()
-        block_info.append((path, _generate_handler(method, path, auth, models, i, response_key)))
+        _rm_cur = _resource_model(path, models)
+        _owner_scoped = bool(_rm_cur and _rm_cur[0] in scoped_read_tables)
+        block_info.append((path, _generate_handler(method, path, auth, models, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables)))
         projected.append(f"{method} {path}")
         existing.add((method, _norm_path(path)))  # dedupe within this batch
 

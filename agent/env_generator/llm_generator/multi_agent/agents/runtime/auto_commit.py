@@ -248,8 +248,14 @@ _BACKEND_FRAMEWORK_OWNED = frozenset({
     "main.py", "models.py", "database.py", "auth_dependency.py", "schemas.py",
     "pyproject.toml", "Dockerfile", "reset.sh",
     "oauth_routes.py", "oauth_store.py", "jwt_manager.py",
+    # seed_data.py is the framework-owned LOADER (reads the lane-owned seed_data.json,
+    # hashes passwords, backfills owners). The DATA file seed_data.json is lane-owned
+    # (authored by the backend agent) and is intentionally NOT listed here.
+    "seed_data.py",
 })
-_BACKEND_LANE_OWNED = frozenset({"custom_routes.py"})
+# custom_routes.py = non-standard business logic; seed_data.json = the demo DATA the
+# backend agent authors (the framework's seed_data.py loader consumes it).
+_BACKEND_LANE_OWNED = frozenset({"custom_routes.py", "seed_data.json"})
 # PROPOSAL #23 — the frontend lane AUTHORS App.jsx (the framework only ADDITIVELY
 # injects declared routes into it via #19 project_missing_ui_routes, which re-runs
 # every heal tick + at release), so App.jsx resolves to the LANE; the framework owns

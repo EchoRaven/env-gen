@@ -127,6 +127,32 @@ class JWTManager:
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
 
+    def verify_access_token(self, token: str) -> Dict[str, Any]:
+        """Decode + verify an RS256 access token against this signer's PUBLIC key and
+        return its claims (``sub`` = user id). Raises on an invalid/expired token.
+
+        The canonical verifier is ``auth_dependency.get_current_user``, but lanes
+        routinely hand-write a custom-route auth helper that calls
+        ``jwt_manager.verify_access_token`` / ``verify_token`` — methods that did NOT
+        exist on this manager, so EVERY such custom (non-CRUD action) endpoint 401'd
+        with "Invalid authentication token" (outlook M2 reply/rsvp/search). Provide them
+        here so a lane's invented auth verifies against the SAME key + algorithm the AS
+        signs with, instead of dead-ending the whole milestone's business_chain."""
+        return jwt.decode(
+            token, self.public_pem, algorithms=[ALGORITHM],
+            options={"verify_aud": False},
+        )
+
+    # Aliases lanes invent for the same verify-and-decode operation.
+    def verify_token(self, token: str) -> Dict[str, Any]:
+        return self.verify_access_token(token)
+
+    def decode_token(self, token: str) -> Dict[str, Any]:
+        return self.verify_access_token(token)
+
+    def decode_access_token(self, token: str) -> Dict[str, Any]:
+        return self.verify_access_token(token)
+
     def jwks(self) -> Dict[str, Any]:
         numbers = self._public_key.public_numbers()
         return {

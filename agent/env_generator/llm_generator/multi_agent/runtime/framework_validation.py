@@ -47,6 +47,16 @@ def snapshot_passing_chains(orch: Any) -> None:
         orch._fwval_green_high_water = (
             getattr(orch, "_fwval_green_high_water", None) or set()
         ) | {"business_chain"}
+        # FREEZE-ON-GREEN (2026-07-01): business_chain is green → record the contract it's
+        # green FOR on the RegistryHub, so register_verification_chain refuses to RE-AUTHOR an
+        # existing (passing) chain into a broken one while the contract is unchanged. This
+        # stops the verifier re-break ↔ regression-guard-restore OSCILLATION that wedged
+        # delivery for 75min (run-25) at the SOURCE (the restore only reverts after the fact).
+        # A CHANGED contract (next milestone) has a different eps set → auto-unfrozen.
+        try:
+            rh._chains_frozen_eps = set(orch._chains_snapshot_endpoints)
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -152,7 +162,7 @@ class FrameworkValidation:
             from .lifecycle import all_business_endpoints_implemented
             from ..orchestrator import (
                 _fwval_should_attempt, _fwval_failure_set, _fwval_stuck_decision,
-                FWVAL_FAST_CAP)
+                _fwval_can_early_return, FWVAL_FAST_CAP)
             registryhub = getattr(orch.hubs, "registryhub", None)
             if registryhub is None:
                 return
@@ -291,11 +301,57 @@ class FrameworkValidation:
                         "(contract complete, no chains registered yet).")
             except Exception as _cae:
                 orch._logger.debug("chain-authoring proactive trigger skipped: %s", _cae)
+            # SEED-AUTHORING proactive nudge (same shape as the chain trigger): the backend
+            # agent OWNS app/backend/seed_data.json (realistic demo data), but the prompt alone
+            # is a weak forcing function — it may never author it (→ bland embedded _SEED
+            # fallback) or leave the framework PLACEHOLDER titles (outlook seed1/seed2,
+            # 2026-06-29). Past the impl gate above, if the agent's seed is ABSENT or
+            # PLACEHOLDER, wake the backend lane with a concrete task. SOFT (the fallback keeps
+            # the app functional → never a hard delivery block) + wall-clock-deduped so it never
+            # storms; self-terminating once the seed is realistic. Domain-agnostic.
+            try:
+                from .backend_skeleton import audit_agent_seed
+                from pathlib import Path as _Path
+                _be = _Path(getattr(orch, "output_dir", "") or ".") / "app" / "backend"
+                _sa = audit_agent_seed(_be)
+                _last_st = getattr(orch, "_seed_authoring_trigger_ts", 0.0)
+                if _sa.get("issues") and (time.time() - _last_st) > 120.0:
+                    orch._seed_authoring_trigger_ts = time.time()
+                    from tools.communication_tools import _create_message
+                    _smsg = _create_message(
+                        source_agent_id="orchestrator", target_agent_id="backend",
+                        content=("SEED DATA needs work — " + " ".join(_sa["issues"]) +
+                                 " Author app/backend/seed_data.json with realistic, FK-valid, "
+                                 "domain-specific rows per your SEED DATA instructions (real "
+                                 "email subjects/names/descriptions, owners set, derived counts "
+                                 "matching). The framework loader reads it + backfills owners/"
+                                 "images, so a populated, real-looking preview ships instead of "
+                                 "the bland default."),
+                        msg_type="task_ready", priority="high", persist=True,
+                        tags=["seed_data", "author_proactive"],
+                    )
+                    _smsg.metadata["validation_phase"] = True
+                    await orch.message_bus.send(_smsg)
+                    orch._logger.info(
+                        "SEED-AUTHORING nudge sent to backend (%s).",
+                        "absent" if not _sa.get("authored") else
+                        f"placeholder:{_sa.get('placeholder_tables')}")
+            except Exception as _sae:
+                orch._logger.debug("seed-authoring nudge skipped: %s", _sae)
             session_ts = getattr(orch, "_session_start_ts", 0.0) or 0.0
             runhub = getattr(orch.hubs, "runhub", None)
             if runhub is not None and hasattr(runhub, "last_successful_run_since"):
-                if runhub.last_successful_run_since(session_ts):
-                    return  # already have a gate-passing run
+                # A gate-passing api_smoke run lets us stop — UNLESS the delivery gate is
+                # STILL blocked on business_chain_failing (the verifier registered chains but
+                # its own run failed, e.g. a stale worktree missing the framework Dockerfile).
+                # In that case fall through to RE-RUN validation so the FRAMEWORK validates the
+                # chains from the integration tree — decoupling milestone advance from the
+                # flaky/idle verifier (outlook-seed1, 2026-06-29). _fwdeliver_last_failed is the
+                # delivery gate's failed-check set, cached by _maybe_framework_deliver each tick.
+                if _fwval_can_early_return(
+                        bool(runhub.last_successful_run_since(session_ts)),
+                        getattr(orch, "_fwdeliver_last_failed", None)):
+                    return  # gate-passing run AND business_chain not blocking → done
             # FIX #31: reset the attempt cap on real progress. The 6-attempt
             # cap (anti-docker-churn) was exhausting in a ~5-min window WHILE the
             # app was still implementing/merging (instagram-core: all 6 attempts

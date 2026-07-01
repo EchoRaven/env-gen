@@ -147,6 +147,13 @@ FWVAL_STUCK_ABORT_AFTER = max(3, int(os.environ.get("ENVGEN_DELIVERY_STUCK_ABORT
 #   of limping to the wall-clock cap (PROPOSAL #5). ~1 slow-retry interval past the cap (~11 min)
 #   vs the 2h budget. Paced by the post-cap slow interval, not the 60s tick — tune against
 #   FWVAL_SLOW_INTERVAL_S, not the tick.
+# ABORT-GRACE (smoke-notes exp11): the delivery stuck-abort latches at the deliver-check
+# but is CONSUMED at the run-loop top of the NEXT iteration — so an in-flight remediation
+# that lands BETWEEN (e.g. the verifier registers a chain that just needs one run_validation)
+# is killed before it can run. Defer a latched deliver-stuck abort for up to this many cycles
+# WHEN forward progress (source/contract/chain change) occurred since the latch. Capped so a
+# genuinely wedged run still fails fast; FWVAL_NO_DELIVER_ABORT_S bounds the total regardless.
+FWVAL_ABORT_GRACE_MAX = max(0, int(os.environ.get("ENVGEN_DELIVERY_ABORT_GRACE_MAX") or "3"))
 VISUAL_DEFERRAL_ESCAPE_S = 900   # max wall-clock a milestone may defer on visuals
 VISUAL_TOTAL_JUDGMENTS_CAP = 10  # per-milestone hard cap on real visual judgments
 
@@ -202,6 +209,51 @@ def _fwval_stuck_decision(stuck_count: int, *,
     if stuck_count >= redispatch_after:
         return "redispatch"
     return "wait"
+
+
+def _fwval_can_early_return(has_passing_run: bool, failed_checks) -> bool:
+    """May ``_maybe_run_framework_validation`` EARLY-RETURN (a gate-passing api_smoke run
+    already exists, nothing left for it to do)?
+
+    Yes ONLY when a passing api_smoke RunHub run exists AND the delivery gate is NOT still
+    blocked on ``business_chain_failing``. The business_chain exception keeps the framework
+    validation RE-RUNNING after api_smoke passes: the verifier registers verification chains
+    but its OWN run_validation can fail for a reason the framework can fix by re-running from
+    the integration tree — e.g. the verifier validated in a worktree that lacked the
+    framework-delivered Dockerfile (outlook-seed1, 2026-06-29: app green via the framework's
+    own api_smoke, yet business_chain_failing wedged the milestone because the idle verifier
+    never retried). Re-running RunValidationTool validates the chains from the integration
+    tree (which always has the Dockerfile), decoupling milestone advance from the flaky/idle
+    verifier. Other post-api_smoke blockers (e.g. ``ui_page_unwired``) are NOT fixable by
+    re-validation, so they do NOT keep the loop running here. Pure + unit-tested."""
+    if not has_passing_run:
+        return False
+    return "business_chain_failing" not in set(failed_checks or [])
+
+
+def _abort_grace_should_defer(is_deliver_stuck: bool, grace_used: int,
+                              sig_at_latch, sig_now,
+                              grace_max: int = FWVAL_ABORT_GRACE_MAX) -> bool:
+    """Should a LATCHED delivery stuck-abort be DEFERRED one coordination cycle?
+
+    The delivery stuck-abort latches inside the deliver-check but is consumed at the
+    run-loop top of the NEXT iteration — so an in-flight remediation that lands in the
+    gap (most importantly: the verifier (re-)registers a verification chain that only
+    needs one ``run_validation`` to go green) is killed before it can run. Defer iff:
+      * the abort came from the DELIVERY stuck-ladder (NOT framework-validation / Site A —
+        those are a separate, already-terminal path that must not be touched here),
+      * forward PROGRESS happened since the abort latched (``sig_now != sig_at_latch`` —
+        the signature is app-source + contract + verification-chain versions, so it moves
+        only when a lane edited code or (re-)registered a contract/chain), and
+      * the grace cap is not yet exhausted (a genuinely wedged run still fails fast; the
+        NO_DELIVER time backstop bounds it regardless).
+    Keyed on the STABLE progress signature, NEVER the counter-bearing reason string (which
+    increments every cycle and would defer forever → livelock). Pure + side-effect-free."""
+    if not is_deliver_stuck or grace_used >= grace_max:
+        return False
+    if sig_at_latch is None or sig_now is None:
+        return False
+    return sig_now != sig_at_latch
 
 
 def _visual_release_decision(deferred_since, attempts: int, total_judgments: int,
@@ -1031,6 +1083,14 @@ class Orchestrator:
                         self._fwval_failure_set = None
                         self._fwval_stuck_count = 0
                         self._fwval_stuck_blocker = None
+                        # deliver-stuck + abort-grace state is per-milestone too: a fresh
+                        # milestone's stall is independently eligible for the grace.
+                        self._fwdeliver_stuck_count = 0
+                        self._fwdeliver_stuck_key = None
+                        self._fwdeliver_first_decline_ts = 0.0
+                        self._fwval_abort_grace_used = 0
+                        self._fwval_abort_deliver_reason = None
+                        self._fwval_abort_progress_sig = None
                         self._silent_lane_nudges = {}
                         try:
                             _orch_lane = self._agents.get("orchestrator")
@@ -1408,13 +1468,54 @@ class Orchestrator:
                         # post-loop raise surfaces the real root instead of "raise the budget".
                         _abort = getattr(self, "_fwval_abort_reason", None)
                         if _abort and not getattr(self, "_project_delivered", False):
-                            stuck_abort_reason = _abort
-                            self._logger.error(
-                                "FAIL-FAST: aborting the run early — %s", _abort)
-                            self._write_run_budget(
-                                caps, loop_start, time.time() - loop_start, tick_count,
-                                "stuck_abort")
-                            break
+                            # ABORT-GRACE (smoke-notes exp11): a DELIVER-stuck abort latches
+                            # at the deliver-check but is consumed HERE the next iteration —
+                            # so an in-flight remediation that landed in the gap (most often:
+                            # the verifier just (re-)registered a verification chain that only
+                            # needs one run_validation to pass) gets killed before it can run.
+                            # If forward progress (source/contract/chain change) happened SINCE
+                            # the abort latched, defer one cycle so it can run. Keyed on the
+                            # stable progress signature, capped (FWVAL_ABORT_GRACE_MAX) so a
+                            # genuine wedge still fails fast; only the deliver-stuck reason
+                            # (identity-matched below) is eligible — Site A / no-converge
+                            # aborts have a different reason string → never deferred.
+                            # IS this the DELIVER-stuck abort (vs a framework-validation /
+                            # Site A or no-converge abort)? Tie it to the EXACT reason the
+                            # deliver-stuck latch stored — NOT a separate boolean that can go
+                            # stale if Site A overwrites _fwval_abort_reason while the flag
+                            # lingers True (review wjakad12l). Identity-match is staleness-proof:
+                            # a Site A / no-converge reason never equals the stored deliver one.
+                            _is_deliver_stuck = (
+                                _abort is not None
+                                and _abort == getattr(self, "_fwval_abort_deliver_reason", None))
+                            if _abort_grace_should_defer(
+                                    _is_deliver_stuck,
+                                    getattr(self, "_fwval_abort_grace_used", 0),
+                                    getattr(self, "_fwval_abort_progress_sig", None),
+                                    self._deliver_progress_sig()):
+                                self._fwval_abort_grace_used = getattr(
+                                    self, "_fwval_abort_grace_used", 0) + 1
+                                self._logger.warning(
+                                    "ABORT-GRACE (%d/%d): forward progress since the "
+                                    "delivery stuck-abort latched (a contract/chain change is "
+                                    "landing) — deferring fail-fast one cycle so the in-flight "
+                                    "remediation can run_validation.",
+                                    self._fwval_abort_grace_used, FWVAL_ABORT_GRACE_MAX)
+                                self._fwval_abort_reason = None
+                                self._fwval_abort_deliver_reason = None
+                                # Reset the deliver-stuck ladder so the deferred remediation
+                                # gets a FULL window (not an immediate re-latch+thrash that
+                                # burns the grace cap in 1-2 cycles — review wjakad12l).
+                                self._fwdeliver_stuck_count = 0
+                                self._fwdeliver_stuck_key = None
+                            else:
+                                stuck_abort_reason = _abort
+                                self._logger.error(
+                                    "FAIL-FAST: aborting the run early — %s", _abort)
+                                self._write_run_budget(
+                                    caps, loop_start, time.time() - loop_start, tick_count,
+                                    "stuck_abort")
+                                break
                         # Deterministic delivery: the orchestrator LLM drifts — it
                         # checks deliverability repeatedly without ever firing
                         # deliver_project (smoke #19: 30x deliverability_check, 0
@@ -1949,6 +2050,25 @@ class Orchestrator:
         except Exception:
             return None
 
+    def _deliver_progress_sig(self):
+        """The forward-PROGRESS signature the delivery stuck-abort keys on: app source
+        content + contract (endpoint/table) versions + verification-chain registry version.
+        It moves ONLY when a lane edits code or (re-)registers a contract/chain — i.e. real
+        progress. Used both to detect a stuck (unchanged across cycles) AND to grant the
+        abort-grace (changed since the abort latched → an in-flight remediation is landing).
+        None on error (caller treats as 'no progress signal')."""
+        try:
+            rh = getattr(getattr(self, "hubs", None), "registryhub", None)
+            _vc = getattr(rh, "_verification_chains", None) if rh is not None else None
+            return (
+                self._compute_app_source_signature(),
+                tuple(sorted((rh.get_versions() or {}).items()))
+                if (rh is not None and hasattr(rh, "get_versions")) else None,
+                _vc.get_version() if (_vc is not None and hasattr(_vc, "get_version")) else 0,
+            )
+        except Exception:
+            return None
+
     def _scaffold_design_readme(self) -> None:
         self._scaffolder.scaffold_design_readme()
 
@@ -1984,9 +2104,11 @@ class Orchestrator:
     # _project_missing_pages REMOVED (user decision 2026-06-11): the framework
     # no longer authors UI content — gates + lane feedback replace projection.
 
-    def _run_test_user_validation(self, version: str) -> None:
+    def _run_test_user_validation(self, version: str) -> "dict | None":
         from .runtime.heal_pipeline import HealPipeline
-        HealPipeline(self).run_test_user_validation(version)
+        # Returns the browser test-user report (auth_ok/blank_pages/…) so the delivery
+        # flow can use it as a PRE-RELEASE gate; None when it could not run.
+        return HealPipeline(self).run_test_user_validation(version)
 
     def _scaffold_frontend_baseline(self) -> None:
         self._scaffolder.scaffold_frontend_baseline()
@@ -2064,16 +2186,7 @@ class Orchestrator:
                 # contract/chain — so an actively-progressing run NEVER trips it. After
                 # FWVAL_STUCK_ABORT_AFTER such cycles, set the run loop's FAIL-FAST signal
                 # (_fwval_abort_reason, consumed at run()-loop) so a genuine wedge fails fast.
-                try:
-                    _vc = getattr(registryhub, "_verification_chains", None)
-                    _progress = (
-                        self._compute_app_source_signature(),
-                        tuple(sorted((registryhub.get_versions() or {}).items()))
-                        if hasattr(registryhub, "get_versions") else None,
-                        _vc.get_version() if (_vc is not None and hasattr(_vc, "get_version")) else 0,
-                    )
-                except Exception:
-                    _progress = None
+                _progress = self._deliver_progress_sig()
                 _stuck_key = (tuple(_failed), _progress)
                 if _progress is not None and _stuck_key == getattr(self, "_fwdeliver_stuck_key", None):
                     self._fwdeliver_stuck_count = getattr(self, "_fwdeliver_stuck_count", 0) + 1
@@ -2087,6 +2200,16 @@ class Orchestrator:
                         "consecutive cycles with NO source/contract/chain change after "
                         "api_smoke passed — no lane is making progress; failing fast instead "
                         "of spinning to wall-clock.")
+                    # ABORT-GRACE bookkeeping: tag this as a DELIVER-stuck abort (so the
+                    # run-loop consumption can distinguish it from a framework-validation /
+                    # Site A abort) and STAMP the progress signature at latch time, so a
+                    # remediation landing before consumption (e.g. a just-registered chain)
+                    # is detected as progress and granted one cycle to run_validation.
+                    # The deliver-reason IDENTITY (not a stale boolean) is what the consume
+                    # site grace-gates on, so a later Site A / no-converge abort that
+                    # overwrites _fwval_abort_reason is never wrongly deferred.
+                    self._fwval_abort_deliver_reason = self._fwval_abort_reason
+                    self._fwval_abort_progress_sig = _progress
                     self._logger.error("DELIVERY-GATE STUCK-ABORT: %s", self._fwval_abort_reason)
                 # CONVERGENCE backstop (run v18): the exact-stuck check above resets on ANY
                 # churn, so an ACTIVE-but-oscillating run (gates cycle, agents keep editing,
@@ -2170,9 +2293,12 @@ class Orchestrator:
             # re-dispatch the frontend lane to BUILD the fallback pages (it now views
             # the references + has write in edit_code). Bounded: <=3 attempts / 900s
             # anchored to the FIRST defer, then ESCAPE and ship the (usable light-list)
-            # fallback — never deadlocks (mirrors the visual deferral). DEFAULT-OFF
-            # until validated; enable via ENVGEN_PAGES_BLOCKING=1.
-            if (os.environ.get("ENVGEN_PAGES_BLOCKING", "0").lower()
+            # fallback — bounded for non-referenced pages (mirrors the visual deferral), but
+            # a REFERENCE-depicted page never escapes (pages_release_decision) per the user
+            # requirement that every page resemble the real design. DEFAULT-ON now (the
+            # pipeline delivers multi-milestone e2e — seed3); set ENVGEN_PAGES_BLOCKING=0 to
+            # disable (e.g. a no-reference env where the card fallback is acceptable).
+            if (os.environ.get("ENVGEN_PAGES_BLOCKING", "1").lower()
                     in ("1", "true", "yes", "on")
                     and getattr(self, "_is_final_milestone", True)):
                 _unbuilt: List[str] = []
@@ -2327,6 +2453,68 @@ class Orchestrator:
                         "delivering with possibly-open test-user defects.",
                         int(_now - self._tu_squad_deferred_since),
                         getattr(self, "_tu_squad_attempts", 0))
+            # DETERMINISTIC BROWSER TEST-USER GATE (2026-06-30): a reliable, objective
+            # complement to the LLM squad above. Drive a real browser through the RUNNING app
+            # (booted by api_smoke) and HOLD the release when the app is objectively UNUSABLE:
+            # login broken (auth_ok False), protected pages rendering BLANK, or bounced to a
+            # login wall (auth_redirect/hollow). These are deterministic signals the advisory
+            # post-release walk already computes; here they GATE the cut so a non-functional UI
+            # never ships as "delivered" (the user's "test-user反馈问题 / 没有 mock frontend"
+            # bar). Blocks ONLY on the objective unusable-app subset — visual mismatches and
+            # console errors stay ADVISORY (still dispatched as P0 inside the walk, never
+            # block). Mirrors the bounded-deferral pattern (defer→re-test→escape) so it can
+            # NEVER deadlock: after the attempt cap / wall-clock anchored to the first defer,
+            # deliver anyway, loudly. Env-gated (default-ON — the escape makes on-by-default
+            # deadlock-proof; set ENVGEN_TESTUSER_BROWSER_GATE=0 to disable). Skips cleanly
+            # (never blocks) if the walk could not run — app unreachable / Playwright absent /
+            # a one-off flake auto-clears on the next cycle's re-test.
+            if (os.environ.get("ENVGEN_TESTUSER_BROWSER_GATE", "1").strip().lower()
+                    not in ("0", "false", "no", "off")):
+                _bg_report = None
+                try:
+                    import asyncio as _bg_asyncio
+                    _bg_report = await _bg_asyncio.to_thread(
+                        self._run_test_user_validation,
+                        getattr(self, "_current_milestone_version", "1.0.0"))
+                except Exception as _bg_exc:
+                    self._logger.debug("pre-release browser test-user gate skipped: %s", _bg_exc)
+                # Block ONLY when the walk actually RAN and found an objective unusable-app
+                # signal ("a real user cannot use this app"). A None/could-not-run report
+                # falls through (infra never blocks delivery). Pure predicate — unit-tested.
+                from .runtime.test_user_runner import browser_report_unusable
+                _bg_unusable = browser_report_unusable(_bg_report)
+                if _bg_unusable:
+                    # Bounded deferral (same escape as the squad/visual gates — a generic
+                    # attempt-cap + wall-clock decision, never deadlocks): keep deferring
+                    # while the fix lands, then escape and ship loudly.
+                    from .runtime.test_user_squad import squad_release_decision
+                    _bg_now = time.time()
+                    if getattr(self, "_tu_browser_deferred_since", None) is None:
+                        self._tu_browser_deferred_since = _bg_now
+                    _bg_decision = squad_release_decision(
+                        self._tu_browser_deferred_since,
+                        getattr(self, "_tu_browser_attempts", 0), _bg_now)
+                    self._tu_browser_attempts = getattr(self, "_tu_browser_attempts", 0) + 1
+                    if _bg_decision == "defer":
+                        self._logger.warning(
+                            "DELIVERY DEFERRED: browser test-user found the app UNUSABLE "
+                            "(auth_ok=%s blank=%s login_wall=%s hollow=%s) — P0 dispatched to "
+                            "the frontend; re-testing after the fix lands (attempt %s, %ss "
+                            "deferred). Set ENVGEN_TESTUSER_BROWSER_GATE=0 to disable.",
+                            _bg_report.get("auth_ok"), _bg_report.get("blank_pages"),
+                            _bg_report.get("auth_redirect_pages"), _bg_report.get("hollow_frontend"),
+                            self._tu_browser_attempts,
+                            int(_bg_now - self._tu_browser_deferred_since))
+                        return  # hold this milestone's release until the UI is usable
+                    self._logger.warning(
+                        "Browser test-user gate RELEASED (escape after %ss deferred / %s "
+                        "attempts) — delivering with a possibly-unusable UI, loudly.",
+                        int(_bg_now - self._tu_browser_deferred_since), self._tu_browser_attempts)
+                elif isinstance(_bg_report, dict) and _bg_report.get("ran"):
+                    # Walk ran and the app is USABLE → clear the per-episode deferral budget
+                    # so a later milestone starts with a fresh attempt/wall-clock allowance.
+                    self._tu_browser_deferred_since = None
+                    self._tu_browser_attempts = 0
             # Flush any committed-but-unmerged lane work into integration BEFORE
             # snapshotting the release. Observed (instagram MM, 2026-06-08): the
             # backend committed the final milestone's routes to agent/backend 11s

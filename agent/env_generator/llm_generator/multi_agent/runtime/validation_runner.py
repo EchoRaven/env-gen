@@ -263,22 +263,26 @@ def run_smoke_validation(
     _fe_ok, _fe_detail = _frontend_navigable(project_dir)
     _add("frontend_navigable", _fe_ok, _fe_detail)
 
-    # VISIBILITY (informational, never fails): how much of the UI is framework
-    # FALLBACK vs lane-authored. Fallback pages keep the app whole, but they
-    # must not silently masquerade as lane work — releases report the gap.
+    # VISIBILITY (informational): how much of the UI is framework FALLBACK vs lane-authored.
+    # The HARD enforcement of "a page the references DEPICT must ship REAL, not the fallback"
+    # lives in the reference-aware page_build_gate (pages_release_decision: referenced-unbuilt
+    # never escapes), so this check stays informational to avoid double-gating a page that
+    # legitimately has no reference to match (its fallback is acceptable).
     try:
         from .frontend_page_projector import _PAGE_MARKER
         _pages_dir = project_dir / "app" / "frontend" / "src" / "pages"
         _total = _fallback = 0
+        _fb_names = []
         for _pf in sorted(_pages_dir.glob("*.jsx")) if _pages_dir.is_dir() else []:
             _total += 1
             try:
                 if _PAGE_MARKER in _pf.read_text(encoding="utf-8", errors="ignore"):
                     _fallback += 1
+                    _fb_names.append(_pf.stem)
             except Exception:
                 pass
         _add("frontend_fallback_pages", True,
-             f"{_fallback}/{_total} pages are framework fallback (not lane-authored)")
+             f"{_fallback}/{_total} pages are framework fallback ({', '.join(_fb_names[:8])})")
     except Exception:
         pass
 

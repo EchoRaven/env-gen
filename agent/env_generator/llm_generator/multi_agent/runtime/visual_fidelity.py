@@ -246,26 +246,49 @@ def _http_json(url: str, payload: Optional[dict] = None, timeout: int = 10) -> t
 
 
 def _seed_demo_login(project_dir: Any) -> Optional[Dict[str, str]]:
-    """Credentials of the SEEDED demo user (the first user in the generated seed_data.py,
-    whose password is the framework's fixed seed password). The QA tooling logs in AS this
-    user so it validates the POPULATED app — the references depict screens WITH data, and a
-    fresh throwaway user sees empty lists (multi-tenant read-scoping), making every page look
-    blank/mismatched. Domain-agnostic: reads whatever the seed generated. None if no seed."""
+    """Credentials of the SEEDED demo user (the first user the LOADER actually inserts), whose
+    password is the framework's fixed seed password. The QA tooling logs in AS this user so it
+    validates the POPULATED app — the references depict screens WITH data, and a fresh throwaway
+    user sees empty lists (owner-scoped reads), making every page look blank/mismatched.
+
+    MUST read the SAME source the loader loads: the agent-authored ``seed_data.json`` (what
+    actually populates the DB), NOT the embedded ``_SEED`` fallback in ``seed_data.py``. Live
+    2026-06-30 (outlook): the JSON's first user was ``demo@example.com`` but the .py ``_SEED``
+    default was ``avachen@example.com``; reading only ``_SEED`` returned a user the DB was NOT
+    seeded with → ``run_browser_test_user`` REGISTERED that email as a fresh empty account and
+    browsed as it → EVERY data page false-flagged blank → the frontend churned on phantom
+    blank-page fixes (eating the milestone time budget). JSON first, ``_SEED`` fallback.
+    Domain-agnostic; None if no seed."""
+    backend = Path(project_dir) / "app" / "backend"
+
+    def _creds_from_users(users) -> Optional[Dict[str, str]]:
+        if users and isinstance(users[0], dict) and users[0].get("email"):
+            return {"email": str(users[0]["email"]), "password": "password",  # backend_skeleton._SEED_PASSWORD
+                    "name": str(users[0].get("name") or "Demo")}
+        return None
+
+    # 1) the agent-authored JSON the loader inserts into the DB (authoritative)
+    try:
+        sj = backend / "seed_data.json"
+        if sj.is_file():
+            import json as _json
+            data = _json.loads(sj.read_text(encoding="utf-8", errors="ignore"))
+            creds = _creds_from_users((data or {}).get("users") or [])
+            if creds:
+                return creds
+    except Exception:
+        pass
+    # 2) fallback: the embedded _SEED default in the loader (used only when no JSON)
     try:
         import ast
-        sd = Path(project_dir) / "app" / "backend" / "seed_data.py"
+        sd = backend / "seed_data.py"
         if not sd.is_file():
             return None
         m = re.search(r"_SEED\s*=\s*(\{.*\})", sd.read_text(encoding="utf-8", errors="ignore"))
         if not m:
             return None
         seed = ast.literal_eval(m.group(1))
-        users = (seed or {}).get("users") or []
-        email = users[0].get("email") if users and isinstance(users[0], dict) else None
-        if not email:
-            return None
-        return {"email": str(email), "password": "password",  # backend_skeleton._SEED_PASSWORD
-                "name": str((users[0].get("name") or "Demo"))}
+        return _creds_from_users((seed or {}).get("users") or [])
     except Exception:
         return None
 

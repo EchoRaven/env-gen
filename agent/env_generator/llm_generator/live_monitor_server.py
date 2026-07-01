@@ -3940,7 +3940,7 @@ def workhub_record_decision_call(workspaces_root: Path, project_id: str, page_id
     agent = (body.get("agent") or "").strip()
     try:
         return reg.workhub.record_decision(
-            page_id=page_id, title=title, options=options,
+            document_id=page_id, title=title, options=options,
             chosen=chosen, reason=reason, agent=agent,
         )
     except Exception as e:

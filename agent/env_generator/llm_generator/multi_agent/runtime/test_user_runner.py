@@ -32,12 +32,17 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 _VIEWPORT = {"width": 1280, "height": 800}
 # A page that rendered almost nothing (a stub heading) — used to flag "blank page".
 _MIN_TEXT = 12
-# DOM probe: is there a real interactive control, and any console errors?
+# DOM probe: real interactive control? console errors? AND does the page actually look
+# like the LOGIN form (a password field + sign-in copy) — so a protected route that
+# rendered the auth form IN PLACE (without a URL change) is still caught as hollow.
 _PROBE = """() => {
   const txt = (document.body && document.body.innerText || '').trim();
   const btns = document.querySelectorAll('button, a[href], [role=button]').length;
   const inputs = document.querySelectorAll('input, textarea, select').length;
-  return { textLen: txt.length, sample: txt.slice(0, 120), buttons: btns, inputs: inputs };
+  const pw = document.querySelectorAll('input[type=password]').length;
+  const signin = /\\b(sign ?in|log ?in|sign ?up|create account)\\b/i.test(txt);
+  return { textLen: txt.length, sample: txt.slice(0, 120), buttons: btns,
+           inputs: inputs, pw: pw, signin: signin };
 }"""
 
 
@@ -207,9 +212,11 @@ async def run_browser_test_user(
                     name = str((pg or {}).get("name") or route or "page")
                     if not route:
                         continue
+                    route_is_auth = any(seg in route for seg in _AUTH_ROUTE_SEGS)
                     cerr.clear()
                     rec: Dict[str, Any] = {"name": name, "route": route, "ok": False, "blank": True,
-                                           "console_errors": [], "shot": None}
+                                           "console_errors": [], "shot": None,
+                                           "redirected_to_login": False}
                     try:
                         await page.goto(base_url + route, wait_until="networkidle", timeout=20000)
                         await page.wait_for_timeout(900)
@@ -217,12 +224,26 @@ async def run_browser_test_user(
                         rec["blank"] = (probe.get("textLen", 0) < _MIN_TEXT)
                         rec["sample"] = probe.get("sample", "")
                         rec["controls"] = probe.get("buttons", 0) + probe.get("inputs", 0)
+                        # HOLLOW-PAGE detection: the test-user is logged in (token stored
+                        # above), so a PROTECTED route that bounces to the auth URL OR
+                        # renders the login form in place (password field + sign-in copy)
+                        # means the app could not restore the session — every protected
+                        # page is unusable even though it builds/serves. This is the wall
+                        # of identical Sign-in captures a hollow frontend ships (outlook MM
+                        # 2026-06-29: a hardcoded absolute API origin made every call fail).
+                        final_path = (page.url or "").split("?", 1)[0]
+                        landed_on_auth = any(seg in final_path for seg in _AUTH_ROUTE_SEGS)
+                        looks_like_login = bool(probe.get("pw")) and bool(probe.get("signin"))
+                        if not route_is_auth and (landed_on_auth or looks_like_login):
+                            rec["redirected_to_login"] = True
+                            rec["note"] = ("protected page is the LOGIN form (session not "
+                                           f"restored): url={page.url}")
                         dest = out_dir / f"{name}.png"
                         await page.screenshot(path=str(dest))
                         rec["shot"] = str(dest)
                         report["shots"][name] = str(dest)
                         rec["console_errors"] = list(cerr)[:5]
-                        rec["ok"] = (not rec["blank"]) and not cerr
+                        rec["ok"] = (not rec["blank"]) and not cerr and not rec["redirected_to_login"]
                     except Exception as exc:
                         rec["note"] = f"navigation failed: {exc}"
                     report["pages"].append(rec)
@@ -232,15 +253,36 @@ async def run_browser_test_user(
         report["summary"] = f"browser test-user error: {exc}"
         return report
 
-    blanks = [p["name"] for p in report["pages"] if p.get("blank")]
-    errs = [p["name"] for p in report["pages"] if p.get("console_errors")]
-    auth_ok = all(s["ok"] for s in report["steps"]) if report["steps"] else False
+    return _finalize_walkthrough(report)
+
+
+def _finalize_walkthrough(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Roll the per-page records + auth steps into the verdict fields the consumers read
+    (auth_ok / blank_pages / error_pages / auth_redirect_pages / hollow_frontend). Pure —
+    extracted from the async walkthrough so the HOLLOW verdict is unit-testable with a
+    synthetic report (the browser path can't run in the test suite)."""
+    pages = report.get("pages") or []
+    steps = report.get("steps") or []
+    blanks = [p["name"] for p in pages if p.get("blank")]
+    errs = [p["name"] for p in pages if p.get("console_errors")]
+    redirected = [p["name"] for p in pages if p.get("redirected_to_login")]
+    auth_ok = all(s["ok"] for s in steps) if steps else False
     report["auth_ok"] = auth_ok
     report["blank_pages"] = blanks
     report["error_pages"] = errs
+    report["auth_redirect_pages"] = redirected
+    # HOLLOW FRONTEND: the app builds + serves, the login form is present, but a logged-in
+    # user cannot actually reach the app — at least half the PROTECTED pages bounce to the
+    # login form. A milestone in this state must NOT ship (the gate reads this flag); it is
+    # the definitive "shipped a login wall / empty shell" signal, independent of the root
+    # cause (failed API origin, fragile auth-restore, missing route guard).
+    protected = [p for p in pages
+                 if not any(seg in str(p.get("route") or "") for seg in _AUTH_ROUTE_SEGS)]
+    report["hollow_frontend"] = bool(protected) and len(redirected) >= max(1, (len(protected) + 1) // 2)
     report["summary"] = (
-        f"auth_ok={auth_ok}; pages={len(report['pages'])}; "
-        f"blank={blanks or '∅'}; console_errors={errs or '∅'}")
+        f"auth_ok={auth_ok}; pages={len(pages)}; "
+        f"blank={blanks or '∅'}; console_errors={errs or '∅'}; "
+        f"login_wall={redirected or '∅'}; hollow={report['hollow_frontend']}")
     return report
 
 
@@ -315,12 +357,23 @@ def format_feedback(report: Mapping[str, Any]) -> str:
     if not report.get("ran"):
         return f"Test-user could not run: {report.get('summary', 'unknown')}"
     lines = [f"TEST-USER report — {report.get('summary', '')}"]
+    if report.get("hollow_frontend"):
+        lines.append(
+            "  ‼ HOLLOW FRONTEND: logged in, but the PROTECTED pages "
+            f"{report.get('auth_redirect_pages')} render the LOGIN form — the app is "
+            "unusable. The session is not restored on a fresh page load. Most common cause: "
+            "the api client targets an ABSOLUTE/wrong origin instead of a same-origin "
+            "RELATIVE path (so it bypasses the nginx proxy / hits the wrong port and every "
+            "call incl. login fails). Use relative '/api', '/auth' URLs and restore auth on "
+            "load via the canonical /api/auth/me. Fix this FIRST — it blocks delivery.")
     for s in report.get("steps", []):
         lines.append(f"  [{'OK' if s['ok'] else 'FAIL'}] {s['step']}" + (f" — {s['note']}" if s.get('note') else ""))
     for p in report.get("pages", []):
         flags = []
         if p.get("blank"):
             flags.append("BLANK (renders no real content)")
+        if p.get("redirected_to_login"):
+            flags.append("REDIRECTED TO LOGIN (session not restored — protected page shows the auth form)")
         if p.get("console_errors"):
             flags.append("console errors: " + "; ".join(p["console_errors"])[:120])
         if flags:
@@ -333,3 +386,22 @@ def format_feedback(report: Mapping[str, Any]) -> str:
             for d in (vis.get("deviations") or [])[:6]:
                 lines.append(f"      - {d}")
     return "\n".join(lines)
+
+
+def browser_report_unusable(report: Optional[Mapping[str, Any]]) -> bool:
+    """PRE-RELEASE GATE predicate (2026-06-30): True iff the browser walk RAN and found an
+    OBJECTIVE "a real user cannot use this app" signal — login broken (``auth_ok`` False),
+    protected pages rendering BLANK (``blank_pages``), or bounced to a LOGIN WALL
+    (``auth_redirect_pages`` / ``hollow_frontend``). The delivery flow uses this to HOLD a
+    release so a non-functional UI never ships as "delivered".
+
+    Deliberately EXCLUDES the SOFT signals ``visual_mismatches`` and ``error_pages`` (console
+    errors): those stay ADVISORY — the walk still dispatches them as a P0 remediation task,
+    but a minor visual deviation or a benign console warning must NOT block delivery. A report
+    that could not run (None / ``ran`` False) is NOT "unusable" — infra must never block a
+    release, and a one-off flake auto-clears on the next cycle's re-test. Pure + env-agnostic
+    so the gate criteria are unit-testable in isolation."""
+    if not isinstance(report, dict) or not report.get("ran"):
+        return False
+    return bool((not report.get("auth_ok")) or report.get("blank_pages")
+                or report.get("auth_redirect_pages") or report.get("hollow_frontend"))

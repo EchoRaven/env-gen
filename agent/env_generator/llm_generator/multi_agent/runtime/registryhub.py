@@ -175,7 +175,13 @@ class RegistryHub:
         """
         import re as _re
         m = str(method or "").upper().strip()
-        ident = _re.sub(r"\{[^}]+\}", "{}", RegistryHub._canonical_path(path))
+        # Strip any QUERY STRING before identity: a loose chain/consumer path like
+        # ``/api/notes?tag=updated`` exercises the registered ``GET /api/notes`` (the
+        # query is a filter ON that endpoint, NOT a distinct endpoint). Without this a
+        # verifier chain that tests a list filter is rejected as a "phantom endpoint"
+        # → business_chain never registers → delivery blocked (smoke-notes exp6).
+        _path = str(path or "").split("?", 1)[0]
+        ident = _re.sub(r"\{[^}]+\}", "{}", RegistryHub._canonical_path(_path))
         return f"{m} {ident}"
 
     @staticmethod
@@ -1540,6 +1546,29 @@ class RegistryHub:
         were silently dropped). Steps are normalized here; malformed input is
         rejected WITH teaching. Execution results are recorded back via
         ``record_chain_result`` so the registry shows pass/fail history."""
+        # FREEZE-ON-GREEN (2026-07-01): once business_chain has passed, RE-AUTHORING an
+        # EXISTING chain is a NO-OP while the contract is unchanged — a verifier that keeps
+        # re-writing a passing chain into a broken one caused a regression↔restore OSCILLATION
+        # that wedged delivery for 75min (run-25). The already-passing chain is kept. A NEW
+        # chain name (add coverage) and a CHANGED contract (next milestone → different eps set;
+        # frozen-eps set by framework_validation.snapshot_passing_chains) are unaffected. The
+        # framework's own coverage-completion + the regression-guard restore write the store
+        # directly (not via this method), so neither is blocked.
+        _frozen_eps = getattr(self, "_chains_frozen_eps", None)
+        if _frozen_eps is not None and str(name) in (self._verification_chains.value() or {}):
+            try:
+                _cur_eps = set((self._endpoints.value() or {}).keys())
+            except Exception:
+                _cur_eps = None
+            if _cur_eps is not None and _cur_eps == _frozen_eps:
+                return {
+                    "frozen": True, "name": str(name),
+                    "detail": ("business_chain is GREEN and the contract is unchanged, so this "
+                               "chain is FROZEN — re-authoring a passing chain is a no-op (the "
+                               "existing passing chain is kept). This prevents regressing a "
+                               "clean gate. To ADD coverage use a NEW chain name; the freeze "
+                               "lifts automatically at the next milestone (new endpoints)."),
+                }
         from .chain_executor import normalize_steps
         norm, errors = normalize_steps(steps)
         if errors or not norm:
@@ -1586,6 +1615,35 @@ class RegistryHub:
                "registered_by": actor, "_updated_at": now}
         self._verification_chains.update(
             lambda m: m.set(str(name), rec, actor), change_info={"agent": actor})
+        # VERIFIER-DRIVEN READ ISOLATION (2026-06-30, user: "must work for ALL envs"): a chain
+        # step asserting a by-id read/write must be DENIED (403/404) to a NON-owner is the
+        # verifier's domain judgment that the resource is per-user-PRIVATE. Mark that table
+        # owner_scoped_reads so the backend regen (render_skeleton_main honours table metadata)
+        # projects its reads owner-scoped BY CONSTRUCTION — closing the cross-user data leak the
+        # backend agent UNRELIABLY declares (outlook run-9/10: it scoped `messages`, forgot
+        # `events` → GET /api/events/{id} returned any user's row). ENV-AGNOSTIC, no global
+        # default flip: a PUBLIC resource (social feed) gets NO isolation probe → never scoped.
+        try:
+            from .chain_executor import _is_cross_user_denial
+            _tbl_names = set((self._tables.value() or {}).keys())
+            _to_scope = set()
+            for _st in norm:
+                if not _is_cross_user_denial(_st):
+                    continue
+                _segs = [s for s in str(_st.get("path") or "").split("?", 1)[0].split("/")
+                         if s and s.lower() != "api"]
+                if _segs and _segs[0] in _tbl_names:
+                    _to_scope.add(_segs[0])
+            for _tn in _to_scope:
+                _t = self._tables.value().get(_tn)
+                if isinstance(_t, dict) and not (_t.get("metadata") or {}).get("owner_scoped_reads"):
+                    _t2 = {**_t, "metadata": {**(_t.get("metadata") or {}),
+                                              "owner_scoped_reads": True}}
+                    self._tables.update(
+                        lambda m, _k=_tn, _v=_t2: m.set(_k, _v, actor),
+                        change_info={"agent": actor})
+        except Exception:
+            pass
         self._emit("verification_chain_registered", rec, recipients=[])
         return rec
 

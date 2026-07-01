@@ -204,7 +204,9 @@ def endpoint_id(method: str, path: str) -> str:
                      ``/notes/{id}`` ≡ ``/notes/{note_id}`` — one endpoint, not a phantom).
     """
     m = str(method or "").upper().strip()
-    p = str(path or "").strip()
+    # Strip any QUERY STRING before identity (byte-identical with
+    # registryhub.endpoint_id): ``/api/notes?tag=x`` ≡ the registered ``/api/notes``.
+    p = str(path or "").split("?", 1)[0].strip()
     if p:
         if not p.startswith("/"):
             p = "/" + p

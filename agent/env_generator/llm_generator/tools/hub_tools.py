@@ -2340,16 +2340,25 @@ class KickoffDeclareTableTool(_KickoffDeclareBase):
     DESCRIPTION = (
         "Declare ONE data_model table of your kickoff backend section (call "
         "once per table — declarations merge). columns: 'name:type' strings, "
-        "optionally 'name:type:pk' or 'name:type:fk=users.id'.")
+        "optionally 'name:type:pk' or 'name:type:fk=users.id'. Set "
+        "owner_scoped_reads=true for a PER-USER-PRIVATE table (each user sees "
+        "only their OWN rows — notes/email/todos/drafts): the framework scopes "
+        "every read to the owner by construction, exactly like writes.")
     PARAMETERS = {"type": "object", "properties": {
         "meeting_id": {"type": "string"},
         "name": {"type": "string", "description": "snake_case table name"},
         "columns": {"type": "array", "items": {"type": "string"},
                     "description": "e.g. ['id:text:pk', 'caption:text', 'author_id:int:fk=users.id']"},
+        "owner_scoped_reads": {"type": "boolean", "description":
+            "true ⇒ per-user-private: reads (list/get/search) are owner-scoped "
+            "(each user sees only their own rows). Default false = public reads "
+            "(anyone may read any row, e.g. a social feed). Needs an owner FK to "
+            "users (e.g. user_id/author_id)."},
         "milestone_index": {"type": "integer", "minimum": 0},
     }, "required": ["meeting_id", "name", "columns"]}
 
     async def _run(self, meeting_id: str, name: str, columns: list,
+                   owner_scoped_reads: Optional[bool] = None,
                    milestone_index: Optional[int] = None,
                    **_extra: Any) -> ToolResult:
         cols = []
@@ -2370,6 +2379,8 @@ class KickoffDeclareTableTool(_KickoffDeclareBase):
                     col["nullable"] = True
             cols.append(col)
         table = {"name": name, "columns": cols}
+        if owner_scoped_reads is not None:
+            table["owner_scoped_reads"] = bool(owner_scoped_reads)
         return self._declare(
             meeting_id, {"data_model": {"tables": [table]}}, milestone_index)
 

@@ -22,6 +22,39 @@ from __future__ import annotations
 from typing import Any, List
 
 
+def _isolation_scoped_tables_from_chains(registryhub, table_names) -> set:
+    """Tables the verifier's REGISTERED chains probe for CROSS-USER ISOLATION — a by-id
+    GET/PUT/DELETE the verifier asserts must be DENIED (403/404) to a NON-owner. Such a
+    probe IS the verifier's domain judgment that the resource is per-user-PRIVATE, so its
+    reads must be owner-scoped BY CONSTRUCTION. This closes the cross-user data leak the
+    backend agent unreliably declares via owner_scoped_reads (outlook run-9/10: it scoped
+    `messages`, forgot `events` → GET /api/events/{id} returned any user's row → business_
+    chain isolation FAIL → 7-cycle wedge). ENV-AGNOSTIC + no global default flip: a PUBLIC
+    resource (social feed) gets NO isolation probe, so it is never scoped and stays open.
+    Best-effort; empty on any failure."""
+    out: set = set()
+    try:
+        from .chain_executor import _is_cross_user_denial, normalize_steps
+        chains = registryhub.get_verification_chains() or {}
+        names = set(table_names or ())
+        for chain in (chains.values() if isinstance(chains, dict) else (chains or [])):
+            if not isinstance(chain, dict):
+                continue
+            steps, _ = normalize_steps(chain.get("steps") or [])
+            for st in steps:
+                if not _is_cross_user_denial(st):
+                    continue
+                # the resource COLLECTION segment of the probed path → the table name
+                # (/api/events/{id} -> 'events'); intersect with real tables for safety.
+                segs = [s for s in str(st.get("path") or "").split("?", 1)[0].split("/")
+                        if s and s.lower() != "api"]
+                if segs and segs[0] in names:
+                    out.add(segs[0])
+    except Exception:
+        pass
+    return out
+
+
 class HealPipeline:
     """Groups the delivery-time repair/merge/commit steps. Stateless; borrows the
     orchestrator (output_dir / hubs / logger / llm) live."""
@@ -193,7 +226,29 @@ class HealPipeline:
             declared = business_endpoints(registryhub.get_endpoints())
             if not declared:
                 return
-            res = project_missing_routes(_P(out_dir) / "app" / "backend", declared)
+            # Per-user-PRIVATE tables (owner_scoped_reads in table metadata): their
+            # reads are projected owner-scoped by construction so the isolation chain
+            # passes without a lane override (which fd56c2e closed for CRUD). One
+            # decision per table at kickoff; default empty ⇒ open reads (public feed).
+            try:
+                _tbls = registryhub.list_tables() or {}
+                owner_scoped_tables = {
+                    name for name, t in _tbls.items()
+                    if str(((t or {}).get("metadata") or {}).get("owner_scoped_reads")
+                           ).strip().lower() in {"true", "1", "yes", "y", "on"}
+                }
+                # VERIFIER-DRIVEN read isolation (2026-06-30): ALSO owner-scope any table the
+                # verifier's registered chains probe for cross-user isolation. The agent's
+                # owner_scoped_reads declaration is unreliable (run-9/10 leaked `events`); the
+                # verifier's isolation probe IS the reliable, domain-correct privacy signal —
+                # and a PUBLIC resource gets no probe, so this never over-scopes a social feed.
+                owner_scoped_tables |= _isolation_scoped_tables_from_chains(
+                    registryhub, set(_tbls.keys()))
+            except Exception:
+                owner_scoped_tables = set()
+            res = project_missing_routes(
+                _P(out_dir) / "app" / "backend", declared,
+                owner_scoped_tables=owner_scoped_tables)
             projected = res.get("projected") or []
             if projected:
                 orch._logger.warning(
@@ -279,7 +334,7 @@ class HealPipeline:
         except Exception as exc:
             orch._logger.debug("psycopg DSN repair skipped: %s", exc)
 
-    def run_test_user_validation(self, version: str) -> None:
+    def run_test_user_validation(self, version: str) -> "dict | None":
         """Post-milestone TEST-USER phase (2026-06-09, user-asked): once a release is
         cut, simulate a real user's journey across the API (register → post → feed →
         view-my-posts → follow → comment → like → message) and check the MCP surface is
@@ -338,13 +393,16 @@ class HealPipeline:
             # milestone — the user's intended "recruit -> test via web tools -> key-node
             # screenshots -> feedback -> fix" loop. Best-effort; never blocks.
             try:
-                self._run_browser_test_user(proj, compose, registryhub, version)
+                # Returns the browser report (auth_ok/blank_pages/…) so a PRE-RELEASE
+                # caller can gate the release on it; None if it could not run.
+                return self._run_browser_test_user(proj, compose, registryhub, version)
             except Exception as _bexc:
                 orch._logger.debug("browser test-user skipped: %s", _bexc)
         except Exception as exc:
             orch._logger.debug("test-user validation skipped: %s", exc)
+        return None
 
-    def _run_browser_test_user(self, proj, compose, registryhub, version) -> None:
+    def _run_browser_test_user(self, proj, compose, registryhub, version) -> "dict | None":
         """Recruit the browser test-user against the running FRONTEND: auth flow +
         per-page screenshot/blank/console checks; log feedback + route blank/broken
         pages back to the frontend lane for repair. Best-effort; never raises out."""
@@ -385,7 +443,7 @@ class HealPipeline:
         if not report.get("ran"):
             orch._logger.warning("BROWSER test-user (v%s): could not run — %s",
                                  version, report.get("summary"))
-            return
+            return None
         # KEY-NODE vs REFERENCE: LLM-compare each captured page screenshot to the reference
         # image that depicts that route, so the feedback says "inbox doesn't match
         # outlook_inbox.png — missing folder rail", not merely "blank/console-error". The
@@ -405,8 +463,14 @@ class HealPipeline:
         # "give feedback, keep fixing" step. (The task is the durable signal the lane claims;
         # the message_bus send is skipped here because this runs in a worker thread off the
         # orchestrator's event loop.)
+        # HOLLOW FRONTEND (login wall): a logged-in test-user that bounces back to the
+        # login form on the protected pages means the app is unusable even though it
+        # builds + serves — the single worst preview defect and exactly what slipped
+        # through before (outlook MM: a hardcoded absolute API origin failed every call).
+        # It MUST escalate to a P0 fix like any other UI defect.
         broken = ((not report.get("auth_ok")) or report.get("blank_pages")
-                  or report.get("error_pages") or report.get("visual_mismatches"))
+                  or report.get("error_pages") or report.get("visual_mismatches")
+                  or report.get("hollow_frontend") or report.get("auth_redirect_pages"))
         if broken:
             try:
                 fb = format_feedback(report)
@@ -417,11 +481,16 @@ class HealPipeline:
                     assignee="frontend", agent="orchestrator", priority="P0")
                 orch._logger.warning(
                     "BROWSER test-user dispatched a P0 fix task to frontend: auth_ok=%s "
-                    "blank=%s console_errors=%s visual_mismatches=%s", report.get("auth_ok"),
-                    report.get("blank_pages"), report.get("error_pages"),
+                    "blank=%s console_errors=%s hollow=%s login_wall=%s visual_mismatches=%s",
+                    report.get("auth_ok"), report.get("blank_pages"), report.get("error_pages"),
+                    report.get("hollow_frontend"), report.get("auth_redirect_pages"),
                     report.get("visual_mismatches"))
             except Exception as _dexc:
                 orch._logger.error("browser test-user feedback dispatch failed: %s", _dexc)
+        # Return the report so a PRE-RELEASE caller can gate the release on it (the delivery
+        # flow blocks a cut when the app is objectively unusable). Advisory POST-release
+        # callers ignore the return; behaviour there is unchanged.
+        return report
 
     def repair_frontend_api(self) -> None:
         """FIX #37: reconcile frontend api.js exports with component imports on the
@@ -435,15 +504,51 @@ class HealPipeline:
             from .frontend_scaffold import (
                 repair_frontend_api_exports, scaffold_missing_local_pages,
                 repair_frontend_named_default_imports, reroute_inline_stub_routes,
-                repair_frontend_missing_local_exports)
+                repair_frontend_missing_local_exports, normalize_frontend_api_base,
+                repair_frontend_escaped_backticks)
             from pathlib import Path as _P
             fe = _P(out_dir) / "app" / "frontend"
+            # SYNTAX FIRST: the lane intermittently escapes template-literal delimiters
+            # (`className={\`...\`}`) → esbuild "Invalid or unexpected token" → the whole
+            # `npm run build` fails, so EVERY other repair below is moot until the file
+            # parses. Un-escape delimiter backticks before anything else (run-13: this
+            # wedged docker_up for many cycles, fixed one file at a time). Runs before each
+            # api_smoke docker_up (framework_validation) AND at delivery.
+            _eb = repair_frontend_escaped_backticks(fe)
+            if _eb.get("repaired"):
+                orch._logger.warning(
+                    "Frontend escaped-backtick template delimiters un-escaped (esbuild "
+                    "parse fix, prevents docker_up build wedge): %s", _eb.get("repaired"))
+            # Same-origin discipline FIRST: a lane that hardcodes an absolute
+            # `http://localhost:<in-container-port>` API base (outlook MM, 2026-06-29)
+            # bypasses the nginx reverse proxy AND targets the wrong host port, so the
+            # browser's login + every authed call fails → the SPA is stuck on the login
+            # form (a "hollow preview" of identical Sign-in pages). Strip such origins to
+            # relative URLs so requests flow through the proxy regardless of host port.
+            _nb = normalize_frontend_api_base(fe)
+            if _nb.get("normalized"):
+                orch._logger.warning(
+                    "Frontend absolute localhost API origins normalized to same-origin "
+                    "relative URLs (lane bypassed the nginx proxy): %s", _nb.get("normalized"))
             rep = repair_frontend_api_exports(fe)
             if rep.get("repaired"):
                 orch._logger.warning(
                     "Frontend api.js reconciled: aliased=%s stubbed=%s",
                     rep.get("aliased"), rep.get("stubbed"),
                 )
+            # INVERSE of the above: a component DEFAULT-imports api (`import api from
+            # '../services/api'`) but api.js has only NAMED exports → Rollup "default is not
+            # exported by api.js" → build FAIL → no delivery (outlook M2 2026-06-29). Add a
+            # default export aggregating the named members.
+            try:
+                from .frontend_scaffold import repair_frontend_default_api_import
+                _di = repair_frontend_default_api_import(fe)
+                if _di.get("repaired"):
+                    orch._logger.warning(
+                        "Frontend api.js default export added (a component default-imports api): %s",
+                        _di.get("default_export_added"))
+            except Exception as _die:
+                orch._logger.debug("frontend default-api-import repair skipped: %s", _die)
             # Generalize export reconciliation to ALL local modules (not just api.js):
             # a named import from a local module that doesn't export it HARD-fails the
             # Vite/rollup build (instagram_v5: PlusSquareIcon) → frontend won't build →
