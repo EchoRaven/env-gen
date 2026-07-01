@@ -21,6 +21,27 @@ from __future__ import annotations
 
 from typing import Any, List
 
+_ROUTE_FILE_SUFFIXES = (".jsx", ".tsx", ".js", ".ts", ".vue", ".mjs", ".css", ".html", ".json")
+
+
+def _is_walkable_route(route) -> bool:
+    """A registered ui_page is walkable by the browser test-user only if its ``route`` is a
+    real SPA URL route — i.e. it STARTS WITH ``/`` and is not a SOURCE FILE PATH.
+
+    The frontend lane routinely registers junk ui_page entries whose ``route`` is the page's
+    SOURCE FILE (``src/pages/OutlookInboxPage.jsx``, ``app/frontend/src/components/
+    ReplyComposer.jsx``) or registers non-navigable COMPONENTS (folder_rail / message_list /
+    calendar_grid …) as ui_pages. Walking those navigates the SPA to a non-route → it renders
+    BLANK → the browser gate reports a FALSE 'unusable', churns its bounded deferral, and
+    escape-ships 'loudly' on a perfectly usable app (outlook run-28 v1.1.0, live-confirmed:
+    EVERY 'blank' page was a file-path/component entry while the real routes ``/`` ``/inbox``
+    ``/calendar`` rendered fine and ``auth_ok=True``). A relative file path fails
+    ``startswith('/')``; an absolute one is caught by the source-file suffix. ENV-AGNOSTIC."""
+    r = str(route or "").strip()
+    if not r.startswith("/"):
+        return False
+    return not r.split("?", 1)[0].rstrip("/").lower().endswith(_ROUTE_FILE_SUFFIXES)
+
 
 def _isolation_scoped_tables_from_chains(registryhub, table_names) -> set:
     """Tables the verifier's REGISTERED chains probe for CROSS-USER ISOLATION — a by-id
@@ -427,7 +448,9 @@ class HealPipeline:
                 if not isinstance(pg, dict):
                     continue
                 route = str(pg.get("route") or pg.get("path") or "").strip()
-                if route:
+                # Skip junk entries whose "route" is a SOURCE FILE PATH or a non-navigable
+                # component — walking them renders BLANK and false-flags a usable app (#26).
+                if route and _is_walkable_route(route):
                     low = route.rstrip("/").lower()
                     pages.append({"name": str(name), "route": route,
                                   "auth": low not in ("/login", "/signup", "/signin", "/register", "", "/")})
