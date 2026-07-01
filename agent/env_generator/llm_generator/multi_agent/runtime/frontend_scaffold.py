@@ -46,6 +46,26 @@ _STOPWORDS = ("account", "user", "users", "current", "data", "info",
 _TICK_OPEN_RE = re.compile(r"((?:[={(\[,:?]|=>|&&|\|\||\?\?|\breturn)\s*)\\(?=`)")
 _TICK_CLOSE_RE = re.compile(r"\\(?=`[)}\];,])")
 
+# Same escaped-character damage family (outlook run-29, 2026-07-01): the lane emitted a
+# LITERAL ``\n`` between statements — ``}\n\nexport function CalendarsPage() {`` — a
+# backslash outside a string is a JS syntax error → vite build fails → docker_up WEDGES
+# (run-29: 6/6 validation attempts, STUCK escalation; the lane never fixed the file).
+# Un-escape ONLY at a STATEMENT BOUNDARY: after ``}``/``;``, before a top-level keyword
+# (export/import/function/const/let/var/class/async) or a comment. A legit ``\n`` inside
+# a string (``split('\n')``, ``"a\nb"``) never sits in that shape — the char after the
+# ``\n`` run is a quote/paren, not a declaration keyword — so it is left untouched (and
+# inside a TEMPLATE literal a real newline is semantically identical anyway).
+_LITNL_BOUNDARY_RE = re.compile(
+    r"([};])(?:\\n)+(?=\s*(?:export\b|import\b|function\b|const\b|let\b|var\b|class\b"
+    r"|async\b|//|/\*))")
+
+
+def _unescape_statement_boundary_newlines(src: str) -> str:
+    """Replace a literal ``\\n`` run at a statement boundary with real newlines."""
+    if "\\n" not in src:
+        return src
+    return _LITNL_BOUNDARY_RE.sub(lambda m: m.group(1) + "\n\n", src)
+
 
 def _unescape_delimiter_backticks(src: str) -> str:
     """Un-escape template-literal delimiter backticks. The OPEN/CLOSE regexes are used as a
@@ -84,9 +104,10 @@ def repair_frontend_escaped_backticks(frontend_dir) -> Dict[str, object]:
                 txt = f.read_text(encoding="utf-8")
             except Exception:
                 continue
-            if "\\`" not in txt:          # fast path: no backslash-backtick anywhere
+            if "\\`" not in txt and "\\n" not in txt:  # fast path: no escape damage anywhere
                 continue
             fixed = _unescape_delimiter_backticks(txt)
+            fixed = _unescape_statement_boundary_newlines(fixed)
             if fixed != txt:
                 try:
                     f.write_text(fixed, encoding="utf-8")
