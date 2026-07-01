@@ -141,6 +141,32 @@ async def _drive_auth_form(page: Any, creds: Mapping[str, str], *, max_steps: in
     return await page.evaluate(_TOKEN_JS)
 
 
+async def _wait_frontend_ready(page, base_url: str, attempts: int = 15,
+                               gap_ms: int = 2000, timeout_ms: int = 4000) -> bool:
+    """Poll ``base_url`` until the frontend SERVES (any response < 500). Returns True once
+    reachable, False if it never comes up within ~attempts*gap.
+
+    The delivery flow restarts the compose stack per milestone, so the browser walk can fire
+    while the FRONTEND container is DOWN / rebuilding → every ``goto`` raises
+    net::ERR_CONNECTION_REFUSED → auth_ok=False + all pages 'blank' → a FALSE 'unusable' that
+    escape-ships a HEALTHY app (outlook run-28 v1.2.0, live: the final walk hit ERR_CONNECTION_
+    REFUSED at /login mid container-restart). Waiting for readiness (and reporting ran=False
+    when it never comes up → the gate treats it as 'could not run' / skip, never 'unusable')
+    makes the verdict reflect the SETTLED app. Bounded + best-effort. ENV-AGNOSTIC."""
+    for _ in range(max(1, attempts)):
+        try:
+            r = await page.goto(base_url + "/", wait_until="commit", timeout=timeout_ms)
+            if r is None or (getattr(r, "status", None) or 200) < 500:
+                return True
+        except Exception:
+            pass
+        try:
+            await page.wait_for_timeout(gap_ms)
+        except Exception:
+            pass
+    return False
+
+
 async def run_browser_test_user(
     base_url: str,
     pages: List[Mapping[str, Any]],
@@ -178,6 +204,15 @@ async def run_browser_test_user(
                 cerr: List[str] = []
                 page.on("console", lambda m: cerr.append(m.text) if m.type == "error" else None)
                 report["ran"] = True
+
+                # READINESS GATE (#27): don't test a frontend that's mid container-restart —
+                # poll until it serves; if it never comes up, mark ran=False so the gate
+                # SKIPS (could-not-run) rather than false-flagging 'unusable' + escape-shipping.
+                if not await _wait_frontend_ready(page, base_url):
+                    report["ran"] = False
+                    report["summary"] = ("frontend not reachable after readiness wait (likely "
+                                          "mid container-restart) — browser walk skipped")
+                    return report
 
                 # ---- 1. AUTH FLOW (staged-form aware, real submit) ----
                 token = None
