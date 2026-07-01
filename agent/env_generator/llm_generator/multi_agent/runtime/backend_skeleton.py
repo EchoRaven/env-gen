@@ -541,7 +541,15 @@ def _custom_route_overrides_projected(method, path):
     if last_is_param and n_params == 1:               # item by id: /messages/{id}
         return _is_get
     if last == "me":                                  # current-user singleton: /auth/me
-        return False
+        # The projector emits a /me handler (route_projector: path.endswith("/me")) ONLY for
+        # endpoints it actually receives — and business_endpoints() EXCLUDES the auth/oauth
+        # control surface (/auth/*, /api/auth/*, /oauth/*). So a /me UNDER that prefix (the
+        # canonical /api/auth/me "current user") has NO projected handler; dropping the custom
+        # one leaves the endpoint NOWHERE → 404, wedging every business_chain auth step + the
+        # frontend's user-load (outlook run-27 M3, live-reproduced: GET /api/auth/me → 404 while
+        # custom_routes defines it). Keep the custom route there; elsewhere (/api/users/me,
+        # bare /me) the projector DID emit a handler, so projected still wins.
+        return len(segs) >= 2 and segs[0] in ("auth", "oauth")
     # NESTED child-RESOURCE CRUD: /<parent>/{pid}/<child>  (list/create) or
     # /<parent>/{pid}/<child>/{cid}  (item) where <child> is a REAL registered resource —
     # the projector emits a functional parent-scoped handler, so projected wins. A nested
