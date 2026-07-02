@@ -223,6 +223,108 @@ async def decompose_reference(image_path, llm, *, max_components: int = 14):
     return {"components": out, "count": len(out)}
 
 
+def _rgb_of_hex(h: str) -> Optional[Tuple[int, int, int]]:
+    try:
+        s = str(h).strip().lstrip("#")
+        if len(s) != 6:
+            return None
+        return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+    except Exception:
+        return None
+
+
+def color_distance(hex_a: str, hex_b: str) -> Optional[float]:
+    """Perceptual-ish distance between two #rrggbb colors ("redmean" — the
+    standard cheap approximation; 0 = identical, ~765 = black↔white). PIL-only,
+    no numpy. None when either hex is unparseable."""
+    a, b = _rgb_of_hex(hex_a), _rgb_of_hex(hex_b)
+    if a is None or b is None:
+        return None
+    rbar = (a[0] + b[0]) / 2.0
+    dr, dg, db = a[0] - b[0], a[1] - b[1], a[2] - b[2]
+    return ((2 + rbar / 256.0) * dr * dr + 4 * dg * dg
+            + (2 + (255 - rbar) / 256.0) * db * db) ** 0.5
+
+
+def spec_color_deviations(spec, screenshot_path, *, threshold: Optional[float] = None,
+                          min_region_frac: float = 0.005):
+    """Deterministic per-component color diff: the pre-measured reference spec
+    (design/component_specs/<screen>.json — regions are 0..1 FRACTIONS, so they
+    apply to a screenshot of ANY resolution) vs the SAME region sampled from the
+    implementation screenshot. PIPELINE.md §11's "determinist color-diff gate":
+    the LLM judge gives an OPINION; this gives NAMED, MEASURED facts the fixing
+    lane can act on exactly ("top_bar renders #ffffff, reference measures
+    #292929"). Two deviation kinds:
+      * background — row-mode background of the region differs beyond
+        ``threshold`` (redmean; env ENVGEN_COLOR_DIFF_THRESHOLD, default 40 —
+        catches any real token drift, tolerates sampling noise);
+      * accent_missing — the spec measured a saturated accent of some hue in
+        the region but the screenshot has NO pixel of that hue there NOR
+        anywhere on the screen (the methodology's #1 collapse point: SEMANTIC
+        COLOR LOSS — unread-blue / ribbon reds going all-gray). The whole-image
+        condition filters CONTENT noise: a reference avatar/photo seeds spec
+        accents (red/gold skin tones) that are user content, not design — if
+        the hue exists elsewhere on the implemented screen it is not a loss.
+    Regions smaller than ``min_region_frac`` of the image are skipped (too small
+    to sample reliably once layouts differ slightly). NOTE: values are
+    trustworthy once the layout ROUGHLY matches the reference (the polish phase
+    this exists for); on a structurally-unrelated screen the judge's structural
+    verdict is the signal, not these. Best-effort: [] on any failure."""
+    if threshold is None:
+        import os as _os
+        try:
+            threshold = float(_os.environ.get("ENVGEN_COLOR_DIFF_THRESHOLD", "40"))
+        except Exception:
+            threshold = 40.0
+    try:
+        im = _open_rgb(screenshot_path)
+    except Exception:
+        return []
+    out = []
+    _hue_on_screen: Dict[str, bool] = {}  # whole-image accent presence, per hue
+
+    def _present_anywhere(hue: str) -> bool:
+        if hue not in _hue_on_screen:
+            _hue_on_screen[hue] = find_accent(im, None, hue) is not None
+        return _hue_on_screen[hue]
+
+    comps = (spec or {}).get("components") if isinstance(spec, dict) else None
+    for c in comps or []:
+        if not isinstance(c, dict):
+            continue
+        reg = c.get("region")
+        try:
+            if not reg or len(reg) < 4:
+                continue
+            rt = tuple(min(1.0, max(0.0, float(v))) for v in reg[:4])
+            if rt[2] <= rt[0] or rt[3] <= rt[1]:
+                continue
+            if (rt[2] - rt[0]) * (rt[3] - rt[1]) < min_region_frac:
+                continue
+        except Exception:
+            continue
+        name = str(c.get("name") or "component")
+        try:
+            spec_bg = c.get("background")
+            if spec_bg:
+                actual = region_background(im, rt)
+                dist = color_distance(spec_bg, actual) if actual else None
+                if dist is not None and dist > threshold:
+                    out.append({"component": name, "kind": "background",
+                                "expected": spec_bg, "actual": actual,
+                                "distance": round(dist, 1), "region": list(rt)})
+            for hue, spec_hex in (c.get("accents") or {}).items():
+                if hue not in _HUE_TESTS or not spec_hex:
+                    continue
+                if find_accent(im, rt, hue) is None and not _present_anywhere(hue):
+                    out.append({"component": name, "kind": "accent_missing",
+                                "hue": hue, "expected": spec_hex,
+                                "region": list(rt)})
+        except Exception:
+            continue
+    return out
+
+
 def _resize_to_width(im, w: int):
     w = max(1, int(w))
     return im.resize((w, max(1, int(im.height * w / max(1, im.width)))))
@@ -267,4 +369,5 @@ def make_side_by_side(ref_path, mine_path, save_path, *, region: Optional[Region
 
 
 __all__ = ["row_mode_color", "region_background", "find_accent", "extract_palette",
-           "crop_region", "decompose_reference", "make_side_by_side"]
+           "crop_region", "decompose_reference", "make_side_by_side",
+           "color_distance", "spec_color_deviations"]

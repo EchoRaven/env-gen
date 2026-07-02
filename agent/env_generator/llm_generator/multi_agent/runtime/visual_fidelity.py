@@ -630,7 +630,8 @@ async def run_visual_fidelity(
                                  "fix the route's auth handling, not its styling")
                                 if screen["name"] in _auth_bounced
                                 else f"route {screen['route']} could not be captured"],
-                            "screenshot": None})
+                            "screenshot": None,
+                            "reference": screen.get("path")})
             continue
         verdict = await judge(llm, screen, shot)
         results.append({"name": screen["name"], "route": screen["route"],
@@ -640,6 +641,12 @@ async def run_visual_fidelity(
                         "deviations": verdict["deviations"],
                         "fixes": verdict.get("fixes", []),
                         "screenshot": shot,
+                        "reference": screen.get("path"),
+                        # Fix #52 — the deterministic per-component color diff
+                        # (spec hex vs the SAME fractional region sampled from
+                        # this screenshot). Facts beside the judge's opinion.
+                        "measured_deviations": _measured_deviations(
+                            project_dir, screen["name"], shot),
                         "summary": verdict.get("summary", "")})
 
     passed = all(r["passed"] for r in results)
@@ -648,6 +655,87 @@ async def run_visual_fidelity(
                else "below %.2f: %s" % (min_similarity, ", ".join(failing)))
     return {"passed": passed, "summary": summary, "screens": results, "skipped": skipped,
             "min_similarity": min_similarity}
+
+
+def _measured_deviations(project_dir: Any, screen_name: str, screenshot_path: str) -> List[Dict[str, Any]]:
+    """Fix #52 — deterministic per-component color diff for one judged screen.
+
+    Loads the pre-measured spec (design/component_specs/<screen>.json, written by
+    the material-prep phase before any lane woke) and samples the SAME fractional
+    regions from the gate's screenshot via material_prep.spec_color_deviations.
+    Best-effort: [] when the spec is absent or anything fails — the LLM judge
+    remains the structural verdict; this only ADDS measured facts."""
+    try:
+        p = Path(project_dir) / "design" / "component_specs" / f"{screen_name}.json"
+        if not p.exists():
+            return []
+        spec = json.loads(p.read_text(encoding="utf-8"))
+        from .material_prep import spec_color_deviations
+        return spec_color_deviations(spec, screenshot_path)
+    except Exception:
+        return []
+
+
+def _lane_visible_reference(output_dir: Any, raw_path: Any) -> Optional[str]:
+    """The WORKSPACE-RELATIVE staged copy of a reference image, if present.
+
+    ``screen["path"]`` is the orchestrator-side ORIGINAL (often a host-absolute
+    CLI path the lane's workspace cannot resolve — review w6x6art4t); the
+    framework stages lane-visible copies under design/references/ and
+    screenshots/. Prefer those; None when neither exists."""
+    try:
+        name = Path(str(raw_path)).name
+        if not name or output_dir is None:
+            return None
+        for rel in (f"design/references/{name}", f"screenshots/{name}"):
+            if (Path(output_dir) / rel).exists():
+                return rel
+    except Exception:
+        pass
+    return None
+
+
+def _measured_diff_lines(r: Mapping[str, Any], output_dir: Any = None) -> List[str]:
+    """Render a screen result's measured color deviations (#52) + the
+    measure-don't-eyeball verification mandate (#53) as remediation lines."""
+    devs = r.get("measured_deviations") or []
+    lines: List[str] = []
+    if devs:
+        lines.append(
+            "MEASURED COLOR DIFF (deterministic pixel sampling of the gate "
+            "screenshot vs the reference spec — facts, not the judge's opinion; "
+            "apply these EXACT values):")
+        for d in devs[:10]:
+            if d.get("kind") == "accent_missing":
+                lines.append(
+                    f"  · {d.get('component')}: {d.get('hue')} accent MISSING — the "
+                    f"reference measures {d.get('expected')} in this region; restore it "
+                    "(semantic color loss: unread-dots/badges/buttons going gray)")
+            else:
+                lines.append(
+                    f"  · {d.get('component')}: background renders {d.get('actual')} but "
+                    f"the reference measures {d.get('expected')} "
+                    f"(Δ{d.get('distance', 0):.0f}) → set it to {d.get('expected')}")
+    # Fix #53 — zoom_compare adoption: the tool has been in the surface since
+    # brick 3 with ZERO calls across runs 30-38 (the lane fixes by eyeball).
+    # Same lever as #50: put the exact, EXECUTABLE call — lane-resolvable
+    # reference path, every required argument (save_as is required — a taught
+    # call that TypeErrors teaches the lane the tool is broken), the worst
+    # region — inside the task so following it is easier than ignoring it.
+    ref = _lane_visible_reference(output_dir, r.get("reference")) or r.get("reference")
+    if ref:
+        region = ""
+        if devs and devs[0].get("region"):
+            region = f", region={[round(v, 3) for v in devs[0]['region']]}"
+        name = str(r.get("name") or "screen")
+        lines.append(
+            "VERIFY LIKE AN ENGINEER (measure, don't eyeball): after fixing, "
+            "capture_webpage this route, then run "
+            f"zoom_compare(reference=\"{ref}\", mine=\"<your capture .png>\", "
+            f"save_as=\"design/compare/{name}_check.png\"{region}, scale=2) "
+            "and view_image the saved comparison — the colors above must match "
+            "before you consider this screen done.")
+    return lines
 
 
 def _spec_snippet(output_dir: Any, screen_name: str) -> str:
@@ -692,6 +780,7 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None) -> str:
             _sn = _spec_snippet(output_dir, str(r.get("name") or ""))
             if _sn:
                 lines.append(_sn)
+        lines.extend(_measured_diff_lines(r, output_dir))
         dims = r.get("dimensions") or {}
         missing = (dims.get("components") or {}).get("missing") or []
         if missing:
