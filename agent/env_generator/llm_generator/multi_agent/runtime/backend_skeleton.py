@@ -613,6 +613,30 @@ try:
     for _fw_p in ("/api/auth/me", "/auth/me"):
         if _fw_p not in _fw_me_present:
             app.get(_fw_p)(_fw_auth_me)
+    # TENANTS-LIST FILL-IN (outlook run-37, live): the login template's TenantPicker calls
+    # GET /api/v1/tenants on MOUNT (pre-auth; /api/v1/* is public infra in the middleware) —
+    # but the projector excludes the control surface and the lane rarely writes it → 404 on
+    # every page with the picker, and a picker that can't validate its tenant can WEDGE the
+    # whole login (auth_ok=False + login_wall at M1). Serve the tenants table (default-row
+    # fallback) — deterministic control-surface scaffolding, only-if-absent.
+    def _fw_tenants_list(db=Depends(get_db)):
+        try:
+            import models as _fw_m
+            _T = getattr(_fw_m, "Tenant", None)
+            if _T is not None:
+                _rows = db.query(_T).limit(50).all()
+                _items = [{"id": getattr(_r, "id", None),
+                           "name": getattr(_r, "name", None) or getattr(_r, "id", None)}
+                          for _r in _rows]
+                if _items:
+                    return {"items": _items, "tenants": _items}
+        except Exception:
+            pass
+        _d = [{"id": "default", "name": "default"}]
+        return {"items": _d, "tenants": _d}
+    for _fw_p in ("/api/v1/tenants",):
+        if _fw_p not in _fw_me_present:
+            app.get(_fw_p)(_fw_tenants_list)
 except Exception as _fw_me_exc:  # pragma: no cover — fill-in must never kill boot
     import logging
     logging.getLogger("custom_routes").warning("auth/me fill-in failed: %s", _fw_me_exc)
