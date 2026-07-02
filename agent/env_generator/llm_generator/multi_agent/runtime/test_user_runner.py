@@ -77,6 +77,136 @@ def _api_register(api_base: str, creds: Mapping[str, str]) -> bool:
     return False
 
 
+def _is_param_seg(seg: str) -> bool:
+    return seg.startswith(":") or (seg.startswith("{") and seg.endswith("}"))
+
+
+def _http_get_json(url: str, token: Optional[str] = None, timeout: int = 5):
+    """(status, parsed-json) for an authed GET; (0, {}) on any failure."""
+    import urllib.request
+    req = urllib.request.Request(url, method="GET")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, json.loads(r.read().decode("utf-8", "replace"))
+    except Exception:
+        return 0, {}
+
+
+def _rows_of(data: Any) -> list:
+    """Rows out of a collection response: canonical {items:[...]} first, then a
+    bare list, then the first list value of any envelope key — excluding
+    error/diagnostic keys, whose entries can carry an 'id' field and would
+    otherwise masquerade as rows ({'errors':[{'id':'AUTH_REQUIRED'}]})."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        items = data.get("items")
+        if isinstance(items, list):
+            return items
+        for k, v in data.items():
+            if str(k).lower() in ("errors", "error", "warnings", "failures", "detail"):
+                continue
+            if isinstance(v, list):
+                return v
+    return []
+
+
+def resolve_param_route(route: str, api_base: Optional[str], token: Optional[str],
+                        http_get: Optional[Callable] = None) -> Optional[str]:
+    """Fix #35 (complete form) — turn a PARAM route (``/inbox/message/:id``,
+    ``/calendar/event/{eventId}``) into a CONCRETE walkable one by fetching a
+    REAL row id from the backend.
+
+    The walker used to navigate the LITERAL ``:id`` → the page fetched resource
+    ":id" → rendered empty → a FALSE blank that burned the M1 deferral budget
+    (outlook run-30). Skipping param routes (the interim fix) silences the false
+    signal but leaves every DETAIL page (read-email, event-detail) with zero
+    walk coverage. So: resolve first, skip only when unresolvable.
+
+    ONLY id-shaped params are resolved (name ends in id/pk — :id, {eventId},
+    :message_id, :uuid): substituting a ROW ID where a :slug/:tab/:handle
+    belongs would fabricate a wrong-but-plausible route whose detail page
+    misses → a false blank behind the BLOCKING gate (adversarial review
+    a7f59d24: /posts/:slug → /posts/7 — the exact class this fix exists to
+    kill). Non-id params → None → the caller's interim skip stands.
+
+    Resource guess per id param, in order: the param NAME minus its Id suffix
+    (``{eventId}`` → events), then the PRECEDING path segment (``message`` →
+    messages) — each tried as-is/pluralised against GET {api_base}/api/<cand>
+    with the caller's token (the seeded demo user, so owner-scoped lists are
+    POPULATED). First row's id (id/<stem>_id/uuid/_id) substitutes the param,
+    URL-encoded. Returns the concrete route, the original route when it has no
+    params, or None when any param can't be resolved (caller falls back to
+    skipping). Residual risk (accepted): a lane-custom UNSCOPED list beside a
+    scoped by-id GET can hand out a non-owner id → 403 detail render — needs
+    list/detail scoping to diverge, which by-construction scoping prevents for
+    projected tables. Never raises; ``http_get`` injectable."""
+    get = http_get or _http_get_json
+    path = str(route or "").split("?", 1)[0]
+    segs = path.split("/")
+    if not any(_is_param_seg(s) for s in segs):
+        return route
+    if not api_base:
+        return None
+
+    def _cands(stem: str) -> List[str]:
+        out: List[str] = []
+        for c in ((stem + "s") if not stem.endswith("s") else stem,
+                  stem, stem.rstrip("s") + "s"):
+            if c and c not in out:
+                out.append(c)
+        return out
+
+    resolved = list(segs)
+    for i, seg in enumerate(segs):
+        if not _is_param_seg(seg):
+            continue
+        pname = seg.lstrip(":").strip("{}")
+        if not pname.lower().endswith(("id", "pk")):
+            return None      # :slug / :tab / :handle — a row id would be WRONG
+        stems: List[str] = []
+        if len(pname) > 2 and pname.lower().endswith("id"):
+            stems.append(pname[:-2].rstrip("_-").lower())
+        prev = next((s for s in reversed(segs[:i]) if s and not _is_param_seg(s)), "")
+        if prev:
+            stems.append(prev.lower())
+        rid = None
+        seen: set = set()
+        for stem in stems:
+            if not stem:
+                continue
+            for cand in _cands(stem):
+                if cand in seen:
+                    continue
+                seen.add(cand)
+                try:
+                    status, data = get(f"{api_base.rstrip('/')}/api/{cand}", token)
+                except Exception:
+                    continue
+                if status != 200:
+                    continue
+                rows = _rows_of(data)
+                if not rows or not isinstance(rows[0], dict):
+                    continue
+                row = rows[0]
+                for k in ("id", f"{stem.rstrip('s')}_id", "uuid", "_id"):
+                    v = row.get(k)
+                    if v not in (None, ""):
+                        import urllib.parse
+                        rid = urllib.parse.quote(str(v), safe="")
+                        break
+                if rid:
+                    break
+            if rid:
+                break
+        if not rid:
+            return None
+        resolved[i] = rid
+    return "/".join(resolved)
+
+
 async def _fill_visible_inputs(page: Any, creds: Mapping[str, str]) -> int:
     """Fill every visible, empty input on the current step by detected role
     (email / password / name / generic). Returns how many it filled — staged forms

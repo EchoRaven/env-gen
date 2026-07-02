@@ -37,11 +37,20 @@ def _is_walkable_route(route) -> bool:
     EVERY 'blank' page was a file-path/component entry while the real routes ``/`` ``/inbox``
     ``/calendar`` rendered fine and ``auth_ok=True``). A relative file path fails
     ``startswith('/')``; an absolute one is caught by the source-file suffix.
-"""
+
+    PARAM routes (``/inbox/message/:id``, ``/calendar/event/{eventId}``) are excluded too
+    (outlook run-30, live): the walker navigates to the LITERAL ``:id`` → the page fetches
+    resource ":id" → nothing → renders empty → a FALSE 'blank' that burned the whole M1
+    deferral budget + escape-shipped while every param-free page was fine. A real user
+    reaches a detail page by CLICKING a list row — that is the click-through/squad tests'
+    coverage, not the URL walk's. ENV-AGNOSTIC."""
     r = str(route or "").strip()
     if not r.startswith("/"):
         return False
-    return not r.split("?", 1)[0].rstrip("/").lower().endswith(_ROUTE_FILE_SUFFIXES)
+    r = r.split("?", 1)[0]
+    if "{" in r or any(seg.startswith(":") for seg in r.split("/")):
+        return False                               # unresolved param → not URL-walkable
+    return not r.rstrip("/").lower().endswith(_ROUTE_FILE_SUFFIXES)
 
 
 def _isolation_scoped_tables_from_chains(registryhub, table_names) -> set:
@@ -453,13 +462,37 @@ class HealPipeline:
         api_base = f"http://localhost:{be_port}" if be_port else None
         # pages to walk: the registered ui_pages with a real route (+ landing/login).
         pages = [{"name": "login", "route": "/login", "auth": False}]
+        # Fix #35 (complete form): a PARAM route (/inbox/message/:id) is not URL-
+        # walkable as written — resolve a REAL row id via the backend (as the
+        # SEEDED demo user, whose owner-scoped lists are populated) and walk the
+        # concrete route; only an unresolvable param route is skipped. One lazy
+        # token mint for the whole page list.
+        _param_tok = {"tried": False, "v": None}
+
+        def _resolver_token():
+            if not _param_tok["tried"]:
+                _param_tok["tried"] = True
+                try:
+                    if be_port:
+                        from .visual_fidelity import _mint_token, _seed_demo_login
+                        _param_tok["v"] = _mint_token(be_port, timeout_s=20,
+                                                      demo=_seed_demo_login(proj))
+                except Exception:
+                    pass
+            return _param_tok["v"]
+
         try:
+            from .test_user_runner import _is_param_seg, resolve_param_route
             for name, pg in (registryhub.list_ui_pages() or {}).items():
                 if not isinstance(pg, dict):
                     continue
                 route = str(pg.get("route") or pg.get("path") or "").strip()
+                if (api_base and route.startswith("/")
+                        and any(_is_param_seg(s) for s in route.split("/"))):
+                    route = resolve_param_route(route, api_base, _resolver_token()) or route
                 # Skip junk entries whose "route" is a SOURCE FILE PATH or a non-navigable
                 # component — walking them renders BLANK and false-flags a usable app (#26).
+                # An unresolved param route still lands here and is skipped (#35 interim).
                 if route and _is_walkable_route(route):
                     low = route.rstrip("/").lower()
                     pages.append({"name": str(name), "route": route,
