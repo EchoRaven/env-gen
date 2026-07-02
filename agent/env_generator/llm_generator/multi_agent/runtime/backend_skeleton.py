@@ -18,6 +18,7 @@ become generic lists; richer business logic is a later lane-override extension).
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
@@ -575,8 +576,16 @@ try:
             next(iter(getattr(_r, "methods", []) or ["GET"])), getattr(_r, "path", ""))
     ]
     app.include_router(_custom_router)
-except ImportError:
-    pass
+except ImportError as _custom_imp:
+    # ONLY "custom_routes does not exist" is benign. A NESTED broken import (the lane's
+    # `import asyncpg` with the package missing) also lands here — and silently dropping
+    # the WHOLE router 404'd every custom-only endpoint while chains stayed green on the
+    # projected handlers (outlook run-29: auth/me 404 → login-wall, invisible for hours).
+    if getattr(_custom_imp, "name", None) not in (None, "custom_routes"):
+        import logging
+        logging.getLogger("custom_routes").error(
+            "custom_routes has a BROKEN IMPORT (%s) — ALL custom routes are disabled; "
+            "add the missing package to pyproject dependencies", _custom_imp)
 except Exception as _custom_exc:  # pragma: no cover — a broken override must not kill boot
     import logging
     logging.getLogger("custom_routes").warning("custom_routes failed to load: %s", _custom_exc)
@@ -700,6 +709,69 @@ dependencies = [
 ]
 '''
 
+# DEPENDENCY RECONCILIATION (outlook run-29, 2026-07-01): the lane wrote
+# ``import asyncpg`` in custom_routes.py but the framework re-asserts _PYPROJECT
+# byte-identically each skeleton pass → asyncpg never installed → the
+# ``from custom_routes import router`` include raised ModuleNotFoundError → the
+# except-ImportError swallow dropped ALL custom routes SILENTLY (auth/me 404 →
+# login-wall/hollow verdict; chains stayed green on projected handlers so nothing
+# noticed). Render pyproject from the base list UNIONED with the third-party
+# modules the lane's backend source actually imports, so a lane picking its own
+# driver/library is installable BY CONSTRUCTION. Unknown import names map to the
+# same pip name (asyncpg/httpx/redis/...); known aliases are translated.
+_IMPORT_TO_PIP = {
+    "jwt": None, "psycopg": None, "fastapi": None, "uvicorn": None,   # already in base
+    "sqlalchemy": None, "cryptography": None, "multipart": None,
+    "psycopg2": "psycopg2-binary", "yaml": "pyyaml", "PIL": "pillow",
+    "dotenv": "python-dotenv", "bs4": "beautifulsoup4", "Crypto": "pycryptodome",
+    "dateutil": "python-dateutil", "OpenSSL": "pyopenssl", "jose": "python-jose",
+    "passlib": "passlib[bcrypt]", "starlette": None, "pydantic": None,  # fastapi deps
+}
+_TOP_IMPORT_RE = re.compile(r"^\s*(?:import|from)\s+([A-Za-z_]\w*)", re.M)
+
+
+def _lane_third_party_imports(be_dir: Any) -> List[str]:
+    """pip requirement strings for third-party modules the backend source imports but the
+    base _PYPROJECT does not carry. Local modules (sibling .py files) and stdlib are
+    skipped; best-effort (empty on any failure)."""
+    out: List[str] = []
+    try:
+        be = Path(be_dir)
+        if not be.is_dir():
+            return out
+        local = {f.stem for f in be.glob("*.py")}
+        stdlib = getattr(sys, "stdlib_module_names", frozenset())
+        seen: set = set()
+        for f in sorted(be.glob("*.py")):
+            try:
+                src = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            for name in _TOP_IMPORT_RE.findall(src):
+                if name in seen or name in local or name in stdlib:
+                    continue
+                seen.add(name)
+                if name in _IMPORT_TO_PIP:
+                    pip = _IMPORT_TO_PIP[name]
+                    if pip:                      # None → already in the base list
+                        out.append(pip)
+                else:
+                    out.append(name)             # asyncpg / httpx / redis / aiohttp / ...
+    except Exception:
+        return []
+    return sorted(set(out))
+
+
+def render_pyproject(be_dir: Any) -> str:
+    """_PYPROJECT + any lane-imported third-party deps (union, never removes)."""
+    extras = _lane_third_party_imports(be_dir)
+    if not extras:
+        return _PYPROJECT
+    lines = "".join(f'  "{d}",\n' for d in extras)
+    # anchor on the dependencies-list terminator (`\n]\n`), NOT a bare `]\n` — that
+    # would match the `[project]` table header first and corrupt the TOML.
+    return _PYPROJECT.replace("\n]\n", "\n" + lines + "]\n", 1)
+
 _DOCKERFILE = '''FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
 WORKDIR /app
 COPY pyproject.toml ./
@@ -750,7 +822,7 @@ def write_backend_build_infra(output_dir: Any) -> Dict[str, Any]:
     be = Path(output_dir) / "app" / "backend"
     be.mkdir(parents=True, exist_ok=True)
     written: Dict[str, str] = {}
-    for name, content in (("pyproject.toml", _PYPROJECT),
+    for name, content in (("pyproject.toml", render_pyproject(be)),
                           ("Dockerfile", _DOCKERFILE),
                           ("reset.sh", _RESET_SH)):
         (be / name).write_text(content, encoding="utf-8")
@@ -1282,7 +1354,7 @@ def write_backend_skeleton(
     w("auth_dependency.py", _AUTH_DEPENDENCY_PY)
     w("main.py", render_skeleton_main(endpoints, tables))
     w("schemas.py", _SCHEMAS_PY)
-    w("pyproject.toml", _PYPROJECT)
+    w("pyproject.toml", render_pyproject(be))
     w("Dockerfile", _DOCKERFILE)
     w("reset.sh", _RESET_SH)
     return {"written": list(written), "backend_dir": str(be)}
