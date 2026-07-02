@@ -366,6 +366,12 @@ response = ask_agent(
 Only deliver when ALL conditions met:
 - Verifier reports all tests and validation flows pass
 - No critical bugs remain in backend/frontend reports
+- The deliverability check you ran THIS round reports ZERO blockers and no lane
+  has in-flight P0 work. Do NOT call `deliver_project()` on optimism or on a
+  lane's "done" message alone: a premature call is REJECTED by the live gate
+  (the run keeps converging), and repeated premature calls have burned entire
+  runs (run-31/32: mid-flight deliver exited the loop into a failed final gate).
+  One rejected `deliver_project()` = a signal to go fix blockers, not to retry.
 
 ```python
 deliver_project(
