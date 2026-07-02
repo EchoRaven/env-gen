@@ -1636,6 +1636,21 @@ class Orchestrator:
                 self._enter_project_phase("test", reason="run delivery gate checks")
                 gate = self._validate_delivery_gate()
                 if not gate["ok"]:
+                    # FINAL-GATE READINESS RETRY (outlook run-28 rc=1 + run-31 FAILED, live):
+                    # this gate probes LIVE state (sql_tables introspection, business-chain
+                    # runs) and the compose stack restarts between milestones — a mid-restart
+                    # evaluation saw sql_tables=4-of-11 / failing chains on a HEALTHY app and
+                    # killed an otherwise-delivered run. Wait (bounded) for the backend to
+                    # serve, then re-evaluate ONCE; a genuinely failing gate still raises,
+                    # just ≤90s later.
+                    from .runtime.validation_runner import wait_backend_ready
+                    self._logger.warning(
+                        "Final delivery gate failed on first evaluation (%s) — waiting for "
+                        "backend readiness (compose may be mid-restart) and re-evaluating once.",
+                        gate.get("failed_checks"))
+                    wait_backend_ready(self.output_dir)
+                    gate = self._validate_delivery_gate()
+                if not gate["ok"]:
                     report = self._format_delivery_gate_report(gate)
                     raise RuntimeError(f"Delivery gate failed.\n{report}")
             

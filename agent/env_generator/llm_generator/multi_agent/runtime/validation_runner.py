@@ -72,6 +72,32 @@ def _backend_host_port(compose_file: Path, cwd: Path) -> Optional[int]:
     return _service_host_port(compose_file, cwd, "backend")
 
 
+def wait_backend_ready(project_dir: Any, timeout_s: int = 90, gap_s: float = 3.0) -> bool:
+    """Bounded wait until the compose BACKEND answers HTTP (<500).
+
+    The FINAL delivery gate evaluates LIVE state (sql_tables introspection, business-chain
+    runs) and the compose stack restarts between milestones — evaluating mid-restart saw
+    sql_tables=4-of-11 + failing chains on a HEALTHY app and KILLED otherwise-delivered runs
+    (outlook run-28 → rc=1; run-31 → Status: FAILED, both at orchestrator's post-loop gate).
+    Callers wait for readiness, then re-evaluate ONCE before raising — recorded-result checks
+    are unaffected; only the live-probed ones get a fair read. Best-effort, never raises."""
+    import time as _time
+    try:
+        compose = Path(project_dir) / "docker" / "docker-compose.yml"
+        cwd = compose.parent
+        deadline = _time.time() + max(1, timeout_s)
+        while _time.time() < deadline:
+            port = _backend_host_port(compose, cwd) if compose.exists() else None
+            if port:
+                r = _http("GET", f"http://localhost:{port}/", timeout=4)
+                if r.get("status") is not None and (r.get("status") or 500) < 500:
+                    return True
+            _time.sleep(gap_s)
+        return False
+    except Exception:
+        return False
+
+
 def _safe_url(url: str) -> str:
     """Percent-encode characters urllib refuses — a verifier-authored query like
     ``/api/messages/search?q=Test Message`` reached urlopen with a raw SPACE →
