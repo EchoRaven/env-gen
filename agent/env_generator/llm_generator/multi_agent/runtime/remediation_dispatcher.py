@@ -203,6 +203,17 @@ class RemediationDispatcher:
         them, untouched). Best-effort: never raises into the loop."""
         # check_id → (owner_lane, task_title, concrete how-to-fix instruction)
         _CHECK_OWNER = {
+            "deliverability_missing_authored_seed": (
+                # #41's gate (run-34, live: logged "NO remediation owner" — the check sat
+                # undispatched). The BACKEND lane owns seed_data.json.
+                "backend", "Author app/backend/seed_data.json (blocks delivery)",
+                "app/backend/seed_data.json is absent/empty ({}), so the app ships the "
+                "bland framework-fallback seed. Author domain-REALISTIC rows for users + "
+                "EVERY business table: FK-valid ids, believable names/subjects/bodies/"
+                "timestamps matching this app's domain (never 'Getting Started'/'Item 1' "
+                "placeholders), enough rows that list screens look like the references "
+                "(e.g. ~a dozen inbox messages). Write valid JSON: "
+                "{\"users\": [...], \"<table>\": [...], ...}."),
             "frontend_dead_controls": (
                 "frontend", "Bind the dead frontend controls (blocks delivery)",
                 "interactive markup (<form>/submit button) with NO bound handler — a "
