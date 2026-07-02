@@ -776,12 +776,26 @@ _DOCKERFILE = '''FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
 WORKDIR /app
 COPY pyproject.toml ./
 RUN uv pip install --system -r pyproject.toml
-COPY *.py ./
+COPY *.py *.json ./
 COPY reset.sh /reset.sh
 RUN chmod +x /reset.sh
 EXPOSE 8081
 CMD ["python", "main.py"]
 '''
+# ``COPY *.py *.json ./`` ships the agent-authored seed_data.json into the image — with
+# only ``*.py`` the DATA file NEVER reached the container, so the loader fell back to the
+# embedded _SEED in every run regardless of what the lane authored (outlook run-31, live:
+# authored demo@example.com JSON on disk, container had no seed_data.json → fallback users
+# → demo login 401 + sparse screens). A .json glob with NO match fails the docker build, so
+# the infra writers below guarantee a seed_data.json ALWAYS exists (empty ``{}`` if the
+# lane hasn't authored one yet — falsy, so the loader still uses its fallback; written
+# ONLY-IF-ABSENT so authored content is never clobbered and the agent isn't anchored).
+
+
+def _ensure_seed_json(be: Path) -> None:
+    p = be / "seed_data.json"
+    if not p.exists():
+        p.write_text("{}\n", encoding="utf-8")
 
 _RESET_SH = '''#!/usr/bin/env bash
 # Framework-generated business-data reset (best-effort; keeps tenancy/identity spine).
@@ -822,6 +836,7 @@ def write_backend_build_infra(output_dir: Any) -> Dict[str, Any]:
     be = Path(output_dir) / "app" / "backend"
     be.mkdir(parents=True, exist_ok=True)
     written: Dict[str, str] = {}
+    _ensure_seed_json(be)
     for name, content in (("pyproject.toml", render_pyproject(be)),
                           ("Dockerfile", _DOCKERFILE),
                           ("reset.sh", _RESET_SH)):
@@ -1410,6 +1425,7 @@ def write_backend_skeleton(
     w("auth_dependency.py", _AUTH_DEPENDENCY_PY)
     w("main.py", render_skeleton_main(endpoints, tables))
     w("schemas.py", _SCHEMAS_PY)
+    _ensure_seed_json(be)
     w("pyproject.toml", render_pyproject(be))
     w("Dockerfile", _DOCKERFILE)
     w("reset.sh", _RESET_SH)
