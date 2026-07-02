@@ -72,11 +72,22 @@ def _backend_host_port(compose_file: Path, cwd: Path) -> Optional[int]:
     return _service_host_port(compose_file, cwd, "backend")
 
 
+def _safe_url(url: str) -> str:
+    """Percent-encode characters urllib refuses — a verifier-authored query like
+    ``/api/messages/search?q=Test Message`` reached urlopen with a raw SPACE →
+    ``InvalidURL: URL can't contain control characters`` → the step (and the whole
+    business_chain) failed forever on a working endpoint (outlook run-29 M3, live).
+    ``quote`` with the URL-structural chars in ``safe`` leaves valid URLs (and
+    already-encoded %XX sequences) byte-identical; only spaces/non-ASCII change."""
+    from urllib.parse import quote
+    return quote(url, safe=":/?&=%+,@;$!*'()[]~._-#")
+
+
 def _http(method: str, url: str, *, token: Optional[str] = None,
           body: Optional[dict] = None, timeout: int = 10) -> Dict[str, Any]:
     """One HTTP call → {status, body_text, error}. Never raises."""
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method.upper())
+    req = urllib.request.Request(_safe_url(url), data=data, method=method.upper())
     req.add_header("Content-Type", "application/json")
     if token:
         req.add_header("Authorization", f"Bearer {token}")

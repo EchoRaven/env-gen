@@ -794,6 +794,37 @@ def _recover_id_via_list(base: str, coll_path: str, token: Any) -> Any:
         return None
 
 
+def _recover_id_via_create(base: str, coll_path: str, token: Any) -> Any:
+    """LAST-RESORT recovery when even the list is EMPTY: create a row and use ITS id.
+
+    The list recovery above assumed seed data populates every collection — but reads are
+    OWNER-SCOPED, and the chain runs as a FRESHLY-REGISTERED user who owns NOTHING: the
+    verifier's ``save: items.0.id`` finds an empty list AND the list recovery sees the same
+    empty list → the literal ``{message_id}`` reaches the typed path param → 422 → the whole
+    business_chain wedges forever on a working backend (outlook run-29 M3 STUCK-ABORT, live:
+    3 of 6 chains died exactly here). POST a minimal row to the collection — auto-filling the
+    required fields the server itself names in its 400/422 (mirrors the step loop's
+    MISSING-FIELD AUTO-REPAIR) — and return the created id. Best-effort; never raises."""
+    if not coll_path or "${" in coll_path or "{" in coll_path or ":" in coll_path.split("/")[-1]:
+        return None
+    try:
+        body: Dict[str, Any] = {}
+        r = _http("POST", base + coll_path, token=token, body=body)
+        if not _status_ok(r.get("status"), []):
+            if r.get("status") not in (400, 422):
+                return None
+            miss_b, _miss_q = _missing_required_fields(r.get("body_text"), "POST")
+            if not miss_b:
+                return None
+            body = {f: "chain-recover" for f in miss_b}
+            r = _http("POST", base + coll_path, token=token, body=body)
+            if not _status_ok(r.get("status"), []):
+                return None
+        return _extract_resource_id(json.loads(r.get("body_text") or "{}"))
+    except Exception:
+        return None
+
+
 def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     """Run one chain; returns {name, steps: [...], broken: [...]}.
     Deterministic wiring; never raises."""
@@ -853,6 +884,10 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                 _rid = last_id
             if _rid is None:
                 _rid = _recover_id_via_list(base, _pcoll, token)
+            if _rid is None:
+                # (4) even the list is empty — owner-scoped reads + a fresh chain user own
+                # NOTHING (run-29 M3): create a row and use its id (#32).
+                _rid = _recover_id_via_create(base, _pcoll, token)
             if _rid is not None:
                 path = _UNRESOLVED_PLACEHOLDER.sub(str(_rid), path)
         body = _subst(step.get("body"), variables) if step.get("body") else None
@@ -940,6 +975,23 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
             if _status_ok(_res3.get("status"), expect):
                 res, status, ok, body = _res3, _res3.get("status"), True, _lb
                 autofilled = (autofilled or []) + ["login-creds<-register"]
+        # AUTH AUTO-ATTACH (#34, outlook run-29 M3): a step that FORGOT its `auth` ref
+        # (verifier authored `save: {token: access_token}` on the register but no
+        # `auth: token` on the writes) hits the endpoint UNAUTHENTICATED → 401 → chain
+        # broken forever on a working backend. When an expected-success step 401/403s
+        # WITHOUT an auth ref and a token was saved earlier, retry once WITH it — adopt
+        # the retry ONLY if it passes the authored expectation, so an isolation probe
+        # that EXPECTS 401/403 (status ∈ expect → ok → no retry) is never disturbed.
+        if (not ok and status in (401, 403) and not step.get("auth")
+                and str(step.get("path", "")).rstrip("/") not in ("/auth/login", "/auth/register")):
+            _tok2 = (variables.get("token") or variables.get("access_token")
+                     or next((v for k, v in reversed(list(variables.items()))
+                              if "token" in k.lower() and v), None))
+            if _tok2 and _tok2 != token:
+                _res5 = _http(method, base + path, token=_tok2, body=body)
+                if _status_ok(_res5.get("status"), expect):
+                    res, status, ok = _res5, _res5.get("status"), True
+                    autofilled = (autofilled or []) + ["auth<-saved-token"]
         kind = "ok"
         note = ""
         if not ok:
