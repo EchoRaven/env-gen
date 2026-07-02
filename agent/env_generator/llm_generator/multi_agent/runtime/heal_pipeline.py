@@ -538,7 +538,8 @@ class HealPipeline:
                 repair_frontend_api_exports, scaffold_missing_local_pages,
                 repair_frontend_named_default_imports, reroute_inline_stub_routes,
                 repair_frontend_missing_local_exports, normalize_frontend_api_base,
-                repair_frontend_escaped_backticks, repair_frontend_unimported_icons)
+                repair_frontend_escaped_backticks, repair_frontend_unimported_icons,
+                repair_frontend_default_export_wrapper)
             from pathlib import Path as _P
             fe = _P(out_dir) / "app" / "frontend"
             # SYNTAX FIRST: the lane intermittently escapes template-literal delimiters
@@ -562,6 +563,13 @@ class HealPipeline:
                 orch._logger.warning(
                     "Frontend unimported JSX identifiers imported via lucide-react "
                     "(render-crash fix): %s", _ui.get("repaired"))
+            # DEFAULT-EXPORT WRAPPER (run-35 /inbox): `export default { api };` makes every
+            # default-import consumer's member call undefined → blank page.
+            _dw = repair_frontend_default_export_wrapper(fe)
+            if _dw.get("repaired"):
+                orch._logger.warning(
+                    "Frontend default-export wrapper unwrapped (member-call blank-page "
+                    "fix): %s", _dw.get("repaired"))
             # Same-origin discipline FIRST: a lane that hardcodes an absolute
             # `http://localhost:<in-container-port>` API base (outlook MM, 2026-06-29)
             # bypasses the nginx reverse proxy AND targets the wrong host port, so the

@@ -186,6 +186,49 @@ def repair_frontend_unimported_icons(frontend_dir) -> Dict[str, object]:
     return {"repaired": repaired}
 
 
+# ── DEFAULT-EXPORT WRAPPER repair (outlook run-35, 2026-07-02) ────────────────
+# api.js declares `export const api = {...}` then ends `export default { api };` — the
+# default export is a WRAPPER OBJECT, so every default-import consumer
+# (`import api from '../services/api'; api.getMessages(...)`) hits
+# `TypeError: api.getMessages is not a function` → the page renders BLANK (run-35 /inbox,
+# live). The author plainly meant to re-export the object itself: rewrite
+# `export default { <name> };` to `export default <name>;` when <name> is a SINGLE
+# identifier that IS a top-level export const/let/var/function in the same file.
+_DEFAULT_WRAPPER_RE = re.compile(r"export\s+default\s*\{\s*([A-Za-z_$][\w$]*)\s*\}\s*;?")
+
+
+def repair_frontend_default_export_wrapper(frontend_dir) -> Dict[str, object]:
+    repaired: List[str] = []
+    try:
+        src_dir = Path(frontend_dir) / "src"
+        if not src_dir.is_dir():
+            return {"repaired": repaired}
+        for f in src_dir.rglob("*"):
+            if f.suffix not in (".js", ".jsx", ".ts", ".tsx") or not f.is_file():
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            m = _DEFAULT_WRAPPER_RE.search(txt)
+            if not m:
+                continue
+            name = m.group(1)
+            if not re.search(r"export\s+(?:const|let|var|function)\s+" + re.escape(name)
+                             + r"\b", txt):
+                continue  # wrapper of a non-exported local — intent unclear, leave it
+            fixed = _DEFAULT_WRAPPER_RE.sub(f"export default {name};", txt, count=1)
+            if fixed != txt:
+                try:
+                    f.write_text(fixed, encoding="utf-8")
+                    repaired.append(str(f.relative_to(src_dir)))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return {"repaired": repaired}
+
+
 def _exported_names(api_src: str) -> Set[str]:
     names: Set[str] = set(_EXPORT_RE.findall(api_src))
     for body in _EXPORT_BRACE_RE.findall(api_src):
