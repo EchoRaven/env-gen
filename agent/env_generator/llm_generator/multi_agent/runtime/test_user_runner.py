@@ -167,6 +167,37 @@ async def _wait_frontend_ready(page, base_url: str, attempts: int = 15,
     return False
 
 
+def _api_probe_once(api_base_url: str, timeout: int = 4) -> bool:
+    """One HTTP probe of the API base; True when it answers anything < 500."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(api_base_url + "/", method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return (getattr(r, "status", 200) or 200) < 500
+    except Exception as exc:
+        code = getattr(exc, "code", None)          # HTTPError: server answered
+        return code is not None and code < 500
+
+
+async def _wait_api_ready(page, api_base_url: str, attempts: int = 15,
+                          gap_ms: int = 2000, probe=None) -> bool:
+    """Poll the BACKEND base until it serves. The frontend readiness gate above closed the
+    frontend-down race — but the compose restart staggers services, so the walk can run in
+    the FRONTEND-UP/BACKEND-DOWN window: the SPA serves, every API call fails silently →
+    login does nothing (auth_ok=False) + data pages render EMPTY shells with ZERO console
+    errors (outlook run-35 M1+M2, live: exactly this signature escape-shipped twice).
+    Bounded; False → caller reports ran=False (skip, never a false 'unusable')."""
+    _probe = probe or _api_probe_once
+    for _ in range(max(1, attempts)):
+        if _probe(api_base_url):
+            return True
+        try:
+            await page.wait_for_timeout(gap_ms)
+        except Exception:
+            pass
+    return False
+
+
 async def run_browser_test_user(
     base_url: str,
     pages: List[Mapping[str, Any]],
@@ -212,6 +243,15 @@ async def run_browser_test_user(
                     report["ran"] = False
                     report["summary"] = ("frontend not reachable after readiness wait (likely "
                                           "mid container-restart) — browser walk skipped")
+                    return report
+                # API-BASE READINESS (#46): the compose restart staggers services — in the
+                # frontend-up/backend-down window the SPA serves but every API call fails
+                # silently → auth_ok=False + blank-but-error-free data pages (run-35 M1+M2
+                # escape-shipped on exactly this). Skip instead of false-flagging.
+                if api_base_url and not await _wait_api_ready(page, api_base_url):
+                    report["ran"] = False
+                    report["summary"] = ("backend API not reachable after readiness wait "
+                                          "(likely mid container-restart) — browser walk skipped")
                     return report
 
                 # ---- 1. AUTH FLOW (staged-form aware, real submit) ----
