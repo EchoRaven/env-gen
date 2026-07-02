@@ -1134,6 +1134,12 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 # #41: the lane never authored seed_data.json — the app would ship the
                 # bland framework fallback (run-33 shipped SUCCESS this way).
                 deliverability_failed_checks.append("deliverability_missing_authored_seed")
+            elif "authored seed quality" in low:
+                # #54: the lane authored seed_data.json but it is a token/placeholder
+                # seed (thin rows, marker words, sequential names) — the populated-
+                # screen bar needs realistic density. Anchored on the exact prefix
+                # deliverability emits; must precede the generic seed branches.
+                deliverability_failed_checks.append("deliverability_authored_seed_quality")
             elif "missing seed" in low:
                 deliverability_failed_checks.append("deliverability_missing_seed")
             elif "low row count" in low or "placeholder seed" in low:

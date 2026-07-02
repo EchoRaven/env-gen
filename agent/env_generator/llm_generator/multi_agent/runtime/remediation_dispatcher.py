@@ -534,6 +534,33 @@ class RemediationDispatcher:
                 "(or an unauthenticated request) reading/modifying another user's resource MUST "
                 "be refused (expect 401/403). Author the isolation step, register the chain, "
                 "re-run run_validation."),
+            # AUTHORED-SEED family (#41/#54). These tokens are minted ONLY by the
+            # delivery gate's deliverability canonicalization (delivery_gate.py) —
+            # i.e. THIS gate-level path, not the validation-run `checks` path that
+            # dispatch_failing_checks covers — so their owner mapping must live in
+            # THIS map (review w6x6art4t: a _CHECK_OWNER entry here is dead code;
+            # run-34's "NO remediation owner" recurs and the non-waivable blocker
+            # rides to STUCK-ABORT with the backend lane idle).
+            "deliverability_missing_authored_seed": (
+                "backend", "Author app/backend/seed_data.json (blocks delivery)",
+                "app/backend/seed_data.json is absent/empty ({}), so the app ships "
+                "the bland framework-fallback seed. Author domain-REALISTIC rows for "
+                "users + EVERY business table: FK-valid ids, believable names/"
+                "subjects/bodies/timestamps matching this app's domain, enough rows "
+                "that list screens look like the references (~a dozen for the "
+                "primary table). Write valid JSON: {\"users\": [...], \"<table>\": "
+                "[...], ...}."),
+            "deliverability_authored_seed_quality": (
+                # #54 — the seed exists (#41 cleared) but fails the content audit.
+                "backend", "Raise app/backend/seed_data.json to realistic density (blocks delivery)",
+                "app/backend/seed_data.json exists but fails the content-quality "
+                "audit: either fewer than ~10 structured rows in total (rows must "
+                "be JSON objects), or a table whose values contain 2+ unambiguous "
+                "placeholder markers (lorem/ipsum/placeholder/dummy/foo...). "
+                "Rewrite it with domain-REALISTIC rows: enough rows that list "
+                "screens look like the references (~a dozen for the primary "
+                "table), believable names/subjects/bodies/timestamps, mixed "
+                "states (read/unread, flagged), FK-valid ids."),
             "verification_checklist_not_ready": (
                 "verifier", "Record a green verification/build checklist (blocks delivery)",
                 "the build checklist is NOT all-green — it needs the CodeHub checks "

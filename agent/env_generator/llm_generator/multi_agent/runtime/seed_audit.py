@@ -141,4 +141,98 @@ def audit_seed_data(hub_registry) -> SeedReport:
     return SeedReport(flagged_tables=flagged)
 
 
-__all__ = ["SeedReport", "audit_seed_data", "detect_placeholder_score"]
+# ---------------------------------------------------------------------------
+# Fix #54 — content-quality audit of the AUTHORED app/backend/seed_data.json.
+# The #41 gate proves the lane authored SOMETHING; this proves it authored
+# ENOUGH and authored it REALISTICALLY (info density + state realism = the top
+# similarity lever, PIPELINE.md; run-33 shipped SUCCESS on a 2-row token seed).
+# Deliberately CONSERVATIVE — it feeds a NON-WAIVABLE deliverability blocker, so
+# every signal must be near-zero-false-positive (adversarial review w6x6art4t
+# killed two draft signals for false-blocking realistic seeds: the sequential-
+# name rule — 'msg_1' string FK ids / 'Room 101' / 'iPhone 15' ARE realistic —
+# and the full marker list — 'test'/'sample'/'bar'/'tbd' are ordinary domain
+# vocabulary). What remains:
+#   * thin seed — fewer than ENVGEN_SEED_MIN_TOTAL_ROWS (default 10) structured
+#     rows in TOTAL across all tables ("a dozen realistic emails … populated on
+#     first load" needs double digits; any real authoring attempt clears this;
+#     0 structured rows also lands here — a {table: ["str", ...]} shape passes
+#     #41's non-empty-list check but seeds nothing);
+#   * unambiguous placeholder markers — ≥2 DISTINCT words from the STRICT set
+#     below on WORD BOUNDARIES in one table (unlike detect_placeholder_score's
+#     substring match, "latest" must NOT hit "test" — and 'test'/'sample' are
+#     not in this set at all: a QA-tracker's realistic seed says 'test' in
+#     every row).
+# ---------------------------------------------------------------------------
+
+_MIN_AUTHORED_TOTAL_ROWS = 10
+
+# Strict subset of _PLACEHOLDER_WORDS that is placeholder in ANY domain. The
+# full set stays for the ADVISORY registration audit (waived once functionally
+# validated); this hard-gate set must never collide with legitimate vocabulary.
+_HARD_MARKER_WORDS = frozenset({
+    "lorem", "ipsum", "placeholder", "dummy", "asdf", "qwerty", "xxxx",
+    "foo", "baz", "qux", "example_user",
+})
+
+
+def _word_boundary_markers(rows: List[dict]) -> List[str]:
+    """DISTINCT hard-marker words appearing on a word boundary in any string
+    value of ``rows`` (case-insensitive)."""
+    hits: Set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for v in row.values():
+            if not isinstance(v, str):
+                continue
+            lowered = v.lower()
+            for word in _HARD_MARKER_WORDS:
+                if word in hits:
+                    continue
+                if re.search(rf"(?<![a-z0-9]){re.escape(word)}(?![a-z0-9])", lowered):
+                    hits.add(word)
+    return sorted(hits)
+
+
+def audit_authored_seed(data: Any) -> List[str]:
+    """Content-quality issues with an authored seed mapping ({table: [rows]}).
+
+    Returns human-readable issue strings ([] = acceptable). Pure + deterministic
+    (recomputed each gate tick, so a rewritten seed self-clears); tolerant of
+    arbitrary JSON shapes — non-dict input is not audited; non-dict ROWS are not
+    counted as structured rows (so a strings-only "seed" can't satisfy the
+    floor)."""
+    import os
+    if not isinstance(data, dict):
+        return []
+    try:
+        min_total = int(os.environ.get("ENVGEN_SEED_MIN_TOTAL_ROWS",
+                                       str(_MIN_AUTHORED_TOTAL_ROWS)))
+    except Exception:
+        min_total = _MIN_AUTHORED_TOTAL_ROWS
+    issues: List[str] = []
+    total = 0
+    for table, rows in data.items():
+        if not isinstance(rows, list):
+            continue
+        dict_rows = [r for r in rows if isinstance(r, dict)]
+        total += len(dict_rows)
+        if not dict_rows:
+            continue
+        markers = _word_boundary_markers(dict_rows)
+        if len(markers) >= 2:
+            issues.append(
+                f"table '{table}' reads as placeholder content "
+                f"(markers: {', '.join(markers[:5])}) — replace those exact "
+                "values with believable domain content")
+    if total < min_total:
+        issues.append(
+            f"only {total} structured row(s) (JSON objects) total across all "
+            f"tables — populated list screens need >= {min_total}; add realistic "
+            "rows (mixed states, believable names/subjects/timestamps) until the "
+            "screens look like the references")
+    return issues
+
+
+__all__ = ["SeedReport", "audit_seed_data", "detect_placeholder_score",
+           "audit_authored_seed"]

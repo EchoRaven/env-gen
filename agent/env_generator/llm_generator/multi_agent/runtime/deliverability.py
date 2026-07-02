@@ -319,6 +319,23 @@ def compute_deliverability(hub_registry, app_root,
                 "the app would ship the bland framework-fallback seed. Author domain-"
                 "realistic rows (users + every business table, FK-valid, believable "
                 "subjects/bodies/timestamps) in app/backend/seed_data.json.")
+        elif os.environ.get("ENVGEN_SEED_QUALITY_GATE", "1") not in ("0", "off", "false"):
+            # Fix #54 — the seed exists; is it GOOD? #41 only proves non-empty,
+            # so a 2-row token seed shipped as "SUCCESS" while the bar is
+            # populated, realistic list screens (info density = the top visual
+            # lever). Same non-waivable family as #41 (content quality is
+            # exactly what functional validation does NOT prove); conservative
+            # signals only (see audit_authored_seed) + recomputed each tick so
+            # a rewritten seed self-clears.
+            try:
+                from .seed_audit import audit_authored_seed
+                _issues = audit_authored_seed(_data)
+            except Exception:
+                _issues = []
+            if _issues:
+                blockers.append(
+                    "authored seed quality: " + "; ".join(_issues)
+                    + " — rewrite app/backend/seed_data.json (keep it FK-valid).")
     except Exception:
         pass
 
