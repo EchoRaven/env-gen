@@ -99,8 +99,17 @@ class HealPipeline:
             from pathlib import Path as _P
             from .backend_scaffold import (
                 repair_backend_auth_dependency, repair_auth_import_paths,
-                repair_inline_token_auth, repair_auth_enforcement_middleware)
+                repair_inline_token_auth, repair_auth_enforcement_middleware,
+                repair_custom_routes_router_prologue)
             be_dir = _P(out_dir) / "app" / "backend"
+            # custom_routes using @router.<verb> without defining router (run-34):
+            # NameError at import silently killed the WHOLE custom router — including the
+            # lane's owner-scoped reads → cross-user leak → isolation wedge → STUCK.
+            _rp = repair_custom_routes_router_prologue(be_dir)
+            if _rp.get("repaired"):
+                orch._logger.warning(
+                    "custom_routes.py used @router without defining it — canonical "
+                    "APIRouter prologue inserted (import-crash fix).")
             rep = repair_backend_auth_dependency(be_dir)
             if rep.get("repaired"):
                 orch._logger.warning(
