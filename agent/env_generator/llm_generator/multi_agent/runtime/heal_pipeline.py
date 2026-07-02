@@ -36,7 +36,8 @@ def _is_walkable_route(route) -> bool:
     escape-ships 'loudly' on a perfectly usable app (outlook run-28 v1.1.0, live-confirmed:
     EVERY 'blank' page was a file-path/component entry while the real routes ``/`` ``/inbox``
     ``/calendar`` rendered fine and ``auth_ok=True``). A relative file path fails
-    ``startswith('/')``; an absolute one is caught by the source-file suffix. ENV-AGNOSTIC."""
+    ``startswith('/')``; an absolute one is caught by the source-file suffix.
+"""
     r = str(route or "").strip()
     if not r.startswith("/"):
         return False
@@ -528,7 +529,7 @@ class HealPipeline:
                 repair_frontend_api_exports, scaffold_missing_local_pages,
                 repair_frontend_named_default_imports, reroute_inline_stub_routes,
                 repair_frontend_missing_local_exports, normalize_frontend_api_base,
-                repair_frontend_escaped_backticks)
+                repair_frontend_escaped_backticks, repair_frontend_unimported_icons)
             from pathlib import Path as _P
             fe = _P(out_dir) / "app" / "frontend"
             # SYNTAX FIRST: the lane intermittently escapes template-literal delimiters
@@ -542,6 +543,16 @@ class HealPipeline:
                 orch._logger.warning(
                     "Frontend escaped-backtick template delimiters un-escaped (esbuild "
                     "parse fix, prevents docker_up build wedge): %s", _eb.get("repaired"))
+            # USED-BUT-UNIMPORTED JSX identifiers (#40, run-33 M1): `<Mail/>` with no
+            # import BUILDS fine but crashes the page at render (ReferenceError → blank +
+            # console error → browser-gate deferral churn). Import them via lucide-react —
+            # the safe-icon plugin renders real icons and degrades unknown names to a
+            # placeholder, so this is crash-proof by construction.
+            _ui = repair_frontend_unimported_icons(fe)
+            if _ui.get("repaired"):
+                orch._logger.warning(
+                    "Frontend unimported JSX identifiers imported via lucide-react "
+                    "(render-crash fix): %s", _ui.get("repaired"))
             # Same-origin discipline FIRST: a lane that hardcodes an absolute
             # `http://localhost:<in-container-port>` API base (outlook MM, 2026-06-29)
             # bypasses the nginx reverse proxy AND targets the wrong host port, so the

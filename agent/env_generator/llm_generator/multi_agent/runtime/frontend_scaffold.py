@@ -119,6 +119,73 @@ def repair_frontend_escaped_backticks(frontend_dir) -> Dict[str, object]:
     return {"repaired": repaired}
 
 
+# ── UNIMPORTED-JSX-IDENTIFIER repair (outlook run-33, 2026-07-02) ─────────────
+# The lane uses an icon in JSX (`<Mail className=…/>`) without importing it. The BUILD
+# passes — a free JSX identifier compiles to a runtime global lookup — and the page then
+# CRASHES at render (`ReferenceError: Mail is not defined` → blank page + console error →
+# browser-gate deferral churn; run-33 M1 burned 3 re-test cycles on messages/events pages).
+# Deterministic repair: add every capitalized JSX tag that is neither imported nor locally
+# defined to a `lucide-react` import. The safe-icon Vite plugin routes ALL lucide imports
+# through its virtual module (real icon when it exists, placeholder SVG otherwise), so this
+# is CRASH-PROOF by construction: a real icon renders, a wrongly-caught name degrades to a
+# visible placeholder the visual gate can flag — strictly better than a dead page.
+_JSX_TAG_RE = re.compile(r"<([A-Z][A-Za-z0-9_]*)[\s/>]")
+_IMPORT_NAMES_RE = re.compile(r"import\s+(?:([A-Za-z_$][\w$]*)\s*,?\s*)?(?:\{([^}]*)\})?\s*from", re.S)
+_LOCAL_DEF_RE = re.compile(r"(?:^|\n)\s*(?:export\s+)?(?:default\s+)?"
+                           r"(?:function|class|const|let|var)\s+([A-Z][A-Za-z0-9_]*)")
+_REACT_BUILTINS = {"Fragment", "StrictMode", "Suspense", "Profiler", "ErrorBoundary"}
+
+
+def _unimported_jsx_tags(src: str) -> List[str]:
+    used = set(_JSX_TAG_RE.findall(src))
+    if not used:
+        return []
+    known: Set[str] = set(_REACT_BUILTINS)
+    for m in _IMPORT_NAMES_RE.finditer(src):
+        if m.group(1):
+            known.add(m.group(1).strip())
+        for part in (m.group(2) or "").split(","):
+            part = part.strip()
+            if part:
+                known.add(part.split(" as ")[-1].strip())  # the LOCAL binding
+    known.update(_LOCAL_DEF_RE.findall(src))
+    return sorted(used - known)
+
+
+def repair_frontend_unimported_icons(frontend_dir) -> Dict[str, object]:
+    """Import every capitalized JSX tag that is used but neither imported nor locally
+    defined, via lucide-react (safe-icon plugin guarantees no crash either way).
+    Idempotent; returns {"repaired": [relpath, ...]}."""
+    repaired: List[str] = []
+    try:
+        src_dir = Path(frontend_dir) / "src"
+        if not src_dir.is_dir():
+            return {"repaired": repaired}
+        for f in src_dir.rglob("*"):
+            if f.suffix not in (".jsx", ".tsx") or not f.is_file():
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            missing = _unimported_jsx_tags(txt)
+            if not missing:
+                continue
+            add = "import { " + ", ".join(missing) + " } from 'lucide-react';\n"
+            lines = txt.split("\n")
+            last_import = max((i for i, l in enumerate(lines)
+                               if l.lstrip().startswith("import ")), default=-1)
+            lines.insert(last_import + 1, add.rstrip("\n"))
+            try:
+                f.write_text("\n".join(lines), encoding="utf-8")
+                repaired.append(str(f.relative_to(src_dir)))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return {"repaired": repaired}
+
+
 def _exported_names(api_src: str) -> Set[str]:
     names: Set[str] = set(_EXPORT_RE.findall(api_src))
     for body in _EXPORT_BRACE_RE.findall(api_src):
