@@ -30,6 +30,243 @@ _FRONT_EXTS = (".js", ".jsx", ".ts", ".tsx", ".mjs")
 _STOPWORDS = ("account", "user", "users", "current", "data", "info",
               "details", "request", "api", "async", "the")
 
+# ── ESCAPED-BACKTICK repair (2026-06-30, outlook run-13) ─────────────────────
+# The frontend LLM lane intermittently emits template-literal DELIMITERS as
+# ESCAPED backticks — ``className={\`...\`}`` instead of ``className={`...`}`` —
+# which is NOT valid JSX/JS (a ``\``` is only legal INSIDE a template string as a
+# literal backtick), so esbuild/Vite fails the transform ("Invalid or unexpected
+# token") → ``npm run build`` fails → api_smoke docker_up FAIL → the validation
+# loop WEDGES, and the lane clears it one file at a time over many cycles (run-13:
+# MessageRow.jsx → FolderList.jsx → Tabs.jsx → InboxPage.jsx, same error each round).
+# Deterministically un-escape a backslash-backtick ONLY when it sits in a template-
+# literal DELIMITER position — right after a JS/JSX structural token (OPEN) or right
+# before a structural close (CLOSE) — so a legitimately-escaped backtick inside
+# displayed TEXT (ordinary characters on both sides) is LEFT UNTOUCHED. Env-agnostic,
+# best-effort, idempotent. Complements the safe-icon/api.js build-integrity repairs.
+_TICK_OPEN_RE = re.compile(r"((?:[={(\[,:?]|=>|&&|\|\||\?\?|\breturn)\s*)\\(?=`)")
+_TICK_CLOSE_RE = re.compile(r"\\(?=`[)}\];,])")
+
+# Same escaped-character damage family (outlook run-29, 2026-07-01): the lane emitted a
+# LITERAL ``\n`` between statements — ``}\n\nexport function CalendarsPage() {`` — a
+# backslash outside a string is a JS syntax error → vite build fails → docker_up WEDGES
+# (run-29: 6/6 validation attempts, STUCK escalation; the lane never fixed the file).
+# Un-escape ONLY at a STATEMENT BOUNDARY: after ``}``/``;``, before a top-level keyword
+# (export/import/function/const/let/var/class/async) or a comment. A legit ``\n`` inside
+# a string (``split('\n')``, ``"a\nb"``) never sits in that shape — the char after the
+# ``\n`` run is a quote/paren, not a declaration keyword — so it is left untouched (and
+# inside a TEMPLATE literal a real newline is semantically identical anyway).
+_LITNL_BOUNDARY_RE = re.compile(
+    r"([};])(?:\\n)+(?=\s*(?:export\b|import\b|function\b|const\b|let\b|var\b|class\b"
+    r"|async\b|//|/\*))")
+
+
+def _unescape_statement_boundary_newlines(src: str) -> str:
+    """Replace a literal ``\\n`` run at a statement boundary with real newlines."""
+    if "\\n" not in src:
+        return src
+    return _LITNL_BOUNDARY_RE.sub(lambda m: m.group(1) + "\n\n", src)
+
+
+# Third shape of the same damage family (outlook run-36, 2026-07-02): a literal ``\n``
+# INSIDE a template-literal interpolation — ``className={`... ${\n cond ? 'a' : 'b'\n}`}``.
+# The ``${...}`` region is EXPRESSION context, so the backslash is a hard esbuild syntax
+# error ("Syntax error \"n\"") → vite build fails → docker_up STUCK-abort (run-36 died
+# in 7 cycles on MessageList.jsx:94). Trigger precisely on ``${\n``; on such a line,
+# un-escape every ``\n`` that is NOT inside a single/double-quoted substring (a quoted
+# ``'\n'`` — e.g. split('\n') — is legitimate data and stays).
+_TPL_EXPR_NL_TRIGGER = re.compile(r"\$\{\\n")
+
+
+def _unescape_template_expr_newlines(src: str) -> str:
+    if not _TPL_EXPR_NL_TRIGGER.search(src):
+        return src
+    out_lines: List[str] = []
+    for line in src.split("\n"):
+        if not _TPL_EXPR_NL_TRIGGER.search(line):
+            out_lines.append(line)
+            continue
+        res: List[str] = []
+        i, n = 0, len(line)
+        quote = None
+        while i < n:
+            ch = line[i]
+            if quote:
+                if ch == "\\" and i + 1 < n:        # escape inside a quoted string
+                    res.append(line[i:i + 2]); i += 2; continue
+                if ch == quote:
+                    quote = None
+                res.append(ch); i += 1; continue
+            if ch in ("'", '"'):
+                quote = ch; res.append(ch); i += 1; continue
+            if ch == "\\" and i + 1 < n and line[i + 1] == "n":
+                res.append("\n"); i += 2; continue   # code context → real newline
+            res.append(ch); i += 1
+        out_lines.append("".join(res))
+    return "\n".join(out_lines)
+
+
+def _unescape_delimiter_backticks(src: str) -> str:
+    """Un-escape template-literal delimiter backticks. The OPEN/CLOSE regexes are used as a
+    per-LINE malformation DETECTOR: a line carrying a ``\``` in a delimiter position — right
+    after a structural token (``{ ( [ = , : ? => && || ?? return``) or right before a
+    structural close (``) } ] ; ,``) — is the lane's escaped-delimiter bug, so every
+    ``\``` on THAT line is un-escaped (this also catches a mid-expression delimiter like a
+    ternary branch ``? \`a\` : \`b\```). A line whose only ``\``` sits between ordinary text
+    characters (a legitimately-escaped literal backtick) matches NEITHER detector and is
+    left untouched — the safety property."""
+    if "\\`" not in src:
+        return src
+    out = []
+    for line in src.splitlines(keepends=True):
+        if "\\`" in line and (_TICK_OPEN_RE.search(line) or _TICK_CLOSE_RE.search(line)):
+            line = line.replace("\\`", "`")
+        out.append(line)
+    return "".join(out)
+
+
+def repair_frontend_escaped_backticks(frontend_dir) -> Dict[str, object]:
+    """Un-escape template-literal delimiter backticks across the frontend source so an
+    LLM-emitted ``className={\`...\`}`` can't break the esbuild/Vite build (and thus wedge
+    the api_smoke docker_up gate). Deterministic + best-effort: only touches a file that
+    actually contains a backslash-backtick, and only rewrites delimiter positions.
+    Returns ``{"repaired": [relative paths]}``."""
+    repaired: List[str] = []
+    try:
+        src_dir = Path(frontend_dir) / "src"
+        if not src_dir.is_dir():
+            return {"repaired": repaired}
+        for f in src_dir.rglob("*"):
+            if f.suffix not in _FRONT_EXTS or not f.is_file():
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            if "\\`" not in txt and "\\n" not in txt:  # fast path: no escape damage anywhere
+                continue
+            fixed = _unescape_delimiter_backticks(txt)
+            fixed = _unescape_statement_boundary_newlines(fixed)
+            fixed = _unescape_template_expr_newlines(fixed)
+            if fixed != txt:
+                try:
+                    f.write_text(fixed, encoding="utf-8")
+                    repaired.append(str(f.relative_to(src_dir)))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return {"repaired": repaired}
+
+
+# ── UNIMPORTED-JSX-IDENTIFIER repair (outlook run-33, 2026-07-02) ─────────────
+# The lane uses an icon in JSX (`<Mail className=…/>`) without importing it. The BUILD
+# passes — a free JSX identifier compiles to a runtime global lookup — and the page then
+# CRASHES at render (`ReferenceError: Mail is not defined` → blank page + console error →
+# browser-gate deferral churn; run-33 M1 burned 3 re-test cycles on messages/events pages).
+# Deterministic repair: add every capitalized JSX tag that is neither imported nor locally
+# defined to a `lucide-react` import. The safe-icon Vite plugin routes ALL lucide imports
+# through its virtual module (real icon when it exists, placeholder SVG otherwise), so this
+# is CRASH-PROOF by construction: a real icon renders, a wrongly-caught name degrades to a
+# visible placeholder the visual gate can flag — strictly better than a dead page.
+_JSX_TAG_RE = re.compile(r"<([A-Z][A-Za-z0-9_]*)[\s/>]")
+_IMPORT_NAMES_RE = re.compile(r"import\s+(?:([A-Za-z_$][\w$]*)\s*,?\s*)?(?:\{([^}]*)\})?\s*from", re.S)
+_LOCAL_DEF_RE = re.compile(r"(?:^|\n)\s*(?:export\s+)?(?:default\s+)?"
+                           r"(?:function|class|const|let|var)\s+([A-Z][A-Za-z0-9_]*)")
+_REACT_BUILTINS = {"Fragment", "StrictMode", "Suspense", "Profiler", "ErrorBoundary"}
+
+
+def _unimported_jsx_tags(src: str) -> List[str]:
+    used = set(_JSX_TAG_RE.findall(src))
+    if not used:
+        return []
+    known: Set[str] = set(_REACT_BUILTINS)
+    for m in _IMPORT_NAMES_RE.finditer(src):
+        if m.group(1):
+            known.add(m.group(1).strip())
+        for part in (m.group(2) or "").split(","):
+            part = part.strip()
+            if part:
+                known.add(part.split(" as ")[-1].strip())  # the LOCAL binding
+    known.update(_LOCAL_DEF_RE.findall(src))
+    return sorted(used - known)
+
+
+def repair_frontend_unimported_icons(frontend_dir) -> Dict[str, object]:
+    """Import every capitalized JSX tag that is used but neither imported nor locally
+    defined, via lucide-react (safe-icon plugin guarantees no crash either way).
+    Idempotent; returns {"repaired": [relpath, ...]}."""
+    repaired: List[str] = []
+    try:
+        src_dir = Path(frontend_dir) / "src"
+        if not src_dir.is_dir():
+            return {"repaired": repaired}
+        for f in src_dir.rglob("*"):
+            if f.suffix not in (".jsx", ".tsx") or not f.is_file():
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            missing = _unimported_jsx_tags(txt)
+            if not missing:
+                continue
+            add = "import { " + ", ".join(missing) + " } from 'lucide-react';\n"
+            lines = txt.split("\n")
+            last_import = max((i for i, l in enumerate(lines)
+                               if l.lstrip().startswith("import ")), default=-1)
+            lines.insert(last_import + 1, add.rstrip("\n"))
+            try:
+                f.write_text("\n".join(lines), encoding="utf-8")
+                repaired.append(str(f.relative_to(src_dir)))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return {"repaired": repaired}
+
+
+# ── DEFAULT-EXPORT WRAPPER repair (outlook run-35, 2026-07-02) ────────────────
+# api.js declares `export const api = {...}` then ends `export default { api };` — the
+# default export is a WRAPPER OBJECT, so every default-import consumer
+# (`import api from '../services/api'; api.getMessages(...)`) hits
+# `TypeError: api.getMessages is not a function` → the page renders BLANK (run-35 /inbox,
+# live). The author plainly meant to re-export the object itself: rewrite
+# `export default { <name> };` to `export default <name>;` when <name> is a SINGLE
+# identifier that IS a top-level export const/let/var/function in the same file.
+_DEFAULT_WRAPPER_RE = re.compile(r"export\s+default\s*\{\s*([A-Za-z_$][\w$]*)\s*\}\s*;?")
+
+
+def repair_frontend_default_export_wrapper(frontend_dir) -> Dict[str, object]:
+    repaired: List[str] = []
+    try:
+        src_dir = Path(frontend_dir) / "src"
+        if not src_dir.is_dir():
+            return {"repaired": repaired}
+        for f in src_dir.rglob("*"):
+            if f.suffix not in (".js", ".jsx", ".ts", ".tsx") or not f.is_file():
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            m = _DEFAULT_WRAPPER_RE.search(txt)
+            if not m:
+                continue
+            name = m.group(1)
+            if not re.search(r"export\s+(?:const|let|var|function)\s+" + re.escape(name)
+                             + r"\b", txt):
+                continue  # wrapper of a non-exported local — intent unclear, leave it
+            fixed = _DEFAULT_WRAPPER_RE.sub(f"export default {name};", txt, count=1)
+            if fixed != txt:
+                try:
+                    f.write_text(fixed, encoding="utf-8")
+                    repaired.append(str(f.relative_to(src_dir)))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return {"repaired": repaired}
+
 
 def _exported_names(api_src: str) -> Set[str]:
     names: Set[str] = set(_EXPORT_RE.findall(api_src))
@@ -119,8 +356,20 @@ def repair_frontend_api_exports(frontend_dir) -> Dict[str, object]:
             return {"repaired": False, "missing": []}
 
         lines = ["", "// auto-reconciled api.js exports (component import/export drift)."]
-        aliased, stubbed = [], []
+        aliased, stubbed, reexported = [], [], []
         for name in missing:
+            # If `name` is ALREADY a top-level binding in this module (e.g. a
+            # component does `import { api }` but api.js has `const api = {...};
+            # export default api;`), appending `export const api = ...` is a
+            # DUPLICATE declaration → vite "Identifier 'api' has already been
+            # declared" → build fail → docker_up FAIL → cascade gate failure (outlook
+            # run-5 M2 2026-06-30). Re-export the EXISTING binding instead — the
+            # named import then resolves to the REAL value, not an alias/stub.
+            if re.search(r"\b(?:const|let|var|function|class)\s+" + re.escape(name) + r"\b",
+                         api_src):
+                lines.append(f"export {{ {name} }};")
+                reexported.append(name)
+                continue
             match = _best_match(name, exported)
             if match:
                 lines.append(f"export const {name} = {match};")
@@ -134,7 +383,59 @@ def repair_frontend_api_exports(frontend_dir) -> Dict[str, object]:
         api_js.write_text(
             api_src.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
         return {"repaired": True, "aliased": aliased, "stubbed": stubbed,
-                "api_js": str(api_js)}
+                "reexported": reexported, "api_js": str(api_js)}
+    except Exception as exc:  # never break generation/validation
+        return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+_DEFAULT_IMPORT_RE = re.compile(
+    r"""import\s+([A-Za-z_$][\w$]*)\s+from\s+['"]([^'"]*services/api(?:\.js)?)['"]""")
+_HAS_DEFAULT_EXPORT_RE = re.compile(r"export\s+default\b")
+
+
+def repair_frontend_default_api_import(frontend_dir) -> Dict[str, object]:
+    """A component does ``import api from '.../services/api'`` (DEFAULT import) but api.js
+    exports only NAMED members (no ``export default``) → Rollup HARD-fails ("default is not
+    exported by src/services/api.js") → the frontend image won't build → docker_up FAIL → no
+    delivery (outlook M2, 2026-06-29: OutlookComposeReply/OutlookReadEmail). ``repair_frontend_
+    api_exports`` reconciles NAMED imports; this is the INVERSE: when ANY file default-imports
+    the api module AND api.js has no default export, append ``export default { …all named
+    exports… }`` so the default import resolves to an object carrying every api function
+    (``api.getMessages(...)`` works). GENERAL, idempotent, best-effort; never raises."""
+    try:
+        frontend_dir = Path(frontend_dir)
+        api_js = frontend_dir / "src" / "services" / "api.js"
+        if not api_js.exists():
+            cands = list(frontend_dir.glob("src/**/services/api.*"))
+            if not cands:
+                return {"repaired": False, "reason": "no api.js"}
+            api_js = cands[0]
+        # does any component DEFAULT-import the api module?
+        wants_default = False
+        for f in frontend_dir.glob("src/**/*"):
+            if f.suffix.lower() in _FRONT_EXTS and f.resolve() != api_js.resolve():
+                try:
+                    if _DEFAULT_IMPORT_RE.search(f.read_text(encoding="utf-8")):
+                        wants_default = True
+                        break
+                except Exception:
+                    continue
+        if not wants_default:
+            return {"repaired": False, "reason": "no default import of api"}
+        api_src = api_js.read_text(encoding="utf-8")
+        if _HAS_DEFAULT_EXPORT_RE.search(api_src):
+            return {"repaired": False, "reason": "api.js already has a default export"}
+        names = sorted(n for n in _exported_names(api_src) if n.isidentifier())
+        if not names:
+            # nothing to aggregate — still satisfy the import with an empty object so the
+            # build resolves (a call would no-op, far better than a hard build break).
+            body = "\nexport default {};\n"
+        else:
+            body = "\n// auto-added: a component default-imports this module; aggregate the\n" \
+                   "// named exports so `import api from './services/api'` resolves.\n" \
+                   "export default { " + ", ".join(names) + " };\n"
+        api_js.write_text(api_src.rstrip() + "\n" + body, encoding="utf-8")
+        return {"repaired": True, "default_export_added": names, "api_js": str(api_js)}
     except Exception as exc:  # never break generation/validation
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 
@@ -205,6 +506,60 @@ def reconcile_frontend_api_paths(frontend_dir, registered_paths) -> Dict[str, ob
     return result
 
 
+# A hardcoded ABSOLUTE origin pointing at a dev / in-container host (localhost,
+# 127.0.0.1, or 0.0.0.0 — any or no port) inside a string/template literal. In
+# SHIPPED browser code such an origin is ALWAYS wrong: the SPA is served by nginx,
+# which same-origin-proxies /api, /auth, /oauth, /.well-known to the backend (see
+# nginx.conf.template below), so the browser must call RELATIVE paths. When a lane
+# hardcodes ``const API_BASE = 'http://localhost:8082'`` (outlook MM, 2026-06-29)
+# the browser hits the HOST's :8082 directly — bypassing the proxy AND using the
+# IN-CONTAINER port (the published host port differs, e.g. ``8000:8082``) → every
+# request, login included, fails → the SPA can never authenticate → every protected
+# route renders the login form ("hollow preview" that the test-user captures as a
+# wall of identical Sign-in pages). The negative lookahead ``(?![\w.\-:])`` ensures
+# we only strip a bare local origin (``localhost``/``localhost:PORT``), never a host
+# that merely starts with it (``localhost.example.com`` is left untouched).
+_ABS_LOCAL_ORIGIN_RE = re.compile(
+    r"""(['"`])https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?(?![\w.\-:])""")
+
+
+def normalize_frontend_api_base(frontend_dir) -> Dict[str, object]:
+    """Rewrite hardcoded absolute localhost / 127.0.0.1 / 0.0.0.0 origins in the
+    frontend source to same-origin RELATIVE URLs, so browser requests flow through
+    the nginx reverse proxy (which routes /api, /auth, /oauth, /.well-known to the
+    backend) regardless of the published host port.
+
+    Only the ORIGIN PREFIX inside a string/template literal is removed; the path is
+    preserved — ``'http://localhost:8082/api/x'`` -> ``'/api/x'`` and a bare
+    ``'http://localhost:8082'`` (the common ``API_BASE`` constant) -> ``''`` so that
+    ``${API_BASE}/auth/login`` becomes ``/auth/login``. GENERAL (no env-specific
+    paths, no port list), idempotent (relative URLs carry no origin to strip), and
+    best-effort — never raises on a malformed tree."""
+    result: Dict[str, object] = {"normalized": []}
+    try:
+        fe = Path(frontend_dir)
+        src = fe / "src"
+        if not src.is_dir():
+            return result
+        changed: List[str] = []
+        for f in src.rglob("*"):
+            if (f.suffix.lower() not in _FRONT_EXTS or not f.is_file()
+                    or "node_modules" in str(f)):
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            new = _ABS_LOCAL_ORIGIN_RE.sub(r"\1", text)
+            if new != text:
+                f.write_text(new, encoding="utf-8")
+                changed.append(str(f.relative_to(fe)))
+        result["normalized"] = sorted(changed)
+    except Exception as exc:  # never break generation/validation
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
 _REL_NAMED_IMPORT_RE = re.compile(
     r"import\s+(?:[A-Za-z0-9_$]+\s*,\s*)?\{([^}]*)\}\s*from\s*['\"](\.\.?/[^'\"]+)['\"]")
 
@@ -245,6 +600,7 @@ def repair_frontend_missing_local_exports(frontend_dir) -> Dict[str, object]:
         if not src_dir.exists():
             return result
         to_add: Dict[Path, set] = {}
+        to_reexport: Dict[Path, set] = {}
         for f in src_dir.glob("**/*"):
             if f.suffix.lower() not in _FRONT_EXTS or "node_modules" in str(f):
                 continue
@@ -267,9 +623,20 @@ def repair_frontend_missing_local_exports(frontend_dir) -> Dict[str, object]:
                     continue
                 exported = _exported_names(tgt_src)
                 for n in names:
-                    # missing export AND the symbol appears NOWHERE in the target
-                    # (conservative — never risk re-declaring an existing symbol)
-                    if n not in exported and not re.search(r"\b" + re.escape(n) + r"\b", tgt_src):
+                    if n in exported:
+                        continue
+                    # ALREADY DECLARED in the target (e.g. `const AuthContext =
+                    # createContext()` but not exported) → re-export the EXISTING
+                    # binding. A stub would be a duplicate-declaration build break;
+                    # SKIPPING (the old behavior) leaves the named import unresolved
+                    # → "X is not exported by Y" → vite fail → docker_up wedge → run
+                    # abort (outlook run-7 AuthContext from App.jsx, 2026-06-30).
+                    if re.search(r"\b(?:const|let|var|function|class)\s+"
+                                 + re.escape(n) + r"\b", tgt_src):
+                        to_reexport.setdefault(target, set()).add(n)
+                    # appears NOWHERE → safe to stub (conservative; a parser miss
+                    # can never cause a duplicate-declaration build break)
+                    elif not re.search(r"\b" + re.escape(n) + r"\b", tgt_src):
                         to_add.setdefault(target, set()).add(n)
         for target, names in to_add.items():
             try:
@@ -290,6 +657,24 @@ def repair_frontend_missing_local_exports(frontend_dir) -> Dict[str, object]:
                         f"throw new Error('{n} not implemented (auto-stub)'); }};")
             target.write_text(tgt_src.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
             result["repaired"].append((target.name, add))
+        # Re-export existing-but-unexported local bindings (e.g. a Context the lane
+        # declared with `const X = createContext()` and imported { X } elsewhere).
+        for target, names in to_reexport.items():
+            try:
+                tgt_src = target.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            exported = _exported_names(tgt_src)
+            reexp = sorted(
+                n for n in names if n not in exported
+                and re.search(r"\b(?:const|let|var|function|class)\s+"
+                              + re.escape(n) + r"\b", tgt_src))
+            if not reexp:
+                continue
+            lines = ["", "// auto-reconciled missing exports (re-export existing local bindings)."]
+            lines += [f"export {{ {n} }};" for n in reexp]
+            target.write_text(tgt_src.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
+            result.setdefault("reexported", []).append((target.name, reexp))
     except Exception as exc:
         result["error"] = f"{type(exc).__name__}: {exc}"
     return result
@@ -1332,11 +1717,19 @@ function safeIconImports() {
         'import * as _real from ' + JSON.stringify(src) + ';',
         "const _F = React.forwardRef((p, r) => React.createElement('svg', Object.assign({ ref: r, width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 }, p), React.createElement('circle', { cx: 12, cy: 12, r: 10 })));",
       ];
+      // The rewritten import KEEPS its `as` alias, so it references the REAL
+      // export name (`import { Calendar as CalendarIcon }` asks the virtual
+      // module for export `Calendar`, binding it locally as CalendarIcon). So
+      // the module must export the REAL name — exporting the LOCAL (alias) name
+      // here made every aliased icon import fail with "<real> is not exported"
+      // → vite build fail → docker_up wedge → no delivery (outlook 2026-06-30).
+      // Dedup so `{ X, X as Y }` (both reference export X) does not double-export.
+      const _seen = {};
       for (const sp of specs) {
-        const parts = sp.split(/\s+as\s+/);
-        const real = parts[0].trim();
-        const local = (parts[1] || parts[0]).trim();
-        lines.push('export const ' + local + ' = _real[' + JSON.stringify(real) + '] || _F;');
+        const real = sp.split(/\s+as\s+/)[0].trim();
+        if (!real || _seen[real]) continue;
+        _seen[real] = 1;
+        lines.push('export const ' + real + ' = _real[' + JSON.stringify(real) + '] || _F;');
       }
       return lines.join('\n') + '\n';
     },
@@ -1350,12 +1743,27 @@ export default defineConfig({
 })
 """
 
-_BASELINE_TAILWIND = """export default {
+# tailwind.config.js is framework-PINNED (FIX #44: lanes broke dep VERSIONS). But the
+# THEME (design tokens — the colors the lane @apply's, e.g. `bg-ig-bg`) is legitimately
+# the frontend's to own, and a pinned EMPTY theme made `@apply <custom-class>` fail the
+# build with NO way for the lane to fix it (write to this file is denied → build fails
+# forever; run v15/v16: index.css `@apply bg-ig-bg` → "class does not exist"). So this
+# pinned config IMPORTS the theme tokens from a frontend-WRITABLE `tailwind.theme.js`
+# (create-if-missing, never force-overwritten), separating locked tooling from the lane's
+# design palette. Missing/empty theme → {} (no custom tokens; standard utilities still work).
+_BASELINE_TAILWIND = """import theme from './tailwind.theme.js'
+export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
-  theme: { extend: {} },
+  theme: { extend: theme || {} },
   plugins: [],
 }
 """
+
+# Frontend-WRITABLE design tokens (NOT in _FRONTEND_FORCE_INFRA, NOT write-denied). The
+# lane defines its palette here — e.g. `export default { colors: { 'ig-bg': '#000000',
+# 'ig-text': '#f5f5f5', 'ig-blue': '#0095F6' } }` — and tailwind.config.js imports it,
+# so `@apply bg-ig-bg` resolves. Projected empty once; the lane fills it; preserved.
+_BASELINE_TAILWIND_THEME = "export default {}\n"
 
 _BASELINE_POSTCSS = """export default { plugins: { tailwindcss: {}, autoprefixer: {} } }
 """
@@ -1518,6 +1926,7 @@ _BASELINE_FILES = {
     "package.json": _BASELINE_PACKAGE_JSON,
     "vite.config.js": _BASELINE_VITE,
     "tailwind.config.js": _BASELINE_TAILWIND,
+    "tailwind.theme.js": _BASELINE_TAILWIND_THEME,
     "postcss.config.js": _BASELINE_POSTCSS,
     "index.html": _BASELINE_INDEX_HTML,
     "src/index.css": _BASELINE_INDEX_CSS,
@@ -1636,6 +2045,13 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text(content, encoding="utf-8")
                 changed.append(rel)
+        # The pinned tailwind.config.js IMPORTS ./tailwind.theme.js — guarantee that
+        # frontend-writable token file EXISTS (create-if-missing) so the config never
+        # fails to load on a fresh tree. Do NOT overwrite it: the lane owns its palette.
+        _theme_p = fe / "tailwind.theme.js"
+        if not _theme_p.exists():
+            _theme_p.write_text(_BASELINE_TAILWIND_THEME, encoding="utf-8")
+            changed.append("tailwind.theme.js (created)")
         # CSS wiring is infra too: a lane-written src/main.jsx that omits
         # ``import './index.css'`` ships a bundle with NO stylesheet at all —
         # Tailwind never runs and every page renders as plain links on white

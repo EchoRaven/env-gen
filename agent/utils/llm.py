@@ -190,12 +190,31 @@ def _ctx_cfg():
     return max(keep, 1), max(cap, 500)
 
 
-def _mask_old_observations(messages: list) -> list:
-    """Truncate the bulky text content of stale messages to bound per-call input."""
+def _mask_old_observations(messages: list, model: str = None) -> list:
+    """Truncate the bulky text content of stale messages to bound per-call input —
+    but ONLY when the full history would exceed the model's RECOMMENDED WORKING
+    window. A large-context model (e.g. Gemini's ~1M) keeps its COMPLETE history
+    (no info loss); trimming kicks in only to avoid genuine overflow. (Was: always
+    trimmed to keep_recent + max_old regardless of model, wasting a big window while
+    cutting old info.)"""
     cfg = _ctx_cfg()
     if not cfg or not messages:
         return messages
     keep_recent, max_old = cfg
+    # MODEL-AWARE budget: if everything fits the model's working window, keep it ALL.
+    try:
+        from utils.model_limits import resolve_ctx_working_chars
+        budget = resolve_ctx_working_chars(model) if model else 0
+    except Exception:
+        budget = 0
+    if budget:
+        total = 0
+        for m in messages:
+            c = getattr(m, "content", None)
+            if isinstance(c, str):
+                total += len(c)
+        if total <= budget:
+            return messages
     n = len(messages)
     if n <= keep_recent:
         return messages
@@ -845,7 +864,7 @@ class OpenAIClient(BaseLLMClient):
         # Always sanitize outgoing content (redact keys/tokens/password-like lines).
         safe_messages: list[Message] = [
             Message(role=m.role, content=_sanitize_message_content(m.content), name=m.name, function_call=m.function_call, tool_calls=m.tool_calls, tool_call_id=m.tool_call_id)
-            for m in _mask_old_observations(messages)
+            for m in _mask_old_observations(messages, self.config.model_name)
         ]
         
         # Determine token parameter name based on model. Reasoning-class models
@@ -1235,6 +1254,8 @@ class AnthropicClient(BaseLLMClient):
 
         # Extract system message and convert content to Anthropic format
         # (maps OpenAI-style image_url parts to Anthropic image blocks).
+        # NOTE: observation masking is OpenAI/Google-only — Anthropic deliberately
+        # sends the FULL history and relies on the condenser + the 1M context window.
         system_content, chat_messages = self._convert_messages_to_anthropic(messages)
 
         request_params = {
@@ -1572,7 +1593,9 @@ class GoogleClient(BaseLLMClient):
         """
         from google.genai import types
 
-        messages = _mask_old_observations(messages)  # bound per-call input growth
+        # NOTE: observation masking is applied ONCE by the callers (chat/chat_stream)
+        # before they hand messages here. Masking again at this layer double-trimmed
+        # every call; the redundant call was removed (user 2026-06-24).
         system_instruction = None
         contents = []
 
@@ -1707,7 +1730,7 @@ class GoogleClient(BaseLLMClient):
         # Always sanitize outgoing content
         safe_messages: list[Message] = [
             Message(role=m.role, content=_sanitize_message_content(m.content), name=m.name, function_call=m.function_call, tool_calls=m.tool_calls, tool_call_id=m.tool_call_id)
-            for m in _mask_old_observations(messages)
+            for m in _mask_old_observations(messages, self.config.model_name)
         ]
         
         # Convert messages to Google format
@@ -1902,9 +1925,16 @@ class GoogleClient(BaseLLMClient):
         # Get usage stats
         prompt_tokens = 0
         completion_tokens = 0
+        cached_tokens = 0
         if hasattr(response, 'usage_metadata') and response.usage_metadata:
             prompt_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0) or 0
             completion_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0) or 0
+            # gemini IMPLICIT caching (2.5+/3 auto-caches a stable prefix incl. the
+            # system_instruction; the cached portion is billed ~4x cheaper). Capture +
+            # log it so cache effectiveness is VISIBLE (it was silently dropped). A
+            # cached_tokens that stays 0 every turn => no cache hits (the prefix isn't
+            # stable) => consider EXPLICIT cached_content for the system prompt.
+            cached_tokens = getattr(response.usage_metadata, 'cached_content_token_count', 0) or 0
         
         has_tool_calls = bool(tool_calls)
         if has_tool_calls:
@@ -1917,7 +1947,7 @@ class GoogleClient(BaseLLMClient):
         if _thinking:
             self._logger.info(f"[LLM thinking] {_thinking[:1500]}")
 
-        self._logger.info(f"[LLM Response] latency={latency:.1f}s, prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={finish_reason}")
+        self._logger.info(f"[LLM Response] latency={latency:.1f}s, prompt_tokens={prompt_tokens}, cached_tokens={cached_tokens}, completion_tokens={completion_tokens}, tool_calls={has_tool_calls}, finish={finish_reason}")
 
         return LLMResponse(
             content=content,
@@ -1945,10 +1975,12 @@ class GoogleClient(BaseLLMClient):
         """Stream chat response from Gemini"""
         client = self._get_client()
         from google.genai import types
-        
-        # Convert messages
-        system_instruction, contents = self._convert_messages_to_google(messages)
-        
+
+        # Convert messages (mask ONCE here — _convert_messages_to_google no longer masks)
+        system_instruction, contents = self._convert_messages_to_google(
+            _mask_old_observations(messages, self.config.model_name)
+        )
+
         gen_config = types.GenerateContentConfig(
             temperature=temperature or self.config.temperature,
             max_output_tokens=max_tokens or self.config.max_tokens,

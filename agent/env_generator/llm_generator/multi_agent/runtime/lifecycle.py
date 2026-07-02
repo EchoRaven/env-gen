@@ -82,8 +82,29 @@ def endpoint_kind(rec: Mapping[str, Any]) -> str:
 
 
 def is_business(rec: Mapping[str, Any]) -> bool:
-    """A business endpoint is one NOT on the fixed surface (kind unset/business)."""
-    return endpoint_kind(rec) not in _FIXED_KINDS
+    """A business endpoint is one NOT on the fixed surface (kind unset/business) AND not a
+    framework-owned control-surface / auth / oauth PATH.
+
+    The kind tag alone is not enough: a lane routinely DECLARES a control-surface endpoint
+    (``/api/v1/tenants``, ``/api/v1/reset``, ``/api/v1/admin/init-tenant``) in its contract
+    with NO kind, so it mis-classifies as business and gets REQUIRED — for implementation
+    AND for business_chain COVERAGE — even though it is served by the control plane and the
+    verifier can never chain it. outlook M2 wedged on exactly this: business_chain_api_coverage
+    listed the spine endpoints as uncovered → 7 stuck cycles → abort. The path net excludes
+    them regardless of the (missing) kind tag — it only ever REMOVES a framework-owned path
+    from the business set, never adds one, so no check can start requiring something new."""
+    if endpoint_kind(rec) in _FIXED_KINDS:
+        return False
+    p = str(rec.get("path") or "")
+    if p.startswith(("/auth/", "/oauth/", "/api/auth/", "/api/oauth/")) or p == "/health":
+        return False
+    try:
+        from .kickoff.contract import is_control_surface_path
+        if is_control_surface_path(p):
+            return False
+    except Exception:
+        pass
+    return True
 
 
 def _status(rec: Mapping[str, Any]) -> str:

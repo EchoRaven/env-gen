@@ -77,6 +77,58 @@ def _coerce_save(save: Any) -> Dict[str, Any]:
     return {}
 
 
+# JWT response-field synonyms a verifier may (mis)use as the token save-path. The
+# framework's auth skeleton returns the access token under "access_token"; any of
+# these as a save VALUE on an /auth step is normalized to that canonical path so the
+# saved var actually populates (else an /api step using it sends an empty bearer → 401).
+_TOKEN_RESP_SYNONYMS = frozenset({
+    "token", "access_token", "accesstoken", "jwt", "auth_token", "authtoken",
+    "bearer_token", "bearertoken", "jwt_token", "id_token",
+})
+
+
+_SUCCESS_CODES = frozenset({200, 201, 202, 203, 204, 205, 206})
+_CROSS_USER_DENIAL_CODES = frozenset({403, 404})
+
+
+def _expect_codes(st: Mapping[str, Any]) -> List[int]:
+    e = st.get("expect")
+    if e is None:
+        return []
+    if not isinstance(e, (list, tuple)):
+        e = [e]
+    out: List[int] = []
+    for c in e:
+        try:
+            out.append(int(c))
+        except Exception:
+            pass
+    return out
+
+
+def _is_cross_user_denial(st: Mapping[str, Any]) -> bool:
+    """A step that asserts THIS actor must be DENIED access to a resource that EXISTS
+    (403/404), NOT an auth-roundtrip 401 (no token) and NOT a success. The signature of
+    a cross-user isolation probe: expect contains 403/404, no 2xx (and not 401-only)."""
+    codes = _expect_codes(st)
+    if not codes or any(c in _SUCCESS_CODES for c in codes):
+        return False
+    return any(c in _CROSS_USER_DENIAL_CODES for c in codes)
+
+
+def _trailing_resource_var(path: Any) -> Optional[str]:
+    """The path-param NAME of a by-id step's LAST segment — ``${note_id}`` / ``{id}`` /
+    ``:id`` → the var. None for a collection or static path. Used to (a) recognise a
+    by-id target and (b) match a denial step against an earlier DELETE of the SAME var."""
+    segs = [s for s in str(path or "").rstrip("/").split("/") if s]
+    if not segs:
+        return None
+    m = re.match(r"^\$\{([^}]+)\}$|^\{([^}]+)\}$|^:(.+)$", segs[-1])
+    if not m:
+        return None
+    return next((g for g in m.groups() if g), None)
+
+
 def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
     """Normalize step variants → canonical {method, path, body, expect, save,
     auth}. Returns (normalized, errors). SCHEMA TOLERANCE (round 35): accept
@@ -106,12 +158,23 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
         for _k in ("body", "payload"):
             _v = st.get(_k)
             if isinstance(_v, str) and _v.strip().startswith("{"):
+                _parsed = None
                 try:
                     _parsed = json.loads(_v)
-                    if isinstance(_parsed, Mapping):
-                        st["body"] = _parsed
                 except Exception:
-                    pass
+                    # A JSON-STRING body that embeds a BARE ${var} substitution token
+                    # ('{"calendar_id": ${calendarId}}') is invalid JSON → json.loads
+                    # fails → the body stays a STRING → the API 422s "Input should be a
+                    # valid dictionary" (outlook events POST). Quote the bare ${...}
+                    # tokens so it parses into a real dict; they become string VALUES
+                    # the executor substitutes at run time (string-substitution in body).
+                    try:
+                        _q = re.sub(r'(?<!")(\$\{[^}]+\})(?!")', r'"\1"', _v)
+                        _parsed = json.loads(_q)
+                    except Exception:
+                        _parsed = None
+                if isinstance(_parsed, Mapping):
+                    st["body"] = _parsed
         # SCHEMA TOLERANCE (2026-06-24): the verifier frequently authors `save` as a
         # STRING shorthand ('access_token->auth.token', 'token:access_token') or a
         # JSON string, not the canonical {var: "dot.path"} dict. The downstream
@@ -148,8 +211,38 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
         # (the custom var stays saved, so steps using it keep working).
         if pth in ("/auth/register", "/auth/login"):
             _save = dict(st.get("save") or {})
+            # TOKEN RESPONSE-PATH NORMALIZATION (run v21): verifiers author the token
+            # save with a WRONG response path — save:{"tokenA": "token"} expecting a
+            # response field "token", but the framework's auth skeleton returns the JWT
+            # under "access_token" (there is NO "token" field). The var (tokenA) then
+            # resolves to None, and the /api step using auth="tokenA" sends an EMPTY
+            # bearer → 401 → business_chain fails (v21: 3/8 chains 401'd exactly this
+            # way, while the chains that wrote "access_token" passed). The token ALWAYS
+            # comes from access_token (a platform invariant of the OAuth2 skeleton), so
+            # rewrite any save whose VALUE is a token synonym to the canonical
+            # "access_token" path. Preserves multi-user identity (tokenA←A's token,
+            # tokenB←B's), unlike a blanket repoint to the single canonical "token".
+            for _k, _v in list(_save.items()):
+                if str(_v).strip().lower() in _TOKEN_RESP_SYNONYMS:
+                    _save[_k] = "access_token"
             _save.setdefault("token", "access_token")
             st["save"] = _save
+        if pth == "/auth/register":
+            # The framework's AS register returns 201 Created (200 on some platforms),
+            # or 409 (user already exists → still loginable). Verifiers author the expect
+            # INCONSISTENTLY — e.g. [200, 409] (FORGETTING 201) → the framework's 201
+            # then fails the step and wedges an otherwise-correct chain (smoke-notes exp7:
+            # notes_crud's whole CRUD flow failed only because register→201 ∉ [200,409]).
+            # The exact success code is a framework FACT, not a verifier choice, so UNION
+            # in all three rather than just appending 409. Per-step ${rand} keeps distinct
+            # register steps distinct; re-registering the same identity 409s safely.
+            _re = st.get("expect")
+            _re = ([200, 201] if not _re else
+                   list(_re) if isinstance(_re, (list, tuple)) else [_re])
+            for _code in (200, 201, 409):
+                if _code not in _re:
+                    _re.append(_code)
+            st["expect"] = _re
         # AUTH BODY DEFAULT (round 47): an /auth/register|login step with NO body
         # (verifier authored the step from just an endpoint id, body=None) sends an
         # empty request → the framework AS returns 422 "email and password are
@@ -234,6 +327,47 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
             return 1
         return 2
     out.sort(key=_auth_rank)
+    # MULTI-ACTOR ISOLATION AUTO-FIX (smoke-notes exp7/exp9, ~2/3 of private-app runs):
+    # the verifier authors a cross-user isolation probe (GET/PUT/DELETE /api/<res>/{id}
+    # expecting 403/404 — "user B must NOT reach A's row") but leaves auth UNSET, so it
+    # defaults to the canonical "token" = the LAST-registered user (usually the resource
+    # OWNER) → it reads its OWN row → 200 ≠ 404 → false-fail → business_chain blocks
+    # delivery though the APP is correctly scoped. The framework SUPPORTS per-step actor
+    # auth (auth=<var> → that Bearer); the verifier just under-authors it. Route such a
+    # step to a dedicated INTRUDER user (registered below, owns NOTHING) so it is
+    # GUARANTEED a non-owner → the app's real 404 is observed. SAFE BY CONSTRUCTION:
+    #   • Only a by-id DENIAL step (expect has 403/404, NO 2xx) whose auth is the canonical
+    #     "token" (the main actor). An EXPLICIT distinct actor (auth=tokenB) is the verifier
+    #     authoring it correctly → left UNTOUCHED. A 401-only auth-roundtrip → not a denial.
+    #   • DELETION-EXCLUSION: skip when an earlier OWNER delete (expect 2xx) removed the SAME
+    #     resource var — that "deleted → 404" check MUST stay the owner, else a FAILED delete
+    #     is masked (the intruder would 404 on a still-existing row). Matched on the trailing
+    #     path var, so a cross-user read of a DIFFERENT resource is still routed.
+    #   • Acts only when CONFIDENT; otherwise byte-identical to prior behaviour. Idempotent.
+    _INTRUDER = "__chain_intruder_token"
+    _owner_deleted_vars: set = set()
+    _used_intruder = False
+    for s in out:
+        _p = str(s.get("path", "")).rstrip("/")
+        _var = _trailing_resource_var(_p)
+        _denial = _is_cross_user_denial(s)
+        if (_p.startswith("/api/") and s.get("auth") == "token" and _var
+                and _denial and _var not in _owner_deleted_vars):
+            s["auth"] = _INTRUDER
+            _used_intruder = True
+        # only an OWNER delete (success-expecting) actually removes the row → marks the var
+        # "gone" so a later same-var 404 is treated as a deletion check, not cross-user.
+        if str(s.get("method", "")).upper() == "DELETE" and _var and not _denial:
+            _owner_deleted_vars.add(_var)
+    if _used_intruder and not any(
+            _INTRUDER in (s.get("save") or {}) for s in out):
+        out.insert(0, {
+            "method": "POST", "path": "/auth/register",
+            "body": {"email": "intruder_${rand}@example.com",
+                     "password": "Chain123!x", "name": "Chain Intruder"},
+            "save": {_INTRUDER: "access_token"},
+            "expect": [200, 201, 409],
+        })
     return out, errors
 
 
@@ -356,6 +490,12 @@ def load_verifier_chains(project_dir: Any) -> List[Dict[str, Any]]:
             data = {}
         for name, rec in (data or {}).items():
             if name == "_meta" or not isinstance(rec, Mapping):
+                continue
+            if str(rec.get("kind") or "").lower() == "coverage":
+                # Framework COVERAGE-completion chain (delivery_gate.complete_coverage_chain):
+                # it references the endpoints no verifier chain touches so the delivery gate's
+                # api-coverage check is satisfied by construction. It carries no request bodies
+                # and must NEVER execute (executing it would fail api_smoke's business_chain).
                 continue
             steps, _errs = normalize_steps(rec.get("steps") or [])
             if steps:
@@ -483,14 +623,229 @@ def _step_refs(step: Mapping[str, Any]) -> set:
     return refs
 
 
+def _status_ok(status: Any, expect: List[int]) -> bool:
+    """A step passes when its status is in the authored ``expect`` list, or — when no
+    ``expect`` was authored — any 2xx.
+
+    SUCCESS-FAMILY TOLERANCE (outlook run-26 + run-29, 2026-07-01): when EVERY authored
+    expect is a 2xx, the verifier's intent is "this write/read SUCCEEDS" — but it GUESSES
+    the exact success code and handlers legitimately differ (rsvp create → 201 vs authored
+    [200]; delete → 204 vs [200]). Strict membership failed the WHOLE business_chain forever
+    on a WORKING flow (run-29: rsvp 201-vs-[200] wedged 4+ validation cycles; run-26 M3
+    flagged the same class) — so an all-2xx expectation accepts any 2xx. An expect list
+    carrying ANY non-2xx (isolation probes [403,404], redirect checks, mixed [200,404])
+    keeps EXACT matching — a 200 must never satisfy an expected-denial probe."""
+    if not expect:
+        return bool(status and 200 <= status < 300)
+    if status in expect:
+        return True
+    return (isinstance(status, int) and 200 <= status < 300
+            and all(isinstance(e, int) and 200 <= e < 300 for e in expect))
+
+
+# A plain-string 4xx detail ('text is required', 'missing field email') — some
+# hand-authored handlers raise HTTPException(400, "text is required") instead of
+# letting Pydantic emit the structured 422 loc[] list. Extract the field name so a
+# write step can still auto-fill it (observed v22: POST /api/posts/{id}/comments
+# → 400 "text is required" — this backend's comment field is `text`, not `content`).
+_REQUIRED_FIELD_RE = re.compile(
+    r"(?:field\s+)?['\"]?([A-Za-z_]\w*)['\"]?\s+(?:is\s+)?required"
+    r"|missing\s+(?:required\s+)?(?:field\s+)?['\"]?([A-Za-z_]\w*)",
+    re.IGNORECASE)
+
+
+def _missing_required_fields(body_text: Optional[str],
+                             method: str) -> "tuple[List[str], List[str]]":
+    """``(body_fields, query_fields)`` the LIVE handler reports MISSING from a 4xx,
+    so a chain step can auto-fill exactly what's required even when the endpoint's
+    REGISTERED request schema is empty (contract drift — v19: POST
+    /api/posts/{id}/comments has request:{} yet 422s "field required"). Structured
+    FastAPI 422 buckets each ``detail[].loc`` by its frame (``body``/``form`` →
+    body, ``query`` → query param, e.g. v22 GET /api/search/users → 422 missing
+    ``query.q``). A plain-STRING detail ('text is required') is attributed to the
+    BODY for a write method (only writes carry one). Domain-agnostic: reads the
+    server's own error, never app knowledge."""
+    body: List[str] = []
+    query: List[str] = []
+    try:
+        d = json.loads(body_text or "{}")
+    except Exception:
+        return body, query
+    det = d.get("detail") if isinstance(d, Mapping) else None
+    if isinstance(det, list):
+        for e in det:
+            if not isinstance(e, Mapping):
+                continue
+            if str(e.get("type", "")).lower() not in ("missing", "value_error.missing"):
+                continue
+            loc = e.get("loc")
+            if not (isinstance(loc, (list, tuple)) and loc):
+                continue
+            frame = str(loc[0])
+            seg = (loc[1] if len(loc) > 1 and frame in ("body", "query", "form")
+                   else loc[-1])
+            if not (isinstance(seg, str) and seg):
+                continue
+            if frame == "query":
+                if seg not in query:
+                    query.append(seg)
+            elif seg not in body:
+                body.append(seg)
+    elif isinstance(det, str) and method in ("POST", "PUT", "PATCH"):
+        for m in _REQUIRED_FIELD_RE.finditer(det):
+            f = m.group(1) or m.group(2)
+            # never treat an auth/permission word as a missing body field (a 401/403
+            # message like "missing or invalid token" is NOT a body-shape problem).
+            if f and f.lower() not in ("token", "authorization", "auth", "bearer", "credentials") \
+                    and f not in body:
+                body.append(f)
+    return body, query
+
+
+_BODY_DOLLAR_VAR = re.compile(r"\$\{[^}]+\}")
+
+
+def _resource_from_path(path: Any) -> Optional[str]:
+    """The SINGULAR resource a step's path targets as a COLLECTION:
+    ``/api/calendars`` -> ``'calendar'``. None for a by-id / path-param / non-collection
+    tail (``/api/calendars/5``, ``/api/events/${id}``) so only real collection
+    steps register a per-resource id. Naive singularize (strip trailing 's') — good
+    enough to match a ``<resource>_id`` FK field (calendars->calendar matches calendar_id)."""
+    segs = [s for s in str(path or "").split("?", 1)[0].rstrip("/").split("/")
+            if s and s.lower() != "api"]
+    if not segs:
+        return None
+    last = segs[-1]
+    if not re.match(r"^[A-Za-z][\w-]*$", last) or last.isdigit():
+        return None  # path param (${id}/{id}/:id) or numeric id → not a collection
+    return last[:-1] if last.endswith("s") and len(last) > 1 else last
+
+
+def _resolve_unresolved_dollar_vars(value: Any, last_id: Any,
+                                    by_resource: Optional[Mapping[str, Any]] = None) -> Any:
+    """BODY counterpart of execute_chain's path UNRESOLVED-VARIABLE FALLBACK. A
+    verifier-authored body that references a ``${var}`` no prior step saved — a nested
+    FK like ``{"calendar_id": "${calendar_id}"}`` with no ``save:{calendar_id:...}`` —
+    otherwise leaves the literal token, which reaches the column (POST /api/events →
+    ``invalid input syntax for type integer: "${calendar_id}"`` → 500) → business_chain
+    wedges FOREVER on a functionally-correct app (outlook 2026-06-30).
+
+    RESOURCE-AWARE (outlook run-8): a WHOLE-value ``${<resource>_id}`` placeholder
+    resolves to THAT resource's last-created id from ``by_resource`` (e.g.
+    ``${calendar_id}`` -> the last POST /api/calendars id) — NOT the GLOBAL ``last_id``,
+    which may be an unrelated row created in between (a message POST right before the
+    event made last_id the MESSAGE id -> events_calendar_id_fkey VIOLATION). Falls back
+    to ``last_id`` when the resource was never created. Taken RAW so an INTEGER FK column
+    gets an int. The ``${...}`` form is always touched; a BARE ``{name}`` is touched ONLY
+    when it is a WHOLE-value FK token ending in ``_id`` (``{folder_id}``/``{cal_id}`` —
+    unambiguously a substitution ref the verifier authored, outlook run-11 M3: a bare
+    ``{folder_id}`` body leaf reached the int column → 500). A bare ``{id}``/``{rand}`` or a
+    non-``_id`` bare token stays a possible literal (see _subst) and is left alone."""
+    if isinstance(value, str):
+        m = (re.fullmatch(r"\$\{([^}]+)\}", value.strip())
+             or re.fullmatch(r"\{([A-Za-z_]\w*_id)\}", value.strip()))
+        if m:
+            var = m.group(1).strip()
+            if by_resource and var.endswith("_id"):
+                res = var[:-3]
+                rid = by_resource.get(res)
+                if rid is None:
+                    rid = by_resource.get(res + "s")  # tolerate a plural-keyed map
+                if rid is not None:
+                    return rid
+            return last_id
+        if _BODY_DOLLAR_VAR.search(value):
+            return _BODY_DOLLAR_VAR.sub(str(last_id), value)
+        return value
+    if isinstance(value, Mapping):
+        return {k: _resolve_unresolved_dollar_vars(v, last_id, by_resource) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve_unresolved_dollar_vars(v, last_id, by_resource) for v in value]
+    return value
+
+
+def _collection_path_of(path: Any) -> str:
+    """COLLECTION path for a by-id path whose LAST segment is an UNRESOLVED placeholder:
+    ``/api/messages/${message_id}`` / ``/api/messages/{id}`` / ``/api/messages/:id`` ->
+    ``/api/messages``. Only strips a trailing ${x}/{x}/:x segment (the recovery case);
+    returns the input unchanged otherwise (so ``/api/messages/search`` is left alone)."""
+    p = str(path or "").split("?", 1)[0].rstrip("/")
+    segs = p.split("/")
+    if segs and (segs[-1].startswith("${") or segs[-1].startswith("{")
+                 or segs[-1].startswith(":")):
+        return "/".join(segs[:-1]) or "/"
+    return p
+
+
+def _recover_id_via_list(base: str, coll_path: str, token: Any) -> Any:
+    """RECOVERY for an unresolvable path var: GET the resource collection and return a real
+    row's id. Seed data populates every business collection, so a chain step that targets a
+    resource it never CREATED (no prior POST to capture an id from) still hits a LIVE row
+    instead of sending the literal ``${x_id}`` → 404 (outlook run-22). Best-effort: never
+    raises; returns None on any failure, an empty collection, or a still-parametrised path."""
+    if not coll_path or "${" in coll_path or "{" in coll_path or ":" in coll_path.split("/")[-1]:
+        return None
+    try:
+        r = _http("GET", base + coll_path, token=token, body=None)
+        if not _status_ok(r.get("status"), [200]):
+            return None
+        return _extract_resource_id(json.loads(r.get("body_text") or "{}"))
+    except Exception:
+        return None
+
+
+def _recover_id_via_create(base: str, coll_path: str, token: Any) -> Any:
+    """LAST-RESORT recovery when even the list is EMPTY: create a row and use ITS id.
+
+    The list recovery above assumed seed data populates every collection — but reads are
+    OWNER-SCOPED, and the chain runs as a FRESHLY-REGISTERED user who owns NOTHING: the
+    verifier's ``save: items.0.id`` finds an empty list AND the list recovery sees the same
+    empty list → the literal ``{message_id}`` reaches the typed path param → 422 → the whole
+    business_chain wedges forever on a working backend (outlook run-29 M3 STUCK-ABORT, live:
+    3 of 6 chains died exactly here). POST a minimal row to the collection — auto-filling the
+    required fields the server itself names in its 400/422 (mirrors the step loop's
+    MISSING-FIELD AUTO-REPAIR) — and return the created id. Best-effort; never raises."""
+    if not coll_path or "${" in coll_path or "{" in coll_path or ":" in coll_path.split("/")[-1]:
+        return None
+    try:
+        body: Dict[str, Any] = {}
+        r = _http("POST", base + coll_path, token=token, body=body)
+        if not _status_ok(r.get("status"), []):
+            if r.get("status") not in (400, 422):
+                return None
+            miss_b, _miss_q = _missing_required_fields(r.get("body_text"), "POST")
+            if not miss_b:
+                return None
+            body = {f: "chain-recover" for f in miss_b}
+            r = _http("POST", base + coll_path, token=token, body=body)
+            if not _status_ok(r.get("status"), []):
+                return None
+        return _extract_resource_id(json.loads(r.get("body_text") or "{}"))
+    except Exception:
+        return None
+
+
 def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     """Run one chain; returns {name, steps: [...], broken: [...]}.
     Deterministic wiring; never raises."""
-    variables: Dict[str, str] = {"rand": str(int(time.time() * 1000))[-7:]}
+    # ${rand} mints a UNIQUE value PER STEP (the prompt's contract: "${rand} mints a
+    # unique value, ${var} reuses a saved one"). It used to be minted ONCE per execution
+    # — so the canonical multi-user pattern (register user A → … → register user B), which
+    # the verifier prompt mandates and few-shots, gave BOTH registers the SAME
+    # ${rand} email → step 2 collided on the unique-email constraint (409) → its token was
+    # never saved → every downstream step skipped → business_chain_failing FOREVER on a
+    # functionally-correct app (run v12: chain `post_creation_and_visibility`). Fresh per
+    # STEP (not per occurrence) keeps a single step's email+username consistent while
+    # making distinct steps distinct; cross-step REUSE is via ${var} (saved), per the prompt.
+    _rand_base = str(int(time.time() * 1000))[-7:]
+    variables: Dict[str, str] = {}
     recorded: List[Dict[str, Any]] = []
     last_id: Any = None
+    last_id_by_resource: Dict[str, Any] = {}  # resource -> its last-created id (FK resolution, fix #10)
+    last_reg_creds: Dict[str, Any] = {}  # creds of the last successful /auth/register → reused if a later /auth/login 401s
     unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
-    for step in chain.get("steps") or []:
+    for idx, step in enumerate(chain.get("steps") or []):
+        variables["rand"] = f"{_rand_base}{idx:02d}"
         method = str(step.get("method", "GET")).upper()
         # A broken step no longer aborts the whole chain (it used to `break`, so only the
         # FIRST failure was ever reported). Continue, but SKIP a step that depends on a
@@ -513,10 +868,38 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
         # substitution, use the most recent resource id captured from a prior step's
         # response — the id a correctly-wired chain would have saved. Untouched when the
         # chain is wired correctly (no leftover placeholder) or no id seen yet.
-        if last_id is not None and _UNRESOLVED_PLACEHOLDER.search(path):
-            path = _UNRESOLVED_PLACEHOLDER.sub(str(last_id), path)
-        body = _subst(step.get("body"), variables) if step.get("body") else None
         token = variables.get(str(step.get("auth"))) if step.get("auth") else None
+        if _UNRESOLVED_PLACEHOLDER.search(path):
+            # Resolve a surviving ${x_id}/{x_id} path placeholder in order: (1) the id of the
+            # SAME resource captured earlier (last_id_by_resource), (2) the most recent captured
+            # id (last_id), (3) RECOVERY — a live LIST GET on the resource's collection (seed
+            # data populates it), taking a real row's id. Without (3), a chain that GETs/updates/
+            # deletes a resource it never CREATED first (outlook run-22: GET /api/messages/
+            # ${message_id} with no prior POST) sent the LITERAL token → 404 → business_chain
+            # wedged forever on a functionally-correct, SEEDED app. Untouched when wired correctly.
+            _pcoll = _collection_path_of(step.get("path"))
+            _pres = _resource_from_path(_pcoll)
+            _rid = (last_id_by_resource.get(_pres) if _pres else None)
+            if _rid is None:
+                _rid = last_id
+            if _rid is None:
+                _rid = _recover_id_via_list(base, _pcoll, token)
+            if _rid is None:
+                # (4) even the list is empty — owner-scoped reads + a fresh chain user own
+                # NOTHING (run-29 M3): create a row and use its id (#32).
+                _rid = _recover_id_via_create(base, _pcoll, token)
+            if _rid is not None:
+                path = _UNRESOLVED_PLACEHOLDER.sub(str(_rid), path)
+        body = _subst(step.get("body"), variables) if step.get("body") else None
+        # BODY UNRESOLVED-VARIABLE FALLBACK — the body counterpart of the path fallback
+        # above. A nested-FK body the verifier referenced but never saved (e.g.
+        # {"calendar_id": "${calendar_id}"} after POST /api/calendars) otherwise sends
+        # the literal "${calendar_id}" to an int column → 500 → business_chain wedges
+        # forever on a correct app. Resolve a surviving ${...} to the most recent
+        # captured resource id (untouched when the chain is wired correctly).
+        if body is not None and last_id is not None:
+            body = _resolve_unresolved_dollar_vars(body, last_id, last_id_by_resource)
+        # (``token`` resolved above, before the path fallback that may need it for recovery.)
         # ``expect`` tolerated as a scalar (verifier authored ``expect: 201``
         # instead of ``[201]``; iterating the int crashed the WHOLE runner →
         # business_chain failed for every chain → no delivery, smoke run #10).
@@ -528,18 +911,118 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
         expect = [int(x) for x in _exp if str(x).isdigit()]
         res = _http(method, base + path, token=token, body=body)
         status = res.get("status")
-        if expect:
-            ok = status in expect
-        else:
-            ok = bool(status and 200 <= status < 300)
+        ok = _status_ok(status, expect)
+        autofilled: List[str] = []
+        # MISSING-FIELD AUTO-REPAIR (2026-06-24): a write step can 422 because the
+        # LIVE handler requires a body field the chain didn't send — either the
+        # verifier under-authored the body, OR (observed v19: POST
+        # /api/posts/{id}/comments) the endpoint's REGISTERED request schema is
+        # empty so neither the verifier nor the framework's schema-driven default
+        # (`_default_chain_body`) could know the field, yet the handler still
+        # requires it → business_chain regresses the moment the api_coverage
+        # remediation makes the verifier add a chain hitting that endpoint. The 422
+        # names the exact missing field(s) in detail[].loc, so read that ground
+        # truth, fill a placeholder for each (a string — the common case for these
+        # CRUD bodies: content/text/caption), merge WITHOUT overriding authored
+        # keys, and retry ONCE. Domain-agnostic (reads the server's own error) and
+        # mirrors the auth-body-default / unresolved-var fallbacks. A wrong-typed or
+        # genuinely-broken field still surfaces: the retry either resolves it or the
+        # original failure is recorded (the type-mismatch retry just 422s again).
+        if not ok and status in (400, 422):
+            _miss_body, _miss_query = _missing_required_fields(res.get("body_text"), method)
+            _miss_body = [f for f in _miss_body
+                          if not (isinstance(body, Mapping) and f in body)]
+            # a required QUERY param the step didn't send (v22: GET /api/search/users
+            # → missing `q`) — append it to the path's query string. Skip any already
+            # present in the path so an authored `?q=` is never doubled.
+            _qs_present = (path.split("?", 1)[1] if "?" in path else "")
+            _miss_query = [f for f in _miss_query if (f + "=") not in _qs_present]
+            if _miss_body or _miss_query:
+                _filler = f"chain-{variables.get('rand', '0')}"
+                _repaired = dict(body) if isinstance(body, Mapping) else (
+                    body if not _miss_body else {})
+                for f in _miss_body:
+                    _repaired[f] = _filler
+                _rpath = path
+                if _miss_query:
+                    _rpath += ("&" if "?" in _rpath else "?") + "&".join(
+                        f"{f}={_filler}" for f in _miss_query)
+                _res2 = _http(method, base + _rpath, token=token, body=_repaired)
+                if _status_ok(_res2.get("status"), expect):
+                    res, status, ok = _res2, _res2.get("status"), True
+                    body = _repaired
+                    if _miss_query:
+                        path = _rpath
+                    autofilled = _miss_body + [f"query:{f}" for f in _miss_query]
+        # LOGIN-CREDS CARRY-FORWARD (run v22): a /auth/login that 401s "invalid
+        # credentials" right after a /auth/register almost always means the chain
+        # authored the login with ${rand}-based creds that DON'T match the register
+        # — ${rand} mints PER STEP (the v12 multi-user fix), so register's
+        # user_<base>00 and login's user_<base>01 differ → that user never existed.
+        # The auth round-trip is a platform invariant (you log in with the creds you
+        # just registered), so retry the login with the most recent successful
+        # register's ACTUAL (substituted) email/username/password. Idempotent; only
+        # when the login isn't already expected to fail. Mirrors the
+        # ensure-user-before-login / auth-body-default fixes.
+        if (not ok and status in (400, 401)
+                and str(step.get("path", "")).rstrip("/") == "/auth/login"
+                and last_reg_creds):
+            _lb = dict(body) if isinstance(body, Mapping) else {}
+            for _ck in ("email", "username", "password"):
+                if last_reg_creds.get(_ck):
+                    _lb[_ck] = last_reg_creds[_ck]
+            _res3 = _http(method, base + path, token=token, body=_lb)
+            if _status_ok(_res3.get("status"), expect):
+                res, status, ok, body = _res3, _res3.get("status"), True, _lb
+                autofilled = (autofilled or []) + ["login-creds<-register"]
+        # AUTH AUTO-ATTACH (#34, outlook run-29 M3): a step that FORGOT its `auth` ref
+        # (verifier authored `save: {token: access_token}` on the register but no
+        # `auth: token` on the writes) hits the endpoint UNAUTHENTICATED → 401 → chain
+        # broken forever on a working backend. When an expected-success step 401/403s
+        # WITHOUT an auth ref and a token was saved earlier, retry once WITH it — adopt
+        # the retry ONLY if it passes the authored expectation, so an isolation probe
+        # that EXPECTS 401/403 (status ∈ expect → ok → no retry) is never disturbed.
+        if (not ok and status in (401, 403) and not step.get("auth")
+                and str(step.get("path", "")).rstrip("/") not in ("/auth/login", "/auth/register")):
+            _tok2 = (variables.get("token") or variables.get("access_token")
+                     or next((v for k, v in reversed(list(variables.items()))
+                              if "token" in k.lower() and v), None))
+            if _tok2 and _tok2 != token:
+                _res5 = _http(method, base + path, token=_tok2, body=body)
+                if _status_ok(_res5.get("status"), expect):
+                    res, status, ok = _res5, _res5.get("status"), True
+                    autofilled = (autofilled or []) + ["auth<-saved-token"]
         kind = "ok"
         note = ""
         if not ok:
             note = (res.get("error") or res.get("body_text") or "")[:160]
-            kind = "missing" if status in (404, 405) else "broken"
+            if status in (404, 405):
+                # 404/405 is normally 'missing' (endpoint not built yet → soft, so the
+                # whole chain isn't failed on a not-yet-implemented endpoint). BUT a 404
+                # from a BUILT route carries a CUSTOM detail (e.g. {"detail":"User not
+                # found"}), unlike Starlette's default {"detail":"Not Found"} for an
+                # UNREGISTERED path — that is a REAL flow failure (the endpoint exists and
+                # rejected the request), so it must count as 'broken'. Without this a chain
+                # ships status='passing' while its user-scoped steps 404 (V29 coverage_chain
+                # bug: 4× '404 User not found' steps, yet broken=[] / status='passing').
+                _built_404 = False
+                if status == 404:
+                    _bt = (res.get("body_text") or "").strip()
+                    _d = _bt
+                    if _bt.startswith("{"):
+                        try:
+                            _d = (json.loads(_bt) or {}).get("detail")
+                        except Exception:
+                            _d = _bt
+                    _built_404 = isinstance(_d, str) and _d.strip().lower() not in ("not found", "")
+                kind = "broken" if _built_404 else "missing"
+            else:
+                kind = "broken"
         entry = {"action": str(step.get("action") or path), "method": method,
                  "path": path, "status": status, "ok": ok, "kind": kind,
                  "note": note}
+        if autofilled:
+            entry["autofilled"] = autofilled
         recorded.append(entry)
         if ok:
             # Auto-capture the current resource id (id / item.id / items[0].id) from
@@ -550,8 +1033,22 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                 _cid = _extract_resource_id(json.loads(res.get("body_text") or "{}"))
                 if _cid is not None:
                     last_id = _cid
+                    # ALSO index by resource so a later FK body field (`${calendar_id}`)
+                    # resolves to the RIGHT parent, not whatever was created most recently
+                    # (fix #10: a message POST between the calendar and the event made the
+                    # global last_id the message id -> events_calendar_id_fkey violation).
+                    _res = _resource_from_path(path)
+                    if _res:
+                        last_id_by_resource[_res] = _cid
             except Exception:
                 pass
+            # Capture the SUBSTITUTED creds of a successful /auth/register so a later
+            # /auth/login that 401s (mismatched ${rand}, see carry-forward above) can
+            # retry with the identity that actually exists.
+            if str(step.get("path", "")).rstrip("/") == "/auth/register" \
+                    and isinstance(body, Mapping):
+                last_reg_creds = {_k: body[_k] for _k in ("email", "username", "password")
+                                  if body.get(_k)}
         if ok and isinstance(step.get("save"), Mapping):
             try:
                 payload = json.loads(res.get("body_text") or "{}")
@@ -579,8 +1076,13 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
         if kind == "broken":
             # Don't abort — just mark the vars this step was supposed to provide as
             # unsatisfied, so ONLY its dependents are skipped; independent steps run on.
+            # But do NOT poison a var an EARLIER step already saved (e.g. a broken
+            # register-B step that re-declares save:{token} must not invalidate the valid
+            # tokenA captured by register-A → downstream auth=tokenA steps were wrongly
+            # skipped, run v12). Only newly-unprovided keys become unsatisfied.
             if isinstance(step.get("save"), Mapping):
-                unsatisfied.update(str(k) for k in step["save"].keys())
+                unsatisfied.update(str(k) for k in step["save"].keys()
+                                   if str(k) not in variables)
     broken = [f"{s['method']} {s['path']} → {s['status']} ({s['note']})"
               for s in recorded if s["kind"] == "broken"]
     return {"name": str(chain.get("name") or "chain"), "steps": recorded,

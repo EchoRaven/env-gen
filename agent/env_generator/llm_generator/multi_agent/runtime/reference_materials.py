@@ -24,7 +24,46 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
+
+# Milestone COUNT is user-controlled, not capped. The ENVGEN_MILESTONES
+# hyperparameter (unset by default) lets the caller steer how many milestones the
+# planner produces — no artificial ceiling:
+#   ENVGEN_MILESTONES="5"    → FORCE exactly 5 milestones (hard constraint).
+#   ENVGEN_MILESTONES="3-5"  → RECOMMEND ~3-5 (soft guidance; planner may deviate).
+#   unset / ""               → FREE: the planner chooses K itself, no cap.
+# (Was a hard data[:6] truncation that silently dropped a complex task's later
+# phases even though the planner instructions say "choose K yourself".)
+def _milestone_target() -> "Tuple[str, Optional[int], Optional[int]]":
+    """Parse ENVGEN_MILESTONES → (mode, lo, hi). mode ∈ {force, recommend, free}."""
+    raw = (os.environ.get("ENVGEN_MILESTONES") or "").strip()
+    if not raw:
+        return ("free", None, None)
+    m = re.fullmatch(r"(\d+)\s*-\s*(\d+)", raw)
+    if m:
+        lo, hi = int(m.group(1)), int(m.group(2))
+        if lo > hi:
+            lo, hi = hi, lo
+        return ("recommend", max(1, lo), max(1, hi))
+    if raw.isdigit() and int(raw) >= 1:
+        n = int(raw)
+        return ("force", n, n)
+    return ("free", None, None)  # unparseable → free
+
+
+def _milestone_count_guidance() -> str:
+    """Prompt fragment steering the planner's milestone COUNT per the hyperparameter."""
+    mode, lo, hi = _milestone_target()
+    if mode == "force":
+        return (f"\n\n## MILESTONE COUNT — HARD CONSTRAINT\nProduce EXACTLY {lo} "
+                f"milestone(s) — no more, no fewer. Partition the build to fit {lo} "
+                f"coherent phases.")
+    if mode == "recommend":
+        span = f"{lo}" if lo == hi else f"{lo}-{hi}"
+        return (f"\n\n## MILESTONE COUNT — RECOMMENDATION\nAim for about {span} "
+                f"milestone(s). Deviate only if the task clearly needs to.")
+    return ""  # free: planner decides, no guidance, no cap
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
@@ -37,6 +76,14 @@ _DOC_EXTS = {".md", ".markdown", ".txt", ".html", ".htm", ".pdf", ".rst"}
 _DOC_CHAR_BUDGET = 24_000
 _TOTAL_CHAR_BUDGET = 96_000
 _MAX_IMAGES_IN_COMPILE = 6
+# Per-screen component DECOMPOSITION (material-prep) caps. The spec-compile cap
+# (6) is a single-multimodal-call budget; decomposition is INDEPENDENT one-call-
+# per-screen, so it must cover EVERY reference screen (a run with 9 pages whose
+# spec stopped at 6 left 3 screens with no measured-color build spec → those
+# pages can't be built to the reference). Bound how many run AT ONCE so a large
+# reference set (running concurrently with the spec compile) never rate-limits.
+_MAX_DECOMPOSE_IMAGES = 24
+_DECOMPOSE_CONCURRENCY = 6
 
 
 def classify_references(paths: List[Any]) -> Dict[str, List[str]]:
@@ -375,6 +422,11 @@ _AGENT_NOTES = """# Agent Notes — conventions for this workspace (machine-auth
   (screens / endpoints / entities / mcp_tools / acceptance). BINDING: spec endpoints
   and MCP tools are deliverability gates.
 - design/references/ — the user's reference documents, verbatim.
+- design/component_specs/<screen>.json — PRE-COMPUTED per-component build spec for each
+  reference screen (the framework decomposed every reference BEFORE you woke): named
+  components, each with its region + role + state + MEASURED background/accent hex. Build
+  each component to THESE colors — they are sampled from the reference, not guessed. If a
+  screen has no spec here, run decompose_reference yourself.
 - Reference images: list_reference_images / view_image.
 
 ## Working discipline
@@ -392,6 +444,89 @@ def write_agent_notes(output_dir: Any) -> str:
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(_AGENT_NOTES, encoding="utf-8")
     return str(dest)
+
+
+# ---------------------------------------------------------------------------
+# Pre-generation MATERIAL-PREP: per-component build specs (decompose each
+# reference BEFORE any lane wakes) — USER directive 2026-06-29 / PIPELINE.md §2-4.
+# ---------------------------------------------------------------------------
+def _component_specs_enabled() -> bool:
+    """Material-prep decomposition is on by default; disable with
+    ENVGEN_COMPONENT_SPECS in {0,false,no,off}. (Default-on is env-agnostic — it
+    only does work when the run actually supplies reference images.)"""
+    return (os.environ.get("ENVGEN_COMPONENT_SPECS") or "1").strip().lower() not in (
+        "0", "false", "no", "off")
+
+
+async def precompute_component_specs(
+    images: List[str],
+    *,
+    output_dir: Any,
+    llm: Any,
+    logger: Any,
+    max_images: int = _MAX_DECOMPOSE_IMAGES,
+) -> List[str]:
+    """Pre-generation MATERIAL-PREP (USER 2026-06-29 — "材料准备阶段在生成前"): BEFORE any
+    lane wakes, decompose EACH reference screenshot into its named UI components with MEASURED
+    per-component colors (background + accent hues, sampled not guessed) and persist them to
+    ``design/component_specs/<stem>.json``. The frontend lane consumes these as its build spec
+    (PIPELINE.md §2-4 "generate-to-spec, per component"), so it builds to truth from its first
+    turn instead of re-discovering the decomposition on demand (the on-demand ``decompose_reference``
+    tool stays available as a fallback / for screens added later).
+
+    Env-agnostic: runs for whatever references the run supplies, no app-specific assumptions.
+    Best-effort and concurrent — one vision call per image via ``decompose_reference``; an image
+    that fails or yields no components is skipped. Returns the staged relative paths (``[]`` when
+    disabled / no images / every image failed). Never raises into the caller.
+    """
+    if not _component_specs_enabled():
+        return []
+    imgs = [i for i in (images or []) if i][:max_images]
+    if not imgs:
+        return []
+    import asyncio
+
+    from .material_prep import decompose_reference
+
+    # Bound concurrency: every reference screen is decomposed, but only
+    # _DECOMPOSE_CONCURRENCY vision calls run at once (this fans out alongside the
+    # reference-spec compile, so an unbounded gather over a big reference set
+    # could rate-limit the provider).
+    _sem = asyncio.Semaphore(_DECOMPOSE_CONCURRENCY)
+
+    async def _decompose_bounded(_img):
+        async with _sem:
+            return await decompose_reference(_img, llm)
+
+    results = await asyncio.gather(
+        *[_decompose_bounded(img) for img in imgs], return_exceptions=True)
+    specs_dir = Path(output_dir) / "design" / "component_specs"
+    written: List[str] = []
+    for img, res in zip(imgs, results):
+        if isinstance(res, BaseException) or not isinstance(res, Mapping):
+            logger.info("component decompose failed for %s: %s", Path(img).name, res)
+            continue
+        if res.get("error") or not res.get("components"):
+            logger.info("component decompose produced nothing for %s: %s",
+                        Path(img).name, res.get("error") or "no components")
+            continue
+        stem = Path(img).stem
+        rel = Path("design") / "component_specs" / f"{stem}.json"
+        try:
+            specs_dir.mkdir(parents=True, exist_ok=True)
+            payload = {"reference": Path(img).name,
+                       "count": res.get("count"),
+                       "components": res.get("components")}
+            (Path(output_dir) / rel).write_text(
+                json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+            written.append(str(rel))
+        except Exception:
+            continue
+    if written:
+        logger.warning(
+            "MATERIAL-PREP: %d/%d reference screen(s) decomposed into per-component "
+            "build specs (MEASURED colors) → %s", len(written), len(imgs), ", ".join(written))
+    return written
 
 
 # ---------------------------------------------------------------------------
@@ -454,7 +589,8 @@ async def plan_milestones(llm: Any, raw_requirements: str,
             {k: spec.get(k) for k in ("screens", "endpoints", "entities")},
             ensure_ascii=False)[:24_000]
     prompt = (_PLAN_INSTRUCTIONS
-              + "\n\n## REQUIREMENTS\n" + str(raw_requirements or "")[:16_000]
+              + _milestone_count_guidance()
+              + "\n\n## REQUIREMENTS\n" + str(raw_requirements or "")
               + spec_text)
     try:
         client = getattr(llm, "_client", llm)
@@ -467,8 +603,13 @@ async def plan_milestones(llm: Any, raw_requirements: str,
         data = json.loads(m.group(0))
         if not isinstance(data, list) or not data:
             return None
+        # Truncate ONLY when the count is FORCED (enforce exactly N); recommend/free
+        # leave the planner's K untouched — no artificial ceiling.
+        _mode, _lo, _hi = _milestone_target()
+        if _mode == "force":
+            data = data[:_hi]
         out: List[Dict[str, str]] = []
-        for i, entry in enumerate(data[:6]):
+        for i, entry in enumerate(data):
             if not isinstance(entry, Mapping):
                 return None
             name = str(entry.get("name") or f"M{i+1}").strip()
@@ -537,7 +678,16 @@ async def compile_reference_materials(
         staged = stage_reference_docs(docs + images, output_dir)
         if staged:
             logger.info("Reference documents staged: %s", staged)
-        spec = await compile_reference_spec(llm, images, docs, raw_req)
+        # Material-prep (pre-gen) runs CONCURRENTLY with the spec compile: both are
+        # one-time vision passes over the same reference images and are independent, so
+        # there is no reason to pay their latency back-to-back. The component decompose
+        # writes design/component_specs/* regardless of whether the spec compile yields
+        # anything usable (the two artifacts serve different lanes).
+        import asyncio as _asyncio
+        spec, _ = await _asyncio.gather(
+            compile_reference_spec(llm, images, docs, raw_req),
+            precompute_component_specs(images, output_dir=output_dir, llm=llm, logger=logger),
+        )
         if not spec or not any(spec.get(k) for k in
                                ("screens", "endpoints", "entities", "mcp_tools")):
             logger.info("Reference spec compile produced nothing usable — continuing without.")

@@ -211,6 +211,23 @@ class EventHub:
     # interrupt any agent's current work regardless of priority_floor.
     _PRIORITY_RANK: Dict[str, int] = {"low": 0, "normal": 1, "high": 2, "critical": 3, "human_user": 4}
 
+    # PULSE-ONLY events (user directive 2026-06-24, "inbox should be agent-to-agent"):
+    # high-volume registry CONTRACT-LIFECYCLE events are RECORDED (events store →
+    # dashboard timeline + queryable) but create NO inbox item and NEVER wake a lane.
+    # Agents see the full contract STATE via the REGISTRY section of their hub_pulse
+    # (get_endpoints/tables/pages reads the registry directly, not the eventhub inbox),
+    # so an inbox copy per registration was pure clutter (run v12: ~75% of a lane's
+    # inbox was these) and the matching live wakeup was churn. The wakeup-timing risk
+    # (an idle lane learns of a new endpoint at its next pulse/task, not instantly) is
+    # accepted — task_created still wakes lanes for actual work, and
+    # endpoint_schema_changed is DELIBERATELY excluded so a contract DRIFT still reaches
+    # consumers live.
+    _PULSE_ONLY_EVENT_TYPES: FrozenSet[str] = frozenset({
+        "endpoint_defined", "endpoint_implemented", "endpoint_registered",
+        "table_registered", "table_implemented",
+        "ui_page_registered", "ui_page_implemented", "ui_component_registered",
+    })
+
     def publish_event(
         self,
         source_hub: str,
@@ -274,7 +291,11 @@ class EventHub:
         thread["participants"] = sorted(set([*thread.get("participants", []), *recipients]))
         thread["updated_at"] = now
         self._threads.update(lambda m: m.set(thread_id, thread, actor), change_info={"agent": actor})
-        for agent in recipients:
+        # PULSE-ONLY: registry contract-lifecycle events are recorded above (events
+        # store) but get NO inbox item and NO bridge wakeup — agents read the contract
+        # via the registry pulse section. See _PULSE_ONLY_EVENT_TYPES.
+        _pulse_only = event_type in self._PULSE_ONLY_EVENT_TYPES
+        for agent in (() if _pulse_only else recipients):
             inbox = self._inboxes.get(agent) or {"agent": agent, "items": {}}
             inbox.setdefault("items", {})[event_id] = {
                 "event_id": event_id,
@@ -292,7 +313,7 @@ class EventHub:
         # running loop if called from a coroutine; otherwise raises
         # RuntimeError. In threaded HTTP-handler contexts (e.g. SSE) there is
         # no running loop, so we fall through to synchronous delivery.
-        for bridge in list(self._bridges):
+        for bridge in (() if _pulse_only else list(self._bridges)):
             try:
                 try:
                     loop = asyncio.get_running_loop()

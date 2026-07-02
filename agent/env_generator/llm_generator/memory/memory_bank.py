@@ -17,11 +17,30 @@ Structure:
 """
 
 import logging
+import os
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import re
+
+# In-context MEMORY budget (user 2026-06-24): sized generously / customizable, not a
+# tiny hardcoded default — a large-context model has ample room for fuller memory.
+# These module-level values are the FLOORS / env-override path used when the model
+# is unknown in scope; when a model IS known the budgets are sized as a fraction of
+# resolve_ctx_working_chars(model) (digest ~6%, notebook ~2.5%) via
+# MemoryBank._resolve_char_budgets(). Override via
+# ENVGEN_MEMORY_DIGEST_CHARS / ENVGEN_MEMORY_NOTEBOOK_CHARS.
+# Floors are the prior hardcoded caps (16000 / 6000) so a small/unknown model still
+# gets a generous default and we never go BELOW what shipped before.
+_DIGEST_CHARS = max(16000, int(os.environ.get("ENVGEN_MEMORY_DIGEST_CHARS", "16000")))
+_NOTEBOOK_CHARS = max(6000, int(os.environ.get("ENVGEN_MEMORY_NOTEBOOK_CHARS", "6000")))
+
+# Fraction of the model's recommended WORKING char budget to spend on each
+# in-context memory artifact. Digest is the always-injected orientation block;
+# the notebook is the agent's own journal (a subset of the digest).
+_DIGEST_BUDGET_FRACTION = 0.06
+_NOTEBOOK_BUDGET_FRACTION = 0.025
 
 
 @dataclass
@@ -62,6 +81,14 @@ class MemoryBank:
     
     root_dir: Path
     memory_dir: Optional[Path] = None
+    # Agent model name (optional). When provided, the in-context digest/notebook
+    # char budgets are sized as a fraction of resolve_ctx_working_chars(model)
+    # instead of the fixed floors — a 1M-context model gets a much larger digest.
+    # TODO(memory-sizing): current MemoryBank() call sites (base.py /
+    # agent_interaction_tools.py) do not yet pass `model`; thread the agent's
+    # config.model_name through there so the budgets auto-size on big-window models.
+    # Until then this stays None and we fall back to the env-override / floor path.
+    model: Optional[str] = None
     _files: Dict[str, MemoryFile] = field(default_factory=dict)
     _logger: logging.Logger = field(default_factory=lambda: logging.getLogger("memory_bank"))
     
@@ -554,7 +581,10 @@ Working on: initialization
         if blockers is not None:
             self._set_section("active_context", "## Blockers", blockers)
         if completed is not None:
-            self._set_section("progress", "## Completed Features", completed, max_items=20)
+            # DURABLE category: a real project ships >20 features; capping at 20
+            # silently evicted the oldest and caused re-work. Keep a large cap so
+            # completed work accumulates (only ephemeral Recent Changes stays small).
+            self._set_section("progress", "## Completed Features", completed, max_items=200)
         if in_progress is not None:
             self._set_section("progress", "## In Progress", in_progress)
         if known_issues is not None:
@@ -682,11 +712,13 @@ Working on: initialization
 
     def append_decision(self, decision: str) -> None:
         """Append a key technical/project decision to system_patterns.md."""
+        # DURABLE category: decisions are rationale the agent must not lose mid-run;
+        # capping at 20 evicted the earliest decisions. Large cap to accumulate.
         self._append_unique_bullet(
             key="system_patterns",
             section_header="## Key Technical Decisions",
             item=decision,
-            max_items=20,
+            max_items=200,
         )
 
     def append_tech_note(self, note: str) -> None:
@@ -750,8 +782,30 @@ Working on: initialization
             touched.append("Log")
         return touched
 
-    def get_notebook(self, max_chars: int = 1600) -> str:
+    def _resolve_char_budgets(self) -> tuple[int, int]:
+        """Return (digest_chars, notebook_chars) for the in-context memory.
+
+        When ``self.model`` is known, size each as a fraction of the model's
+        recommended working char budget (resolve_ctx_working_chars) — so a
+        1M-context model gets a much fuller digest instead of the fixed cap.
+        The module-level _DIGEST_CHARS / _NOTEBOOK_CHARS act as FLOORS (and the
+        explicit env-override path), so we never go below what shipped before.
+        Best-effort: if model_limits is unavailable, fall back to the floors."""
+        digest, notebook = _DIGEST_CHARS, _NOTEBOOK_CHARS
+        if self.model:
+            try:
+                from utils.model_limits import resolve_ctx_working_chars
+                working = resolve_ctx_working_chars(self.model)
+                digest = max(digest, int(working * _DIGEST_BUDGET_FRACTION))
+                notebook = max(notebook, int(working * _NOTEBOOK_BUDGET_FRACTION))
+            except Exception:
+                pass
+        return digest, notebook
+
+    def get_notebook(self, max_chars: Optional[int] = None) -> str:
         """Return the agent's writable notebook content (trimmed)."""
+        if max_chars is None:
+            max_chars = self._resolve_char_budgets()[1]
         nb = self.get_file(self.NOTEBOOK_KEY) or ""
         # Drop the read-only-contract preamble (the > blockquote) from the
         # digest view — the agent already knows it owns this file.
@@ -760,7 +814,12 @@ Working on: initialization
             if not ln.lstrip().startswith(">") and not ln.startswith("# Lane Notebook")
         ).strip()
         if len(body) > max_chars:
-            return body[: max_chars - 20] + "\n...(truncated)\n"
+            dropped = len(body) - max_chars
+            marker = (f"\n\n>>> NOTEBOOK TRUNCATED: showing first {max_chars} of "
+                      f"{len(body)} chars ({dropped} elided). Read notebook.md in "
+                      f"full with read_memory_bank if you need the rest. <<<\n")
+            keep = max(0, max_chars - len(marker))
+            return body[:keep] + marker
         return body
 
     def _append_unique_bullet(self, key: str, section_header: str, item: str, max_items: int = 20) -> None:
@@ -828,13 +887,15 @@ Working on: initialization
         
         return f"Memory Bank: {self.memory_dir}\n" + "\n".join(files_status)
 
-    def get_digest(self, max_chars: int = 4000) -> str:
+    def get_digest(self, max_chars: Optional[int] = None) -> str:
         """
         Return a concise, actionable digest of the Memory Bank.
 
         This is meant to be LLM-friendly: current focus, next step, recent changes,
         completed items, and current blockers/issues (without dumping full files).
         """
+        if max_chars is None:
+            max_chars = self._resolve_char_budgets()[0]
         if not self.exists():
             return "Memory Bank not initialized."
 
@@ -846,14 +907,20 @@ Working on: initialization
         tech = _read("tech_context")
         patterns = _read("system_patterns")
 
-        def _section(md: str, header: str) -> str:
+        def _section(md: str, header: str, max_lines: int = 50) -> str:
             # Extract section body between "## Header" and next "## "
             m = re.search(rf"^##\s+{re.escape(header)}\s*$([\s\S]*?)(?=^##\s+|\Z)", md, flags=re.MULTILINE)
             if not m:
                 return ""
             body = m.group(1).strip()
-            # Remove empty lines at ends
-            return "\n".join([ln.rstrip() for ln in body.splitlines() if ln.strip()][:50]).strip()
+            all_lines = [ln.rstrip() for ln in body.splitlines() if ln.strip()]
+            shown = all_lines[:max_lines]
+            # No silent drops: tell the agent the list is partial so it knows to
+            # read the full file rather than assume it saw everything.
+            if len(all_lines) > max_lines:
+                shown.append(f"  …(showing latest {max_lines} of {len(all_lines)}; "
+                             f"read the full section with read_memory_bank)")
+            return "\n".join(shown).strip()
 
         focus = _section(active, "Current Focus")
         recent = _section(active, "Recent Changes")
@@ -909,6 +976,11 @@ Working on: initialization
         ]).strip() + "\n"
 
         if len(out) > max_chars:
-            return out[: max_chars - 20] + "\n...(truncated)\n"
+            dropped = len(out) - max_chars
+            marker = (f"\n\n>>> DIGEST TRUNCATED: showing first {max_chars} of "
+                      f"{len(out)} chars ({dropped} elided). Read the relevant "
+                      f"memory-bank file in full with read_memory_bank. <<<\n")
+            keep = max(0, max_chars - len(marker))
+            return out[:keep] + marker
         return out
 

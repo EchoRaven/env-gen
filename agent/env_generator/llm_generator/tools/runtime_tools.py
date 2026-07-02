@@ -1561,7 +1561,7 @@ After starting, use these tools to manage:
                     pm._cleanup_process(info.pid)
                     return ToolResult(
                         success=False,
-                        error_message=f"Process crashed on startup (exit code: {poll_result}).\nLogs:\n{early_output[:1500]}"
+                        error_message=f"Process crashed on startup (exit code: {poll_result}).\nLogs:\n{early_output}"
                     )
                 
                 # Check if port is listening
@@ -1578,7 +1578,7 @@ After starting, use these tools to manage:
                     pm._cleanup_process(info.pid)
                     return ToolResult(
                         success=False,
-                        error_message=f"Process crashed (exit code: {poll_result}).\nLogs:\n{early_output[:1500]}"
+                        error_message=f"Process crashed (exit code: {poll_result}).\nLogs:\n{early_output}"
                     )
                 # Process running but port not open yet
                 return ToolResult(

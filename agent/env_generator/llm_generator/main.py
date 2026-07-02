@@ -58,6 +58,76 @@ try:
 except Exception:
     pass
 
+# Fix #55 (run-40, 2026-07-02): the main process DIED SILENTLY mid-run — no
+# exception in the log, no shutdown record, no OOM trace; the USR1/USR2 dumps
+# above are MANUAL (someone must signal a live pid) so they can't explain a
+# process that is already gone. Automatic crash forensics, all best-effort:
+#   * faulthandler.enable(file=...) — a native/hard fault (segfault in a grpc /
+#     PIL / event-loop C dep) writes every thread's stack to the crash file as
+#     the process dies (stderr under nohup can be lost with the terminal);
+#   * sys.excepthook + threading.excepthook — an uncaught Python exception is
+#     appended to the SAME file before the interpreter exits;
+#   * an atexit marker — "clean interpreter exit" present ⇒ orderly exit;
+#     absent + no traceback ⇒ SIGKILL (OOM-killer / external kill), which
+#     narrows run-40's class in one read.
+# ENVGEN_CRASH_LOG names the file (default envgen_crash.log in the cwd);
+# ENVGEN_CRASH_LOG=0/off disables (tests that import this module set a tmp path).
+def _forensics_note(msg):  # no-op until armed below; rebound when the file opens
+    pass
+
+
+try:
+    _crash_target = os.environ.get("ENVGEN_CRASH_LOG", "envgen_crash.log")
+    if _crash_target not in ("0", "off", "false"):
+        _crash_file = open(_crash_target, "a", buffering=1)  # kept open: faulthandler writes on the dying fd
+        faulthandler.enable(file=_crash_file, all_threads=True)
+
+        def _forensics_note(msg):  # noqa: F811 — armed rebind of the module no-op
+            try:
+                _crash_file.write(f"[{datetime.utcnow().isoformat()}] {msg} pid={os.getpid()}\n")
+                _crash_file.flush()
+            except Exception:
+                pass
+
+        _forensics_note(f"crash-forensics armed argv={' '.join(sys.argv[:6])}")
+
+        def _crash_note(prefix, etype, evalue, etb):
+            import traceback as _tb
+            try:
+                _crash_file.write(f"[{datetime.utcnow().isoformat()}] {prefix} pid={os.getpid()}\n")
+                _tb.print_exception(etype, evalue, etb, file=_crash_file)
+                _crash_file.flush()
+            except Exception:
+                pass
+
+        _prev_excepthook = sys.excepthook
+
+        def _forensic_excepthook(etype, evalue, etb):
+            _crash_note("UNCAUGHT EXCEPTION", etype, evalue, etb)
+            _prev_excepthook(etype, evalue, etb)
+
+        sys.excepthook = _forensic_excepthook
+
+        import threading as _threading
+        _prev_thread_hook = _threading.excepthook
+
+        def _forensic_thread_hook(args):
+            _crash_note(f"UNCAUGHT THREAD EXCEPTION ({getattr(args.thread, 'name', '?')})",
+                        args.exc_type, args.exc_value, args.exc_traceback)
+            # CHAIN the prior hook (review w6x6art4t): without it the default
+            # "Exception in thread ..." traceback VANISHES from stderr/run log.
+            try:
+                _prev_thread_hook(args)
+            except Exception:
+                pass
+
+        _threading.excepthook = _forensic_thread_hook
+
+        import atexit as _atexit
+        _atexit.register(lambda: _forensics_note("clean interpreter exit"))
+except Exception:
+    pass
+
 # ===== Global JSON Patch to Handle Non-Serializable Objects =====
 # This ensures all json.dumps calls in the entire application handle
 # Message objects and other non-serializable types gracefully.
@@ -435,6 +505,11 @@ if __name__ == "__main__":
             def _force_exit():
                 print(f"[main-exit] shutdown watchdog fired — forcing exit "
                       f"(rc={_rc_holder[0]})", file=sys.stderr, flush=True)
+                # os._exit skips atexit — without this note a SUCCESSFUL run
+                # that exits via the watchdog reads as SIGKILL/OOM in the
+                # crash log (review w6x6art4t: the #55 decode would mislead).
+                _forensics_note(f"shutdown-watchdog exit rc={_rc_holder[0]} "
+                                "(result durable; asyncio cleanup hung)")
                 _os._exit(_rc_holder[0])
             # On success the result (release/commit) is already durable, so a hung
             # cleanup needn't wait the full safety bound — exit promptly; keep the

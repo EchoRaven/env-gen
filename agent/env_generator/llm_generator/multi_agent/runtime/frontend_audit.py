@@ -311,13 +311,21 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         if not _route_is_wired(route, app_jsx):
             missing.append(f"route `{route}` not wired in App.jsx")
     for api in apis:
-        # loose: the path literal (or its parametrized prefix) appears anywhere.
-        # PROPOSAL #55-v2 (BUG B): strip BOTH FastAPI `{param}` AND Express `:param` —
-        # apis_used are declared in `:id` form (prompt) but the code writes the path as a
-        # `${id}` template literal, so a `{param}`-only strip left the `:id` in the probe
-        # and never matched → a phantom "never referenced" miss on a working call.
-        probe = re.sub(r"\{[^}]+\}|:[A-Za-z_]\w*", "", api).rstrip("/")
-        if probe and probe not in all_src:
+        # Match the declared path against the source allowing each {param}/:param to be
+        # ANY single path segment. The lane writes the call as `/api/posts/${postId}/like`
+        # or `/api/posts/`+id+`/like`, so a MID-PATH param must be a wildcard, not removed.
+        # The old "strip the param" probe produced a DOUBLE slash (`/api/posts//like`) that
+        # never matched a real mid-path-param call — run v12: PostCard/ReelPlayer DID call
+        # like/save via `/api/posts/${postId}/like` but were flagged "never referenced",
+        # so their component artifacts stayed `defined`, their impl tasks never
+        # auto-completed, and the pages depending on them stayed blocked → the lane
+        # abandoned 5 components it had actually built. Build a regex: literal segments
+        # escaped, each param → one path-segment wildcard.
+        segs = re.split(r"\{[^}]+\}|:[A-Za-z_]\w*", api)
+        if not any(s.strip("/") for s in segs):
+            continue
+        pat = r"[^/'\"`\s)]*".join(re.escape(s) for s in segs).rstrip("/")
+        if pat and not re.search(pat, all_src):
             missing.append(f"declared API `{api}` never referenced in frontend src")
     if comp_file_text and _page_dead_controls(comp_file_text):
         missing.append(f"component `{component}` renders interactive markup "

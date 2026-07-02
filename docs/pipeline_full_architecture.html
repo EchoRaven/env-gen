@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>forgingground-gen 生成流水线 · 完整架构与每个 Gate 逻辑详解</title>
+<style>
+  body{font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue","PingFang SC","Microsoft YaHei",sans-serif;
+       line-height:1.65;color:#1a1a1a;max-width:1100px;margin:0 auto;padding:32px 28px;background:#fff;}
+  h1{font-size:28px;border-bottom:3px solid #0a66c2;padding-bottom:10px;margin-top:8px;}
+  h2{font-size:23px;color:#0a66c2;border-bottom:1px solid #d0d7de;padding-bottom:6px;margin-top:38px;}
+  h3{font-size:19px;color:#1f2937;margin-top:28px;}
+  h4{font-size:16px;color:#374151;margin-top:20px;}
+  code,kbd{font-family:"SF Mono",Consolas,"Liberation Mono",Menlo,monospace;font-size:0.88em;
+       background:#f3f4f6;padding:1px 5px;border-radius:4px;color:#b1004a;}
+  pre{background:#0d1117;color:#e6edf3;padding:14px 16px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.5;}
+  pre code{background:none;color:inherit;padding:0;}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14px;}
+  th,td{border:1px solid #d0d7de;padding:8px 10px;text-align:left;vertical-align:top;}
+  th{background:#eef4fb;font-weight:600;}
+  tr:nth-child(even) td{background:#fafbfc;}
+  .note{background:#eef7ff;border-left:4px solid #0a66c2;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;}
+  .warn{background:#fff6e5;border-left:4px solid #e8912d;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;}
+  .hard{color:#b42318;font-weight:600;}
+  .soft{color:#b8860b;font-weight:600;}
+  .on{color:#067647;font-weight:600;}
+  .off{color:#6b7280;font-weight:600;}
+  .toc{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px 22px;margin:20px 0;}
+  .toc ol{margin:6px 0;} .toc a{color:#0a66c2;text-decoration:none;} .toc a:hover{text-decoration:underline;}
+  .mermaid{background:#fbfcfe;border:1px solid #e2e8f0;border-radius:8px;padding:18px;margin:18px 0;text-align:center;}
+  .meta{color:#6b7280;font-size:13px;}
+  .fn{color:#0a66c2;font-family:"SF Mono",Consolas,monospace;font-size:0.9em;}
+</style>
+</head>
+<body>
+
+<h1>forgingground-gen 生成流水线 · 完整架构与每个 Gate 逻辑详解</h1>
+<p class="meta">对象：agentsuite / forgingground-gen 多智能体环境生成器（FastAPI + React/Vite/Tailwind + Postgres + OAuth2 + MCP，一切「由契约投影」）。<br>
+版本基线：2026-06-30（含新增 Fix #14「浏览器 test-user 交付门」）。本文的行号引用来自 <code>agent/env_generator/llm_generator/multi_agent/</code> 目录。</p>
+
+<div class="warn">
+<b>如何贴进 Google Doc：</b>在浏览器打开本 HTML → 全选（Ctrl/Cmd-A）→ 复制 → 在 Google Doc 里粘贴，标题 / 表格 / 列表 / 等宽代码都会保留。<b>Mermaid 流程图</b>：本页在浏览器里会自动渲染（CDN），你可以对渲染出来的图截图贴进文档；文末第 12 节也附了 Mermaid 源码，可粘到 <code>mermaid.live</code> 导出高清 PNG/SVG。
+</div>
+
+<div class="toc">
+<b>目录</b>
+<ol>
+<li><a href="#overview">总览：五大支柱与「由契约投影」的核心思想</a></li>
+<li><a href="#flow">顶层流程图（完整 Mermaid）</a></li>
+<li><a href="#p0">Phase 0 · 材料准备（生成前）：4 块 Brick + 方法论 + 数据获取</a></li>
+<li><a href="#p1">Phase 1 · Kickoff：契约合成</a></li>
+<li><a href="#p2">Phase 2 · 实现与协同循环（tick / 泳道 / 卡死升级）</a></li>
+<li><a href="#p3">Phase 3 · 契约投影 By-Construction（后端/前端）</a></li>
+<li><a href="#p4">Phase 4 · 验证与自愈（api_smoke 门 + Heal Pipeline）</a></li>
+<li><a href="#p5">Phase 5 · 交付门详解（每个 gate 的逻辑）</a></li>
+<li><a href="#ms">多里程碑循环</a></li>
+<li><a href="#term">终止条件</a></li>
+<li><a href="#env">环境变量参考表</a></li>
+<li><a href="#src">Mermaid 源码（可复制）</a> · <a href="#files">关键文件索引</a></li>
+</ol>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="overview">1. 总览：五大支柱与「由契约投影」的核心思想</h2>
+
+<p>整条流水线的入口是 <span class="fn">Orchestrator.run(goal, requirements, resume, milestones)</span>（<code>orchestrator.py:661</code>）。它是一个<b>多智能体（multi-agent）</b>系统，由一个常驻 orchestrator 加三条实现泳道（lane）——<code>backend</code> / <code>frontend</code> / <code>verifier</code>——协作，把一段自然语言描述 + 参考截图，变成一个真实可跑、可登录、有种子数据的完整 Web 应用。</p>
+
+<p>它区别于「让 LLM 直接写整个应用」的关键，是<b>五大支柱</b>：</p>
+
+<table>
+<tr><th>支柱</th><th>作用</th><th>代表机制</th></tr>
+<tr><td><b>① 契约（Contract）</b></td><td>endpoints / tables / ui_pages / verification_chains 是一等公民，存在 <code>RegistryHub</code> / <code>SchemaHub</code> / <code>WorkHub</code> 里，作为唯一事实源。</td><td><span class="fn">register_endpoint / register_table / register_ui_page / register_verification_chain</span></td></tr>
+<tr><td><b>② 由契约投影（Projection by construction）</b></td><td>后端 <code>main.py</code>/handlers/models/DDL、前端 pages/routes/api.js —— 由框架<b>确定性地从契约投影生成</b>，而不是 LLM 手写后再校验。「一致性靠构造，而非事后校验」。</td><td><span class="fn">render_skeleton_main / _generate_handler / project_missing_routes / scaffold_pages_from_contract</span></td></tr>
+<tr><td><b>③ 材料准备（Material Prep）</b></td><td>生成<b>前</b>先把参考截图拆成组件、测量真实颜色、预生成每屏 component spec，让前端「照着量出来的像素建」，而不是猜。</td><td>4 块 Brick：<span class="fn">extract_palette / decompose_reference / make_side_by_side / precompute_component_specs</span></td></tr>
+<tr><td><b>④ 死锁不了的质量门（Bounded-deferral gates）</b></td><td>交付前一系列门（功能门 + 视觉 + test-user）。每个门都是「不通过就 defer 重测；到达上限就 escape 大声交付」，永不死锁。</td><td><span class="fn">_validate_delivery_gate / _visual_release_decision / squad_release_decision / browser_report_unusable</span></td></tr>
+<tr><td><b>⑤ 交付时自愈（Heal Pipeline）</b></td><td>交付前跑一组确定性、幂等的修复，收敛 lane 反复出现的缺陷（auth、打包、DDL 漂移、psycopg DSN、api.js 漂移……）。</td><td><span class="fn">HealPipeline.repair_*</span></td></tr>
+</table>
+
+<p><b>粗粒度阶段（写进 hub、监控可见）：</b><code>init → implement → test → done</code>（<span class="fn">_enter_project_phase</span>，<code>orchestrator.py:515</code>；底层是 <code>WorkHub.set_project_phase</code>，一个自由字符串字段，<b>不是枚举</b>）。<br>
+<b>真正的流水线（每个里程碑内）：</b>Kickoff（契约合成）→ Scaffold（DB/MCP/前端页脚手架）→ Implementation（泳道实现）→ Coordination/Validation 循环（每 tick 跑 api_smoke + 补救）→ Delivery（门全清后切 release）。这条推进<b>不是离散状态翻转</b>，而是<b>由 hub 查询驱动</b>：循环不断问 <span class="fn">all_business_endpoints_implemented(...)</span> 和 <span class="fn">_validate_delivery_gate()</span>，一旦返回「清」就交付。</p>
+
+<!-- ============================================================ -->
+<h2 id="flow">2. 顶层流程图（完整 Mermaid）</h2>
+<p>下图是整条流水线（材料准备 → Kickoff → 实现循环 → 交付门 → 里程碑循环 / 终止）。浏览器会自动渲染；源码见<a href="#src">第 12 节</a>。</p>
+
+<pre class="mermaid">
+flowchart TD
+    START([开始 Orchestrator.run]) --> P0
+
+    subgraph P0["Phase 0 · 材料准备 Material Prep（生成前，可选但默认开）"]
+        REF["参考截图&lt;br/&gt;reference_images/*.png"]
+        REF --> B1["Brick1 测量取色&lt;br/&gt;extract_palette / sample_color&lt;br/&gt;row-mode 背景 + 饱和度 accent"]
+        REF --> B2["Brick2 组件拆分&lt;br/&gt;decompose_reference (Gemini)&lt;br/&gt;6-14 组件 · region · role · state"]
+        B2 --> B4["Brick4 预拆分&lt;br/&gt;precompute_component_specs&lt;br/&gt;并发≤6 · ≤24 张"]
+        B1 --> SPEC["design/component_specs/*.json&lt;br/&gt;每组件 measured hex"]
+        B4 --> SPEC
+    end
+
+    P0 --> KO
+
+    subgraph KO["Phase 1 · Kickoff 契约合成"]
+        MEET["开 kickoff 会议&lt;br/&gt;backend/frontend/verifier 起草"]
+        MEET --> BUILD["_build_contract&lt;br/&gt;LLM 草案 → 确定性归一/兜底"]
+        BUILD --> REG["finalize_kickoff 注册"]
+        REG --> CONTRACT[("RegistryHub 契约&lt;br/&gt;endpoints · tables · pages · chains")]
+    end
+
+    KO --> SCAF["Phase 2a · Scaffold&lt;br/&gt;_generate_database · _generate_mcp&lt;br/&gt;_scaffold_frontend_pages"]
+    SCAF --> TICK
+
+    subgraph IMPL["Phase 2b · 实现 + 协同循环（每 tick，最多等 60s）"]
+        TICK{"协同 tick&lt;br/&gt;lane 空闲 且 tick_due?"}
+        TICK -->|dispatch| LANES["backend / frontend / verifier&lt;br/&gt;实现 endpoints · pages · chains"]
+        LANES --> NUDGE["stall 侦测 + nudge&lt;br/&gt;沉默 lane 重新 task_ready（≤4）"]
+        NUDGE --> VAL["api_smoke 验证（每 tick）&lt;br/&gt;docker compose down -v; up --build"]
+        VAL --> VALQ{"全部 probe pass?"}
+        VALQ -->|否| REMED["remediation dispatch&lt;br/&gt;失败 check → owner lane（P0）"]
+        REMED --> TICK
+        VALQ -->|是| RUNREC["RunHub 记录成功 run&lt;br/&gt;（仅 pass 才记录）"]
+    end
+
+    RUNREC --> GATEQ{"契约全部 implemented?&lt;br/&gt;all_business_endpoints_implemented"}
+    GATEQ -->|否| TICK
+    GATEQ -->|是| DG
+
+    subgraph DELIV["Phase 3 · 交付门序列 _maybe_framework_deliver"]
+        DG["功能交付门 _validate_delivery_gate&lt;br/&gt;business_chain · deliverability · ui_page…"]
+        DG --> DGQ{"failed_checks 为空?"}
+        DGQ -->|"否（hard）"| STUCK["stuck 阶梯&lt;br/&gt;redispatch→terminal→abort(7)"]
+        DGQ -->|"仅 retry_pending（soft）/ 空"| PG{"PageBuild 门&lt;br/&gt;有未建页?"}
+        PG -->|"defer"| PGR["重派 frontend"]
+        PG -->|"pass / escape"| VF{"Visual 门 默认开&lt;br/&gt;相似度≥0.65?"}
+        VF -->|"defer（P1，≤900s/3 次）"| VFR["重派 frontend"]
+        VF -->|"pass / escape"| SQ{"Squad 门 默认关&lt;br/&gt;ENVGEN_TESTUSER_SQUAD"}
+        SQ -->|"defer（P0，≤900s/3 次）"| SQR["重派 owner"]
+        SQ -->|"pass / escape"| BR{"Browser 门 默认开&lt;br/&gt;browser_report_unusable?"}
+        BR -->|"unusable→defer（P0，≤900s/3 次）"| BRR["重派 frontend"]
+        BR -->|"usable / escape"| CUT
+    end
+
+    STUCK --> TICK
+    PGR --> TICK
+    VFR --> TICK
+    SQR --> TICK
+    BRR --> TICK
+
+    CUT["release 切分序列&lt;br/&gt;merge→skeleton→scaffold→project→commit→create_release"]
+    CUT --> POST["post-release 咨询 test-user&lt;br/&gt;（不阻塞，safety net）"]
+    POST --> MS{"还有 milestone?"}
+    MS -->|"是"| RESET["_respawn_core_lanes&lt;br/&gt;重置门状态 · 版本++"]
+    RESET --> KO
+    MS -->|"否"| DONE([交付完成 success])
+
+    IMPL -.->|"wall-clock 7200s / max-ticks 240 / stuck-abort / kickoff 超时"| ABORT([中止 abort])
+</pre>
+
+<!-- ============================================================ -->
+<h2 id="p0">3. Phase 0 · 材料准备（生成前）</h2>
+
+<p>这是你一直在完善的那部分：在<b>任何 lane 醒来之前</b>，把参考截图变成「可照着建的量化材料」。方法论文档在 <code>/data/common/haibotong/outlook_components/PIPELINE.md</code>，代码实现在 <code>runtime/material_prep.py</code>（Brick 1-3）+ <code>runtime/reference_materials.py</code>（Brick 4）+ <code>tools/material_prep_tools.py</code>（agent 工具封装）。</p>
+
+<h3>3.1 四块 Brick</h3>
+<table>
+<tr><th>Brick</th><th>做什么</th><th>关键函数（<code>material_prep.py</code>）</th><th>形态</th></tr>
+<tr><td><b>Brick 1<br>测量取色</b></td><td>确定性（纯 PIL，无 LLM、无网络）。<span class="fn">row_mode_color</span> 沿一行取<b>众数</b>色 = 真·不透明背景（击穿单点取色被半透明面板骗的问题）；<span class="fn">region_background</span> 9 行投票；<span class="fn">find_accent</span> 取某色相里<b>最饱和</b>像素 = 按钮/强调色；<span class="fn">extract_palette</span> 整屏调色板；<span class="fn">crop_region</span> 按<b>分数框</b>裁组件。</td><td><code>:37 / :51 / :76 / :97 / :123</code></td><td>框架函数 + agent 工具 + prompt</td></tr>
+<tr><td><b>Brick 2<br>组件拆分</b></td><td><span class="fn">decompose_reference</span>（Gemini vision，异步）。prompt 让视觉模型自上而下点名 6-14 个组件，每个给 <code>{name, region[x0,y0,x1,y1] 分数, role, state}</code>，并<b>明确禁止模型报颜色</b>（「颜色由框架从你的 region 测量」）。随后框架对每个 region 跑 Brick 1 测出 background/accent hex。</td><td><code>:157</code>（prompt <code>:143</code>）</td><td>框架函数 + agent 工具 + prompt</td></tr>
+<tr><td><b>Brick 3<br>2× 缩放对照</b></td><td><span class="fn">make_side_by_side</span>：可选只裁两图<b>同一个组件框</b>并放大 <code>scale&gt;1</code>（§6 的逐组件 2×/3× 像素对照），渲染「REFERENCE 上 / MINE 下」标注画布，喂给视觉批评。</td><td><code>:231</code></td><td>框架函数 + agent 工具（<code>zoom_compare</code>，默认 <code>scale=2</code>）</td></tr>
+<tr><td><b>Brick 4<br>预拆分（生成前）</b></td><td><span class="fn">precompute_component_specs</span>：生成前把 <span class="fn">decompose_reference</span> <b>并发跑遍每一张参考图</b>，产出 <code>design/component_specs/&lt;stem&gt;.json</code>。上限 <code>_MAX_DECOMPOSE_IMAGES=24</code>、并发 <code>_DECOMPOSE_CONCURRENCY=6</code>（<code>reference_materials.py:85-86</code>）；与 spec 编译并发（<code>asyncio.gather</code>）。默认开，<code>ENVGEN_COMPONENT_SPECS</code> 关。</td><td><code>reference_materials.py:461</code></td><td>框架函数（生成前编排步骤，非工具）</td></tr>
+</table>
+
+<div class="note"><b>架构规则（你定的）：</b>材料准备能力必须以「四种积木」之一落地——<b>硬门 / prompt / 框架函数 / agent 工具</b>。Brick 1/2/3 都同时是<b>框架函数 + agent 工具 + prompt 条目</b>（工具名：<code>sample_color</code> / <code>crop_reference</code> / <code>extract_palette</code> / <code>decompose_reference</code> / <code>zoom_compare</code>，见 <code>material_prep_tools.py</code>，经 <code>tool_bundles.py</code> 的 <code>reference</code> / <code>vision</code> 类目授予 frontend 泳道）；Brick 4 是生成前的批量编排步骤。四块都<b>不是</b>硬交付门——相关的硬门是独立的 <b>视觉保真门</b>（见 §8.4.2）。</div>
+
+<h3>3.2 方法论（PIPELINE.md）：杠杆顺序 + 塌缩点</h3>
+<p><b>7 阶段核心循环：</b>①收集参考 → ②裁成组件 → ③逐组件取色（别猜）→ ④写组件级 spec/prompt → ⑤建→截图→并排→改（循环）→ ⑥逐组件 <b>2× 缩放像素对照</b> → ⑦多智能体<b>对抗式复核</b>。</p>
+<p><b>杠杆顺序（最反直觉、最重要的结论）</b>——相似度的驱动力按优先级排序：</p>
+<div class="note"><b>大面积背景/材质 &gt; 精确颜色 token &gt; 信息密度 + 状态分布 &gt; 图标风格 &gt; 结构组件</b><br>
+大多数生成器把力气花在「结构」（最末位），所以「总是差一口气」。修法：按上面的顺序投入。例：Outlook 的 Mica 全屏壁纸 + 半透明面板占屏约 55%，用扁平占位背景一眼假；未读为主 → 蓝色为主，是暗色 Outlook 的视觉指纹。</div>
+<p><b>5 类塌缩点（critic 必须专门盯）：</b>①多/漏小元素；②<b>语义色丢失</b>（计数蓝、图标红/紫/金 → 全灰，最常见）；③<b>状态数据不真实</b>（全已读 vs 满屏未读蓝）；④密度/行高（生成器偏松）；⑤复合/分裂控件（New-mail 的分裂下拉）。社交 UI 另有一组（导航图标顺序、Follow/Following、转发/计数、故事条、全局 dock…）。</p>
+
+<h3>3.3 材料如何喂给前端 lane（3 条通道）</h3>
+<ol>
+<li><b>Prompt 条目</b>（<code>prompts/v3/frontend_agent.j2:90</code>）：指示 lane <b>先读 <code>design/component_specs/&lt;screen&gt;.json</code></b>（框架已在醒来前拆好：组件名 + region + role + state + 测量出的 background/accent hex），照着这些<b>测量色</b>逐组件建；截图后跑 <code>zoom_compare(scale=2)</code> 逐组件抓微偏差。</li>
+<li><b>磁盘工件</b>（工作区共同事实）：<code>design/component_specs/*.json</code>、<code>design/reference_spec.json</code>、<code>design/references/</code>、<code>design/agent_notes.md</code>。</li>
+<li><b>运行时 agent 工具</b>：上面 5 个工具，经 bundle 授予 frontend 泳道。</li>
+</ol>
+
+<h3>3.4 真实数据获取（截图外的「真实素材」）</h3>
+<div class="warn"><b>重要澄清（避免文档失真）：</b><b>TikHub 目前<u>没有</u>接进流水线</b>——全库检索无任何 <code>tikhub</code> 引用，只有一个裸密钥文件 <code>/tmp/tikhub_key.sh</code>（记在你的 MEMORY 里，属于<b>计划</b>）。<br>
+<b>代码里真正接好的真实数据通道是 HuggingFace 数据引擎</b>：<code>tools/data_engine_tools.py</code> 的 <span class="fn">discover_datasets</span>（搜 HF 数据集）→ <span class="fn">preview_dataset</span> → <span class="fn">download_dataset</span> → <span class="fn">generate_seed_sql</span>（写 <code>app/database/init/03_real_data.sql</code>）；方法论在 <code>knowledge/seed_data.py</code>（<code>discover→preview→generate_seed_sql</code>，用 <code>field_mapping</code> 把 HF 列映到你的表列，绝不编造外部 ID）。</div>
+<p>此外，<b>数据 schema</b> 的真实性通过<b>参考 spec</b> 落地（不是 TikHub）：<span class="fn">compile_reference_spec</span> 产出 <code>entities:[{name, fields}]</code>，经 <span class="fn">spec_summary_for_requirements</span> 进 kickoff，经 <span class="fn">gates_from_spec</span> 变成交付门。PIPELINE.md §11.7「数据生成器」（真实的未读/已读/计数/标志分布、满屏内容）是设计意图，今天由 HF 数据引擎 + 前端状态分布 prompt 实现。</p>
+
+<!-- ============================================================ -->
+<h2 id="p1">4. Phase 1 · Kickoff：契约合成</h2>
+
+<p>契约是 <b>LLM 起草 → 确定性归一/兜底 → 才注册</b>，任何字段进 store 前都被强制成一个「靠构造闭合」的规范形状。</p>
+
+<h4>合成管线（<code>runtime/kickoff/run_kickoff.py</code>）</h4>
+<ul>
+<li><span class="fn">try_synthesize()</span>（<code>:1460</code>）轮询会议，返回 <code>awaiting / conflict / validation_failed / ready</code>；只有 <code>ready</code> 带 <code>contract / task_tree / predicates</code>。</li>
+<li><span class="fn">_build_contract(drafts, description)</span>（<code>:583</code>）是合成器：
+  <ul>
+  <li><b>确定性兜底（FIX #42）：</b>若 lane 什么都没起草，<span class="fn">extract_contract_from_description()</span> 用正则从结构化描述里抽 <code>- METHOD /path</code> 和 <code>- table: col,col</code>，契约<b>永不为空</b>。</li>
+  <li><b>UI 层自动补全：</b>页面/组件 <code>apis_used</code> 里引用了但不在契约里的 endpoint 被<b>追加</b>（<code>source=auto_from_ui_declaration</code>）——靠构造闭合，而非拒绝。</li>
+  <li><b>契约形状下限：</b>每个 endpoint 补规范 <code>response_key</code>（<code>/api/</code> → <code>item</code>/<code>items</code> 信封）+ 缺省 <code>auth_required=True</code>。</li>
+  <li><b>owner_scoped_reads 兜底：</b>若 lane 没决定、且表有 owner 外键、且目标语义为「每用户私有」，则置 <code>True</code>（显式 lane 决定永远被尊重）。</li>
+  </ul></li>
+</ul>
+<h4>注册（<span class="fn">finalize_kickoff()</span>，<code>:1796</code>，要求 <code>status=="ready"</code>）</h4>
+<p>按序 fail-fast 写 hub：每个 endpoint 经 <span class="fn">normalize_to_registryhub_endpoint</span> 后 <span class="fn">register_endpoint(status="defined")</span>；每个 table（把 <code>owner_scoped_reads</code> 提到 <code>table_meta</code> 以免被 <code>normalize_table_schema</code> 丢掉）<span class="fn">register_table</span>；每个 task <span class="fn">create_task</span>；持久化 predicates；<span class="fn">close_meeting</span>；<span class="fn">publish_event("kickoff_complete")</span>；记 <code>phase=finalized</code>。</p>
+
+<div class="note"><b>「一致性靠构造」原则（<code>kickoff/contract.py</code> 模块 docstring）：</b>kickoff 形状是<b>生产者</b>形状；RegistryHub 是<b>系统事实源</b>形状；唯一的转换是注册时的 <span class="fn">normalize_to_registryhub_endpoint</span>，<b>永不反向</b>——所以「契约漂移」这一类 bug 无法再进来。<span class="fn">endpoint_id()</span> 在 <code>contract.py</code> 与 <code>registryhub.py</code> 必须逐字节一致：都把 <code>{param}</code> 折叠成 <code>{}</code>（参数名无关）、都剥查询串，所以「一条路由 = 一个 id」。</div>
+
+<!-- ============================================================ -->
+<h2 id="p2">5. Phase 2 · 实现与协同循环</h2>
+
+<h3>5.1 协同 tick（<code>orchestrator.py:1378-1611</code>）</h3>
+<p>主循环每轮最多在 <code>_project_delivered_event.wait()</code> 上阻塞 <b>60s</b>；超时后每 tick 按序：</p>
+<ol>
+<li><b>预算</b>：重读 <code>run_budget.json</code>（UI 可实时调上限）；<code>budget_exceeded</code> 则跳出。</li>
+<li><b>stall nudge</b>（<code>coordination.py</code>）：读 <code>eventhub.get_all_agent_statuses()</code>，一条 lane 只有在 <code>ENVGEN_LANE_STALL_SEC=150</code> 内发过心跳才算「活着」；<b>持有 pending/in_progress 工作却沉默</b>的 lane 收到紧急 <code>task_ready</code>；每个 stall 段最多 <code>ENVGEN_MAX_SILENT_NUDGES=4</code> 次。grace 120s、interval 60s。</li>
+<li><b>确定性 api_smoke 验证</b>：<span class="fn">_maybe_run_framework_validation()</span>（<b>每 tick</b> 跑，因为 LLM orchestrator 泳道常空转）。见 §8.1。</li>
+<li><b>fail-fast abort 检查</b>：读 <code>_fwval_abort_reason</code>；有 abort-grace 缓冲。</li>
+<li><b>确定性交付</b>：<span class="fn">_maybe_framework_deliver()</span>（门全清则切 release）。见 §8。</li>
+<li><b>协同 tick 派发</b>：<b>仅当 lane 空闲</b>（<code>orchestrator_task_done_event</code> 已置，PROPOSAL #17 忙保护）<b>且</b> <code>_coordination_tick_due</code>（done 置位 或 卡 <code>ENVGEN_COORD_TICK_STUCK_SEC=300</code>s）时，派一个 <code>resident_coordination_tick</code> LLM 任务（超时 180s）。连续 3 次空闲 tick 后 prompt 加升级附言。</li>
+</ol>
+
+<h3>5.2 泳道派发与补救</h3>
+<p>lane 不由 tick 直接派，而是由<b>补救派发器</b>派：<span class="fn">_dispatch_unimplemented_routes / _dispatch_frontend_navigable / _dispatch_failing_checks / _dispatch_unwired_ui_pages / _dispatch_unbuilt_pages</span>（委托 <code>remediation_dispatcher.py</code>）。哪个 check 失败 → 派给哪条 owner 泳道（见 §8.2 的 owner 表）。</p>
+
+<h3>5.3 卡死升级阶梯（<code>framework_validation.py</code>，键是失败 check 名的 frozenset）</h3>
+<p><span class="fn">_fwval_stuck_decision</span>：<code>wait → redispatch(≥2) → terminal(≥4) → abort(≥7)</code>。常量：<code>FWVAL_FAST_CAP=6</code>、<code>FWVAL_SLOW_INTERVAL_S=300</code>、<code>FWVAL_STUCK_REDISPATCH_AFTER=2</code>、<code>FWVAL_STUCK_TERMINAL_AFTER=4</code>、<code>FWVAL_STUCK_ABORT_AFTER=7</code>。<b>失败集合一变化，计数清零</b>（有进展就不算卡）。</p>
+
+<!-- ============================================================ -->
+<h2 id="p3">6. Phase 3 · 契约投影 By-Construction</h2>
+
+<h3>6.1 后端投影</h3>
+<ul>
+<li><b>主投影器</b> <span class="fn">render_skeleton_main(endpoints, tables)</span>（<code>backend_skeleton.py:511</code>）：<b>先</b>生成最终 <code>main.py</code> = 固定骨架 + auth 中间件 + custom-route include + 从契约投影出的全部业务 handler。静态路由排在参数路由<b>前</b>（<code>/api/users/suggested</code> 不被 <code>/api/users/{id}</code> 遮蔽）。</li>
+<li><b>handler 生成</b> <span class="fn">_generate_handler()</span>（<code>route_projector.py:534</code>）：按 CRUD/nested 模式投影真正能跑的 FastAPI handler，<b>绝不 404</b>。<b>CRUD 信封</b>硬编码：集合 GET 返回 <code>{"items":[...],"total":N}</code>；单条/by-id/<code>/me</code>/create/update/delete 返回 <code>{"item":...}</code>。POST 把 owner 外键绑到 <code>user.id</code>；失败给诚实 500，绝不假 201。</li>
+<li><b>读隔离（owner-scoping）by construction</b>：表元数据 <code>owner_scoped_reads</code> → <code>scoped_read_tables</code> → 置位且 model 有 owner 外键且已认证时：by-id GET 对非属主加 404；集合 GET / search 过滤 <code>owner_fk == user.id</code>；nested 校验父资源属主。<b>写（PUT/DELETE）永远 owner-gated</b>，与读标志无关。两处投影点（<code>render_skeleton_main</code> + <code>project_missing_routes</code>）用<b>同一个</b>逐表决定。</li>
+<li><b>交付时补投</b> <span class="fn">project_missing_routes(...)</span>（<code>route_projector.py:944</code>）：给每个「已声明但无路由」的业务 endpoint 追加投影 handler（若主投影已出则 no-op）。</li>
+<li><b>lane custom_routes 优先级</b> <span class="fn">_custom_route_overrides_projected(method, path)</span>（<code>backend_skeleton.py:440</code>）：对标准 CRUD 形状，<b>写</b>用投影版（丢弃 lane 的），但 <b>lane 的 GET 胜出</b>（<code>return _is_get</code>）——因为 lane 的 GET 带着域正确的读作用域，丢掉会漏（outlook run-9 跨用户泄漏）。动作动词/search/新形状 → custom 胜出。</li>
+<li><b>models/DDL/seed</b>：<span class="fn">render_models()</span> 投影 SQLAlchemy 模型；DDL 交付时<b>从 ORM 反投影</b>（<code>repair_ddl_from_orm</code>）以免与 handler 漂移；<span class="fn">render_seed_data()</span> 投影种子加载器，优先 lane 写的 <code>seed_data.json</code>，否则用内嵌 <code>_SEED</code>，按外键顺序填每张空表，含可登录 demo 用户（密码 <code>"password"</code>，盐 <code>app_sandbox_salt_2024</code>）。</li>
+</ul>
+
+<h3>6.2 前端脚手架（<code>frontend_scaffold.py</code>）</h3>
+<ul>
+<li><span class="fn">scaffold_pages_from_contract</span> / <span class="fn">_project_page_component</span>：从注册的 <code>ui_pages</code> 投影真实数据页。</li>
+<li><span class="fn">project_missing_ui_routes</span>：additively 注入 lane 漏掉的已声明页路由（前端版的补投）。</li>
+<li><b>safe-icon Vite 插件</b>（<code>_BASELINE_VITE</code> 内）：把所有图标库的具名 import 经虚拟模块重写；<code>load()</code> 真图标存在就 re-export 真的，名字是幻觉就退化成通用 SVG——错图标降级成占位，而不是 build 失败。关键：导出<b>真名而非本地别名</b>（修 <code>Calendar as CalendarIcon</code> 的别名 bug），并对 <code>{X, X as Y}</code> 去重。</li>
+<li><b>api.js 导出漂移修复</b> <span class="fn">repair_frontend_api_exports</span>：收集 <code>src/**</code> 里所有从 api.js import 的名字，缺的要么 re-export 已有绑定（避免重复声明 build 失败）、要么别名到最近模糊匹配、要么 stub 一个 async 函数。</li>
+</ul>
+
+<h3>6.3 验证链（verification chains）与「验证者驱动的隔离」</h3>
+<p><span class="fn">register_verification_chain(name, steps, ...)</span>（<code>registryhub.py:1541</code>）：步骤经 <span class="fn">normalize_steps</span>；<b>边界校验（PROPOSAL #42）</b>：每一步都必须命中<b>已注册的</b> endpoint（经 <code>endpoint_id</code> 参数名无关匹配），否则整条链被拒并附上未注册 id 列表。</p>
+<div class="note"><b>验证者驱动的读隔离（2026-06-30）：</b>注册时，若某步是「跨用户拒绝探针」（<code>expect</code> 含 403/404、无 2xx、非纯 401），就把被探的集合段映到表名，若该表还没 <code>owner_scoped_reads</code> 就置 <code>True</code>。即：验证者断言「非属主必须被拒绝读 by-id」这一<b>域判断</b>本身，就把表标记为私有，后端 regen 于是<b>由构造</b> owner-scope 其读——补上后端 agent 不可靠声明的漏洞（outlook run-9/10：scope 了 <code>messages</code> 忘了 <code>events</code>）。环境无关：公开资源没有隔离探针 → 永不 scope。</div>
+
+<!-- ============================================================ -->
+<h2 id="p4">7. Phase 4 · 验证与自愈</h2>
+
+<h3>7.1 api_smoke / RunHub 门（交付的硬前提）</h3>
+<p>见 §8.1 的完整逻辑。要点：交付流程只有在有一次<b>已记录的通过 RunHub run</b> 后才可达 —— <code>create_release</code> 在 api_smoke 通过前不可达。</p>
+
+<h3>7.2 Heal Pipeline —— 交付时确定性修复（有序）</h3>
+<p><code>heal_pipeline.py</code> 把无状态、幂等、best-effort 的修复体分组；<b>顺序由 orchestrator 调用方决定</b>。预验证 heal 顺序：</p>
+<table>
+<tr><th>#</th><th>修复</th><th>治什么</th></tr>
+<tr><td>1</td><td><span class="fn">repair_backend_auth</span></td><td>装真 JWT <code>auth_dependency.py</code>，重写占位/错模块 <code>get_current_user</code> import、内联假 token 解析，注入 auth 强制中间件（FIX #45/#48/#46/#47）。</td></tr>
+<tr><td>2</td><td><span class="fn">repair_backend_packaging</span></td><td>让后端在 docker 里可 pip 安装（hatchling 扁平布局 → wheel bypass-selection），build 不再死。</td></tr>
+<tr><td>3</td><td><span class="fn">repair_ddl_from_orm</span></td><td>从 SQLAlchemy 模型<b>反生成 DDL</b>并写到每个 compose 挂载的 init 路径，DDL 不与 handler 漂移。</td></tr>
+<tr><td>4</td><td><span class="fn">project_missing_routes</span></td><td>给每个已声明业务 endpoint 补投可跑 handler（契约完整、无 404）；并从元数据 + 验证链算 <code>owner_scoped_tables</code>，再对齐 registry 状态到代码真相。</td></tr>
+<tr><td>5</td><td><span class="fn">repair_handler_fk_aliases</span></td><td>把 handler 里引用的、非真列的 <code>&lt;Model&gt;.&lt;owner_alias&gt;</code> 改成真 owner 外键（防 AttributeError 500）。</td></tr>
+<tr><td>6</td><td><span class="fn">repair_psycopg_dsn</span></td><td>给裸 <code>psycopg.connect(SQLAlchemy-URL)</code> 包一层剥掉 <code>+driver</code> 方言（防 <code>missing "="</code> 500）。</td></tr>
+<tr><td>7</td><td><span class="fn">repair_frontend_api</span></td><td>把绝对 localhost API 源改成同源相对 URL，对齐 api.js 导出/默认导出/具名↔默认 import，stub 悬空页，把 api 调用路径对齐到注册契约。</td></tr>
+<tr><td>8</td><td><span class="fn">repair_backend_as_wiring</span></td><td>在 <code>app=FastAPI(...)</code> 后注入 <code>include_router(build_router(...))</code>，让框架 OAuth2 AS 接管 <code>/oauth/* · /.well-known/* · /auth/register · /auth/login</code>。</td></tr>
+<tr><td>9</td><td><span class="fn">repair_backend_entrypoint</span></td><td>补 <code>if __name__=="__main__": uvicorn.run(...)</code>，让 <code>python main.py</code> 真能起服务。</td></tr>
+</table>
+
+<div class="note"><b>贯穿不变量：</b>同样三个确定性信号——规范 <code>item</code>/<code>items</code> 信封、<code>endpoint_id</code> 归一、逐表 <code>owner_scoped_reads</code>——在 kickoff、主投影（<code>render_skeleton_main</code>）、交付时补投（<code>project_missing_routes</code>）三处<b>完全一致</b>地应用，这就是「由构造投影」而非「事后校验」的本质。</div>
+
+<!-- ============================================================ -->
+<h2 id="p5">8. Phase 5 · 交付门详解（每个 gate 的逻辑）</h2>
+
+<p>交付发生在 <span class="fn">_maybe_framework_deliver()</span>（<code>orchestrator.py:2139</code>）。门按此序执行，<b>全清</b>才到 <code>create_release</code>：<br>
+<b>api_smoke/RunHub（硬前提）→ 功能交付门 <code>_validate_delivery_gate</code> → PageBuild 门 → Visual 门 → Squad 门 → Browser 门 → 切 release</b>。</p>
+<p><b>五个门共享一个「有界延迟」范式</b>：不通过就 <b>defer</b>（在 <code>create_release</code> 前 <code>return</code>、重派修复、下轮重测）；到达<b>尝试上限</b>或<b>锚定首次 defer 的墙钟</b>就 <b>escape</b>（大声交付）。所以任何门都不会死锁。</p>
+
+<!-- ---------- 8.1 ---------- -->
+<h3>8.1 api_smoke / RunHub 门（GATE 0，硬前提）</h3>
+<p><b>文件：</b><code>runtime/validation_runner.py</code>（<code>run_smoke_validation</code>）+ <code>framework_validation.py</code>（<code>maybe_run</code>）+ <code>tools/validation_tools.py</code>（<code>_record_runhub_run</code>）。</p>
+<ul>
+<li><b>触发：</b>每个空闲 tick，前提是契约已全实现（<code>all_business_endpoints_implemented</code> 或 <code>_all_business_endpoints_have_route_code()</code>）且尚无通过 run。</li>
+<li><b>如何起应用：</b><code>docker compose down -v --remove-orphans</code> 然后 <code>up -d --build --remove-orphans</code>——<b>干净启动</b>，无残留 pg 卷；用 <code>fcntl</code> 文件锁 <code>.smoke_validation.lock</code>（等 600s）串行化，防两次并发启动互相拆台。</li>
+<li><b>探针（全部须 <code>status=="pass"</code>）：</b><code>frontend_navigable</code>、<code>docker_up</code>、<code>backend_port</code>、<code>backend_health</code>（<code>GET /health==200</code>，90s 内）、<code>auth_register_login</code>（<code>/auth/register</code> 超集载荷铸 token 再 <code>/auth/login</code>）、<code>business_endpoints_reachable</code>（&lt;500）、<code>business_endpoints_implemented</code>（已注册实现的路由非 404/405）、<code>business_endpoints_correct_shape</code>（item/items 信封）、<code>business_writes_persist</code>（POST 后 GET 回读含新 id）、<code>auth_enforced_401</code>、<code>business_chain</code>（跑验证链）、<code>frontend_dead_controls</code>、<code>frontend_reachable</code>。</li>
+<li><b>记录：</b><span class="fn">_record_runhub_run</span> <b>只有 <code>report["passed"]</code> 才记录 run</b>——失败的 api_smoke 不记任何 run。</li>
+<li><b>重试/降速：</b><code>FWVAL_FAST_CAP=6</code> 次快速（每 tick）尝试；超过后<b>降速</b>为最多每 <code>FWVAL_SLOW_INTERVAL_S=300</code>s 一次（不硬停）；<b>有真进展（实现数上升）计数清零</b>。<code>up_timeout=300</code>、<code>health_timeout=90</code>。</li>
+<li><b>阻塞 or 咨询：</b><b>阻塞。</b>没有专门开关（它是核心裁决者）；<code>create_release</code> 在通过 run 记录前不可达。</li>
+</ul>
+
+<!-- ---------- 8.2 ---------- -->
+<h3>8.2 功能交付门 <span class="fn">_validate_delivery_gate</span>（所有 check）</h3>
+<p><b>入口：</b><span class="fn">validate_delivery_gate(...)</span>（<code>delivery_gate.py:828</code>）。<b>返回结构：</b><code>{ok, state, soft_fail_only, failed_checks[], missing_files[], missing_dirs[], invalid_json[], business_chain, deliverability, validation_runtime, ...}</code>。</p>
+<div class="note"><b>软 vs 硬 的唯一规则（<code>delivery_gate.py:1148-1153</code>）：</b><br>
+<code>state=="ok"</code> ⟺ 零失败。<br>
+<code>state=="waiting_for_retry"</code>（<span class="soft">软</span>）⟺ <b>唯一</b>失败恰好是 <code>validation_retry_pending</code> 且无 missing files/dirs/invalid JSON。<br>
+其他任何非空失败集 → <code>state=="failed"</code>（<span class="hard">硬</span>）。<br>
+即：<b><code>validation_retry_pending</code> 是唯一能产生软态的 check，且只有它单独出现时才软。</b></div>
+
+<h4>所有 check（逐条）</h4>
+<table>
+<tr><th>check 名</th><th>类型</th><th>失败条件（简）</th><th>owner / 备注</th></tr>
+<tr><td><code>validation_retry_pending</code></td><td class="soft">软</td><td>tasks.yaml 存在且 <code>retry_pending_count&gt;0</code>（自动 smoke 重试还在飞）</td><td>框架自愈（重试环自解）；唯一软 check</td></tr>
+<tr><td><code>validation_api_smoke_missing</code></td><td class="hard">硬</td><td>无 <code>status==passed</code> 且 <code>check∈{api_smoke,api_health}</code> 的记录</td><td>框架自记（_COVERED_ELSEWHERE）</td></tr>
+<tr><td><code>validation_ui_smoke_missing</code></td><td class="hard">硬</td><td>无通过的 <code>ui_smoke/ui_page_reachable</code> 记录</td><td>框架自记</td></tr>
+<tr><td><code>business_chain_missing</code></td><td class="hard">硬</td><td>验证者未注册任何真链（<code>authored</code> 为空；合成默认链不算）</td><td><b>verifier</b></td></tr>
+<tr><td><code>business_chain_failing</code></td><td class="hard">硬</td><td>某链 <code>status!="passing"</code> 或 <code>last_result.broken</code> 非空</td><td><b>verifier</b></td></tr>
+<tr><td><code>business_chain_api_coverage</code></td><td class="hard">硬</td><td><code>_uncovered_business_endpoints</code> 非空（有业务 endpoint 无任何链步覆盖）</td><td><b>verifier</b>（派发时把未覆盖清单原样交给它）</td></tr>
+<tr><td><code>business_chain_isolation</code></td><td class="hard">硬</td><td>无任何一步是 401/403 拒绝断言（纯 2xx sweep 证明不了租户/属主隔离）</td><td><b>verifier</b>；<b>env <code>ENVGEN_ISOLATION_GATE</code> 默认<span class="off">关</span></b>，关时整条跳过</td></tr>
+<tr><td><code>backend_code_missing</code> / <code>frontend_code_missing</code> / <code>database_sql_missing</code></td><td class="hard">硬</td><td>对应目录无任何代码 / 无 <code>*.sql</code></td><td>建议映射到「生成…文件」</td></tr>
+<tr><td><code>contract_alignment_failed</code></td><td class="hard">硬*</td><td>契约与 SQL schema/后端路由/前端调用不齐（缺表/缺列/引用不存在列/调未注册路径）</td><td><b>backend</b>；*被 <code>functionally_validated</code>（本会话有成功 RunHub run）放宽</td></tr>
+<tr><td><code>frontend_build_not_recorded</code></td><td class="hard">硬*</td><td>有 package.json 但无通过的 <code>frontend_build</code> 记录</td><td>*被 <code>functionally_validated</code> 放宽</td></tr>
+<tr><td><code>no_endpoints_in_hub</code> / <code>no_tables_in_hub</code> / <code>no_pages_in_hub</code></td><td class="hard">硬</td><td>RegistryHub/SchemaHub 无注册条目</td><td>—</td></tr>
+<tr><td><code>no_implemented_endpoints</code> / <code>no_implemented_tables</code></td><td class="hard">硬</td><td>无任何 <code>status∈{implemented,tested}</code> 的 endpoint/table</td><td>—</td></tr>
+<tr><td><code>verification_checklist_not_ready</code></td><td class="hard">硬</td><td>build 清单（sql_syntax/docker_build/npm_install/backend_start）有记录但未全绿</td><td><b>verifier</b></td></tr>
+<tr><td><code>incomplete_required_tasks</code></td><td class="hard">硬</td><td>kickoff 的结构任务（implement_endpoint/table、validate_api_smoke）未完成<b>且</b>缺 registry 证据</td><td>按任务 assignee 路由；<b>env <code>ENVGEN_MILESTONE_SCOPED_GATE</code> 默认<span class="off">关</span></b>（仅非终里程碑作用域过滤）</td></tr>
+<tr><td><code>business_response_key_noncanonical</code></td><td class="hard">硬</td><td>业务 endpoint 的 <code>response_key</code> 不是投影器实际发的 <code>items</code>/<code>item</code></td><td><b>backend</b></td></tr>
+</table>
+
+<h4>Deliverability 子门（由 <code>compute_deliverability</code> 散文映射成 token，全硬）</h4>
+<table>
+<tr><th>token</th><th>失败条件（简）</th><th>放宽?</th></tr>
+<tr><td><code>deliverability_no_successful_run</code></td><td>本会话无成功 RunHub run</td><td>否（它<b>就是</b>放宽条件本身）</td></tr>
+<tr><td><code>deliverability_failed_endpoint_probes</code> / <code>_failed_mcp_probes</code></td><td>最近一次 run 有失败的 endpoint / MCP 探针</td><td>否</td></tr>
+<tr><td><code>deliverability_dead_artifacts</code></td><td>覆盖率审计有「死工件」（无引用的生成文件）</td><td>被 <code>functionally_validated</code> 放宽</td></tr>
+<tr><td><code>deliverability_missing_seed</code> / <code>_seed_quality</code></td><td>表缺种子注册 / 行数太少·占位</td><td>被 <code>functionally_validated</code> 放宽</td></tr>
+<tr><td><code>deliverability_critical_visuals_pending</code> / <code>_needs_revision</code></td><td>关键视觉复核待批 / 需修改</td><td>pending 被 <code>ui_validated</code> 放宽；needs_revision <b>永不</b>放宽</td></tr>
+<tr><td><code>deliverability_ui_flow_missing</code> / <code>_failed</code></td><td>关键 UI 流缺通过记录 / 已记录流失败</td><td>missing 被 <code>ui_validated</code> 放宽；failed <b>永不</b>放宽</td></tr>
+<tr><td><code>deliverability_critical_flows_invalid</code></td><td>前端 kickoff 的 <code>critical_flows[]</code> 全不可解析</td><td>否</td></tr>
+<tr><td><code>deliverability_ui_page_unwired</code></td><td>已声明 ui_page 的路由未在 App.jsx 接线 / 组件文件缺失</td><td><b>否</b>（确定性代码事实，显式不放宽）</td></tr>
+<tr><td><code>deliverability_compute_failed</code> / <code>deliverability_other:&lt;prose&gt;</code></td><td>聚合器抛异常 / 未匹配任何已知子串的 blocker</td><td>—</td></tr>
+</table>
+
+<h4>business_chain 门的两个细节</h4>
+<p><b>什么算「业务 endpoint」（<code>lifecycle.is_business</code>）：</b>排除 <code>kind∈{auth,oauth,infra,spine}</code>、排除路径以 <code>/auth/ /oauth/ /api/auth/ /api/oauth/</code> 开头或 <code>==/health</code>、排除 <code>is_control_surface_path</code>（<code>/api/v1/reset · init-tenant · admin · tenants</code>…）。这张网<b>只删不加</b>——所以覆盖门永远不会开始要求一个控制面 endpoint（修 outlook M2 的 spine-endpoint 卡死）。</p>
+<div class="warn"><b>关于 run-12 的 <code>api_coverage</code> 卡死：</b>因为 <code>is_business</code> 已经排除了 <code>/api/auth/</code>，所以那次卡死<b>不是</b>简单的框架 bug，而是<b>验证者链创作方差</b>（LLM 没把所有业务 endpoint 都写进链）。真正的解法是一个「覆盖由构造」的确定性兜底（未来的聚焦任务）。</div>
+<p><b>链步如何匹配 endpoint（<code>_uncovered_business_endpoints</code>）：</b>对每个业务 endpoint 建 <code>endpoint_id(method,path)</code>；对每个链步把 <code>${var}</code> 重写成 <code>{x}</code> 再算 <code>endpoint_id</code>；<code>endpoint_id</code> 自身又把 <code>{param}</code> 折成 <code>{}</code>——所以链步 <code>/api/posts/${id}</code> 能匹配注册的 <code>/api/posts/{post_id}</code>。返回没被任何链步碰过的业务 endpoint 标签；出异常返回 <code>[]</code>（降级为 no-op，绝不卡门）。</p>
+
+<!-- ---------- 8.3 ---------- -->
+<h3>8.3 PageBuild 门</h3>
+<p><b>env <code>ENVGEN_PAGES_BLOCKING</code> 默认<span class="on">开</span>，仅终里程碑。</b><span class="fn">frontend_unbuilt_pages / pages_release_decision</span>（<code>page_build_gate.py</code>）：有未建页则 defer（重派 frontend）或 escape。<b>被参考图描绘的页永不 escape</b>（必须建）。</p>
+
+<!-- ---------- 8.4 ---------- -->
+<h3>8.4 三个 bounded-deferral 质量门</h3>
+
+<h4 id="visual">8.4.1（写作 GATE 1）Visual 视觉保真门</h4>
+<p><b>文件：</b><code>visual_fidelity.py</code>（<code>VisualFidelityGate</code>）+ orchestrator <code>_visual_release_decision</code>。<b>env <code>ENVGEN_VISUAL_BLOCKING</code> 默认<span class="on">开</span></b>，仅终里程碑、须有参考图。</p>
+<ul>
+<li><b>做什么：</b>起已构建镜像 → 等前端服务（≤240s）→ 以<b>种子 demo 用户</b>登录（<code>_seed_demo_login</code> 优先读 <code>seed_data.json</code>）让认证屏有内容 → 把每张参考图文件名映到路由 → Playwright 逐路由截图（1380×900）→ 视觉模型跨 7 维（布局/组件/风格/颜色/排版/图标/文案）给整体 <code>similarity</code> 0-1（temperature 0）。</li>
+<li><b>阈值：</b>每张判定屏都 <code>similarity ≥ min_similarity</code> 才 pass，默认 <b>0.65</b>（<code>ENVGEN_VISUAL_MIN</code>）；最多 8 屏。</li>
+<li><b>defer/escape：</b>三条 escape 任一触发即放行——① 首次 defer 起墙钟 &gt; <code>VISUAL_DEFERRAL_ESCAPE_S=900</code>s；② <code>total_judgments ≥ VISUAL_TOTAL_JUDGMENTS_CAP=10</code>（每里程碑真判定成本上限）；③ 单源 <code>attempts ≥ 3</code>。相同源签名不花尝试；截图/认证失败<b>退款</b>尝试。defer 时派 <b>P1</b> 前端修复任务（带逐屏 remediation 文本）。</li>
+<li><b>阻塞 or 咨询：</b><b>阻塞</b>（escape 时「按低于阈值」交付，永不死锁）；无可映射参考 → 空过。</li>
+</ul>
+
+<h4 id="squad">8.4.2（GATE 2）Test-User Squad 门（多智能体，默认关）</h4>
+<p><b>文件：</b><code>test_user_squad.py</code>。<b>env <code>ENVGEN_TESTUSER_SQUAD</code> 默认<span class="off">关</span>（"0"）</b>，验证后再默认开。</p>
+<ul>
+<li><b>做什么：</b><span class="fn">plan_test_user_goals</span> 从契约（ui_pages + endpoints）按模态派生目标；<code>MODALITY_PROFILE={api,mcp,browser}</code> 三个模态各一批 <code>test_user</code> agent，<code>max_concurrent=4</code> 波次、每个 <code>per_agent_timeout=900s</code>，各自独立租户。agent 自己驱动应用并经 <span class="fn">bug_create</span> 报缺陷（打 source+severity）。<b>P0 数 &gt; 0</b> = fail。<code>FailureLedger</code> 记住失败目标，下轮优先重测。</li>
+<li><b>defer/escape：</b><span class="fn">squad_release_decision</span>：<code>attempts ≥ max_attempts=3</code> 或 <code>(now-deferred_since) ≥ wall_s=900s</code> → release，否则 defer（重派 owner，<code>return</code> 阻塞）。</li>
+<li><b>阻塞 or 咨询：</b>启用时<b>阻塞</b>（P0 未清），同 3/900 escape。</li>
+</ul>
+
+<h4 id="browser">8.4.3（GATE 3）★ Browser Test-User 交付门（NEW，Fix #14，默认开）</h4>
+<p><b>文件：</b><code>test_user_runner.py</code>（<code>run_browser_test_user / browser_report_unusable</code>）+ <code>heal_pipeline.py</code>（<code>run_test_user_validation / _run_browser_test_user</code>）+ orchestrator 门块。<b>env <code>ENVGEN_TESTUSER_BROWSER_GATE</code> 默认<span class="on">开</span>（"1"）。</b></p>
+<ul>
+<li><b>浏览器走查做什么：</b>（1）<b>认证流</b>——API 注册种子 demo 用户，驱动真 <code>/login</code> 表单（支持分步表单），断言 token 已存<b>且</b> URL 已离开任何认证路由。（2）<b>逐页</b>——对每个已声明 ui_page 路由，以登录态导航、截图、跑 DOM 探针：<code>blank = textLen &lt; _MIN_TEXT(=12)</code>；收集 console error；检测受保护页回弹到登录（<code>redirected_to_login</code>）。汇总出 <code>auth_ok / blank_pages / error_pages / auth_redirect_pages / hollow_frontend</code>（<code>hollow_frontend</code> = ≥半数受保护页回弹登录）。</li>
+<li><b>「客观不可用」判据 <span class="fn">browser_report_unusable</span>：</b>走查<b>确实跑了</b> 且 满足任一：<code>not auth_ok</code> / <code>blank_pages</code> / <code>auth_redirect_pages</code> / <code>hollow_frontend</code> → <b>阻塞</b>。<b>刻意排除</b> <code>visual_mismatches</code> 与 <code>error_pages</code>（console 错）——它们仍作为 P0 派发但<b>只咨询、不阻塞</b>。跑不起来（None/ran=False）<b>不算</b>不可用（基础设施永不阻塞交付）。</li>
+<li><b>defer/escape：</b>复用 <span class="fn">squad_release_decision</span>（3 次 / 900s，锚首次 defer）。defer 时记录 auth_ok/blank/login_wall/hollow 信号并在 <code>create_release</code> 前 <code>return</code>；可用且跑了则清零本段预算。P0 由 <code>format_feedback</code> 生成、经 <code>workhub.create_task(priority="P0", assignee="frontend")</code> 派发，抬头是「HOLLOW FRONTEND … Fix this FIRST — it blocks delivery」。</li>
+<li><b>为何默认开安全：</b>3/900 escape 使它<b>死锁不能</b>——最坏情况一个持续假阴性也只延迟 ≤3 轮就大声交付。<code>ENVGEN_TESTUSER_BROWSER_GATE=0</code> 可关。<b>18 个单测</b>覆盖判据 + 一个忠实模拟 orchestrator 记账的仿真（阻塞坏应用 / 修好即放行 / 抖动自愈 / 基础设施不阻塞 / 持续坏必 escape）。</li>
+</ul>
+
+<h3>8.5 门全清后的 release 切分序列</h3>
+<p>（<code>orchestrator.py:2527-2598</code>，均从<b>已提交</b>的 integration head 切）：<span class="fn">_merge_committed_agent_work</span> → <span class="fn">_generate_backend_skeleton</span> → <span class="fn">_scaffold_frontend_baseline</span> → <span class="fn">_repair_frontend_api</span> → <span class="fn">_project_missing_routes</span> → <span class="fn">_scaffold_frontend_pages</span> → <span class="fn">_commit_framework_delivery</span> → <span class="fn">create_release(tag=_current_milestone_version)</span> → <span class="fn">_write_preview_config</span> → post-release 咨询 <span class="fn">_run_test_user_validation</span>（不阻塞的 safety net）→ 置 <code>_project_delivered</code> + 触发交付事件。</p>
+
+<!-- ============================================================ -->
+<h2 id="ms">9. 多里程碑循环</h2>
+<ul>
+<li><b>定义/版本：</b>里程碑是 <code>{name, version, description_slice}</code>；不给则合成单个 M1 <code>1.0.0</code>；否则 <span class="fn">plan_milestones(...)</span> 让本次 run 的模型规划 ≤6 片。<code>ENVGEN_SINGLE_MILESTONE</code> 强制单里程碑。roadmap 进 <code>self.hubs.milestones.set_roadmap(...)</code>。</li>
+<li><b>循环：</b><code>for _m_idx, _milestone in enumerate(milestones, start=1)</code>（<code>orchestrator.py:925</code>）。<code>_current_milestone_version</code> 在 <code>:952</code> 设定（= release tag）。</li>
+<li><b>逐里程碑重置（仅 <code>_m_idx&gt;1</code>）：</b>清 <code>_project_delivered</code>、所有 <code>_fwval_*</code> 卡死/失败态、视觉/页/test-user 门态，清交付事件，然后 <span class="fn">_respawn_core_lanes()</span>（终止+重生 backend/frontend/verifier，让 LLM 对已合并的上一里程碑代码有<b>全新上下文</b>；worktree 保留）。</li>
+<li><b>推进：</b>内层 <code>while</code>（<code>:1378</code>）在交付事件置位时退出，<code>for</code> 前进；store 标记先前里程碑 <code>delivered</code>、当前 <code>active</code>。中间里程碑切一个 per-里程碑 release 并前进；只有终里程碑（或 LLM 的 <code>deliver_project</code>）结束整个 run。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="term">10. 终止条件</h2>
+<table>
+<tr><th>条件</th><th>触发</th><th>结果</th></tr>
+<tr><td>全部里程碑交付（正常）</td><td>内层循环退出 + <code>for</code> 耗尽</td><td><code>success=True</code></td></tr>
+<tr><td>墙钟超限</td><td><code>elapsed &gt; ENVGEN_MAX_WALLCLOCK_SEC</code>（默认 <b>7200</b>s）</td><td>抛「Run budget exceeded」</td></tr>
+<tr><td>tick 超限</td><td><code>tick_count ≥ ENVGEN_MAX_TICKS</code>（默认 <b>240</b>）</td><td>同上；<code>ENVGEN_BUDGET_UNLIMITED</code> 可绕过</td></tr>
+<tr><td>卡死 abort（fail-fast）</td><td>卡死阶梯置 <code>_fwval_abort_reason</code>（<code>FWVAL_STUCK_ABORT_AFTER=7</code>）/ 交付门卡死 / 无收敛兜底 <code>FWVAL_NO_DELIVER_ABORT_S=4500</code></td><td>抛专门的「STUCK — generation aborted」；abort-grace 最多缓 3 轮</td></tr>
+<tr><td>Kickoff 超时</td><td>receipt <code>phase!="finalized"</code>；硬界 <code>KICKOFF_TIMEOUT_SEC(1200)+600</code></td><td>抛</td></tr>
+<tr><td>任意异常</td><td><code>except</code></td><td><code>success=False</code>、标记 <code>failed</code>；<code>finally</code> 仍 flush/merge 并停 agent</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="env">11. 环境变量参考表（默认值）</h2>
+<table>
+<tr><th>变量</th><th>默认</th><th>作用</th></tr>
+<tr><td><code>ENVGEN_TESTUSER_BROWSER_GATE</code></td><td class="on">开(1)</td><td>浏览器 test-user 交付门（Fix #14）；客观不可用→阻塞</td></tr>
+<tr><td><code>ENVGEN_VISUAL_BLOCKING</code></td><td class="on">开</td><td>视觉保真门阻塞交付</td></tr>
+<tr><td><code>ENVGEN_VISUAL_MIN</code></td><td>0.65</td><td>视觉相似度阈值</td></tr>
+<tr><td><code>ENVGEN_PAGES_BLOCKING</code></td><td class="on">开</td><td>PageBuild 门阻塞交付</td></tr>
+<tr><td><code>ENVGEN_TESTUSER_SQUAD</code></td><td class="off">关(0)</td><td>多智能体 test-user squad 门</td></tr>
+<tr><td><code>ENVGEN_ISOLATION_GATE</code></td><td class="off">关</td><td><code>business_chain_isolation</code> 门（要求 ≥1 拒绝断言）</td></tr>
+<tr><td><code>ENVGEN_MILESTONE_SCOPED_GATE</code></td><td class="off">关</td><td>非终里程碑对 <code>incomplete_required_tasks</code> 作用域过滤</td></tr>
+<tr><td><code>ENVGEN_REQUIRE_UI_EVIDENCE</code></td><td class="off">关</td><td>关时 <code>ui_validated == functionally_validated</code></td></tr>
+<tr><td><code>ENVGEN_COMPONENT_SPECS</code></td><td class="on">开</td><td>Brick 4 生成前预拆分</td></tr>
+<tr><td><code>ENVGEN_MAX_WALLCLOCK_SEC</code> / <code>ENVGEN_MAX_TICKS</code></td><td>7200 / 240</td><td>墙钟 / tick 上限</td></tr>
+<tr><td><code>ENVGEN_LANE_STALL_SEC</code> / <code>ENVGEN_NUDGE_GRACE_SEC</code> / <code>ENVGEN_MAX_SILENT_NUDGES</code></td><td>150 / 120 / 4</td><td>沉默 lane 侦测/宽限/最多 nudge 次数</td></tr>
+<tr><td><code>ENVGEN_SINGLE_MILESTONE</code> / <code>ENVGEN_BUDGET_UNLIMITED</code></td><td>—</td><td>强制单里程碑 / 解除预算</td></tr>
+</table>
+<p class="meta">门内常量（非 env）：<code>FWVAL_FAST_CAP=6</code>、<code>FWVAL_SLOW_INTERVAL_S=300</code>、<code>FWVAL_STUCK_ABORT_AFTER=7</code>、<code>VISUAL_DEFERRAL_ESCAPE_S=900</code>、<code>VISUAL_TOTAL_JUDGMENTS_CAP=10</code>、squad/browser <code>max_attempts=3 · wall_s=900</code>、<code>KICKOFF_TIMEOUT_SEC=1200</code>、<code>_MIN_TEXT=12</code>、<code>_MAX_DECOMPOSE_IMAGES=24</code>、<code>_DECOMPOSE_CONCURRENCY=6</code>。</p>
+
+<!-- ============================================================ -->
+<h2 id="src">12. Mermaid 源码（可复制到 mermaid.live）</h2>
+<p>与第 2 节同图，复制下面整段到 <code>mermaid.live</code> 可导出高清图：</p>
+<pre><code>flowchart TD
+    START([开始 Orchestrator.run]) --&gt; P0
+    subgraph P0["Phase 0 · 材料准备 Material Prep（生成前）"]
+        REF["参考截图 reference_images/*.png"]
+        REF --&gt; B1["Brick1 测量取色 extract_palette/sample_color"]
+        REF --&gt; B2["Brick2 组件拆分 decompose_reference (Gemini)"]
+        B2 --&gt; B4["Brick4 预拆分 precompute_component_specs (≤24/并发6)"]
+        B1 --&gt; SPEC["design/component_specs/*.json 每组件 measured hex"]
+        B4 --&gt; SPEC
+    end
+    P0 --&gt; KO
+    subgraph KO["Phase 1 · Kickoff 契约合成"]
+        MEET["kickoff 会议: backend/frontend/verifier 起草"]
+        MEET --&gt; BUILD["_build_contract: LLM草案→确定性归一/兜底"]
+        BUILD --&gt; REG["finalize_kickoff 注册"]
+        REG --&gt; CONTRACT[("RegistryHub 契约: endpoints·tables·pages·chains")]
+    end
+    KO --&gt; SCAF["Phase 2a Scaffold: DB/MCP/前端页脚手架"]
+    SCAF --&gt; TICK
+    subgraph IMPL["Phase 2b 实现+协同循环 (每 tick≤60s)"]
+        TICK{"协同 tick: lane 空闲且 tick_due?"}
+        TICK --&gt;|dispatch| LANES["backend/frontend/verifier 实现"]
+        LANES --&gt; NUDGE["stall 侦测+nudge (≤4)"]
+        NUDGE --&gt; VAL["api_smoke: docker down -v; up --build"]
+        VAL --&gt; VALQ{"全部 probe pass?"}
+        VALQ --&gt;|否| REMED["remediation→owner lane (P0)"]
+        REMED --&gt; TICK
+        VALQ --&gt;|是| RUNREC["RunHub 记录成功 run"]
+    end
+    RUNREC --&gt; GATEQ{"契约全部 implemented?"}
+    GATEQ --&gt;|否| TICK
+    GATEQ --&gt;|是| DG
+    subgraph DELIV["Phase 3 交付门 _maybe_framework_deliver"]
+        DG["功能门 _validate_delivery_gate"]
+        DG --&gt; DGQ{"failed_checks 空?"}
+        DGQ --&gt;|否 hard| STUCK["stuck 阶梯 abort(7)"]
+        DGQ --&gt;|是/仅软| PG{"PageBuild 门"}
+        PG --&gt;|defer| PGR[重派 frontend]
+        PG --&gt;|pass/escape| VF{"Visual 门 默认开 ≥0.65"}
+        VF --&gt;|defer P1| VFR[重派 frontend]
+        VF --&gt;|pass/escape 900s/3| SQ{"Squad 门 默认关"}
+        SQ --&gt;|defer P0| SQR[重派 owner]
+        SQ --&gt;|pass/escape| BR{"Browser 门 默认开 unusable?"}
+        BR --&gt;|defer P0 900s/3| BRR[重派 frontend]
+        BR --&gt;|usable/escape| CUT
+    end
+    STUCK --&gt; TICK
+    PGR --&gt; TICK
+    VFR --&gt; TICK
+    SQR --&gt; TICK
+    BRR --&gt; TICK
+    CUT["release 切分: merge→skeleton→scaffold→project→commit→create_release"]
+    CUT --&gt; POST["post-release 咨询 test-user (不阻塞)"]
+    POST --&gt; MS{"还有 milestone?"}
+    MS --&gt;|是| RESET["_respawn_core_lanes 重置门态·版本++"]
+    RESET --&gt; KO
+    MS --&gt;|否| DONE([交付完成 success])
+    IMPL -.-&gt;|"7200s/240ticks/stuck-abort"| ABORT([中止 abort])</code></pre>
+
+<h2 id="files">关键文件索引</h2>
+<ul>
+<li><code>orchestrator.py</code> — run 主循环、协同 tick、交付流程、门接线、里程碑循环</li>
+<li><code>runtime/delivery_gate.py</code> — 功能交付门全部 check + 返回结构 + business_chain 门</li>
+<li><code>runtime/deliverability.py</code> — deliverability 子门（散文 blocker）</li>
+<li><code>runtime/lifecycle.py</code> — endpoint/table/page 状态机 + <code>is_business</code> / <code>business_endpoints</code></li>
+<li><code>runtime/validation_runner.py</code> + <code>framework_validation.py</code> + <code>tools/validation_tools.py</code> — api_smoke/RunHub 门</li>
+<li><code>runtime/visual_fidelity.py</code> / <code>test_user_squad.py</code> / <code>test_user_runner.py</code> / <code>page_build_gate.py</code> — 四个 bounded-deferral 门</li>
+<li><code>runtime/kickoff/run_kickoff.py</code> + <code>kickoff/contract.py</code> — 契约合成 + 注册 + <code>endpoint_id</code></li>
+<li><code>runtime/backend_skeleton.py</code> + <code>route_projector.py</code> — 后端投影（handler/CRUD 信封/owner-scoping/custom-route 优先级/seed）</li>
+<li><code>runtime/frontend_scaffold.py</code> — 前端脚手架 + safe-icon 插件 + api.js 修复</li>
+<li><code>runtime/registryhub.py</code> — 契约 store + 验证链注册 + 验证者驱动隔离</li>
+<li><code>runtime/heal_pipeline.py</code> — 交付时确定性自愈</li>
+<li><code>runtime/material_prep.py</code> + <code>reference_materials.py</code> + <code>tools/material_prep_tools.py</code> — 材料准备 4 块 Brick</li>
+<li><code>tools/data_engine_tools.py</code> + <code>knowledge/seed_data.py</code> — HuggingFace 真实种子数据引擎</li>
+<li><code>/data/common/haibotong/outlook_components/PIPELINE.md</code> — 材料准备人工方法论</li>
+</ul>
+
+<hr>
+<p class="meta">生成于 2026-06-30。本文档基于对当前工作树代码的直接研读（5 路并行研究）综合而成；行号可能随后续改动漂移，以 <code>grep</code> 标识符为准。TikHub 真实数据接入为<b>计划</b>，当前真实数据通道是 HuggingFace 数据引擎。</p>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default', flowchart: { htmlLabels: true, curve: 'basis' } });
+</script>
+</body>
+</html>

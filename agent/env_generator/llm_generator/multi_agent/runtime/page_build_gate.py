@@ -100,9 +100,14 @@ def pages_release_decision(deferred_since: Optional[float], attempts: int, now: 
     (``has_referenced_unbuilt``), block HARDER — double the attempt + wall-clock budget
     so the lane gets more chances to ship the REAL page before falling back (still bounded;
     never a hard deadlock)."""
+    # USER REQUIREMENT (2026-06-29): a page the REFERENCES DEPICT must ship as the REAL page,
+    # NEVER the framework fallback. So while any reference-depicted page is still unbuilt we
+    # NEVER escape: keep deferring + re-dispatching the lane to build it. (If the lane truly
+    # cannot, the run hits its overall wall-clock cap and fails honestly with the unbuilt-page
+    # reason, rather than silently shipping a stub.) A page with NO reference to match keeps
+    # the bounded escape below (its fallback is acceptable; that deferral always terminates).
     if has_referenced_unbuilt:
-        attempt_cap *= 2
-        escape_s *= 2
+        return "defer"
     if deferred_since is not None and (now - deferred_since) > escape_s:
         return "release"
     if attempts >= attempt_cap:

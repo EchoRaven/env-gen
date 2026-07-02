@@ -21,6 +21,70 @@ from __future__ import annotations
 
 from typing import Any, List
 
+_ROUTE_FILE_SUFFIXES = (".jsx", ".tsx", ".js", ".ts", ".vue", ".mjs", ".css", ".html", ".json")
+
+
+def _is_walkable_route(route) -> bool:
+    """A registered ui_page is walkable by the browser test-user only if its ``route`` is a
+    real SPA URL route — i.e. it STARTS WITH ``/`` and is not a SOURCE FILE PATH.
+
+    The frontend lane routinely registers junk ui_page entries whose ``route`` is the page's
+    SOURCE FILE (``src/pages/OutlookInboxPage.jsx``, ``app/frontend/src/components/
+    ReplyComposer.jsx``) or registers non-navigable COMPONENTS (folder_rail / message_list /
+    calendar_grid …) as ui_pages. Walking those navigates the SPA to a non-route → it renders
+    BLANK → the browser gate reports a FALSE 'unusable', churns its bounded deferral, and
+    escape-ships 'loudly' on a perfectly usable app (outlook run-28 v1.1.0, live-confirmed:
+    EVERY 'blank' page was a file-path/component entry while the real routes ``/`` ``/inbox``
+    ``/calendar`` rendered fine and ``auth_ok=True``). A relative file path fails
+    ``startswith('/')``; an absolute one is caught by the source-file suffix.
+
+    PARAM routes (``/inbox/message/:id``, ``/calendar/event/{eventId}``) are excluded too
+    (outlook run-30, live): the walker navigates to the LITERAL ``:id`` → the page fetches
+    resource ":id" → nothing → renders empty → a FALSE 'blank' that burned the whole M1
+    deferral budget + escape-shipped while every param-free page was fine. A real user
+    reaches a detail page by CLICKING a list row — that is the click-through/squad tests'
+    coverage, not the URL walk's. ENV-AGNOSTIC."""
+    r = str(route or "").strip()
+    if not r.startswith("/"):
+        return False
+    r = r.split("?", 1)[0]
+    if "{" in r or any(seg.startswith(":") for seg in r.split("/")):
+        return False                               # unresolved param → not URL-walkable
+    return not r.rstrip("/").lower().endswith(_ROUTE_FILE_SUFFIXES)
+
+
+def _isolation_scoped_tables_from_chains(registryhub, table_names) -> set:
+    """Tables the verifier's REGISTERED chains probe for CROSS-USER ISOLATION — a by-id
+    GET/PUT/DELETE the verifier asserts must be DENIED (403/404) to a NON-owner. Such a
+    probe IS the verifier's domain judgment that the resource is per-user-PRIVATE, so its
+    reads must be owner-scoped BY CONSTRUCTION. This closes the cross-user data leak the
+    backend agent unreliably declares via owner_scoped_reads (outlook run-9/10: it scoped
+    `messages`, forgot `events` → GET /api/events/{id} returned any user's row → business_
+    chain isolation FAIL → 7-cycle wedge). ENV-AGNOSTIC + no global default flip: a PUBLIC
+    resource (social feed) gets NO isolation probe, so it is never scoped and stays open.
+    Best-effort; empty on any failure."""
+    out: set = set()
+    try:
+        from .chain_executor import _is_cross_user_denial, normalize_steps
+        chains = registryhub.get_verification_chains() or {}
+        names = set(table_names or ())
+        for chain in (chains.values() if isinstance(chains, dict) else (chains or [])):
+            if not isinstance(chain, dict):
+                continue
+            steps, _ = normalize_steps(chain.get("steps") or [])
+            for st in steps:
+                if not _is_cross_user_denial(st):
+                    continue
+                # the resource COLLECTION segment of the probed path → the table name
+                # (/api/events/{id} -> 'events'); intersect with real tables for safety.
+                segs = [s for s in str(st.get("path") or "").split("?", 1)[0].split("/")
+                        if s and s.lower() != "api"]
+                if segs and segs[0] in names:
+                    out.add(segs[0])
+    except Exception:
+        pass
+    return out
+
 
 class HealPipeline:
     """Groups the delivery-time repair/merge/commit steps. Stateless; borrows the
@@ -44,8 +108,17 @@ class HealPipeline:
             from pathlib import Path as _P
             from .backend_scaffold import (
                 repair_backend_auth_dependency, repair_auth_import_paths,
-                repair_inline_token_auth, repair_auth_enforcement_middleware)
+                repair_inline_token_auth, repair_auth_enforcement_middleware,
+                repair_custom_routes_router_prologue)
             be_dir = _P(out_dir) / "app" / "backend"
+            # custom_routes using @router.<verb> without defining router (run-34):
+            # NameError at import silently killed the WHOLE custom router — including the
+            # lane's owner-scoped reads → cross-user leak → isolation wedge → STUCK.
+            _rp = repair_custom_routes_router_prologue(be_dir)
+            if _rp.get("repaired"):
+                orch._logger.warning(
+                    "custom_routes.py used @router without defining it — canonical "
+                    "APIRouter prologue inserted (import-crash fix).")
             rep = repair_backend_auth_dependency(be_dir)
             if rep.get("repaired"):
                 orch._logger.warning(
@@ -193,7 +266,29 @@ class HealPipeline:
             declared = business_endpoints(registryhub.get_endpoints())
             if not declared:
                 return
-            res = project_missing_routes(_P(out_dir) / "app" / "backend", declared)
+            # Per-user-PRIVATE tables (owner_scoped_reads in table metadata): their
+            # reads are projected owner-scoped by construction so the isolation chain
+            # passes without a lane override (which fd56c2e closed for CRUD). One
+            # decision per table at kickoff; default empty ⇒ open reads (public feed).
+            try:
+                _tbls = registryhub.list_tables() or {}
+                owner_scoped_tables = {
+                    name for name, t in _tbls.items()
+                    if str(((t or {}).get("metadata") or {}).get("owner_scoped_reads")
+                           ).strip().lower() in {"true", "1", "yes", "y", "on"}
+                }
+                # VERIFIER-DRIVEN read isolation (2026-06-30): ALSO owner-scope any table the
+                # verifier's registered chains probe for cross-user isolation. The agent's
+                # owner_scoped_reads declaration is unreliable (run-9/10 leaked `events`); the
+                # verifier's isolation probe IS the reliable, domain-correct privacy signal —
+                # and a PUBLIC resource gets no probe, so this never over-scopes a social feed.
+                owner_scoped_tables |= _isolation_scoped_tables_from_chains(
+                    registryhub, set(_tbls.keys()))
+            except Exception:
+                owner_scoped_tables = set()
+            res = project_missing_routes(
+                _P(out_dir) / "app" / "backend", declared,
+                owner_scoped_tables=owner_scoped_tables)
             projected = res.get("projected") or []
             if projected:
                 orch._logger.warning(
@@ -218,8 +313,13 @@ class HealPipeline:
                         "ENDPOINT LIFECYCLE (code-truth): implemented=%s regressed=%s "
                         "pending=%s", _ea.get("implemented"), _ea.get("regressed"),
                         _ea.get("pending"))
-            except Exception:
-                pass
+            except Exception as exc:
+                # Non-fatal (don't crash the heal run) but LOUD: backend_audit raises
+                # BackendAuditError on a real failure and silently swallowing it
+                # re-hides the very signal it was added to surface.
+                orch._logger.error(
+                    "backend_audit.sync_endpoint_statuses FAILED (endpoint lifecycle "
+                    "NOT synced; flags may be stale): %s", exc)
         except Exception as exc:
             orch._logger.debug("route projection skipped: %s", exc)
 
@@ -274,7 +374,7 @@ class HealPipeline:
         except Exception as exc:
             orch._logger.debug("psycopg DSN repair skipped: %s", exc)
 
-    def run_test_user_validation(self, version: str) -> None:
+    def run_test_user_validation(self, version: str) -> "dict | None":
         """Post-milestone TEST-USER phase (2026-06-09, user-asked): once a release is
         cut, simulate a real user's journey across the API (register → post → feed →
         view-my-posts → follow → comment → like → message) and check the MCP surface is
@@ -333,13 +433,16 @@ class HealPipeline:
             # milestone — the user's intended "recruit -> test via web tools -> key-node
             # screenshots -> feedback -> fix" loop. Best-effort; never blocks.
             try:
-                self._run_browser_test_user(proj, compose, registryhub, version)
+                # Returns the browser report (auth_ok/blank_pages/…) so a PRE-RELEASE
+                # caller can gate the release on it; None if it could not run.
+                return self._run_browser_test_user(proj, compose, registryhub, version)
             except Exception as _bexc:
                 orch._logger.debug("browser test-user skipped: %s", _bexc)
         except Exception as exc:
             orch._logger.debug("test-user validation skipped: %s", exc)
+        return None
 
-    def _run_browser_test_user(self, proj, compose, registryhub, version) -> None:
+    def _run_browser_test_user(self, proj, compose, registryhub, version) -> "dict | None":
         """Recruit the browser test-user against the running FRONTEND: auth flow +
         per-page screenshot/blank/console checks; log feedback + route blank/broken
         pages back to the frontend lane for repair. Best-effort; never raises out."""
@@ -359,12 +462,38 @@ class HealPipeline:
         api_base = f"http://localhost:{be_port}" if be_port else None
         # pages to walk: the registered ui_pages with a real route (+ landing/login).
         pages = [{"name": "login", "route": "/login", "auth": False}]
+        # Fix #35 (complete form): a PARAM route (/inbox/message/:id) is not URL-
+        # walkable as written — resolve a REAL row id via the backend (as the
+        # SEEDED demo user, whose owner-scoped lists are populated) and walk the
+        # concrete route; only an unresolvable param route is skipped. One lazy
+        # token mint for the whole page list.
+        _param_tok = {"tried": False, "v": None}
+
+        def _resolver_token():
+            if not _param_tok["tried"]:
+                _param_tok["tried"] = True
+                try:
+                    if be_port:
+                        from .visual_fidelity import _mint_token, _seed_demo_login
+                        _param_tok["v"] = _mint_token(be_port, timeout_s=20,
+                                                      demo=_seed_demo_login(proj))
+                except Exception:
+                    pass
+            return _param_tok["v"]
+
         try:
+            from .test_user_runner import _is_param_seg, resolve_param_route
             for name, pg in (registryhub.list_ui_pages() or {}).items():
                 if not isinstance(pg, dict):
                     continue
                 route = str(pg.get("route") or pg.get("path") or "").strip()
-                if route:
+                if (api_base and route.startswith("/")
+                        and any(_is_param_seg(s) for s in route.split("/"))):
+                    route = resolve_param_route(route, api_base, _resolver_token()) or route
+                # Skip junk entries whose "route" is a SOURCE FILE PATH or a non-navigable
+                # component — walking them renders BLANK and false-flags a usable app (#26).
+                # An unresolved param route still lands here and is skipped (#35 interim).
+                if route and _is_walkable_route(route):
                     low = route.rstrip("/").lower()
                     pages.append({"name": str(name), "route": route,
                                   "auth": low not in ("/login", "/signup", "/signin", "/register", "", "/")})
@@ -380,7 +509,7 @@ class HealPipeline:
         if not report.get("ran"):
             orch._logger.warning("BROWSER test-user (v%s): could not run — %s",
                                  version, report.get("summary"))
-            return
+            return None
         # KEY-NODE vs REFERENCE: LLM-compare each captured page screenshot to the reference
         # image that depicts that route, so the feedback says "inbox doesn't match
         # outlook_inbox.png — missing folder rail", not merely "blank/console-error". The
@@ -400,8 +529,14 @@ class HealPipeline:
         # "give feedback, keep fixing" step. (The task is the durable signal the lane claims;
         # the message_bus send is skipped here because this runs in a worker thread off the
         # orchestrator's event loop.)
+        # HOLLOW FRONTEND (login wall): a logged-in test-user that bounces back to the
+        # login form on the protected pages means the app is unusable even though it
+        # builds + serves — the single worst preview defect and exactly what slipped
+        # through before (outlook MM: a hardcoded absolute API origin failed every call).
+        # It MUST escalate to a P0 fix like any other UI defect.
         broken = ((not report.get("auth_ok")) or report.get("blank_pages")
-                  or report.get("error_pages") or report.get("visual_mismatches"))
+                  or report.get("error_pages") or report.get("visual_mismatches")
+                  or report.get("hollow_frontend") or report.get("auth_redirect_pages"))
         if broken:
             try:
                 fb = format_feedback(report)
@@ -412,11 +547,16 @@ class HealPipeline:
                     assignee="frontend", agent="orchestrator", priority="P0")
                 orch._logger.warning(
                     "BROWSER test-user dispatched a P0 fix task to frontend: auth_ok=%s "
-                    "blank=%s console_errors=%s visual_mismatches=%s", report.get("auth_ok"),
-                    report.get("blank_pages"), report.get("error_pages"),
+                    "blank=%s console_errors=%s hollow=%s login_wall=%s visual_mismatches=%s",
+                    report.get("auth_ok"), report.get("blank_pages"), report.get("error_pages"),
+                    report.get("hollow_frontend"), report.get("auth_redirect_pages"),
                     report.get("visual_mismatches"))
             except Exception as _dexc:
                 orch._logger.error("browser test-user feedback dispatch failed: %s", _dexc)
+        # Return the report so a PRE-RELEASE caller can gate the release on it (the delivery
+        # flow blocks a cut when the app is objectively unusable). Advisory POST-release
+        # callers ignore the return; behaviour there is unchanged.
+        return report
 
     def repair_frontend_api(self) -> None:
         """FIX #37: reconcile frontend api.js exports with component imports on the
@@ -430,15 +570,69 @@ class HealPipeline:
             from .frontend_scaffold import (
                 repair_frontend_api_exports, scaffold_missing_local_pages,
                 repair_frontend_named_default_imports, reroute_inline_stub_routes,
-                repair_frontend_missing_local_exports)
+                repair_frontend_missing_local_exports, normalize_frontend_api_base,
+                repair_frontend_escaped_backticks, repair_frontend_unimported_icons,
+                repair_frontend_default_export_wrapper)
             from pathlib import Path as _P
             fe = _P(out_dir) / "app" / "frontend"
+            # SYNTAX FIRST: the lane intermittently escapes template-literal delimiters
+            # (`className={\`...\`}`) → esbuild "Invalid or unexpected token" → the whole
+            # `npm run build` fails, so EVERY other repair below is moot until the file
+            # parses. Un-escape delimiter backticks before anything else (run-13: this
+            # wedged docker_up for many cycles, fixed one file at a time). Runs before each
+            # api_smoke docker_up (framework_validation) AND at delivery.
+            _eb = repair_frontend_escaped_backticks(fe)
+            if _eb.get("repaired"):
+                orch._logger.warning(
+                    "Frontend escaped-backtick template delimiters un-escaped (esbuild "
+                    "parse fix, prevents docker_up build wedge): %s", _eb.get("repaired"))
+            # USED-BUT-UNIMPORTED JSX identifiers (#40, run-33 M1): `<Mail/>` with no
+            # import BUILDS fine but crashes the page at render (ReferenceError → blank +
+            # console error → browser-gate deferral churn). Import them via lucide-react —
+            # the safe-icon plugin renders real icons and degrades unknown names to a
+            # placeholder, so this is crash-proof by construction.
+            _ui = repair_frontend_unimported_icons(fe)
+            if _ui.get("repaired"):
+                orch._logger.warning(
+                    "Frontend unimported JSX identifiers imported via lucide-react "
+                    "(render-crash fix): %s", _ui.get("repaired"))
+            # DEFAULT-EXPORT WRAPPER (run-35 /inbox): `export default { api };` makes every
+            # default-import consumer's member call undefined → blank page.
+            _dw = repair_frontend_default_export_wrapper(fe)
+            if _dw.get("repaired"):
+                orch._logger.warning(
+                    "Frontend default-export wrapper unwrapped (member-call blank-page "
+                    "fix): %s", _dw.get("repaired"))
+            # Same-origin discipline FIRST: a lane that hardcodes an absolute
+            # `http://localhost:<in-container-port>` API base (outlook MM, 2026-06-29)
+            # bypasses the nginx reverse proxy AND targets the wrong host port, so the
+            # browser's login + every authed call fails → the SPA is stuck on the login
+            # form (a "hollow preview" of identical Sign-in pages). Strip such origins to
+            # relative URLs so requests flow through the proxy regardless of host port.
+            _nb = normalize_frontend_api_base(fe)
+            if _nb.get("normalized"):
+                orch._logger.warning(
+                    "Frontend absolute localhost API origins normalized to same-origin "
+                    "relative URLs (lane bypassed the nginx proxy): %s", _nb.get("normalized"))
             rep = repair_frontend_api_exports(fe)
             if rep.get("repaired"):
                 orch._logger.warning(
                     "Frontend api.js reconciled: aliased=%s stubbed=%s",
                     rep.get("aliased"), rep.get("stubbed"),
                 )
+            # INVERSE of the above: a component DEFAULT-imports api (`import api from
+            # '../services/api'`) but api.js has only NAMED exports → Rollup "default is not
+            # exported by api.js" → build FAIL → no delivery (outlook M2 2026-06-29). Add a
+            # default export aggregating the named members.
+            try:
+                from .frontend_scaffold import repair_frontend_default_api_import
+                _di = repair_frontend_default_api_import(fe)
+                if _di.get("repaired"):
+                    orch._logger.warning(
+                        "Frontend api.js default export added (a component default-imports api): %s",
+                        _di.get("default_export_added"))
+            except Exception as _die:
+                orch._logger.debug("frontend default-api-import repair skipped: %s", _die)
             # Generalize export reconciliation to ALL local modules (not just api.js):
             # a named import from a local module that doesn't export it HARD-fails the
             # Vite/rollup build (instagram_v5: PlusSquareIcon) → frontend won't build →

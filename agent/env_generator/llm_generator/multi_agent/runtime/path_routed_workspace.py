@@ -41,6 +41,25 @@ def _writers(*extra: str) -> FrozenSet[str]:
     return _BROAD_WRITERS | frozenset(extra)
 
 
+# Spawned short-lived lane helpers (latent today) — they assist the OWNING lane and
+# share its write scope, but they are NOT coordinators.
+_LANE_HELPER_WRITERS: FrozenSet[str] = frozenset({"worker", "analysis_worker", "review_worker"})
+
+
+def _lane_writers(lane: str) -> FrozenSet[str]:
+    """Writer set for LANE-owned application code: the owning lane (+ its spawned
+    helpers) ONLY — deliberately EXCLUDING the coordinator broad-writers (orchestrator).
+
+    User directive 2026-06-24 ("为什么是orchestrator在改代码"): the orchestrator diagnosed a
+    backend column-name bug and PATCHED ``app/backend/custom_routes.py`` itself instead of
+    re-waking the backend. That violates the builder/coordinator split (lanes are the
+    DIRECT builders of their own code; orchestrator/debugger COORDINATE and DISPATCH) and
+    is mechanically unsound — the orchestrator edits its OWN worktree copy, which then
+    conflicts on merge to integration. A lane bug is re-routed to the owning lane via a
+    dispatched remediation task (task_created → for-self wakeup re-wakes an idle lane)."""
+    return _LANE_HELPER_WRITERS | frozenset({lane})
+
+
 _FW_OWNED_MAP_CACHE: Optional[List[Tuple[str, FrozenSet[str]]]] = None
 
 
@@ -110,9 +129,9 @@ ROUTING_TABLE: Tuple[Tuple[str, str, Optional[FrozenSet[str]], str], ...] = (
     # a YAML into the workspace tree, no agent can write to it.
     (".gates/",       "base", frozenset(),           "code_check allowlist — operator-only, read-only to agents"),
     # ------ per-agent code (role-gated) ------
-    ("app/backend/",  "code", _writers("backend"),   "backend implements API; per-worktree"),
-    ("app/frontend/", "code", _writers("frontend"),  "frontend implements UI; per-worktree"),
-    ("app/database/", "code", _writers("database"),  "database implements schema/seed; per-worktree"),
+    ("app/backend/",  "code", _lane_writers("backend"),   "backend implements API; per-worktree — coordinators DISPATCH, never patch"),
+    ("app/frontend/", "code", _lane_writers("frontend"),  "frontend implements UI; per-worktree — coordinators DISPATCH, never patch"),
+    ("app/database/", "code", _lane_writers("database"),  "database implements schema/seed; per-worktree — coordinators DISPATCH, never patch"),
     ("app/",          "code", _BROAD_WRITERS,        "app/* catch-all — broad writers only"),
     # ------ shared (project root), role-gated ------
     # design/ holds README.md + the kickoff-coordinator-authored

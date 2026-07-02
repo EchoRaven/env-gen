@@ -32,12 +32,17 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 _VIEWPORT = {"width": 1280, "height": 800}
 # A page that rendered almost nothing (a stub heading) — used to flag "blank page".
 _MIN_TEXT = 12
-# DOM probe: is there a real interactive control, and any console errors?
+# DOM probe: real interactive control? console errors? AND does the page actually look
+# like the LOGIN form (a password field + sign-in copy) — so a protected route that
+# rendered the auth form IN PLACE (without a URL change) is still caught as hollow.
 _PROBE = """() => {
   const txt = (document.body && document.body.innerText || '').trim();
   const btns = document.querySelectorAll('button, a[href], [role=button]').length;
   const inputs = document.querySelectorAll('input, textarea, select').length;
-  return { textLen: txt.length, sample: txt.slice(0, 120), buttons: btns, inputs: inputs };
+  const pw = document.querySelectorAll('input[type=password]').length;
+  const signin = /\\b(sign ?in|log ?in|sign ?up|create account)\\b/i.test(txt);
+  return { textLen: txt.length, sample: txt.slice(0, 120), buttons: btns,
+           inputs: inputs, pw: pw, signin: signin };
 }"""
 
 
@@ -70,6 +75,136 @@ def _api_register(api_base: str, creds: Mapping[str, str]) -> bool:
         except Exception:
             pass
     return False
+
+
+def _is_param_seg(seg: str) -> bool:
+    return seg.startswith(":") or (seg.startswith("{") and seg.endswith("}"))
+
+
+def _http_get_json(url: str, token: Optional[str] = None, timeout: int = 5):
+    """(status, parsed-json) for an authed GET; (0, {}) on any failure."""
+    import urllib.request
+    req = urllib.request.Request(url, method="GET")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, json.loads(r.read().decode("utf-8", "replace"))
+    except Exception:
+        return 0, {}
+
+
+def _rows_of(data: Any) -> list:
+    """Rows out of a collection response: canonical {items:[...]} first, then a
+    bare list, then the first list value of any envelope key — excluding
+    error/diagnostic keys, whose entries can carry an 'id' field and would
+    otherwise masquerade as rows ({'errors':[{'id':'AUTH_REQUIRED'}]})."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        items = data.get("items")
+        if isinstance(items, list):
+            return items
+        for k, v in data.items():
+            if str(k).lower() in ("errors", "error", "warnings", "failures", "detail"):
+                continue
+            if isinstance(v, list):
+                return v
+    return []
+
+
+def resolve_param_route(route: str, api_base: Optional[str], token: Optional[str],
+                        http_get: Optional[Callable] = None) -> Optional[str]:
+    """Fix #35 (complete form) — turn a PARAM route (``/inbox/message/:id``,
+    ``/calendar/event/{eventId}``) into a CONCRETE walkable one by fetching a
+    REAL row id from the backend.
+
+    The walker used to navigate the LITERAL ``:id`` → the page fetched resource
+    ":id" → rendered empty → a FALSE blank that burned the M1 deferral budget
+    (outlook run-30). Skipping param routes (the interim fix) silences the false
+    signal but leaves every DETAIL page (read-email, event-detail) with zero
+    walk coverage. So: resolve first, skip only when unresolvable.
+
+    ONLY id-shaped params are resolved (name ends in id/pk — :id, {eventId},
+    :message_id, :uuid): substituting a ROW ID where a :slug/:tab/:handle
+    belongs would fabricate a wrong-but-plausible route whose detail page
+    misses → a false blank behind the BLOCKING gate (adversarial review
+    a7f59d24: /posts/:slug → /posts/7 — the exact class this fix exists to
+    kill). Non-id params → None → the caller's interim skip stands.
+
+    Resource guess per id param, in order: the param NAME minus its Id suffix
+    (``{eventId}`` → events), then the PRECEDING path segment (``message`` →
+    messages) — each tried as-is/pluralised against GET {api_base}/api/<cand>
+    with the caller's token (the seeded demo user, so owner-scoped lists are
+    POPULATED). First row's id (id/<stem>_id/uuid/_id) substitutes the param,
+    URL-encoded. Returns the concrete route, the original route when it has no
+    params, or None when any param can't be resolved (caller falls back to
+    skipping). Residual risk (accepted): a lane-custom UNSCOPED list beside a
+    scoped by-id GET can hand out a non-owner id → 403 detail render — needs
+    list/detail scoping to diverge, which by-construction scoping prevents for
+    projected tables. Never raises; ``http_get`` injectable."""
+    get = http_get or _http_get_json
+    path = str(route or "").split("?", 1)[0]
+    segs = path.split("/")
+    if not any(_is_param_seg(s) for s in segs):
+        return route
+    if not api_base:
+        return None
+
+    def _cands(stem: str) -> List[str]:
+        out: List[str] = []
+        for c in ((stem + "s") if not stem.endswith("s") else stem,
+                  stem, stem.rstrip("s") + "s"):
+            if c and c not in out:
+                out.append(c)
+        return out
+
+    resolved = list(segs)
+    for i, seg in enumerate(segs):
+        if not _is_param_seg(seg):
+            continue
+        pname = seg.lstrip(":").strip("{}")
+        if not pname.lower().endswith(("id", "pk")):
+            return None      # :slug / :tab / :handle — a row id would be WRONG
+        stems: List[str] = []
+        if len(pname) > 2 and pname.lower().endswith("id"):
+            stems.append(pname[:-2].rstrip("_-").lower())
+        prev = next((s for s in reversed(segs[:i]) if s and not _is_param_seg(s)), "")
+        if prev:
+            stems.append(prev.lower())
+        rid = None
+        seen: set = set()
+        for stem in stems:
+            if not stem:
+                continue
+            for cand in _cands(stem):
+                if cand in seen:
+                    continue
+                seen.add(cand)
+                try:
+                    status, data = get(f"{api_base.rstrip('/')}/api/{cand}", token)
+                except Exception:
+                    continue
+                if status != 200:
+                    continue
+                rows = _rows_of(data)
+                if not rows or not isinstance(rows[0], dict):
+                    continue
+                row = rows[0]
+                for k in ("id", f"{stem.rstrip('s')}_id", "uuid", "_id"):
+                    v = row.get(k)
+                    if v not in (None, ""):
+                        import urllib.parse
+                        rid = urllib.parse.quote(str(v), safe="")
+                        break
+                if rid:
+                    break
+            if rid:
+                break
+        if not rid:
+            return None
+        resolved[i] = rid
+    return "/".join(resolved)
 
 
 async def _fill_visible_inputs(page: Any, creds: Mapping[str, str]) -> int:
@@ -136,6 +271,63 @@ async def _drive_auth_form(page: Any, creds: Mapping[str, str], *, max_steps: in
     return await page.evaluate(_TOKEN_JS)
 
 
+async def _wait_frontend_ready(page, base_url: str, attempts: int = 15,
+                               gap_ms: int = 2000, timeout_ms: int = 4000) -> bool:
+    """Poll ``base_url`` until the frontend SERVES (any response < 500). Returns True once
+    reachable, False if it never comes up within ~attempts*gap.
+
+    The delivery flow restarts the compose stack per milestone, so the browser walk can fire
+    while the FRONTEND container is DOWN / rebuilding → every ``goto`` raises
+    net::ERR_CONNECTION_REFUSED → auth_ok=False + all pages 'blank' → a FALSE 'unusable' that
+    escape-ships a HEALTHY app (outlook run-28 v1.2.0, live: the final walk hit ERR_CONNECTION_
+    REFUSED at /login mid container-restart). Waiting for readiness (and reporting ran=False
+    when it never comes up → the gate treats it as 'could not run' / skip, never 'unusable')
+    makes the verdict reflect the SETTLED app. Bounded + best-effort. ENV-AGNOSTIC."""
+    for _ in range(max(1, attempts)):
+        try:
+            r = await page.goto(base_url + "/", wait_until="commit", timeout=timeout_ms)
+            if r is None or (getattr(r, "status", None) or 200) < 500:
+                return True
+        except Exception:
+            pass
+        try:
+            await page.wait_for_timeout(gap_ms)
+        except Exception:
+            pass
+    return False
+
+
+def _api_probe_once(api_base_url: str, timeout: int = 4) -> bool:
+    """One HTTP probe of the API base; True when it answers anything < 500."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(api_base_url + "/", method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return (getattr(r, "status", 200) or 200) < 500
+    except Exception as exc:
+        code = getattr(exc, "code", None)          # HTTPError: server answered
+        return code is not None and code < 500
+
+
+async def _wait_api_ready(page, api_base_url: str, attempts: int = 15,
+                          gap_ms: int = 2000, probe=None) -> bool:
+    """Poll the BACKEND base until it serves. The frontend readiness gate above closed the
+    frontend-down race — but the compose restart staggers services, so the walk can run in
+    the FRONTEND-UP/BACKEND-DOWN window: the SPA serves, every API call fails silently →
+    login does nothing (auth_ok=False) + data pages render EMPTY shells with ZERO console
+    errors (outlook run-35 M1+M2, live: exactly this signature escape-shipped twice).
+    Bounded; False → caller reports ran=False (skip, never a false 'unusable')."""
+    _probe = probe or _api_probe_once
+    for _ in range(max(1, attempts)):
+        if _probe(api_base_url):
+            return True
+        try:
+            await page.wait_for_timeout(gap_ms)
+        except Exception:
+            pass
+    return False
+
+
 async def run_browser_test_user(
     base_url: str,
     pages: List[Mapping[str, Any]],
@@ -174,6 +366,24 @@ async def run_browser_test_user(
                 page.on("console", lambda m: cerr.append(m.text) if m.type == "error" else None)
                 report["ran"] = True
 
+                # READINESS GATE (#27): don't test a frontend that's mid container-restart —
+                # poll until it serves; if it never comes up, mark ran=False so the gate
+                # SKIPS (could-not-run) rather than false-flagging 'unusable' + escape-shipping.
+                if not await _wait_frontend_ready(page, base_url):
+                    report["ran"] = False
+                    report["summary"] = ("frontend not reachable after readiness wait (likely "
+                                          "mid container-restart) — browser walk skipped")
+                    return report
+                # API-BASE READINESS (#46): the compose restart staggers services — in the
+                # frontend-up/backend-down window the SPA serves but every API call fails
+                # silently → auth_ok=False + blank-but-error-free data pages (run-35 M1+M2
+                # escape-shipped on exactly this). Skip instead of false-flagging.
+                if api_base_url and not await _wait_api_ready(page, api_base_url):
+                    report["ran"] = False
+                    report["summary"] = ("backend API not reachable after readiness wait "
+                                          "(likely mid container-restart) — browser walk skipped")
+                    return report
+
                 # ---- 1. AUTH FLOW (staged-form aware, real submit) ----
                 token = None
                 creds = dict(demo_login) if demo_login else {
@@ -207,9 +417,11 @@ async def run_browser_test_user(
                     name = str((pg or {}).get("name") or route or "page")
                     if not route:
                         continue
+                    route_is_auth = any(seg in route for seg in _AUTH_ROUTE_SEGS)
                     cerr.clear()
                     rec: Dict[str, Any] = {"name": name, "route": route, "ok": False, "blank": True,
-                                           "console_errors": [], "shot": None}
+                                           "console_errors": [], "shot": None,
+                                           "redirected_to_login": False}
                     try:
                         await page.goto(base_url + route, wait_until="networkidle", timeout=20000)
                         await page.wait_for_timeout(900)
@@ -217,12 +429,26 @@ async def run_browser_test_user(
                         rec["blank"] = (probe.get("textLen", 0) < _MIN_TEXT)
                         rec["sample"] = probe.get("sample", "")
                         rec["controls"] = probe.get("buttons", 0) + probe.get("inputs", 0)
+                        # HOLLOW-PAGE detection: the test-user is logged in (token stored
+                        # above), so a PROTECTED route that bounces to the auth URL OR
+                        # renders the login form in place (password field + sign-in copy)
+                        # means the app could not restore the session — every protected
+                        # page is unusable even though it builds/serves. This is the wall
+                        # of identical Sign-in captures a hollow frontend ships (outlook MM
+                        # 2026-06-29: a hardcoded absolute API origin made every call fail).
+                        final_path = (page.url or "").split("?", 1)[0]
+                        landed_on_auth = any(seg in final_path for seg in _AUTH_ROUTE_SEGS)
+                        looks_like_login = bool(probe.get("pw")) and bool(probe.get("signin"))
+                        if not route_is_auth and (landed_on_auth or looks_like_login):
+                            rec["redirected_to_login"] = True
+                            rec["note"] = ("protected page is the LOGIN form (session not "
+                                           f"restored): url={page.url}")
                         dest = out_dir / f"{name}.png"
                         await page.screenshot(path=str(dest))
                         rec["shot"] = str(dest)
                         report["shots"][name] = str(dest)
                         rec["console_errors"] = list(cerr)[:5]
-                        rec["ok"] = (not rec["blank"]) and not cerr
+                        rec["ok"] = (not rec["blank"]) and not cerr and not rec["redirected_to_login"]
                     except Exception as exc:
                         rec["note"] = f"navigation failed: {exc}"
                     report["pages"].append(rec)
@@ -232,15 +458,36 @@ async def run_browser_test_user(
         report["summary"] = f"browser test-user error: {exc}"
         return report
 
-    blanks = [p["name"] for p in report["pages"] if p.get("blank")]
-    errs = [p["name"] for p in report["pages"] if p.get("console_errors")]
-    auth_ok = all(s["ok"] for s in report["steps"]) if report["steps"] else False
+    return _finalize_walkthrough(report)
+
+
+def _finalize_walkthrough(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Roll the per-page records + auth steps into the verdict fields the consumers read
+    (auth_ok / blank_pages / error_pages / auth_redirect_pages / hollow_frontend). Pure —
+    extracted from the async walkthrough so the HOLLOW verdict is unit-testable with a
+    synthetic report (the browser path can't run in the test suite)."""
+    pages = report.get("pages") or []
+    steps = report.get("steps") or []
+    blanks = [p["name"] for p in pages if p.get("blank")]
+    errs = [p["name"] for p in pages if p.get("console_errors")]
+    redirected = [p["name"] for p in pages if p.get("redirected_to_login")]
+    auth_ok = all(s["ok"] for s in steps) if steps else False
     report["auth_ok"] = auth_ok
     report["blank_pages"] = blanks
     report["error_pages"] = errs
+    report["auth_redirect_pages"] = redirected
+    # HOLLOW FRONTEND: the app builds + serves, the login form is present, but a logged-in
+    # user cannot actually reach the app — at least half the PROTECTED pages bounce to the
+    # login form. A milestone in this state must NOT ship (the gate reads this flag); it is
+    # the definitive "shipped a login wall / empty shell" signal, independent of the root
+    # cause (failed API origin, fragile auth-restore, missing route guard).
+    protected = [p for p in pages
+                 if not any(seg in str(p.get("route") or "") for seg in _AUTH_ROUTE_SEGS)]
+    report["hollow_frontend"] = bool(protected) and len(redirected) >= max(1, (len(protected) + 1) // 2)
     report["summary"] = (
-        f"auth_ok={auth_ok}; pages={len(report['pages'])}; "
-        f"blank={blanks or '∅'}; console_errors={errs or '∅'}")
+        f"auth_ok={auth_ok}; pages={len(pages)}; "
+        f"blank={blanks or '∅'}; console_errors={errs or '∅'}; "
+        f"login_wall={redirected or '∅'}; hollow={report['hollow_frontend']}")
     return report
 
 
@@ -315,12 +562,23 @@ def format_feedback(report: Mapping[str, Any]) -> str:
     if not report.get("ran"):
         return f"Test-user could not run: {report.get('summary', 'unknown')}"
     lines = [f"TEST-USER report — {report.get('summary', '')}"]
+    if report.get("hollow_frontend"):
+        lines.append(
+            "  ‼ HOLLOW FRONTEND: logged in, but the PROTECTED pages "
+            f"{report.get('auth_redirect_pages')} render the LOGIN form — the app is "
+            "unusable. The session is not restored on a fresh page load. Most common cause: "
+            "the api client targets an ABSOLUTE/wrong origin instead of a same-origin "
+            "RELATIVE path (so it bypasses the nginx proxy / hits the wrong port and every "
+            "call incl. login fails). Use relative '/api', '/auth' URLs and restore auth on "
+            "load via the canonical /api/auth/me. Fix this FIRST — it blocks delivery.")
     for s in report.get("steps", []):
         lines.append(f"  [{'OK' if s['ok'] else 'FAIL'}] {s['step']}" + (f" — {s['note']}" if s.get('note') else ""))
     for p in report.get("pages", []):
         flags = []
         if p.get("blank"):
             flags.append("BLANK (renders no real content)")
+        if p.get("redirected_to_login"):
+            flags.append("REDIRECTED TO LOGIN (session not restored — protected page shows the auth form)")
         if p.get("console_errors"):
             flags.append("console errors: " + "; ".join(p["console_errors"])[:120])
         if flags:
@@ -333,3 +591,22 @@ def format_feedback(report: Mapping[str, Any]) -> str:
             for d in (vis.get("deviations") or [])[:6]:
                 lines.append(f"      - {d}")
     return "\n".join(lines)
+
+
+def browser_report_unusable(report: Optional[Mapping[str, Any]]) -> bool:
+    """PRE-RELEASE GATE predicate (2026-06-30): True iff the browser walk RAN and found an
+    OBJECTIVE "a real user cannot use this app" signal — login broken (``auth_ok`` False),
+    protected pages rendering BLANK (``blank_pages``), or bounced to a LOGIN WALL
+    (``auth_redirect_pages`` / ``hollow_frontend``). The delivery flow uses this to HOLD a
+    release so a non-functional UI never ships as "delivered".
+
+    Deliberately EXCLUDES the SOFT signals ``visual_mismatches`` and ``error_pages`` (console
+    errors): those stay ADVISORY — the walk still dispatches them as a P0 remediation task,
+    but a minor visual deviation or a benign console warning must NOT block delivery. A report
+    that could not run (None / ``ran`` False) is NOT "unusable" — infra must never block a
+    release, and a one-off flake auto-clears on the next cycle's re-test. Pure + env-agnostic
+    so the gate criteria are unit-testable in isolation."""
+    if not isinstance(report, dict) or not report.get("ran"):
+        return False
+    return bool((not report.get("auth_ok")) or report.get("blank_pages")
+                or report.get("auth_redirect_pages") or report.get("hollow_frontend"))

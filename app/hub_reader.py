@@ -35,6 +35,18 @@ def _records(d: dict) -> list[dict]:
     return [v for k, v in (d or {}).items() if k != "_meta" and isinstance(v, dict)]
 
 
+# Per-agent context-usage ring budget. The runtime compresses an agent's context once
+# it exceeds the model's WORKING char budget (resolve_ctx_working_chars ≈ window x 3.5
+# chars/tok x 0.7), i.e. ~0.7 x the window in TOKENS. The default run model
+# gemini-3.1-pro has a 1,000,000-token window -> ~700,000-token working budget, so a
+# ring at 100% means compression is imminent. (Override via ENVGEN_CTX_BUDGET_TOKENS.)
+import os as _os
+try:
+    _CTX_BUDGET_TOKENS = max(50_000, int(_os.environ.get("ENVGEN_CTX_BUDGET_TOKENS") or 700_000))
+except ValueError:
+    _CTX_BUDGET_TOKENS = 700_000
+
+
 def _iso(ts: Any) -> str:
     try:
         if isinstance(ts, (int, float)):
@@ -363,7 +375,7 @@ def _parse_action_entry(e: dict) -> dict:
             result = s
     return {"at": str(e.get("timestamp", "")), "type": str(e.get("event_type", "")),
             "tool": tool, "args": args[:400], "args_obj": args_obj,
-            "result": result[:400], "content": content[:400], "ok": ok}
+            "result": result[:400], "content": content[:2000], "ok": ok}
 
 
 def _agent_log_activity(gen: Path, role: str):
@@ -383,11 +395,20 @@ def _agent_log_activity(gen: Path, role: str):
     except OSError:
         return None
     acts = []
+    toks = []
     for ln in lines[-25:]:
         try:
             e = json.loads(ln)
         except Exception:
             continue
+        # Context-usage ring: a 'response' entry carries the LLM call's token count in
+        # metadata.tokens; the recent PEAK approximates how full the agent's (resident-
+        # loop) context is, so the UI can show a fill ring + flag impending compression.
+        if e.get("event_type") == "response":
+            try:
+                toks.append(int((e.get("metadata") or {}).get("tokens") or 0))
+            except Exception:
+                pass
         acts.append(_parse_action_entry(e))
     if not acts:
         return None
@@ -395,7 +416,8 @@ def _agent_log_activity(gen: Path, role: str):
     # Overview shows this as a compact label — keep it to the clean tool/action
     # name only (the full args/result live in the agent drawer's action history).
     label = (last["tool"] or last["type"] or "—")[:80]
-    return (label, newest.stat().st_mtime, list(reversed(acts)))
+    ctx_tokens = max(toks) if toks else 0
+    return (label, newest.stat().st_mtime, list(reversed(acts)), ctx_tokens)
 
 
 def _agent_status_map(gen: Path) -> dict:
@@ -449,7 +471,7 @@ def _agents(h: Path) -> list[dict]:
     out = []
     for aid, role in CORE_AGENTS:
         act = _agent_log_activity(gen, role)
-        log_label, log_mtime, recent = act if act else (None, 0.0, [])
+        log_label, log_mtime, recent, ctx_tokens = act if act else (None, 0.0, [], 0)
         st = status_map.get(aid)            # (ts, status, current_task) | None
         st_ts = st[0] if st else 0.0
         st_status = (st[1] if st else "") or ""
@@ -470,6 +492,10 @@ def _agents(h: Path) -> list[dict]:
         out.append({"id": aid, "role": role, "status": status,
                     "last_action": label or "—",
                     "last_active_at": _iso(last_active) if last_active else "",
+                    # Context-usage ring (like Claude Code): how full this agent's
+                    # context is vs the model's working budget — 100% ≈ compression.
+                    "context_tokens": ctx_tokens,
+                    "context_pct": min(100, round(100 * ctx_tokens / _CTX_BUDGET_TOKENS)) if ctx_tokens else 0,
                     "recent_actions": recent})
     return out
 
@@ -524,14 +550,35 @@ def _pages(h: Path) -> list[dict]:
     return [{"id": v.get("id", ""), "title": v.get("title", ""), "kind": v.get("kind", ""),
              "status": v.get("status", ""), "description": _doc_body(v),
              "attendees": [str(a) for a in (v.get("attendees") or [])]}
-            for v in _records(_load(h / "workhub_pages.json"))
+            for v in _records(_load(h / "workhub_documents.json") or _load(h / "workhub_pages.json"))
             if v.get("kind") not in ("ui_page", "ui_component")]
 
 
 def _milestones(h: Path) -> list[dict]:
-    """Port of the monitor's build_milestones: roadmap from milestone_plan
-    decisions + per-milestone 'M<n> kickoff' pages + cut releases."""
+    """Roadmap for the monitoring UI.
+
+    PRIMARY source: the first-class MilestoneRegistry store (milestones.json) —
+    the authoritative roadmap since milestones became managed state. The legacy
+    path below (milestone_plan decisions + 'M<n> kickoff' pages + cut releases in
+    workhub_pages.json) is now only a FALLBACK for pre-registry runs, since that
+    store was renamed to workhub_documents.json and current runs leave it absent —
+    which is why this returned [] and the UI showed no roadmap."""
     import re as _re
+    # PRIMARY: the first-class milestone store. Map registry status -> UI enum.
+    _SMAP = {"delivered": "released", "active": "active", "pending": "planned"}
+    _ms_recs = _records(_load(h / "milestones.json"))
+    if _ms_recs:
+        _ms_recs = sorted(_ms_recs, key=lambda v: int(v.get("index", 0) or 0))
+        return [{"version": str(v.get("version") or f"1.{max(0, int(v.get('index', 1) or 1) - 1)}.0"),
+                 "title": str(v.get("name") or v.get("title") or f"M{v.get('index')}"),
+                 "status": _SMAP.get(str(v.get("status") or ""), "planned"),
+                 "index": int(v.get("index", 0) or 0),
+                 # 'detail' is the renamed 'brief' (the full phase spec); read either
+                 # so this works across the rename. Surfaced for a detail view.
+                 "detail": str(v.get("detail") or v.get("brief") or ""),
+                 "acceptance": [str(a) for a in (v.get("acceptance") or [])]}
+                for v in _ms_recs]
+    # FALLBACK (legacy / pre-registry runs):
     pages = _load(h / "workhub_pages.json")
     plan: list = []
     kickoffs: dict[int, dict] = {}
@@ -603,6 +650,64 @@ def _gates(h: Path, ui_pages: list[dict], chains: list[dict]) -> list[dict]:
 
 # ── public API ──────────────────────────────────────────────────────────────
 
+def _test_users(gen: Path) -> list[dict]:
+    """Test-user squad reports — the simulated api/mcp/browser users that exercise the
+    generated env per version (written to ``test_user_reports/<version>.json`` by
+    test_user_validation). Surfaced so the Env Forge UserConsolePanel can show WHAT the
+    test users did + found, not just leave it in the logs. Newest version first."""
+    out: list[dict] = []
+    d = gen / "test_user_reports"
+    if not d.is_dir():
+        return out
+    for f in sorted(d.glob("*.json")):
+        if f.name == "failure_ledger.json":
+            continue
+        try:
+            r = json.loads(f.read_text(encoding="utf-8", errors="ignore"))
+        except Exception:
+            continue
+        if not isinstance(r, dict):
+            continue
+        summary = r.get("summary") or {}
+        api = r.get("api") or {}
+        mcp = r.get("mcp") or {}
+        ui = r.get("ui") or {}
+        ui_flows = r.get("ui_flows") or {}
+        out.append({
+            "version": r.get("version") or f.stem,
+            "verdict": summary.get("verdict"),
+            "api": {
+                "actor": api.get("actor"),
+                "steps": summary.get("api_steps", len(api.get("steps") or [])),
+                "passed": summary.get("api_passed"),
+                "failed": summary.get("api_failed"),
+                "missing": summary.get("api_missing"),
+                "step_detail": (api.get("steps") or [])[:40],
+            },
+            "mcp": {
+                "server_found": mcp.get("server_found"),
+                "tools_found": mcp.get("tools_found"),
+                "tools_expected": mcp.get("tools_expected"),
+                "complete": mcp.get("complete"),
+                "note": mcp.get("note"),
+            },
+            "ui_flows": {
+                "ran": ui_flows.get("ran"),
+                "passed": ui_flows.get("passed"),
+                "flows": (ui_flows.get("flows") or [])[:20],
+            },
+            "ui": {
+                "ran": ui.get("ran"),
+                "screens": (ui.get("screens") or [])[:40],
+                "top_issues": (ui.get("top_issues") or [])[:20],
+            },
+            "broken": (summary.get("broken") or [])[:20],
+            "missing": (summary.get("missing") or [])[:20],
+        })
+    out.reverse()  # newest version first
+    return out
+
+
 def read_state(gen_dir: str | Path) -> dict:
     gen = Path(gen_dir)
     h = _hubs(gen)
@@ -611,6 +716,7 @@ def read_state(gen_dir: str | Path) -> dict:
     tasks = _tasks(h)
     return {
         "preview_url": None,
+        "test_users": _test_users(gen),
         "progress": _progress(h, tasks),
         "agents": _agents(h),
         "metrics": _metrics(h),

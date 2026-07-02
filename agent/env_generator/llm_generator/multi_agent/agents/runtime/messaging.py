@@ -475,24 +475,36 @@ class AgentMessaging:
         # kickoff_response_prompt macro and runs ONE agentic loop —
         # the macro itself caps the response at "Run ONCE, then
         # finish(). Do NOT loop. Do NOT poll for synthesis."
+        # Kickoff handlers run IMMEDIATELY when received (the V26 behavior).
+        # HISTORY: a busy-guard that DEFERRED these (to avoid running a second
+        # agentic loop concurrently with the resident main loop) was tried and
+        # LIVELOCKED — the orchestrator's continuous resident wakeups out-raced the
+        # drain, so a deferred kickoff_detail_request sat unhandled for minutes while
+        # the lane idled "waiting for kickoff", the detail was never authored, and the
+        # poll fell back to the slice (V27 01:48-01:52). The concrete double-AUTHOR
+        # harm (two milestone_set_detail writes) is already prevented at the SOURCE:
+        # milestone_registry.set_detail no-ops once detail_authored is marked, and the
+        # author poll resolves on is_detail_authored (turn-complete). So dispatching
+        # directly is correct + unblocks the kickoff; the full per-agent turn mutex is
+        # the deferred structural fix for the (benign-in-practice) concurrent loop.
         if msg_type == "kickoff_request":
             await self._handle_kickoff_request(urgent_msg)
             return True
 
-        # Round-8f.1: facilitator handler — only the orchestrator
-        # subscribes to ``kickoff_facilitate_request`` (see
-        # ``agent_subscriptions.py``). The driver
-        # (``runtime/kickoff/facilitate.py:request_facilitation``)
-        # fires this event after ``try_synthesize`` returns
-        # ``ready``/``conflict``, asking the orchestrator's LLM to
-        # CHAIR the meeting: read all attendee decisions for the
-        # current round, then author ONE ``facilitator_note``
-        # decision declaring ``consensus``, ``request_revision``,
-        # or ``escalate``. Structural mirror of
-        # ``_handle_kickoff_request`` — different event_type +
-        # different macro name (``kickoff_facilitation_prompt``).
+        # Round-8f.1: facilitator handler — only the orchestrator subscribes to
+        # ``kickoff_facilitate_request``. The driver fires it after try_synthesize
+        # returns ready/conflict, asking the orchestrator to CHAIR the meeting: read
+        # all attendee decisions, author ONE facilitator_note (consensus /
+        # request_revision / escalate). Mirror of _handle_kickoff_request.
         if msg_type == "kickoff_facilitate_request":
             await self._handle_kickoff_facilitate_request(urgent_msg)
+            return True
+
+        # Per-milestone KICKOFF-DETAIL turn: author THIS phase's detailed milestone
+        # spec + (optionally) revise FUTURE milestones via the milestone_* tools,
+        # BEFORE the lanes draft. Mirror of facilitate; macro kickoff_milestone_detail_prompt.
+        if msg_type == "kickoff_detail_request":
+            await self._handle_kickoff_detail_request(urgent_msg)
             return True
 
         # Round-8f.1: facilitator-driven single-pass revision. After
@@ -533,7 +545,17 @@ class AgentMessaging:
                 )
                 return True
 
-            if self._processing_state == ProcessingState.IDLE:
+            # V30 RE-ENTRANCY GUARD: only start a task_ready handler (which runs a FULL
+            # nested run_agentic_loop) when we are NOT already inside an agentic loop. The
+            # shared _processing_state can read IDLE mid-outer-loop (a prior nested handler's
+            # finally reset it) — that window let the urgent drain start a SECOND in-stack
+            # run_agentic_loop, which deadlocked in setup and hung the frontend lane silently
+            # for 13min (V30). The depth counter (step_runner) is reset-proof. When already in
+            # a loop, fall through to the busy branch below -> defer to
+            # _deferred_task_ready_messages (drained, exactly as today, when the lane next
+            # goes IDLE). Lower-priority urgent work correctly waits for the in-flight task.
+            if (self._processing_state == ProcessingState.IDLE
+                    and getattr(self, "_agentic_loop_depth", 0) == 0):
                 await self._handle_task_ready(urgent_msg)
                 return True
 
@@ -780,11 +802,32 @@ Start by thinking about what might cause this issue.
             await self._drain_deferred_task_ready_messages()
 
     async def _drain_deferred_task_ready_messages(self) -> None:
-        """Start the next deferred task_ready once the agent becomes idle again."""
+        """Start the next deferred kickoff/task_ready once the agent becomes idle.
+
+        Every kickoff_* handler and _handle_task_ready calls this in its
+        ``finally`` block right after restoring ``_processing_state = IDLE``, so
+        this is the single re-entry point for ALL deferred urgent work. Drain
+        DEFERRED KICKOFF events FIRST (DUAL-LOOP DOUBLE-AUTHOR FIX): a kickoff
+        turn that was declined while the lane was busy is time-critical (the
+        kickoff driver is polling for its decision/section), whereas a deferred
+        task_ready is implementation-phase work that can wait until kickoff is
+        done.
+        """
         if getattr(self, "_shutdown_requested", False):
             self._deferred_task_ready_messages = []
+            self._deferred_kickoff_messages = []
             return
         if self._processing_state != ProcessingState.IDLE:
+            return
+        kickoff_queued = list(getattr(self, "_deferred_kickoff_messages", []) or [])
+        if kickoff_queued:
+            next_kickoff, next_msg_type = kickoff_queued.pop(0)
+            self._deferred_kickoff_messages = kickoff_queued
+            self._logger.info(
+                f"[{self.agent_id}] draining deferred kickoff {next_msg_type} "
+                "now that the lane is idle"
+            )
+            await self._defer_or_handle_kickoff(next_kickoff, next_msg_type)
             return
         queued = list(getattr(self, "_deferred_task_ready_messages", []) or [])
         if not queued:
@@ -792,6 +835,67 @@ Start by thinking about what might cause this issue.
         next_message = queued.pop(0)
         self._deferred_task_ready_messages = queued
         await self._handle_task_ready(next_message)
+
+    async def _defer_or_handle_kickoff(
+        self, message: BaseMessage, msg_type: str
+    ) -> bool:
+        """Busy-guarded dispatch for the kickoff_* urgent handlers.
+
+        DUAL-LOOP DOUBLE-AUTHOR FIX: each kickoff_* handler runs a full
+        ``run_agentic_loop``. They MUST NOT run concurrently with the resident
+        main loop (or with one another) — two loops authoring the same meeting
+        section / milestone detail at once is the double-author race. Mirror the
+        ``task_ready`` busy-guard at ``_check_and_handle_urgent`` :544 EXACTLY:
+
+          * IDLE  → run the matching handler now (it sets
+            ``_processing_state = PROCESSING_TASK`` for its duration and restores
+            IDLE + drains in its own ``finally``).
+          * BUSY  → queue the (message, msg_type) into
+            ``_deferred_kickoff_messages`` (deduped by message_id) and return —
+            ``_drain_deferred_task_ready_messages`` replays it the instant the
+            current turn finishes.
+
+        This declines to START a concurrent loop; it never holds a cross-lane
+        lock, so it cannot deadlock. Always returns True (the urgent event was
+        consumed — either handled or queued — so the urgent drain does not retry
+        it as unhandled).
+        """
+        handlers = {
+            "kickoff_request": self._handle_kickoff_request,
+            "kickoff_facilitate_request": self._handle_kickoff_facilitate_request,
+            "kickoff_detail_request": self._handle_kickoff_detail_request,
+        }
+        handler = handlers.get(msg_type)
+        if handler is None:
+            self._logger.warning(
+                f"[{self.agent_id}] _defer_or_handle_kickoff called with "
+                f"unknown msg_type={msg_type!r}; ignoring."
+            )
+            return True
+
+        if self._processing_state == ProcessingState.IDLE:
+            await handler(message)
+            return True
+
+        queued = list(getattr(self, "_deferred_kickoff_messages", []) or [])
+        queued_ids = {
+            getattr(item.header, "message_id", None)
+            for (item, _mt) in queued
+            if getattr(item, "header", None) is not None
+        }
+        if message.header.message_id in queued_ids:
+            self._logger.info(
+                f"[{self.agent_id}] duplicate {msg_type} ignored while busy"
+            )
+            return True
+        queued.append((message, msg_type))
+        self._deferred_kickoff_messages = queued
+        self._logger.info(
+            f"[{self.agent_id}] {msg_type} received but busy "
+            f"(state={self._processing_state.name}); deferred to avoid a "
+            "concurrent kickoff agentic loop (double-author guard)"
+        )
+        return True
 
     async def _handle_kickoff_request(self, message: BaseMessage) -> None:
         """Round-8c Fix #2: drive ONE LLM turn rendering kickoff_response_prompt.
@@ -952,11 +1056,18 @@ Start by thinking about what might cause this issue.
                         f"({_KTS * 0.5:.0f}s) — skipping remaining corrective "
                         "turns; terminal stub will let the meeting advance.")
                     break
-                self._logger.warning(
-                    f"[{self.agent_id}] kickoff section "
-                    f"'{expected_section}' missing/empty after turn — "
-                    f"corrective turn {_attempt + 1}/2 (author in parts via "
-                    "decision_file)."
+                # KICKOFF STALL FIX (Task C): the attendee called finish() during
+                # kickoff-initial while its substantive section is still MISSING.
+                # Do NOT accept that finish silently — log LOUD (ERROR) and feed
+                # the agent back a finish-REJECTION prompt that NAMES the missing
+                # section, so it declares its endpoint/table/page decisions instead
+                # of looping finish() and stalling the meeting to the 1200s timeout.
+                self._logger.error(
+                    f"[{self.agent_id}] finish() during kickoff-initial REJECTED: "
+                    f"section='{expected_section}' has no substantive "
+                    f"{_kickoff_missing_section_kind(expected_section)} recorded "
+                    f"on meeting {meeting_id} — corrective turn {_attempt + 1}/2 "
+                    "(re-prompting the attendee to declare it before finishing)."
                 )
                 await self.run_agentic_loop(
                     system_prompt=system_prompt,
@@ -988,7 +1099,7 @@ Start by thinking about what might cause this issue.
         try:
             workhub = getattr(self._hubs, "workhub", None)
             pages_store = getattr(workhub, "stores", None)
-            pages = getattr(pages_store, "pages", None) if pages_store else None
+            pages = getattr(pages_store, "documents", None) if pages_store else None
             page = pages.value().get(meeting_id) if (pages and hasattr(pages, "value")) else None
             if not isinstance(page, Mapping):
                 return False
@@ -1038,7 +1149,7 @@ Start by thinking about what might cause this issue.
             # because the initial-section check needs section-name (not
             # round_n + phase) keying.
             pages_store = getattr(workhub, "stores", None)
-            pages = getattr(pages_store, "pages", None) if pages_store else None
+            pages = getattr(pages_store, "documents", None) if pages_store else None
             page = None
             if pages and hasattr(pages, "value"):
                 page = pages.value().get(meeting_id)
@@ -1291,7 +1402,7 @@ Start by thinking about what might cause this issue.
             if workhub is None or not hasattr(workhub, "add_meeting_decision"):
                 return
             pages_store = getattr(workhub, "stores", None)
-            pages = getattr(pages_store, "pages", None) if pages_store else None
+            pages = getattr(pages_store, "documents", None) if pages_store else None
             page = None
             if pages and hasattr(pages, "value"):
                 page = pages.value().get(meeting_id)
@@ -1482,6 +1593,112 @@ Start by thinking about what might cause this issue.
                 last_synthesis_status=last_synthesis_status,
             )
 
+    async def _handle_kickoff_detail_request(self, message: BaseMessage) -> None:
+        """Per-milestone KICKOFF-DETAIL turn (2026-06-24). Fired by
+        ``run_kickoff.author_milestone_detail`` at milestone ENTRY, BEFORE the lanes
+        draft. The orchestrator (full system prompt + hub context + the ``milestone_*``
+        tools) reviews the roadmap, MAY revise FUTURE phases (milestone_add/update/
+        remove — delivered+active frozen), and MUST set THIS phase's detailed detail
+        (milestone_set_detail). Renders ``kickoff_milestone_detail_prompt``; structural
+        mirror of ``_handle_kickoff_facilitate_request``.
+
+        Turn-completion contract: the FINALLY block ALWAYS marks the phase
+        ``detail_authored`` (via ms.mark_detail_authored) so the main-loop poll
+        (author_milestone_detail) resolves on turn COMPLETION rather than on the first
+        store write. The framework does NOT silently substitute a slice here — if the
+        turn authored NO detail, that is logged LOUD (ERROR) for investigation and the
+        empty detail propagates so the caller's own loud fallback fires."""
+        payload = message.payload if isinstance(message.payload, Mapping) else {}
+        milestone_index = payload.get("milestone_index") if isinstance(payload, Mapping) else None
+        milestone_id = payload.get("milestone_id") if isinstance(payload, Mapping) else None
+        raw_requirements = (payload.get("raw_requirements") if isinstance(payload, Mapping) else "") or ""
+
+        ms = getattr(self, "_hubs", None)
+        ms = getattr(ms, "milestones", None)
+        roadmap, current = [], None
+        if ms is not None:
+            try:
+                roadmap = ms.list_milestones()
+                current = ((ms.get(milestone_id) if milestone_id else None)
+                           or ms.get_by_index(milestone_index) or ms.get_current())
+            except Exception:
+                roadmap, current = [], None
+        if current is None:
+            self._logger.warning(
+                f"[{self.agent_id}] kickoff_detail_request without a resolvable milestone "
+                f"(payload={payload!r}); ignoring.")
+            return
+        milestone_id = current.get("id")
+
+        prompt_cfg = getattr(self, "_prompt_cfg", None) or {}
+        template = prompt_cfg.get("template") if isinstance(prompt_cfg, Mapping) else None
+        rendered: Optional[str] = None
+        if template and hasattr(self, "render_macro"):
+            try:
+                rendered = self.render_macro(
+                    template, "kickoff_milestone_detail_prompt",
+                    milestone_index=milestone_index, milestone_id=milestone_id,
+                    current=current, roadmap=roadmap, raw_requirements=raw_requirements)
+            except Exception as exc:
+                self._logger.warning(
+                    f"[{self.agent_id}] kickoff_milestone_detail_prompt render failed "
+                    f"({exc}); falling back to plain-text prompt.")
+                rendered = None
+        if not rendered:
+            _rm = "\n".join(
+                f"  M{m.get('index')} [{m.get('name')}@{m.get('version')}] {m.get('status')}: "
+                f"{str(m.get('description_slice',''))}" for m in roadmap)
+            rendered = (
+                f"## Milestone {milestone_index} kickoff — author the phase detail\n\n"
+                f"You are entering milestone {milestone_index} of {len(roadmap)}. FIRST call "
+                f"`milestone_list`. Review the roadmap below against what's DELIVERED. You MAY "
+                f"revise the FUTURE (not-yet-started) phases via `milestone_add` / "
+                f"`milestone_update` / `milestone_remove` (delivered + active are frozen) — a "
+                f"no-op is fine. Then you MUST call "
+                f"`milestone_set_detail(milestone='{milestone_index}', detail=...)` with a "
+                f"concrete, bounded detail for THIS phase: exactly which endpoints / pages / "
+                f"components / data this phase ADDS, the acceptance, and what's already shipped "
+                f"(do NOT rebuild). Then `finish()`.\n\n"
+                f"OVERALL GOAL (context only — do NOT build it all this phase):\n"
+                f"{str(raw_requirements)}\n\nROADMAP:\n{_rm}\n")
+
+        self._logger.info(
+            f"[{self.agent_id}] kickoff_detail_request (M{milestone_index}, id={milestone_id}); "
+            "rendering kickoff_milestone_detail_prompt and running one agentic loop.")
+        self._processing_state = ProcessingState.PROCESSING_TASK
+        prev_active_phase = getattr(self, "_active_phase", None)
+        self._active_phase = "kickoff"
+        try:
+            system_prompt = self._compose_system_prompt()
+            await self.run_agentic_loop(
+                system_prompt=system_prompt, initial_prompt=rendered, max_steps=16)
+        except Exception as e:
+            self._logger.error(f"[{self.agent_id}] kickoff_detail agentic loop failed: {e}")
+        finally:
+            self._processing_state = ProcessingState.IDLE
+            self._active_phase = prev_active_phase
+            # Turn-completion contract: ALWAYS mark the phase detail_authored so the
+            # main-loop poll (author_milestone_detail) resolves on turn COMPLETION,
+            # NOT on the first store write (that race broadcast a half-finished detail
+            # + let the main resident loop re-author). The framework does NOT silently
+            # substitute the slice here — if the turn authored NO detail, log LOUD so a
+            # reviewer can investigate; the empty detail propagates and the caller's own
+            # loud fallback handles last-resort scope.
+            try:
+                if ms is not None:
+                    cur = ms.get(milestone_id)
+                    if cur is not None and not str(cur.get("detail") or "").strip():
+                        self._logger.error(
+                            f"[{self.agent_id}] milestone-detail turn authored NO detail "
+                            f"for M{milestone_index} — investigate.")
+                    ms.mark_detail_authored(milestone_id, agent="orchestrator")
+            except Exception:
+                pass
+            # DUAL-LOOP DOUBLE-AUTHOR FIX: drain any kickoff_* / task_ready that
+            # was deferred while this milestone-detail turn ran, now that the
+            # lane is IDLE again (mirrors the other kickoff handlers' finally).
+            await self._drain_deferred_task_ready_messages()
+
     def _ensure_facilitator_note(
         self,
         *,
@@ -1527,7 +1744,7 @@ Start by thinking about what might cause this issue.
             # for round_n has any action token, do NOT write the backup.
             workhub_check = getattr(self._hubs, "workhub", None)
             pages_store = getattr(workhub_check, "stores", None)
-            pages = getattr(pages_store, "pages", None) if pages_store else None
+            pages = getattr(pages_store, "documents", None) if pages_store else None
             existing_action: Optional[str] = None
             if pages and hasattr(pages, "value"):
                 page = pages.value().get(meeting_id)
@@ -1882,16 +2099,43 @@ Start by thinking about what might cause this issue.
             self._logger.warning(f"[{self.agent_id}] Failed to send runtime status update: {e}")
 
 
+def _kickoff_missing_section_kind(section: str) -> str:
+    """Name the substantive decisions the given kickoff section MUST contain, so
+    the finish-rejection error below can tell the attendee EXACTLY what is missing
+    (no generic "your section" — a named, actionable gap)."""
+    s = (section or "").strip().lower()
+    if s == "backend":
+        return "endpoint + data-model/table decisions (api_endpoints + data_model.tables)"
+    if s == "frontend":
+        return "page/UI decisions (ui_pages + user_flows)"
+    if s == "verifier":
+        return "acceptance-predicate decisions (predicates)"
+    return "endpoint/table/page decisions"
+
+
 def _kickoff_correction_prompt(section: str, meeting_id, milestone_index) -> str:
-    """Corrective-turn prompt: the agent's decision didn't land (usually the
-    inline JSON argument was too long for one tool call). Teach author-in-parts
-    instead of authoring for it."""
+    """KICKOFF STALL FIX — LOUD rejected-finish prompt.
+
+    Task C root cause: an attendee whose ``kickoff_declare_*`` / decision was
+    mangled by MALFORMED records NO substantive section, the kickoff driver
+    measures it as MISSING, the attendee gets NO feedback, concludes it is done,
+    and loops ``finish()`` — so the meeting stalls in phase=initial to the 1200s
+    timeout. Instead of silently accepting that finish, we REJECT it loudly: this
+    prompt is framed as a finish/tool ERROR that NAMES the missing section so the
+    attendee knows it is NOT done and exactly what to declare before finishing.
+    We still teach author-in-parts (the practical recovery) and never author the
+    section FOR the agent — the section stays the agent's own work."""
+    kind = _kickoff_missing_section_kind(section)
     return (
-        f"## Correction needed — your kickoff section did not land\n\n"
-        f"Your previous turn ended without a SUBSTANTIVE section='{section}' "
-        f"decision on meeting `{meeting_id}` (the decision was missing or had "
-        "empty fields). The usual cause: the inline `decision={{...}}` JSON was "
-        "TOO LONG for one tool call, so the call was dropped or truncated.\n\n"
+        f"## finish() REJECTED — your initial proposal has NO recorded "
+        f"{kind}\n\n"
+        f"You called finish(), but your initial kickoff proposal for "
+        f"section='{section}' on meeting `{meeting_id}` has NO substantive "
+        f"decision recorded (it is missing or all-empty — usually because the "
+        f"inline `decision={{...}}` JSON was TOO LONG for one tool call and got "
+        f"mangled/dropped). The meeting CANNOT advance and you are NOT done: the "
+        f"kickoff driver counts you as MISSING. You MUST declare your "
+        f"{kind} via `workhub_add_meeting_decision` BEFORE finishing.\n\n"
         "Author it now IN PARTS — the meeting MERGES multiple decisions for your "
         "section, so submit SMALL pieces:\n"
         f"1. `workhub_add_meeting_decision(meeting_id='{meeting_id}', milestone_index={milestone_index}, "
@@ -1899,7 +2143,7 @@ def _kickoff_correction_prompt(section: str, meeting_id, milestone_index) -> str
         "or 2 endpoints or 2 predicates>}}}})`\n"
         "2. Repeat with the next small piece until your whole section is submitted "
         "(each call well under 60 lines of JSON).\n"
-        "3. `finish()`.\n\n"
+        "3. ONLY THEN `finish()`.\n\n"
         "Do NOT try to emit one giant payload — long arguments get mangled. "
         "Do NOT re-state your analysis. Just submit the pieces."
     )

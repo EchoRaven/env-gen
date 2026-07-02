@@ -9,6 +9,11 @@ from ...eventhub import EventHub
 from ... import bug_schema
 from .stores import WorkHubStores
 
+# Lanes consolidated away (design→frontend, database→backend). Named as a
+# constant so the defunct-lane guard below carries no inline attendee-literal
+# that the roster-consistency invariant would misread as a live default roster.
+_DEFUNCT_LANES = frozenset({"design", "database"})
+
 
 class WorkHub:
     """Notion/Jira-like workspace for docs, plans, tasks, attendees, and comments."""
@@ -28,7 +33,8 @@ class WorkHub:
         # PR 3 (hub-responsibility-split plan, rank 3) moved the
         # design / visual / retro / coverage gate methods OUT of
         # WorkHub entirely — see ``multi_agent/runtime/gate_registry.py``.
-        # GateRegistry shares ``self.stores.pages`` by reference
+        # GateRegistry shares ``self.stores.documents`` (the WorkHub
+        # coordination-document store) by reference
         # (HubRegistry passes the handle at init), so persistence
         # stays unified. No thin-delegate layer remains here.
 
@@ -54,20 +60,19 @@ class WorkHub:
     _VALID_PRIORITIES = ("P0", "P1", "P2", "P3")
     _PRIORITY_RANK = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 
-    def create_page(self, title: str, parent: str = None, attendees: Optional[List[str]] = None, agent: str = "",
+    def create_document(self, title: str, parent: str = None, attendees: Optional[List[str]] = None, agent: str = "",
                     kind: str = "general", metadata: Optional[dict] = None) -> dict:
         """Create a coordination document (kind=kickoff/meeting/retro/project/general).
 
-        NOTE: not a UI page — UI pages live in RegistryHub. (Method name kept
-        as ``create_page`` for snapshot/resume compat; the agent-facing tool is
-        ``workhub_create_document``.)
+        NOTE: not a UI page — UI pages live in RegistryHub. The agent-facing
+        tool is ``workhub_create_document``.
         """
         actor = agent or "workhub"
         now = time.time()
-        page_id = f"page_{uuid.uuid4().hex[:10]}"
+        document_id = f"doc_{uuid.uuid4().hex[:10]}"
         default_status = "draft" if kind == "design" else "active"
-        page = {
-            "id": page_id,
+        document = {
+            "id": document_id,
             "title": title,
             "parent": parent,
             "attendees": attendees or [],
@@ -79,11 +84,11 @@ class WorkHub:
             "_updated_by": agent,
             "_updated_at": now,
         }
-        self.stores.pages.update(lambda m: m.set(page_id, page, actor), change_info={"agent": actor})
+        self.stores.documents.update(lambda m: m.set(document_id, document, actor), change_info={"agent": actor})
         for attendee in attendees or []:
-            self.invite_attendee(page_id, attendee, role="viewer", invited_by=agent)
-        self._emit("page_created", page, recipients=attendees or [])
-        return page
+            self.invite_attendee(document_id, attendee, role="viewer", invited_by=agent)
+        self._emit("document_created", document, recipients=attendees or [])
+        return document
 
     # ------------------------------------------------------------------
     # PR 3 (hub-responsibility-split plan, rank 3) retired these gate
@@ -109,8 +114,8 @@ class WorkHub:
     # ------------------------------------------------------------------
 
     def append_block(self, page_id: str, block: dict, agent: str = "") -> dict:
-        if page_id not in self.stores.pages.value():
-            return {"error": f"Page not found: {page_id}"}
+        if page_id not in self.stores.documents.value():
+            return {"error": f"Document not found: {page_id}"}
         actor = agent or "workhub"
         now = time.time()
         block_id = block.get("id") or f"block_{uuid.uuid4().hex[:10]}"
@@ -137,7 +142,7 @@ class WorkHub:
             "_updated_at": now,
         }
         self.stores.blocks.update(lambda m: m.set(block_id, payload, actor), change_info={"agent": actor})
-        self._emit("block_appended", payload, recipients=self.stores.pages.value().get(page_id, {}).get("attendees", []))
+        self._emit("block_appended", payload, recipients=self.stores.documents.value().get(page_id, {}).get("attendees", []))
         return payload
 
     # Plan-store methods retired. Canonical home for per-task plan
@@ -842,32 +847,32 @@ class WorkHub:
         return payload
 
     # ------------------------------------------------------------------
-    # Task 4: page/plan accessors + cross-hub link methods
+    # Task 4: document/plan accessors + cross-hub link methods
     # ------------------------------------------------------------------
 
-    def get_page(self, page_id: str, with_blocks: bool = True) -> Optional[dict]:
-        """Return the page dict, optionally including its blocks list."""
-        page = self.stores.pages.value().get(page_id)
-        if page is None:
+    def get_document(self, document_id: str, with_blocks: bool = True) -> Optional[dict]:
+        """Return the document dict, optionally including its blocks list."""
+        document = self.stores.documents.value().get(document_id)
+        if document is None:
             return None
-        page = dict(page)
+        document = dict(document)
         if with_blocks:
             blocks = [
                 b for b in self.stores.blocks.value().values()
-                if b.get("page_id") == page_id
+                if b.get("page_id") == document_id
             ]
             blocks.sort(key=lambda b: b.get("ord", 0))
-            page["blocks"] = blocks
-        return page
+            document["blocks"] = blocks
+        return document
 
-    def list_pages(self, kind: str = None, status: str = None) -> List[dict]:
-        """Return pages filtered by kind and/or status."""
-        pages = list(self.stores.pages.value().values())
+    def list_documents(self, kind: str = None, status: str = None) -> List[dict]:
+        """Return documents filtered by kind and/or status."""
+        documents = list(self.stores.documents.value().values())
         if kind is not None:
-            pages = [p for p in pages if p.get("kind") == kind]
+            documents = [p for p in documents if p.get("kind") == kind]
         if status is not None:
-            pages = [p for p in pages if p.get("status") == status]
-        return pages
+            documents = [p for p in documents if p.get("status") == status]
+        return documents
 
     def link_task_to_pr(self, task_id: str, pr_id: str, agent: str = "") -> dict:
         """Set linked_pr on a task."""
@@ -911,7 +916,7 @@ class WorkHub:
         ]
 
     # ------------------------------------------------------------------
-    # Task 5: block edit + archive_page
+    # Task 5: block edit + archive_document
     # ------------------------------------------------------------------
 
     def update_block(self, block_id: str, content: Any, agent: str = "") -> dict:
@@ -927,7 +932,7 @@ class WorkHub:
         updated["_updated_at"] = now
         self.stores.blocks.update(lambda m: m.set(block_id, updated, actor), change_info={"agent": actor})
         page_id = updated.get("page_id", "")
-        recipients = self.stores.pages.value().get(page_id, {}).get("attendees", [])
+        recipients = self.stores.documents.value().get(page_id, {}).get("attendees", [])
         self._emit("block_updated", updated, recipients=recipients)
         return updated
 
@@ -943,9 +948,9 @@ class WorkHub:
         If after_block_id is not found, appends at the end (max_ord + 1024).
         Returns error if page_id is unknown.
         """
-        pages = self.stores.pages.value()
+        pages = self.stores.documents.value()
         if page_id not in pages:
-            return {"error": f"Page not found: {page_id}"}
+            return {"error": f"Document not found: {page_id}"}
 
         # Collect all blocks for this page sorted by ord
         page_blocks = sorted(
@@ -993,19 +998,19 @@ class WorkHub:
         self._emit("block_inserted", payload, recipients=recipients)
         return payload
 
-    def archive_page(self, page_id: str, agent: str = "") -> dict:
-        """Set page status to 'archived'."""
-        page = self.stores.pages.value().get(page_id)
-        if page is None:
-            return {"error": f"Page not found: {page_id}"}
+    def archive_document(self, document_id: str, agent: str = "") -> dict:
+        """Set document status to 'archived'."""
+        document = self.stores.documents.value().get(document_id)
+        if document is None:
+            return {"error": f"Document not found: {document_id}"}
         actor = agent or "workhub"
         now = time.time()
-        updated = dict(page)
+        updated = dict(document)
         updated["status"] = "archived"
         updated["_updated_by"] = agent
         updated["_updated_at"] = now
-        self.stores.pages.update(lambda m: m.set(page_id, updated, actor), change_info={"agent": actor})
-        self._emit("page_archived", updated, recipients=updated.get("attendees", []))
+        self.stores.documents.update(lambda m: m.set(document_id, updated, actor), change_info={"agent": actor})
+        self._emit("document_archived", updated, recipients=updated.get("attendees", []))
         return updated
 
     # ------------------------------------------------------------------
@@ -1092,22 +1097,22 @@ class WorkHub:
     ) -> dict:
         """Create a meeting document (default kind='kickoff', status='open').
 
-        NOT a delegate of ``create_page``: meetings differ in three
+        NOT a delegate of ``create_document``: meetings differ in three
         meeting-specific ways that justify the inline construction here
-        (charter §8 "delete don't shim" — duplicating one short page-dict
-        literal beats forking ``create_page``'s signature to thread
+        (charter §8 "delete don't shim" — duplicating one short document-dict
+        literal beats forking ``create_document``'s signature to thread
         meeting-only knobs through it):
-            * Attendees join with ``role='participant'`` (vs page's
+            * Attendees join with ``role='participant'`` (vs the document's
               ``'viewer'`` default) since meeting attendees are active
               participants, not passive readers.
             * Default ``status`` is ``'open'`` for kind in
               ('kickoff', 'meeting') — these are live-while-running, not
-              ``'active'`` long-lived docs nor ``'draft'`` design pages.
-            * Emits ``meeting_created`` (NOT ``page_created``) so
+              ``'active'`` long-lived docs nor ``'draft'`` design docs.
+            * Emits ``meeting_created`` (NOT ``document_created``) so
               meeting-specific subscribers (e.g. milestone tracker) can
-              react without re-filtering page-created on kind.
+              react without re-filtering document-created on kind.
         Agenda + attendees + ``milestone_index`` + caller-supplied
-        metadata are merged into ``page.metadata`` so the canonical
+        metadata are merged into ``document.metadata`` so the canonical
         record of *why* the meeting was called lives next to its
         produced artifacts after close.
 
@@ -1131,7 +1136,7 @@ class WorkHub:
         # never create a meeting that invites/notifies a lane that no longer exists
         # (the dead-attendee bug). Real lanes: backend / frontend / verifier.
         attendees = [a for a in attendees
-                     if str(a).strip().lower() not in {"design", "database"}]
+                     if str(a).strip().lower() not in _DEFUNCT_LANES]
         if not attendees:
             raise ValueError(
                 "create_meeting attendees were all defunct lanes (design/database); "
@@ -1156,12 +1161,12 @@ class WorkHub:
             "phase": "open",
         }
         now = time.time()
-        page_id = f"page_{uuid.uuid4().hex[:10]}"
+        document_id = f"doc_{uuid.uuid4().hex[:10]}"
         default_status = "open" if kind in ("kickoff", "meeting") else (
             "draft" if kind == "design" else "active"
         )
-        page = {
-            "id": page_id,
+        document = {
+            "id": document_id,
             "title": agenda,
             "parent": None,
             "attendees": list(attendees),
@@ -1173,14 +1178,14 @@ class WorkHub:
             "_updated_by": agent,
             "_updated_at": now,
         }
-        self.stores.pages.update(
-            lambda m: m.set(page_id, page, agent),
+        self.stores.documents.update(
+            lambda m: m.set(document_id, document, agent),
             change_info={"agent": agent},
         )
         for attendee in attendees:
-            self.invite_attendee(page_id, attendee, role="participant", invited_by=agent)
-        self._emit("meeting_created", page, recipients=list(attendees))
-        return page
+            self.invite_attendee(document_id, attendee, role="participant", invited_by=agent)
+        self._emit("meeting_created", document, recipients=list(attendees))
+        return document
 
     def add_meeting_decision(
         self,
@@ -1198,8 +1203,8 @@ class WorkHub:
         every other write helper in this module).
 
         Identity + input discipline:
-            * ``meeting_id`` must reference an existing page (returns an
-              ``{'error': ...}`` dict otherwise — mirrors archive_page).
+            * ``meeting_id`` must reference an existing document (returns an
+              ``{'error': ...}`` dict otherwise — mirrors archive_document).
             * ``decision`` must be a non-empty dict.
             * ``agent`` must be non-empty.
             * ``milestone_index`` is optional; when provided it MUST be
@@ -1224,7 +1229,7 @@ class WorkHub:
                 raise ValueError(
                     "add_meeting_decision milestone_index must be a non-negative int"
                 )
-        if meeting_id not in self.stores.pages.value():
+        if meeting_id not in self.stores.documents.value():
             return {"error": f"Meeting not found: {meeting_id}"}
         now = time.time()
         decision_entry = {
@@ -1249,8 +1254,8 @@ class WorkHub:
             updated["_updated_at"] = now
             return m.set(meeting_id, updated, agent)
 
-        self.stores.pages.update(_mutate, change_info={"agent": agent})
-        page_after = self.stores.pages.value().get(meeting_id) or {}
+        self.stores.documents.update(_mutate, change_info={"agent": agent})
+        document_after = self.stores.documents.value().get(meeting_id) or {}
         # Deliver via SUBSCRIPTION, not an all-attendees broadcast. The ONLY
         # consumer of meeting_decision_added is the orchestrator (kickoff synthesis
         # trigger — its lone subscriber, agent_subscriptions.py). The other
@@ -1259,13 +1264,13 @@ class WorkHub:
         # attendees just floods every lane's inbox (run v11: 84 decisions × 4
         # attendees = 336 inbox items, 252 of them pure noise). recipients=[] lets
         # publish_event fan out to subscribers only (the orchestrator). The
-        # decisions themselves remain on the meeting page for anyone who queries it.
+        # decisions themselves remain on the meeting document for anyone who queries it.
         self._emit(
             "meeting_decision_added",
             {"meeting_id": meeting_id, "decision": decision_entry},
             recipients=[],
         )
-        return page_after
+        return document_after
 
     def close_meeting(
         self,
@@ -1277,8 +1282,8 @@ class WorkHub:
     ) -> dict:
         """Close a meeting document: flip status to 'closed', record artifacts.
 
-        Symmetric to ``archive_page`` but specialized for meetings: stores
-        the canonical list of artifacts the meeting produced (page ids,
+        Symmetric to ``archive_document`` but specialized for meetings: stores
+        the canonical list of artifacts the meeting produced (document ids,
         plan ids, decision ids, etc) on ``metadata['produced_artifacts']``
         so downstream tasks can reference them without re-scanning the
         decisions list. Emits ``meeting_closed`` (NOT ``kickoff_complete``
@@ -1286,14 +1291,14 @@ class WorkHub:
         responsibility, not the bare ``close_meeting`` primitive).
 
         Identity + input discipline:
-            * ``meeting_id`` must reference an existing page (returns
+            * ``meeting_id`` must reference an existing document (returns
               ``{'error': ...}`` dict otherwise).
             * ``produced_artifacts`` must be a list (may be empty — a
               meeting that closes with no artifacts is a real,
               recordable outcome, not an error).
             * ``agent`` must be non-empty.
             * ``milestone_index`` is optional; when provided it MUST be
-              a non-negative int and is persisted on the closed page's
+              a non-negative int and is persisted on the closed document's
               ``metadata['milestone_index']`` (overwriting any prior
               value) so an audit-time scan of closed meetings can
               recover the milestone anchor even if the original
@@ -1314,7 +1319,7 @@ class WorkHub:
                 raise ValueError(
                     "close_meeting milestone_index must be a non-negative int"
                 )
-        if meeting_id not in self.stores.pages.value():
+        if meeting_id not in self.stores.documents.value():
             return {"error": f"Meeting not found: {meeting_id}"}
         now = time.time()
         artifacts_snapshot = list(produced_artifacts)
@@ -1339,31 +1344,31 @@ class WorkHub:
             updated["_updated_at"] = now
             return m.set(meeting_id, updated, agent)
 
-        self.stores.pages.update(_mutate, change_info={"agent": agent})
-        page_after = self.stores.pages.value().get(meeting_id) or {}
+        self.stores.documents.update(_mutate, change_info={"agent": agent})
+        document_after = self.stores.documents.value().get(meeting_id) or {}
         self._emit(
             "meeting_closed",
             {
                 "meeting_id": meeting_id,
                 "produced_artifacts": artifacts_snapshot,
-                "page": page_after,
+                "document": document_after,
             },
-            recipients=page_after.get("attendees", []),
+            recipients=document_after.get("attendees", []),
         )
-        return page_after
+        return document_after
 
-    def record_decision(self, page_id: str, title: str, options: list, chosen: str, reason: str, agent: str = "") -> dict:
-        """Append a decision block to the document (page_id) and record in decisions store."""
-        if page_id not in self.stores.pages.value():
-            return {"error": f"Page not found: {page_id}"}
+    def record_decision(self, document_id: str, title: str, options: list, chosen: str, reason: str, agent: str = "") -> dict:
+        """Append a decision block to the document (document_id) and record in decisions store."""
+        if document_id not in self.stores.documents.value():
+            return {"error": f"Document not found: {document_id}"}
         content = {"title": title, "options": options, "chosen": chosen, "reason": reason}
-        block = self.append_block(page_id, {"type": "decision", "content": content}, agent=agent)
+        block = self.append_block(document_id, {"type": "decision", "content": content}, agent=agent)
         actor = agent or "workhub"
         now = time.time()
         decision_id = f"decision_{uuid.uuid4().hex[:10]}"
         decision = {
             "id": decision_id,
-            "page_id": page_id,
+            "document_id": document_id,
             "block_id": block.get("id"),
             "title": title,
             "options": options,
@@ -1443,14 +1448,14 @@ class WorkHub:
     # ------------------------------------------------------------------
 
     def set_project_info(self, name: str, description: str = "", agent: str = "") -> dict:
-        """Upsert a project page."""
-        page_id = f"page:project:{name}"
+        """Upsert a project document."""
+        document_id = f"page:project:{name}"
         actor = agent or "workhub"
         now = time.time()
-        existing = self.stores.pages.get(page_id)
+        existing = self.stores.documents.get(document_id)
         payload = {
             **(existing or {}),
-            "id": page_id,
+            "id": document_id,
             "title": name,
             "kind": "project",
             "parent": None,
@@ -1463,49 +1468,49 @@ class WorkHub:
         if existing is None:
             payload["created_by"] = agent
             payload["created_at"] = now
-        self.stores.pages.update(lambda m: m.set(page_id, payload, actor), change_info={"agent": actor})
+        self.stores.documents.update(lambda m: m.set(document_id, payload, actor), change_info={"agent": actor})
         self._emit("project_info_set", payload, recipients=[])
         return payload
 
     def set_project_phase(self, name: str, phase: str, agent: str = "", reason: str = "") -> dict:
-        """Append a project_phase block to the project page, auto-creating if needed."""
-        page_id = f"page:project:{name}"
-        if not self.stores.pages.get(page_id):
+        """Append a project_phase block to the project document, auto-creating if needed."""
+        document_id = f"page:project:{name}"
+        if not self.stores.documents.get(document_id):
             self.set_project_info(name, agent=agent)
-        return self.append_block(page_id, {
+        return self.append_block(document_id, {
             "type": "project_phase",
             "content": {"phase": phase, "reason": reason},
         }, agent=agent)
 
     def get_project_status(self, name: str = None) -> dict:
-        """Return the most-recently-updated project page with its latest phase."""
-        pages = [p for p in self.stores.pages.value().values() if p.get("kind") == "project"]
+        """Return the most-recently-updated project document with its latest phase."""
+        documents = [p for p in self.stores.documents.value().values() if p.get("kind") == "project"]
         if name is not None:
-            pages = [p for p in pages if p.get("title") == name]
-        if not pages:
+            documents = [p for p in documents if p.get("title") == name]
+        if not documents:
             return {}
-        pages.sort(key=lambda p: p.get("_updated_at", 0), reverse=True)
-        page = pages[0]
+        documents.sort(key=lambda p: p.get("_updated_at", 0), reverse=True)
+        document = documents[0]
         blocks = [
             b for b in self.stores.blocks.value().values()
-            if b.get("page_id") == page["id"] and b.get("type") == "project_phase"
+            if b.get("page_id") == document["id"] and b.get("type") == "project_phase"
         ]
         blocks.sort(key=lambda b: b.get("_updated_at", 0), reverse=True)
         latest_phase = (blocks[0]["content"] if blocks else {}) or {}
-        return {**page, "phase": latest_phase.get("phase"), "phase_reason": latest_phase.get("reason")}
+        return {**document, "phase": latest_phase.get("phase"), "phase_reason": latest_phase.get("reason")}
 
     # ------------------------------------------------------------------
     # Knowledge / share_implementation helpers
     # ------------------------------------------------------------------
 
     def share_implementation(self, title: str, content: str, agent: str = "", **metadata) -> dict:
-        """Append a knowledge block to the shared knowledge page."""
-        page_id = "page:knowledge"
+        """Append a knowledge block to the shared knowledge document."""
+        document_id = "page:knowledge"
         actor = agent or "workhub"
         now = time.time()
-        if not self.stores.pages.get(page_id):
-            self.stores.pages.update(lambda m: m.set(page_id, {
-                "id": page_id,
+        if not self.stores.documents.get(document_id):
+            self.stores.documents.update(lambda m: m.set(document_id, {
+                "id": document_id,
                 "title": "Knowledge",
                 "kind": "knowledge",
                 "parent": None,
@@ -1516,7 +1521,7 @@ class WorkHub:
                 "_updated_by": agent,
                 "_updated_at": now,
             }, actor), change_info={"agent": actor})
-        return self.append_block(page_id, {
+        return self.append_block(document_id, {
             "type": "knowledge",
             "content": {"title": title, "body": content, **metadata},
         }, agent=agent)

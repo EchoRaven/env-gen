@@ -363,7 +363,17 @@ def _render_column(table_name: str, col: Any) -> str:
     if not _FK_INLINE_IN_TYPE_RE.search(ctype):
         fk = _structured_fk_ref(col)
         if fk:
-            parts.append(f"REFERENCES {_quote_ident(fk[0])} ({_quote_ident(fk[1])})")
+            # ON DELETE CASCADE: a child row's FK to a parent (comments.post_id →
+            # posts.id, posts.author_id → users.id, …) must cascade, else deleting
+            # the parent raises a ForeignKeyViolation → the DELETE endpoint 500s for
+            # any parent that has children (run v22: DELETE /api/posts/{id} → 500
+            # "comments_post_id_fkey", a REAL app bug a user hits, and the lone
+            # remaining business_chain failure). The control-plane/spine FKs and the
+            # inline-FK renderer ALREADY cascade-by-default; this makes the structured
+            # path consistent. Owned-resource hierarchies want cascade (parent gone →
+            # its children gone), which is the correct semantic for these CRUD apps.
+            parts.append(
+                f"REFERENCES {_quote_ident(fk[0])} ({_quote_ident(fk[1])}) ON DELETE CASCADE")
     # Fix dotted inline FKs (`references users.id` → `references users(id)`)
     # wherever they landed — contracts cram them into the `type` passthrough.
     return "    " + _normalize_inline_fk(" ".join(parts))
@@ -592,7 +602,11 @@ def _spine_extra_column_alters(
         if not _FK_INLINE_IN_TYPE_RE.search(ctype):
             fk = _structured_fk_ref(col)
             if fk:
-                parts.append(f"REFERENCES {_quote_ident(fk[0])} ({_quote_ident(fk[1])})")
+                # ON DELETE CASCADE — consistent with the top-level structured-FK
+                # renderer and the inline-FK path (see _render_column): a child FK
+                # must cascade so deleting the parent doesn't 500 on a FK violation.
+                parts.append(
+                    f"REFERENCES {_quote_ident(fk[0])} ({_quote_ident(fk[1])}) ON DELETE CASCADE")
         clause = _normalize_inline_fk(" ".join(parts))
         out.append(
             f"ALTER TABLE {_quote_ident(table_name)} "

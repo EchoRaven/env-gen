@@ -48,6 +48,11 @@ DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
         # request_revision / escalate). Handled by
         # ``_handle_kickoff_facilitate_request`` in messaging.py.
         ("orchestrator", "kickoff_facilitate_request", "high"),
+        # Per-milestone KICKOFF-DETAIL turn (2026-06-24): fired at milestone entry
+        # (run_kickoff.author_milestone_detail) BEFORE the lanes draft. The orchestrator
+        # reviews the roadmap, may revise FUTURE phases + sets THIS phase's detailed
+        # detail via the milestone_* tools. Handled by _handle_kickoff_detail_request.
+        ("orchestrator", "kickoff_detail_request", "high"),
         # Step B circuit-breaker escalation. Use "*" for source_hub
         # because each lane publishes from its own agent_id.
         ("*", "lane_idle_warning", "normal"),
@@ -132,9 +137,12 @@ DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
         ("orchestrator", "kickoff_complete", "high"),
     ],
     "debugger": [
-        # Bug-level orchestrator. Wakes on verifier bug_found + runhub
-        # failures; analyzes root cause, assigns remediation tasks.
-        ("verifier", "bug_found", "low"),
+        # Bug-level orchestrator. Wakes on bug_found + runhub failures; analyzes root
+        # cause, assigns remediation tasks. Source is "*" not "verifier": bug_create emits
+        # bug_found with source_hub=<source> (e.g. "business_chain"/"api_smoke"), so a
+        # ("verifier","bug_found") sub silently missed every chain-filed bug and the
+        # debugger never woke (run v14: DELETE FK-500 bug went untriaged → no delivery).
+        ("*", "bug_found", "low"),
         ("runhub", "run_failed", "low"),
         ("runhub", "run_completed", "normal"),
         # Kickoff_complete is informational — debugger learns which

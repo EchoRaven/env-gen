@@ -30,6 +30,7 @@ SAFE_DEFAULT_MAX_OUTPUT = 8192
 # specific prefixes MUST come before more general ones.
 _MAX_OUTPUT_TABLE: list[tuple[str, int]] = [
     # --- Anthropic ---
+    ("claude-opus-4-8", 128000),
     ("claude-opus-4-7", 128000),
     ("claude-opus-4-6", 128000),
     ("claude-opus-4-5", 64000),
@@ -83,4 +84,79 @@ def resolve_max_output_tokens(model: str,
     return default
 
 
-__all__ = ["resolve_max_output_tokens", "SAFE_DEFAULT_MAX_OUTPUT"]
+# --- Context WINDOW (input) per model family -------------------------------
+# The model's documented INPUT context window (tokens). Used to size the live
+# context manager / in-context memory to the model's RECOMMENDED WORKING LENGTH
+# rather than a tiny hardcoded default — an agent on a large-context model (e.g.
+# Gemini's ~1M) should USE that window, not truncate its history/memory to a small
+# slice. Prefix-matched like the output table.
+SAFE_DEFAULT_CONTEXT_WINDOW = 128000
+
+# Documented INPUT context windows, verified against provider docs (June 2026).
+# Specific prefixes MUST precede general ones (first match wins).
+_CONTEXT_WINDOW_TABLE: list[tuple[str, int]] = [
+    # --- Anthropic: 1M GA for Opus/Sonnet 4.6+ (claude.com/blog/1m-context-ga,
+    #     Mar 2026, no price multiplier); earlier 4.x + Claude 3 are 200k.
+    ("claude-opus-4-8", 1_000_000),
+    ("claude-opus-4-7", 1_000_000),
+    ("claude-opus-4-6", 1_000_000),
+    ("claude-sonnet-4-6", 1_000_000),
+    ("claude-opus-4", 200_000),
+    ("claude-sonnet-4", 200_000),
+    ("claude-haiku-4", 200_000),
+    ("claude-3", 200_000),
+    # --- OpenAI: GPT-5.5 ~1.05M; GPT-5/5.4 standard input 272k (1M is opt-in
+    #     experimental, not assumed); GPT-4.1 1M; GPT-4o/4 128k.
+    ("gpt-5.5", 1_050_000),
+    ("gpt-5", 272_000),
+    ("gpt-4.1", 1_047_576),
+    ("o1", 200_000),
+    ("o3", 200_000),
+    ("o4", 200_000),
+    ("gpt-4o", 128_000),
+    ("gpt-4", 128_000),
+    # --- Google Gemini: 3.x Pro = 1,000,000-token input window (ai.google.dev /
+    #     Vertex docs; 64k output); 2.5/2.0/1.5 = 1,048,576.
+    ("gemini-3", 1_000_000),
+    ("gemini-2.5", 1_048_576),
+    ("gemini-2.0", 1_048_576),
+    ("gemini-1.5", 1_048_576),
+]
+
+
+def resolve_context_window(model: str,
+                           default: int = SAFE_DEFAULT_CONTEXT_WINDOW) -> int:
+    """Return the INPUT context window (tokens) for ``model`` (prefix match)."""
+    if not model:
+        return default
+    name = model.strip().lower()
+    candidates = [name]
+    if "/" in name:
+        candidates.append(name.rsplit("/", 1)[1])
+    for candidate in candidates:
+        for prefix, win in _CONTEXT_WINDOW_TABLE:
+            if candidate.startswith(prefix):
+                return win
+    return default
+
+
+def resolve_ctx_working_chars(model: str,
+                              default: int = SAFE_DEFAULT_CONTEXT_WINDOW) -> int:
+    """RECOMMENDED working char budget for the live context (accumulated history +
+    in-context memory), from the model's window with response headroom: ~3.5
+    chars/token x 0.7 of the window. Override via ENVGEN_CTX_WORKING_CHARS. A
+    Gemini-class 1M-token model yields a ~2.5M-char budget (normal runs never
+    truncated); a small model stays modest."""
+    import os
+    env = os.environ.get("ENVGEN_CTX_WORKING_CHARS")
+    if env:
+        try:
+            return max(2000, int(env))
+        except ValueError:
+            pass
+    return int(resolve_context_window(model, default) * 3.5 * 0.7)
+
+
+__all__ = ["resolve_max_output_tokens", "SAFE_DEFAULT_MAX_OUTPUT",
+           "resolve_context_window", "resolve_ctx_working_chars",
+           "SAFE_DEFAULT_CONTEXT_WINDOW"]

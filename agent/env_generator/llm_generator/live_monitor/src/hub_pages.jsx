@@ -3280,7 +3280,8 @@ window.HubPages = (function () {
     const Icons = window.Icons || {};
     const tasks = Object.values(hub?.tasks || {});
     const plans = Object.values(hub?.plans || {});
-    const pages = Object.values(hub?.pages || {});
+    // page→document rename: snapshot key is ``documents`` (legacy ``pages`` fallback).
+    const pages = Object.values(hub?.documents || hub?.pages || {});
     const decisions = Object.values(hub?.decisions || {});
     const nav = (p) => window.LiveMonitorRouter.navigateTo(p);
 
@@ -3874,7 +3875,8 @@ window.HubPages = (function () {
   // ============================================================================
   function PageDetailView({ projectId, hub, state, pageId }) {
     const Icons = window.Icons || {};
-    const pages = hub?.pages || {};
+    // page→document rename: snapshot key is ``documents`` (legacy ``pages`` fallback).
+    const pages = hub?.documents || hub?.pages || {};
     const page = pages[pageId];
     const nav = (p) => window.LiveMonitorRouter.navigateTo(p);
     const back = () => nav(`/projects/${encodeURIComponent(projectId)}/workhub`);

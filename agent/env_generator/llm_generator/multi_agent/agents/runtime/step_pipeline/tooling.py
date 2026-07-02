@@ -547,17 +547,13 @@ class AgentStepToolingMixin:
             elif result_str.strip() == "None":
                 result_str = f"Tool {tool_name} completed successfully (no output)."
 
-            max_result_len = 16000
-            if hasattr(self, "context_manager") and len(result_str) > 1000:
-                from ....context_management import ToolResultCompressor
-
-                compressor = ToolResultCompressor()
-                result_str = compressor.compress(tool_name, result_str, result.success)
-                self.context_manager.add_tool_result(tool_name, result_str, result.success)
-            if len(result_str) > max_result_len:
-                result_str = result_str[:max_result_len] + (
-                    f"\n<response clipped><NOTE>Output truncated. {len(result_str) - max_result_len} chars omitted.</NOTE>"
-                )
+            # NO compression / NO cap (user decision 2026-06-24): the FULL tool result
+            # reaches the agent — truncated tool output is a correctness hazard (the
+            # agent acts on a partial view). This was the DOMINANT truncation: the live
+            # step pipeline ran ToolResultCompressor (COMPRESSION_RULES — ~1000 chars per
+            # tool, head/summary) on any result >1000 chars, THEN capped at 16000, so
+            # large file reads / hub dumps / chain results were silently shrunk to a
+            # digest before the model ever saw them. Removed both.
             # PATH FIREWALL: relativize absolute env/worktree roots before the
             # result reaches the model, so it perceives its workspace as root and
             # never learns the host path to script against (run #13 leak).

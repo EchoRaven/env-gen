@@ -74,10 +74,10 @@ class GateRegistry:
         eventhub: Any = None,
     ) -> None:
         """``pages_store`` is the JsonStore-backed dict-like that
-        WorkHub uses (``WorkHub.stores.pages``).
-        ``create_page_fn`` is ``WorkHub.create_page`` — we route
-        page creation through it so default kind/status conventions
-        and the page_created event stay centralised on WorkHub.
+        WorkHub uses (``WorkHub.stores.documents``).
+        ``create_page_fn`` is ``WorkHub.create_document`` — we route
+        document creation through it so default kind/status conventions
+        and the document_created event stay centralised on WorkHub.
         ``eventhub`` is the same handle WorkHub uses for emission;
         events stay tagged ``source_hub='workhub'`` for downstream
         listener compatibility during the delegate window."""

@@ -101,8 +101,40 @@ def _env_to_dict(e: Environment) -> dict:
         "run_count": summ.get("run_count", 0),
         "pending_approvals": pending,
         "created_at": e.created_at.isoformat() if e.created_at else "",
-        "updated_at": e.updated_at.isoformat() if e.updated_at else "",
+        # LIVE updated_at: the DB row's timestamp is written once at registration and never
+        # again, so an ACTIVE CLI run (hubs rewritten every few seconds) sorted to the
+        # BOTTOM of the list under a weeks-old date — invisible in practice (2026-07-02:
+        # run-40 at 78% progress sat at position 31/34 under updated_at=06-22). Use the
+        # newest hub-store write when it beats the DB column.
+        "updated_at": _live_updated_at(e),
     }
+
+
+def _live_updated_at(e: Environment) -> str:
+    # Normalize the DB value to NAIVE UTC before comparing: sqlite round-trips
+    # the aware column default as naive UTC already, but Postgres TIMESTAMPTZ
+    # returns an AWARE datetime in the session tz — its isoformat carries an
+    # offset suffix, so a lexical max against a naive string compares
+    # wall-clock digits and can pick the WRONG value (and the endpoint would
+    # emit mixed formats).
+    from datetime import datetime as _dt, timezone as _tz
+    db_dt = e.updated_at
+    if db_dt is not None and db_dt.tzinfo is not None:
+        db_dt = db_dt.astimezone(_tz.utc).replace(tzinfo=None)
+    db_iso = db_dt.isoformat() if db_dt else ""
+    try:
+        if not e.generated_dir:
+            return db_iso
+        hubs = Path(e.generated_dir) / "shared" / "hubs"
+        mtime = hub_reader._hub_mtime(hubs)
+        if not mtime:
+            return db_iso
+        # The hub mtime is rendered the same NAIVE-UTC way, else a local-time
+        # render (UTC-5 here) always loses the string max to any boot-touched row.
+        live_iso = _dt.utcfromtimestamp(mtime).isoformat()
+        return max(db_iso, live_iso)
+    except Exception:
+        return db_iso
 
 
 @app.on_event("startup")

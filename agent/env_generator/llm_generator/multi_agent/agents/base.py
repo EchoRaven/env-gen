@@ -158,7 +158,7 @@ class EnvGenAgent(
         "deliver",
     )
     ACTION_STAGE_CATEGORY_HINTS: Dict[str, Set[str]] = {
-        "communicate": {"communication", "progress", "knowledge_write"},
+        "communicate": {"communication", "progress", "knowledge_write", "milestone"},
         "edit_code": {"file", "project", "analysis", "memory", "reference", "image_search"},
         "run_checks": {
             "runtime",
@@ -369,9 +369,69 @@ class EnvGenAgent(
         "view_image",
         "list_reference_images",
     }
+    # The ORCHESTRATOR's milestone-roadmap tools (milestone_tools bundle, category
+    # "milestone"). They were added to the orchestrator's tool_categories + bundle but
+    # NOT to any action stage's category hints or always-include — so they registered
+    # into the 223-tool map yet were NEVER offered to the LLM in any action stage. The
+    # per-milestone KICKOFF-DETAIL turn then ordered the orchestrator to call
+    # milestone_list / milestone_set_detail; the model emitted a call for a tool absent
+    # from the offered set and gemini returned MALFORMED_FUNCTION_CALL every time → the
+    # detail was never authored and the whole kickoff wedged (V25, lanes never woken).
+    # Same crowd-out / never-offered class as _CONTRACT_READ / _REFERENCE_VIEW. Force-
+    # offer in the communicate stage (roadmap coordination + the broadcast it leads to)
+    # and the generic action stage; bundle-intersected, so ONLY the orchestrator (which
+    # bundles milestone_tools) ever sees them.
+    _MILESTONE_FLOW = {
+        "milestone_list",
+        "milestone_add",
+        "milestone_update",
+        "milestone_remove",
+        "milestone_set_detail",
+    }
+    # The ORCHESTRATOR's audit / monitoring / delivery-gate tools. They are GRANTED
+    # (tool_categories delivery/memory/coverage/seed/run + bundles deliverability_tools /
+    # retro_tools / coverage_tools / seed_tools / run_tools) AND the orchestrator prompt
+    # MANDATES them: coverage_audit_check + seed_audit_check are the hard pre-flight gates
+    # DeliverProjectTool runs before delivery, get_retro_stats feeds the mandatory
+    # submit_retro, deliverability_summary is the "quick check" counterpart to
+    # deliverability_check, and run_list/run_get are the prompt's named way to monitor
+    # validation runs probe-by-probe. But their categories (delivery, memory, coverage,
+    # seed, run) appear in NO ACTION_STAGE_CATEGORY_HINTS stage and their names were in NO
+    # _FLOW / ACTION_STAGE_ALWAYS_INCLUDE set — so they registered into the tool map yet were
+    # NEVER offered to the LLM in any action stage. EXACT same never-offered class as the
+    # _MILESTONE_FLOW bug (V25: the model emitted a call for a tool absent from the offered
+    # set → MALFORMED_FUNCTION_CALL, kickoff wedged). Force-offer in the deliver stage (the
+    # pre-delivery gates + retro stats) AND the generic action stage (run_list/run_get
+    # monitoring + deliverability_summary throughout the resident loop); bundle-intersected,
+    # so ONLY the orchestrator (which bundles all five families) ever sees them.
+    _ORCH_AUDIT_FLOW = {
+        "deliverability_summary",
+        "get_retro_stats",
+        "coverage_audit_check",
+        "seed_audit_check",
+        "run_list",
+        "run_get",
+    }
+    # The KNOWLEDGE lane's structured-document tools (structured_knowledge_tools bundle,
+    # category "knowledge"). They are GRANTED — the bundle registers submit_adr /
+    # submit_runbook / submit_postmortem under category "knowledge" — and the knowledge
+    # agent prompt MANDATES them (knowledge_agent.j2: "submit_adr / submit_runbook /
+    # submit_postmortem when the triggering artifact exactly matches the document shape").
+    # But "knowledge" appears in NO ACTION_STAGE_CATEGORY_HINTS stage (the communicate
+    # stage hints knowledge_write, not knowledge) and their names were in NO _FLOW /
+    # ACTION_STAGE_ALWAYS_INCLUDE set — so they registered into the tool map yet were
+    # ONLY reachable via the low-priority ranker, i.e. never offered. EXACT same orphan /
+    # never-offered class as _MILESTONE_FLOW (V25) and _ORCH_AUDIT_FLOW. Force-offer in the
+    # communicate stage (where the knowledge lane writes its artifacts); bundle-intersected,
+    # so ONLY the knowledge agent (which bundles structured_knowledge_tools) ever sees them.
+    _KNOWLEDGE_DOC_FLOW = {
+        "submit_adr",
+        "submit_runbook",
+        "submit_postmortem",
+    }
     ACTION_STAGE_ALWAYS_INCLUDE: Dict[str, Set[str]] = {
         "communicate": {"check_inbox", "send_message", "ask_agent", "broadcast", "report_progress", "finish"}
-                        | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW,
+                        | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _MILESTONE_FLOW | _KNOWLEDGE_DOC_FLOW,
         "edit_code": {"read", "edit", "apply_patch", "write", "finish"} | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _CONTRACT_READ | _REFERENCE_VIEW,
         "run_checks": {"lint", "test_api", "finish"} | _CLAIM_FLOW | _VALIDATION_FLOW | _CONTRACT_READ,
         "delegate_team": {"finish"},
@@ -389,8 +449,8 @@ class EnvGenAgent(
         # ranker crowded it out of ~150 tools → the orchestrator could never consult the
         # skill → deliver_project blocked (run #28: 33× wedge). Bundle-intersected, so
         # only the orchestrator (which bundles knowledge_skill_tools) ever sees it.
-        "deliver": {"finish", "deliver_project", "report_completion", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW,
-        "action": {"finish", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW | _BUG_FLOW,
+        "deliver": {"finish", "deliver_project", "report_completion", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW | _ORCH_AUDIT_FLOW,
+        "action": {"finish", "submit_retro", "deliverability_check", "get_skill"} | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _VALIDATION_FLOW | _BUG_FLOW | _MILESTONE_FLOW | _ORCH_AUDIT_FLOW,
     }
 
     # PROPOSAL #28 F2 — validation/delivery tools that are MEANINGLESS during KICKOFF
@@ -1014,11 +1074,12 @@ class EnvGenAgent(
         chat_files_created: List[str] = []
         chat_files_modified: List[str] = []
 
-        # Tool-result text cap: mirrors FinishContinuePolicy's 10000-char
-        # bound. Without this, a single tool returning a large dict (e.g.
-        # listing a 50k-file workspace) blows the next LLM call's context
-        # window.
-        _TOOL_RESULT_CAP = 10000
+        # NO tool-result cap (user decision 2026-06-24): tool output MUST reach the
+        # agent COMPLETE — a truncated result is a correctness hazard (the agent acts
+        # on a half-truth) and must never be obstructed. The run model's large context
+        # absorbs full results; tools that could be enormous (file reads, listings)
+        # already paginate at their own layer, so the full result here is bounded in
+        # practice. (Was a 10000-char cap that silently cut large reads/dumps.)
 
         for step in range(max_steps):
             # Respect shutdown signals between rounds — matches the
@@ -1246,13 +1307,9 @@ class EnvGenAgent(
                 # context window on the very next round, surfacing as
                 # a cryptic 'LLM error during chat' to the user.
                 try:
-                    text_blob = str(result_payload)
-                    if len(text_blob) > _TOOL_RESULT_CAP:
-                        text_blob = (
-                            text_blob[: _TOOL_RESULT_CAP - 64]
-                            + f"\n…[truncated; original length={len(text_blob)} chars]"
-                        )
-                    messages.append(Message.tool(text_blob, tool_call_id))
+                    # NO cap — append the FULL tool result (user decision 2026-06-24:
+                    # tool output must never be truncated/obstructed).
+                    messages.append(Message.tool(str(result_payload), tool_call_id))
                 except Exception:
                     pass
 
@@ -1687,7 +1744,11 @@ class EnvGenAgent(
                     f"[{self.agent_id}] Failed to seed agent memory bank from shared legacy path ({shared_legacy_memory_dir}): {e}"
                 )
 
-        self.memory_bank = MemoryBank(root_dir=workspace_root, memory_dir=canonical_memory_dir)
+        self.memory_bank = MemoryBank(
+            root_dir=workspace_root,
+            memory_dir=canonical_memory_dir,
+            model=getattr(self.config, "model_name", None),
+        )
         self.memory_bank.initialize(project_info or {})
         
         # Bind MemoryBank to GeneratorMemory for auto-sync

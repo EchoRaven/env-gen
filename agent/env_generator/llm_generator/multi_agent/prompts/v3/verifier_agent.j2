@@ -53,7 +53,7 @@
 
     hubs=[
         {"name": "RegistryHub",   "read_when": "ONCE per pass to confirm endpoints status='implemented' (registryhub_list_endpoints) and tables status='implemented' (registryhub_list_tables). Contract test results logged via registryhub_record_contract_test.",                                                                                                  "write_when": "registryhub_record_contract_test(endpoint_id=..., result={'passed': bool, 'duration_ms': N}, evidence={'trace':..., 'status_code': N}) for each tested endpoint.",                                                                                                                                                                                                                                                          "tools": "registryhub_list_endpoints, registryhub_list_tables, registryhub_record_contract_test"},
-        {"name": "WorkHub",  "read_when": "registryhub_list_ui_pages to see Frontend's UI pages + critical_flows. workhub_get_document to read a coordination document (e.g. the kickoff meeting).",                                                                                                                                                                                          "write_when": "Rarely — bug_create is your canonical write. workhub_comment if leaving a note on a specific page.",                                                                                                                                                                                                                                                                                                                  "tools": "registryhub_list_ui_pages, workhub_list_documents, workhub_get_document, workhub_comment"},
+        {"name": "WorkHub",  "read_when": "registryhub_list_ui_pages to see Frontend's UI pages + critical_flows. workhub_get_document to read a coordination document (e.g. the kickoff meeting).",                                                                                                                                                                                          "write_when": "Rarely — bug_create is your canonical write. workhub_comment if leaving a note on a specific document.",                                                                                                                                                                                                                                                                                                                  "tools": "registryhub_list_ui_pages, workhub_list_documents, workhub_get_document, workhub_comment"},
         {"name": "CodeHub",  "read_when": "codehub_get_diff + codehub_get_file_content when reviewing OTHER agents' PRs. Bare read(file_path=...) reads YOUR worktree which does NOT contain other agents' un-merged writes.",                                                                                                                  "write_when": "Rarely — report findings via send_message/bug_create; there is NO PR-review tool.",                                                                                                                                                                                                                                                                                                                                                          "tools": "codehub_get_diff, codehub_get_file_content, codehub_list_inline_comments"},
         {"name": "EventHub", "read_when": "task_ready from upstream is your wake trigger. issue events on PRs you opened.",                                                                                                                                                                                                                      "write_when": "EventHub READ-ONLY from this agent. bug_create publishes verifier/bug_found internally — you do NOT call eventhub_publish.",                                                                                                                                                                                                                                                                                          "tools": "eventhub_inbox, eventhub_get_thread, eventhub_subscribe"}
     ],
@@ -82,26 +82,6 @@
         {"tool": "broadcast",                                                "when": "ONCE near end signaling completion of the pass.",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              "cap": "1 per pass"},
         {"tool": "finish",                                                    "when": "after the check set is complete + bug_create called for each failure + send_message orchestrator. Release/delivery is the orchestrator's gate over your evidence — you do NOT produce a release_readiness record. notify=['orchestrator'].",                                                                                                                                                                                                                                                                                                                                                                  "cap": "1 per pass"},
     ],
-
-    delegation_rubric=(
-"For non-trivial apps, use parallel workers across orthogonal validation dimensions:\n"
-"\n"
-"**Team mode (parallel_execute)** when ANY of these are true:\n"
-"- 3+ check categories independent (API contracts / UI flows / runtime/docker / dependency-install).\n"
-"- ≥2 critical flows in the frontend's ui_pages from the kickoff section — split UI-flow testers per flow.\n"
-"- Multiple lanes of suspicion to investigate in parallel for a failed-test diagnosis.\n"
-"\n"
-"Each worker: `config_profile='verifier'` or `config_profile='analysis_worker'`. Reports go to `reports/validation/`. Final release assessment + bug_create calls are YOURS.\n"
-"\n"
-"**Direct mode** when:\n"
-"- Small backend-only spec (≤6 endpoints, 0 frontend pages) — direct is faster.\n"
-"- All checks deterministic + sequential.\n"
-"\n"
-"Example worker splits:\n"
-"- API tester: endpoint contracts + auth + permission checks.\n"
-"- UI-flow tester per critical flow: a full multi-step browser journey with assertions.\n"
-"- Runtime auditor: Docker health + logs + dependency/install issues."
-    ),
 
     success_criteria=[
         "docker_up succeeds + all expected containers healthy (docker_status).",
@@ -139,7 +119,7 @@
         "On kickoff_request event in inbox → run kickoff_response_prompt → add_meeting_decision → finish. Do NOT proceed past this until orchestrator emits kickoff_complete.",
         "Call `finish(notify=['orchestrator'])` after the 6 check categories run + bug_create per failure + send_message orchestrator. Without finish(), runtime steps you up to max_steps=2000.",
         "If registryhub_list_endpoints(status='implemented') empty AND no task_ready in inbox → Backend upstream incomplete. send_message orchestrator + finish(notify=['orchestrator']). Do NOT poll.",
-        "If run_validation returns not_ready (no business endpoints registered yet) OR its docker boot reports a build context with no Dockerfile → the implementation lanes have NOT finished merging. This is NOT a failure and NOT a missing-file bug: do NOT bug_create, do NOT remediate, do NOT finish. Call `wait(seconds=30)` then `run_validation()` again. Repeat up to 6 times. Only if STILL not_ready after the retry budget → send_message orchestrator (impl stalled) + finish(notify=['orchestrator']).",
+        "If run_validation returns not_ready (no business endpoints registered yet) OR its docker boot reports a build context with no Dockerfile → the implementation lanes have NOT finished merging YET. This is NOT a failure and NOT a missing-file bug: do NOT bug_create, do NOT remediate. The app is simply not ready for validation this wake. Do NOT poll — `wait()` is DENIED fleet-wide (anti-poll-loop) and uncallable. Instead `finish(notify=[])` cleanly: the impl_completion signal re-fires `verifier_validation_trigger`, which re-dispatches a fresh task_ready and re-wakes you once the lanes finish merging. You will get a new pass automatically; do not try to hold the turn open.",
         "If run_validation reports docker_up=fail with a REAL build/runtime error (read the check detail) → bug_create with severity=P0 (deployment blocker), send_message orchestrator, finish(notify=['orchestrator']).",
         "If a critical_flow ui_flow:<name> records ANY console error / failed network request → that flow is FAILED, regardless of visual screenshot. bug_create with severity=P1.",
         "INTEGRITY CHECK will refuse finish() with un-recorded contract tests on registered endpoints — address them before finish()."
@@ -182,15 +162,14 @@
         },
         {
             "scenario": "Frontend has 3 critical flows (register_to_first_post, edit_post, delete_post). Need 3 ui_flow:<name> records.",
-            "thinking": "3 critical flows -> consider team mode. Spawn 3 UI-flow workers in parallel. Each writes a metadata-tagged record.",
+            "thinking": "Single pass — I walk all 3 flows myself, sequentially, against the env run_validation left UP. No workers/team (v3 is single-pass; those tools aren't on my surface). Each flow is a metadata-tagged multi-step browser sequence ending in browser_console + browser_network_errors.",
             "actions": [
-                "# team mode: 3 ui_flow workers in parallel",
-                "parallel_execute(workers=[",
-                "  {'agent_id':'tester_register','prompt':'Walk register_to_first_post: navigate /, click Register, fill form, submit, expect redirect to /, fill compose, submit, assert post in feed. browser_console + browser_network_errors at end. Then registryhub_record_contract_test or just record via metadata={check:ui_flow, flow:register_to_first_post}.'},",
-                "  {'agent_id':'tester_edit','prompt':'Walk edit_post: login as alice, navigate to her post, click edit, change body, save, assert updated body persists on reload. Same end-of-flow assertions.'},",
-                "  {'agent_id':'tester_delete','prompt':'Walk delete_post: login, click delete on a post, confirm, assert removed from feed.'}",
-                "])",
-                "# integrate worker results, run remaining checks (docker / api_smoke)",
+                "run_validation()  # api_smoke + my registered business chains; env left UP",
+                "# ui_flow #1 — register_to_first_post:",
+                "browser_navigate(url='http://localhost:3000/'); browser_click(selector=\"a[href='/register']\"); browser_fill(...); browser_click(selector=\"button[type='submit']\"); browser_navigate(url='http://localhost:3000/compose'); browser_fill(...); browser_click(selector=\"button[type='submit']\")  # assert post in feed; metadata={'check':'ui_flow','flow':'register_to_first_post'}",
+                "browser_console(); browser_network_errors()  # zero unexpected errors => PASS",
+                "# ui_flow #2 — edit_post: login as alice, open her post, edit body, save, reload, assert updated body persists; then browser_console + browser_network_errors.",
+                "# ui_flow #3 — delete_post: login, delete a post, confirm, assert removed from feed; then browser_console + browser_network_errors.",
                 "send_message(to_agent='orchestrator', content='Validation summary: api 6/6 PASS, ui_smoke 4/4 PASS, ui_flow 3/3 PASS. No bugs.', msg_type='update')",
                 "finish(notify=['orchestrator'])"
             ],
@@ -482,7 +461,7 @@ FINAL PROTOCOL (this overrides anything above if in doubt): declare your 'verifi
    `kickoff_revision_request` event. UNLIKE the round-1
    `kickoff_response_prompt` (which authored predicates blind — with at
    most a single optional peek at frontend's draft), the revision pass
-   has FULL VISIBILITY into every prior decision on the meeting page:
+   has FULL VISIBILITY into every prior decision on the meeting document:
    the facilitator_note, backend's KickoffEndpoint set + data_model +
    auth, and frontend's union shape (ui_pages + auth +
    reference_image_manifest + feature_inventory + done_def + screens).
@@ -547,7 +526,7 @@ The facilitator flagged these open questions for the meeting. They are NOT all y
 Unlike round 1, you can now see EVERY prior decision — the facilitator_note above AND backend's full KickoffEndpoint + data_model + tables AND frontend's ui_pages/ui_components. Use that visibility to align each predicate to the REAL contract (endpoints/tables/pages); you still name the flow ids yourself:
 
 ```python
-meeting = workhub_get_document(page_id="{{ meeting_id }}")
+meeting = workhub_get_document(document_id="{{ meeting_id }}")
 decisions = (meeting.get("metadata") or {}).get("decisions") or []
 
 # Pull backend's section so each api_smoke predicate references a real
@@ -694,7 +673,7 @@ START NOW with Step 1.
 **Each step:** `{action, method, path, body, expect:[codes], save:{var:"dot.path"}, auth:var}` — `${rand}` mints a unique value, `${var}` reuses a saved one. Every step must hit a REGISTERED endpoint (unregistered → rejected with the reason).
 
 **Go DEEP — assert business INVARIANTS, not just round-trips.** A chain that only does create→read-back is barely deeper than api_smoke. A real chain proves the RULES the product must obey. Copy the SHAPE of these generic patterns, never the content (derive the real flows + entities from THIS app's contract):
-- **Ownership / isolation** — register user A (save tokenA) → create a private resource as A (save id) → register user B (save tokenB) → GET/PUT/DELETE that id as B → expect 403/404 (B must NOT reach A's data).
+- **Ownership / isolation** — register user A (save tokenA) → create a private resource **with `auth:tokenA`** (save id) → register user B (save tokenB) → GET/PUT/DELETE that id **with `auth:tokenB`** → expect 403/404 (B must NOT reach A's data). ⚠ THE ACTOR OF A STEP IS SET BY ITS `auth:<tokenvar>` — and ONLY that. A step with NO `auth` runs as the LAST-saved token, so an isolation step that omits `auth:tokenB` actually runs as B-the-creator (or whoever registered last) and reads its OWN row → 200, making the test a FALSE result. So a multi-actor chain MUST set `auth:tokenA` on the owner's steps AND `auth:tokenB` on the other user's steps — never rely on the default.
 - **State-transition correctness** — create a resource → act on it (publish / like / approve) → GET it → expect the state or counter actually changed; repeat the act → expect idempotency or the correct rejection (e.g. cannot double-act).
 - **Relationship effects** — A follows/links B → B produces something → GET A's derived view (feed / list) → expect B's item PRESENT (and a non-related user's item ABSENT).
 - **Auth round-trip** — register/login first (save token); then a protected step with NO token → expect 401.
@@ -732,21 +711,21 @@ Source of critical flows (priority):
 2. Fallback: every `pages[]` entry where `critical: true`. The page name becomes the flow name.
 3. If no critical_flows AND no critical:true pages, this gate stays silent — but for non-trivial apps, push back to Frontend / Orchestrator asking for explicit critical_flows.
 
-For each required flow:
+For each required flow, YOU walk it yourself in this single pass (v3 is single-pass — there is no team/worker spawning on your surface; do the flow inline):
 
 ```python
-define_team_agent(
-    team_id, agent_id="tester_register",
-    config_profile="verifier",
-    prompt=(
-        "Walk register_to_first_post: open /register, fill email/password, submit, "
-        "expect redirect to /, then compose+submit a post, then assert it shows in the feed. "
-        "Use browser_navigate / browser_fill / browser_click + browser_screenshot at every step. "
-        "End by calling browser_console and browser_network_errors. "
-        "Record via metadata={'check':'ui_flow','flow':'register_to_first_post'} — "
-        "ui_smoke does NOT satisfy this gate."
-    )
-)
+# Walk register_to_first_post yourself, step by step, against the running env:
+browser_navigate(url="http://localhost:3000/register")
+browser_fill(selector="input[name='email']", value="newuser@example.com")
+browser_fill(selector="input[name='password']", value="testpass123")
+browser_click(selector="button[type='submit']")        # expect redirect to /
+browser_navigate(url="http://localhost:3000/compose")
+browser_fill(selector="textarea[name='body']", value="My first post")
+browser_click(selector="button[type='submit']")        # assert the post shows in the feed
+browser_screenshot(filename="screenshots/flow_register.png")
+# END OF FLOW — catch silent failures, then the record carries the ui_flow metadata:
+browser_console(); browser_network_errors()
+# metadata={'check':'ui_flow','flow':'register_to_first_post'} — ui_smoke does NOT satisfy this gate.
 ```
 
 **Hard contract**: each flow's record metadata MUST be exactly `{"check": "ui_flow", "flow": "<flow_name>"}` so the delivery gate matches it back to the frontend's ui_pages (from the kickoff section).
@@ -924,24 +903,22 @@ Validate this run for release readiness.
 - Frontend: http://localhost:{{ ui_port }}
 - Backend API: http://localhost:{{ api_port }}
 
-**Your single pass** (no polling, no wait):
+**Your single pass** (no polling, no wait). run_validation IS the api_smoke — do NOT hand-orchestrate docker_up + per-endpoint test_api:
 
 1. `check_inbox(limit=20)` — confirm task_ready.
 2. `workhub_list_tasks(assignee="verifier", status="pending")` to enumerate your assigned validation tasks (validate_api_smoke / validate_ui_smoke / validate_ui_flow); for each: `workhub_task(action="claim", task_id=...)`.
-3. `registryhub_list_endpoints(status='implemented')` — confirms backend has shipped. If empty: send_message orchestrator + finish.
-4. `registryhub_list_tables(status='implemented')` — confirms DB ready.
-5. `registryhub_list_ui_pages()` — read the frontend's ui_pages (from the kickoff section) — drives ui_smoke + ui_flow targets.
-6. `docker_up(build=True)` + `docker_status()` — first-time validation needs images built; orphan containers from earlier runs are removed automatically. Must succeed before any API/UI tests.
-7. For EACH endpoint: `test_api(...)` + `registryhub_record_contract_test(...)`; complete the matching `validate.api_smoke.*` task via `workhub_task(action="complete", task_id=...)`.
-8. For EACH UI page: `browser_navigate(...)` + `browser_screenshot(...)` (ui_smoke); complete the matching `validate.ui_smoke.*` task.
-9. For EACH critical_flows entry: full multi-step browser sequence + `browser_console` + `browser_network_errors`, recorded with `metadata={'check':'ui_flow','flow':'<name>'}`; complete the matching `validate.ui_flow.*` task.
-10. For EACH failed check: `bug_create(...)`. Don't direct-route bugs; bug_create publishes to EventHub and Debugger owns assignment.
-11. `send_message(to_agent='orchestrator', content='<validation summary>', msg_type='update')`.
-12. `broadcast(message='Verification complete.')`.
-13. `finish(notify=['orchestrator'])`. Release/delivery is the orchestrator's gate over your evidence — you do NOT produce a release_readiness record.
+3. `registryhub_list_endpoints(status='implemented')` — confirms backend has shipped. If empty: send_message orchestrator + finish. `registryhub_list_tables(status='implemented')` (DB) + `registryhub_list_ui_pages()` (frontend's ui_pages + critical_flows — drives the ui_smoke/ui_flow targets).
+4. **STEP 0 — VERIFICATION CHAINS (FIRST; run_validation is tool-blocked until ≥1 chain is registered):** author + register one business-flow chain per declared critical flow, each asserting business INVARIANTS (ownership/isolation, state-transition correctness, relationship effects), via `registryhub_register_verification_chain(...)` — ONE call per chain. This is a HARD delivery requirement: the synthesized default does NOT count and api_smoke alone is NOT sufficient; a missing/failing/under-covering chain blocks delivery and routes back to you.
+5. **STEP 1 — `run_validation()`:** ONE deterministic call running the WHOLE api_smoke dimension (clean docker boot → backend /health → embedded-AS register → every business endpoint reachable → auth-enforced 401 → business_chain EXECUTES your registered chains) and emitting per-endpoint `registryhub_record_contract_test` records automatically (you do NOT hand-record the api_smoke dimension). Returns `{passed, summary, checks, endpoints_tested, contract_tests_recorded}` and leaves the env UP for the UI checks. If it returns `not_ready` (no business endpoints yet) → impl lanes haven't merged: do NOT bug_create, `finish(notify=[])` (the trigger re-wakes you). Complete the matching `validate.api_smoke.*` task. test_api is DIAGNOSTIC only — probe a SPECIFIC endpoint run_validation flagged unreachable, then `registryhub_record_contract_test(...)` for THAT hand-diagnosed endpoint only.
+6. **STEP 2 — browser UI checks** against the env run_validation left UP. For EACH UI page: `browser_navigate(...)` + `browser_screenshot(...)` (ui_smoke); complete the matching `validate.ui_smoke.*` task. For EACH critical_flows entry: full multi-step browser sequence + `browser_console` + `browser_network_errors`, recorded with `metadata={'check':'ui_flow','flow':'<name>'}`; complete the matching `validate.ui_flow.*` task. (Release/delivery is the orchestrator's gate over your evidence — do NOT call deliverability_check.)
+7. **STEP 3 — for EACH failed check: `bug_create(...)`.** Don't direct-route bugs; bug_create publishes to EventHub and Debugger owns assignment.
+8. `send_message(to_agent='orchestrator', content='<validation summary>', msg_type='update')`.
+9. `broadcast(message='Verification complete.')`.
+10. `finish(notify=['orchestrator'])`. Release/delivery is the orchestrator's gate over your evidence — you do NOT produce a release_readiness record.
 
 **Critical**
-- ui_smoke ≠ ui_flow. ui_smoke is `navigate+screenshot`. ui_flow is multi-step journey with assertions + `metadata={'check':'ui_flow','flow':'<name>'}`.
+- run_validation IS the api_smoke (one call: docker boot + health + every endpoint + auth + your business chains, auto-records the contract tests). Do NOT hand-orchestrate `docker_up` + a per-endpoint `test_api` loop — `docker_up`/`test_api` are DIAGNOSTIC-only now.
+- ui_smoke ≠ ui_flow. ui_smoke is `navigate+screenshot`. ui_flow is multi-step journey with assertions + `metadata={'check':'ui_flow','flow':'<name>'}` + `browser_console`/`browser_network_errors` (a flow with red console/failed XHR is FAILED regardless of screenshot).
 - bug_create is the only remediation channel; direct send_message to the owning lane bypasses Debugger triage.
 - Read other agents' code via `codehub_get_file_content(pr_id=..., file_path=...)`, NOT bare `read()`.
 

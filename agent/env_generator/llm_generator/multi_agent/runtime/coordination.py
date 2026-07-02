@@ -15,6 +15,7 @@ the orchestrator shim constructs a fresh ``Coordination(self)`` per call.
 from __future__ import annotations
 
 import os
+import time
 from typing import Any, List
 
 
@@ -136,12 +137,45 @@ class Coordination:
                 continue
             status = all_statuses.get(lane_id) or {}
             last_at = status.get("_event_created_at", 0.0)
-            if last_at and last_at > kickoff_finalized_at:
-                # Lane has emitted an agent_status post-finalize, so
-                # it is provably alive. Reset its nudge counter so the
-                # next stall episode starts clean.
+            # FRESHNESS, not a one-time liveness anchor (V30 dead-turn blind spot).
+            # The old test `last_at > kickoff_finalized_at` is a FIXED past anchor: the
+            # moment a lane emits ONE agent_status after finalize it is classified alive
+            # for the WHOLE rest of the run, even if its turn then died mid-step. V30: the
+            # frontend wedged in a re-entrant agentic loop and went silent for 13min, yet
+            # the watchdog nudged ZERO lanes because every lane had a stale-but-present
+            # heartbeat. A lane is "provably alive" only if it emitted a heartbeat
+            # RECENTLY — otherwise fall through to the work-check + nudge below so a
+            # dead-mid-turn lane holding in_progress work gets re-driven. The nudge counter
+            # resets only while the lane stays fresh (each new stall episode starts clean).
+            _now = time.time()
+            _stall = float(os.environ.get("ENVGEN_LANE_STALL_SEC", "150"))
+            if last_at and last_at > kickoff_finalized_at and (_now - last_at) < _stall:
                 self._orch._silent_lane_nudges.pop(lane_id, None)
                 continue
+
+            # Don't nudge a lane that has NO actionable work. The nudge orders the lane to
+            # "pick up your assigned kickoff task_tree entries" — but idle-BY-DESIGN lanes
+            # (knowledge = observer; debugger before any bug_found) have ZERO assigned
+            # tasks, so the instruction is provably impossible to act on and just burns a
+            # full LLM step + floods the inbox (audit #8 / run v12: knowledge 133s, debugger
+            # 3513s on an impossible instruction; kickoff_driver already models knowledge as
+            # an observer + impl_lanes={backend,frontend}). Only nudge a silent lane that
+            # actually holds claimable / in-progress work. Best-effort: never let the
+            # work-check break escalation.
+            try:
+                _wh = self._orch.hubs.workhub
+                _has_work = bool(
+                    (_wh.list_tasks(assignee=lane_id, status="pending") or [])
+                    or (_wh.list_tasks(assignee=lane_id, status="in_progress") or [])
+                )
+                if not _has_work:
+                    self._orch._logger.debug(
+                        "Stall escalation: lane %s has no assigned pending/in_progress "
+                        "tasks — idle by design; not nudging.", lane_id,
+                    )
+                    continue
+            except Exception:
+                pass
 
             prior_nudges = self._orch._silent_lane_nudges.get(lane_id, 0)
             # FIX #41 (speed): cap stall nudges per lane per stall-episode. A lane
@@ -164,15 +198,26 @@ class Coordination:
                         lane_id, prior_nudges,
                     )
                 continue
+            _stale = bool(last_at and last_at > kickoff_finalized_at)
+            self._orch._logger.warning(
+                "Stall escalation: re-driving %s lane %s (last activity %s, holds work).",
+                "STALE-mid-turn" if _stale else "never-woke", lane_id,
+                (f"{int(_now - last_at)}s ago" if last_at else "none since finalize"),
+            )
             message = _create_message(
                 source_agent_id="orchestrator",
                 target_agent_id=lane_id,
                 content=(
-                    "Stall escalation: kickoff_complete fired but you "
-                    "have produced no agent_status events since finalize. "
-                    "Pick up your assigned kickoff task_tree entries from "
-                    "WorkHub and start executing. Do not ack and wait — "
-                    "run your one-pass step_contract NOW."
+                    ("Stall escalation: you went SILENT mid-task — last activity "
+                     f"{int(_now - last_at)}s ago, but you still hold pending/in-progress "
+                     "work. Resume it NOW: continue (or re-claim) your assigned WorkHub "
+                     "task and run your step_contract. Do not ack and wait.")
+                    if _stale else
+                    ("Stall escalation: kickoff_complete fired but you "
+                     "have produced no agent_status events since finalize. "
+                     "Pick up your assigned kickoff task_tree entries from "
+                     "WorkHub and start executing. Do not ack and wait — "
+                     "run your one-pass step_contract NOW.")
                 ),
                 msg_type="task_ready",
                 priority="urgent",

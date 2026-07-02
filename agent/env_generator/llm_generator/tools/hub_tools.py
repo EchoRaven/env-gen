@@ -594,7 +594,7 @@ class CodeHubCreateReleaseTool(HubTool):
         return ToolResult(data=self._hubs.codehub.create_release(tag, source=source, notes=notes, agent=self._agent_id))
 
 
-class WorkHubCreatePageTool(HubTool):
+class WorkHubCreateDocumentTool(HubTool):
     NAME = "workhub_create_document"
     DESCRIPTION = (
         "Create a Notion-like WorkHub coordination document (kickoff/meeting/"
@@ -604,7 +604,7 @@ class WorkHubCreatePageTool(HubTool):
     PARAMETERS = {"type": "object", "properties": {"title": {"type": "string"}, "parent": {"type": "string"}, "attendees": {"type": "array", "items": {"type": "string"}}}, "required": ["title"]}
 
     async def _run(self, title: str, parent: str = None, attendees: list = None) -> ToolResult:
-        return ToolResult(data=self._hubs.workhub.create_page(title, parent=parent, attendees=attendees or [], agent=self._agent_id))
+        return ToolResult(data=self._hubs.workhub.create_document(title, parent=parent, attendees=attendees or [], agent=self._agent_id))
 
 
 class WorkHubUpdatePageTool(HubTool):
@@ -964,25 +964,25 @@ class WorkhubListBlockedTool(HubTool):
         return ToolResult(data={"blocked": blocked})
 
 
-class WorkHubGetPageTool(HubTool):
+class WorkHubGetDocumentTool(HubTool):
     NAME = "workhub_get_document"
     DESCRIPTION = "Get a WorkHub coordination document (kickoff/meeting/retro/project) by id, optionally including its blocks."
-    PARAMETERS = {"type": "object", "properties": {"page_id": {"type": "string"}, "with_blocks": {"type": "boolean"}}, "required": ["page_id"]}
+    PARAMETERS = {"type": "object", "properties": {"document_id": {"type": "string"}, "with_blocks": {"type": "boolean"}}, "required": ["document_id"]}
 
-    async def _run(self, page_id: str, with_blocks: bool = True) -> ToolResult:
-        page = self._hubs.workhub.get_page(page_id, with_blocks=with_blocks)
-        if page is None:
-            return ToolResult(success=False, error_message=f"Page not found: {page_id}")
-        return ToolResult(data=page)
+    async def _run(self, document_id: str, with_blocks: bool = True) -> ToolResult:
+        document = self._hubs.workhub.get_document(document_id, with_blocks=with_blocks)
+        if document is None:
+            return ToolResult(success=False, error_message=f"Document not found: {document_id}")
+        return ToolResult(data=document)
 
 
-class WorkHubListPagesTool(HubTool):
+class WorkHubListDocumentsTool(HubTool):
     NAME = "workhub_list_documents"
     DESCRIPTION = "List WorkHub coordination documents, optionally filtered by kind or status."
     PARAMETERS = {"type": "object", "properties": {"kind": {"type": "string"}, "status": {"type": "string"}}}
 
     async def _run(self, kind: str = None, status: str = None) -> ToolResult:
-        return ToolResult(data={"pages": self._hubs.workhub.list_pages(kind=kind, status=status)})
+        return ToolResult(data={"documents": self._hubs.workhub.list_documents(kind=kind, status=status)})
 
 
 class WorkHubLinkTaskToPrTool(HubTool):
@@ -1012,32 +1012,32 @@ class WorkHubUpdateBlockTool(HubTool):
         return ToolResult(data=self._hubs.workhub.update_block(block_id, content, agent=self._agent_id))
 
 
-class WorkHubArchivePageTool(HubTool):
-    NAME = "workhub_archive_page"
-    DESCRIPTION = "Set a WorkHub page status to 'archived'."
-    PARAMETERS = {"type": "object", "properties": {"page_id": {"type": "string"}}, "required": ["page_id"]}
+class WorkHubArchiveDocumentTool(HubTool):
+    NAME = "workhub_archive_document"
+    DESCRIPTION = "Set a WorkHub document status to 'archived'."
+    PARAMETERS = {"type": "object", "properties": {"document_id": {"type": "string"}}, "required": ["document_id"]}
 
-    async def _run(self, page_id: str) -> ToolResult:
-        return ToolResult(data=self._hubs.workhub.archive_page(page_id, agent=self._agent_id))
+    async def _run(self, document_id: str) -> ToolResult:
+        return ToolResult(data=self._hubs.workhub.archive_document(document_id, agent=self._agent_id))
 
 
 class WorkHubRecordDecisionTool(HubTool):
     NAME = "workhub_record_decision"
-    DESCRIPTION = "Append a decision block to a WorkHub page and record it in the decisions store."
+    DESCRIPTION = "Append a decision block to a WorkHub document and record it in the decisions store."
     PARAMETERS = {
         "type": "object",
         "properties": {
-            "page_id": {"type": "string"},
+            "document_id": {"type": "string"},
             "title": {"type": "string"},
             "options": {"type": "array", "items": {"type": "string"}},
             "chosen": {"type": "string"},
             "reason": {"type": "string"},
         },
-        "required": ["page_id", "title", "options", "chosen", "reason"],
+        "required": ["document_id", "title", "options", "chosen", "reason"],
     }
 
-    async def _run(self, page_id: str, title: str, options: list, chosen: str, reason: str) -> ToolResult:
-        return ToolResult(data=self._hubs.workhub.record_decision(page_id, title, options, chosen, reason, agent=self._agent_id))
+    async def _run(self, document_id: str, title: str, options: list, chosen: str, reason: str) -> ToolResult:
+        return ToolResult(data=self._hubs.workhub.record_decision(document_id, title, options, chosen, reason, agent=self._agent_id))
 
 
 class WorkHubCommentsForTool(HubTool):
@@ -2209,10 +2209,10 @@ class KickoffDeclareUiPageTool(_KickoffDeclareBase):
                    **_extra: Any) -> ToolResult:
         page = {"id": id, "route": route}
         if purpose: page["purpose"] = purpose
-        if components: page["components"] = [str(c) for c in components][:15]
-        if must_have: page["must_have"] = [str(m) for m in must_have][:15]
+        if components: page["components"] = [str(c) for c in components][:60]
+        if must_have: page["must_have"] = [str(m) for m in must_have][:60]
         if component: page["component"] = str(component)
-        if apis_used: page["apis_used"] = [str(a) for a in apis_used][:20]
+        if apis_used: page["apis_used"] = [str(a) for a in apis_used][:60]
         return self._declare(meeting_id, {"ui_pages": [page]}, milestone_index)
 
 
@@ -2250,8 +2250,8 @@ class KickoffDeclareUiComponentTool(_KickoffDeclareBase):
         if component: comp["component"] = str(component)
         if kind: comp["kind"] = str(kind)
         if purpose: comp["purpose"] = purpose
-        if apis_used: comp["apis_used"] = [str(a) for a in apis_used][:20]
-        if children: comp["children"] = [str(c) for c in children][:15]
+        if apis_used: comp["apis_used"] = [str(a) for a in apis_used][:60]
+        if children: comp["children"] = [str(c) for c in children][:60]
         return self._declare(meeting_id, {"ui_components": [comp]}, milestone_index)
 
 
@@ -2275,7 +2275,7 @@ class KickoffDeclareUserFlowTool(_KickoffDeclareBase):
                    milestone_index: Optional[int] = None,
                    **_extra: Any) -> ToolResult:
         flow = {"id": id, "description": description}
-        if steps: flow["steps"] = [str(x) for x in steps][:15]
+        if steps: flow["steps"] = [str(x) for x in steps][:60]
         if critical is not None: flow["critical"] = bool(critical)
         return self._declare(meeting_id, {"user_flows": [flow]}, milestone_index)
 
@@ -2340,16 +2340,25 @@ class KickoffDeclareTableTool(_KickoffDeclareBase):
     DESCRIPTION = (
         "Declare ONE data_model table of your kickoff backend section (call "
         "once per table — declarations merge). columns: 'name:type' strings, "
-        "optionally 'name:type:pk' or 'name:type:fk=users.id'.")
+        "optionally 'name:type:pk' or 'name:type:fk=users.id'. Set "
+        "owner_scoped_reads=true for a PER-USER-PRIVATE table (each user sees "
+        "only their OWN rows — notes/email/todos/drafts): the framework scopes "
+        "every read to the owner by construction, exactly like writes.")
     PARAMETERS = {"type": "object", "properties": {
         "meeting_id": {"type": "string"},
         "name": {"type": "string", "description": "snake_case table name"},
         "columns": {"type": "array", "items": {"type": "string"},
                     "description": "e.g. ['id:text:pk', 'caption:text', 'author_id:int:fk=users.id']"},
+        "owner_scoped_reads": {"type": "boolean", "description":
+            "true ⇒ per-user-private: reads (list/get/search) are owner-scoped "
+            "(each user sees only their own rows). Default false = public reads "
+            "(anyone may read any row, e.g. a social feed). Needs an owner FK to "
+            "users (e.g. user_id/author_id)."},
         "milestone_index": {"type": "integer", "minimum": 0},
     }, "required": ["meeting_id", "name", "columns"]}
 
     async def _run(self, meeting_id: str, name: str, columns: list,
+                   owner_scoped_reads: Optional[bool] = None,
                    milestone_index: Optional[int] = None,
                    **_extra: Any) -> ToolResult:
         cols = []
@@ -2370,6 +2379,8 @@ class KickoffDeclareTableTool(_KickoffDeclareBase):
                     col["nullable"] = True
             cols.append(col)
         table = {"name": name, "columns": cols}
+        if owner_scoped_reads is not None:
+            table["owner_scoped_reads"] = bool(owner_scoped_reads)
         return self._declare(
             meeting_id, {"data_model": {"tables": [table]}}, milestone_index)
 
@@ -2412,7 +2423,7 @@ HUB_TOOL_CLASSES = [
     CodeHubResolveConflictTool,
     CodeHubResolveMergeConflictTool,
     CodeHubRevertCommitTool,
-    WorkHubCreatePageTool,
+    WorkHubCreateDocumentTool,
     WorkHubUpdatePageTool,
     WorkHubTaskTool,
     WorkHubFailTaskTool,
@@ -2423,12 +2434,12 @@ HUB_TOOL_CLASSES = [
     WorkhubSetPriorityTool,
     WorkhubListReadyTool,
     WorkhubListBlockedTool,
-    WorkHubGetPageTool,
-    WorkHubListPagesTool,
+    WorkHubGetDocumentTool,
+    WorkHubListDocumentsTool,
     WorkHubLinkTaskToPrTool,
     WorkHubLinkTaskToApisTool,
     WorkHubUpdateBlockTool,
-    WorkHubArchivePageTool,
+    WorkHubArchiveDocumentTool,
     WorkHubRecordDecisionTool,
     WorkHubCommentsForTool,
     WorkhubCreateMeetingTool,

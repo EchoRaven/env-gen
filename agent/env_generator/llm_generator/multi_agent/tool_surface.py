@@ -9,10 +9,13 @@ This module centralizes:
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from .tool_bundles import TOOL_BUNDLE_REQUIREMENTS
+
+logger = logging.getLogger(__name__)
 
 
 KNOWN_TOOL_CATEGORIES: Set[str] = {
@@ -61,6 +64,7 @@ KNOWN_TOOL_CATEGORIES: Set[str] = {
     "run",
     "design",
     "bug",
+    "milestone",  # orchestrator-only milestone roadmap tools (milestone_tools bundle)
 }
 
 
@@ -229,6 +233,14 @@ def build_profile_tool_audit(profiles: Dict[str, Dict[str, Any]]) -> Dict[str, A
                 tool_bundle_ids=bundles,
             ),
         }
+    # STARTUP orphan-class guard. ``build_profile_tool_audit`` is the all-profiles
+    # call ``load_config`` already makes, so running the orphan validator here gives
+    # the "called from load_config" coverage. Guarded + warning-only — never blocks
+    # the audit build (and therefore never breaks ``load_config``).
+    try:
+        validate_orphaned_tool_offerings(profiles)
+    except Exception as exc:  # pragma: no cover - defensive; validator is self-guarded
+        logger.debug("orphan validator: top-level guard tripped, skipping (%s)", exc)
     return report
 
 
@@ -318,3 +330,160 @@ def _get_tool_description(tool: Any) -> str:
     except Exception:
         pass
     return ""
+
+
+# ==================== ORPHAN-CLASS STARTUP VALIDATOR ====================
+#
+# A tool reaches an LLM's per-step menu only when one of two things is true at
+# action time (step_pipeline/tooling.py:_stage_tool_names): either its CATEGORY
+# is a preferred category for the active stage (ACTION_STAGE_CATEGORY_HINTS, which
+# gives the ranker a category-bonus) OR its NAME is force-offered for the stage
+# (ACTION_STAGE_ALWAYS_INCLUDE, which bypasses the ranker entirely). A tool that a
+# profile is GRANTED (its assembled pool instantiates it) but whose category is in
+# NO hint stage AND whose name is in NO always-include set is in the "orphan" class:
+# it sits in the registered tool map, the prompt may mandate it, yet the model is
+# never offered it — so a call for it returns MALFORMED_FUNCTION_CALL and the lane
+# wedges (the milestone_tools bug, V25; the orchestrator audit/gate bug — coverage_
+# audit_check / seed_audit_check / deliverability_summary / run_list / run_get).
+# Both classes registered cleanly and passed every other validator, so they were
+# only ever caught by reading a wedged run. This validator catches the class at
+# STARTUP. It must NEVER raise (a noisy config must still boot), so every step is
+# guarded and failures degrade to a debug line, not an exception.
+
+
+def detect_orphaned_tool_offerings(
+    profile_id: str,
+    *,
+    granted_tool_categories: Dict[str, Set[str]],
+    hint_categories: Set[str],
+    always_include_names: Set[str],
+) -> List[str]:
+    """Pure detector for the orphan class. Returns the sorted names of granted
+    tools whose category is in NO ``ACTION_STAGE_CATEGORY_HINTS`` stage AND whose
+    name is in NO ``ACTION_STAGE_ALWAYS_INCLUDE`` set — i.e. tools that can never
+    be offered to the LLM in any action stage. Empty list when the surface is
+    honest."""
+    orphans: List[str] = []
+    for name, categories in (granted_tool_categories or {}).items():
+        if not name:
+            continue
+        if name in (always_include_names or set()):
+            continue  # force-offered by name — reachable
+        if set(categories or set()) & (hint_categories or set()):
+            continue  # at least one category is a stage hint — rankable
+        orphans.append(name)
+    return sorted(orphans)
+
+
+def _orphan_reference_sets() -> Tuple[Set[str], Set[str]]:
+    """Collect the union of all stage hint CATEGORIES and all force-offered NAMES
+    from ``EnvGenAgent``. Imported lazily so this module stays importable without
+    the agent runtime (and so a base.py import failure degrades to "no validation"
+    rather than breaking ``load_config``)."""
+    from .agents.base import EnvGenAgent
+
+    hint_categories: Set[str] = set()
+    for stage_categories in (EnvGenAgent.ACTION_STAGE_CATEGORY_HINTS or {}).values():
+        hint_categories |= set(stage_categories or set())
+    always_include_names: Set[str] = set()
+    for stage_names in (EnvGenAgent.ACTION_STAGE_ALWAYS_INCLUDE or {}).values():
+        always_include_names |= set(stage_names or set())
+    return hint_categories, always_include_names
+
+
+def _assemble_granted_tool_categories(profile_id: str, profile_cfg: Dict[str, Any]) -> Dict[str, Set[str]]:
+    """Dry-assemble a profile's granted tool pool (the SAME bundle pipeline the
+    runtime uses — tools.py:_assemble_agent_tool_pool) against a minimal stub
+    workspace, and return ``{tool_name: {categories}}`` read off each tool's
+    ``_tool_surface_categories``. Bundles that need a live workspace/hub/docker/
+    browser are skipped (their factories raise on the stub) — conservative: a
+    skipped bundle simply isn't audited rather than producing a false orphan.
+    Fully guarded; returns ``{}`` on any failure."""
+    try:
+        from .tool_runtime import ToolAssemblyContext, ToolPoolBuilder
+        from .tool_bundles import apply_tool_bundles
+    except Exception as exc:  # pragma: no cover - import-environment dependent
+        logger.debug("orphan validator: tool assembly imports unavailable (%s)", exc)
+        return {}
+
+    class _StubWorkspace:
+        # The few attributes bundle factories read off a workspace; a stub keeps
+        # the audit dependency-free (no real project tree needed at config load).
+        base_root = None
+        base_dir = None
+        root = None
+
+    bundle_ids = [str(b) for b in (profile_cfg.get("tool_bundles") or [])]
+    context = ToolAssemblyContext(
+        agent_type=profile_id,
+        workspace=_StubWorkspace(),
+        agent_id=profile_id,
+        tool_bundle_ids=bundle_ids,
+    )
+    builder = ToolPoolBuilder(context)
+    # Apply each bundle independently so one workspace-dependent bundle that can't
+    # assemble against the stub doesn't abort the whole profile's audit.
+    for bundle_id in bundle_ids:
+        try:
+            apply_tool_bundles(builder, context, [bundle_id])
+        except Exception as exc:
+            logger.debug(
+                "orphan validator: profile '%s' bundle '%s' not assembled for audit (%s)",
+                profile_id, bundle_id, exc,
+            )
+
+    name_to_categories: Dict[str, Set[str]] = {}
+    for tool in getattr(builder, "_tools", []) or []:
+        name = getattr(tool, "NAME", "") or ""
+        if not name:
+            continue
+        categories = set(getattr(tool, "_tool_surface_categories", set()) or set())
+        name_to_categories.setdefault(name, set()).update(categories)
+    return name_to_categories
+
+
+def validate_orphaned_tool_offerings(profiles: Dict[str, Dict[str, Any]]) -> None:
+    """STARTUP guard for the orphan class (called from ``load_config``).
+
+    For each profile, dry-assemble its granted pool, then emit a LOUD
+    ``logger.warning`` (one consolidated line per profile) listing every granted
+    tool that is never offerable — category in no stage hint AND name in no
+    always-include set. Never raises: a profile whose pool can't be assembled, or
+    a reference-set import failure, degrades to a debug line so ``load_config``
+    still completes."""
+    try:
+        hint_categories, always_include_names = _orphan_reference_sets()
+    except Exception as exc:
+        logger.debug("orphan validator: could not load reference sets, skipping (%s)", exc)
+        return
+
+    for profile_id, profile_cfg in (profiles or {}).items():
+        try:
+            granted = _assemble_granted_tool_categories(profile_id, profile_cfg or {})
+            if not granted:
+                continue
+            orphans = detect_orphaned_tool_offerings(
+                profile_id,
+                granted_tool_categories=granted,
+                hint_categories=hint_categories,
+                always_include_names=always_include_names,
+            )
+            if orphans:
+                # The AND-heuristic over-reports: the action stage can still OFFER any
+                # granted tool via token-overlap ranking, so "not pinned/hinted" does
+                # NOT mean "never offerable". Emit ONE concise INFO summary per profile
+                # (count + up to 5 example names) instead of one WARN per orphan, so
+                # startup logs aren't flooded with false positives. Detection is
+                # unchanged; only the logging is downgraded. Never raises.
+                examples = ", ".join(orphans[:5])
+                more = "..." if len(orphans) > 5 else ""
+                logger.info(
+                    "tool-surface: profile '%s' has %d tool(s) not pinned/hinted to a "
+                    "stage (offerable via ranking): %s%s",
+                    profile_id, len(orphans), examples, more,
+                )
+        except Exception as exc:
+            logger.debug(
+                "orphan validator: profile '%s' audit failed, skipping (%s)",
+                profile_id, exc,
+            )

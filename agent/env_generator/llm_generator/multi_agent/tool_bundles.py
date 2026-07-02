@@ -20,6 +20,7 @@ from tools.docker_tools import DockerRestartTool, create_docker_tools
 from tools.reasoning_tools import PlanTool, VerifyPlanTool
 from tools.file_tools import CopyReferenceImageTool, ListReferenceImagesTool
 from tools.image_search_tools import create_image_search_tools
+from tools.material_prep_tools import create_material_prep_tools, create_material_prep_vision_tools
 from tools.knowledge_tools import create_knowledge_tools
 from tools.structured_knowledge_tools import create_structured_knowledge_tools
 from tools.retro_tools import create_retro_tools
@@ -31,6 +32,7 @@ from tools.deliverability_tools import create_deliverability_tools
 from tools.mcp_registry_tools import create_mcp_registry_tools
 import time as _time
 from tools.bug_tools import create_bug_tools
+from tools.milestone_tools import create_milestone_tools
 from tools.design_tools import create_design_tools
 from tools.run_tools import create_run_tools
 from tools.hub_tools import create_hub_tools
@@ -127,6 +129,11 @@ def _bundle_reference_images(builder: ToolPoolBuilder, context: ToolAssemblyCont
     builder.add([
         ListReferenceImagesTool(workspace=context.workspace),
         CopyReferenceImageTool(workspace=context.workspace),
+        # MATERIAL-PREP (USER directive 2026-06-29): measure colors / crop components off a
+        # reference at runtime (PIPELINE.md §3 "don't guess colors"). They operate on the same
+        # reference images this bundle exposes, so they ride the "reference" category the
+        # frontend lane already holds — no separate grant needed.
+        *create_material_prep_tools(workspace=context.workspace),
     ], "reference")
 
 
@@ -142,6 +149,11 @@ def _bundle_browser_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext
 def _bundle_vision_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext) -> None:
     if context.include_vision and context.llm_client:
         builder.add(create_vision_tools(context.llm_client, workspace=context.workspace), "vision")
+        # MATERIAL-PREP decompose_reference (Brick 2): a vision call that names the components +
+        # the framework measures their colors → a per-component build spec. Needs the LLM, so it
+        # rides the vision bundle (gated "vision" — frontend holds it).
+        builder.add(create_material_prep_vision_tools(
+            workspace=context.workspace, llm_client=context.llm_client), "vision")
 
 
 def _bundle_verification_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext) -> None:
@@ -332,6 +344,12 @@ def _bundle_analysis_tools(builder: ToolPoolBuilder, context: ToolAssemblyContex
     builder.add(create_analysis_tools(workspace=context.workspace), "analysis")
 
 
+def _bundle_material_prep_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext) -> None:
+    # MEASURE colors / CROP components off the reference screenshots (PIPELINE.md §3); granted
+    # under the "reference" category the frontend lane already holds (it reads references).
+    builder.add(create_material_prep_tools(workspace=context.workspace), "reference")
+
+
 def _bundle_web_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext) -> None:
     builder.add(create_web_tools(), "web")
 
@@ -418,7 +436,7 @@ def _bundle_workhub_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext
             "workhub_link_task_to_pr",
             "workhub_link_task_to_apis",
             "workhub_update_block",
-            "workhub_archive_page",
+            "workhub_archive_document",
             "workhub_record_decision",
             "workhub_comments_for",
             "workhub_invite_attendee",
@@ -523,6 +541,17 @@ def _bundle_bug_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext) ->
         hub_workspace=context.hub_workspace,
     )
     builder.add(tools, "bug", "hub")
+
+
+def _bundle_milestone_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext) -> None:
+    """Milestone roadmap management (hubs.milestones) — the orchestrator's kickoff
+    surface to revise FUTURE phases (add/update/remove) + set the current phase's
+    detailed brief. Orchestrator-only; delivered milestones are frozen."""
+    tools = create_milestone_tools(
+        agent_id=context.agent_id or context.agent_type,
+        hub_workspace=context.hub_workspace,
+    )
+    builder.add(tools, "milestone", "hub")
 
 
 def _bundle_run_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext) -> None:
@@ -657,6 +686,7 @@ TOOL_BUNDLE_REGISTRY: Dict[str, BundleApplier] = {
     "schemahub_tools": _bundle_schemahub_tools,
     "project_tools": _bundle_project_tools,
     "analysis_tools": _bundle_analysis_tools,
+    "material_prep_tools": _bundle_material_prep_tools,
     "web_tools": _bundle_web_tools,
     "codehub_tools": _bundle_codehub_tools,
     "codehub_admin_tools": _bundle_codehub_admin_tools,
@@ -666,6 +696,7 @@ TOOL_BUNDLE_REGISTRY: Dict[str, BundleApplier] = {
     "verifier_contract_tools": _bundle_verifier_contract_tools,
     "eventhub_tools": _bundle_eventhub_tools,
     "bug_tools": _bundle_bug_tools,
+    "milestone_tools": _bundle_milestone_tools,
     "run_tools": _bundle_run_tools,
     "design_tools": _bundle_design_tools,
     "team_spawn_tools": _bundle_team_spawn,
@@ -717,6 +748,7 @@ TOOL_BUNDLE_REQUIREMENTS: Dict[str, set[str]] = {
     "schemahub_tools": {"registryhub"},
     "project_tools": {"project"},
     "analysis_tools": {"analysis"},
+    "material_prep_tools": {"reference"},
     "web_tools": {"web"},
     "codehub_tools": {"codehub"},
     "codehub_admin_tools": {"codehub"},
@@ -734,6 +766,7 @@ TOOL_BUNDLE_REQUIREMENTS: Dict[str, set[str]] = {
     "verifier_contract_tools": {"registryhub"},
     "eventhub_tools": {"eventhub"},
     "bug_tools": {"bug"},
+    "milestone_tools": {"milestone"},
     "run_tools": {"run"},
     # `design_tools` registers under the "design" tool_category
     # (see _bundle_design_tools above). Post-2026-06-02 kickoff-refactor

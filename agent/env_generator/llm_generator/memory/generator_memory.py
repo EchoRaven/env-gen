@@ -762,7 +762,9 @@ class MemoryBankSync:
     
     def _maybe_sync(self) -> None:
         """Sync if enough time has passed or enough updates accumulated."""
-        time_since_sync = (datetime.now() - self._last_sync).seconds
+        # total_seconds() (not .seconds, which is the 0-86399 intraday component and
+        # resets at midnight — breaking the 30s threshold across a day rollover).
+        time_since_sync = (datetime.now() - self._last_sync).total_seconds()
         total_pending = sum(len(v) for v in self._pending_updates.values())
         
         # Sync every 30 seconds or when 5+ updates pending
@@ -1890,7 +1892,7 @@ class GeneratorMemory(AgentMemory):
     def set_phase(self, phase: str) -> None:
         """Set current phase and log duration of previous."""
         if self._current_phase and self._phase_start_time:
-            duration = (datetime.now() - self._phase_start_time).seconds
+            duration = int((datetime.now() - self._phase_start_time).total_seconds())
             self.add_knowledge(
                 f"Phase '{self._current_phase}' completed in {duration}s",
                 category="progress",
@@ -1952,7 +1954,7 @@ class GeneratorMemory(AgentMemory):
         if self._current_phase:
             duration = 0
             if self._phase_start_time:
-                duration = (datetime.now() - self._phase_start_time).seconds
+                duration = int((datetime.now() - self._phase_start_time).total_seconds())
             lines.append(f"## Current Phase: {self._current_phase} ({duration}s)")
             lines.append("")
         
@@ -1994,7 +1996,7 @@ class GeneratorMemory(AgentMemory):
         lines = ["=== OPERATION STATE ==="]
         
         if self._current_phase:
-            duration = (datetime.now() - self._phase_start_time).seconds if self._phase_start_time else 0
+            duration = int((datetime.now() - self._phase_start_time).total_seconds()) if self._phase_start_time else 0
             lines.append(f"Phase: {self._current_phase} ({duration}s)")
         
         stats = self.get_file_stats()

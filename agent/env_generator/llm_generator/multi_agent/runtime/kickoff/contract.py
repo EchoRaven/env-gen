@@ -57,7 +57,75 @@ __all__ = [
     "normalize_to_registryhub_endpoint",
     "validate_kickoff_endpoint",
     "REQUIRED_ENDPOINT_KEYS",
+    "FIXED_ENDPOINT_KINDS",
+    "is_control_surface_path",
+    "control_surface_kind_for_path",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Shared FIXED (runtime-owned) endpoint-kind surface — the ONE definition.
+# ---------------------------------------------------------------------------
+# The runtime-owned contract surface (registered by the orchestrator, served by
+# the AS / control plane — NOT by lane business code). Every gate that "audits
+# only business endpoints" MUST skip exactly this set, or it false-demotes /
+# re-implements the fixed surface. Historically the definition had DIVERGED
+# across files — ``backend_audit`` carried {auth,oauth,spine,control,health}
+# (no ``infra``) while ``lifecycle`` / ``database_scaffold`` /
+# ``cross_check_suite`` carried {auth,oauth,infra,spine} (no ``control``/
+# ``health``). The control surface registers as ``kind='infra'``
+# (see ``control_plane.CONTROL_SURFACE_ENDPOINTS``), so the ``backend_audit``
+# variant (lacking ``infra``) repeatedly demoted the tenant/health control
+# endpoints to ``regressed`` and hand-reimplemented them.
+#
+# This is now the single source of truth: a UNION covering BOTH naming
+# conventions in use anywhere in the runtime (``infra`` is the kind the control
+# plane actually carries today; ``control``/``control_plane``/``health`` are the
+# forward-looking control-surface tags applied by ``control_surface_kind_for_path``
+# and the reserved-path guard). All gates point here instead of redefining it.
+# ``contract.py`` is a pure, import-safe leaf (no hub/runtime coupling), so every
+# gate can import this without a cycle.
+FIXED_ENDPOINT_KINDS: frozenset = frozenset({
+    "auth", "oauth", "infra", "spine", "control", "control_plane", "health",
+})
+
+
+# Control-surface path classification — the deterministic tenant/health/admin
+# surface the harness drives. Used to AUTO-TAG ``kind='control'`` at registration
+# (part A) so a control endpoint can never be mistaken for a lane business
+# endpoint, AND as a behavior-based skip net in the gates (path, not just the
+# tag). Mirrors the reserved-path guard in ``registryhub.register_endpoint``.
+def is_control_surface_path(path: Any) -> bool:
+    """True iff ``path`` is part of the FIXED tenant/health/admin control plane.
+
+    Matches (after canonicalization): ``/health``, ``/api/v1/admin/*`` (incl. the
+    init-tenant endpoint ``/api/v1/admin/init-tenant``), ``/api/v1/reset``, and
+    ``/api/v1/tenants*`` (collection + ``/api/v1/tenants/{tenant_id}``). Path-based
+    (behavior), not kind-based — so it holds even when the ``kind`` tag is absent
+    or wrong."""
+    p = str(path or "").strip()
+    if p:
+        if not p.startswith("/"):
+            p = "/" + p
+        if len(p) > 1 and p.endswith("/"):
+            p = p.rstrip("/") or "/"
+    return (
+        p in ("/health", "/api/v1/reset", "/api/v1/init-tenant")
+        or p.startswith("/api/v1/admin/")
+        or p == "/api/v1/admin"
+        or p.startswith("/api/v1/tenants/")
+        or p == "/api/v1/tenants"
+    )
+
+
+def control_surface_kind_for_path(path: Any) -> str:
+    """Return ``"control"`` for a control-surface path (part A auto-tag), else ``""``.
+
+    Helper so the registration/projection site can stamp ``metadata.kind='control'``
+    for ``/api/v1/admin/*`` / ``/api/v1/reset`` / ``/api/v1/tenants*`` / init-tenant
+    without re-deriving the path rule. ``"control"`` is a member of
+    :data:`FIXED_ENDPOINT_KINDS`, so every gate that points there skips it."""
+    return "control" if is_control_surface_path(path) else ""
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +204,9 @@ def endpoint_id(method: str, path: str) -> str:
                      ``/notes/{id}`` ≡ ``/notes/{note_id}`` — one endpoint, not a phantom).
     """
     m = str(method or "").upper().strip()
-    p = str(path or "").strip()
+    # Strip any QUERY STRING before identity (byte-identical with
+    # registryhub.endpoint_id): ``/api/notes?tag=x`` ≡ the registered ``/api/notes``.
+    p = str(path or "").split("?", 1)[0].strip()
     if p:
         if not p.startswith("/"):
             p = "/" + p
@@ -211,7 +281,7 @@ def normalize_to_registryhub_endpoint(ke: KickoffEndpoint) -> Dict[str, Any]:
     request_sub = ke.get("request") or {}
     response_sub = ke.get("response") or {}
 
-    return {
+    kwargs: Dict[str, Any] = {
         "method": ke["method"],
         "path": ke["path"],
         "schema": {
@@ -224,6 +294,24 @@ def normalize_to_registryhub_endpoint(ke: KickoffEndpoint) -> Dict[str, Any]:
         "response_key": ke["response_key"],
         "auth_required": ke["auth_required"],
     }
+    # Part A: AUTO-TAG the fixed tenant/health/admin control surface as
+    # ``kind='control'`` (a member of FIXED_ENDPOINT_KINDS) so it can never be
+    # audited as a lane business endpoint and get demoted/hand-reimplemented.
+    # Path-based (behavior), so it holds regardless of what the drafter put in
+    # ``kind``. An EXPLICIT fixed-surface kind already on the KickoffEndpoint
+    # (auth/oauth/infra/spine/...) is preserved verbatim — only an untagged /
+    # business-looking control-path endpoint is reclassified.
+    _ctrl_kind = control_surface_kind_for_path(ke["path"])
+    if _ctrl_kind:
+        _existing_kind = str(ke.get("kind") or "").strip().lower()
+        if _existing_kind not in FIXED_ENDPOINT_KINDS:
+            kwargs["kind"] = _ctrl_kind
+        elif _existing_kind:
+            kwargs["kind"] = _existing_kind
+    elif _is_nonempty_str(ke.get("kind")):
+        # Pass through any caller-declared kind unchanged (no silent drop).
+        kwargs["kind"] = str(ke["kind"]).strip().lower()
+    return kwargs
 
 
 def validate_kickoff_endpoint(ke: Any) -> List[ValidationFinding]:

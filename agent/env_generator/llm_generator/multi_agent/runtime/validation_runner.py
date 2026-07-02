@@ -72,11 +72,48 @@ def _backend_host_port(compose_file: Path, cwd: Path) -> Optional[int]:
     return _service_host_port(compose_file, cwd, "backend")
 
 
+def wait_backend_ready(project_dir: Any, timeout_s: int = 90, gap_s: float = 3.0) -> bool:
+    """Bounded wait until the compose BACKEND answers HTTP (<500).
+
+    The FINAL delivery gate evaluates LIVE state (sql_tables introspection, business-chain
+    runs) and the compose stack restarts between milestones — evaluating mid-restart saw
+    sql_tables=4-of-11 + failing chains on a HEALTHY app and KILLED otherwise-delivered runs
+    (outlook run-28 → rc=1; run-31 → Status: FAILED, both at orchestrator's post-loop gate).
+    Callers wait for readiness, then re-evaluate ONCE before raising — recorded-result checks
+    are unaffected; only the live-probed ones get a fair read. Best-effort, never raises."""
+    import time as _time
+    try:
+        compose = Path(project_dir) / "docker" / "docker-compose.yml"
+        cwd = compose.parent
+        deadline = _time.time() + max(1, timeout_s)
+        while _time.time() < deadline:
+            port = _backend_host_port(compose, cwd) if compose.exists() else None
+            if port:
+                r = _http("GET", f"http://localhost:{port}/", timeout=4)
+                if r.get("status") is not None and (r.get("status") or 500) < 500:
+                    return True
+            _time.sleep(gap_s)
+        return False
+    except Exception:
+        return False
+
+
+def _safe_url(url: str) -> str:
+    """Percent-encode characters urllib refuses — a verifier-authored query like
+    ``/api/messages/search?q=Test Message`` reached urlopen with a raw SPACE →
+    ``InvalidURL: URL can't contain control characters`` → the step (and the whole
+    business_chain) failed forever on a working endpoint (outlook run-29 M3, live).
+    ``quote`` with the URL-structural chars in ``safe`` leaves valid URLs (and
+    already-encoded %XX sequences) byte-identical; only spaces/non-ASCII change."""
+    from urllib.parse import quote
+    return quote(url, safe=":/?&=%+,@;$!*'()[]~._-#")
+
+
 def _http(method: str, url: str, *, token: Optional[str] = None,
           body: Optional[dict] = None, timeout: int = 10) -> Dict[str, Any]:
     """One HTTP call → {status, body_text, error}. Never raises."""
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method.upper())
+    req = urllib.request.Request(_safe_url(url), data=data, method=method.upper())
     req.add_header("Content-Type", "application/json")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
@@ -246,6 +283,7 @@ def run_smoke_validation(
     cwd = project_dir / "docker"
     checks: List[Dict[str, Any]] = []
     endpoint_results: List[Dict[str, Any]] = []
+    chain_results: List[Dict[str, Any]] = []
 
     def _add(name: str, ok: bool, detail: str = "") -> None:
         checks.append({"name": name, "status": "pass" if ok else "fail", "detail": detail})
@@ -262,22 +300,26 @@ def run_smoke_validation(
     _fe_ok, _fe_detail = _frontend_navigable(project_dir)
     _add("frontend_navigable", _fe_ok, _fe_detail)
 
-    # VISIBILITY (informational, never fails): how much of the UI is framework
-    # FALLBACK vs lane-authored. Fallback pages keep the app whole, but they
-    # must not silently masquerade as lane work — releases report the gap.
+    # VISIBILITY (informational): how much of the UI is framework FALLBACK vs lane-authored.
+    # The HARD enforcement of "a page the references DEPICT must ship REAL, not the fallback"
+    # lives in the reference-aware page_build_gate (pages_release_decision: referenced-unbuilt
+    # never escapes), so this check stays informational to avoid double-gating a page that
+    # legitimately has no reference to match (its fallback is acceptable).
     try:
         from .frontend_page_projector import _PAGE_MARKER
         _pages_dir = project_dir / "app" / "frontend" / "src" / "pages"
         _total = _fallback = 0
+        _fb_names = []
         for _pf in sorted(_pages_dir.glob("*.jsx")) if _pages_dir.is_dir() else []:
             _total += 1
             try:
                 if _PAGE_MARKER in _pf.read_text(encoding="utf-8", errors="ignore"):
                     _fallback += 1
+                    _fb_names.append(_pf.stem)
             except Exception:
                 pass
         _add("frontend_fallback_pages", True,
-             f"{_fallback}/{_total} pages are framework fallback (not lane-authored)")
+             f"{_fallback}/{_total} pages are framework fallback ({', '.join(_fb_names[:8])})")
     except Exception:
         pass
 
@@ -534,6 +576,13 @@ def run_smoke_validation(
         try:
             from .chain_executor import run_chains
             _chain = run_chains(base, project_dir, list(business_endpoints or []))
+            # Surface the PER-CHAIN results so the run_validation tool can sync each
+            # chain's verdict back through the LIVE registryhub (record_chain_result)
+            # to the MAIN registry the delivery gate reads. run_chains' own status
+            # write-back goes to project_dir's hub file — which, when validation runs
+            # inside a lane WORKTREE, is NOT the registry the gate audits (run v20:
+            # chains pass live but the gate sees stale 'registered' → deadlock).
+            chain_results = _chain.get("chains") or []
             _add("business_chain", not _chain["broken"],
                  ("; ".join(_chain["broken"]))[:800] if _chain["broken"]
                  else f"{_chain['total_steps']} step(s) across "
@@ -586,10 +635,10 @@ def run_smoke_validation(
                  "could not resolve the frontend service's published port "
                  "(container not running?)")
 
-        return _finalize(checks, backend_port, endpoint_results)
+        return _finalize(checks, backend_port, endpoint_results, chain_results)
     except Exception as exc:
         _add("runner_error", False, f"{type(exc).__name__}: {exc}")
-        return _finalize(checks, backend_port, endpoint_results)
+        return _finalize(checks, backend_port, endpoint_results, chain_results)
     finally:
         if teardown:
             try:
@@ -609,12 +658,14 @@ def run_smoke_validation(
 
 
 def _finalize(checks: List[Dict[str, Any]], backend_port: Optional[int],
-              endpoint_results: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+              endpoint_results: Optional[List[Dict[str, Any]]] = None,
+              chain_results: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     passed = bool(checks) and all(c["status"] == "pass" for c in checks)
     fails = [c["name"] for c in checks if c["status"] != "pass"]
     summary = "all api_smoke checks passed" if passed else f"FAILED: {', '.join(fails)}"
     return {"passed": passed, "summary": summary, "checks": checks,
-            "backend_port": backend_port, "endpoints": endpoint_results or []}
+            "backend_port": backend_port, "endpoints": endpoint_results or [],
+            "chains": chain_results or []}
 
 
 __all__ = ["run_smoke_validation"]

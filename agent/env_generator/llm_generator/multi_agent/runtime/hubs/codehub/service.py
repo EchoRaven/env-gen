@@ -307,7 +307,7 @@ class CodeHub:
         if linked_pages and workhub is not None:
             unknown_pages = [
                 p for p in linked_pages
-                if workhub.get_page(p, with_blocks=False) is None
+                if workhub.get_document(p, with_blocks=False) is None
             ]
             if unknown_pages:
                 return {
@@ -1297,7 +1297,18 @@ class CodeHub:
             for line in (status_out or "").splitlines():
                 # Each line is "XY <path>"; we strip the 3-char prefix.
                 if len(line) > 3:
-                    dirty_files.append(line[3:].strip())
+                    _p = line[3:].strip()
+                    # Python bytecode / cache artifacts are NOT source changes:
+                    # they are (re)generated every time the framework IMPORTS the
+                    # generated backend to api_smoke-test it. Counting them as a
+                    # dirty tree wedged delivery in an infinite loop — api_smoke
+                    # passes, the import re-creates app/backend/__pycache__/*.pyc,
+                    # the hub-consistency gate blocks finish() on the "dirty" tree,
+                    # retry, repeat (outlook 2026-06-30). Never let a build artifact
+                    # gate delivery; only real tracked changes count.
+                    if "__pycache__/" in _p or _p.endswith((".pyc", ".pyo", ".pyd")):
+                        continue
+                    dirty_files.append(_p)
             # Try common default-branch names: main, then master.
             ahead = 0
             for base in ("main", "master"):

@@ -246,26 +246,49 @@ def _http_json(url: str, payload: Optional[dict] = None, timeout: int = 10) -> t
 
 
 def _seed_demo_login(project_dir: Any) -> Optional[Dict[str, str]]:
-    """Credentials of the SEEDED demo user (the first user in the generated seed_data.py,
-    whose password is the framework's fixed seed password). The QA tooling logs in AS this
-    user so it validates the POPULATED app — the references depict screens WITH data, and a
-    fresh throwaway user sees empty lists (multi-tenant read-scoping), making every page look
-    blank/mismatched. Domain-agnostic: reads whatever the seed generated. None if no seed."""
+    """Credentials of the SEEDED demo user (the first user the LOADER actually inserts), whose
+    password is the framework's fixed seed password. The QA tooling logs in AS this user so it
+    validates the POPULATED app — the references depict screens WITH data, and a fresh throwaway
+    user sees empty lists (owner-scoped reads), making every page look blank/mismatched.
+
+    MUST read the SAME source the loader loads: the agent-authored ``seed_data.json`` (what
+    actually populates the DB), NOT the embedded ``_SEED`` fallback in ``seed_data.py``. Live
+    2026-06-30 (outlook): the JSON's first user was ``demo@example.com`` but the .py ``_SEED``
+    default was ``avachen@example.com``; reading only ``_SEED`` returned a user the DB was NOT
+    seeded with → ``run_browser_test_user`` REGISTERED that email as a fresh empty account and
+    browsed as it → EVERY data page false-flagged blank → the frontend churned on phantom
+    blank-page fixes (eating the milestone time budget). JSON first, ``_SEED`` fallback.
+    Domain-agnostic; None if no seed."""
+    backend = Path(project_dir) / "app" / "backend"
+
+    def _creds_from_users(users) -> Optional[Dict[str, str]]:
+        if users and isinstance(users[0], dict) and users[0].get("email"):
+            return {"email": str(users[0]["email"]), "password": "password",  # backend_skeleton._SEED_PASSWORD
+                    "name": str(users[0].get("name") or "Demo")}
+        return None
+
+    # 1) the agent-authored JSON the loader inserts into the DB (authoritative)
+    try:
+        sj = backend / "seed_data.json"
+        if sj.is_file():
+            import json as _json
+            data = _json.loads(sj.read_text(encoding="utf-8", errors="ignore"))
+            creds = _creds_from_users((data or {}).get("users") or [])
+            if creds:
+                return creds
+    except Exception:
+        pass
+    # 2) fallback: the embedded _SEED default in the loader (used only when no JSON)
     try:
         import ast
-        sd = Path(project_dir) / "app" / "backend" / "seed_data.py"
+        sd = backend / "seed_data.py"
         if not sd.is_file():
             return None
         m = re.search(r"_SEED\s*=\s*(\{.*\})", sd.read_text(encoding="utf-8", errors="ignore"))
         if not m:
             return None
         seed = ast.literal_eval(m.group(1))
-        users = (seed or {}).get("users") or []
-        email = users[0].get("email") if users and isinstance(users[0], dict) else None
-        if not email:
-            return None
-        return {"email": str(email), "password": "password",  # backend_skeleton._SEED_PASSWORD
-                "name": str((users[0].get("name") or "Demo"))}
+        return _creds_from_users((seed or {}).get("users") or [])
     except Exception:
         return None
 
@@ -607,7 +630,8 @@ async def run_visual_fidelity(
                                  "fix the route's auth handling, not its styling")
                                 if screen["name"] in _auth_bounced
                                 else f"route {screen['route']} could not be captured"],
-                            "screenshot": None})
+                            "screenshot": None,
+                            "reference": screen.get("path")})
             continue
         verdict = await judge(llm, screen, shot)
         results.append({"name": screen["name"], "route": screen["route"],
@@ -617,6 +641,12 @@ async def run_visual_fidelity(
                         "deviations": verdict["deviations"],
                         "fixes": verdict.get("fixes", []),
                         "screenshot": shot,
+                        "reference": screen.get("path"),
+                        # Fix #52 — the deterministic per-component color diff
+                        # (spec hex vs the SAME fractional region sampled from
+                        # this screenshot). Facts beside the judge's opinion.
+                        "measured_deviations": _measured_deviations(
+                            project_dir, screen["name"], shot),
                         "summary": verdict.get("summary", "")})
 
     passed = all(r["passed"] for r in results)
@@ -627,7 +657,115 @@ async def run_visual_fidelity(
             "min_similarity": min_similarity}
 
 
-def remediation_text(result: Mapping[str, Any]) -> str:
+def _measured_deviations(project_dir: Any, screen_name: str, screenshot_path: str) -> List[Dict[str, Any]]:
+    """Fix #52 — deterministic per-component color diff for one judged screen.
+
+    Loads the pre-measured spec (design/component_specs/<screen>.json, written by
+    the material-prep phase before any lane woke) and samples the SAME fractional
+    regions from the gate's screenshot via material_prep.spec_color_deviations.
+    Best-effort: [] when the spec is absent or anything fails — the LLM judge
+    remains the structural verdict; this only ADDS measured facts."""
+    try:
+        p = Path(project_dir) / "design" / "component_specs" / f"{screen_name}.json"
+        if not p.exists():
+            return []
+        spec = json.loads(p.read_text(encoding="utf-8"))
+        from .material_prep import spec_color_deviations
+        return spec_color_deviations(spec, screenshot_path)
+    except Exception:
+        return []
+
+
+def _lane_visible_reference(output_dir: Any, raw_path: Any) -> Optional[str]:
+    """The WORKSPACE-RELATIVE staged copy of a reference image, if present.
+
+    ``screen["path"]`` is the orchestrator-side ORIGINAL (often a host-absolute
+    CLI path the lane's workspace cannot resolve — review w6x6art4t); the
+    framework stages lane-visible copies under design/references/ and
+    screenshots/. Prefer those; None when neither exists."""
+    try:
+        name = Path(str(raw_path)).name
+        if not name or output_dir is None:
+            return None
+        for rel in (f"design/references/{name}", f"screenshots/{name}"):
+            if (Path(output_dir) / rel).exists():
+                return rel
+    except Exception:
+        pass
+    return None
+
+
+def _measured_diff_lines(r: Mapping[str, Any], output_dir: Any = None) -> List[str]:
+    """Render a screen result's measured color deviations (#52) + the
+    measure-don't-eyeball verification mandate (#53) as remediation lines."""
+    devs = r.get("measured_deviations") or []
+    lines: List[str] = []
+    if devs:
+        lines.append(
+            "MEASURED COLOR DIFF (deterministic pixel sampling of the gate "
+            "screenshot vs the reference spec — facts, not the judge's opinion; "
+            "apply these EXACT values):")
+        for d in devs[:10]:
+            if d.get("kind") == "accent_missing":
+                lines.append(
+                    f"  · {d.get('component')}: {d.get('hue')} accent MISSING — the "
+                    f"reference measures {d.get('expected')} in this region; restore it "
+                    "(semantic color loss: unread-dots/badges/buttons going gray)")
+            else:
+                lines.append(
+                    f"  · {d.get('component')}: background renders {d.get('actual')} but "
+                    f"the reference measures {d.get('expected')} "
+                    f"(Δ{d.get('distance', 0):.0f}) → set it to {d.get('expected')}")
+    # Fix #53 — zoom_compare adoption: the tool has been in the surface since
+    # brick 3 with ZERO calls across runs 30-38 (the lane fixes by eyeball).
+    # Same lever as #50: put the exact, EXECUTABLE call — lane-resolvable
+    # reference path, every required argument (save_as is required — a taught
+    # call that TypeErrors teaches the lane the tool is broken), the worst
+    # region — inside the task so following it is easier than ignoring it.
+    ref = _lane_visible_reference(output_dir, r.get("reference")) or r.get("reference")
+    if ref:
+        region = ""
+        if devs and devs[0].get("region"):
+            region = f", region={[round(v, 3) for v in devs[0]['region']]}"
+        name = str(r.get("name") or "screen")
+        lines.append(
+            "VERIFY LIKE AN ENGINEER (measure, don't eyeball): after fixing, "
+            "capture_webpage this route, then run "
+            f"zoom_compare(reference=\"{ref}\", mine=\"<your capture .png>\", "
+            f"save_as=\"design/compare/{name}_check.png\"{region}, scale=2) "
+            "and view_image the saved comparison — the colors above must match "
+            "before you consider this screen done.")
+    return lines
+
+
+def _spec_snippet(output_dir: Any, screen_name: str) -> str:
+    """The pre-computed component spec's MEASURED values for one screen, compact.
+
+    The framework decomposes every reference into design/component_specs/<screen>.json
+    (named components + measured background/accent hex) before the lanes wake — but runs
+    30-38 show the lane reads it ~once per run, then fixes visual tasks by eyeball. Embed
+    the numbers directly in the remediation task so the fixing lane holds the exact spec
+    (quality by gate, per the material-prep architecture rule). Empty on any failure."""
+    try:
+        p = Path(output_dir) / "design" / "component_specs" / f"{screen_name}.json"
+        if not p.exists():
+            return ""
+        spec = json.loads(p.read_text(encoding="utf-8"))
+        rows = []
+        for c in (spec.get("components") or [])[:12]:
+            acc = ", ".join(f"{k}={v}" for k, v in (c.get("accents") or {}).items())
+            rows.append(f"  · {c.get('name')}: bg {c.get('background')}"
+                        + (f", accents {acc}" if acc else "")
+                        + (f" — {c.get('state')}" if c.get("state") else ""))
+        if not rows:
+            return ""
+        return ("MEASURED SPEC (design/component_specs/" + screen_name + ".json — use these "
+                "EXACT hex values, never eyeball):\n" + "\n".join(rows))
+    except Exception:
+        return ""
+
+
+def remediation_text(result: Mapping[str, Any], output_dir: Any = None) -> str:
     """Actionable task body for the frontend lane from a failed gate result —
     per screen: missing components first, then the judge's per-dimension notes
     (weakest dimension first), then the ordered deviations."""
@@ -638,6 +776,11 @@ def remediation_text(result: Mapping[str, Any]) -> str:
         if r.get("passed"):
             continue
         lines.append(f"\n## {r['name']}  (route {r['route']}, similarity {r['similarity']:.2f})")
+        if output_dir is not None:
+            _sn = _spec_snippet(output_dir, str(r.get("name") or ""))
+            if _sn:
+                lines.append(_sn)
+        lines.extend(_measured_diff_lines(r, output_dir))
         dims = r.get("dimensions") or {}
         missing = (dims.get("components") or {}).get("missing") or []
         if missing:
@@ -765,7 +908,7 @@ class VisualFidelityGate:
             try:
                 _vt = orch.hubs.workhub.create_task(
                     title=f"UI does not match reference designs (visual gate, attempt {self.attempts})",
-                    description=remediation_text(result),
+                    description=remediation_text(result, getattr(orch, "output_dir", None)),
                     assignee="frontend",
                     agent="orchestrator",
                     priority="P1",

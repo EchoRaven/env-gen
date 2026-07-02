@@ -499,6 +499,17 @@ class AgentTooling:
             if hasattr(ws, "is_framework_owned"):
                 fw_owned = [p for p in denied if ws.is_framework_owned(p)]
             if fw_owned:
+                _tw_hint = ""
+                if any("tailwind.config" in str(p) for p in fw_owned):
+                    # The pinned tailwind.config imports ./tailwind.theme.js — define your
+                    # design tokens THERE instead of editing the locked config.
+                    _tw_hint = (
+                        " To define theme tokens (the colors/fonts you @apply, e.g. a custom "
+                        "`bg-ig-bg`), write `tailwind.theme.js` (frontend-WRITABLE; the pinned "
+                        "tailwind.config.js imports it) — e.g. "
+                        "`export default { colors: { 'ig-bg': '#000000' } }`. Never @apply a "
+                        "class you haven't defined there (it fails the build)."
+                    )
                 return ToolResult(
                     success=False,
                     error_message=(
@@ -508,7 +519,28 @@ class AgentTooling:
                         f"causes merge conflicts. Author your business logic in "
                         f"custom_routes.py (backend) or src/pages/*.jsx + App.jsx (frontend); "
                         f"to change models/schemas/main, register the contract via the "
-                        f"registryhub_* tools and the framework regenerates them."
+                        f"registryhub_* tools and the framework regenerates them." + _tw_hint
+                    ),
+                )
+            # LANE-OWNED application code (app/backend|frontend|database/*) is authored
+            # ONLY by the owning lane. A coordinator (orchestrator/debugger) reaching here
+            # diagnosed a lane bug and tried to PATCH it — re-route, don't patch (the edit
+            # lands in the wrong worktree and conflicts on merge).
+            _lane_code = [
+                p for p in denied
+                if any(str(p).replace("\\", "/").lstrip("/").startswith(pre)
+                       for pre in ("app/backend/", "app/frontend/", "app/database/"))
+            ]
+            if _lane_code:
+                return ToolResult(
+                    success=False,
+                    error_message=(
+                        f"Write denied: {_lane_code} is LANE-OWNED code — only the owning "
+                        f"lane (backend/frontend/database) authors it. If you diagnosed a "
+                        f"bug there, do NOT patch it from here. DISPATCH it: report_issue, "
+                        f"or create a remediation task assigned to the owning lane (a new "
+                        f"task re-wakes it even when idle), naming the exact file + the fix "
+                        f"you found. Coordinators coordinate; lanes build."
                     ),
                 )
             return ToolResult(

@@ -293,6 +293,52 @@ def compute_deliverability(hub_registry, app_root,
         blockers.append(
             f"{extra} table(s) with low row count or placeholder seed (Cutover 21 gate)")
 
+    # AUTHORED-SEED gate (outlook run-33, 2026-07-02) — NOT waived by functional
+    # validation: the registration checks above audit hub BOOKKEEPING and are relaxed
+    # once api_smoke passes, so a run whose lane never authored app/backend/
+    # seed_data.json shipped the bland framework-fallback seed as "SUCCESS" — while the
+    # spec's bar is domain-REALISTIC populated screens ("a dozen realistic emails …
+    # populated on first load"). The file is guaranteed to EXIST (empty {}) by the
+    # build-infra writers, so absent-or-empty means the lane hasn't authored data yet;
+    # the remediation dispatch + deliver guard then drive it to (run-31 proved the lane
+    # CAN author it). Clears the moment a non-empty valid JSON lands.
+    try:
+        import json as _json
+        _seed_path = Path(app_root) / "backend" / "seed_data.json"
+        _authored = False
+        if _seed_path.exists():
+            try:
+                _data = _json.loads(_seed_path.read_text(encoding="utf-8"))
+                _authored = isinstance(_data, dict) and any(
+                    isinstance(v, list) and v for v in _data.values())
+            except Exception:
+                _authored = False
+        if not _authored:
+            blockers.append(
+                "authored seed missing: app/backend/seed_data.json is absent or empty — "
+                "the app would ship the bland framework-fallback seed. Author domain-"
+                "realistic rows (users + every business table, FK-valid, believable "
+                "subjects/bodies/timestamps) in app/backend/seed_data.json.")
+        elif os.environ.get("ENVGEN_SEED_QUALITY_GATE", "1") not in ("0", "off", "false"):
+            # Fix #54 — the seed exists; is it GOOD? #41 only proves non-empty,
+            # so a 2-row token seed shipped as "SUCCESS" while the bar is
+            # populated, realistic list screens (info density = the top visual
+            # lever). Same non-waivable family as #41 (content quality is
+            # exactly what functional validation does NOT prove); conservative
+            # signals only (see audit_authored_seed) + recomputed each tick so
+            # a rewritten seed self-clears.
+            try:
+                from .seed_audit import audit_authored_seed
+                _issues = audit_authored_seed(_data)
+            except Exception:
+                _issues = []
+            if _issues:
+                blockers.append(
+                    "authored seed quality: " + "; ".join(_issues)
+                    + " — rewrite app/backend/seed_data.json (keep it FK-valid).")
+    except Exception:
+        pass
+
     visual = _visual_summary(hub_registry)
     if visual.get("pending", 0) > 0 and not ui_validated:
         blockers.append(

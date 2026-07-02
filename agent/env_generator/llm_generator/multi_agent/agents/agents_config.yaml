@@ -72,7 +72,7 @@ profiles:
     # report_completion are gated on release_readiness_consulted (stage_tool_preconditions
     # below), which instructs the agent to call get_skill — so the tool MUST be granted or
     # the gate is unsatisfiable (run #21: 14× deliver_project loop = BUG#5 / PROPOSAL #14).
-    tool_categories: ["reasoning", "file", "progress", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "knowledge_skill", "observability", "coverage", "visual_review", "seed", "delivery", "mcp_registry", "team_spawn", "team_lifecycle", "team_reasoning", "team_planning", "runtime", "api", "docker", "logs", "database", "browser", "verification", "web", "codehub", "workhub", "registryhub", "eventhub", "run", "hub"]
+    tool_categories: ["reasoning", "file", "progress", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "knowledge_skill", "observability", "coverage", "visual_review", "seed", "delivery", "mcp_registry", "team_spawn", "team_lifecycle", "team_reasoning", "team_planning", "runtime", "api", "docker", "logs", "database", "browser", "verification", "web", "codehub", "workhub", "registryhub", "eventhub", "run", "hub", "milestone"]
     include_vision: false
     timeout: 7200
     prompts:
@@ -127,6 +127,7 @@ profiles:
       - codehub_admin_tools
       - workhub_tools
       - meeting_tools  # Round-8g Fix #E: orchestrator chairs the kickoff meeting and the facilitator turn must call workhub_add_meeting_decision (Round-8d Fix #6 added this to backend/frontend/verifier but missed orchestrator — meeting_tools is intentionally a separate bundle from workhub_tools, see tool_bundles._bundle_meeting_tools docstring).
+      - milestone_tools  # 2026-06-24: orchestrator-only — manages the milestone roadmap (hubs.milestones) at kickoff: revise FUTURE phases (add/update/remove) + set the current phase's detailed brief. Delivered phases frozen.
       - registryhub_tools
       - eventhub_tools
       - run_tools
@@ -310,6 +311,13 @@ profiles:
         # contract slice), so they have no use here and only widen the surface that
         # kickoff is deliberately minimized to keep declare-focused. They remain in
         # implementation:action (where code is authored + files need locating).
+        # FIX #12: the M2+ kickoff prompt mandates READING the prior milestone's
+        # implemented contract (so this phase's declares extend, not duplicate, it).
+        # These are READ-ONLY (no register authority — registration is the
+        # orchestrator's finalize_kickoff job and register_endpoint/register_table are
+        # still excluded here); without them the M2+ read instruction was DEAD.
+        - registryhub_list_endpoints
+        - registryhub_list_tables
         - finish
       # Smoke #4 (2026-06-06): backend entered edit_code 38x but called
       # workhub_get_document/read (NOT write/register), 0 endpoints implemented ->
@@ -574,6 +582,97 @@ profiles:
         # PROPOSAL #9: no file-search in kickoff (nothing built yet; declare-only).
         # The search tools live in implementation:action, not here.
         - finish
+      # FIX #7: the frontend had NO implementation:action / test_fix:action allowlist,
+      # so its MANDATED impl tools (write/edit/apply_patch/lint, register_ui_page/
+      # register_consumer, the claim + conflict flow) were orphan-class — the per-round
+      # ranker could drop them and the lane could wake to build a page with no
+      # code-producing surface (the backend's Smoke #4 pathology, mirrored). These
+      # stages pin the curated frontend impl toolset (intersected with the agent's
+      # bundled/granted tools — backend-denied registryhub writes stay denied — so an
+      # extra name is a no-op; only an omission hurts → deliberately generous).
+      # (_active_phase="implementation" pinned in base.process_task; same shape as the
+      # backend's ~:324 block.)
+      "implementation:action":
+        - read
+        - write
+        - edit
+        - apply_patch
+        - lint
+        - plan
+        - finish
+        - check_inbox
+        - send_message
+        - report_progress
+        - workhub_task
+        - workhub_list_tasks
+        - workhub_get_task
+        - workhub_get_document
+        - workhub_list_documents
+        - workhub_create_document
+        - workhub_share_implementation
+        - workhub_fail_task
+        # ui_page register (in workhub_tools bundle) clears the frontend's
+        # hub_consistency_gate; register_consumer + list_ui_pages are frontend-owned
+        # contract reads/declares (the backend-only register_endpoint/table writes
+        # stay deny_tools-stripped, so listing them here would just be a no-op).
+        - registryhub_register_ui_page
+        - registryhub_register_consumer
+        - registryhub_list_ui_pages
+        - registryhub_list_endpoints
+        - registryhub_get_endpoint
+        # Reference-driven UI build (Phase A): see the references, never guess.
+        - list_reference_images
+        - view_image
+        - copy_reference_image
+        - verify_api_contract
+        # commit + the branch/worktree conflict flow (commit-only pipeline).
+        - codehub_commit
+        - codehub_resolve_merge_conflict
+        # File-search / symbol lookup (PROPOSAL #6): the frontend authors components/
+        # pages/services across many files that reference each other; read-only
+        # discovery that feeds code production, no write/contract authority.
+        - glob
+        - grep
+        - list_generated_files
+        - find_definition
+      # TEST-FIX phase (§6): a lane woken to FIX a reported defect uses the SAME scoped
+      # editing/diagnosis/registry toolset as implementation (a fix is
+      # implementation-like work), NOT the full coordination surface — mirrors the
+      # backend's test_fix:action.
+      "test_fix:action":
+        - read
+        - write
+        - edit
+        - apply_patch
+        - lint
+        - plan
+        - finish
+        - check_inbox
+        - send_message
+        - report_progress
+        - workhub_task
+        - workhub_list_tasks
+        - workhub_get_task
+        - workhub_get_document
+        - workhub_list_documents
+        - workhub_create_document
+        - workhub_share_implementation
+        - workhub_fail_task
+        - registryhub_register_ui_page
+        - registryhub_register_consumer
+        - registryhub_list_ui_pages
+        - registryhub_list_endpoints
+        - registryhub_get_endpoint
+        - list_reference_images
+        - view_image
+        - copy_reference_image
+        - verify_api_contract
+        - codehub_commit
+        - codehub_resolve_merge_conflict
+        - glob
+        - grep
+        - list_generated_files
+        - find_definition
     workflow_policies:
       # Breaker first — see ordering note on ``design`` profile.
       - kind: lane_idle_circuit_breaker
@@ -756,6 +855,14 @@ profiles:
         - read
         # PROPOSAL #9: no file-search in kickoff (nothing built yet; declare-only).
         # The search tools live in implementation:action, not here.
+        # FIX #12: the M2+ kickoff prompt mandates READING the prior milestone's
+        # implemented contract (endpoints + tables + ui_pages) so the verifier's
+        # acceptance predicates cover the already-shipped surface. READ-ONLY — the
+        # verifier never authors the contract (its registryhub writes are deny-stripped
+        # via PROPOSAL #27); without these the M2+ read instruction was DEAD.
+        - registryhub_list_endpoints
+        - registryhub_list_tables
+        - registryhub_list_ui_pages
         - finish
       # Smoke #6 (2026-06-06): backend implemented 12 endpoints but the verifier
       # never validated (0 run_validation) — it suppressed 118 wakeups and, when
@@ -937,15 +1044,56 @@ profiles:
       # Debugger must finish the fix tasks it claims (in_progress) and answer
       # owning-lane questions before idling — no abandon-on-empty.
       - kind: lane_wind_down
+    # FIX #9: the debugger had NO action allowlist, so without a scoped surface its
+    # MANDATED triage tools (bug_escalate / bug_update_state / codehub_list_prs /
+    # codehub_get_diff) were orphan-class — the per-round ranker could drop them and
+    # the debugger could wake on a bug with no way to act on it. This allowlist pins
+    # the debugger's real triage toolset for the action stage (intersected with its
+    # bundled/granted tools, so an extra name is a no-op; only an omission hurts).
+    # detect→triage→fix boundary preserved: NO code-edit tools (the debugger never
+    # writes code), reads + bug-routing + messaging only.
+    stage_tool_allowlist:
+      "action":
+        - bug_triage
+        - bug_list_open
+        - bug_list_assigned_to
+        - bug_escalate
+        - bug_update_state
+        - bug_create
+        - codehub_list_prs
+        - codehub_get_diff
+        - codehub_get_file_content
+        - registryhub_list_endpoints
+        - registryhub_get_endpoint
+        - registryhub_list_tables
+        - registryhub_get_table_breaking_changes
+        - workhub_get_task
+        - workhub_list_tasks
+        - workhub_get_document
+        - workhub_list_documents
+        - check_inbox
+        - send_message
+        - broadcast
+        - report_progress
+        - query_knowledge
+        - plan
+        - finish
     stage_tool_preconditions:
       action:
-        # Additionally block the bug TOOLS until the IMPL→VALIDATION boundary, so a
+        # Additionally block bug_create until the IMPL→VALIDATION boundary, so a
         # run_completed fired during early IMPLEMENTATION (post-finalize, pre-impl)
         # is also caught: there is no working app to debug until every business
         # endpoint is implemented (the same predicate the framework validate/deliver
-        # drivers use). A genuine failing validation run then opens these.
+        # drivers use). A genuine failing validation run then opens it — spurious-bug
+        # suppression during kickoff/implementation is still wanted, so KEEP it here.
         bug_create: validation_phase_reached
-        bug_triage: validation_phase_reached
+        # FIX #2: bug_triage is NOT phase-gated. Triage is the debugger's ONLY
+        # mandated action and it runs on an ALREADY-FILED real defect. Gating it on
+        # validation_phase_reached blocked triage in exactly the not-all-implemented
+        # defect states that wake the debugger → self-perpetuating wedge: the debugger
+        # woke on a real bug it could never act on. bug_create stays gated above
+        # (kickoff spurious-bug suppression); triaging a filed defect must not be
+        # phase-gated.
     execution_pipeline:
       stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
@@ -959,7 +1107,12 @@ profiles:
     name: "Knowledge Agent"
     reasoning_effort: "low"  # Knowledge curator is event-driven, single-action-per-wake; low effort sufficient.
     description: "Wake-driven cross-project knowledge curator (v3): single trigger -> single action -> finish()."
-    tool_categories: ["file", "reasoning", "communication", "memory", "knowledge_read", "knowledge_write", "knowledge_skill", "knowledge"]
+    # FIX #3: + workhub/registryhub/codehub/eventhub categories so the knowledge
+    # curator can READ the artifacts its prompt must summarize (the contract surface,
+    # coordination documents, code diffs, inbox). The broad hub bundles below are
+    # gated on these categories; the WRITE tools they also carry are stripped via
+    # deny_tools (reads only — the curator authors knowledge, never the contract/code).
+    tool_categories: ["file", "reasoning", "communication", "memory", "knowledge_read", "knowledge_write", "knowledge_skill", "knowledge", "workhub", "registryhub", "codehub", "eventhub", "hub"]
     include_vision: false
     timeout: 7200
     prompts:
@@ -993,10 +1146,58 @@ profiles:
       - knowledge_write_tools
       - knowledge_skill_tools
       - structured_knowledge_tools
+      # FIX #3: READ-ONLY hub access for the curator. These broad bundles are the
+      # standard grant for registryhub/workhub/codehub READS (there is no dedicated
+      # read-only hub bundle — verifier/debugger grant the broad bundle then deny the
+      # writes via PROPOSAL #27, mirrored below). They surface the artifact-read tools
+      # the knowledge_agent.j2 prompt must call to summarize: registryhub_list_endpoints
+      # / list_tables / get_endpoint, workhub_get_document / list_documents,
+      # codehub_get_diff / get_file_content. check_inbox comes from the always-on
+      # communication category (already present).
+      - registryhub_tools
+      - workhub_tools
+      - codehub_tools
+      - eventhub_tools
     deny_tools:
       - codehub_force_merge
       - wait
       - wait_for_process
+      # FIX #3: the curator is READ-ONLY over the hubs — it summarizes artifacts, it
+      # never authors the contract, pages, tasks, or code. Strip every WRITE tool the
+      # broad registryhub/workhub/codehub bundles carry (same shape as the debugger's
+      # PROPOSAL #27 deny-set), keeping ONLY the reads + hub_snapshot.
+      # --- registryhub writes ---
+      - registryhub_register_endpoint
+      - registryhub_register_table
+      - registryhub_register_consumer
+      - registryhub_register_table_consumer
+      - registryhub_register_ui_page
+      - registryhub_update_schema
+      - registryhub_update_table_schema
+      - registryhub_deprecate_endpoint
+      # --- workhub writes ---
+      - workhub_create_document
+      - workhub_task
+      - workhub_fail_task
+      - workhub_cancel_task
+      - workhub_link_task_to_pr
+      - workhub_link_task_to_apis
+      - workhub_update_block
+      - workhub_archive_document
+      - workhub_record_decision
+      - workhub_invite_attendee
+      - workhub_remove_attendee
+      - workhub_comment
+      - workhub_reply
+      - workhub_share_implementation
+      - workhub_set_priority
+      # --- codehub writes ---
+      - codehub_commit
+      - codehub_register_repo
+      - codehub_record_commit
+      - codehub_record_check
+      - codehub_resolve_merge_conflict
+      - codehub_revert_commit
     execution_pipeline:
       stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:

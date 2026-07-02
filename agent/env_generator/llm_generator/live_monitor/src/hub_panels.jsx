@@ -1149,7 +1149,8 @@ function ReferencesSection({ projectId }) {
 function WorkHubPanel({ snapshot, projectId, onChange }) {
   const s = snapshot || {};
   const tasks = Object.values(s.tasks || {});
-  const pages = Object.values(s.pages || {});
+  // page→document rename: snapshot key is ``documents`` (legacy ``pages`` fallback).
+  const pages = Object.values(s.documents || s.pages || {});
   const allComments = Object.values(s.comments || {});
 
   const columns = ["pending", "in_progress", "completed", "failed", "blocked"];

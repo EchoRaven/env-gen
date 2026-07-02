@@ -203,6 +203,17 @@ class RemediationDispatcher:
         them, untouched). Best-effort: never raises into the loop."""
         # check_id → (owner_lane, task_title, concrete how-to-fix instruction)
         _CHECK_OWNER = {
+            "deliverability_missing_authored_seed": (
+                # #41's gate (run-34, live: logged "NO remediation owner" — the check sat
+                # undispatched). The BACKEND lane owns seed_data.json.
+                "backend", "Author app/backend/seed_data.json (blocks delivery)",
+                "app/backend/seed_data.json is absent/empty ({}), so the app ships the "
+                "bland framework-fallback seed. Author domain-REALISTIC rows for users + "
+                "EVERY business table: FK-valid ids, believable names/subjects/bodies/"
+                "timestamps matching this app's domain (never 'Getting Started'/'Item 1' "
+                "placeholders), enough rows that list screens look like the references "
+                "(e.g. ~a dozen inbox messages). Write valid JSON: "
+                "{\"users\": [...], \"<table>\": [...], ...}."),
             "frontend_dead_controls": (
                 "frontend", "Bind the dead frontend controls (blocks delivery)",
                 "interactive markup (<form>/submit button) with NO bound handler — a "
@@ -515,6 +526,48 @@ class RemediationDispatcher:
                 "verifier", "Cover every critical flow with a verification chain (blocks delivery)",
                 "fewer verification chains than declared critical flows — author one "
                 "business-flow chain per critical flow so each is covered, then re-run run_validation."),
+            "business_chain_isolation": (
+                "verifier", "Add a cross-user isolation/negative assertion (blocks delivery)",
+                "your chains are a pure 2xx happy-path sweep — that cannot tell a real, "
+                "tenancy-enforcing backend from one returning dummy 2xx. Add at least one "
+                "NEGATIVE step proving ownership/tenant isolation is ENFORCED: a SECOND user "
+                "(or an unauthenticated request) reading/modifying another user's resource MUST "
+                "be refused (expect 401/403). Author the isolation step, register the chain, "
+                "re-run run_validation."),
+            # AUTHORED-SEED family (#41/#54). These tokens are minted ONLY by the
+            # delivery gate's deliverability canonicalization (delivery_gate.py) —
+            # i.e. THIS gate-level path, not the validation-run `checks` path that
+            # dispatch_failing_checks covers — so their owner mapping must live in
+            # THIS map (review w6x6art4t: a _CHECK_OWNER entry here is dead code;
+            # run-34's "NO remediation owner" recurs and the non-waivable blocker
+            # rides to STUCK-ABORT with the backend lane idle).
+            "deliverability_missing_authored_seed": (
+                "backend", "Author app/backend/seed_data.json (blocks delivery)",
+                "app/backend/seed_data.json is absent/empty ({}), so the app ships "
+                "the bland framework-fallback seed. Author domain-REALISTIC rows for "
+                "users + EVERY business table: FK-valid ids, believable names/"
+                "subjects/bodies/timestamps matching this app's domain, enough rows "
+                "that list screens look like the references (~a dozen for the "
+                "primary table). Write valid JSON: {\"users\": [...], \"<table>\": "
+                "[...], ...}."),
+            "deliverability_authored_seed_quality": (
+                # #54 — the seed exists (#41 cleared) but fails the content audit.
+                "backend", "Raise app/backend/seed_data.json to realistic density (blocks delivery)",
+                "app/backend/seed_data.json exists but fails the content-quality "
+                "audit: either fewer than ~10 structured rows in total (rows must "
+                "be JSON objects), or a table whose values contain 2+ unambiguous "
+                "placeholder markers (lorem/ipsum/placeholder/dummy/foo...). "
+                "Rewrite it with domain-REALISTIC rows: enough rows that list "
+                "screens look like the references (~a dozen for the primary "
+                "table), believable names/subjects/bodies/timestamps, mixed "
+                "states (read/unread, flagged), FK-valid ids."),
+            "verification_checklist_not_ready": (
+                "verifier", "Record a green verification/build checklist (blocks delivery)",
+                "the build checklist is NOT all-green — it needs the CodeHub checks "
+                "build:database, build:docker, build:frontend, build:backend all = success. "
+                "run_validation to RUN and RECORD them; if one is just unrecorded (pending), "
+                "run_validation records it; if one FAILS, bug_create for the failing component "
+                "(it routes to the owning lane) and re-run once fixed. Re-run until ready."),
         }
         # Owned by a bespoke helper, or framework-deterministic (re-runs/records itself),
         # or routed via the task's own assignee — NOT dead-ends, so don't log as uncovered.
@@ -533,6 +586,19 @@ class RemediationDispatcher:
             if not isinstance(guard, dict):
                 guard = {}
                 orch._gatecheck_owner_dispatched = guard
+            # PERSISTENCE RE-ARM (V29 stall): the guard below is one-shot per milestone.
+            # If a dispatched wake doesn't resolve the check — the owning lane's turn
+            # failed/idled, or (the v11/V29 bug fixed above) the verifier wake was
+            # rejected — the one-shot guard blocked every retry and the gate spun to
+            # fail-fast. Re-fire a STILL-failing owned check every _GATECHECK_REFIRE
+            # declines instead of never (the stuck-abort is at 7 declines, so this yields
+            # real retries first). Dup remediation tasks are kind=None, so they never
+            # inflate the incomplete_required_tasks gate.
+            _persist = getattr(orch, "_gatecheck_persist", None)
+            if not isinstance(_persist, dict):
+                _persist = {}
+                orch._gatecheck_persist = _persist
+            _GATECHECK_REFIRE = 3
             from tools.communication_tools import _create_message
             uncovered: List[str] = []
             for raw in failed_checks:
@@ -543,26 +609,114 @@ class RemediationDispatcher:
                         uncovered.append(name)
                     continue
                 if guard.get(name) == milestone:
-                    continue  # one dispatch per milestone (storm control)
+                    # already dispatched this milestone — but re-fire a PERSISTING blocker
+                    # every _GATECHECK_REFIRE declines so a wake that didn't land gets
+                    # retried (V29: the verifier wake bounced and was never re-attempted).
+                    _persist[name] = _persist.get(name, 0) + 1
+                    if _persist[name] % _GATECHECK_REFIRE != 0:
+                        continue  # storm control between re-fires
+                else:
+                    _persist[name] = 0
                 owner, title, how = spec
+                _extra = ""
+                if name == "business_chain_api_coverage":
+                    # Hand the verifier the EXACT uncovered endpoints. The generic "cover the
+                    # uncovered endpoints" left it guessing — run v17 got business_chain green
+                    # + ui_page_unwired cleared, then stalled on api_coverage (3 chains / 32
+                    # endpoints) and fail-fast aborted because it never knew WHICH endpoints
+                    # were still uncovered. Re-derive the set exactly as the gate does.
+                    try:
+                        from .delivery_gate import _uncovered_business_endpoints
+                        _rh = orch.hubs.registryhub
+                        _chains = (_rh._verification_chains.value() or {})
+                        _authored = [rec for n, rec in _chains.items()
+                                     if n != "_meta" and isinstance(rec, dict) and rec.get("steps")]
+                        _unc = _uncovered_business_endpoints(_rh, _authored)
+                        if _unc:
+                            _extra = (
+                                "\n\nThese endpoints are exercised by NO chain yet — author ONE "
+                                "dedicated coverage chain (auth round-trip first, then a step per "
+                                "endpoint) that hits EACH of them, register it, and re-run "
+                                "run_validation:\n- " + "\n- ".join(_unc))
+                    except Exception:
+                        pass
                 task = orch.hubs.workhub.create_task(
                     title=title,
                     description=(
-                        f"The `{name}` delivery-gate check FAILED.\n{how}\n"
+                        f"The `{name}` delivery-gate check FAILED.\n{how}{_extra}\n"
                         "Delivery stays blocked until a gate tick shows this check "
                         "green. Fix it, then finish."),
                     assignee=owner, agent="orchestrator", priority="P0")
                 guard[name] = milestone
-                await orch.message_bus.send(_create_message(
+                _persist[name] = 0  # reset the decline counter on a (re-)dispatch
+                _gmsg = _create_message(
                     source_agent_id="orchestrator", target_agent_id=owner,
                     content=(
                         f"URGENT: delivery is blocked on the `{name}` gate check. Claim "
                         f"task {(task or {}).get('id')} and fix it NOW, then finish."),
                     msg_type="task_ready", priority="urgent", persist=True,
-                    tags=[name, "remediation"]))
+                    tags=[name, "remediation"])
+                # CRITICAL (v11 root cause, mirrors framework_validation.py:587): the
+                # verifier's VerifierValidationTriggerPolicy REJECTS a task_ready that
+                # lacks metadata["validation_phase"]=True ("requires explicit validation-
+                # phase trigger", workflow_policies.py:369) — its tags [name,"remediation"]
+                # do not intersect accepted_tags. V29: the gate-check coverage re-dispatch
+                # to the verifier bounced 38× and the run STUCK-ABORTed with NO delivery.
+                # The flag always satisfies the policy (workflow_policies.py:346); harmless
+                # for non-verifier owners, so set it whenever the wake targets the verifier.
+                if owner == "verifier":
+                    _gmsg.metadata["validation_phase"] = True
+                await orch.message_bus.send(_gmsg)
                 orch._logger.warning(
                     "GATE-CHECK remediation dispatched to %s (task %s): %s",
                     owner, (task or {}).get("id"), name)
+            # FIX C (V29 stall): incomplete_required_tasks is in _COVERED_ELSEWHERE
+            # ("routed via the task's own assignee") — but the assignee may have FINISHED
+            # and gone idle WITHOUT producing the task's required evidence (V29: the verifier
+            # finished without re-running run_validation, so 3 validate_api_smoke tasks stayed
+            # pending with NO driver -> co-stalled the gate). Re-wake the assignee of each
+            # still-incomplete structural task (the tasks already exist — no new task) so an
+            # idle owner is re-engaged. Same persistence re-fire + validation_phase injection
+            # (verifier) as the gate-check dispatch above.
+            if "incomplete_required_tasks" in failed_checks:
+                _itn = "incomplete_required_tasks"
+                _fire = True
+                if guard.get(_itn) == milestone:
+                    _persist[_itn] = _persist.get(_itn, 0) + 1
+                    _fire = (_persist[_itn] % _GATECHECK_REFIRE == 0)
+                else:
+                    _persist[_itn] = 0
+                if _fire:
+                    try:
+                        from .delivery_gate import incomplete_required_tasks as _irt
+                        _by_assignee = {}
+                        for _t in (_irt(orch.hubs) or []):
+                            _a = str(_t.get("assignee") or "").strip()
+                            if _a:
+                                _by_assignee.setdefault(_a, []).append(_t)
+                        for _a, _ts in _by_assignee.items():
+                            _ids = ", ".join(str(t.get("id")) for t in _ts[:8])
+                            _wmsg = _create_message(
+                                source_agent_id="orchestrator", target_agent_id=_a,
+                                content=(
+                                    f"URGENT: delivery is blocked — you have {len(_ts)} "
+                                    f"unfinished required task(s) whose evidence is still "
+                                    f"missing ({_ids}). Claim + COMPLETE them now (verifier: "
+                                    "re-run run_validation to record the missing per-endpoint "
+                                    "contract tests), then finish."),
+                                msg_type="task_ready", priority="urgent", persist=True,
+                                tags=[_itn, "remediation"])
+                            if _a == "verifier":
+                                _wmsg.metadata["validation_phase"] = True
+                            await orch.message_bus.send(_wmsg)
+                        if _by_assignee:
+                            guard[_itn] = milestone
+                            _persist[_itn] = 0
+                            orch._logger.warning(
+                                "INCOMPLETE-TASK remediation re-woke %d assignee(s): %s",
+                                len(_by_assignee), ", ".join(sorted(_by_assignee)))
+                    except Exception:
+                        pass
             # Dedup to once-per-CHANGE (mirrors #45) — _maybe_framework_deliver runs every
             # ≤60s loop, so an undeduped log would spam while the same checks persist.
             _uncov = sorted(uncovered)

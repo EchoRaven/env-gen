@@ -116,8 +116,8 @@ class HubRegistry:
         # ``attach_mcp_registry`` setter stays.
         from .gate_registry import GateRegistry
         self.gate_registry = GateRegistry(
-            pages_store=self.workhub.stores.pages,
-            create_page_fn=self.workhub.create_page,
+            pages_store=self.workhub.stores.documents,
+            create_page_fn=self.workhub.create_document,
             eventhub=self.eventhub,
         )
         from .mcp_registry import MCPRegistry
@@ -126,6 +126,12 @@ class HubRegistry:
             eventhub=self.eventhub,
         )
         self.runhub.attach_mcp_registry(self.mcp_registry)
+        # Milestones as FIRST-CLASS managed state (2026-06-24): a persistent,
+        # tool-drivable roadmap (vs the old in-memory list + buried decision). The
+        # orchestrator adds/updates/removes FUTURE phases + sets the current phase's
+        # detailed brief via milestone_* tools at kickoff; delivered phases frozen.
+        from .milestone_registry import MilestoneRegistry
+        self.milestones = MilestoneRegistry(self._store_dir, eventhub=self.eventhub)
         # Table/schema methods live on RegistryHub directly (backend owns the API
         # and DB schema together). ``schema_hub`` is the semantic accessor name
         # for table/schema operations (``schema_hub.register_table`` reads more
@@ -222,6 +228,7 @@ class HubRegistry:
             "registryhub": self.registryhub.snapshot(),
             "eventhub": self.eventhub.snapshot(),
             "runhub": self.runhub.snapshot(),
+            "milestones": self.milestones.snapshot(),
         }
 
     # ------------------------------------------------------------------

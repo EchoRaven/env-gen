@@ -173,6 +173,7 @@ then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
         # them deterministically here (failure self-corrects: a broken build keeps
         # the gate honestly blocked).
         self._record_build_checks(report)
+        self._record_chain_status(report)
         data = {
             "passed": report["passed"],
             "summary": report["summary"],
@@ -215,6 +216,49 @@ then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
                             "status_code": er.get("status_code")},
                     evidence={"trace": er.get("trace"), "status_code": er.get("status_code"),
                               "source": "run_validation", "error": er.get("error")},
+                    agent="",  # framework/system authority (see docstring)
+                )
+                n += 1
+            except Exception:
+                continue
+        return n
+
+    def _record_chain_status(self, report: dict) -> int:
+        """Sync each verification chain's pass/fail verdict back through the LIVE
+        registryhub so it reaches the MAIN registry the DELIVERY GATE reads.
+
+        ROOT CAUSE (run v20): the business_chain delivery gate is FLAG-BASED — it
+        blocks unless every authored chain's registry ``status == "passing"``
+        (delivery_gate.evaluate_business_chains). That status is set by
+        chain_executor.run_chains via a DIRECT JsonStore write to the caller's
+        ``project_dir`` hub file. But validation resolves project_dir from
+        ``self._hubs.base_dir`` — when the verifier (or any lane) runs validation
+        inside its OWN WORKTREE, the status write lands in the worktree's hub file,
+        NOT the shared registry the orchestrator's gate audits. register_verification_chain
+        (a synced hub write) put the chains in the MAIN registry as ``registered``;
+        the run-pass status never propagated there → the chains PASS live yet the gate
+        sees stale ``registered`` forever → business_chain_failing deadlocks delivery
+        (v20: 3 chains pass 15/15, gate red 78min → no-convergence abort).
+
+        Fix: route the verdict through the live registryhub (record_chain_result),
+        exactly like _record_contract_tests / _record_build_checks route their
+        evidence — framework authority (agent=''), best-effort, never affects the
+        verdict. The gate's verdict is thus grounded in ACTUAL chain execution
+        against the validated app, not a flag that silently diverges by worktree."""
+        hubs = self._hubs
+        registryhub = getattr(hubs, "registryhub", None) if hubs is not None else None
+        if registryhub is None or not hasattr(registryhub, "record_chain_result"):
+            return 0
+        n = 0
+        for ch in (report.get("chains") or []):
+            name = ch.get("name") if isinstance(ch, dict) else None
+            if not name:
+                continue
+            try:
+                registryhub.record_chain_result(
+                    str(name),
+                    result={"broken": ch.get("broken") or [],
+                            "steps": ch.get("steps") or []},
                     agent="",  # framework/system authority (see docstring)
                 )
                 n += 1

@@ -325,15 +325,15 @@ def _read_meeting_decisions(hubs: Any, meeting_id: str) -> List[Mapping[str, Any
     # Two callable shapes are tolerated so tests can mock either:
     # (a) ``workhub.get_meeting_decisions(meeting_id) -> list`` —
     #     preferred (gives the test author an obvious mock point),
-    # (b) ``workhub.stores.pages.value()[meeting_id]`` — the live
+    # (b) ``workhub.stores.documents.value()[meeting_id]`` — the live
     #     persistence path.
     getter = getattr(workhub, "get_meeting_decisions", None)
     if callable(getter):
         decisions = getter(meeting_id) or []
         return list(decisions)
-    pages = workhub.stores.pages.value()
-    page = pages.get(meeting_id) or {}
-    meta = page.get("metadata") or {}
+    documents = workhub.stores.documents.value()
+    document = documents.get(meeting_id) or {}
+    meta = document.get("metadata") or {}
     return list(meta.get("decisions") or [])
 
 
@@ -519,6 +519,67 @@ def derive_frontend_pages_from_endpoints(
     return pages
 
 
+# Columns that attribute a row to the authenticated caller — a table carrying one
+# is "owned per user" (route_projector uses the same notion to authorize writes).
+_OWNER_FK_COL_NAMES = frozenset({
+    "user_id", "author_id", "owner_id", "creator_id", "created_by",
+    "sender_id", "uploaded_by", "posted_by", "account_id", "from_user_id",
+})
+
+# HIGH-PRECISION phrases that signal per-user-PRIVATE reads (each user sees only
+# their OWN rows). Deliberately excludes bare "your X" — public-feed UI copy uses
+# it too. A public-feed goal ("see everyone's posts", "a shared/public feed")
+# matches NONE of these.
+_PRIVATE_GOAL_PHRASES = (
+    "only see their own", "only sees their own", "see only their own",
+    "only view their own", "only their own", "only see your own",
+    "only sees your own", "see only your own", "scoped to the authenticated user",
+    "scoped to the current user", "scoped to the logged-in user", "scoped per user",
+    "owned per user", "owned by the user", "private to each user",
+    "private to the user", "each user only sees", "each user can only see",
+    "users can only see their", "users only see their", "per-user private",
+    "only the owner can", "visible only to the owner",
+)
+_PRIVATE_GOAL_RE = re.compile(
+    r"each\s+user[^.\n]{0,40}\b(own|only)\b"
+    r"|users?\s+can\s+only\s+(see|view|access)[^.\n]{0,30}\bown\b"
+    r"|only\s+(see|view|access)\s+(their|your|his|her|its)\s+own",
+    re.IGNORECASE,
+)
+
+
+def _goal_implies_per_user_private(description: Any) -> bool:
+    """True when the GOAL explicitly states per-user-PRIVATE reads (each user sees
+    only their OWN rows). High-precision: a public-feed goal does NOT match. Used
+    ONLY as a deterministic BACKSTOP when the lane did not author owner_scoped_reads
+    (which is LLM-authored and demonstrably inconsistent run-to-run)."""
+    text = description if isinstance(description, str) else ""
+    if not text and description:
+        try:
+            text = " ".join(str(x) for x in description)
+        except Exception:
+            return False
+    low = text.lower()
+    if any(p in low for p in _PRIVATE_GOAL_PHRASES):
+        return True
+    return bool(_PRIVATE_GOAL_RE.search(low))
+
+
+def _table_has_owner_fk(table: Mapping[str, Any]) -> bool:
+    """The table is owned-per-user: a column names the actor (user_id/author_id/…)
+    or FKs to ``users``. The SAME signal route_projector keys row-ownership on."""
+    cols = table.get("columns") if isinstance(table, Mapping) else None
+    for c in (cols or []):
+        if not isinstance(c, Mapping):
+            continue
+        if str(c.get("name") or "").strip().lower() in _OWNER_FK_COL_NAMES:
+            return True
+        ref = str(c.get("references") or c.get("fk") or c.get("foreign_key") or "").strip().lower()
+        if ref == "users" or ref.startswith("users.") or ref.startswith("users("):
+            return True
+    return False
+
+
 def _build_contract(
     drafts: Mapping[str, Mapping[str, Any]], description: str = "",
 ) -> Dict[str, Any]:
@@ -678,6 +739,20 @@ def _build_contract(
                     for c in _cols)):
                 _t = dict(_t)
                 _t["columns"] = [{"name": "id", "type": "integer", "pk": True}]
+            # READ-VISIBILITY BACKSTOP (deterministic; fills a GAP only). The per-table
+            # owner_scoped_reads flag is LLM-authored at kickoff and demonstrably
+            # INCONSISTENT across runs of the SAME app (smoke-notes: set in exp3, FORGOTTEN
+            # in exp1/exp5 → a per-user-private app ships with leaking reads). When the lane
+            # did NOT decide it AND the table is owned-per-user (owner FK to users) AND the
+            # GOAL explicitly states per-user privacy, set it deterministically here. An
+            # EXPLICIT lane decision (true OR false) is always respected — this never
+            # overrides, only fills the gap. High-precision goal match → no public-feed
+            # false-positive (a public feed's goal matches none of the private phrases).
+            if ("owner_scoped_reads" not in _t
+                    and _table_has_owner_fk(_t)
+                    and _goal_implies_per_user_private(description)):
+                _t = dict(_t)
+                _t["owner_scoped_reads"] = True
             _kept.append(_t)
         data_model = {**_dm, "tables": _kept}
     return {
@@ -877,6 +952,66 @@ def _conflict_from_finding(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+
+async def author_milestone_detail(
+    hubs: Any,
+    orch_agent: Any,
+    milestone_index: int,
+    *,
+    raw_req: str = "",
+    timeout_s: float = 240.0,
+) -> str:
+    """Run the orchestrator's KICKOFF-DETAIL turn for ``milestone_index``, returning
+    the authored detail (or ``""`` to fall back to the rough slice).
+
+    Fires a ``kickoff_detail_request`` to the orchestrator AGENT (it reviews the
+    roadmap, may revise FUTURE phases, and sets THIS phase's detailed detail via the
+    ``milestone_*`` tools — with its full system prompt + hub context), then AWAITS
+    (bounded) until ``hubs.milestones`` reports the kickoff-detail TURN COMPLETE
+    (``is_detail_authored``). Waiting for turn COMPLETION (not the first non-empty
+    write) closes the double-author race: the handler may set the detail then refine
+    it within the same turn, and only marks ``detail_authored`` in its finally block.
+    NEVER hangs the run — the timeout is a hard safety cap; on timeout returns ``""``
+    and the caller falls back to the rough slice."""
+    import asyncio
+    ms = getattr(hubs, "milestones", None)
+    if ms is None or orch_agent is None:
+        return ""  # no store / no orchestrator agent to author — caller uses the slice
+    try:
+        cur = ms.get_by_index(milestone_index) or ms.get_current()
+    except Exception:
+        cur = None
+    if not isinstance(cur, dict):
+        return ""
+    mid = cur.get("id")
+    if ms.is_detail_authored(mid):
+        return str(cur.get("detail") or "")  # already authored (resume) — reuse
+    try:
+        hubs.eventhub.publish_event(
+            source_hub="orchestrator",
+            event_type="kickoff_detail_request",
+            payload={"milestone_index": milestone_index, "milestone_id": mid,
+                     "raw_requirements": str(raw_req or "")},
+            recipients=["orchestrator"], priority="high", caller="orchestrator")
+    except Exception:
+        return ""
+    # Bounded poll: the orchestrator handler (separate task) authors the detail +
+    # may revise future phases, then marks the TURN complete (detail_authored) in its
+    # finally block. This resolves on turn COMPLETION — not on the first non-empty
+    # write — so a refined second write within the turn is never missed. asyncio.sleep
+    # yields so the orchestrator task runs concurrently.
+    waited, step = 0.0, 3.0
+    while waited < timeout_s:
+        await asyncio.sleep(step)
+        waited += step
+        try:
+            if ms.is_detail_authored(mid):
+                c = ms.get(mid)
+                return str(c.get("detail") or "") if isinstance(c, dict) else ""
+        except Exception:
+            pass
+    return ""  # timed out → caller falls back to the rough slice
 
 
 def start_kickoff(
@@ -1885,13 +2020,26 @@ def finalize_kickoff(
         name = tbl.get("name")
         if not isinstance(name, str) or not name.strip():
             continue
-        schema = {k: v for k, v in tbl.items() if k != "name"}
+        # owner_scoped_reads (a.k.a private/private_reads): per-user-PRIVATE table —
+        # every read is owner-scoped, like writes. It's a TABLE PROPERTY, not a
+        # column, so lift it into metadata (the projector reads it from there);
+        # leaving it in ``schema`` would make normalize_table_schema drop it.
+        _read_flag_keys = ("owner_scoped_reads", "private_reads", "private")
+        schema = {k: v for k, v in tbl.items()
+                  if k != "name" and k not in _read_flag_keys}
+        _osr = next((tbl[k] for k in _read_flag_keys if k in tbl), None)
+        table_meta: Dict[str, Any] = {}
+        if _osr is not None:
+            table_meta["owner_scoped_reads"] = (
+                _osr if isinstance(_osr, bool)
+                else str(_osr).strip().lower() in {"true", "1", "yes", "y", "on"})
         try:
             result = hubs.schema_hub.register_table(
                 name=name,
                 schema=schema,
                 provider="backend",
                 agent=agent,
+                **table_meta,
             )
         except Exception as exc:
             n_tables_failed += 1

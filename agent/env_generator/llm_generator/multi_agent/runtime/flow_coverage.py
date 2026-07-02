@@ -69,7 +69,7 @@ def _derive_ui_spec_from_hub(hub_registry) -> Optional[dict]:
     pages: List[dict] = []
 
     try:
-        kickoff_pages = workhub.list_pages(kind="kickoff") or []
+        kickoff_pages = workhub.list_documents(kind="kickoff") or []
     except Exception:
         kickoff_pages = []
 

@@ -225,6 +225,38 @@ def _normalize_auth_imports_in_src(src: str) -> str:
     return "\n".join(lines) + ("\n" if src.endswith("\n") else "")
 
 
+_ROUTER_USE_RE = re.compile(r"^\s*@router\.", re.M)
+_ROUTER_DEF_RE = re.compile(r"^\s*router\s*=", re.M)
+
+
+def repair_custom_routes_router_prologue(backend_dir) -> Dict[str, object]:
+    """custom_routes.py uses ``@router.<verb>`` but never DEFINES ``router`` (outlook
+    run-34, live): the module raises NameError at import, main.py's include swallows it,
+    and the WHOLE custom router silently vanishes — the lane's properly OWNER-SCOPED
+    by-id reads with it, so the unscoped projected reads leaked cross-user rows →
+    isolation probes failed 7 cycles → STUCK abort. The missing prologue is mechanical:
+    insert the canonical ``router = APIRouter()`` after the last top-level import.
+    Idempotent; best-effort."""
+    out: Dict[str, object] = {"repaired": False}
+    try:
+        p = Path(backend_dir) / "custom_routes.py"
+        if not p.exists():
+            return out
+        src = p.read_text(encoding="utf-8")
+        if not _ROUTER_USE_RE.search(src) or _ROUTER_DEF_RE.search(src):
+            return out
+        lines = src.split("\n")
+        last_import = max((i for i, l in enumerate(lines)
+                           if l.startswith("import ") or l.startswith("from ")), default=-1)
+        lines[last_import + 1:last_import + 1] = [
+            "", "from fastapi import APIRouter", "router = APIRouter()", ""]
+        p.write_text("\n".join(lines), encoding="utf-8")
+        out["repaired"] = True
+    except Exception:
+        pass
+    return out
+
+
 def repair_auth_import_paths(backend_dir) -> Dict[str, object]:
     """FIX #48: lanes import the canonical auth dependency from the WRONG module —
     ``from oauth_routes import get_current_user`` (oauth_routes only exposes

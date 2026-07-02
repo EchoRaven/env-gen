@@ -111,8 +111,13 @@ def kickoff_endpoints_implemented(
             try:
                 from ...runtime.backend_audit import sync_endpoint_statuses
                 sync_endpoint_statuses(_wt, registryhub)
-            except Exception:
-                pass
+            except Exception as exc:
+                # Non-fatal (this gate must not crash) but LOUD: backend_audit raises
+                # BackendAuditError on a real failure; silently swallowing it re-hides
+                # the signal and the STATUS gate then runs on stale flags.
+                _log.error(
+                    "backend_audit.sync_endpoint_statuses FAILED in precondition "
+                    "(worktree=%s; endpoint flags may be stale): %s", _wt, exc)
     endpoints = registryhub.get_endpoints() or {}
     # PROPOSAL #30 S1: skip the FRAMEWORK-OWNED fixed surface (auth/oauth/infra/spine)
     # via the canonical lifecycle.is_business — the SAME predicate
