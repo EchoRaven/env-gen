@@ -67,6 +67,44 @@ def _unescape_statement_boundary_newlines(src: str) -> str:
     return _LITNL_BOUNDARY_RE.sub(lambda m: m.group(1) + "\n\n", src)
 
 
+# Third shape of the same damage family (outlook run-36, 2026-07-02): a literal ``\n``
+# INSIDE a template-literal interpolation — ``className={`... ${\n cond ? 'a' : 'b'\n}`}``.
+# The ``${...}`` region is EXPRESSION context, so the backslash is a hard esbuild syntax
+# error ("Syntax error \"n\"") → vite build fails → docker_up STUCK-abort (run-36 died
+# in 7 cycles on MessageList.jsx:94). Trigger precisely on ``${\n``; on such a line,
+# un-escape every ``\n`` that is NOT inside a single/double-quoted substring (a quoted
+# ``'\n'`` — e.g. split('\n') — is legitimate data and stays).
+_TPL_EXPR_NL_TRIGGER = re.compile(r"\$\{\\n")
+
+
+def _unescape_template_expr_newlines(src: str) -> str:
+    if not _TPL_EXPR_NL_TRIGGER.search(src):
+        return src
+    out_lines: List[str] = []
+    for line in src.split("\n"):
+        if not _TPL_EXPR_NL_TRIGGER.search(line):
+            out_lines.append(line)
+            continue
+        res: List[str] = []
+        i, n = 0, len(line)
+        quote = None
+        while i < n:
+            ch = line[i]
+            if quote:
+                if ch == "\\" and i + 1 < n:        # escape inside a quoted string
+                    res.append(line[i:i + 2]); i += 2; continue
+                if ch == quote:
+                    quote = None
+                res.append(ch); i += 1; continue
+            if ch in ("'", '"'):
+                quote = ch; res.append(ch); i += 1; continue
+            if ch == "\\" and i + 1 < n and line[i + 1] == "n":
+                res.append("\n"); i += 2; continue   # code context → real newline
+            res.append(ch); i += 1
+        out_lines.append("".join(res))
+    return "\n".join(out_lines)
+
+
 def _unescape_delimiter_backticks(src: str) -> str:
     """Un-escape template-literal delimiter backticks. The OPEN/CLOSE regexes are used as a
     per-LINE malformation DETECTOR: a line carrying a ``\``` in a delimiter position — right
@@ -108,6 +146,7 @@ def repair_frontend_escaped_backticks(frontend_dir) -> Dict[str, object]:
                 continue
             fixed = _unescape_delimiter_backticks(txt)
             fixed = _unescape_statement_boundary_newlines(fixed)
+            fixed = _unescape_template_expr_newlines(fixed)
             if fixed != txt:
                 try:
                     f.write_text(fixed, encoding="utf-8")
