@@ -752,6 +752,29 @@ Args:
                             _blockers.append(str(_bc["reason"]))
                     except Exception:
                         pass
+                    # GUARD 2b (#39, runs 31+32 both FAILED this way): the checks above pass
+                    # while FRONTEND work is mid-flight — every backend endpoint implemented +
+                    # chains frozen-green, but a registered ui_page is not yet WIRED (its route
+                    # absent from App.jsx / component file missing). deliver_project then exits
+                    # the loop straight into the post-loop gate's deliverability sweep →
+                    # 'deliverability_ui_page_unwired' → RuntimeError → watchdog kill. Re-use
+                    # the SAME deliverability aggregator the post-loop gate maps its checks
+                    # from, so a deliver that would fail the gate is rejected (run keeps
+                    # converging) instead of killing the run. session_start_ts=0 keeps the
+                    # RunHub recency check LOOSER than the gate's — never stricter.
+                    try:
+                        from pathlib import Path as _Path
+                        from multi_agent.runtime.deliverability import compute_deliverability
+                        _base = getattr(_hubs, "base_dir", None)
+                        if _base:
+                            _app = _Path(_base) / "app"
+                            if not _app.exists():
+                                _app = _Path(_base)
+                            _rep = compute_deliverability(_hubs, _app, session_start_ts=0.0)
+                            for _bl in (getattr(_rep, "blockers", None) or []):
+                                _blockers.append(str(_bl)[:160])
+                    except Exception:
+                        pass
                     if _blockers:
                         return ToolResult(
                             success=False,
