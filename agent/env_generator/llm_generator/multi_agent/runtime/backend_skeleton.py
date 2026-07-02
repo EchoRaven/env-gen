@@ -580,6 +580,33 @@ except ImportError:
 except Exception as _custom_exc:  # pragma: no cover — a broken override must not kill boot
     import logging
     logging.getLogger("custom_routes").warning("custom_routes failed to load: %s", _custom_exc)
+
+# CURRENT-USER FILL-IN: the frontend's session restore (ProtectedRoute) calls the
+# auth-prefixed "current user" endpoint, but NOTHING guarantees it exists — the projector
+# EXCLUDES the /auth|/oauth control surface (business_endpoints), the coverage gate excludes
+# it too, and the lane only sometimes writes it (outlook run-27 + run-29: /api/auth/me 404 →
+# every protected page bounced to /login → hollow app / login-wall). If neither the lane nor
+# the projector registered a /me under auth/oauth, register the canonical one here — the row
+# is fully determined by the platform's own auth (get_current_user), so this is deterministic
+# control-surface scaffolding, not business logic. Fill-in only; a lane-authored /me wins.
+try:
+    _fw_me_present = {getattr(_r, "path", "") for _r in app.routes}
+    def _fw_auth_me(user=Depends(get_current_user)):
+        if not hasattr(user, "__dict__") and not isinstance(user, dict):
+            return {"item": {"id": user}}        # dependency returned a bare user id
+        _item = {}
+        for _c in ("id", "email", "name", "username", "display_name", "avatar_url",
+                   "tenant_id", "created_at"):
+            _v = user.get(_c) if isinstance(user, dict) else getattr(user, _c, None)
+            if _v is not None:
+                _item[_c] = _v.isoformat() if hasattr(_v, "isoformat") else _v
+        return {"item": _item}
+    for _fw_p in ("/api/auth/me", "/auth/me"):
+        if _fw_p not in _fw_me_present:
+            app.get(_fw_p)(_fw_auth_me)
+except Exception as _fw_me_exc:  # pragma: no cover — fill-in must never kill boot
+    import logging
+    logging.getLogger("custom_routes").warning("auth/me fill-in failed: %s", _fw_me_exc)
 '''
 
 _MAIN_FOOTER = '''
