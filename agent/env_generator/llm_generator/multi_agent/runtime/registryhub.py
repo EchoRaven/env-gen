@@ -239,6 +239,21 @@ class RegistryHub:
                 "not registrations."
             ),
         )
+        # PATH-PARAM VALIDATION (#57, outlook run-43 live): a brace param must be a
+        # named identifier. The verifier registered ``DELETE /api/messages/{}`` —
+        # projected verbatim that emits ``def h(: str, ...)`` → SyntaxError → the
+        # backend CRASH-LOOPS and every validation cycle dies on backend_port.
+        # Reject at the source with the fix in the message (the projector also
+        # sanitizes defensively for garbage already stored).
+        import re as _re
+        for _seg in str(path or "").split("/"):
+            if _seg.startswith("{") and _seg.endswith("}"):
+                if not _re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", _seg[1:-1]):
+                    raise ValueError(
+                        f"invalid path parameter '{_seg}' in '{path}': every "
+                        "{...} must be a NAMED identifier — e.g. "
+                        "/api/messages/{messageId}, not /api/messages/{}. "
+                        "Re-register with a named param.")
         endpoint_id = self.endpoint_id(method, path)
         actor = agent or provider or "registryhub"
         now = time.time()

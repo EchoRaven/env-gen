@@ -244,6 +244,27 @@ def _path_params(path: str) -> List[str]:
     return [s for s, is_p in _segments(path) if is_p]
 
 
+def _sanitize_path_params(path: str) -> str:
+    """Fix #57 (outlook run-43, live): a registered path can carry an EMPTY or
+    non-identifier brace param — the verifier registered ``DELETE
+    /api/messages/{}`` — and projected VERBATIM it emits ``def h(: str, ...)``
+    → SyntaxError → the backend CRASH-LOOPS and every validation cycle dies on
+    backend_port (never a published port). Rewrite each invalid ``{...}`` to a
+    deterministic positional ``{param_N}``: the handler is valid Python and the
+    served route still matches the same URL shapes. Registration now also
+    REJECTS such paths (registryhub); this is the defense for garbage already
+    in a hub store."""
+    segs = (path or "").split("/")
+    out = []
+    for n, seg in enumerate(segs, 1):
+        if seg.startswith("{") and seg.endswith("}"):
+            name = seg[1:-1]
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+                seg = "{param_%d}" % n
+        out.append(seg)
+    return "/".join(out)
+
+
 def _ends_in_param(path: str) -> bool:
     segs = _segments(path)
     return bool(segs) and segs[-1][1]
@@ -542,6 +563,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
     email, calendar, drafts) gets correct read isolation BY CONSTRUCTION, instead
     of a remediation loop the lane can't win (projected wins for CRUD, fd56c2e).
     Default off keeps the reference public-feed behaviour (anyone GETs any row)."""
+    path = _sanitize_path_params(path)   # #57: never emit invalid Python for a bad brace param
     fn = "_projected_" + re.sub(r"[^a-zA-Z0-9]+", "_", f"{method}_{path}").strip("_").lower() + f"_{idx}"
     res = _resource_model(path, models)
     # No type annotations on the dependency params: a ``: User`` / ``: Session``
