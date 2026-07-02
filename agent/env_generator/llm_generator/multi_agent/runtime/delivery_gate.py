@@ -1130,6 +1130,10 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 deliverability_failed_checks.append("deliverability_failed_mcp_probes")
             elif "dead artifact" in low:
                 deliverability_failed_checks.append("deliverability_dead_artifacts")
+            elif "authored seed missing" in low:
+                # #41: the lane never authored seed_data.json — the app would ship the
+                # bland framework fallback (run-33 shipped SUCCESS this way).
+                deliverability_failed_checks.append("deliverability_missing_authored_seed")
             elif "missing seed" in low:
                 deliverability_failed_checks.append("deliverability_missing_seed")
             elif "low row count" in low or "placeholder seed" in low:
