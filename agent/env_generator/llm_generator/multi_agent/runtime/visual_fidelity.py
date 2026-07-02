@@ -650,7 +650,34 @@ async def run_visual_fidelity(
             "min_similarity": min_similarity}
 
 
-def remediation_text(result: Mapping[str, Any]) -> str:
+def _spec_snippet(output_dir: Any, screen_name: str) -> str:
+    """The pre-computed component spec's MEASURED values for one screen, compact.
+
+    The framework decomposes every reference into design/component_specs/<screen>.json
+    (named components + measured background/accent hex) before the lanes wake — but runs
+    30-38 show the lane reads it ~once per run, then fixes visual tasks by eyeball. Embed
+    the numbers directly in the remediation task so the fixing lane holds the exact spec
+    (quality by gate, per the material-prep architecture rule). Empty on any failure."""
+    try:
+        p = Path(output_dir) / "design" / "component_specs" / f"{screen_name}.json"
+        if not p.exists():
+            return ""
+        spec = json.loads(p.read_text(encoding="utf-8"))
+        rows = []
+        for c in (spec.get("components") or [])[:12]:
+            acc = ", ".join(f"{k}={v}" for k, v in (c.get("accents") or {}).items())
+            rows.append(f"  · {c.get('name')}: bg {c.get('background')}"
+                        + (f", accents {acc}" if acc else "")
+                        + (f" — {c.get('state')}" if c.get("state") else ""))
+        if not rows:
+            return ""
+        return ("MEASURED SPEC (design/component_specs/" + screen_name + ".json — use these "
+                "EXACT hex values, never eyeball):\n" + "\n".join(rows))
+    except Exception:
+        return ""
+
+
+def remediation_text(result: Mapping[str, Any], output_dir: Any = None) -> str:
     """Actionable task body for the frontend lane from a failed gate result —
     per screen: missing components first, then the judge's per-dimension notes
     (weakest dimension first), then the ordered deviations."""
@@ -661,6 +688,10 @@ def remediation_text(result: Mapping[str, Any]) -> str:
         if r.get("passed"):
             continue
         lines.append(f"\n## {r['name']}  (route {r['route']}, similarity {r['similarity']:.2f})")
+        if output_dir is not None:
+            _sn = _spec_snippet(output_dir, str(r.get("name") or ""))
+            if _sn:
+                lines.append(_sn)
         dims = r.get("dimensions") or {}
         missing = (dims.get("components") or {}).get("missing") or []
         if missing:
@@ -788,7 +819,7 @@ class VisualFidelityGate:
             try:
                 _vt = orch.hubs.workhub.create_task(
                     title=f"UI does not match reference designs (visual gate, attempt {self.attempts})",
-                    description=remediation_text(result),
+                    description=remediation_text(result, getattr(orch, "output_dir", None)),
                     assignee="frontend",
                     agent="orchestrator",
                     priority="P1",
