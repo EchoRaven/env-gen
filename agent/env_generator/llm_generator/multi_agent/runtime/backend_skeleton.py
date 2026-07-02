@@ -438,6 +438,23 @@ from auth_dependency import get_current_user
 import models  # noqa: F401  (registers all ORM tables on Base.metadata)
 from models import *  # noqa: F401,F403
 
+
+def _fw_uid(user):
+    """Authenticated caller's id, coerced to the owner column's likely type. Auth deps
+    commonly carry the JWT `sub` as a STRING; comparing it raw against an INTEGER owner
+    column makes postgres raise `operator does not exist: integer = character varying`
+    → every owner-scoped read/write 500s (outlook run-39, live). Digits → int; else as-is
+    (text/uuid ids untouched)."""
+    _v = getattr(user, "id", None)
+    if _v is None and isinstance(user, dict):
+        _v = user.get("id") or user.get("sub")
+    if _v is None:
+        _v = user
+    try:
+        return int(_v)
+    except (TypeError, ValueError):
+        return _v
+
 Base.metadata.create_all(bind=engine)
 
 # Populate empty business tables with realistic demo data so the UI is not blank

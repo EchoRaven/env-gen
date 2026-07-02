@@ -537,7 +537,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
 
     ``owner_scoped_reads``: OPT-IN per-resource signal (default off). When set AND
     the model has an owner FK AND the route is authenticated, the by-id GET, flat
-    collection GET, and search are scoped to ``owner_fk == user.id`` — mirroring
+    collection GET, and search are scoped to ``owner_fk == _fw_uid(user)`` — mirroring
     the PUT/DELETE write authz. This is how a per-user-PRIVATE resource (notes,
     email, calendar, drafts) gets correct read isolation BY CONSTRUCTION, instead
     of a remediation loop the lane can't win (projected wins for CRUD, fd56c2e).
@@ -579,7 +579,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
     # reads), a nested route (/api/projects/{id}/tasks) must owner-check the parent — else
     # a user reaches another user's children via the nested path (smoke-proj: GET
     # /api/projects/{otherId}/tasks → 200 leaked another user's tasks). The parent lookup
-    # then filters by its owner FK == user.id, so a non-owned parent resolves to None → 404.
+    # then filters by its owner FK == _fw_uid(user), so a non-owned parent resolves to None → 404.
     _parent_owner_filter = ""
     if parent_ctx:
         parent_table, parent_meta, parent_param = parent_ctx
@@ -589,7 +589,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         if auth and owner_scoped_tables and parent_table in set(owner_scoped_tables):
             _p_ofk = _owner_fk(parent_meta)
             if _p_ofk:
-                _parent_owner_filter = f'.filter(getattr({parent_cls}, "{_p_ofk}") == user.id)'
+                _parent_owner_filter = f'.filter(getattr({parent_cls}, "{_p_ofk}") == _fw_uid(user))'
 
     body_lines: List[str] = []
     m = method.upper()
@@ -621,7 +621,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             # leak existence), exactly like the PUT/DELETE owner gate. Opt-in via
             # the resource's owner_scoped_reads contract signal; open by default.
             body_lines += [
-                f'    if getattr(obj, "{owner_fk}", None) != user.id:',
+                f'    if getattr(obj, "{owner_fk}", None) != _fw_uid(user):',
                 '        raise HTTPException(status_code=404, detail="not found")',
             ]
         body_lines += [
@@ -635,11 +635,11 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         # the PARENT's id, NOT the child row's PK, so it deleted the wrong row / 404'd /
         # 500'd (instagram_v6: DELETE /api/posts/{post_id}/like|save + /users/{username}/
         # follow all 500 → delivery wedged). Find by (target_fk==parent.id [, owner_fk==
-        # user.id]) and delete idempotently (a no-op delete still succeeds — toggles are
+        # _fw_uid(user)]) and delete idempotently (a no-op delete still succeeds — toggles are
         # safe to repeat). Uses _target_fk (the create-bind FK) NOT _scope_fk so a
         # self-referential join (follows: follower_id + following_id both → users)
         # filters the FOLLOWED side (following_id==parent.id) against the OWNER side
-        # (follower_id==user.id) — mirrors the create handler's bind.
+        # (follower_id==_fw_uid(user)) — mirrors the create handler's bind.
         _sfk = _target_fk(meta, parent_table, parent_singular)
         body_lines = [
             f'    parent = db.query({parent_cls}).filter(getattr({parent_cls}, "{parent_field}") == {parent_param}){_parent_owner_filter}.first()',
@@ -649,7 +649,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         ]
         if owner_fk:
             body_lines.append(
-                f'    _q = _q.filter(getattr({cls}, "{owner_fk}") == user.id)')
+                f'    _q = _q.filter(getattr({cls}, "{owner_fk}") == _fw_uid(user))')
         body_lines += [
             "    obj = _q.first()",
             "    if obj is not None:",
@@ -668,7 +668,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             # can't even probe existence). Safe default for projected CRUD; broader
             # rules (admin/moderator) go in the lane's custom_routes.
             body_lines += [
-                f'    if getattr(obj, "{owner_fk}", None) != user.id:',
+                f'    if getattr(obj, "{owner_fk}", None) != _fw_uid(user):',
                 '        raise HTTPException(status_code=404, detail="not found")',
             ]
         body_lines += [
@@ -721,7 +721,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         ]
         if owner_scoped_reads and owner_fk:
             body_lines.append(
-                f'    query = query.filter(getattr({cls}, "{owner_fk}") == user.id)')
+                f'    query = query.filter(getattr({cls}, "{owner_fk}") == _fw_uid(user))')
         body_lines += [
             "    if term:",
             f"        cols_to_search = [c for c in {_search_cols!r} if hasattr({cls}, c)]",
@@ -755,7 +755,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         if _me and _me[0]:
             _ucls, _ucols = _me
             body_lines = [
-                (f"    obj = db.get({_ucls}, user.id) if user is not None else None"
+                (f"    obj = db.get({_ucls}, _fw_uid(user)) if user is not None else None"
                  if auth else f"    obj = db.query({_ucls}).first()"),
                 "    if obj is None:",
                 '        raise HTTPException(status_code=404, detail="not found")',
@@ -768,7 +768,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         if owner_scoped_reads and owner_fk:
             # PRIVATE resource: the list is the caller's own rows only.
             body_lines = [
-                f'    rows = db.query({cls}).filter(getattr({cls}, "{owner_fk}") == user.id).limit(100).all()',
+                f'    rows = db.query({cls}).filter(getattr({cls}, "{owner_fk}") == _fw_uid(user)).limit(100).all()',
                 f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": len(rows)}}",
             ]
         else:
@@ -802,7 +802,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             _ucls = (_me_u[0] if (_me_u and _me_u[0]) else None) or cls
             body_lines += [
                 "    try:",
-                f"        obj = db.get({_ucls}, user.id)" if auth else f"        obj = db.query({_ucls}).first()",
+                f"        obj = db.get({_ucls}, _fw_uid(user))" if auth else f"        obj = db.query({_ucls}).first()",
                 "        if obj is None:",
                 '            raise HTTPException(status_code=404, detail="not found")',
                 "        for k, v in valid.items():",
@@ -821,7 +821,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             ]
             if owner_fk:
                 body_lines += [
-                    f'        if getattr(obj, "{owner_fk}", None) != user.id:',
+                    f'        if getattr(obj, "{owner_fk}", None) != _fw_uid(user):',
                     '            raise HTTPException(status_code=404, detail="not found")',
                 ]
             body_lines += [
@@ -844,7 +844,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             if m == "POST" and auth:
                 ofk = _owner_fk(meta, exclude=tuple(bound))
                 if ofk:
-                    body_lines += [f'    valid.setdefault("{ofk}", user.id)']
+                    body_lines += [f'    valid.setdefault("{ofk}", _fw_uid(user))']
             body_lines += [
                 "    try:",
                 f"        obj = {cls}(**valid)",
@@ -1028,6 +1028,21 @@ def project_missing_routes(
         guard = (
             "# by-construction projector deps (guarded; safe to re-import)\n"
             "from fastapi import Depends, HTTPException, Query  # noqa: F401,F811\n"
+            # OWNER-ID COERCION (outlook run-39, live): auth deps commonly carry the JWT
+            # `sub` as a STRING; comparing it against an INTEGER owner column made postgres
+            # raise `operator does not exist: integer = character varying` → EVERY scoped
+            # read/write 500'd → business_endpoints_reachable STUCK-abort. Every projected
+            # owner comparison now goes through _fw_uid (int-coerce when digits, else as-is).
+            "def _fw_uid(user):  # noqa: F811 — idempotent re-definition is harmless\n"
+            "    _v = getattr(user, 'id', None)\n"
+            "    if _v is None and isinstance(user, dict):\n"
+            "        _v = user.get('id') or user.get('sub')\n"
+            "    if _v is None:\n"
+            "        _v = user\n"
+            "    try:\n"
+            "        return int(_v)\n"
+            "    except (TypeError, ValueError):\n"
+            "        return _v\n"
             "try:\n"
             "    from models import *  # noqa: F401,F403\n"
             "except Exception:\n"
