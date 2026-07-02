@@ -625,8 +625,22 @@ def _step_refs(step: Mapping[str, Any]) -> set:
 
 def _status_ok(status: Any, expect: List[int]) -> bool:
     """A step passes when its status is in the authored ``expect`` list, or — when no
-    ``expect`` was authored — any 2xx."""
-    return (status in expect) if expect else bool(status and 200 <= status < 300)
+    ``expect`` was authored — any 2xx.
+
+    SUCCESS-FAMILY TOLERANCE (outlook run-26 + run-29, 2026-07-01): when EVERY authored
+    expect is a 2xx, the verifier's intent is "this write/read SUCCEEDS" — but it GUESSES
+    the exact success code and handlers legitimately differ (rsvp create → 201 vs authored
+    [200]; delete → 204 vs [200]). Strict membership failed the WHOLE business_chain forever
+    on a WORKING flow (run-29: rsvp 201-vs-[200] wedged 4+ validation cycles; run-26 M3
+    flagged the same class) — so an all-2xx expectation accepts any 2xx. An expect list
+    carrying ANY non-2xx (isolation probes [403,404], redirect checks, mixed [200,404])
+    keeps EXACT matching — a 200 must never satisfy an expected-denial probe."""
+    if not expect:
+        return bool(status and 200 <= status < 300)
+    if status in expect:
+        return True
+    return (isinstance(status, int) and 200 <= status < 300
+            and all(isinstance(e, int) and 200 <= e < 300 for e in expect))
 
 
 # A plain-string 4xx detail ('text is required', 'missing field email') — some
