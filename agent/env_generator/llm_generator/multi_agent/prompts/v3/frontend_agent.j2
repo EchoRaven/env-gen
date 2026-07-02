@@ -780,6 +780,14 @@ export default function TasksPage() {
     );
 }
 ```
+EFFECT-DEPENDENCY RULE (page-hang class): never put a freshly-constructed OBJECT in a
+`useEffect` dependency array — `useEffect(..., [startDate])` where the parent derives
+`startDate` with `new Date(...)`/`getWeekStart(...)` on every render creates a NEW identity
+each render → the effect re-fires → setState → re-render → INFINITE fetch loop → the page
+never settles and times out (a real hang the browser gate flags). Depend on stable
+PRIMITIVES instead: `[startDate.toISOString()]` / `[weekKey]`, or memoize the object with
+`useMemo`. Also import EVERY icon/component you reference in JSX — an unimported
+`<Mail/>` builds fine but crashes the page at render (`ReferenceError`).
 </component_template>
 
 
