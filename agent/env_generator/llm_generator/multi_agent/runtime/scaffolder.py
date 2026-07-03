@@ -139,6 +139,29 @@ services:
     build: ../app/backend
     environment:
       DATABASE_URL: postgresql+psycopg://sandbox:sandbox@database:{db_port}/app
+      # Fix #60 (outlook run-45, live): lanes hand-roll their own DB clients
+      # (an asyncpg pool in custom_routes) reading whatever env convention they
+      # guess — DB_HOST/DB_PORT/..., PG*, POSTGRES_* — NONE of which existed, so
+      # the guess fell back to its localhost defaults and every custom-route
+      # read 500'd (OSError: Connect call failed 127.0.0.1). Export the SAME
+      # connection facts under all three common conventions so any reasonable
+      # guess resolves BY CONSTRUCTION (PG* is also libpq/asyncpg's native
+      # fallback; DATABASE_URL is complete, so psycopg never consults PG*).
+      DB_HOST: database
+      DB_PORT: "{db_port}"
+      DB_USER: sandbox
+      DB_PASSWORD: sandbox
+      DB_NAME: app
+      PGHOST: database
+      PGPORT: "{db_port}"
+      PGUSER: sandbox
+      PGPASSWORD: sandbox
+      PGDATABASE: app
+      POSTGRES_HOST: database
+      POSTGRES_PORT: "{db_port}"
+      POSTGRES_USER: sandbox
+      POSTGRES_PASSWORD: sandbox
+      POSTGRES_DB: app
       API_PORT: {backend_port}
       # Embedded OAuth2 AS (zoom-style): the env mints its OWN RS256 tokens.
       # OAUTH_ISSUER is intentionally unset → derived from request.base_url.
