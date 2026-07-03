@@ -129,6 +129,44 @@ def _trailing_resource_var(path: Any) -> Optional[str]:
     return next((g for g in m.groups() if g), None)
 
 
+def _drop_auth_save_clobbers(steps: List[Dict[str, Any]]) -> None:
+    """AUTH-SAVE CLOBBER GUARD (#59c, outlook run-44 live) — in place.
+
+    A LATER auth step must not RE-BIND a token var that an EARLIER auth step
+    with a DIFFERENT email already saves. run-44: the second register carried
+    ``save: {"token_2": "access_token", "token": "access_token"}`` (the
+    canonical-token setdefault below adds "token" to EVERY auth step) —
+    silently overwriting user 1's token with user 2's. Every later "owner"
+    step (auth=token) then acted AS USER 2, so the cross-user probe
+    (auth=token_2) read a row its OWN identity created → 200 → the chain
+    flagged a LEAK on a correctly-isolated app (live 2-user curl proved the
+    isolation worked) and wedged business_chain for 12+ cycles. The clobbering
+    save key is dropped (the step's own new var stays); a same-email re-login
+    rebind is the same identity and left alone.
+
+    Called from BOTH normalize_steps (registration-time) and execute_chain
+    (runtime): chains persisted by an older framework carry the clobber in the
+    STORED steps, and execute_chain runs the stored steps verbatim."""
+    _auth_email_by_var: Dict[str, str] = {}
+    for s in steps:
+        if not isinstance(s, dict):
+            continue
+        if not (str(s.get("method", "")).upper() == "POST"
+                and "/auth/" in str(s.get("path", ""))):
+            continue
+        _body = s.get("body")
+        _email = str((_body or {}).get("email", "") if isinstance(_body, Mapping)
+                     else "").strip().lower()
+        _save = dict(_coerce_save(s.get("save")))
+        for _k in list(_save.keys()):
+            _first = _auth_email_by_var.get(_k)
+            if _first and _email and _first != _email:
+                _save.pop(_k, None)
+            elif _email:
+                _auth_email_by_var.setdefault(_k, _email)
+        s["save"] = _save
+
+
 def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
     """Normalize step variants → canonical {method, path, body, expect, save,
     auth}. Returns (normalized, errors). SCHEMA TOLERANCE (round 35): accept
@@ -344,6 +382,7 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
     #     is masked (the intruder would 404 on a still-existing row). Matched on the trailing
     #     path var, so a cross-user read of a DIFFERENT resource is still routed.
     #   • Acts only when CONFIDENT; otherwise byte-identical to prior behaviour. Idempotent.
+    _drop_auth_save_clobbers(out)
     _INTRUDER = "__chain_intruder_token"
     _owner_deleted_vars: set = set()
     _used_intruder = False
@@ -844,7 +883,13 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     last_id_by_resource: Dict[str, Any] = {}  # resource -> its last-created id (FK resolution, fix #10)
     last_reg_creds: Dict[str, Any] = {}  # creds of the last successful /auth/register → reused if a later /auth/login 401s
     unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
-    for idx, step in enumerate(chain.get("steps") or []):
+    # #59c: STORED chains (registered by an older framework, or hand-edited) can
+    # carry the auth-save clobber in their persisted steps — normalize-time
+    # guarding alone can't reach them, so guard the runtime copy too.
+    _steps = [dict(s) if isinstance(s, Mapping) else s
+              for s in (chain.get("steps") or [])]
+    _drop_auth_save_clobbers(_steps)
+    for idx, step in enumerate(_steps):
         variables["rand"] = f"{_rand_base}{idx:02d}"
         method = str(step.get("method", "GET")).upper()
         # A broken step no longer aborts the whole chain (it used to `break`, so only the
@@ -883,11 +928,30 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
             if _rid is None:
                 _rid = last_id
             if _rid is None:
-                _rid = _recover_id_via_list(base, _pcoll, token)
-            if _rid is None:
-                # (4) even the list is empty — owner-scoped reads + a fresh chain user own
-                # NOTHING (run-29 M3): create a row and use its id (#32).
-                _rid = _recover_id_via_create(base, _pcoll, token)
+                # DENIAL-PROBE IDENTITY (#59b): a CROSS-USER-DENIAL step must not
+                # recover an id AS ITSELF — under owner-scoping its list is empty,
+                # so create-recovery (#32) mints the PROBER's own row and the probe
+                # then reads it → 200 → a false LEAK on a correctly-isolated app.
+                # Recover with a NON-prober identity (the chain's primary actor's
+                # token); with no other token available, skip recovery — the
+                # literal placeholder 404s, which the denial expectation tolerates
+                # (vacuous pass, never a false leak).
+                _rtoken, _can_recover = token, True
+                if _is_cross_user_denial(step):
+                    _rtoken, _can_recover = None, False
+                    _auth_name = str(step.get("auth") or "")
+                    for _vn, _vv in variables.items():
+                        if (_vn != _auth_name and "token" in str(_vn).lower()
+                                and isinstance(_vv, str) and _vv):
+                            _rtoken, _can_recover = _vv, True
+                            break
+                if _can_recover:
+                    _rid = _recover_id_via_list(base, _pcoll, _rtoken)
+                    if _rid is None:
+                        # (4) even the list is empty — owner-scoped reads + a fresh
+                        # chain user own NOTHING (run-29 M3): create a row and use
+                        # its id (#32).
+                        _rid = _recover_id_via_create(base, _pcoll, _rtoken)
             if _rid is not None:
                 path = _UNRESOLVED_PLACEHOLDER.sub(str(_rid), path)
         body = _subst(step.get("body"), variables) if step.get("body") else None
