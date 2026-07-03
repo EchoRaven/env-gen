@@ -492,6 +492,60 @@ def _fw_uid(user):
 
 Base.metadata.create_all(bind=engine)
 
+
+def _ensure_temporal_alias_columns():
+    """Fix #63 (outlook run-47, live): a lane authored RAW SQL against the _time
+    naming (SELECT * / WHERE start_time / ORDER BY start_time / INSERT ... start_time)
+    while the contract column is start_at → 'psycopg.errors.UndefinedColumn: column
+    "start_time" does not exist' → every such raw-SQL read 500'd (the ORM #61 synonym
+    can't reach a SQL string). For each temporal <x>_at/<x>_time column whose sibling
+    name does NOT physically exist, add a Postgres GENERATED-ALWAYS-STORED mirror
+    column so the lane's raw SQL works AS-WRITTEN for reads (SELECT * returns the
+    sibling key too); the mirror is read-only, but raw INSERTs of the sibling are
+    shadowed by the projected ORM write (which uses the real column). Postgres-only,
+    idempotent (ADD COLUMN IF NOT EXISTS), best-effort — never blocks boot. Coexists
+    with the ORM synonym (this is a DB column outside the ORM model)."""
+    from sqlalchemy import text as _text
+    try:
+        if engine.dialect.name != "postgresql":
+            return
+    except Exception:
+        return
+    _TEMPORAL = ("timestamp", "timestamptz", "date", "time")
+    try:
+        with engine.begin() as _c:
+            rows = _c.execute(_text(
+                "SELECT table_name, column_name, data_type FROM information_schema.columns "
+                "WHERE table_schema = 'public'")).fetchall()
+            by_table = {}
+            for t, col, dt in rows:
+                by_table.setdefault(t, {})[col] = str(dt or "").lower()
+            for t, cols in by_table.items():
+                for col, dt in list(cols.items()):
+                    if not any(k in dt for k in _TEMPORAL):
+                        continue
+                    low = col.lower()
+                    if low.endswith("_at"):
+                        sib = col[:-3] + "_time"
+                    elif low.endswith("_time"):
+                        sib = col[:-5] + "_at"
+                    else:
+                        continue
+                    if sib.lower() in {c.lower() for c in cols}:
+                        continue  # sibling already a real/mirror column
+                    cols[sib] = dt  # don't double-add within this pass
+                    try:
+                        _c.execute(_text(
+                            'ALTER TABLE "%s" ADD COLUMN IF NOT EXISTS "%s" %s '
+                            'GENERATED ALWAYS AS ("%s") STORED' % (t, sib, dt, col)))
+                    except Exception:
+                        pass
+    except Exception:
+        pass  # best-effort; a missing mirror only re-surfaces the lane bug, never blocks boot
+
+
+_ensure_temporal_alias_columns()
+
 # Populate empty business tables with realistic demo data so the UI is not blank
 # on first load (framework-owned; idempotent — skips tables that already have rows).
 try:
