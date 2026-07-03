@@ -924,20 +924,23 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
             # wedged forever on a functionally-correct, SEEDED app. Untouched when wired correctly.
             _pcoll = _collection_path_of(step.get("path"))
             _pres = _resource_from_path(_pcoll)
+            _is_denial = _is_cross_user_denial(step)
+            # (1) SAME-RESOURCE captured id — always the correct id for this path.
             _rid = (last_id_by_resource.get(_pres) if _pres else None)
+            # (2) RECOVERY on the CORRECT collection — MUST come BEFORE the global
+            #     last_id fallback (#66, run-51 auth_and_inbox_flow live): the
+            #     global last_id is the most-recent id from ANY prior step — e.g.
+            #     the USER id from GET /api/auth/me or a FOLDER id from GET
+            #     /api/folders — so using it for GET /api/messages/{message_id}
+            #     read /api/messages/<user-or-folder-id> → 404 → business_chain
+            #     wedged on a correct app. Recovery targets THIS collection (a real
+            #     seeded row or a freshly-created one), so it is the right resource.
+            #     #59b: a CROSS-USER-DENIAL step recovers with a NON-prober token
+            #     (else create-recovery mints its own row → the probe reads it →
+            #     200 false leak); no such token → skip recovery.
             if _rid is None:
-                _rid = last_id
-            if _rid is None:
-                # DENIAL-PROBE IDENTITY (#59b): a CROSS-USER-DENIAL step must not
-                # recover an id AS ITSELF — under owner-scoping its list is empty,
-                # so create-recovery (#32) mints the PROBER's own row and the probe
-                # then reads it → 200 → a false LEAK on a correctly-isolated app.
-                # Recover with a NON-prober identity (the chain's primary actor's
-                # token); with no other token available, skip recovery — the
-                # literal placeholder 404s, which the denial expectation tolerates
-                # (vacuous pass, never a false leak).
                 _rtoken, _can_recover = token, True
-                if _is_cross_user_denial(step):
+                if _is_denial:
                     _rtoken, _can_recover = None, False
                     _auth_name = str(step.get("auth") or "")
                     for _vn, _vv in variables.items():
@@ -948,10 +951,17 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                 if _can_recover:
                     _rid = _recover_id_via_list(base, _pcoll, _rtoken)
                     if _rid is None:
-                        # (4) even the list is empty — owner-scoped reads + a fresh
-                        # chain user own NOTHING (run-29 M3): create a row and use
-                        # its id (#32).
+                        # even the list is empty — owner-scoped reads + a fresh
+                        # chain user own NOTHING (run-29 M3): create a row (#32).
                         _rid = _recover_id_via_create(base, _pcoll, _rtoken)
+            # (3) GLOBAL last_id — absolute last resort, NON-denial only. Usually
+            #     the WRONG resource (a same-resource id would have won at (1)),
+            #     kept only for the rare ambiguous case. A denial step must NEVER
+            #     fall here — the global last_id is the prober's own most-recent
+            #     id → reading it → 200 false leak; leave the literal (404s,
+            #     tolerated by the denial expectation).
+            if _rid is None and not _is_denial:
+                _rid = last_id
             if _rid is not None:
                 path = _UNRESOLVED_PLACEHOLDER.sub(str(_rid), path)
         body = _subst(step.get("body"), variables) if step.get("body") else None
