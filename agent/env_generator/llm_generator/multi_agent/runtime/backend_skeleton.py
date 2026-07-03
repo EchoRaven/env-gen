@@ -266,6 +266,39 @@ def _reconcile_fk_types_in_map(by_name: Dict[str, List[Dict[str, Any]]]) -> None
                 _set_col_base_category(c, canon)
 
 
+def _temporal_synonym_lines(real: List[Dict[str, Any]]) -> List[str]:
+    """Fix #61 (outlook run-46, live) — SQLAlchemy ``synonym`` aliases for the
+    ``_at``↔``_time`` datetime-column naming drift.
+
+    A lane routinely authors handlers against ``event.start_time`` /
+    ``Event(start_time=...)`` while the framework-projected model (from the
+    contract's ``start_at``) has ``start_at`` → ``AttributeError: 'Event' object
+    has no attribute 'start_time'`` on read AND ``invalid keyword argument`` on
+    construct → EVERY events read/write 500'd (run-46 wedged business_chain on
+    GET /api/events/{id} → 500). ``synonym`` (unlike ORM ``__getattr__``) aliases
+    the sibling for READ, WRITE, and CONSTRUCTOR kwargs alike, so the buggy lane
+    code just works. Scoped to the temporal suffix family (the highest-frequency,
+    lowest-risk drift) and only emitted when the sibling name is NOT already a
+    real column — never shadows a declared column. Env-agnostic."""
+    names = {str(c.get("name") or "").lower() for c in real}
+    out: List[str] = []
+    for c in real:
+        nm = str(c.get("name") or "").strip()
+        low = nm.lower()
+        satype = _sa_type(str(c.get("type") or "")).lower()
+        if not nm or ("date" not in satype and "time" not in satype):
+            continue  # only datetime/date/time-typed columns get a temporal synonym
+        sib = None
+        if low.endswith("_at"):
+            sib = nm[:-3] + "_time"
+        elif low.endswith("_time"):
+            sib = nm[:-5] + "_at"
+        if sib and sib.lower() not in names and sib.lower() != low:
+            names.add(sib.lower())   # a second temporal col won't re-alias the same name
+            out.append(f'    {sib} = synonym("{nm}")')
+    return out
+
+
 def render_models(tables: Dict[str, Any]) -> str:
     """Render ``models.py`` (SQLAlchemy ORM) from the SchemaHub ``tables`` contract.
     Always emits the spine ``User``/``Tenant``; app tables generate one model each."""
@@ -293,6 +326,7 @@ def render_models(tables: Dict[str, Any]) -> str:
             else:
                 real = [{"name": "id", "type": "integer", "primary_key": True}] + real
         lines = [c for c in (_render_column(col) for col in real) if c]
+        lines += _temporal_synonym_lines(real)   # #61: _at↔_time drift aliases
         body = "\n".join(lines) or "    pass"
         blocks.append(f'class {_class_name(table)}(Base):\n'
                       f'    __tablename__ = "{table}"\n{body}')
@@ -314,6 +348,7 @@ def render_models(tables: Dict[str, Any]) -> str:
         "from sqlalchemy import (Column, Integer, BigInteger, String, Text, Boolean,\n"
         "                        DateTime, Date, Time, Float, Numeric, JSON, ForeignKey,\n"
         "                        text)\n"
+        "from sqlalchemy.orm import synonym\n"
         "from database import Base\n\n\n"
     )
     return header + "\n\n\n".join(blocks) + "\n"
