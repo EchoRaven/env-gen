@@ -124,12 +124,30 @@ def _unescape_delimiter_backticks(src: str) -> str:
     return "".join(out)
 
 
+# escaped JSX ATTRIBUTE double-quotes (outlook run-57, live): the lane JSON-escaped a
+# whole JSX file, emitting ``className=\"min-h-screen bg-[#fff]\"`` instead of
+# ``className="..."`` → esbuild/Vite "Unexpected token" → npm run build fails → docker_up
+# wedged 7 cycles → STUCK-ABORT (the lane repaired it ONE FILE AT A TIME, too slow for the
+# budget). PRECISE + SAFE: only ``identifier=\"value\"`` where the value carries no other
+# quote or backslash (a Tailwind/class string). A legitimately-escaped quote INSIDE a
+# string literal (its value would contain a ``\`` or ``"``) does NOT match ``[^"\\]*`` and
+# is left untouched — the same safety property as the backtick repair.
+_JSX_ESCQ_RE = re.compile(r'([A-Za-z_][\w-]*=)\\"([^"\\]*)\\"')
+
+
+def _unescape_jsx_attr_quotes(src: str) -> str:
+    if '\\"' not in src:
+        return src
+    return _JSX_ESCQ_RE.sub(r'\1"\2"', src)
+
+
 def repair_frontend_escaped_backticks(frontend_dir) -> Dict[str, object]:
-    """Un-escape template-literal delimiter backticks across the frontend source so an
-    LLM-emitted ``className={\`...\`}`` can't break the esbuild/Vite build (and thus wedge
-    the api_smoke docker_up gate). Deterministic + best-effort: only touches a file that
-    actually contains a backslash-backtick, and only rewrites delimiter positions.
-    Returns ``{"repaired": [relative paths]}``."""
+    """Un-escape template-literal delimiter backticks, escaped newlines, AND escaped JSX
+    attribute quotes across the frontend source so an LLM-emitted ``className={\`...\`}`` /
+    ``className=\"...\"`` can't break the esbuild/Vite build (and thus wedge the api_smoke
+    docker_up gate). Deterministic + best-effort: only touches a file that actually contains
+    an escape artifact, and only rewrites delimiter/attribute positions. Returns
+    ``{"repaired": [relative paths]}``."""
     repaired: List[str] = []
     try:
         src_dir = Path(frontend_dir) / "src"
@@ -142,11 +160,13 @@ def repair_frontend_escaped_backticks(frontend_dir) -> Dict[str, object]:
                 txt = f.read_text(encoding="utf-8")
             except Exception:
                 continue
-            if "\\`" not in txt and "\\n" not in txt:  # fast path: no escape damage anywhere
+            # fast path: no escape damage anywhere
+            if "\\`" not in txt and "\\n" not in txt and '\\"' not in txt:
                 continue
             fixed = _unescape_delimiter_backticks(txt)
             fixed = _unescape_statement_boundary_newlines(fixed)
             fixed = _unescape_template_expr_newlines(fixed)
+            fixed = _unescape_jsx_attr_quotes(fixed)
             if fixed != txt:
                 try:
                     f.write_text(fixed, encoding="utf-8")
