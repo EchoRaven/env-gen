@@ -721,6 +721,12 @@ def _missing_required_fields(body_text: Optional[str],
             if not (isinstance(loc, (list, tuple)) and loc):
                 continue
             frame = str(loc[0])
+            # ``loc == ["body"]`` (#70): the WHOLE body is missing because the step
+            # sent null/no body — there is NO field name to fill (filling a field
+            # literally named "body" is wrong). Skip; the caller re-probes with {}
+            # to surface the field-level 422 (loc == ["body","<field>"]).
+            if frame in ("body", "form") and len(loc) == 1:
+                continue
             seg = (loc[1] if len(loc) > 1 and frame in ("body", "query", "form")
                    else loc[-1])
             if not (isinstance(seg, str) and seg):
@@ -1028,6 +1034,18 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
         # genuinely-broken field still surfaces: the retry either resolves it or the
         # original failure is recorded (the type-mismatch retry just 422s again).
         if not ok and status in (400, 422):
+            # #70 (outlook run-58, live): the step sent NO body but the handler
+            # requires one (e.g. POST /api/events/{id}/rsvp needs {"response":...})
+            # → FastAPI reports loc:["body"] "Field required" with NO field name,
+            # so the fill below has nothing to target and the chain wedges. Re-probe
+            # once with an empty {} to surface the FIELD-level 422
+            # (loc:["body","response"]) whose field names the fill can then use.
+            # Safe: an endpoint that takes no body ignores {}.
+            if not isinstance(body, Mapping) and method in ("POST", "PUT", "PATCH"):
+                _probe = _http(method, base + path, token=token, body={})
+                if _probe.get("status") in (400, 422):
+                    res = _probe
+                body = {}
             _miss_body, _miss_query = _missing_required_fields(res.get("body_text"), method)
             _miss_body = [f for f in _miss_body
                           if not (isinstance(body, Mapping) and f in body)]
