@@ -719,6 +719,25 @@ try:
     for _fw_p in ("/api/auth/me", "/auth/me"):
         if _fw_p not in _fw_me_present:
             app.get(_fw_p)(_fw_auth_me)
+    # AUTH LOGIN/REGISTER FILL-IN under the /api prefix (#64, outlook run-48 live):
+    # the frontend api.js prepends /api to every call, so its login/register hit
+    # /api/auth/login|register — but the framework AS only serves /auth/login|
+    # register, so the UI login 401'd (auth_ok=False + login-wall) while the API
+    # /auth/login 200s. Re-register the EXACT AS endpoint (same body parse + token
+    # mint) at the /api/auth/* path by reusing the mounted /auth/* route's handler
+    # — only-if-absent, so a lane that wrote its own wins. Deterministic control-
+    # surface scaffolding (mirrors the /api/auth/me + /api/v1/tenants fill-ins).
+    _fw_as_by_key = {}
+    for _r in app.routes:
+        _rp = getattr(_r, "path", "")
+        _rm = getattr(_r, "methods", None) or set()
+        if _rp in ("/auth/login", "/auth/register") and "POST" in _rm:
+            _fw_as_by_key[_rp] = getattr(_r, "endpoint", None)
+    for _src, _dst in (("/auth/login", "/api/auth/login"),
+                       ("/auth/register", "/api/auth/register")):
+        _ep = _fw_as_by_key.get(_src)
+        if _ep is not None and _dst not in _fw_me_present:
+            app.post(_dst)(_ep)
     # TENANTS-LIST FILL-IN (outlook run-37, live): the login template's TenantPicker calls
     # GET /api/v1/tenants on MOUNT (pre-auth; /api/v1/* is public infra in the middleware) —
     # but the projector excludes the control surface and the lane rarely writes it → 404 on
