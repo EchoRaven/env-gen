@@ -964,6 +964,31 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                 _rid = last_id
             if _rid is not None:
                 path = _UNRESOLVED_PLACEHOLDER.sub(str(_rid), path)
+        # #67 (outlook run-53, live): UNSATISFIABLE-BY-DATA read. A positive GET
+        # by-id whose placeholder STILL can't resolve — the chain user owns no
+        # rows (owner-scoped empty list) AND the collection has NO POST to create
+        # one (run-53: POST /api/messages → 405, the agent registered only GET
+        # /api/messages this run) — is not a backend defect: the endpoint is
+        # reachable (api_smoke proved it) and correctly 404s a non-existent id;
+        # the chain just authored a read with no data to read. Sending the
+        # LITERAL ${x} → 404 → business_chain wedged 7 cycles on a correct app.
+        # SKIP it (recorded, not broken) instead. DENIAL steps still send the
+        # literal (their 404 is the desired pass, #59b); non-GET writes still run
+        # (a write with an unresolved FK should fail honestly, caught elsewhere).
+        # placeholder check FIRST: it is True only when the resolution block above
+        # ran (same path), which is where _is_denial is defined — so referencing
+        # _is_denial after it is always safe (short-circuit).
+        if (_UNRESOLVED_PLACEHOLDER.search(path)
+                and method == "GET" and not _is_denial):
+            recorded.append({
+                "action": str(step.get("action") or step.get("path") or ""),
+                "method": method, "path": str(step.get("path") or ""),
+                "status": None, "ok": True, "kind": "skipped",
+                "note": ("skipped — unsatisfiable by data: the chain user owns no "
+                         + str(_pres or "row") + " and the collection cannot create one "
+                         "(no POST / empty list). Endpoint reachability is proven by "
+                         "api_smoke; this read has no data to target.")})
+            continue
         body = _subst(step.get("body"), variables) if step.get("body") else None
         # BODY UNRESOLVED-VARIABLE FALLBACK — the body counterpart of the path fallback
         # above. A nested-FK body the verifier referenced but never saved (e.g.
