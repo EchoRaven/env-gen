@@ -700,6 +700,26 @@ def _measured_diff_lines(r: Mapping[str, Any], output_dir: Any = None) -> List[s
     measure-don't-eyeball verification mandate (#53) as remediation lines."""
     devs = r.get("measured_deviations") or []
     lines: List[str] = []
+    # Fix #65 — a WHOLESALE theme inversion dwarfs any per-component color tweak
+    # (large-area background is the #1 similarity lever). If most backgrounds are
+    # inverted the same way, lead with ONE structural instruction instead of
+    # burying it under a scattered per-component list.
+    if devs:
+        try:
+            from .material_prep import theme_inversion
+            _want = theme_inversion(devs)
+        except Exception:
+            _want = None
+        if _want:
+            _have = "light" if _want == "dark" else "dark"
+            lines.append(
+                f"⚠ WRONG BASE THEME: the reference is {_want.upper()} but your "
+                f"build renders {_have.upper()} (most component backgrounds are "
+                f"inverted). Reference images WIN over any 'theme' wording in the "
+                f"text spec — flip the app's BASE theme to {_want} FIRST (the page/"
+                f"surface/card background tokens), then the per-component colors "
+                f"below fall into place. This single change moves similarity far "
+                f"more than any individual tweak.")
     if devs:
         lines.append(
             "MEASURED COLOR DIFF (deterministic pixel sampling of the gate "
