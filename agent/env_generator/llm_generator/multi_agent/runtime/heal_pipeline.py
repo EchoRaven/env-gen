@@ -572,7 +572,8 @@ class HealPipeline:
                 repair_frontend_named_default_imports, reroute_inline_stub_routes,
                 repair_frontend_missing_local_exports, normalize_frontend_api_base,
                 repair_frontend_escaped_backticks, repair_frontend_unimported_icons,
-                repair_frontend_default_export_wrapper)
+                repair_frontend_default_export_wrapper,
+                neutralize_frontend_external_backgrounds)
             from pathlib import Path as _P
             fe = _P(out_dir) / "app" / "frontend"
             # SYNTAX FIRST: the lane intermittently escapes template-literal delimiters
@@ -614,6 +615,18 @@ class HealPipeline:
                 orch._logger.warning(
                     "Frontend absolute localhost API origins normalized to same-origin "
                     "relative URLs (lane bypassed the nginx proxy): %s", _nb.get("normalized"))
+            # VISUAL/self-contained (#75b, outlook run-62): a lane paints a CONTENT surface
+            # (inbox reading-pane / feed / dashboard) with a full-bleed EXTERNAL stock photo
+            # (a mountain unsplash bg) — it doesn't match the clean reference AND is an
+            # external network dep in the offline sandbox (a page mid-hydration over a
+            # pending image is the blank 0.00 the visual gate can't refund). Replace such
+            # external CSS backgrounds with a subtle neutral gradient in the app's own
+            # palette; landing/marketing/auth hero photos + all <img> content imagery kept.
+            _bg = neutralize_frontend_external_backgrounds(fe)
+            if _bg.get("neutralized"):
+                orch._logger.warning(
+                    "Frontend external stock-photo backgrounds neutralized to an in-palette "
+                    "gradient (self-contained + reference-matching): %s", _bg.get("neutralized"))
             rep = repair_frontend_api_exports(fe)
             if rep.get("repaired"):
                 orch._logger.warning(

@@ -330,19 +330,37 @@ def _mint_token(backend_port: int, timeout_s: int = 60,
     return None
 
 
+# FIX #75a (outlook run-62): networkidle can still be a bare un-hydrated SPA shell
+# (``<div id="root"></div>`` mid-rebuild). A shot of it IS written, so run_visual_fidelity
+# never hits capture_unavailable — the blank is judged 0.00 and BURNS one of the 3 per-source
+# attempts with no refund, exhausting the budget → the 900s escape. Detect the shell (BOTH
+# tiny innerText AND few nodes — a hydrated-but-data-empty "No messages" page has short text
+# but dozens of chrome nodes, so it is NOT flagged) and re-poll like fix #68 before skipping.
+_CAPTURE_BLANK_TEXT = 12
+_CAPTURE_BLANK_NODES = 8
+_CAPTURE_BLANK_PROBE = (
+    "() => { const t=(document.body&&document.body.innerText||'').trim();"
+    " const n=document.body?document.body.querySelectorAll('*').length:0;"
+    " return {textLen: t.length, nodes: n}; }")
+
+
 async def capture_route_screenshots(
     base_url: str,
     screens: List[Dict[str, Any]],
     token: Optional[str],
     out_dir: Path,
     auth_redirected: Optional[List[str]] = None,
+    blank_screens: Optional[List[str]] = None,
 ) -> Dict[str, str]:
     """Screenshot each screen's route; returns {screen name → png path}. A
     failed navigation skips that screen (reported upstream as missing). An
     AUTH screen whose final URL bounced to /login|/signup is NOT shot — the
     judge must never compare the login page against a feed reference (round
     31: every auth screen scored 0.2 against the wrong pixels). Bounced
-    names are appended to ``auth_redirected`` when the caller passes one."""
+    names are appended to ``auth_redirected`` when the caller passes one. A
+    still-un-hydrated BLANK shell (FIX #75a) is re-polled ~5s then, if still
+    blank, appended to ``blank_screens`` and its shot skipped (a blank 0.00
+    that would waste the visual attempt budget)."""
     from playwright.async_api import async_playwright  # lazy: heavy dep
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -368,6 +386,23 @@ async def capture_route_screenshots(
                             if auth_redirected is not None:
                                 auth_redirected.append(screen["name"])
                             continue
+                    # FIX #75a: an un-hydrated blank shell — re-poll before concluding.
+                    try:
+                        _p = await page.evaluate(_CAPTURE_BLANK_PROBE)
+                        _txt, _nd = _p.get("textLen", 0), _p.get("nodes", 0)
+                        if _txt < _CAPTURE_BLANK_TEXT and _nd < _CAPTURE_BLANK_NODES:
+                            for _ in range(3):
+                                await page.wait_for_timeout(1200)
+                                _p = await page.evaluate(_CAPTURE_BLANK_PROBE)
+                                _txt, _nd = _p.get("textLen", 0), _p.get("nodes", 0)
+                                if _txt >= _CAPTURE_BLANK_TEXT or _nd >= _CAPTURE_BLANK_NODES:
+                                    break
+                        if _txt < _CAPTURE_BLANK_TEXT and _nd < _CAPTURE_BLANK_NODES:
+                            if blank_screens is not None:
+                                blank_screens.append(screen["name"])
+                            continue  # skip the shot — do not feed a blank 0.00 to the judge
+                    except Exception:
+                        pass  # probe error → treat as non-blank (never false-skip)
                     dest = out_dir / f"{screen['name']}.png"
                     await page.screenshot(path=str(dest))
                     shots[screen["name"]] = str(dest)
@@ -592,13 +627,16 @@ async def run_visual_fidelity(
         shots_dir = out_dir or (project_dir / "design" / "visual_gate")
 
         _auth_bounced: List[str] = []
+        _blank_screens: List[str] = []
 
         async def capture(scr):  # noqa: F811 — default capture closes over the boot
             return await capture_route_screenshots(
-                base_url, scr, token, shots_dir, auth_redirected=_auth_bounced)
+                base_url, scr, token, shots_dir, auth_redirected=_auth_bounced,
+                blank_screens=_blank_screens)
 
     else:
         _auth_bounced = []
+        _blank_screens = []
 
     shots = await capture(judged_screens)
     _auth_routes = [s["name"] for s in judged_screens if s.get("auth")]
@@ -610,7 +648,7 @@ async def run_visual_fidelity(
                             "redirected to /login despite a freshly minted "
                             "token; skipping judgment"),
                 "screens": [], "skipped": skipped}
-    if judged_screens and not shots:
+    if judged_screens and not shots and not _blank_screens:
         return {"passed": False,
                 "summary": "capture unavailable — app not reachable; not judged",
                 "screens": [], "skipped": skipped,
@@ -622,14 +660,22 @@ async def run_visual_fidelity(
     for screen in judged_screens:
         shot = shots.get(screen["name"])
         if not shot:
+            if screen["name"] in _blank_screens:
+                _dev = (f"route {screen['route']} rendered BLANK — navigated + reached "
+                        "networkidle but the SPA never hydrated after ~5s re-poll (a bare "
+                        "<div id=root> shell). If transient (mid-rebuild) it is refunded a "
+                        "few times; if it persists it is a real render/data-fetch failure "
+                        "on this route — fix the page's mount/data load, not its styling")
+            elif screen["name"] in _auth_bounced:
+                _dev = (f"route {screen['route']} redirected to /login — the auth guard "
+                        "rejected the session on THIS route only; fix the route's auth "
+                        "handling, not its styling")
+            else:
+                _dev = f"route {screen['route']} could not be captured"
             results.append({"name": screen["name"], "route": screen["route"],
                             "similarity": 0.0, "passed": False, "dimensions": {},
-                            "deviations": [
-                                (f"route {screen['route']} redirected to /login — the "
-                                 "auth guard rejected the session on THIS route only; "
-                                 "fix the route's auth handling, not its styling")
-                                if screen["name"] in _auth_bounced
-                                else f"route {screen['route']} could not be captured"],
+                            "deviations": [_dev],
+                            "blank": screen["name"] in _blank_screens,
                             "screenshot": None,
                             "reference": screen.get("path")})
             continue
@@ -653,7 +699,14 @@ async def run_visual_fidelity(
     failing = [f"{r['name']}({r['similarity']:.2f})" for r in results if not r["passed"]]
     summary = ("all %d screens ≥ %.2f" % (len(results), min_similarity) if passed
                else "below %.2f: %s" % (min_similarity, ", ".join(failing)))
+    if _blank_screens:
+        summary += " [blank capture: %s]" % ", ".join(_blank_screens)
+    # FIX #75a: a REFUNDABLE transient ONLY when EVERY judged screen was a blank shell
+    # (no real verdict obtained). If SOME screens produced real shots, do NOT refund —
+    # their verdicts + remediation must flow this tick (a partial-blank must not discard
+    # a fixable sibling's 0.55 and suppress its remediation).
     return {"passed": passed, "summary": summary, "screens": results, "skipped": skipped,
+            "capture_transient": bool(_blank_screens) and not shots,
             "min_similarity": min_similarity}
 
 
@@ -825,6 +878,13 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None) -> str:
     return "\n".join(lines)
 
 
+try:  # FIX #75a: how many mid-rebuild blank captures to absorb before a still-blank
+    # route becomes a real 0.00 verdict (so a truly-broken app can't defer forever).
+    _TRANSIENT_REFUND_CAP = int(os.environ.get("ENVGEN_VISUAL_BLANK_REFUNDS", "3"))
+except Exception:
+    _TRANSIENT_REFUND_CAP = 3
+
+
 class VisualFidelityGate:
     """Stateful visual-fidelity gate extracted from the Orchestrator (PROPOSAL
     #8 — VisualFidelity slice B). Owns the per-source judging budget + pass
@@ -847,6 +907,7 @@ class VisualFidelityGate:
         self.passed = False            # latched pass for the current source
         self.deferred_since = None     # wall-clock anchor of the milestone's FIRST defer
         self.total_judgments = 0       # per-milestone real-verdict count (backstop)
+        self.transient_refunds = 0     # per-milestone bounded blank-capture refunds (#75a)
         self.last_result = None
         self.last_judged_sig = None
 
@@ -855,6 +916,7 @@ class VisualFidelityGate:
         (PIPE-C3: within a milestone neither is reset by lane churn)."""
         self.deferred_since = None
         self.total_judgments = 0
+        self.transient_refunds = 0     # #75a: milestone-anchored, not reset by sig churn
 
     async def maybe_run(self) -> None:
         """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the
@@ -906,6 +968,21 @@ class VisualFidelityGate:
                 orch._logger.warning(
                     "Visual fidelity: %s — attempt refunded, will retry next tick.",
                     result.get("summary") or "capture/auth unavailable")
+                return
+            # FIX #75a: EVERY judged screen was an un-hydrated blank shell (capture_transient
+            # ⇒ no real verdict obtained) — a mid-rebuild snapshot, not a design failure.
+            # Refund the attempt so the blank doesn't burn the 3-run budget, BOUNDED by
+            # _TRANSIENT_REFUND_CAP (milestone-anchored) so a GENUINELY blank app can't defer
+            # forever: past the cap this branch is skipped and the blank 0.00 flows to a real
+            # verdict + remediation below. Partial-blank captures set capture_transient=False
+            # (they carry real sibling verdicts), so they are judged/remediated normally here.
+            if result.get("capture_transient") and self.transient_refunds < _TRANSIENT_REFUND_CAP:
+                self.transient_refunds += 1
+                self.attempts = max(0, self.attempts - 1)
+                orch._logger.warning(
+                    "Visual fidelity: %s — blank capture, attempt refunded "
+                    "(transient %s/%s).", result.get("summary") or "blank shell",
+                    self.transient_refunds, _TRANSIENT_REFUND_CAP)
                 return
             screens = result.get("screens") or []
             self.last_result = result

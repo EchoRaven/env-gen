@@ -288,6 +288,121 @@ def repair_frontend_default_export_wrapper(frontend_dir) -> Dict[str, object]:
     return {"repaired": repaired}
 
 
+# ── FIX #75b: neutralize EXTERNAL stock-photo backgrounds on CONTENT/authed pages ──────
+# A lane decorates a content surface (inbox reading-pane / feed / dashboard) with a full-
+# bleed EXTERNAL photo — style={{ backgroundImage: 'url("https://images.unsplash.com/…")' }}
+# (outlook run-62 OutlookInboxPage:71, a mountain) OR a shared CSS class (index.css
+# `.outlook-bg { background-image: url('https://…') }`). Harms: (a) it does NOT match the
+# clean reference (a random stock photo, not the app's own surface); (b) it is an EXTERNAL
+# network dep in the offline sandbox — the request hangs and a page mid-hydration over a
+# pending image is exactly the blank 0.00 the visual gate captures. Replace with a subtle
+# neutral gradient in the app's OWN palette. SAFETY (delivery-critical — this runs before
+# every docker build): the token is CASE-SENSITIVE lowercase ``url(`` with a
+# ``(?<![\w$.])`` lookbehind so it can NEVER match the ``URL(`` of ``new URL("http…")`` nor
+# the ``Url(`` of ``avatarUrl("http…")`` (which would corrupt JS → the Vite build fails →
+# no delivery); and only a url() sitting in a background/mask CONTEXT is rewritten (never a
+# font ``src``/cursor). An <img> is untouched by construction (url() never appears in
+# ``<img src>``). Intended hero backgrounds are preserved: a landing/marketing/auth code
+# file is skipped wholesale, and a CSS rule whose selector names a hero is left alone.
+_EXT_URL_RE = re.compile(
+    r"(?<![\w$.])url\(\s*(['\"]?)\s*((?:https?:)?//[^'\")\s]+)\s*\1\s*\)")
+_TW_EXT_BG_RE = re.compile(
+    r"bg-\[\s*url\(\s*(['\"]?)\s*(?:https?:)?//[^\]]*?\1\s*\)\s*\]")
+_BG_CTX_RE = re.compile(r"background|\bmask\b|bg-\[", re.I)
+_SURFACE_HEX_RE = re.compile(
+    r"(?:background-?color\s*:\s*['\"]?|bg-\[)#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})", re.I)
+_DARK_ROOT_RE = re.compile(r"\bbg-(?:black|(?:zinc|slate|gray|neutral|stone)-9\d0)\b")
+_MARKETING_NAME_RE = re.compile(
+    r"landing|welcome|hero|splash|marketing|login|sign[-_]?in|sign[-_]?up|signin|signup|register|onboard",
+    re.I)
+# <a href="/login"> / <Link to="/signup">; the (?<![.\w]) lookbehind rejects a JS
+# window.location.href = '/login' sign-out, so a CONTENT page is not mistaken for landing.
+_ENTRY_CTA_RE = re.compile(
+    r"""(?<![.\w])(?:href|to)\s*=\s*['"]/(?:login|signin|sign-in|signup|sign-up|register)\b""",
+    re.I)
+
+
+def _is_marketing_or_auth_context(path: Path, src: str) -> bool:
+    names = [path.stem] + re.findall(
+        r"(?:export\s+default\s+)?(?:function|const|class)\s+([A-Za-z_]\w*)", src)
+    if any(_MARKETING_NAME_RE.search(n or "") for n in names):
+        return True
+    return bool(_ENTRY_CTA_RE.search(src))
+
+
+def _mix_hex(r: int, g: int, b: int, tr: int, tg: int, tb: int, amt: float) -> str:
+    return "#%02x%02x%02x" % (round(r + (tr - r) * amt), round(g + (tg - g) * amt),
+                              round(b + (tb - b) * amt))
+
+
+def _neutral_gradient_for(scan: str, at: int) -> str:
+    base = None
+    for m in _SURFACE_HEX_RE.finditer(scan):
+        if m.start() < at:
+            base = m.group(1)
+        else:
+            break
+    if base is None:
+        base = "1f2937" if _DARK_ROOT_RE.search(scan) else "f1f5f9"
+    base6 = base if len(base) == 6 else "".join(c * 2 for c in base)
+    try:
+        r, g, b = int(base6[0:2], 16), int(base6[2:4], 16), int(base6[4:6], 16)
+    except Exception:
+        r, g, b = 31, 41, 55
+    lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+    c2 = _mix_hex(r, g, b, 255, 255, 255, 0.14) if lum < 0.5 else _mix_hex(r, g, b, 0, 0, 0, 0.06)
+    return f"linear-gradient(160deg, #{base6} 0%, {c2} 100%)"
+
+
+def neutralize_frontend_external_backgrounds(frontend_dir) -> Dict[str, object]:
+    """Replace EXTERNAL CSS background images on content/authed surfaces with a neutral
+    in-palette gradient (self-contained + reference-matching). Best-effort, idempotent
+    (the result has no ``url(``), never raises. See the block comment above for safety."""
+    result: Dict[str, object] = {"neutralized": []}
+    try:
+        src_dir = Path(frontend_dir) / "src"
+        if not src_dir.is_dir():
+            return result
+        touched: List[str] = []
+        for f in src_dir.rglob("*"):
+            if f.suffix not in (".jsx", ".tsx", ".js", ".ts", ".css", ".scss") or not f.is_file():
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            if "url(" not in txt or not _EXT_URL_RE.search(txt):
+                continue  # fast path: no external CSS background
+            is_code = f.suffix in (".jsx", ".tsx", ".js", ".ts")
+            if is_code and _is_marketing_or_auth_context(f, txt):
+                continue  # intended landing/marketing/auth hero — leave it
+            dark = bool(_DARK_ROOT_RE.search(txt))
+            # Tailwind arbitrary bg first (replace the WHOLE bg-[url()] token with a class),
+            # so the generic url() pass never double-processes it.
+            new = _TW_EXT_BG_RE.sub("bg-slate-800" if dark else "bg-slate-100", txt)
+            scan = new  # bind so the callback reads the SAME string it scans
+
+            def _repl(m):
+                start = m.start()
+                if not _BG_CTX_RE.search(scan[max(0, start - 60):start]):
+                    return m.group(0)  # not a background/mask (font src, cursor, stray url) → keep
+                if not is_code and _MARKETING_NAME_RE.search(scan[max(0, start - 200):start]):
+                    return m.group(0)  # CSS rule for a hero-named selector → preserve
+                return _neutral_gradient_for(scan, start)
+
+            new = _EXT_URL_RE.sub(_repl, new)
+            if new != txt:
+                try:
+                    f.write_text(new, encoding="utf-8")
+                    touched.append(str(f.relative_to(src_dir)))
+                except Exception:
+                    pass
+        result["neutralized"] = sorted(touched)
+    except Exception as exc:  # never break generation/validation
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
 def _exported_names(api_src: str) -> Set[str]:
     names: Set[str] = set(_EXPORT_RE.findall(api_src))
     for body in _EXPORT_BRACE_RE.findall(api_src):
