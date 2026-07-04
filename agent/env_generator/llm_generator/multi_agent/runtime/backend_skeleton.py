@@ -416,7 +416,7 @@ def _models_meta(tables: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     meta: Dict[str, Dict[str, Any]] = {}
 
     def add(table: str, cols: List[Dict[str, Any]]) -> None:
-        names, fks, types = [], {}, {}
+        names, fks, types, uniq = [], {}, {}, []
         have_pk = False
         pk_name, pk_type = None, "integer"
         for c in cols:
@@ -431,6 +431,11 @@ def _models_meta(tables: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
             # param + search both fall back to int/all-columns: a STRING/UUID primary key
             # (outlook messages.id = String) typed the {id} param ``int`` → a UUID path 422'd.
             types[n] = _sa_type(str(c.get("type") or ""))
+            # FIX #74: per-column UNIQUE (from the contract) — the demo-content
+            # concentrator de-dupes these on clone so a copied subject/name/slug does not
+            # collide with the row it was cloned from.
+            if c.get("unique"):
+                uniq.append(n)
             if c.get("primary_key") or c.get("pk"):
                 have_pk = True
                 pk_name = n
@@ -444,7 +449,8 @@ def _models_meta(tables: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         if pk_name is None:
             pk_name = "id"  # synthesized SERIAL id
         meta[table] = {"cls": _class_name(table), "cols": names, "fks": fks,
-                       "pk": pk_name, "pk_type": pk_type, "types": types}
+                       "pk": pk_name, "pk_type": pk_type, "types": types,
+                       "unique": uniq}
 
     add("tenants", _merge_cols(_SPINE_TENANT_COLS, by_name.get("tenants", [])))
     add("users", _merge_cols(_SPINE_USER_COLS, by_name.get("users", [])))
@@ -1342,7 +1348,48 @@ def _build_seed_rows(tables: Dict[str, Any]):
                 if _is_image_col(c) and str(types.get(c, "")) in ("String", "Text")]
         if imgs:
             image_col[t] = imgs
-    return seed, classmap, owner_col, image_col
+    # FIX #74 (DEMO-CONTENT CONCENTRATION) — metadata the loader's concentrator needs.
+    # Owner-scoped CHILD FKs: a FK column on an owner-scoped table that points to ANOTHER
+    # owner-scoped table (messages.folder_id -> folders). When a donor row is cloned into
+    # the demo user, these MUST be remapped to the demo user's OWN child rows (the donor's
+    # folder belongs to the donor). Baked from the CONTRACT (explicit fks + the SAME
+    # name-inference the row builder uses), because a lane's ``folder_id = Column(Integer)``
+    # carries no runtime ForeignKey, so ``__table__.foreign_keys`` is unreliable.
+    owner_child_fk: Dict[str, Dict[str, str]] = {}
+    if owner_int:
+        owner_tables = set(owner_col.keys())
+        for t in seed:
+            if t == "users" or t not in owner_tables:
+                continue
+            my_owner = owner_col.get(t)
+            resolved: Dict[str, str] = dict(meta.get(t, {}).get("fks") or {})
+            for c in (meta.get(t, {}).get("cols") or []):
+                if c not in resolved:
+                    inf = _seed_infer_fk(c, known_tables)
+                    if inf:
+                        resolved[c] = inf
+            child: Dict[str, str] = {}
+            for col, tgt in resolved.items():
+                if col == my_owner or tgt == t:
+                    continue  # owner col itself / self-ref stays as the donor's value
+                if tgt in owner_tables:
+                    child[col] = tgt
+            if child:
+                owner_child_fk[t] = child
+    # PK name + coarse category (integer/uuid/text) per table: the concentrator drops an
+    # integer PK (SERIAL assigns) and MINTS a fresh unique value for a uuid/text PK.
+    pk_meta: Dict[str, List[str]] = {
+        t: [meta.get(t, {}).get("pk") or "id",
+            _pk_type_cat(meta.get(t, {}).get("pk_type"))] for t in seed}
+    # String/Text UNIQUE columns per table — de-duped on clone to dodge collisions.
+    unique_cols: Dict[str, List[str]] = {}
+    for t in seed:
+        types = meta.get(t, {}).get("types") or {}
+        us = [c for c in (meta.get(t, {}).get("unique") or [])
+              if str(types.get(c, "")) in ("String", "Text")]
+        if us:
+            unique_cols[t] = us
+    return seed, classmap, owner_col, image_col, owner_child_fk, pk_meta, unique_cols
 
 
 def render_seed_json(tables: Dict[str, Any]) -> str:
@@ -1352,7 +1399,7 @@ def render_seed_json(tables: Dict[str, Any]) -> str:
     rather than the framework's domain-blind defaults). The loader (seed_data.py) prefers
     this file; this default just guarantees the app is never blank before the agent runs."""
     import json as _json
-    seed, _classmap, _owner, _img = _build_seed_rows(tables)
+    seed, *_rest = _build_seed_rows(tables)
     return _json.dumps(seed, indent=2, ensure_ascii=False)
 
 
@@ -1412,7 +1459,7 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
     lane's handlers (``Folder.name == "Sent"``). After seeding, the loader ensures EVERY
     existing user has each such row — idempotent, so an agent seed that omits the canonical
     folder no longer 500s reply/forward/delete on a real, correct handler."""
-    seed, classmap, owner_col, image_col = _build_seed_rows(tables)
+    seed, classmap, owner_col, image_col, owner_child_fk, pk_meta, unique_cols = _build_seed_rows(tables)
     bootstrap_spec = list(bootstrap_spec or [])
     body = (
         '"""Seed LOADER (framework-owned). The DATA lives in the sibling seed_data.json,\n'
@@ -1431,6 +1478,10 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         f"_CLASS = {classmap!r}\n"
         f"_OWNER_COL = {owner_col!r}\n"
         f"_IMAGE_COL = {image_col!r}\n"
+        f"_OWNER_CHILD_FK = {owner_child_fk!r}\n"   # FIX #74: {{table: {{fk_col: child_table}}}}
+        f"_PK = {pk_meta!r}\n"                       # FIX #74: {{table: [pk_name, category]}}
+        f"_UNIQUE = {unique_cols!r}\n"               # FIX #74: {{table: [unique string cols]}}
+        f"_DEMO_FLOOR = 8\n"                          # FIX #74: min rows the demo user owns
         f"_PASSWORD_SALT = {_SEED_PASSWORD_SALT!r}\n"
         f"_SEED = {seed!r}\n"
         f"_USER_BOOTSTRAP = {bootstrap_spec!r}\n\n\n"
@@ -1558,6 +1609,152 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "                db.commit()\n"
         "            except Exception:\n"
         "                db.rollback()\n\n\n"
+        "def _concentrate_demo_content():\n"
+        "    # FIX #74: the FIRST user (by id) is the DEMO identity every gate + the first\n"
+        "    # page-load uses. Lanes routinely spread rows evenly across many users, so the\n"
+        "    # demo owns only a few → inbox/feed/calendar look EMPTY on first load even though\n"
+        "    # the app works. For each owner-scoped CONTENT table where the demo owns\n"
+        "    # < _DEMO_FLOOR rows, CLONE existing rows INTO the demo (fresh PK, owner=demo,\n"
+        "    # owner-scoped child FKs remapped to the demo's OWN child rows, unique string\n"
+        "    # cols de-duped) until the floor is met. Never re-owns/removes a donor row, so\n"
+        "    # cross-user tests keep their data. Runs AFTER _ensure_canonical_rows so the\n"
+        "    # demo's canonical child rows exist for the remap. Floor-gated → idempotent\n"
+        "    # across boots; FK-safe; per-row best-effort (a failed clone rolls back only\n"
+        "    # itself). Skips text/uuid-user apps (no _OWNER_COL) and structural per-user\n"
+        "    # tables (those with canonical bootstrap rows — folders/labels).\n"
+        "    if not _OWNER_COL:\n"
+        "        return\n"
+        "    users_cls = getattr(models, _CLASS.get('users') or 'User', None)\n"
+        "    if users_cls is None or not hasattr(users_cls, 'id'):\n"
+        "        return\n"
+        "    _structural = set(s.get('table') for s in (_USER_BOOTSTRAP or []) if s.get('table'))\n"
+        "    def _discrim(ccls):\n"
+        "        # the child's KIND/discriminator column (folders.kind='inbox'/'sent') so a\n"
+        "        # cloned row is filed under the demo's SAME-KIND child, not round-robin.\n"
+        "        try:\n"
+        "            cols = [c.name for c in ccls.__table__.columns]\n"
+        "        except Exception:\n"
+        "            return None\n"
+        "        for cand in ('kind', 'type', 'category', 'label', 'name'):\n"
+        "            if cand in cols:\n"
+        "                return cand\n"
+        "        return None\n"
+        "    db = SessionLocal()\n"
+        "    try:\n"
+        "        try:\n"
+        "            demo = db.query(users_cls).order_by(users_cls.id.asc()).first()\n"
+        "        except Exception:\n"
+        "            return\n"
+        "        demo_uid = getattr(demo, 'id', None) if demo is not None else None\n"
+        "        if demo_uid is None:\n"
+        "            return\n"
+        "        for t in _ORDER:  # FK targets (child tables) first → parent remap can use them\n"
+        "            owner = _OWNER_COL.get(t)\n"
+        "            if not owner or t in _structural:\n"
+        "                continue\n"
+        "            cls = getattr(models, _CLASS.get(t, ''), None)\n"
+        "            if cls is None:\n"
+        "                continue\n"
+        "            ocol = getattr(cls, owner, None)\n"
+        "            pk_name, pk_cat = (_PK.get(t) or ['id', 'integer'])\n"
+        "            if ocol is None or not pk_name or not hasattr(cls, pk_name):\n"
+        "                continue\n"
+        "            try:\n"
+        "                demo_rows = db.query(cls).filter(ocol == demo_uid).all()\n"
+        "                have = len(demo_rows)\n"
+        "                if have >= _DEMO_FLOOR:\n"
+        "                    continue\n"
+        "                donors = db.query(cls).filter(ocol != demo_uid).all()\n"
+        "            except Exception:\n"
+        "                continue\n"
+        "            if not donors:\n"
+        "                continue  # single-user seed: demo already owns all there is\n"
+        "            _per = dict()\n"
+        "            for _d in donors:\n"
+        "                _dk = getattr(_d, owner, None)\n"
+        "                _per[_dk] = _per.get(_dk, 0) + 1\n"
+        "            if not _per or max(_per.values()) <= 1:\n"
+        "                # SINGLETON per-user table (settings/profile — <=1 row/user): NOT feed\n"
+        "                # content. Cloning it makes look-alikes, or under UNIQUE(user_id) every\n"
+        "                # clone collides → per-boot fail-churn. Leave it alone.\n"
+        "                continue\n"
+        "            child_map = _OWNER_CHILD_FK.get(t, {})\n"
+        "            # per child table: kind->demo-PKs map, all-demo-PKs list, child-PK->kind map\n"
+        "            demo_by_kind, demo_any, kind_of = dict(), dict(), dict()\n"
+        "            for _fk, ctab in child_map.items():\n"
+        "                ccls = getattr(models, _CLASS.get(ctab, ''), None)\n"
+        "                cowner = _OWNER_COL.get(ctab)\n"
+        "                cpk = (_PK.get(ctab) or [None])[0]\n"
+        "                bykind, anyids, kof = dict(), [], dict()\n"
+        "                if (ccls is not None and cowner and cpk\n"
+        "                        and hasattr(ccls, cpk) and hasattr(ccls, cowner)):\n"
+        "                    dcol = _discrim(ccls)\n"
+        "                    try:\n"
+        "                        for r in db.query(ccls).filter(getattr(ccls, cowner) == demo_uid).all():\n"
+        "                            _p = getattr(r, cpk); anyids.append(_p)\n"
+        "                            bykind.setdefault(getattr(r, dcol, None) if dcol else None, []).append(_p)\n"
+        "                    except Exception:\n"
+        "                        pass\n"
+        "                    if dcol:\n"
+        "                        try:\n"
+        "                            for r in db.query(ccls).all():\n"
+        "                                kof[getattr(r, cpk)] = getattr(r, dcol, None)\n"
+        "                        except Exception:\n"
+        "                            pass\n"
+        "                demo_by_kind[ctab] = bykind; demo_any[ctab] = anyids; kind_of[ctab] = kof\n"
+        "            col_names = [c.name for c in cls.__table__.columns]\n"
+        "            uniq = set(_UNIQUE.get(t, []))\n"
+        "            need = _DEMO_FLOOR - have\n"
+        "            made, attempts = 0, 0\n"
+        "            max_attempts = need * (len(donors) + 2) + 4\n"
+        "            while made < need and attempts < max_attempts:\n"
+        "                donor = donors[attempts % len(donors)]\n"
+        "                attempts += 1\n"
+        "                vals, skip = {}, False\n"
+        "                for c in col_names:\n"
+        "                    if c == pk_name:\n"
+        "                        continue  # integer PK → SERIAL assigns; uuid/text minted below\n"
+        "                    if c == owner:\n"
+        "                        vals[c] = demo_uid\n"
+        "                        continue\n"
+        "                    if c in child_map:\n"
+        "                        ctab = child_map[c]\n"
+        "                        _dpk = getattr(donor, c, None)\n"
+        "                        _dk = kind_of.get(ctab, {}).get(_dpk)\n"
+        "                        # file the clone under the demo's SAME-KIND child (donor's\n"
+        "                        # Inbox message → demo's Inbox), so received mail populates the\n"
+        "                        # INBOX screen, not scattered round-robin into Sent/Trash.\n"
+        "                        pool = demo_by_kind.get(ctab, {}).get(_dk) or demo_any.get(ctab) or []\n"
+        "                        if pool:\n"
+        "                            vals[c] = pool[made % len(pool)]\n"
+        "                        elif _dpk is None:\n"
+        "                            continue  # nullable/absent → leave NULL\n"
+        "                        else:\n"
+        "                            skip = True  # NOT-NULL child FK, no demo equivalent\n"
+        "                            break\n"
+        "                        continue\n"
+        "                    v = getattr(donor, c, None)\n"
+        "                    if v is None:\n"
+        "                        continue\n"
+        "                    if c in uniq and isinstance(v, str):\n"
+        "                        v = v[:180] + ' (' + str(demo_uid) + '-' + str(made + 1) + ')'\n"
+        "                    vals[c] = v\n"
+        "                if skip:\n"
+        "                    continue\n"
+        "                if pk_cat == 'uuid':\n"
+        "                    import uuid as _uuid\n"
+        "                    vals[pk_name] = str(_uuid.uuid5(_uuid.NAMESPACE_DNS,\n"
+        "                        t + '-demo-' + str(demo_uid) + '-' + str(made + 1)))\n"
+        "                elif pk_cat == 'text':\n"
+        "                    vals[pk_name] = str(t)[:12] + '-d' + str(demo_uid) + '-' + str(made + 1)\n"
+        "                try:\n"
+        "                    db.add(cls(**{k: v for k, v in vals.items() if hasattr(cls, k)}))\n"
+        "                    db.commit()\n"
+        "                    made += 1\n"
+        "                except Exception:\n"
+        "                    db.rollback()\n"
+        "    finally:\n"
+        "        db.close()\n\n\n"
         "def seed_if_empty():\n"
         "    data = _load_rows()\n"
         "    # SEED-SOURCE FINGERPRINT (outlook run-30, live): the loader used to fill only\n"
@@ -1621,6 +1818,7 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "    finally:\n"
         "        db.close()\n"
         "        _ensure_canonical_rows()\n"  # FIX #72: heal canonical rows on EVERY boot
+        "        _concentrate_demo_content()\n"  # FIX #74: fill the demo user's screens
     )
     return body
 
