@@ -16,8 +16,11 @@ a lane↔framework CONSISTENCY defect: the lane names a canonical row the framew
 creates. By construction, the FRAMEWORK owns the seed and the register path, so it must
 satisfy the canonical names the handlers reference.
 
-This module detects those canonical rows from the lane's route source (the singleton-
-lookup-then-raise idiom is the safe signal: it means "this named row MUST exist"), and
+This module detects those canonical rows from the lane's route source via two safe,
+privilege-excluding signals (see ``detect_canonical_rows``): a 5xx-guarded lookup ("this
+named row MUST exist") OR a lookup whose ``.id`` is filed as a foreign key ("this row is
+a structural container the handler writes into" — run-62's graceful reply variant, where
+a missing Sent folder silently orphans every reply to ``folder_id = NULL``). It then
 projects a ``user_bootstrap.json`` spec that two runtime consumers enforce idempotently:
 the seed LOADER (seeded users) and ``create_user`` (freshly-registered users, i.e. the
 verification chain's user). Env-agnostic: driven entirely by the literals the handlers
@@ -94,15 +97,24 @@ def detect_canonical_rows(route_src: str, models_src: str) -> List[Dict[str, str
         src = route_src or ""
         for m in _LOOKUP_RE.finditer(src):
             var, model, args = m.group(1), m.group(2), m.group(3)
-            # the guard must (a) test THIS var and (b) raise a 5xx within a short window
-            # after the lookup — a 5xx is the "this row must exist" invariant; a 4xx/authz
-            # guard (403 "admin role required") is excluded so we never fabricate a
-            # privilege row. Require the ``not <var>`` to precede the 5xx raise it guards.
-            tail = src[m.end():m.end() + 260]
+            # Accept the looked-up labeled singleton as a canonical row to bootstrap when
+            # EITHER signal holds (both mean "this row should exist for the user", and
+            # BOTH exclude an authorization gate):
+            #   (A) MUST-EXIST — a 5xx guards ``not <var>`` ("broken invariant if absent",
+            #       e.g. run-61 reply: ``if not sent_folder: raise HTTPException(500,...)``).
+            #       A 4xx/403 authz gate is excluded → never fabricate a privilege row.
+            #   (B) STRUCTURAL CONTAINER — ``<var>.id`` is assigned as a foreign-key value
+            #       (``folder_id=sent_folder.id``), i.e. the row is the PARENT the handler
+            #       files new child rows into (run-62 reply: graceful ``folder_id=
+            #       sent_folder.id if sent_folder else None``). Without the container the
+            #       write orphans the child (FK null) — the delivered Sent folder is forever
+            #       empty. An authz check never assigns ``<var>.id`` as an FK, so this is
+            #       still privilege-safe.
+            tail = src[m.end():m.end() + 400]
             m5 = _RAISE_5XX_RE.search(tail)
-            if not m5:
-                continue
-            if not re.search(r"\bnot\s+" + re.escape(var) + r"\b", tail[:m5.end()]):
+            must_exist = bool(m5 and re.search(r"\bnot\s+" + re.escape(var) + r"\b", tail[:m5.end()]))
+            fk_target = bool(re.search(r"\b\w+_id\s*=\s*" + re.escape(var) + r"\.id\b", tail))
+            if not (must_exist or fk_target):
                 continue
             table = tmap.get(model) or (model.lower() + "s" if not model.lower().endswith("s") else model.lower())
             for col, lit in _FILTER_EQ_RE.findall(args) + _FILTER_KW_RE.findall(args):
