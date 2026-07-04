@@ -139,6 +139,29 @@ services:
     build: ../app/backend
     environment:
       DATABASE_URL: postgresql+psycopg://sandbox:sandbox@database:{db_port}/app
+      # Fix #60 (outlook run-45, live): lanes hand-roll their own DB clients
+      # (an asyncpg pool in custom_routes) reading whatever env convention they
+      # guess — DB_HOST/DB_PORT/..., PG*, POSTGRES_* — NONE of which existed, so
+      # the guess fell back to its localhost defaults and every custom-route
+      # read 500'd (OSError: Connect call failed 127.0.0.1). Export the SAME
+      # connection facts under all three common conventions so any reasonable
+      # guess resolves BY CONSTRUCTION (PG* is also libpq/asyncpg's native
+      # fallback; DATABASE_URL is complete, so psycopg never consults PG*).
+      DB_HOST: database
+      DB_PORT: "{db_port}"
+      DB_USER: sandbox
+      DB_PASSWORD: sandbox
+      DB_NAME: app
+      PGHOST: database
+      PGPORT: "{db_port}"
+      PGUSER: sandbox
+      PGPASSWORD: sandbox
+      PGDATABASE: app
+      POSTGRES_HOST: database
+      POSTGRES_PORT: "{db_port}"
+      POSTGRES_USER: sandbox
+      POSTGRES_PASSWORD: sandbox
+      POSTGRES_DB: app
       API_PORT: {backend_port}
       # Embedded OAuth2 AS (zoom-style): the env mints its OWN RS256 tokens.
       # OAUTH_ISSUER is intentionally unset → derived from request.base_url.
@@ -230,7 +253,8 @@ volumes:
                 return
             from .backend_skeleton import write_backend_skeleton
             from .lifecycle import business_endpoints
-            from .database_scaffold import synthesize_missing_tables
+            from .database_scaffold import (synthesize_missing_tables,
+                                             synthesize_missing_create_endpoints)
             sh = getattr(orch.hubs, "schema_hub", None)
             tables = (sh.list_tables() if sh else {}) or {}
             endpoints = business_endpoints(registryhub.get_endpoints() or {}) if registryhub else []
@@ -240,6 +264,34 @@ volumes:
             # business resource that has an endpoint but no registered table, so
             # the projector emits a REAL handler (not a stub) for it (large apps).
             tables = synthesize_missing_tables(tables, endpoints)
+            # Contract completeness #76 (outlook run-63): a resource that is demonstrably
+            # MUTABLE (collection GET + reply/forward/patch/delete) but whose plain CREATE
+            # (POST /api/<collection>) the kickoff LLM dropped → create 405 → the
+            # business_chain can't make a row → nested ${id} unresolved → 422 → STUCK. Add
+            # the missing create so the projector emits a real handler (never for a read-only
+            # collection). run-62 had it; run-63 (same env) didn't — pure LLM variance.
+            endpoints, _synth_created = synthesize_missing_create_endpoints(endpoints, tables)
+            if _synth_created:
+                # Register in the RegistryHub too (not just the local projection list) so ALL
+                # consumers agree: the route projector emits the create handler AND the
+                # verifier's business_chain (which reads the registry via business_endpoints)
+                # gets a POST /collection to create the parent → nested ${id} resolves. status
+                # 'implemented' so it never blocks the all-endpoints-implemented gate.
+                if registryhub is not None:
+                    for _ep in endpoints:
+                        if (_ep.get("path") in _synth_created
+                                and str(_ep.get("method", "")).upper() == "POST"):
+                            try:
+                                registryhub.register_endpoint(
+                                    method="POST", path=_ep["path"], schema=_ep.get("schema"),
+                                    agent="orchestrator", status="implemented",
+                                    kind="business", synthesized_create=True)
+                            except Exception:
+                                pass
+                orch._logger.warning(
+                    "CONTRACT COMPLETENESS: synthesized + registered missing CREATE endpoint(s) "
+                    "for mutable resources whose POST /collection the lane dropped: %s",
+                    _synth_created)
             # VERIFIER-DRIVEN read isolation at the FULL-SKELETON site (outlook run-34):
             # render_skeleton_main owner-scopes reads from table METADATA only, and the
             # chain-probed union previously applied ONLY in project_missing_routes (which

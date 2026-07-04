@@ -233,6 +233,50 @@ def _rgb_of_hex(h: str) -> Optional[Tuple[int, int, int]]:
         return None
 
 
+def _luminance(hex_c: str) -> Optional[float]:
+    """Perceived luminance 0..255 of a #rrggbb color (Rec. 601). None if bad."""
+    rgb = _rgb_of_hex(hex_c)
+    if rgb is None:
+        return None
+    return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+
+
+def theme_inversion(deviations, *, light_thresh: float = 150.0,
+                    dark_thresh: float = 105.0, min_bg: int = 3) -> Optional[str]:
+    """Fix #65 — detect a WHOLESALE light/dark theme inversion from the measured
+    background deviations (material-prep methodology: 'large-area background is
+    the #1 similarity lever'). When most component backgrounds are inverted the
+    SAME way — the build renders light where the reference is dark (or vice
+    versa) — the app is on the WRONG BASE THEME, and a scattered per-component
+    color list buries that under noise (outlook run-50: every page 0.20, every
+    top_bar/nav_rail rendered #ffffff vs a #292929/#09101a dark reference — the
+    run's text said 'light theme' but the references are dark Outlook). Returns
+    'light'/'dark' (the theme the REFERENCE wants and the build lacks) when >=
+    min_bg background deviations exist and >= 2/3 are same-direction inversions;
+    else None. Env-agnostic; feeds a single high-signal remediation line."""
+    bg = [d for d in (deviations or []) if isinstance(d, dict)
+          and d.get("kind") == "background" and d.get("actual") and d.get("expected")]
+    if len(bg) < min_bg:
+        return None
+    build_light_ref_dark = 0   # build renders light, reference is dark → want DARK
+    build_dark_ref_light = 0   # build renders dark, reference is light → want LIGHT
+    for d in bg:
+        la = _luminance(d["actual"])       # what the build renders
+        le = _luminance(d["expected"])     # what the reference measures
+        if la is None or le is None:
+            continue
+        if la >= light_thresh and le <= dark_thresh:
+            build_light_ref_dark += 1
+        elif la <= dark_thresh and le >= light_thresh:
+            build_dark_ref_light += 1
+    n = len(bg)
+    if build_light_ref_dark >= max(min_bg, (2 * n + 2) // 3):
+        return "dark"
+    if build_dark_ref_light >= max(min_bg, (2 * n + 2) // 3):
+        return "light"
+    return None
+
+
 def color_distance(hex_a: str, hex_b: str) -> Optional[float]:
     """Perceptual-ish distance between two #rrggbb colors ("redmean" — the
     standard cheap approximation; 0 = identical, ~765 = black↔white). PIL-only,
@@ -370,4 +414,4 @@ def make_side_by_side(ref_path, mine_path, save_path, *, region: Optional[Region
 
 __all__ = ["row_mode_color", "region_background", "find_accent", "extract_palette",
            "crop_region", "decompose_reference", "make_side_by_side",
-           "color_distance", "spec_color_deviations"]
+           "color_distance", "spec_color_deviations", "theme_inversion"]

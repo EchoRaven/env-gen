@@ -142,6 +142,16 @@ FWVAL_NO_DELIVER_ABORT_S = int(os.environ.get("ENVGEN_NO_DELIVER_ABORT_S", "4500
 #   verification_checklist) never fail-fasts and livelocks toward the 6h wall. If delivery
 #   has not succeeded within this window AFTER the contract is built (first gate decline),
 #   abort — generous (3-5× the observed clear time), well under the 6h wallclock backstop.
+# CHAIN-AUTHORING PROGRESS (#71, outlook run-60): the exact-stuck ladder keys on the
+# CHECK-level failure set ({"business_chain"}), which stays constant while the VERIFIER
+# is actively RE-AUTHORING a broken verification chain toward correct — the verifier IS
+# making progress the check set can't see, yet the 7-cycle abort fires mid-convergence
+# (run-60: the chain went green ONE cycle after the abort). When business_chain is the
+# only blocker AND the chains' authored content signature CHANGED since the last
+# validation (a re-authoring), reset the stuck counter — but count the churn, BOUNDED by
+# this cap so a verifier that oscillates FOREVER (never converging) still aborts (no
+# livelock). Env-gated. ~this-many re-authorings of room before giving up on the verifier.
+FWVAL_CHAIN_CHURN_CAP = max(2, int(os.environ.get("ENVGEN_CHAIN_CHURN_CAP") or "8"))
 FWVAL_STUCK_ABORT_AFTER = max(3, int(os.environ.get("ENVGEN_DELIVERY_STUCK_ABORT_AFTER") or "7"))  # env-gated (default 7); …then FAIL FAST: redispatch+terminal didn't help on an
 #   unchanged failure set with no lane progress → abort early with the root surfaced, instead
 #   of limping to the wall-clock cap (PROPOSAL #5). ~1 slow-retry interval past the cap (~11 min)

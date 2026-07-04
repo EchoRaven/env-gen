@@ -426,7 +426,25 @@ async def run_browser_test_user(
                         await page.goto(base_url + route, wait_until="networkidle", timeout=20000)
                         await page.wait_for_timeout(900)
                         probe = await page.evaluate(_PROBE)
-                        rec["blank"] = (probe.get("textLen", 0) < _MIN_TEXT)
+                        # #68 (outlook run-56, live): RETRY a would-be-blank read
+                        # before flagging it. A React page under nested routing +
+                        # a data fetch can still be mounting at 900ms — run-56 saw
+                        # 9 FALSE 'blank' pages (inconsistent between two walks —
+                        # the tell of a race) while a manual 1500ms capture of the
+                        # SAME routes rendered full content (inbox rows, calendar
+                        # grid). A false blank wastes the whole deferral budget
+                        # (30min) + escapes + files bogus P0s. Re-poll up to ~3.6s
+                        # more; the page only stays 'blank' if it genuinely never
+                        # renders content.
+                        _tl = probe.get("textLen", 0)
+                        if _tl < _MIN_TEXT:
+                            for _ in range(3):
+                                await page.wait_for_timeout(1200)
+                                probe = await page.evaluate(_PROBE)
+                                _tl = probe.get("textLen", 0)
+                                if _tl >= _MIN_TEXT:
+                                    break
+                        rec["blank"] = (_tl < _MIN_TEXT)
                         rec["sample"] = probe.get("sample", "")
                         rec["controls"] = probe.get("buttons", 0) + probe.get("inputs", 0)
                         # HOLLOW-PAGE detection: the test-user is logged in (token stored

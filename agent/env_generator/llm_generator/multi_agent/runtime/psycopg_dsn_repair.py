@@ -11,9 +11,17 @@ run) → api_smoke stalls the milestone.
 
 The SQLAlchemy engine genuinely needs ``postgresql+psycopg://`` (psycopg3 driver), so the
 env can't change; only the RAW-psycopg call sites need a clean DSN. Mirrors the other
-by-construction repairs: wrap every ``psycopg.connect(<arg>)`` with a ``_psycopg_dsn(...)``
-helper that strips a ``+<driver>`` dialect from the scheme. Deterministic, idempotent,
-best-effort; touches nothing when the app never uses raw psycopg.
+by-construction repairs: wrap every ``psycopg.connect(<first-arg>)`` with a
+``_psycopg_dsn(...)`` helper that strips a ``+<driver>`` dialect from the scheme.
+Deterministic, idempotent, best-effort; touches nothing when the app never uses raw
+psycopg.
+
+#62 (outlook run-47, live): the original repair only touched ``main.py`` and only
+matched a connect whose DSN was the SOLE argument. The custom-routes era moved the
+lane's raw psycopg into ``custom_routes.py``, and the lane authored
+``psycopg.connect(conninfo, row_factory=dict_row)`` — neither matched, so every
+auth/me + folders read 500'd for 5+ validation cycles on a correct app. The repair
+now covers every lane-owned backend module and any trailing-argument shape.
 """
 
 from __future__ import annotations
@@ -22,8 +30,20 @@ import re
 from pathlib import Path
 from typing import Any, Dict
 
-# A psycopg.connect argument: a call like ``_database_url()`` or a bare name/attr.
-_CONNECT_RE = re.compile(r"psycopg\.connect\(\s*([\w.]+\(\)|[\w.]+)\s*\)")
+# The FIRST psycopg.connect argument — an os.getenv/environ lookup, a call like
+# ``_database_url()``, or a bare name/attr — regardless of trailing kwargs (#62:
+# ``psycopg.connect(conninfo, row_factory=dict_row)`` matched NOTHING under the
+# old only-argument regex). A string LITERAL first arg is left alone (it is not
+# the env URL; rewriting hand-written conninfo strings risks breaking them).
+_CONNECT_RE = re.compile(
+    r"psycopg\.connect\(\s*"
+    r"((?:os\.(?:getenv|environ\.get)\(\s*[^()]*\)|[\w.]+\(\)|[\w.]+))"
+    r"\s*(?=[,)])")
+
+# Lane-owned backend modules that open raw connections. main.py is framework-
+# projected but historically carried lane handlers too; custom_routes.py is the
+# custom-routes-era home of lane SQL.
+_TARGET_FILES = ("main.py", "custom_routes.py")
 
 _HELPER = (
     "\n\ndef _psycopg_dsn(url):\n"
@@ -35,20 +55,16 @@ _HELPER = (
 )
 
 
-def repair_psycopg_dsn(backend_dir: Any) -> Dict[str, Any]:
-    """Wrap every ``psycopg.connect(<arg>)`` with ``_psycopg_dsn(<arg>)`` and inject the
-    helper. Returns ``{"wrapped": n}`` (0 when there is no raw psycopg to fix)."""
-    backend_dir = Path(backend_dir)
-    main_py = backend_dir / "main.py"
-    if not main_py.exists():
-        return {"wrapped": 0}
-    src = main_py.read_text(encoding="utf-8")
+def _repair_one(py_file: Path) -> int:
+    src = py_file.read_text(encoding="utf-8")
     if "psycopg.connect(" not in src or "_psycopg_dsn(" in src:
-        return {"wrapped": 0}  # nothing to do / already repaired (idempotent)
+        return 0  # nothing to do / already repaired (idempotent)
 
-    new_src, n = _CONNECT_RE.subn(r"psycopg.connect(_psycopg_dsn(\1))", src)
+    # the trailing ``,``/``)`` delimiter is NOT consumed (lookahead), so the
+    # replacement adds exactly one paren to close the _psycopg_dsn(...) wrapper.
+    new_src, n = _CONNECT_RE.subn(r"psycopg.connect(_psycopg_dsn(\1)", src)
     if n == 0:
-        return {"wrapped": 0}
+        return 0
 
     # Inject the helper after the module's import block (before first def/class/@).
     lines = new_src.splitlines(keepends=True)
@@ -62,5 +78,22 @@ def repair_psycopg_dsn(backend_dir: Any) -> Dict[str, Any]:
             insert_at = i + 1
     new_src = "".join(lines[:insert_at]) + _HELPER + "".join(lines[insert_at:])
 
-    main_py.write_text(new_src, encoding="utf-8")
-    return {"wrapped": n}
+    py_file.write_text(new_src, encoding="utf-8")
+    return n
+
+
+def repair_psycopg_dsn(backend_dir: Any) -> Dict[str, Any]:
+    """Wrap every ``psycopg.connect(<first-arg>)`` in the lane-owned backend modules
+    with ``_psycopg_dsn(<first-arg>)`` and inject the helper per file. Returns
+    ``{"wrapped": n}`` (0 when there is no raw psycopg to fix)."""
+    backend_dir = Path(backend_dir)
+    wrapped = 0
+    for name in _TARGET_FILES:
+        py_file = backend_dir / name
+        if not py_file.exists():
+            continue
+        try:
+            wrapped += _repair_one(py_file)
+        except Exception:
+            continue
+    return {"wrapped": wrapped}

@@ -25,7 +25,7 @@ CALL-TIME inside ``maybe_run`` (never module-top: that would cycle).
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Mapping, Optional
 
 from progress import EventType
 
@@ -59,6 +59,47 @@ def snapshot_passing_chains(orch: Any) -> None:
             pass
     except Exception:
         pass
+
+
+def _fwval_chain_signature(orch: Any) -> Optional[str]:
+    """A stable hash of the AUTHORED verification-chain content (each chain's name +
+    steps), EXCLUDING per-run execution metadata (last_result / last_run_at /
+    _updated_at / status), which changes every validation. A CHANGED signature ⇒ the
+    verifier RE-AUTHORED a chain (real convergence progress the check-level failure set
+    can't see). None on any failure (never gates on a hash error). Fix #71."""
+    import hashlib
+    import json as _json
+    try:
+        rh = getattr(getattr(orch, "hubs", None), "registryhub", None)
+        if rh is None:
+            return None
+        chains = dict(rh._verification_chains.value() or {})
+        content = {
+            str(name): (c.get("steps") if isinstance(c, Mapping) else None)
+            for name, c in chains.items()
+            if not str(name).startswith("_")
+        }
+        blob = _json.dumps(content, sort_keys=True, default=str)
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+    except Exception:
+        return None
+
+
+def _fwval_is_chain_authoring_progress(fset, chain_sig, prev_chain_sig,
+                                       chain_churn, cap) -> bool:
+    """True iff business_chain is the ONLY blocker AND the verifier RE-AUTHORED the
+    chains (content signature changed) AND the bounded churn budget isn't spent — the
+    verifier is actively converging a chain the check-level failure set can't see, so
+    the stuck counter should reset (run-60). Bounded by ``cap`` so a verifier that
+    oscillates FOREVER still aborts (no livelock). Fix #71."""
+    try:
+        return bool(
+            fset and set(fset) <= {"business_chain"}
+            and chain_sig is not None and prev_chain_sig is not None
+            and chain_sig != prev_chain_sig
+            and (chain_churn or 0) < cap)
+    except Exception:
+        return False
 
 
 def restore_regressed_chains(orch: Any, fset):
@@ -162,7 +203,8 @@ class FrameworkValidation:
             from .lifecycle import all_business_endpoints_implemented
             from ..orchestrator import (
                 _fwval_should_attempt, _fwval_failure_set, _fwval_stuck_decision,
-                _fwval_can_early_return, FWVAL_FAST_CAP)
+                _fwval_can_early_return, FWVAL_FAST_CAP, FWVAL_CHAIN_CHURN_CAP)
+            _FWVAL_CHAIN_CHURN_CAP = FWVAL_CHAIN_CHURN_CAP
             registryhub = getattr(orch.hubs, "registryhub", None)
             if registryhub is None:
                 return
@@ -496,10 +538,13 @@ class FrameworkValidation:
                 _fset = _fwval_failure_set(data)
                 _fset = restore_regressed_chains(orch, _fset)
                 _prev_fset = getattr(orch, "_fwval_failure_set", None)
+                _chain_sig = _fwval_chain_signature(orch)
                 if _prev_fset is None or _fset != _prev_fset:
                     # New/changed failure set → real progress (or first observation).
                     orch._fwval_failure_set = _fset
                     orch._fwval_stuck_count = 0
+                    orch._fwval_chain_churn = 0   # #71: fresh chain-churn budget per failure set
+                    orch._fwval_chain_sig = _chain_sig
                     if _prev_fset is not None:
                         # An actual change (not the first sight) → fresh fast budget,
                         # exactly like a rising endpoint count (FIX #31).
@@ -507,8 +552,33 @@ class FrameworkValidation:
                         # Re-arm the per-milestone owner-dispatch guards so the
                         # next-failure feedback can fire afresh for the new failure set.
                         orch._fwval_rearm_owner_dispatch()
+                # CHAIN-AUTHORING PROGRESS (#71, run-60): business_chain is the only
+                # persistent blocker AND the verifier RE-AUTHORED the chains (their
+                # content signature changed) since the last validation → real convergence
+                # progress the check-level failure set can't see. Reset the stuck counter
+                # so an actively-converging verifier isn't aborted mid-flight — BOUNDED by
+                # FWVAL_CHAIN_CHURN_CAP so a verifier that oscillates FOREVER (each cycle a
+                # different broken chain, never green) still aborts (no livelock). Gated to
+                # the POST-FAST-CAP window (review wyy421m0c): below the cap there is NO
+                # abort risk, so the grace budget must not be spent during fast-retry —
+                # that would shrink the window where it matters. Below the cap a
+                # re-authoring falls to the else (stuck++), harmless: the else escalation
+                # is itself cap-gated, and a fresh failure-set change resets stuck anyway.
+                elif (_attempts >= FWVAL_FAST_CAP
+                      and _fwval_is_chain_authoring_progress(
+                          _fset, _chain_sig, getattr(orch, "_fwval_chain_sig", None),
+                          getattr(orch, "_fwval_chain_churn", 0), _FWVAL_CHAIN_CHURN_CAP)):
+                    orch._fwval_chain_churn = getattr(orch, "_fwval_chain_churn", 0) + 1
+                    orch._fwval_stuck_count = 0
+                    orch._fwval_chain_sig = _chain_sig
+                    orch._logger.warning(
+                        "CHAIN-AUTHORING PROGRESS: business_chain still failing but the "
+                        "verifier re-authored the chains (churn %s/%s) — resetting the "
+                        "stuck budget to let it converge (bounded).",
+                        orch._fwval_chain_churn, _FWVAL_CHAIN_CHURN_CAP)
                 else:
                     # Same failure set as last validation → no functional progress.
+                    orch._fwval_chain_sig = _chain_sig
                     orch._fwval_stuck_count = getattr(orch, "_fwval_stuck_count", 0) + 1
                     # Only escalate once the FAST budget is spent (the converging
                     # window is over); below the cap we are still in the normal

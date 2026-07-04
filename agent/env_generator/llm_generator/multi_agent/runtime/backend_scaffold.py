@@ -385,6 +385,14 @@ async def _framework_auth_guard(request, call_next):
         p in ("/", "/health", "/openapi.json", "/docs", "/redoc", "/favicon.ico")
         or p.startswith("/auth/") or p.startswith("/api/v1/")
         or p.startswith("/.well-known") or p.startswith("/oauth")
+        # #64 (outlook run-48, live): the frontend's api.js prefixes EVERY call
+        # with /api, so its login/register hit /api/auth/login|register — which
+        # the guard walled (only /auth/* was public under the /api umbrella) →
+        # 401 on the UI login → auth_ok=False + login-wall on every protected
+        # page even though the API /auth/login 200s. The unauthenticated auth
+        # entry points must be public under BOTH prefixes; /api/auth/me stays
+        # guarded by its own Depends(get_current_user).
+        or p in ("/api/auth/login", "/api/auth/register")
     )
     if p.startswith("/api/") and not public and request.method != "OPTIONS":
         ok = False

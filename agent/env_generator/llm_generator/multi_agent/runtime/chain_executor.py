@@ -129,6 +129,44 @@ def _trailing_resource_var(path: Any) -> Optional[str]:
     return next((g for g in m.groups() if g), None)
 
 
+def _drop_auth_save_clobbers(steps: List[Dict[str, Any]]) -> None:
+    """AUTH-SAVE CLOBBER GUARD (#59c, outlook run-44 live) — in place.
+
+    A LATER auth step must not RE-BIND a token var that an EARLIER auth step
+    with a DIFFERENT email already saves. run-44: the second register carried
+    ``save: {"token_2": "access_token", "token": "access_token"}`` (the
+    canonical-token setdefault below adds "token" to EVERY auth step) —
+    silently overwriting user 1's token with user 2's. Every later "owner"
+    step (auth=token) then acted AS USER 2, so the cross-user probe
+    (auth=token_2) read a row its OWN identity created → 200 → the chain
+    flagged a LEAK on a correctly-isolated app (live 2-user curl proved the
+    isolation worked) and wedged business_chain for 12+ cycles. The clobbering
+    save key is dropped (the step's own new var stays); a same-email re-login
+    rebind is the same identity and left alone.
+
+    Called from BOTH normalize_steps (registration-time) and execute_chain
+    (runtime): chains persisted by an older framework carry the clobber in the
+    STORED steps, and execute_chain runs the stored steps verbatim."""
+    _auth_email_by_var: Dict[str, str] = {}
+    for s in steps:
+        if not isinstance(s, dict):
+            continue
+        if not (str(s.get("method", "")).upper() == "POST"
+                and "/auth/" in str(s.get("path", ""))):
+            continue
+        _body = s.get("body")
+        _email = str((_body or {}).get("email", "") if isinstance(_body, Mapping)
+                     else "").strip().lower()
+        _save = dict(_coerce_save(s.get("save")))
+        for _k in list(_save.keys()):
+            _first = _auth_email_by_var.get(_k)
+            if _first and _email and _first != _email:
+                _save.pop(_k, None)
+            elif _email:
+                _auth_email_by_var.setdefault(_k, _email)
+        s["save"] = _save
+
+
 def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
     """Normalize step variants → canonical {method, path, body, expect, save,
     auth}. Returns (normalized, errors). SCHEMA TOLERANCE (round 35): accept
@@ -344,6 +382,7 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
     #     is masked (the intruder would 404 on a still-existing row). Matched on the trailing
     #     path var, so a cross-user read of a DIFFERENT resource is still routed.
     #   • Acts only when CONFIDENT; otherwise byte-identical to prior behaviour. Idempotent.
+    _drop_auth_save_clobbers(out)
     _INTRUDER = "__chain_intruder_token"
     _owner_deleted_vars: set = set()
     _used_intruder = False
@@ -682,6 +721,12 @@ def _missing_required_fields(body_text: Optional[str],
             if not (isinstance(loc, (list, tuple)) and loc):
                 continue
             frame = str(loc[0])
+            # ``loc == ["body"]`` (#70): the WHOLE body is missing because the step
+            # sent null/no body — there is NO field name to fill (filling a field
+            # literally named "body" is wrong). Skip; the caller re-probes with {}
+            # to surface the field-level 422 (loc == ["body","<field>"]).
+            if frame in ("body", "form") and len(loc) == 1:
+                continue
             seg = (loc[1] if len(loc) > 1 and frame in ("body", "query", "form")
                    else loc[-1])
             if not (isinstance(seg, str) and seg):
@@ -825,6 +870,35 @@ def _recover_id_via_create(base: str, coll_path: str, token: Any) -> Any:
         return None
 
 
+def _reverify_denial_via_fresh_intruder(base, method, path, body, expect) -> bool:
+    """#78: a cross-user DENIAL step (expect 403/404) got a 2xx (apparent leak). Register a
+    GUARANTEED-fresh intruder and re-run the SAME request as them. The recurring false-positive
+    (outlook run-64 read, smoke-feed write; both live-confirmed the backend is CORRECT) is the
+    probe running as the resource's OWNER via a stale / owner-colliding / empty intruder token
+    → the op legitimately succeeds → false "leak/hack" → 7-cycle stuck → abort. A brand-new
+    intruder is DEFINITELY a different principal: if THEY are denied, the original 2xx was a
+    probe-setup artifact, NOT a real cross-user leak. Returns True iff a REAL leak is confirmed
+    (the fresh intruder ALSO succeeds) — so this can NEVER mask a real leak; conservative
+    (returns True = keep the leak verdict) on any error or if a fresh token can't be obtained."""
+    try:
+        import uuid as _uuid
+        _email = "reverify_%s@example.com" % _uuid.uuid4().hex[:14]
+        _reg = _http("POST", base + "/auth/register",
+                     body={"email": _email, "password": "Reverify123!x", "name": "Reverify"})
+        _tok = None
+        try:
+            _tok = (json.loads(_reg.get("body_text") or "{}") or {}).get("access_token")
+        except Exception:
+            _tok = None
+        if not _tok:
+            return True  # no fresh intruder → cannot disprove → keep the leak verdict (safe)
+        _r = _http(method, base + path, token=_tok,
+                   body=(body if isinstance(body, Mapping) else None))
+        return not _status_ok(_r.get("status"), expect)  # real leak iff NOT denied
+    except Exception:
+        return True  # any failure → conservative → keep the leak verdict
+
+
 def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     """Run one chain; returns {name, steps: [...], broken: [...]}.
     Deterministic wiring; never raises."""
@@ -844,7 +918,13 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     last_id_by_resource: Dict[str, Any] = {}  # resource -> its last-created id (FK resolution, fix #10)
     last_reg_creds: Dict[str, Any] = {}  # creds of the last successful /auth/register → reused if a later /auth/login 401s
     unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
-    for idx, step in enumerate(chain.get("steps") or []):
+    # #59c: STORED chains (registered by an older framework, or hand-edited) can
+    # carry the auth-save clobber in their persisted steps — normalize-time
+    # guarding alone can't reach them, so guard the runtime copy too.
+    _steps = [dict(s) if isinstance(s, Mapping) else s
+              for s in (chain.get("steps") or [])]
+    _drop_auth_save_clobbers(_steps)
+    for idx, step in enumerate(_steps):
         variables["rand"] = f"{_rand_base}{idx:02d}"
         method = str(step.get("method", "GET")).upper()
         # A broken step no longer aborts the whole chain (it used to `break`, so only the
@@ -879,17 +959,71 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
             # wedged forever on a functionally-correct, SEEDED app. Untouched when wired correctly.
             _pcoll = _collection_path_of(step.get("path"))
             _pres = _resource_from_path(_pcoll)
+            _is_denial = _is_cross_user_denial(step)
+            # (1) SAME-RESOURCE captured id — always the correct id for this path.
             _rid = (last_id_by_resource.get(_pres) if _pres else None)
+            # (2) RECOVERY on the CORRECT collection — MUST come BEFORE the global
+            #     last_id fallback (#66, run-51 auth_and_inbox_flow live): the
+            #     global last_id is the most-recent id from ANY prior step — e.g.
+            #     the USER id from GET /api/auth/me or a FOLDER id from GET
+            #     /api/folders — so using it for GET /api/messages/{message_id}
+            #     read /api/messages/<user-or-folder-id> → 404 → business_chain
+            #     wedged on a correct app. Recovery targets THIS collection (a real
+            #     seeded row or a freshly-created one), so it is the right resource.
+            #     #59b: a CROSS-USER-DENIAL step recovers with a NON-prober token
+            #     (else create-recovery mints its own row → the probe reads it →
+            #     200 false leak); no such token → skip recovery.
             if _rid is None:
+                _rtoken, _can_recover = token, True
+                if _is_denial:
+                    _rtoken, _can_recover = None, False
+                    _auth_name = str(step.get("auth") or "")
+                    for _vn, _vv in variables.items():
+                        if (_vn != _auth_name and "token" in str(_vn).lower()
+                                and isinstance(_vv, str) and _vv):
+                            _rtoken, _can_recover = _vv, True
+                            break
+                if _can_recover:
+                    _rid = _recover_id_via_list(base, _pcoll, _rtoken)
+                    if _rid is None:
+                        # even the list is empty — owner-scoped reads + a fresh
+                        # chain user own NOTHING (run-29 M3): create a row (#32).
+                        _rid = _recover_id_via_create(base, _pcoll, _rtoken)
+            # (3) GLOBAL last_id — absolute last resort, NON-denial only. Usually
+            #     the WRONG resource (a same-resource id would have won at (1)),
+            #     kept only for the rare ambiguous case. A denial step must NEVER
+            #     fall here — the global last_id is the prober's own most-recent
+            #     id → reading it → 200 false leak; leave the literal (404s,
+            #     tolerated by the denial expectation).
+            if _rid is None and not _is_denial:
                 _rid = last_id
-            if _rid is None:
-                _rid = _recover_id_via_list(base, _pcoll, token)
-            if _rid is None:
-                # (4) even the list is empty — owner-scoped reads + a fresh chain user own
-                # NOTHING (run-29 M3): create a row and use its id (#32).
-                _rid = _recover_id_via_create(base, _pcoll, token)
             if _rid is not None:
                 path = _UNRESOLVED_PLACEHOLDER.sub(str(_rid), path)
+        # #67 (outlook run-53, live): UNSATISFIABLE-BY-DATA read. A positive GET
+        # by-id whose placeholder STILL can't resolve — the chain user owns no
+        # rows (owner-scoped empty list) AND the collection has NO POST to create
+        # one (run-53: POST /api/messages → 405, the agent registered only GET
+        # /api/messages this run) — is not a backend defect: the endpoint is
+        # reachable (api_smoke proved it) and correctly 404s a non-existent id;
+        # the chain just authored a read with no data to read. Sending the
+        # LITERAL ${x} → 404 → business_chain wedged 7 cycles on a correct app.
+        # SKIP it (recorded, not broken) instead. DENIAL steps still send the
+        # literal (their 404 is the desired pass, #59b); non-GET writes still run
+        # (a write with an unresolved FK should fail honestly, caught elsewhere).
+        # placeholder check FIRST: it is True only when the resolution block above
+        # ran (same path), which is where _is_denial is defined — so referencing
+        # _is_denial after it is always safe (short-circuit).
+        if (_UNRESOLVED_PLACEHOLDER.search(path)
+                and method == "GET" and not _is_denial):
+            recorded.append({
+                "action": str(step.get("action") or step.get("path") or ""),
+                "method": method, "path": str(step.get("path") or ""),
+                "status": None, "ok": True, "kind": "skipped",
+                "note": ("skipped — unsatisfiable by data: the chain user owns no "
+                         + str(_pres or "row") + " and the collection cannot create one "
+                         "(no POST / empty list). Endpoint reachability is proven by "
+                         "api_smoke; this read has no data to target.")})
+            continue
         body = _subst(step.get("body"), variables) if step.get("body") else None
         # BODY UNRESOLVED-VARIABLE FALLBACK — the body counterpart of the path fallback
         # above. A nested-FK body the verifier referenced but never saved (e.g.
@@ -929,6 +1063,18 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
         # genuinely-broken field still surfaces: the retry either resolves it or the
         # original failure is recorded (the type-mismatch retry just 422s again).
         if not ok and status in (400, 422):
+            # #70 (outlook run-58, live): the step sent NO body but the handler
+            # requires one (e.g. POST /api/events/{id}/rsvp needs {"response":...})
+            # → FastAPI reports loc:["body"] "Field required" with NO field name,
+            # so the fill below has nothing to target and the chain wedges. Re-probe
+            # once with an empty {} to surface the FIELD-level 422
+            # (loc:["body","response"]) whose field names the fill can then use.
+            # Safe: an endpoint that takes no body ignores {}.
+            if not isinstance(body, Mapping) and method in ("POST", "PUT", "PATCH"):
+                _probe = _http(method, base + path, token=token, body={})
+                if _probe.get("status") in (400, 422):
+                    res = _probe
+                body = {}
             _miss_body, _miss_query = _missing_required_fields(res.get("body_text"), method)
             _miss_body = [f for f in _miss_body
                           if not (isinstance(body, Mapping) and f in body)]
@@ -1018,6 +1164,19 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                 kind = "broken" if _built_404 else "missing"
             else:
                 kind = "broken"
+                # #78: a cross-user DENIAL step got a 2xx (apparent leak). Re-verify with a
+                # GUARANTEED-fresh intruder before failing the gate — the recurring
+                # false-positive (run-64, smoke-feed) is the probe running as the OWNER via a
+                # stale/colliding intruder token. If a brand-new intruder is DENIED, the 2xx was
+                # a probe artifact, not a real leak. Cannot mask a real leak (a genuine leak →
+                # the fresh intruder ALSO succeeds → stays broken).
+                if (isinstance(status, int) and 200 <= status < 300
+                        and _is_cross_user_denial(step)
+                        and not _reverify_denial_via_fresh_intruder(base, method, path, body, expect)):
+                    kind = "skipped"
+                    note = ("cross-user denial re-verified with a FRESH intruder → DENIED; the "
+                            f"original {status} was a stale/owner-colliding probe token, not a "
+                            "real cross-user leak (#78)")
         entry = {"action": str(step.get("action") or path), "method": method,
                  "path": path, "status": status, "ok": ok, "kind": kind,
                  "note": note}
