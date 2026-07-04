@@ -296,6 +296,79 @@ def synthesize_missing_tables(tables: Any, endpoints: Any) -> Dict[str, Any]:
     return out
 
 
+_CREATE_OWNER_NAMES = {
+    "user_id", "owner_id", "author_id", "creator_id", "created_by", "account_id",
+    "sender_id", "uploader_id", "poster_id", "seller_id", "host_id", "organizer_id"}
+
+
+def synthesize_missing_create_endpoints(endpoints: Any, tables: Any):
+    """BY-CONSTRUCTION contract completeness: ADD a CREATE (``POST /api/<collection>``) for a
+    resource that is demonstrably MUTABLE — it has a collection ``GET /api/<collection>`` AND
+    other writes (``PATCH``/``PUT``/``DELETE`` on ``/{id}`` or a ``POST`` sub-action) — but no
+    plain create. The kickoff LLM intermittently DROPS the create (outlook run-63: registered
+    ``GET /api/messages`` + reply/forward/patch/delete but NOT ``POST /api/messages`` → create
+    405 → the business_chain can't make a message → the reply/forward ``${message_id}`` never
+    resolves → 422 → STUCK-ABORT; run-62 with the SAME env HAD it, so it is pure LLM variance).
+    Additive + deterministic. SAFETY: only a resource that ALREADY proves it is writable gets a
+    create, so a read-only collection (``GET /api/feed``/``/notifications`` with no other write)
+    is NEVER given a spurious create; and only when a backing table exists (aggregate/derived
+    collections have none). The request schema mirrors the table's non-key, non-owner columns.
+    Returns ``(endpoints_list, added_paths)``."""
+    eps: List[Any] = list(endpoints or [])
+    have_tables = {str(k).lower() for k in (tables or {})}
+
+    def _single_collection(path: str) -> Optional[str]:
+        p = str(path or "").rstrip("/")
+        if not p.startswith("/api/") or "{" in p or ":" in p:
+            return None
+        segs = [s for s in p.split("/") if s and s != "api"]
+        return segs[0].lower() if len(segs) == 1 else None
+
+    get_collections: Dict[str, str] = {}
+    post_collections = set()
+    writable = set()
+    for ep in eps:
+        if not isinstance(ep, dict) and not hasattr(ep, "get"):
+            continue
+        method = str(ep.get("method", "GET")).upper()
+        path = str(ep.get("path", "")).rstrip("/")
+        col = _single_collection(path)
+        if col and method == "GET":
+            get_collections.setdefault(col, path)
+        if col and method == "POST":
+            post_collections.add(col)
+        segs = [s for s in path.split("/") if s and s != "api"]
+        if segs:  # a write on /<res>/{id} or a POST sub-action /<res>/{id}/<verb> ⇒ mutable
+            res = segs[0].lower()
+            if method in ("PATCH", "PUT", "DELETE") or (method == "POST" and len(segs) > 1):
+                writable.add(res)
+
+    added: List[str] = []
+    for col, gpath in get_collections.items():
+        if col in post_collections or col not in have_tables or col not in writable:
+            continue
+        tdef = (tables or {}).get(col)
+        if tdef is None:  # case-insensitive table lookup
+            tdef = next((v for k, v in (tables or {}).items() if str(k).lower() == col), None)
+        req: Dict[str, Any] = {}
+        for c in (_columns_of(tdef) if isinstance(tdef, dict) else []):
+            if not isinstance(c, dict):
+                continue
+            n = str(c.get("name") or "").strip()
+            if (n and n.lower() != "id" and not c.get("primary_key") and not c.get("pk")
+                    and n.lower() not in _CREATE_OWNER_NAMES and not n.endswith("_at")
+                    and n.lower() not in ("tenant_id", "created_at", "updated_at")):
+                req[n] = str(c.get("type") or "string")
+        eps.append({
+            "method": "POST", "path": gpath, "status": "implemented",
+            "kind": "business",
+            "metadata": {"kind": "business", "synthesized_create": True},
+            "schema": {"request": req},
+        })
+        added.append(gpath)
+    return eps, added
+
+
 def _columns_of(table: Dict[str, Any]) -> List[Any]:
     """Extract the column list from a SchemaHub table record.
 
