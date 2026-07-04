@@ -870,6 +870,35 @@ def _recover_id_via_create(base: str, coll_path: str, token: Any) -> Any:
         return None
 
 
+def _reverify_denial_via_fresh_intruder(base, method, path, body, expect) -> bool:
+    """#78: a cross-user DENIAL step (expect 403/404) got a 2xx (apparent leak). Register a
+    GUARANTEED-fresh intruder and re-run the SAME request as them. The recurring false-positive
+    (outlook run-64 read, smoke-feed write; both live-confirmed the backend is CORRECT) is the
+    probe running as the resource's OWNER via a stale / owner-colliding / empty intruder token
+    → the op legitimately succeeds → false "leak/hack" → 7-cycle stuck → abort. A brand-new
+    intruder is DEFINITELY a different principal: if THEY are denied, the original 2xx was a
+    probe-setup artifact, NOT a real cross-user leak. Returns True iff a REAL leak is confirmed
+    (the fresh intruder ALSO succeeds) — so this can NEVER mask a real leak; conservative
+    (returns True = keep the leak verdict) on any error or if a fresh token can't be obtained."""
+    try:
+        import uuid as _uuid
+        _email = "reverify_%s@example.com" % _uuid.uuid4().hex[:14]
+        _reg = _http("POST", base + "/auth/register",
+                     body={"email": _email, "password": "Reverify123!x", "name": "Reverify"})
+        _tok = None
+        try:
+            _tok = (json.loads(_reg.get("body_text") or "{}") or {}).get("access_token")
+        except Exception:
+            _tok = None
+        if not _tok:
+            return True  # no fresh intruder → cannot disprove → keep the leak verdict (safe)
+        _r = _http(method, base + path, token=_tok,
+                   body=(body if isinstance(body, Mapping) else None))
+        return not _status_ok(_r.get("status"), expect)  # real leak iff NOT denied
+    except Exception:
+        return True  # any failure → conservative → keep the leak verdict
+
+
 def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     """Run one chain; returns {name, steps: [...], broken: [...]}.
     Deterministic wiring; never raises."""
@@ -1135,6 +1164,19 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                 kind = "broken" if _built_404 else "missing"
             else:
                 kind = "broken"
+                # #78: a cross-user DENIAL step got a 2xx (apparent leak). Re-verify with a
+                # GUARANTEED-fresh intruder before failing the gate — the recurring
+                # false-positive (run-64, smoke-feed) is the probe running as the OWNER via a
+                # stale/colliding intruder token. If a brand-new intruder is DENIED, the 2xx was
+                # a probe artifact, not a real leak. Cannot mask a real leak (a genuine leak →
+                # the fresh intruder ALSO succeeds → stays broken).
+                if (isinstance(status, int) and 200 <= status < 300
+                        and _is_cross_user_denial(step)
+                        and not _reverify_denial_via_fresh_intruder(base, method, path, body, expect)):
+                    kind = "skipped"
+                    note = ("cross-user denial re-verified with a FRESH intruder → DENIED; the "
+                            f"original {status} was a stale/owner-colliding probe token, not a "
+                            "real cross-user leak (#78)")
         entry = {"action": str(step.get("action") or path), "method": method,
                  "path": path, "status": status, "ok": ok, "kind": kind,
                  "note": note}
