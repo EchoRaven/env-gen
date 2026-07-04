@@ -632,6 +632,15 @@ _CUSTOM_ROUTES_INCLUDE = '''
 # tell a NESTED child-resource route (/<parent>/{id}/tasks) the projector handles from a
 # nested ACTION verb (/<parent>/{id}/like) it does not. Injected from the contract.
 _NESTED_CHILD_RESOURCES = set(__NESTED_CHILD_RESOURCES__)
+# #77 (outlook run-64): resources the framework POSITIVELY marked per-user-PRIVATE-TO-READ
+# (a cross-user GET-denial chain proved it) AND whose model has a SINGLE, UNAMBIGUOUS owner
+# FK — so the PROJECTED read is guaranteed correctly owner-scoped. For a GET on one of these
+# the projected scoped read MUST win: a lane custom GET can only re-widen the leak (run-64: an
+# unscoped lane GET /api/messages/{id} overrode the scoped projected read → cross-user leak →
+# isolation depended on the LANE fixing its own read → 75-min wall). A PUBLIC feed (never
+# flagged) and a multi-principal DM table (sender+recipient — the projected single-owner read
+# would 404 the recipient) are DELIBERATELY excluded, so the lane still wins for them.
+_OWNER_SCOPED_RESOURCES = set(__OWNER_SCOPED_RESOURCES__)
 
 
 def _custom_route_overrides_projected(method, path):
@@ -660,8 +669,17 @@ def _custom_route_overrides_projected(method, path):
     # concern is for mutations), and projected NESTED reads keep their parent-owner isolation.
     _is_get = method.upper() == "GET"
     if len(segs) == 1 and not last_is_param:          # collection: /messages
+        # #77: a framework-scoped PRIVATE resource keeps the PROJECTED scoped list — a lane
+        # custom GET can only re-leak. Public/unflagged resources: lane still wins.
+        if _is_get and segs[0].lower() in _OWNER_SCOPED_RESOURCES:
+            return False
         return _is_get
     if last_is_param and n_params == 1:               # item by id: /messages/{id}
+        # resource = the segment BEFORE the trailing {id} (segs[-2]) so a namespaced path
+        # (/api/v1/messages/{id} → 'messages') is still covered, not the version prefix.
+        _res = segs[-2].lower() if len(segs) >= 2 else segs[0].lower()
+        if _is_get and _res in _OWNER_SCOPED_RESOURCES:
+            return False                              # scoped projected read wins (no leak)
         return _is_get
     if last == "me":                                  # current-user singleton: /auth/me
         # The projector emits a /me handler (route_projector: path.endswith("/me")) ONLY for
@@ -779,7 +797,8 @@ if __name__ == "__main__":
 def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, Any]) -> str:
     """Render the full ``main.py``: fixed skeleton + auth-enforcement middleware + ALL
     business handlers projected from the contract (static routes before param routes)."""
-    from .route_projector import _generate_handler, _norm_path, _resource_model, _truthy
+    from .route_projector import (_generate_handler, _norm_path, _resource_model, _truthy,
+                                  _owner_fk, _TARGET_FK_NAMES)
     from .backend_scaffold import _AUTH_MIDDLEWARE
 
     meta = _models_meta(tables)
@@ -831,8 +850,30 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
         _n = str(_t).strip().lower()
         if _n:
             _nested_resources |= {_n, _n + "s", _n.rstrip("s")}
+    # #77: resources whose PROJECTED read is guaranteed correctly owner-scoped — the framework
+    # flagged them private-to-read (scoped_read_tables) AND their model has a SINGLE, unambiguous
+    # user principal. A table with a SECOND user-principal column (a DM's recipient_id/to_user_id
+    # beside sender_id) has an OR privacy boundary the single-owner projected read can't express
+    # (the recipient would 404), so it is EXCLUDED → the lane's OR-correct read still wins. Injected
+    # so _custom_route_overrides_projected drops a lane GET that would re-widen the scoped read.
+    _owner_scoped_resources: set = set()
+    for _t in scoped_read_tables:
+        _tm = meta.get(_t) or meta.get(str(_t).lower()) or {}
+        if not _owner_fk(_tm):
+            continue  # no owner FK → projected read can't scope → do not drop the lane read
+        _fks = _tm.get("fks") or {}
+        _cols = _tm.get("cols") or []
+        _principals = {c for c, tgt in _fks.items() if str(tgt).lower() == "users"}
+        _principals |= {c for c in _cols if str(c).lower() in _TARGET_FK_NAMES}
+        if len(_principals) > 1:
+            continue  # multi-principal (DM sender+recipient) → ambiguous → keep lane-wins
+        _n = str(_t).strip().lower()
+        if _n:
+            _owner_scoped_resources |= {_n, _n + "s", _n.rstrip("s")}
     custom_include = _CUSTOM_ROUTES_INCLUDE.replace(
-        "__NESTED_CHILD_RESOURCES__", repr(sorted(_nested_resources)))
+        "__NESTED_CHILD_RESOURCES__", repr(sorted(_nested_resources))
+    ).replace(
+        "__OWNER_SCOPED_RESOURCES__", repr(sorted(_owner_scoped_resources)))
     # _CUSTOM_ROUTES_INCLUDE precedes the projected blocks so a lane custom_routes
     # handler OVERRIDES the projected one for the same METHOD+path (first-registered
     # wins in Starlette) — the documented lane-override intent, which the old footer

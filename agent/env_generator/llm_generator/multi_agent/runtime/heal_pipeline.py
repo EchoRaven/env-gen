@@ -54,10 +54,12 @@ def _is_walkable_route(route) -> bool:
 
 
 def _isolation_scoped_tables_from_chains(registryhub, table_names) -> set:
-    """Tables the verifier's REGISTERED chains probe for CROSS-USER ISOLATION — a by-id
-    GET/PUT/DELETE the verifier asserts must be DENIED (403/404) to a NON-owner. Such a
-    probe IS the verifier's domain judgment that the resource is per-user-PRIVATE, so its
-    reads must be owner-scoped BY CONSTRUCTION. This closes the cross-user data leak the
+    """Tables the verifier's REGISTERED chains probe for CROSS-USER READ ISOLATION — a by-id
+    GET the verifier asserts must be DENIED (403/404) to a NON-owner. A cross-user GET denial
+    IS the verifier's domain judgment that the resource is per-user-PRIVATE-TO-READ, so its
+    reads must be owner-scoped BY CONSTRUCTION. (#77: a cross-user PUT/DELETE denial is NOT
+    used — it proves only WRITE authz, which is true for PUBLIC resources too; using it wrongly
+    scoped a world-readable feed's reads to the caller.) This closes the cross-user data leak the
     backend agent unreliably declares via owner_scoped_reads (outlook run-9/10: it scoped
     `messages`, forgot `events` → GET /api/events/{id} returned any user's row → business_
     chain isolation FAIL → 7-cycle wedge). ENV-AGNOSTIC + no global default flip: a PUBLIC
@@ -75,12 +77,29 @@ def _isolation_scoped_tables_from_chains(registryhub, table_names) -> set:
             for st in steps:
                 if not _is_cross_user_denial(st):
                     continue
-                # the resource COLLECTION segment of the probed path → the table name
-                # (/api/events/{id} -> 'events'); intersect with real tables for safety.
+                # #77: READ-SCOPING may only be inferred from a cross-user GET denial. A
+                # cross-user PUT/DELETE/PATCH denial proves only WRITE authz ("you may not
+                # edit/delete someone else's row") — a near-universal property that ALSO
+                # holds for PUBLIC resources (a forum comment, a social post). Deriving
+                # read-scoping from it wrongly scopes a world-readable resource's reads to
+                # the caller → the public feed silently shows only your own rows, and it
+                # ships GREEN (the write-denial still passes). Mutations enforce their own
+                # authz; only a GET denial proves reads must be owner-scoped.
+                if str(st.get("method") or "GET").upper() != "GET":
+                    continue
+                # the resource COLLECTION of the by-id TARGET → the table name. For a by-id
+                # probe (last seg is a path param) that is the segment BEFORE the param
+                # (/api/events/{id} -> 'events'; /api/posts/{id}/comments/{cid} -> 'comments',
+                # NOT 'posts'); for a bare-collection denial it is the last segment. Using
+                # segs[0] mis-attributed a nested by-id denial to the PARENT collection.
                 segs = [s for s in str(st.get("path") or "").split("?", 1)[0].split("/")
                         if s and s.lower() != "api"]
-                if segs and segs[0] in names:
-                    out.add(segs[0])
+                if not segs:
+                    continue
+                _last_is_param = segs[-1].startswith(("{", ":", "${"))
+                _res = (segs[-2] if _last_is_param and len(segs) >= 2 else segs[-1])
+                if _res in names:
+                    out.add(_res)
     except Exception:
         pass
     return out
