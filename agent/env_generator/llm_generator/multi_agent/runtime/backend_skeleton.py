@@ -1400,14 +1400,20 @@ def audit_agent_seed(backend_dir) -> Dict[str, Any]:
     return out
 
 
-def render_seed_data(tables: Dict[str, Any]) -> str:
+def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[str, Any]]] = None) -> str:
     """Project seed_data.py — the framework-owned LOADER. It loads the DATA from the
     sibling ``seed_data.json`` (authored by the backend agent) when present + non-empty,
     else the embedded deterministic ``_SEED`` (so the app is never blank). For each EMPTY
     table it inserts the rows in FK order, idempotently, hashing the demo password for
     users and backfilling a missing owner FK so owner-scoped reads are never empty. Demo
-    users log in with 'password'."""
+    users log in with 'password'.
+
+    ``bootstrap_spec`` (FIX #72) is the canonical per-user named-row spec detected from the
+    lane's handlers (``Folder.name == "Sent"``). After seeding, the loader ensures EVERY
+    existing user has each such row — idempotent, so an agent seed that omits the canonical
+    folder no longer 500s reply/forward/delete on a real, correct handler."""
     seed, classmap, owner_col, image_col = _build_seed_rows(tables)
+    bootstrap_spec = list(bootstrap_spec or [])
     body = (
         '"""Seed LOADER (framework-owned). The DATA lives in the sibling seed_data.json,\n'
         'authored by the backend agent with domain-aware, FK-valid, semantically-consistent\n'
@@ -1426,7 +1432,47 @@ def render_seed_data(tables: Dict[str, Any]) -> str:
         f"_OWNER_COL = {owner_col!r}\n"
         f"_IMAGE_COL = {image_col!r}\n"
         f"_PASSWORD_SALT = {_SEED_PASSWORD_SALT!r}\n"
-        f"_SEED = {seed!r}\n\n\n"
+        f"_SEED = {seed!r}\n"
+        f"_USER_BOOTSTRAP = {bootstrap_spec!r}\n\n\n"
+        "def _ensure_canonical_rows():\n"
+        "    # FIX #72: every user (seeded OR freshly-registered) must have the canonical\n"
+        "    # per-user named rows the lane's handlers require (a 'Sent' folder / a\n"
+        "    # kind=='trash' folder), or reply/forward/delete 500 on a correct handler and\n"
+        "    # the business_chain gate wedges. Idempotent + best-effort: runs on EVERY boot\n"
+        "    # (incl. the already-seeded fingerprint path) so an agent seed that omits the\n"
+        "    # canonical row is healed; a per-row failure never breaks the app.\n"
+        "    if not _USER_BOOTSTRAP:\n"
+        "        return\n"
+        "    users_cls = getattr(models, _CLASS.get('users') or 'User', None)\n"
+        "    if users_cls is None:\n"
+        "        return\n"
+        "    db = SessionLocal()\n"
+        "    try:\n"
+        "        try:\n"
+        "            uids = [u.id for u in db.query(users_cls).all()]\n"
+        "        except Exception:\n"
+        "            return\n"
+        "        for s in _USER_BOOTSTRAP:\n"
+        "            t = s.get('table'); owner = s.get('owner_col')\n"
+        "            mcol = s.get('match_col'); lit = s.get('literal')\n"
+        "            row = dict(s.get('row') or {})\n"
+        "            cls = getattr(models, _CLASS.get(t) or '', None)\n"
+        "            if cls is None or not owner or not mcol:\n"
+        "                continue\n"
+        "            ocol = getattr(cls, owner, None); mattr = getattr(cls, mcol, None)\n"
+        "            if ocol is None or mattr is None:\n"
+        "                continue\n"
+        "            for uid in uids:\n"
+        "                try:\n"
+        "                    if db.query(cls).filter(ocol == uid, mattr == lit).first() is not None:\n"
+        "                        continue\n"
+        "                    vals = {owner: uid}; vals.update(row); vals[mcol] = lit\n"
+        "                    db.add(cls(**{k: v for k, v in vals.items() if hasattr(cls, k)}))\n"
+        "                    db.commit()\n"
+        "                except Exception:\n"
+        "                    db.rollback()\n"
+        "    finally:\n"
+        "        db.close()\n\n\n"
         "def _load_rows():\n"
         "    try:\n"
         "        data = json.loads(Path(__file__).with_name('seed_data.json').read_text(encoding='utf-8'))\n"
@@ -1574,6 +1620,7 @@ def render_seed_data(tables: Dict[str, Any]) -> str:
         "        _store_fingerprint(db, fp)\n"
         "    finally:\n"
         "        db.close()\n"
+        "        _ensure_canonical_rows()\n"  # FIX #72: heal canonical rows on EVERY boot
     )
     return body
 
@@ -1597,9 +1644,29 @@ def write_backend_skeleton(
         (be / name).write_text(content, encoding="utf-8")
         written[name] = str(be / name)
 
+    # FIX #72: detect the canonical per-user named rows the lane's handlers REQUIRE
+    # (``Folder.name == "Sent"`` / ``kind == "trash"`` guarded by a raise-on-absent) and
+    # project the bootstrap spec BOTH the seed loader (seeded users) and create_user
+    # (registered users — the verification chain's user) enforce. Best-effort; a detector
+    # miss just yields an empty spec (the pre-#72 behaviour), never a crash.
+    _bootstrap_spec: List[Dict[str, Any]] = []
+    try:
+        from .canonical_rows import detect_canonical_rows, build_bootstrap_spec
+        _routes_src = ""
+        _cr = be / "custom_routes.py"
+        if _cr.exists():
+            _routes_src = _cr.read_text(encoding="utf-8")
+        if _routes_src:
+            _canonical = detect_canonical_rows(_routes_src, render_models(tables))
+            _bootstrap_spec = build_bootstrap_spec(_canonical, tables)
+    except Exception:
+        _bootstrap_spec = []
+
     w("database.py", _DATABASE_PY)
     w("models.py", render_models(tables))
-    w("seed_data.py", render_seed_data(tables))      # framework LOADER (code; embeds _SEED fallback)
+    w("seed_data.py", render_seed_data(tables, _bootstrap_spec))  # framework LOADER (code; embeds _SEED fallback)
+    import json as _json_bs
+    w("user_bootstrap.json", _json_bs.dumps(_bootstrap_spec, indent=2, ensure_ascii=False))  # FIX #72: create_user reads this
     # The framework deliberately does NOT write seed_data.json — that DATA file is the
     # backend agent's to AUTHOR with domain-aware values. Shipping a COMPLETE default here
     # anchored the agent to placeholder content (live 2026-06-29: it kept the framework's

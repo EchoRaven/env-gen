@@ -229,7 +229,62 @@ class OAuthStore:
                 "RETURNING id, email, name, tenant_id".format(collist, placeholders),
                 tuple(cols.values()),
             ).fetchone()
+            # FIX #72: a freshly-registered user must get the canonical per-user named
+            # rows the lane's handlers require (a "Sent" folder / a kind=="trash" folder),
+            # or reply/forward/delete 500 for them on a correct handler — and a
+            # verification chain that registers a fresh user then wedges the gate forever.
+            # Same transaction as the user insert; idempotent + best-effort.
+            if row:
+                self._bootstrap_user_rows(conn, row["id"])
         return dict(row) if row else None
+
+    _USER_BOOTSTRAP_CACHE: Optional[List[Dict[str, Any]]] = None
+
+    @classmethod
+    def _user_bootstrap_specs(cls) -> List[Dict[str, Any]]:
+        """The framework-projected canonical per-user row spec (FIX #72), read once from
+        the ``user_bootstrap.json`` the backend skeleton wrote beside this module."""
+        if cls._USER_BOOTSTRAP_CACHE is not None:
+            return cls._USER_BOOTSTRAP_CACHE
+        specs: List[Dict[str, Any]] = []
+        try:
+            p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "user_bootstrap.json")
+            if os.path.exists(p):
+                with open(p, "r", encoding="utf-8") as f:
+                    data = _json.load(f)
+                if isinstance(data, list):
+                    specs = data
+        except Exception:
+            specs = []
+        cls._USER_BOOTSTRAP_CACHE = specs
+        return specs
+
+    def _bootstrap_user_rows(self, conn, user_id) -> None:
+        """Insert every canonical per-user named row for ``user_id`` if absent. Idempotent
+        (guarded by a match-column existence check) and best-effort — a per-row failure is
+        swallowed so registration never fails on a bootstrap hiccup."""
+        for s in self._user_bootstrap_specs():
+            try:
+                t = s.get("table"); owner = s.get("owner_col")
+                mcol = s.get("match_col"); lit = s.get("literal")
+                row = dict(s.get("row") or {})
+                if not (t and owner and mcol):
+                    continue
+                hit = conn.execute(
+                    'SELECT 1 FROM "{}" WHERE "{}" = %s AND "{}" = %s LIMIT 1'.format(t, owner, mcol),
+                    (user_id, lit)).fetchone()
+                if hit:
+                    continue
+                vals = {owner: user_id}
+                vals.update(row)
+                vals[mcol] = lit
+                cl = ", ".join('"{}"'.format(c) for c in vals)
+                ph = ", ".join(["%s"] * len(vals))
+                conn.execute(
+                    'INSERT INTO "{}" ({}) VALUES ({})'.format(t, cl, ph),
+                    tuple(vals.values()))
+            except Exception:
+                continue
 
     def verify_user_by_username(
         self, username: str, password: str, tenant_id: str = "default"
