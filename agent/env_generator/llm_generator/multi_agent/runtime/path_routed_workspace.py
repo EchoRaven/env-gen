@@ -134,12 +134,15 @@ ROUTING_TABLE: Tuple[Tuple[str, str, Optional[FrozenSet[str]], str], ...] = (
     ("app/database/", "code", _lane_writers("database"),  "database implements schema/seed; per-worktree — coordinators DISPATCH, never patch"),
     ("app/",          "code", _BROAD_WRITERS,        "app/* catch-all — broad writers only"),
     # ------ shared (project root), role-gated ------
-    # design/ holds README.md + the kickoff-coordinator-authored
-    # reference image manifest. RegistryHub / WorkHub are the source of
-    # truth for the contract — these on-disk artifacts are
-    # supplementary.
-    ("design/",       "base", _writers("backend", "frontend"),
-                                                     "supplementary artifacts (README.md + reference images)"),
+    # design/ holds README.md + the kickoff-coordinator-authored reference image
+    # manifest + (Design-Prep) the design_analyst's design_system.json / crops /
+    # component_specs. RegistryHub / WorkHub are the source of truth for the
+    # contract — these on-disk artifacts are supplementary. The one-shot
+    # design_analyst OWNS design/design_system.json + design/crops/, so it must be
+    # a writer here (else its write-scope gate fails closed and the whole
+    # measure-per-component phase silently produces nothing).
+    ("design/",       "base", _writers("backend", "frontend", "design_analyst"),
+                                                     "supplementary artifacts (README + reference images + Design-Prep design_system/crops)"),
     ("docker/",       "base", _writers("backend", "frontend", "database", "verifier"),
                                                      "compose / runtime files (any infra-aware agent)"),
     ("scripts/",      "base", _writers("verifier"),  "verification scripts"),
