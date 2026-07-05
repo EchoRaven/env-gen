@@ -873,9 +873,39 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None) -> str:
             lines.append("Do these, in order:")
             for i, f in enumerate(fixes, 1):
                 lines.append(f"{i}. {f}")
+    adv = _asset_usage_advisory(output_dir)
+    if adv:
+        lines.append(adv)
     lines.append("\nReference images: use list_reference_images / view_image. "
                  "Your screenshots from the last gate run are in design/visual_gate/.")
     return "\n".join(lines)
+
+
+def _asset_usage_advisory(output_dir: Any) -> str:
+    """ADVISORY block (Design-Prep): when design/design_system.json maps components to REAL staged
+    assets that the frontend does not reference, tell the lane to use them instead of drawing
+    approximations. Best-effort; '' when there is no design_system or nothing to flag."""
+    if output_dir is None:
+        return ""
+    try:
+        import json as _json
+        from pathlib import Path as _P
+        ds_path = _P(output_dir) / "design" / "design_system.json"
+        if not ds_path.is_file():
+            return ""
+        ds = _json.loads(ds_path.read_text(encoding="utf-8"))
+        from .frontend_audit import audit_asset_usage
+        unused = audit_asset_usage(_P(output_dir) / "app" / "frontend", ds).get("unused_mapped") or []
+        if not unused:
+            return ""
+        out = ["\n## Real assets not used (advisory — use the STAGED asset, do not draw it):"]
+        for u in unused[:20]:
+            out.append(f"- component `{u['component']}` should render real asset "
+                       f"`{u['asset']}` → reference `/assets/{u['file']}` "
+                       f"(<img src='/assets/{u['file']}'/> or import it), not a hand-drawn shape.")
+        return "\n".join(out)
+    except Exception:
+        return ""
 
 
 try:  # FIX #75a: how many mid-rebuild blank captures to absorb before a still-blank
