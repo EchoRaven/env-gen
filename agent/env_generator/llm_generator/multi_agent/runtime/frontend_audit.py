@@ -534,3 +534,55 @@ def ui_page_delivery_blockers(frontend_src: Any, workhub: Any) -> List[str]:
     except Exception:
         pass
     return blockers
+
+
+def audit_asset_usage(frontend_dir: Any, design_system: Mapping[str, Any]) -> Dict[str, Any]:
+    """ADVISORY (never a hard block): flag each component the Design-Prep design_system maps to a
+    REAL asset that no frontend file actually references. For every ``screens[].components[].assets``
+    id, resolve its manifest ``file`` and check whether ANY frontend ``src`` file mentions that
+    file's basename (e.g. ``ig.svg``); if none do, the lane drew an approximation instead of using
+    the real asset → report ``{component, asset, file}``. Best-effort; ``{"unused_mapped": []}`` on
+    any error or missing design_system."""
+    out: Dict[str, Any] = {"unused_mapped": []}
+    try:
+        ds = design_system or {}
+        assets_by_id = {a.get("id"): a for a in (ds.get("assets") or []) if isinstance(a, dict)}
+        if not assets_by_id:
+            return out
+        src = Path(frontend_dir) / "src"
+        if not src.is_dir():
+            return out
+        # concatenate all frontend source once (small; deterministic)
+        blob_parts: List[str] = []
+        for p in src.rglob("*"):
+            if p.is_file() and p.suffix.lower() in (
+                    ".jsx", ".tsx", ".js", ".ts", ".css", ".scss", ".html"):
+                try:
+                    blob_parts.append(p.read_text(encoding="utf-8", errors="ignore"))
+                except Exception:
+                    continue
+        blob = "\n".join(blob_parts)
+        seen = set()
+        for screen in (ds.get("screens") or []):
+            for comp in (screen.get("components") or []):
+                if not isinstance(comp, dict):
+                    continue
+                cid = comp.get("id")
+                for aid in (comp.get("assets") or []):
+                    a = assets_by_id.get(aid)
+                    if not a:
+                        continue
+                    fname = a.get("file") or ""
+                    base = Path(fname).name
+                    if not base:
+                        continue
+                    key = (cid, aid)
+                    if key in seen:
+                        continue
+                    if base not in blob:
+                        seen.add(key)
+                        out["unused_mapped"].append(
+                            {"component": cid, "asset": aid, "file": fname})
+    except Exception:
+        return {"unused_mapped": []}
+    return out
