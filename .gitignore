@@ -42,3 +42,6 @@ forgingground_gen.db
 run_*.sh
 launch_*.sh
 .env
+
+# Design-Prep validation fixtures (local-only, like run scripts)
+design_inputs/
