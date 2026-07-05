@@ -238,6 +238,19 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
                 and st["body"].get("email") and st["body"].get("password"):
             st["path"] = "/auth/register"
             pth = "/auth/register"
+        # CANONICAL AUTH PATH (#79, instagram-core opt6 abort): the OAuth AS is mounted at BOTH
+        # "/" and "/api", so a verifier can author the auth round-trip at /api/auth/register|login
+        # — a valid, equivalent endpoint. But EVERY auth invariant below (canonical save,
+        # expect-union, body-default, ensure-user-before-login, auth-first reorder) keys on the
+        # un-prefixed "/auth/*" form, so an /api-prefixed auth step bypassed ALL of them — most
+        # damagingly the body-default, leaving a body-less POST /api/auth/register that the
+        # framework AS 422'd ("email and password are required") every cycle → business_chain
+        # failed for 75min → NO-CONVERGENCE ABORT (auth_and_profile chain, register step body=null).
+        # Collapse to the canonical path (SAME handler, mounted at both) so all invariants apply —
+        # mirrors the /oauth/register repoint just above.
+        if pth in ("/api/auth/register", "/api/auth/login"):
+            st["path"] = pth[len("/api"):]
+            pth = st["path"]
         # CANONICAL TOKEN SAVE: an /auth/* step ALWAYS saves the token under the
         # canonical var "token" — merged, never skipped when the verifier already
         # authored a custom save (e.g. {"commenter_token": "access_token"}). The
