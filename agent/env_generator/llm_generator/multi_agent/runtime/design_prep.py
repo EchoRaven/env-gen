@@ -188,3 +188,219 @@ def build_skeleton_design_system(resolved: Dict, output_dir,
         "assets": assets,
         "screens": screens,
     }
+
+
+# ── single-shot analyst enrichment (the one agent pass) ──────────────────────
+_ANALYST_PROMPT = (
+    "You are a senior UI/UX designer writing the DESIGN SYSTEM for a faithful clone of a reference app.\n"
+    "You are given: (1) a SKELETON design_system JSON whose colors are already MEASURED from the "
+    "reference pixels — these are GROUND TRUTH, never change a measured hex; (2) the reference "
+    "screenshots; (3) a manifest of REAL assets (icons/logos/images) the build will actually use, "
+    "with their images; (4) any reference docs.\n\n"
+    "Produce an ENRICHED design_system JSON with the SAME shape as the skeleton, filling in:\n"
+    " - design_system: add surface/text/border palette keys (do NOT change measured bg/accent), "
+    "type_scale (roles h1/h2/body/caption with size_px+weight estimated from the crops), "
+    "radius_scale, shadow_scale, iconography {style,stroke_px}.\n"
+    " - screens[].layout: one line describing the page layout.\n"
+    " - screens[].components[]: for EACH component keep its measured colors, and add role, "
+    "build_notes (concrete: what it looks like + how to build it), typography, and CRITICALLY "
+    "\"assets\": the list of REAL asset ids (from the manifest) this component should render "
+    "(a nav uses the logo + action icons; a post uses avatar/media assets; etc.). Map every asset "
+    "that visibly belongs to a component.\n"
+    " - assets[]: for each asset add \"description\" (what it depicts + style) and \"use\" (where it "
+    "appears).\n\n"
+    "\"measure, don't guess\": colors are measured facts. Output ONLY the JSON object, nothing else."
+)
+
+
+def _img_part(path: str) -> Optional[Dict]:
+    import base64
+    try:
+        src = str(path)
+        try:
+            from tools.file_tools import _compressed_image_for_llm
+            src = _compressed_image_for_llm(src) or src
+        except Exception:
+            pass
+        with open(src, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        return {"type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"}}
+    except Exception:
+        return None
+
+
+async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
+                       docs_text: str, max_ref_images: int, max_asset_images: int) -> Optional[Dict]:
+    import re
+    from utils.llm import Message
+
+    parts: List[Dict] = [{"type": "text", "text": _ANALYST_PROMPT}]
+    parts.append({"type": "text",
+                  "text": "SKELETON (measured facts):\n" + json.dumps(skeleton, indent=2)[:12000]})
+    if docs_text:
+        parts.append({"type": "text", "text": "REFERENCE DOCS:\n" + docs_text[:8000]})
+
+    for ref in (resolved.get("references") or [])[:max_ref_images]:
+        p = _img_part(ref)
+        if p:
+            parts.append({"type": "text", "text": f"REFERENCE screen: {Path(ref).name}"})
+            parts.append(p)
+
+    # raster asset images only (svg/vector go to the model as manifest text)
+    assets_dir = output_dir / "design" / "assets"
+    shown = 0
+    for a in skeleton.get("assets") or []:
+        if shown >= max_asset_images:
+            break
+        if a.get("type") in ("svg",):
+            continue
+        ap = assets_dir / a.get("file", "")
+        part = _img_part(str(ap)) if ap.is_file() else None
+        if part:
+            parts.append({"type": "text", "text": f"ASSET id={a.get('id')} file={a.get('file')}"})
+            parts.append(part)
+            shown += 1
+
+    client = getattr(llm, "_client", llm)
+    resp = await client.chat([Message.user_multimodal(parts)], temperature=0.0, max_tokens=4000)
+    text = getattr(resp, "content", "") or ""
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(0))
+    except Exception:
+        return None
+
+
+def _merge_enrichment(skeleton: Dict, enriched: Dict) -> Dict:
+    """Merge the analyst's enrichment over the skeleton — MEASURED facts always win. The skeleton's
+    measured palette keys (bg/accent/accents) and every component ``colors`` map are immutable;
+    everything else (prose, type/radius/shadow scales, asset mapping, annotations) is taken from
+    the analyst when present."""
+    import copy
+    ds = copy.deepcopy(skeleton)
+    e = enriched or {}
+
+    eds = e.get("design_system") or {}
+    sds = ds["design_system"]
+    # palette: analyst may ADD keys but not overwrite measured ones
+    for k, v in (eds.get("palette") or {}).items():
+        sds.setdefault("palette", {})
+        if k not in sds["palette"]:
+            sds["palette"][k] = v
+    for key in ("type_scale", "radius_scale", "shadow_scale", "iconography"):
+        if eds.get(key):
+            sds[key] = eds[key]
+    if eds.get("theme"):
+        # keep the measured default theme, but let the analyst add extra themes
+        cur = sds.get("theme") or {}
+        cur_themes = set(cur.get("themes") or [])
+        for t in (eds["theme"].get("themes") or []):
+            cur_themes.add(t)
+        cur["themes"] = sorted(cur_themes) if cur_themes else cur.get("themes")
+        sds["theme"] = cur
+
+    # assets: add description/use by id (never touch id/file/type/dims/staged_path)
+    e_assets = {a.get("id"): a for a in (e.get("assets") or []) if isinstance(a, dict)}
+    for a in ds.get("assets") or []:
+        ea = e_assets.get(a.get("id"))
+        if ea:
+            for k in ("description", "use"):
+                if ea.get(k) is not None:
+                    a[k] = ea[k]
+
+    # screens/components: layout + role/build_notes/typography/state/assets by id
+    e_screens = {s.get("name"): s for s in (e.get("screens") or []) if isinstance(s, dict)}
+    for s in ds.get("screens") or []:
+        es = e_screens.get(s.get("name"))
+        if not es:
+            continue
+        if es.get("layout"):
+            s["layout"] = es["layout"]
+        e_comps = {c.get("id"): c for c in (es.get("components") or []) if isinstance(c, dict)}
+        for c in s.get("components") or []:
+            ec = e_comps.get(c.get("id"))
+            if not ec:
+                continue
+            for k in ("role", "build_notes", "state", "typography", "assets", "crop"):
+                if ec.get(k) is not None:
+                    c[k] = ec[k]
+            # measured colors are immutable — c["colors"] is never replaced
+    return ds
+
+
+def _render_design_md(ds: Dict) -> str:
+    dsys = ds.get("design_system") or {}
+    lines: List[str] = ["# Design System", ""]
+    pal = dsys.get("palette") or {}
+    if pal:
+        lines.append("## Palette (measured)")
+        for k, v in pal.items():
+            if isinstance(v, str):
+                lines.append(f"- **{k}**: `{v}`")
+        lines.append("")
+    if dsys.get("type_scale"):
+        lines.append("## Type scale")
+        for t in dsys["type_scale"]:
+            lines.append(f"- {t.get('role')}: {t.get('size_px')}px / {t.get('weight')}")
+        lines.append("")
+    if dsys.get("theme"):
+        lines.append(f"**Theme:** default `{dsys['theme'].get('default')}` "
+                     f"({', '.join(dsys['theme'].get('themes') or [])})\n")
+    assets = ds.get("assets") or []
+    if assets:
+        lines.append("## Real assets (staged at `public/assets/`)")
+        for a in assets:
+            desc = a.get("description") or ""
+            use = ", ".join(a.get("use") or [])
+            lines.append(f"- `{a.get('id')}` → `{a.get('staged_path')}` — {desc}"
+                         + (f" (used: {use})" if use else ""))
+        lines.append("")
+    for s in ds.get("screens") or []:
+        lines.append(f"## Screen: {s.get('name')}")
+        if s.get("layout"):
+            lines.append(f"_{s['layout']}_\n")
+        for c in s.get("components") or []:
+            colors = c.get("colors") or {}
+            col = " ".join(f"{k}=`{v}`" for k, v in colors.items())
+            asset_ids = ", ".join(c.get("assets") or [])
+            lines.append(f"### {c.get('id')} — {c.get('role') or ''}")
+            if col:
+                lines.append(f"- colors (measured): {col}")
+            if asset_ids:
+                lines.append(f"- assets: {asset_ids}")
+            if c.get("build_notes"):
+                lines.append(f"- build: {c['build_notes']}")
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def _write_design_system(design_dir: Path, ds: Dict) -> None:
+    try:
+        design_dir.mkdir(parents=True, exist_ok=True)
+        (design_dir / "design_system.json").write_text(
+            json.dumps(ds, indent=2) + "\n", encoding="utf-8")
+        (design_dir / "design_system.md").write_text(_render_design_md(ds), encoding="utf-8")
+    except Exception:
+        pass
+
+
+async def enrich_design_system(skeleton: Dict, resolved: Dict, output_dir, llm, *,
+                               docs_text: str = "", max_ref_images: int = 6,
+                               max_asset_images: int = 24) -> Dict:
+    """Single-shot analyst pass: ONE multimodal call enriches the measured skeleton with per-component
+    style/UX prose + component→real-asset mapping + asset annotations, then writes
+    design/design_system.json + .md. MEASURED colors always win the merge. Best-effort: on ANY LLM
+    error the SKELETON is written (deterministic facts still ship). Never raises."""
+    out = Path(output_dir)
+    enriched: Optional[Dict] = None
+    try:
+        enriched = await _run_analyst(skeleton, resolved, out, llm,
+                                      docs_text, max_ref_images, max_asset_images)
+    except Exception:
+        enriched = None
+    ds = _merge_enrichment(skeleton, enriched) if enriched else skeleton
+    _write_design_system(out / "design", ds)
+    return ds
