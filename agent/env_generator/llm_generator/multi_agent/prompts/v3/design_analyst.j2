@@ -60,8 +60,8 @@
       {"tool": "crop_reference(image, region, save_as='design/crops/<stem>__<NN_name>.png')", "when": "for EACH component, crop it (a touch LOOSE) and then view_image the crop up close — the whole page is too big to study"},
       {"tool": "sample_color(image, region, kind)", "when": "per component: kind='background' (row-mode = the true opaque bg) AND kind='accent', hue=... (the saturated button/semantic color); sample opaque chrome vs translucent panel SEPARATELY"},
       {"tool": "measure_layout(image, region, metric)", "when": "when spacing/columns/width matter (grids, nav rails, content width): metric='grid_columns' (real column count) / 'content_width' (true edges) / 'row_spacing' (item gaps). Eyeballing these is unreliable — measure"},
-      {"tool": "list_assets / annotate_asset", "when": "read the real asset manifest; map each component's brand elements to real asset ids; annotate what each asset is + where it is used"},
-      {"tool": "write / read (file tools)", "when": "persist design/design_system.json + design/design_system.md yourself (schema in OUTPUT). component_specs/ are already written by decompose_reference; you enrich into design_system.json"},
+      {"tool": "read (file tool) — design/design_system.json", "when": "the framework pre-writes a SKELETON design_system.json (staged real assets[] + measured palette + component regions) before you run — read it FIRST; map each component's brand elements to the asset ids in assets[], and annotate each asset's description/use"},
+      {"tool": "write (file tool) — design/design_system.json + .md", "when": "persist your enriched doc yourself (schema in OUTPUT). component_specs/ are written by decompose_reference; you fold their measured colors + your per-component measurements into design_system.json"},
     ],
     success_criteria=[
       "EVERY reference screen decomposed, and EVERY component measured (crop viewed + background + accent sampled) and given a spec — no component left un-measured.",
