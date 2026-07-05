@@ -481,9 +481,13 @@ def _bands(counts, coords, *, min_run: int = 1):
 
 def grid_columns(im, region: Optional[Region] = None, *, thresh: float = 60.0,
                  step: int = 2, min_fill: float = 0.15) -> Dict[str, object]:
-    """Count content columns separated by gap-lines — §15② (推翻 '3列' → 数出真列数). A column x is
-    'content' when >``min_fill`` of its rows are content pixels; contiguous content columns = one
-    cell. Returns {columns, band_centers_px, gap_centers_px}."""
+    """Count content columns of a grid — §15② (推翻 '3列' → 数出真列数). Content columns (x with
+    >``min_fill`` content-vs-bg rows) form bands; ``columns`` = the band count, and ``pitch_px`` =
+    the column pitch (smallest band-to-band spacing) for cross-checking. Robust for UI/clean grids;
+    APPROXIMATE for photo grids with spanning cells (a 2×2 explore tile hides a gutter and merges
+    two bands → undercount). The caller should CONFIRM the count by view_image-ing the grid crop
+    (a vision pass counts columns reliably); use pitch_px + width to sanity-check. Returns
+    {columns, pitch_px, band_centers_px, gap_centers_px}."""
     px0, py0, px1, py1 = _region_px(im, region)
     bg = _bg_rgb(im, region)
     rows = max(1, (py1 - py0) // step)
@@ -496,7 +500,11 @@ def grid_columns(im, region: Optional[Region] = None, *, thresh: float = 60.0,
     bands = _bands(counts, coords)
     centers = [c for _, _, c in bands]
     gaps = [(bands[i][1] + bands[i + 1][0]) // 2 for i in range(len(bands) - 1)]
-    return {"columns": len(bands), "band_centers_px": centers, "gap_centers_px": gaps}
+    pitch = None
+    if len(centers) >= 2:
+        pitch = min(centers[i + 1] - centers[i] for i in range(len(centers) - 1))
+    return {"columns": len(bands), "pitch_px": pitch,
+            "band_centers_px": centers, "gap_centers_px": gaps}
 
 
 def row_bands(im, region: Optional[Region] = None, *, thresh: float = 60.0,

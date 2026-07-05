@@ -288,8 +288,10 @@ class MeasureLayoutTool(BaseTool):
     DESCRIPTION = (
         "MEASURE layout geometry off a reference screenshot with pixel scanning (spacing / columns "
         "/ width are impossible to eyeball — measure them, PIPELINE.md §15). "
-        "metric='grid_columns' → count grid columns via gap-line detection (e.g. explore is 4 "
-        "columns, not 3). metric='content_width' → the content bounding box (find the true left/"
+        "metric='grid_columns' → column count + pitch (a HINT — robust for clean/UI grids, but a "
+        "photo grid's 2x2 spanning tiles can hide a gutter and undercount; CONFIRM by view_image-"
+        "ing the grid crop and use pitch_px+width to sanity-check). metric='content_width' → the "
+        "content bounding box (find the true left/"
         "right edges, e.g. explore ~1110px vs feed ~935px). metric='row_spacing' → the y-centers "
         "of stacked items + the gap between them (e.g. nav glyph→first-item 183px, item gap 56px). "
         "Pass `region` to scope to one component (a nav column, a grid). Theme-agnostic (content = "
