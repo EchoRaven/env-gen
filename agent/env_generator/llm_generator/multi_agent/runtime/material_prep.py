@@ -414,6 +414,125 @@ def make_side_by_side(ref_path, mine_path, save_path, *, region: Optional[Region
     return canvas.size
 
 
+# ── §15 PIL layout measurement (columns / width / spacing) — theme-agnostic ──
+def _rgb_dist(a, b) -> float:
+    """redmean distance between two RGB tuples (0=identical). No hex round-trip (fast per-pixel)."""
+    rm = (a[0] + b[0]) / 2.0
+    dr, dg, db = a[0] - b[0], a[1] - b[1], a[2] - b[2]
+    return ((2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db) ** 0.5
+
+
+def _region_px(im, region):
+    W, H = im.size
+    x0, y0, x1, y1 = region or (0.0, 0.0, 1.0, 1.0)
+    return (max(0, int(x0 * W)), max(0, int(y0 * H)),
+            min(W, int(x1 * W)), min(H, int(y1 * H)))
+
+
+def _bg_rgb(im, region):
+    hexc = region_background(im, region)
+    rgb = _rgb_of_hex(hexc) if hexc else None
+    return rgb or (0, 0, 0)
+
+
+def content_bounds(im, region: Optional[Region] = None, *, thresh: float = 60.0,
+                   step: int = 2) -> Dict[str, object]:
+    """Bounding box of CONTENT (pixels far from the region's measured background) — §15① content
+    width/edges. Returns px + 0..1 fractions (of the FULL image), or {"content": False} if empty."""
+    W, H = im.size
+    px0, py0, px1, py1 = _region_px(im, region)
+    bg = _bg_rgb(im, region)
+    minx = miny = 10 ** 9
+    maxx = maxy = -1
+    for y in range(py0, py1, step):
+        for x in range(px0, px1, step):
+            if _rgb_dist(im.getpixel((x, y)), bg) > thresh:
+                if x < minx: minx = x
+                if x > maxx: maxx = x
+                if y < miny: miny = y
+                if y > maxy: maxy = y
+    if maxx < 0:
+        return {"content": False}
+    return {"content": True,
+            "left_px": minx, "right_px": maxx, "top_px": miny, "bottom_px": maxy,
+            "width_px": maxx - minx, "height_px": maxy - miny,
+            "left": round(minx / W, 4), "right": round(maxx / W, 4),
+            "top": round(miny / H, 4), "bottom": round(maxy / H, 4),
+            "width": round((maxx - minx) / W, 4), "height": round((maxy - miny) / H, 4)}
+
+
+def _bands(counts, coords, *, min_run: int = 1):
+    """Group consecutive 'has-content' samples into bands → list of (start,end,center)."""
+    bands = []
+    run_start = None
+    for i, c in enumerate(counts):
+        if c:
+            if run_start is None:
+                run_start = i
+        else:
+            if run_start is not None:
+                if i - run_start >= min_run:
+                    bands.append((coords[run_start], coords[i - 1]))
+                run_start = None
+    if run_start is not None and len(coords) - run_start >= min_run:
+        bands.append((coords[run_start], coords[-1]))
+    return [(s, e, (s + e) // 2) for s, e in bands]
+
+
+def grid_columns(im, region: Optional[Region] = None, *, thresh: float = 60.0,
+                 step: int = 2, min_fill: float = 0.15) -> Dict[str, object]:
+    """Count content columns separated by gap-lines — §15② (推翻 '3列' → 数出真列数). A column x is
+    'content' when >``min_fill`` of its rows are content pixels; contiguous content columns = one
+    cell. Returns {columns, band_centers_px, gap_centers_px}."""
+    px0, py0, px1, py1 = _region_px(im, region)
+    bg = _bg_rgb(im, region)
+    rows = max(1, (py1 - py0) // step)
+    counts, coords = [], []
+    for x in range(px0, px1, step):
+        n = sum(1 for y in range(py0, py1, step)
+                if _rgb_dist(im.getpixel((x, y)), bg) > thresh)
+        counts.append(1 if n >= min_fill * rows else 0)
+        coords.append(x)
+    bands = _bands(counts, coords)
+    centers = [c for _, _, c in bands]
+    gaps = [(bands[i][1] + bands[i + 1][0]) // 2 for i in range(len(bands) - 1)]
+    return {"columns": len(bands), "band_centers_px": centers, "gap_centers_px": gaps}
+
+
+def row_bands(im, region: Optional[Region] = None, *, thresh: float = 60.0,
+              step: int = 2, min_fill: float = 0.15) -> Dict[str, object]:
+    """Y-centers of content bands (nav-item / row spacing) — §15③ (glyph→首项 183px, 项间 56px).
+    Returns {bands, centers_px, first_gap_px, item_gap_px, gaps_px}."""
+    px0, py0, px1, py1 = _region_px(im, region)
+    bg = _bg_rgb(im, region)
+    cols = max(1, (px1 - px0) // step)
+    counts, coords = [], []
+    for y in range(py0, py1, step):
+        n = sum(1 for x in range(px0, px1, step)
+                if _rgb_dist(im.getpixel((x, y)), bg) > thresh)
+        counts.append(1 if n >= min_fill * cols else 0)
+        coords.append(y)
+    bands = _bands(counts, coords)
+    centers = [c for _, _, c in bands]
+    gaps = [centers[i + 1] - centers[i] for i in range(len(centers) - 1)]
+    gaps_sorted = sorted(gaps)
+    item_gap = gaps_sorted[len(gaps_sorted) // 2] if gaps_sorted else 0
+    return {"bands": len(bands), "centers_px": centers,
+            "first_gap_px": (centers[0] - py0) if centers else 0,
+            "item_gap_px": item_gap, "gaps_px": gaps}
+
+
+def measure_layout(im, region: Optional[Region], metric: str) -> Dict[str, object]:
+    """Dispatch §15 measurements. metric ∈ {content_width, grid_columns, row_spacing}."""
+    if metric in ("content_width", "content_bounds"):
+        return content_bounds(im, region)
+    if metric == "grid_columns":
+        return grid_columns(im, region)
+    if metric in ("row_spacing", "row_bands", "nav_spacing"):
+        return row_bands(im, region)
+    return {"error": f"unknown metric '{metric}' (want content_width|grid_columns|row_spacing)"}
+
+
 # ── Design-Prep: real-asset ingestion + staging (deterministic) ──────────────
 _IMG_EXT = {".png": "png", ".jpg": "jpg", ".jpeg": "jpg", ".webp": "webp",
             ".gif": "gif", ".svg": "svg", ".bmp": "bmp", ".ico": "ico"}
