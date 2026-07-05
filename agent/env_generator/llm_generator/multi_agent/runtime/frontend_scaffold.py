@@ -16,6 +16,7 @@ app that won't build at all).
 """
 
 import re
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
 
@@ -2291,6 +2292,31 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
         return {"pinned": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+def stage_design_assets(output_dir) -> List[str]:
+    """Copy the Design-Prep staged real assets ``<output_dir>/design/assets/*`` into the served
+    frontend ``<output_dir>/app/frontend/public/assets/`` (Vite serves + bundles ``public/``), so
+    the frontend can reference them at ``/assets/<file>``. Preserves icons/ logos/ grouping.
+    Returns the copied relative paths; ``[]`` when there is no design/assets. Best-effort."""
+    out = Path(output_dir)
+    src = out / "design" / "assets"
+    if not src.is_dir():
+        return []
+    dest = out / "app" / "frontend" / "public" / "assets"
+    copied: List[str] = []
+    for p in sorted(src.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(src)
+        try:
+            d = dest / rel
+            d.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, d)
+            copied.append(rel.as_posix())
+        except Exception:
+            continue
+    return copied
+
+
 def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
     """Gap-fill a minimal buildable Vite+React+Tailwind+nginx frontend. Writes
     each standard file ONLY when missing/empty, so a lane that produced code is
@@ -2301,6 +2327,12 @@ def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
         frontend_dir = Path(frontend_dir)
         frontend_dir.mkdir(parents=True, exist_ok=True)
         written: List[str] = []
+        # Design-Prep: stage the real assets (design/assets/) into public/assets/ so the
+        # frontend serves them. frontend_dir is <output>/app/frontend → output = parents[1].
+        try:
+            stage_design_assets(frontend_dir.parent.parent)
+        except Exception:
+            pass
         # GENERALITY: baseline copy derives the display name from the project
         # directory — the templates carry __APP_NAME__, never a real brand.
         try:
@@ -2326,5 +2358,6 @@ def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
 __all__ = [
     "repair_frontend_api_exports",
     "scaffold_frontend_baseline",
+    "stage_design_assets",
     "pin_frontend_build_tooling",
 ]
