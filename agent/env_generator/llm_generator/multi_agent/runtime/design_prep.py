@@ -404,3 +404,42 @@ async def enrich_design_system(skeleton: Dict, resolved: Dict, output_dir, llm, 
     ds = _merge_enrichment(skeleton, enriched) if enriched else skeleton
     _write_design_system(out / "design", ds)
     return ds
+
+
+# ── phase entry ──────────────────────────────────────────────────────────────
+_TEXT_DOC_EXTS = (".md", ".markdown", ".txt", ".rst", ".html", ".htm")
+
+
+def _read_docs_text(docs: List[str], *, cap: int = 20000) -> str:
+    """Concatenate the readable text of the reference docs (md/txt/rst/html) for the analyst.
+    Binary docs (pdf) are skipped. Best-effort; bounded to ``cap`` chars."""
+    chunks: List[str] = []
+    total = 0
+    for d in docs or []:
+        p = Path(d)
+        if p.suffix.lower() not in _TEXT_DOC_EXTS:
+            continue
+        try:
+            txt = p.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        chunks.append(f"### {p.name}\n{txt}")
+        total += len(txt)
+        if total >= cap:
+            break
+    return ("\n\n".join(chunks))[:cap]
+
+
+async def run_design_prep(design_input: Optional[str], reference_dir: Optional[str],
+                          reference_images: Optional[List[str]], output_dir, llm) -> Dict:
+    """The one-shot Design-Prep phase: resolve inputs → deterministic measured skeleton (reusing any
+    design/component_specs the upstream precompute wrote + staging real assets) → single-shot analyst
+    enrichment → emit design/design_system.json + .md. Returns the design_system dict; ``{}`` on total
+    failure (the run continues references-only). Best-effort; never raises into the caller."""
+    try:
+        resolved = resolve_design_input(design_input, reference_dir, reference_images)
+        docs_text = _read_docs_text(resolved.get("docs") or [])
+        skeleton = build_skeleton_design_system(resolved, output_dir)
+        return await enrich_design_system(skeleton, resolved, output_dir, llm, docs_text=docs_text)
+    except Exception:
+        return {}

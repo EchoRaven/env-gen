@@ -1989,6 +1989,24 @@ class Orchestrator:
         if res.spec is not None:
             self._reference_spec = res.spec
             self._reference_spec_summary = res.spec_summary
+        # Design-Prep phase (opt-in via --design-input): now that component_specs are
+        # measured on disk, build the rich design_system doc + stage the real assets. One
+        # extra vision pass; best-effort — a failure leaves the run references-only.
+        if getattr(self, "_design_input", None):
+            try:
+                from .runtime.design_prep import run_design_prep
+                ds = await run_design_prep(
+                    self._design_input, None,
+                    getattr(self, "_reference_images", None),
+                    self.output_dir, self.llm)
+                if ds:
+                    self._design_system = ds
+                    n_assets = len(ds.get("assets") or [])
+                    self._logger.info(
+                        "Design-Prep: design_system.json written (%d screens, %d real assets staged)",
+                        len(ds.get("screens") or []), n_assets)
+            except Exception as dp_err:
+                self._logger.warning("Design-Prep phase failed (continuing): %s", dp_err)
         return res.requirements
 
     @property
