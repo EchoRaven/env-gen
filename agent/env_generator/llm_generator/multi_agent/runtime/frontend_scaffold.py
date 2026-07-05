@@ -1776,7 +1776,14 @@ _BASELINE_NGINX = """server {
     location /auth         { proxy_pass ${API_URL}; proxy_http_version 1.1; proxy_set_header Host $host; }
     location /oauth        { proxy_pass ${API_URL}; proxy_http_version 1.1; proxy_set_header Host $host; }
     location /.well-known  { proxy_pass ${API_URL}; proxy_http_version 1.1; proxy_set_header Host $host; }
-    location /             { try_files $uri $uri/ /index.html; }
+    # Vite emits CONTENT-HASHED filenames under /assets (index-<hash>.js) — a new build gets a new
+    # URL, so these are safe to cache forever. immutable stops needless refetches.
+    location /assets/      { add_header Cache-Control "public, max-age=31536000, immutable"; }
+    # index.html + every SPA route MUST NOT be cached: a browser that reuses a stale index.html
+    # references an OLD JS hash, so a rebuilt app "doesn't show the change" — the #1 false bug
+    # (PIPELINE.md §5.3/§9). no-store forces a fresh index (→ current bundle) on every load, which
+    # eliminates the whole stale-tab / ?v=-bump class deterministically.
+    location /             { try_files $uri $uri/ /index.html; add_header Cache-Control "no-store, no-cache, must-revalidate, max-age=0"; }
 }
 """
 
