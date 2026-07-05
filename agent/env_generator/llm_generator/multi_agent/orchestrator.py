@@ -296,6 +296,7 @@ class Orchestrator:
         name: str = "generated_app",
         reference_images: List[str] = None,
         verbose: bool = False,
+        design_input: str = None,
     ):
         self._logger = logging.getLogger("Orchestrator")
         if verbose:
@@ -315,6 +316,7 @@ class Orchestrator:
         from .runtime.run_budget import RunBudget
         self._budget = RunBudget(self.output_dir, self._logger)
 
+        self._design_input = design_input  # Design-Prep phase input dir (Task 5); None → off
         self._reference_images = list(reference_images or [])
         # Merge in any reference images the UI (or a prior step) already dropped
         # into <workspace>/references/ — that is the store the monitor's

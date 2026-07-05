@@ -322,6 +322,9 @@ async def main():
                        help="Reference screenshot paths for design (e.g., screenshot/expedia.png)")
     parser.add_argument("--reference-dir", default=None,
                        help="Directory containing reference screenshots")
+    parser.add_argument("--design-input", dest="design_input", default=None,
+                       help="Design-Prep input dir with optional references/ docs/ assets/ "
+                            "subfolders (real screenshots + docs + real icon/logo/image assets)")
     parser.add_argument("--log", action="store_true",
                        help="Save logs to file (output_dir/logs/generation.log)")
     parser.add_argument("--fresh", dest="fresh", action="store_true", default=None,
@@ -413,7 +416,18 @@ async def main():
                         "*.html", "*.htm", "*.pdf", "*.md", "*.markdown",
                         "*.txt", "*.rst"):
                 reference_images.extend([str(p) for p in ref_dir.glob(ext)])
-    
+
+    # Design-Prep: --design-input's references/ + docs/ also feed the existing reference
+    # pipeline (so back-compat consumers keep working); the assets/ folder is consumed by
+    # the Design-Prep phase itself (Task 5) via the design_input dir passed to the orchestrator.
+    if args.design_input:
+        from env_generator.llm_generator.multi_agent.runtime.design_prep import resolve_design_input
+        resolved = resolve_design_input(args.design_input, None, [])
+        for p in resolved["references"] + resolved["docs"]:
+            if p not in reference_images:
+                reference_images.append(p)
+
+
     if reference_images:
         logger.info(f"Reference images: {len(reference_images)} files")
         for img in reference_images:
@@ -425,6 +439,7 @@ async def main():
         name=args.name,
         verbose=args.verbose,
         reference_images=reference_images,
+        design_input=args.design_input,
     )
     
     requirements = []
