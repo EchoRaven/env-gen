@@ -463,6 +463,18 @@ def build_design_analyst_briefing(output_dir, resolved: Dict) -> str:
     )
 
 
+def load_valid_design_system(path) -> Optional[Dict]:
+    """Load design_system.json ONLY if it parses AND is structurally a design doc (has a
+    ``design_system`` block or ``screens``). Returns None on a missing/unreadable/malformed file
+    or a non-design shape — so a spawned agent that wrote garbage JSON is DETECTED and the caller
+    can rebuild (single-shot) instead of discarding the whole phase to references-only."""
+    try:
+        d = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return d if isinstance(d, dict) and (d.get("design_system") or d.get("screens")) else None
+
+
 def design_system_summary_for_requirements(ds: Dict) -> str:
     """Compact BINDING block appended to the requirements every lane reads (mirrors
     reference_materials.spec_summary_for_requirements) — so the measured design system drives the

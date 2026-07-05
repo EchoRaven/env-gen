@@ -1999,30 +1999,36 @@ class Orchestrator:
             try:
                 from .runtime.design_prep import (
                     resolve_design_input, write_skeleton_design_system, run_design_prep,
-                    design_system_summary_for_requirements)
+                    load_valid_design_system, design_system_summary_for_requirements)
                 resolved = resolve_design_input(
                     self._design_input, None, getattr(self, "_reference_images", None))
                 write_skeleton_design_system(resolved, self.output_dir)   # the agent's starting doc
                 agent_done = await self._spawn_design_analyst(resolved)
-                if not agent_done:
-                    await run_design_prep(                                # single-shot fallback
+                dsp = self.output_dir / "design" / "design_system.json"
+                # Validate the agent's output: parseable AND a design doc. A spawned LLM that wrote
+                # MALFORMED JSON must not discard the whole phase — rebuild via the single-shot
+                # enrich (which re-lays a valid skeleton + doc) instead.
+                ds = load_valid_design_system(dsp) if agent_done else None
+                used_agent = ds is not None
+                if ds is None:
+                    if agent_done:
+                        self._logger.warning(
+                            "design_analyst produced no valid design_system.json — single-shot fallback")
+                    await run_design_prep(
                         self._design_input, None,
                         getattr(self, "_reference_images", None),
                         self.output_dir, self.llm)
-                dsp = self.output_dir / "design" / "design_system.json"
-                if dsp.is_file():
-                    import json as _json
-                    self._design_system = _json.loads(dsp.read_text(encoding="utf-8"))
+                    ds = load_valid_design_system(dsp)
+                if ds is not None:
+                    self._design_system = ds
                     self._logger.info(
                         "Design-Prep: design_system.json ready (%d screens, %d real assets) [%s]",
-                        len(self._design_system.get("screens") or []),
-                        len(self._design_system.get("assets") or []),
-                        "agent" if agent_done else "single-shot fallback")
+                        len(ds.get("screens") or []), len(ds.get("assets") or []),
+                        "agent" if used_agent else "single-shot fallback")
                     # Fold the measured design system into the requirements every lane reads, so
                     # it drives the build from turn 1 (non-voluntary), mirroring the reference-spec
                     # summary. Stored + appended to the returned requirements below.
-                    self._design_system_req_suffix = design_system_summary_for_requirements(
-                        self._design_system)
+                    self._design_system_req_suffix = design_system_summary_for_requirements(ds)
             except Exception as dp_err:
                 self._logger.warning("Design-Prep phase failed (continuing): %s", dp_err)
         return res.requirements + getattr(self, "_design_system_req_suffix", "")
