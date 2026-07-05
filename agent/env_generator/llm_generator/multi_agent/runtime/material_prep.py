@@ -578,17 +578,26 @@ def _dominant_colors(im, n: int = 4) -> List[str]:
 
 
 def _svg_dims(text: str) -> Optional[list]:
+    # viewBox is the most reliable intrinsic size (an inner element's width/height must not win).
+    vb = _SVG_VB_RE.search(text)
+    if vb:
+        try:
+            return [int(round(float(vb.group(1)))), int(round(float(vb.group(2))))]
+        except ValueError:
+            pass
+    # else the ROOT width/height — take the FIRST match of each (the <svg> element's), not a later
+    # inner <rect width=..>'s (which mis-sized IG's comment icon to [2,24]).
     dims: Dict[str, float] = {}
     for name, val in _SVG_LEN_RE.findall(text):
+        k = name.lower()
+        if k in dims:
+            continue
         try:
-            dims[name.lower()] = float(val)
+            dims[k] = float(val)
         except ValueError:
             pass
     if "width" in dims and "height" in dims:
         return [int(round(dims["width"])), int(round(dims["height"]))]
-    vb = _SVG_VB_RE.search(text)
-    if vb:
-        return [int(round(float(vb.group(1)))), int(round(float(vb.group(2))))]
     return None
 
 
