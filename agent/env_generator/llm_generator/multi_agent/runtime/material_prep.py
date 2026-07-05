@@ -508,9 +508,15 @@ def grid_columns(im, region: Optional[Region] = None, *, thresh: float = 60.0,
 
 
 def row_bands(im, region: Optional[Region] = None, *, thresh: float = 60.0,
-              step: int = 2, min_fill: float = 0.15) -> Dict[str, object]:
-    """Y-centers of content bands (nav-item / row spacing) — §15③ (glyph→首项 183px, 项间 56px).
-    Returns {bands, centers_px, first_gap_px, item_gap_px, gaps_px}."""
+              step: int = 2, min_fill: float = 0.15,
+              cluster_px: Optional[int] = None) -> Dict[str, object]:
+    """Y-centers of stacked items (nav-item / row spacing) — §15③ (glyph→首项 183px, 项间 56px).
+    Raw content bands FRAGMENT a structured item (a line icon has internal gaps → several sub-
+    bands), so the raw bands are CLUSTERED into items by y-proximity (the manual's "聚类成各图标 y
+    中心"): consecutive bands within ``cluster_px`` (default = half the typical band spacing) are one
+    item. ``item_gap_px`` is the typical (outlier-trimmed) inter-item gap; large gaps (section
+    breaks like glyph→first-item) are in ``section_gaps_px``. Returns {items, item_centers_px,
+    item_gap_px, first_gap_px, section_gaps_px, bands, centers_px, gaps_px}."""
     px0, py0, px1, py1 = _region_px(im, region)
     bg = _bg_rgb(im, region)
     cols = max(1, (px1 - px0) // step)
@@ -522,12 +528,35 @@ def row_bands(im, region: Optional[Region] = None, *, thresh: float = 60.0,
         coords.append(y)
     bands = _bands(counts, coords)
     centers = [c for _, _, c in bands]
-    gaps = [centers[i + 1] - centers[i] for i in range(len(centers) - 1)]
-    gaps_sorted = sorted(gaps)
-    item_gap = gaps_sorted[len(gaps_sorted) // 2] if gaps_sorted else 0
-    return {"bands": len(bands), "centers_px": centers,
-            "first_gap_px": (centers[0] - py0) if centers else 0,
-            "item_gap_px": item_gap, "gaps_px": gaps}
+    if len(centers) < 2:
+        return {"items": len(centers), "item_centers_px": centers,
+                "item_gap_px": 0, "first_gap_px": (centers[0] - py0) if centers else 0,
+                "section_gaps_px": [], "bands": len(bands), "centers_px": centers, "gaps_px": []}
+    raw_gaps = [centers[i + 1] - centers[i] for i in range(len(centers) - 1)]
+    if cluster_px is None:                                   # adaptive: half the typical (upper-half) gap
+        srt = sorted(raw_gaps)
+        upper = srt[len(srt) // 2:]
+        typ = upper[len(upper) // 2] if upper else srt[-1]
+        cluster_px = max(8, int(typ * 0.5))
+    items: List[int] = []
+    cur = [centers[0]]
+    for c in centers[1:]:
+        if c - cur[-1] <= cluster_px:
+            cur.append(c)
+        else:
+            items.append(sum(cur) // len(cur))
+            cur = [c]
+    items.append(sum(cur) // len(cur))
+    item_gaps = [items[i + 1] - items[i] for i in range(len(items) - 1)]
+    # typical item gap = median of the outlier-trimmed gaps; big gaps are section breaks
+    ig_sorted = sorted(item_gaps)
+    small = ig_sorted[:max(1, int(len(ig_sorted) * 0.7))] if ig_sorted else []
+    item_gap = small[len(small) // 2] if small else 0
+    section = [g for g in item_gaps if item_gap and g > 1.8 * item_gap]
+    return {"items": len(items), "item_centers_px": items,
+            "item_gap_px": item_gap, "first_gap_px": items[0] - py0,
+            "section_gaps_px": section,
+            "bands": len(bands), "centers_px": centers, "gaps_px": item_gaps}
 
 
 def measure_layout(im, region: Optional[Region], metric: str) -> Dict[str, object]:
