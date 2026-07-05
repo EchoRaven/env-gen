@@ -17,9 +17,11 @@ truth, not the model's guess. Best-effort: returns {} / None rather than raising
 
 from __future__ import annotations
 
+import re
+import shutil
 from collections import Counter
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 Region = Tuple[float, float, float, float]  # (x0,y0,x1,y1) as 0..1 fractions
 
@@ -412,6 +414,136 @@ def make_side_by_side(ref_path, mine_path, save_path, *, region: Optional[Region
     return canvas.size
 
 
+# ── Design-Prep: real-asset ingestion + staging (deterministic) ──────────────
+_IMG_EXT = {".png": "png", ".jpg": "jpg", ".jpeg": "jpg", ".webp": "webp",
+            ".gif": "gif", ".svg": "svg", ".bmp": "bmp", ".ico": "ico"}
+_SVG_LEN_RE = re.compile(r'\b(width|height)\s*=\s*["\']?\s*([0-9.]+)', re.I)
+_SVG_VB_RE = re.compile(r'viewBox\s*=\s*["\']\s*[-0-9.]+\s+[-0-9.]+\s+([0-9.]+)\s+([0-9.]+)', re.I)
+_HEX_RE = re.compile(r'#[0-9a-fA-F]{6}\b')
+
+
+def _slug(stem: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", stem.strip().lower()).strip("-")
+    return s or "asset"
+
+
+def _dominant_colors(im, n: int = 4) -> List[str]:
+    """Top-``n`` dominant colors of a raster (median-cut quantize). Transparent pixels are
+    composited over white first so an icon's real ink dominates, not the fill-over-black."""
+    try:
+        if im.mode in ("RGBA", "LA") or "transparency" in getattr(im, "info", {}):
+            from PIL import Image
+            base = Image.new("RGB", im.size, (255, 255, 255))
+            base.paste(im.convert("RGBA"), mask=im.convert("RGBA").split()[-1])
+            im = base
+        small = im.convert("RGB").resize((48, 48))
+        q = small.quantize(colors=max(2, n))
+        pal = q.getpalette() or []
+        counts = Counter(q.getdata())
+        out: List[str] = []
+        for idx, _cnt in counts.most_common(n):
+            rgb = pal[idx * 3:idx * 3 + 3]
+            if len(rgb) == 3:
+                out.append(_hex(rgb))
+        return out
+    except Exception:
+        return []
+
+
+def _svg_dims(text: str) -> Optional[list]:
+    dims: Dict[str, float] = {}
+    for name, val in _SVG_LEN_RE.findall(text):
+        try:
+            dims[name.lower()] = float(val)
+        except ValueError:
+            pass
+    if "width" in dims and "height" in dims:
+        return [int(round(dims["width"])), int(round(dims["height"]))]
+    vb = _SVG_VB_RE.search(text)
+    if vb:
+        return [int(round(float(vb.group(1)))), int(round(float(vb.group(2))))]
+    return None
+
+
+def _ingest_one(path: Path, rel: Path) -> Optional[Dict]:
+    suffix = path.suffix.lower()
+    kind = _IMG_EXT.get(suffix)
+    if not kind:
+        return None
+    dims: Optional[list] = None
+    transparent = False
+    colors: List[str] = []
+    if kind == "svg":
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            text = ""
+        dims = _svg_dims(text)
+        transparent = True  # vector assets are transparent by convention
+        seen: List[str] = []
+        for h in _HEX_RE.findall(text):
+            h = h.lower()
+            if h not in seen:
+                seen.append(h)
+        colors = seen[:4]
+    else:
+        try:
+            from PIL import Image
+            im = Image.open(path)
+            dims = [im.width, im.height]
+            transparent = im.mode in ("RGBA", "LA", "P") and (
+                im.mode in ("RGBA", "LA") or "transparency" in getattr(im, "info", {}))
+            colors = _dominant_colors(im)
+        except Exception:
+            dims, transparent, colors = None, False, []
+    return {
+        "id": _slug(path.stem),
+        "file": rel.as_posix(),
+        "type": kind,
+        "dims": dims,
+        "transparent": bool(transparent),
+        "dominant_colors": colors,
+        "staged_path": f"public/assets/{rel.as_posix()}",
+    }
+
+
+def ingest_assets(assets_dir, stage_dir) -> List[Dict]:
+    """Scan a user-provided ``assets/`` folder → a manifest (one entry per image) + physically
+    stage each file into ``stage_dir`` (preserving any icons/ logos/ subfolder grouping so
+    ``staged_path`` = ``public/assets/<relpath>``). Deterministic, best-effort: missing dir → [],
+    unreadable files skipped, never raises. Manifest entry:
+    {id, file, type, dims:[w,h]|None, transparent, dominant_colors:[hex], staged_path}."""
+    src = Path(assets_dir)
+    if not src.is_dir():
+        return []
+    stage = Path(stage_dir)
+    manifest: List[Dict] = []
+    seen_ids: Dict[str, int] = {}
+    for path in sorted(src.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(src)
+        try:
+            entry = _ingest_one(path, rel)
+        except Exception:
+            entry = None
+        if not entry:
+            continue
+        base_id = entry["id"]
+        seen_ids[base_id] = seen_ids.get(base_id, 0) + 1
+        if seen_ids[base_id] > 1:
+            entry["id"] = f"{base_id}-{seen_ids[base_id]}"
+        try:
+            dest = stage / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, dest)
+        except Exception:
+            continue
+        manifest.append(entry)
+    return manifest
+
+
 __all__ = ["row_mode_color", "region_background", "find_accent", "extract_palette",
            "crop_region", "decompose_reference", "make_side_by_side",
-           "color_distance", "spec_color_deviations", "theme_inversion"]
+           "color_distance", "spec_color_deviations", "theme_inversion",
+           "ingest_assets"]
