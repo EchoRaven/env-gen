@@ -430,6 +430,39 @@ def _read_docs_text(docs: List[str], *, cap: int = 20000) -> str:
     return ("\n\n".join(chunks))[:cap]
 
 
+def write_skeleton_design_system(resolved: Dict, output_dir) -> Dict:
+    """Build the deterministic skeleton (measured palette + component regions + staged real
+    assets) and WRITE it to design/design_system.json — the starting doc the spawned design_analyst
+    agent reads and enriches. Returns the skeleton dict. Best-effort; never raises."""
+    out = Path(output_dir)
+    skel = build_skeleton_design_system(resolved, out)
+    _write_design_system(out / "design", skel)
+    return skel
+
+
+def build_design_analyst_briefing(output_dir, resolved: Dict) -> str:
+    """The spawn task description for the design_analyst agent — points it at the staged
+    references, the skeleton doc to enrich, the asset manifest, and the output contract."""
+    refs = [Path(r).name for r in (resolved.get("references") or [])]
+    ref_list = ", ".join(refs) if refs else "(none — proceed from requirements)"
+    n_docs = len(resolved.get("docs") or [])
+    return (
+        "MEASURE a design system from the reference set and emit design/design_system.json + "
+        "design/design_system.md.\n\n"
+        f"References staged under design/references/ — cover EVERY screen: {ref_list}.\n"
+        "A SKELETON design/design_system.json is ALREADY written (staged real assets[] + a measured "
+        "palette + component regions). READ it FIRST, then for EACH screen run extract_palette + "
+        "decompose_reference, and for EACH component crop_reference + view_image + sample_color "
+        "(background row-mode AND accent) + measure_layout where geometry matters, and ENRICH the "
+        "doc with the measured per-component spec.\n"
+        + (f"Reference docs ({n_docs}) are compiled into design/reference_spec.json — read it.\n" if n_docs else "")
+        + "Real assets are staged under design/assets/ (also in design_system.json assets[]) — map "
+        "each component's brand elements to their asset ids; never ask a lane to draw a logo.\n"
+        "Measure, never guess. Apply the 塌缩点 checklist (dropped semantic color is the #1 collapse). "
+        "When every component of every screen is measured + specced and the doc is written, finish()."
+    )
+
+
 async def run_design_prep(design_input: Optional[str], reference_dir: Optional[str],
                           reference_images: Optional[List[str]], output_dir, llm) -> Dict:
     """The one-shot Design-Prep phase: resolve inputs → deterministic measured skeleton (reusing any

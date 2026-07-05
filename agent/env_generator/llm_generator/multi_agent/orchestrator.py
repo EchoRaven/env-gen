@@ -1989,25 +1989,74 @@ class Orchestrator:
         if res.spec is not None:
             self._reference_spec = res.spec
             self._reference_spec_summary = res.spec_summary
-        # Design-Prep phase (opt-in via --design-input): now that component_specs are
-        # measured on disk, build the rich design_system doc + stage the real assets. One
-        # extra vision pass; best-effort — a failure leaves the run references-only.
+        # Design-Prep phase (opt-in via --design-input): now that component_specs are measured
+        # on disk, write the SKELETON design_system.json (measured palette + component regions +
+        # staged real assets), then have the dedicated design_analyst AGENT measure each component
+        # (crop + eyedrop + geometry) and enrich the doc. If no spawn_service (or the agent can't
+        # finish), fall back to the single-shot enrich. Best-effort — a failure leaves the run
+        # references-only.
         if getattr(self, "_design_input", None):
             try:
-                from .runtime.design_prep import run_design_prep
-                ds = await run_design_prep(
-                    self._design_input, None,
-                    getattr(self, "_reference_images", None),
-                    self.output_dir, self.llm)
-                if ds:
-                    self._design_system = ds
-                    n_assets = len(ds.get("assets") or [])
+                from .runtime.design_prep import (
+                    resolve_design_input, write_skeleton_design_system, run_design_prep)
+                resolved = resolve_design_input(
+                    self._design_input, None, getattr(self, "_reference_images", None))
+                write_skeleton_design_system(resolved, self.output_dir)   # the agent's starting doc
+                agent_done = await self._spawn_design_analyst(resolved)
+                if not agent_done:
+                    await run_design_prep(                                # single-shot fallback
+                        self._design_input, None,
+                        getattr(self, "_reference_images", None),
+                        self.output_dir, self.llm)
+                dsp = self.output_dir / "design" / "design_system.json"
+                if dsp.is_file():
+                    import json as _json
+                    self._design_system = _json.loads(dsp.read_text(encoding="utf-8"))
                     self._logger.info(
-                        "Design-Prep: design_system.json written (%d screens, %d real assets staged)",
-                        len(ds.get("screens") or []), n_assets)
+                        "Design-Prep: design_system.json ready (%d screens, %d real assets) [%s]",
+                        len(self._design_system.get("screens") or []),
+                        len(self._design_system.get("assets") or []),
+                        "agent" if agent_done else "single-shot fallback")
             except Exception as dp_err:
                 self._logger.warning("Design-Prep phase failed (continuing): %s", dp_err)
         return res.requirements
+
+    async def _spawn_design_analyst(self, resolved) -> bool:
+        """Spawn the one-shot design_analyst agent to MEASURE each component and enrich
+        design/design_system.json. Returns True iff it finished. Best-effort: no spawn_service, a
+        spawn error, or a timeout → False (the caller uses the single-shot fallback)."""
+        spawn_service = getattr(self, "spawn_service", None)
+        if spawn_service is None:
+            return False
+        from .agent_spawn_service import AgentSpawnRequest
+        from .runtime.design_prep import build_design_analyst_briefing
+        agent_id = "design_analyst_1"
+        spawned = False
+        try:
+            briefing = build_design_analyst_briefing(self.output_dir, resolved)
+            res = await spawn_service.spawn(AgentSpawnRequest(
+                agent_id=agent_id, agent_type="design_analyst", config_key="design_analyst",
+                task="Measure a design system from the references -> design_system.json",
+                parent_id="orchestrator", role="design_analyst", resident=False,
+                metadata={"description": briefing}))
+            spawned = True
+            ev = getattr(res, "task_done_event", None)
+            if ev is None:
+                return False
+            timeout = float(os.environ.get("ENVGEN_DESIGN_ANALYST_TIMEOUT", "1800"))
+            await asyncio.wait_for(ev.wait(), timeout=timeout)
+            self._logger.info("design_analyst finished — design_system.json enriched")
+            return True
+        except Exception as exc:
+            self._logger.warning(
+                "design_analyst agent unavailable/incomplete (%s) — single-shot fallback", exc)
+            return False
+        finally:
+            if spawned:
+                try:
+                    await spawn_service.terminate(agent_id, wait=False)
+                except Exception:
+                    pass
 
     @property
     def _vf_gate(self):
