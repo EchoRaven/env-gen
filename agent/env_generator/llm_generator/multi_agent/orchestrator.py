@@ -1998,7 +1998,8 @@ class Orchestrator:
         if getattr(self, "_design_input", None):
             try:
                 from .runtime.design_prep import (
-                    resolve_design_input, write_skeleton_design_system, run_design_prep)
+                    resolve_design_input, write_skeleton_design_system, run_design_prep,
+                    design_system_summary_for_requirements)
                 resolved = resolve_design_input(
                     self._design_input, None, getattr(self, "_reference_images", None))
                 write_skeleton_design_system(resolved, self.output_dir)   # the agent's starting doc
@@ -2017,9 +2018,14 @@ class Orchestrator:
                         len(self._design_system.get("screens") or []),
                         len(self._design_system.get("assets") or []),
                         "agent" if agent_done else "single-shot fallback")
+                    # Fold the measured design system into the requirements every lane reads, so
+                    # it drives the build from turn 1 (non-voluntary), mirroring the reference-spec
+                    # summary. Stored + appended to the returned requirements below.
+                    self._design_system_req_suffix = design_system_summary_for_requirements(
+                        self._design_system)
             except Exception as dp_err:
                 self._logger.warning("Design-Prep phase failed (continuing): %s", dp_err)
-        return res.requirements
+        return res.requirements + getattr(self, "_design_system_req_suffix", "")
 
     async def _spawn_design_analyst(self, resolved) -> bool:
         """Spawn the one-shot design_analyst agent to MEASURE each component and enrich

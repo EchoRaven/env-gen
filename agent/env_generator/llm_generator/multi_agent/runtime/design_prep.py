@@ -463,6 +463,51 @@ def build_design_analyst_briefing(output_dir, resolved: Dict) -> str:
     )
 
 
+def design_system_summary_for_requirements(ds: Dict) -> str:
+    """Compact BINDING block appended to the requirements every lane reads (mirrors
+    reference_materials.spec_summary_for_requirements) — so the measured design system drives the
+    build from the first turn instead of depending on a voluntary file read. ``""`` when empty."""
+    if not isinstance(ds, dict):
+        return ""
+    dsys = ds.get("design_system") or {}
+    screens = ds.get("screens") or []
+    if not (dsys.get("palette") or screens):
+        return ""
+    lines = ["\n\n## DESIGN SYSTEM (measured from the references — BINDING; build to these MEASURED "
+             "values, never change a measured hex)"]
+    pal = dsys.get("palette") or {}
+    pal_txt = ", ".join(f"{k}={v}" for k, v in pal.items() if isinstance(v, str))
+    if pal_txt:
+        lines.append("Palette (measured): " + pal_txt[:800])
+    theme = dsys.get("theme") or {}
+    if theme.get("default"):
+        lines.append(f"Theme: {theme.get('default')} ({', '.join(theme.get('themes') or [])})")
+    if dsys.get("type_scale"):
+        lines.append("Type scale: " + ", ".join(
+            f"{t.get('role')} {t.get('size_px')}px/{t.get('weight')}"
+            for t in dsys["type_scale"] if isinstance(t, dict))[:400])
+    if dsys.get("material"):
+        lines.append("Material: " + str(dsys["material"])[:200])
+    assets = [a for a in (ds.get("assets") or []) if isinstance(a, dict)]
+    if assets:
+        lines.append("Real assets (STAGED at public/assets/ — reference them, do NOT draw): " + ", ".join(
+            f"{a.get('id')}→/assets/{a.get('file')}" for a in assets[:24])[:1200])
+    for s in screens[:12]:
+        comps = [c for c in (s.get("components") or []) if isinstance(c, dict)]
+        if not comps:
+            continue
+        parts = []
+        for c in comps[:10]:
+            col = c.get("colors") or {}
+            cc = "/".join(f"{k}:{v}" for k, v in col.items()) if col else ""
+            am = "+".join(c.get("assets") or [])
+            parts.append(f"{c.get('id')}[{cc}{('|' + am) if am else ''}]")
+        lines.append(f"{s.get('name')}: " + " ".join(parts)[:600])
+    lines.append("Full doc: design/design_system.json (+ .md); crops: design/crops/. "
+                 "MEASURE, DON'T GUESS — the colors are sampled truth.")
+    return "\n".join(lines)
+
+
 async def run_design_prep(design_input: Optional[str], reference_dir: Optional[str],
                           reference_images: Optional[List[str]], output_dir, llm) -> Dict:
     """The one-shot Design-Prep phase: resolve inputs → deterministic measured skeleton (reusing any
