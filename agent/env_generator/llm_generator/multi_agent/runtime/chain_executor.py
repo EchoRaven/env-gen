@@ -779,6 +779,37 @@ def _resource_from_path(path: Any) -> Optional[str]:
     return last[:-1] if last.endswith("s") and len(last) > 1 else last
 
 
+def _harvest_resource_ids(payload: Any, into: Dict[str, Any]) -> None:
+    """FIX #83 (instagram run-3, live): harvest resource ids from a step's RESPONSE BODY.
+
+    The verifier wires chains the way a human would — GET /api/feed, then act on
+    ``${post_id}`` FROM the feed — but capture was envelope-only and keyed by the PATH's
+    resource ('feed'), and content-feed apps have NO bare /api/posts collection, so list/
+    create recovery dead-ended and the LITERAL ``${post_id}`` reached the int path param
+    (422 → wedge → STUCK). Harvest instead: every top-level key whose value is a list of
+    dicts with an ``id`` → ``into[singular(key)] = first id``; plus ONE level of nested
+    dicts inside the first row ({"posts":[{"user":{"id":42}}]} → user=42) since nested
+    actors (post author) are often the only source of a second resource's id. setdefault
+    ONLY — an id captured from the chain's own create stays authoritative."""
+    if not isinstance(payload, Mapping):
+        return
+
+    def _singular(k: str) -> str:
+        k = str(k).lower()
+        return k[:-1] if k.endswith("s") and len(k) > 1 else k
+
+    for k, v in payload.items():
+        if isinstance(v, list) and v and isinstance(v[0], Mapping):
+            row = v[0]
+            if row.get("id") is not None:
+                into.setdefault(_singular(k), row["id"])
+            for k2, v2 in row.items():
+                if isinstance(v2, Mapping) and v2.get("id") is not None:
+                    into.setdefault(_singular(k2), v2["id"])
+        elif isinstance(v, Mapping) and v.get("id") is not None:
+            into.setdefault(_singular(k), v["id"])
+
+
 def _resolve_unresolved_dollar_vars(value: Any, last_id: Any,
                                     by_resource: Optional[Mapping[str, Any]] = None) -> Any:
     """BODY counterpart of execute_chain's path UNRESOLVED-VARIABLE FALLBACK. A
@@ -1218,7 +1249,12 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
             # later get/update/delete step can target a real row even when the verifier
             # didn't wire an explicit save. Never overrides an explicit save.
             try:
-                _cid = _extract_resource_id(json.loads(res.get("body_text") or "{}"))
+                _payload = json.loads(res.get("body_text") or "{}")
+                # FIX #83: list/nested ids in the body (a feed's posts + their authors)
+                # resolve later ${x_id} refs when no bare collection endpoint exists.
+                # setdefault-only — never clobbers an explicitly created/captured id.
+                _harvest_resource_ids(_payload, last_id_by_resource)
+                _cid = _extract_resource_id(_payload)
                 if _cid is not None:
                     last_id = _cid
                     # ALSO index by resource so a later FK body field (`${calendar_id}`)

@@ -463,10 +463,13 @@ except Exception:
 if _FWIntegrityError is not None:
     @app.exception_handler(_FWIntegrityError)
     async def _framework_integrity_error_handler(request, exc):
-        code = getattr(getattr(exc, "orig", None), "pgcode", None) or ""
-        if code == "23503":
+        _orig = getattr(exc, "orig", None)
+        # psycopg2 carries pgcode; psycopg 3 (the pyproject driver) carries sqlstate.
+        code = (getattr(_orig, "pgcode", None) or getattr(_orig, "sqlstate", None) or "")
+        text = str(_orig or exc).lower()
+        if code == "23503" or "foreign key" in text:
             status, detail = 404, "referenced resource not found"
-        elif code == "23505":
+        elif code == "23505" or "unique constraint" in text or "duplicate key" in text:
             status, detail = 409, "duplicate resource"
         else:
             status, detail = 400, "integrity constraint violated"

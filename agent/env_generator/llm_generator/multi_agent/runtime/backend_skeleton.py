@@ -799,7 +799,7 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
     business handlers projected from the contract (static routes before param routes)."""
     from .route_projector import (_generate_handler, _norm_path, _resource_model, _truthy,
                                   _owner_fk, _TARGET_FK_NAMES)
-    from .backend_scaffold import _AUTH_MIDDLEWARE
+    from .backend_scaffold import _AUTH_MIDDLEWARE, _INTEGRITY_HANDLER
 
     meta = _models_meta(tables)
     # Per-user-PRIVATE tables (owner_scoped_reads in the contract metadata): their reads
@@ -878,7 +878,12 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
     # handler OVERRIDES the projected one for the same METHOD+path (first-registered
     # wins in Starlette) — the documented lane-override intent, which the old footer
     # placement silently inverted.
-    body = (_MAIN_HEADER + "\n\n" + mid + "\n\n\n"
+    # FIX #82 lives HERE by construction (not only the heal-time injection): the skeleton
+    # regenerates main.py every pre-validation cycle, so an injected-only handler raced the
+    # regen and the deployed container could hold an un-healed main.py (run-3, 2026-07-06:
+    # unchecked path-id FK INSERT → raw 500 → business_chain wedged on a tolerated-404 chain).
+    integ = _INTEGRITY_HANDLER.strip("\n")
+    body = (_MAIN_HEADER + "\n\n" + mid + "\n\n\n" + integ + "\n\n\n"
             + custom_include + "\n\n\n"
             + "\n\n\n".join(static_blocks + param_blocks) + _MAIN_FOOTER)
     return body
