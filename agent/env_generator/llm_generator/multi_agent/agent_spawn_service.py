@@ -217,6 +217,22 @@ class AgentSpawnService:
                 tool_profile_agent_type=overrides["tool_profile_agent_type"],
             )
 
+            # A spawn that names its OWN explicit profile (config_key) distinct from the parent must
+            # use THAT profile's tool surface — categories, tool bundles, and include_vision — NOT
+            # inherit the parent's. Otherwise a specialized agent silently loses its own tool
+            # categories: e.g. the one-shot `design_analyst` spawned by the orchestrator inherited
+            # the orchestrator's categories (which lack reference/vision), so ALL its measurement
+            # tools (sample_color/crop_reference/measure_layout/decompose_reference) were filtered
+            # out and it fell back to eyeballing — the whole measure-per-component feature broke,
+            # invisibly. Inheritance still applies to same-type helper spawns that share the
+            # parent's scope (config_key omitted, or == the parent's profile).
+            _parent_key = getattr(parent_agent, "_config_key", None) or request.parent_id
+            if request.config_key and resolved_config_key != _parent_key:
+                overrides = dict(overrides)
+                overrides["inherited_tool_categories"] = None       # → use the profile's tool_categories
+                overrides["tool_profile_agent_type"] = resolved_config_key  # assemble the OWN profile's bundles
+                overrides["include_vision_override"] = None          # → use the profile's include_vision
+
             custom_name = request.custom_name
             if custom_name is None and requested_agent_type != resolved_config_key:
                 custom_name = requested_agent_type
