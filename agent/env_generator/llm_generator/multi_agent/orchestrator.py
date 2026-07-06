@@ -1244,10 +1244,43 @@ class Orchestrator:
                             self._kickoff_handle, _ls, "driver_wedged",
                         )
                     if kickoff_receipt.get("phase") == "timeout_fallback":
+                        # FIX #95 (runs 4/10/13, live): Gemini MALFORMED storms are
+                        # 20-50min BURSTS — a kickoff landing in one times out with
+                        # ZERO drafts and the abort discards runs that had ALREADY
+                        # delivered milestones (run-13: M1+M2). ONE bounded retry:
+                        # re-broadcast the kickoff_request to the missing lanes and
+                        # drive one more window; if the burst passed, the run lives.
+                        self._logger.error(
+                            "Kickoff timed out (missing=%s) — FIX #95: ONE retry "
+                            "(re-broadcast + one more drive window) before aborting.",
+                            kickoff_receipt.get("missing"))
+                        try:
+                            run_kickoff.rebroadcast_kickoff_request(
+                                self.hubs, self._kickoff_handle,
+                                only=list(kickoff_receipt.get("missing") or []) or None)
+                        except Exception as _rb_err:
+                            self._logger.warning("kickoff re-broadcast failed: %s", _rb_err)
+                        # the driver times out on handle['started_at'] — without a reset
+                        # the retry window would expire INSTANTLY.
+                        self._kickoff_handle["started_at"] = time.time()
+                        try:
+                            kickoff_receipt = await asyncio.wait_for(
+                                self._drive_kickoff_to_completion(self._kickoff_handle),
+                                timeout=run_kickoff.KICKOFF_TIMEOUT_SEC + 600,
+                            )
+                        except asyncio.TimeoutError:
+                            try:
+                                _ls2 = run_kickoff.try_synthesize(
+                                    self.hubs, self._kickoff_handle)
+                            except Exception:
+                                _ls2 = {"status": "unknown"}
+                            kickoff_receipt = self._kickoff_fallback_or_reconcile(
+                                self._kickoff_handle, _ls2, "driver_wedged")
+                    if kickoff_receipt.get("phase") == "timeout_fallback":
                         raise RuntimeError(
                             "Kickoff timed out after "
                             f"{run_kickoff.KICKOFF_TIMEOUT_SEC:.0f}s without "
-                            "a ready synthesis. Missing="
+                            "a ready synthesis (incl. one FIX #95 retry). Missing="
                             f"{kickoff_receipt.get('missing')} "
                             f"last_status={kickoff_receipt.get('last_status')!r}. "
                             "kickoff_failed event emitted; aborting."
