@@ -390,6 +390,29 @@ class _Session(Session):
                     pass
         return raw.cursor(*args, **kwargs)
 
+    def execute(self, statement, params=None, *args, **kwargs):
+        """FIX #86: ALSO accept RAW-string SQL in the psycopg style (instagram run-7 M3:
+        a lane get_db yielded a raw psycopg connection while its handlers mixed
+        ``execute(text(...)).mappings()`` with ``execute("... %s", (v,))`` — no single
+        handle type served both, and the TextClause reaching psycopg raised
+        ``TypeError: TextClause has no len()`` -> 500 -> validation wedge). A plain-str
+        statement is coerced to text(); %s positional params become named binds; rows
+        come back DICT-LIKE (``row["col"]``) matching the dict_row habit. TextClause /
+        ORM statements take the native path untouched."""
+        if isinstance(statement, str):
+            from sqlalchemy import text as _text
+            if isinstance(params, (list, tuple)) and "%s" in statement:
+                parts = statement.split("%s")
+                stmt = parts[0]
+                bound = {}
+                for i, chunk in enumerate(parts[1:]):
+                    stmt += f":p{i}" + chunk
+                    if i < len(params):
+                        bound[f"p{i}"] = params[i]
+                return super().execute(_text(stmt), bound, *args, **kwargs).mappings()
+            return super().execute(_text(statement), params, *args, **kwargs).mappings()
+        return super().execute(statement, params, *args, **kwargs)
+
 
 SessionLocal = sessionmaker(
     bind=engine, class_=_Session, autoflush=False, autocommit=False, future=True)

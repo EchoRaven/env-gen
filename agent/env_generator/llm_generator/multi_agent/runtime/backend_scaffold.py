@@ -511,6 +511,55 @@ def repair_integrity_error_handler(backend_dir) -> Dict[str, object]:
         return {"injected": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+def repair_custom_routes_db_handle(backend_dir) -> Dict[str, object]:
+    """FIX #86 (instagram run-7 M3 STUCK, live traceback): custom_routes.py defined its
+    OWN ``get_db()`` yielding a RAW psycopg connection, shadowing the framework's
+    SQLAlchemy Session — while its business handlers were written SQLAlchemy-style
+    (``db.execute(text(...)).mappings()``), so psycopg's _convert_query raised
+    ``TypeError: TextClause has no len()`` → unfollow/explore 500 → the validation
+    wedged 7 post-cap cycles. Rewrite the lane's psycopg get_db into a delegation to
+    the framework's database.get_db (whose _Session serves BOTH styles: native
+    TextClause/ORM, .cursor(), and — with the FIX #86 execute shim — plain-str SQL).
+    AST-precise, idempotent, best-effort, never raises."""
+    import ast
+    try:
+        be = Path(backend_dir)
+        cr = be / "custom_routes.py"
+        if not cr.exists():
+            return {"repaired": False, "reason": "no custom_routes.py"}
+        src = cr.read_text(encoding="utf-8")
+        if "_framework_get_db" in src:
+            return {"repaired": False, "reason": "already delegated"}
+        tree = ast.parse(src)
+        target = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "get_db":
+                body_src = ast.get_source_segment(src, node) or ""
+                if "psycopg" in body_src and ".connect(" in body_src:
+                    target = node
+                    break
+        if target is None:
+            return {"repaired": False, "reason": "no lane psycopg get_db"}
+        lines = src.splitlines(keepends=True)
+        indent = " " * target.col_offset
+        repl = (
+            f"{indent}def get_db():\n"
+            f"{indent}    # framework-normalized (FIX #86): the canonical Session serves both\n"
+            f"{indent}    # SQLAlchemy-style and raw psycopg-style handlers; a lane-local raw\n"
+            f"{indent}    # psycopg connection breaks every text()/.mappings() call with a 500.\n"
+            f"{indent}    from database import get_db as _framework_get_db\n"
+            f"{indent}    yield from _framework_get_db()\n"
+        )
+        start = target.lineno - 1
+        end = target.end_lineno
+        new_src = "".join(lines[:start]) + repl + "".join(lines[end:])
+        ast.parse(new_src)   # never write a syntax error
+        cr.write_text(new_src, encoding="utf-8")
+        return {"repaired": True}
+    except Exception as exc:
+        return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
 def repair_backend_packaging(backend_dir) -> Dict[str, object]:
     """Make the backend pip-installable in docker. The lane variably writes a
     pyproject.toml with ``build-backend = "hatchling.build"`` but a FLAT module

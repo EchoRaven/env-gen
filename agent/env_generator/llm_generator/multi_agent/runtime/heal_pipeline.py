@@ -128,7 +128,8 @@ class HealPipeline:
             from .backend_scaffold import (
                 repair_backend_auth_dependency, repair_auth_import_paths,
                 repair_inline_token_auth, repair_auth_enforcement_middleware,
-                repair_custom_routes_router_prologue, repair_integrity_error_handler)
+                repair_custom_routes_router_prologue, repair_integrity_error_handler,
+                repair_custom_routes_db_handle)
             be_dir = _P(out_dir) / "app" / "backend"
             # custom_routes using @router.<verb> without defining router (run-34):
             # NameError at import silently killed the WHOLE custom router — including the
@@ -179,6 +180,13 @@ class HealPipeline:
                 orch._logger.warning(
                     "Backend IntegrityError→REST mapping injected (FIX #82): FK "
                     "violation → 404, unique → 409, other integrity → 400 (no raw 500s).")
+            # FIX #86 (run-7 M3): a lane-local raw-psycopg get_db in custom_routes
+            # shadows the framework Session → every text()/.mappings() handler 500s.
+            dbh = repair_custom_routes_db_handle(be_dir)
+            if dbh.get("repaired"):
+                orch._logger.warning(
+                    "custom_routes.py lane get_db (raw psycopg) rewritten to delegate to "
+                    "the framework Session (FIX #86) — dual-style DB handle restored.")
         except Exception as exc:
             orch._logger.debug("backend auth repair skipped: %s", exc)
 
