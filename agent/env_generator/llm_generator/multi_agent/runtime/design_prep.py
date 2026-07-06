@@ -230,68 +230,50 @@ def _img_part(path: str) -> Optional[Dict]:
         return None
 
 
-async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
-                       docs_text: str, max_ref_images: int, max_asset_images: int) -> Optional[Dict]:
-    import re
-    from utils.llm import Message
+_SCREEN_PROMPT = (
+    "You are a senior UI engineer writing BUILD NOTES for a faithful clone of ONE screen.\n"
+    "You get: the screen's MEASURED skeleton (component ids + measured colors — ground "
+    "truth, never change a hex), the REAL asset manifest, and the reference screenshot.\n"
+    "For EVERY component id in the skeleton, submit one entry with:\n"
+    " - build_notes (REQUIRED, 1-3 concrete sentences from the SCREENSHOT: geometry, "
+    "paddings/spacing, icon shapes, borders/dividers, states — what a dev needs to copy it)\n"
+    " - typography (role sizes/weights you can read), and assets (manifest ids this "
+    "component should render).\n"
+    "Also submit layout (one line) and, if readable, global type_scale/radius_scale/"
+    "iconography. Submit via the function — nothing else."
+)
 
-    parts: List[Dict] = [{"type": "text", "text": _ANALYST_PROMPT}]
-    parts.append({"type": "text",
-                  "text": "SKELETON (measured facts):\n" + json.dumps(skeleton, indent=2)[:12000]})
-    if docs_text:
-        parts.append({"type": "text", "text": "REFERENCE DOCS:\n" + docs_text[:8000]})
-
-    for ref in (resolved.get("references") or [])[:max_ref_images]:
-        p = _img_part(ref)
-        if p:
-            parts.append({"type": "text", "text": f"REFERENCE screen: {Path(ref).name}"})
-            parts.append(p)
-
-    # raster asset images only (svg/vector go to the model as manifest text)
-    assets_dir = output_dir / "design" / "assets"
-    shown = 0
-    for a in skeleton.get("assets") or []:
-        if shown >= max_asset_images:
-            break
-        if a.get("type") in ("svg",):
-            continue
-        ap = assets_dir / a.get("file", "")
-        part = _img_part(str(ap)) if ap.is_file() else None
-        if part:
-            parts.append({"type": "text", "text": f"ASSET id={a.get('id')} file={a.get('file')}"})
-            parts.append(part)
-            shown += 1
-
-    client = getattr(llm, "_client", llm)
-    _msgs = [Message.user_multimodal(parts)]
-    # FIX #92 (run-12 live): the -customtools variant RESISTS no-tools long-form output —
-    # #88's JSON mode stopped the hallucinated tool call (run-8) but the model then
-    # answered finish=STOP with completion_tokens=11 (an empty object) on the same prompt
-    # that produced 34 build_notes via the tool-driven AGENT path (run-9). Play WITH the
-    # tuning: offer ONE function whose parameters ARE the enriched doc and FORCE the call.
-    _submit_tool = [{
-        "type": "function",
-        "function": {
-            "name": "submit_enriched_design_system",
-            "description": ("Submit the COMPLETE enriched design_system document "
-                            "(same shape as the skeleton, with your enrichment filled in)."),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "design_system": {"type": "object"},
-                    "assets": {"type": "array", "items": {"type": "object"}},
-                    "screens": {"type": "array", "items": {"type": "object"}},
-                },
-                "required": ["design_system", "screens"],
+_SCREEN_TOOL = [{
+    "type": "function",
+    "function": {
+        "name": "submit_screen_enrichment",
+        "description": ("Submit THIS screen's design enrichment: one entry per skeleton "
+                        "component id, each with REQUIRED concrete build_notes."),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "layout": {"type": "string"},
+                "components": {"type": "array", "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "build_notes": {"type": "string"},
+                        "typography": {"type": "object"},
+                        "assets": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["id", "build_notes"],
+                }},
+                "type_scale": {"type": "array", "items": {"type": "object"}},
+                "radius_scale": {"type": "object"},
+                "iconography": {"type": "object"},
             },
+            "required": ["components"],
         },
-    }]
-    resp = None
-    try:
-        resp = await client.chat(_msgs, temperature=0.0, max_tokens=16000,
-                                 tools=_submit_tool, tool_choice="required")
-    except TypeError:
-        resp = None
+    },
+}]
+
+
+def _tool_call_args(resp) -> Optional[Dict]:
     for tc in (getattr(resp, "tool_calls", None) or []):
         fn = tc.get("function") if isinstance(tc, dict) else getattr(tc, "function", None)
         args = (fn or {}).get("arguments") if isinstance(fn, dict) else getattr(fn, "arguments", None)
@@ -300,16 +282,29 @@ async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
                 args = json.loads(args)
             except Exception:
                 args = None
-        if isinstance(args, dict) and args.get("screens") is not None:
+        if isinstance(args, dict):
             return args
-    # FIX #88 fallback ladder: JSON mode text → plain text. (4k was too small for a
-    # ~100-component doc; 16k throughout.)
+    return None
+
+
+async def _chat_ladder(client, msgs, *, max_tokens: int) -> Optional[Dict]:
+    """forced-function → JSON-mode text → plain text; TypeError degrades per rung."""
+    import re
+    resp = None
+    try:
+        resp = await client.chat(msgs, temperature=0.0, max_tokens=max_tokens,
+                                 tools=_SCREEN_TOOL, tool_choice="required")
+    except TypeError:
+        resp = None
+    args = _tool_call_args(resp)
+    if args is not None:
+        return args
     if resp is None or not (getattr(resp, "content", "") or "").strip():
         try:
-            resp = await client.chat(_msgs, temperature=0.0, max_tokens=16000,
+            resp = await client.chat(msgs, temperature=0.0, max_tokens=max_tokens,
                                      response_mime_type="application/json")
         except TypeError:
-            resp = await client.chat(_msgs, temperature=0.0, max_tokens=16000)
+            resp = await client.chat(msgs, temperature=0.0, max_tokens=max_tokens)
     text = getattr(resp, "content", "") or ""
     m = re.search(r"\{.*\}", text, re.DOTALL)
     if not m:
@@ -318,6 +313,75 @@ async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
         return json.loads(m.group(0))
     except Exception:
         return None
+
+
+async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
+                       docs_text: str, max_ref_images: int, max_asset_images: int) -> Optional[Dict]:
+    """FIX #94: enrich PER SCREEN. Three live runs + a controlled offline replay proved the
+    -customtools model refuses LARGE one-shot outputs on the mega multimodal prompt no
+    matter the format (#88 JSON mode → 11 tokens; #92 forced function → a near-empty doc)
+    while doing SMALL structured outputs instantly. One forced-function call per screen
+    (its skeleton slice + its reference image + the asset manifest), merged best-effort —
+    a failed screen never poisons the rest. Global scales are harvested from the first
+    screen that reports them."""
+    from utils.llm import Message
+
+    client = getattr(llm, "_client", None) or llm
+    ref_by_name = {Path(r).name: r for r in (resolved.get("references") or [])}
+    manifest = json.dumps([{"id": a.get("id"), "file": a.get("file")}
+                           for a in (skeleton.get("assets") or [])])[:3000]
+
+    enriched_screens: List[Dict] = []
+    scales: Dict = {}
+    asset_notes: Dict = {}
+    for s in (skeleton.get("screens") or []):
+        if not isinstance(s, dict):
+            continue
+        parts: List[Dict] = [
+            {"type": "text", "text": _SCREEN_PROMPT},
+            {"type": "text", "text": ("SCREEN '" + str(s.get("name")) + "' skeleton "
+                                      "(measured facts — enrich THESE components by id):\n"
+                                      + json.dumps(s, indent=1)[:9000])},
+            {"type": "text", "text": "REAL ASSET MANIFEST (map ids onto components): " + manifest},
+        ]
+        if docs_text:
+            parts.append({"type": "text", "text": "REFERENCE DOCS:\n" + docs_text[:4000]})
+        ref = ref_by_name.get(str(s.get("reference") or ""))
+        p = _img_part(ref) if ref else None
+        if p:
+            parts.append({"type": "text", "text": f"REFERENCE screenshot for '{s.get('name')}':"})
+            parts.append(p)
+        try:
+            doc = await _chat_ladder(client, [Message.user_multimodal(parts)], max_tokens=6000)
+        except Exception:
+            doc = None
+        if not isinstance(doc, dict):
+            continue
+        # tolerate both {components:[...]} and a full-doc {design_system,screens} shape
+        dsx = doc.get("design_system") if isinstance(doc.get("design_system"), dict) else {}
+        comps = doc.get("components")
+        layout = doc.get("layout")
+        if isinstance(doc.get("screens"), list) and doc["screens"]:
+            first = doc["screens"][0]
+            if isinstance(first, dict):
+                if comps is None:
+                    comps = first.get("components")
+                if not layout:
+                    layout = first.get("layout")
+        enriched_screens.append({"name": s.get("name"),
+                                 "layout": str(layout or ""),
+                                 "components": comps or []})
+        for k in ("type_scale", "radius_scale", "shadow_scale", "iconography", "palette"):
+            v = doc.get(k) or dsx.get(k)
+            if v and not scales.get(k):
+                scales[k] = v
+        for a in (doc.get("assets") or []):
+            if isinstance(a, dict) and a.get("id") is not None:
+                asset_notes.setdefault(a["id"], a)
+    if not enriched_screens:
+        return None
+    return {"design_system": scales, "assets": list(asset_notes.values()),
+            "screens": enriched_screens}
 
 
 def _merge_enrichment(skeleton: Dict, enriched: Dict) -> Dict:
