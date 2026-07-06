@@ -331,9 +331,12 @@ def _merge_enrichment(skeleton: Dict, enriched: Dict) -> Dict:
     return ds
 
 
+_MD_RENDER_MARKER = "<!-- rendered by design-prep (derived from design_system.json) -->"
+
+
 def _render_design_md(ds: Dict) -> str:
     dsys = ds.get("design_system") or {}
-    lines: List[str] = ["# Design System", ""]
+    lines: List[str] = ["# Design System", "", _MD_RENDER_MARKER, ""]
     pal = dsys.get("palette") or {}
     if pal:
         lines.append("## Palette (measured)")
@@ -382,7 +385,18 @@ def _write_design_system(design_dir: Path, ds: Dict) -> None:
         design_dir.mkdir(parents=True, exist_ok=True)
         (design_dir / "design_system.json").write_text(
             json.dumps(ds, indent=2) + "\n", encoding="utf-8")
-        (design_dir / "design_system.md").write_text(_render_design_md(ds), encoding="utf-8")
+        # FIX #85c (run-6 live): a design_system.md WITHOUT the render marker is AGENT
+        # PROSE (the analyst's hand-written doc — its one real deliverable that run) —
+        # never clobber it with the derived render. Marked or absent → (re)render.
+        md = design_dir / "design_system.md"
+        if md.exists():
+            try:
+                existing = md.read_text(encoding="utf-8")
+            except Exception:
+                existing = ""
+            if existing.strip() and _MD_RENDER_MARKER not in existing:
+                return
+        md.write_text(_render_design_md(ds), encoding="utf-8")
     except Exception:
         pass
 
@@ -570,6 +584,28 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
     except Exception:
         pass
     return ds
+
+
+def design_system_is_enriched(ds) -> bool:
+    """FIX #85a — deterministic ENRICHMENT verdict on an accepted design doc.
+
+    Run-5/run-6 (live, identical signature): the design_analyst finished 'successfully'
+    but never touched design_system.json — a MALFORMED-degraded planning step, the
+    resident-protocol overhead, and a no-execution-tool dead end (it authored
+    measure_and_enrich.py it could never run) left build_notes 0/98 and
+    type_scale/radius_scale/iconography empty. The orchestrator's fallback keyed only on
+    PARSEABILITY, so the hollow doc sailed through. Enriched == at least one component
+    carries build_notes OR a design_system scale/iconography is non-empty."""
+    if not isinstance(ds, dict):
+        return False
+    dsys = ds.get("design_system") or {}
+    if any(dsys.get(k) for k in ("type_scale", "radius_scale", "shadow_scale", "iconography")):
+        return True
+    for s in ds.get("screens") or []:
+        for c in (s.get("components") or []) if isinstance(s, dict) else []:
+            if isinstance(c, dict) and (c.get("build_notes") or c.get("typography")):
+                return True
+    return False
 
 
 def load_valid_design_system(path) -> Optional[Dict]:

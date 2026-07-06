@@ -2000,7 +2000,7 @@ class Orchestrator:
                 from .runtime.design_prep import (
                     resolve_design_input, write_skeleton_design_system, run_design_prep,
                     load_valid_design_system, complete_design_system,
-                    design_system_summary_for_requirements)
+                    design_system_is_enriched, design_system_summary_for_requirements)
                 resolved = resolve_design_input(
                     self._design_input, None, getattr(self, "_reference_images", None))
                 write_skeleton_design_system(resolved, self.output_dir)   # the agent's starting doc
@@ -2010,6 +2010,15 @@ class Orchestrator:
                 # MALFORMED JSON must not discard the whole phase — rebuild via the single-shot
                 # enrich (which re-lays a valid skeleton + doc) instead.
                 ds = load_valid_design_system(dsp) if agent_done else None
+                # FIX #85a: an agent doc that parses but was never ENRICHED (run-5/6 live:
+                # build_notes 0/98, all scales empty — the analyst wrote a script it could
+                # not execute and finished) must ALSO fall back to the single-shot enrich,
+                # not ship hollow. Parseability alone is not success.
+                if ds is not None and not design_system_is_enriched(ds):
+                    self._logger.warning(
+                        "design_analyst doc is UNENRICHED (no build_notes/typography, empty "
+                        "scales) — running the single-shot enrich fallback over it")
+                    ds = None
                 used_agent = ds is not None
                 if ds is None:
                     if agent_done:
