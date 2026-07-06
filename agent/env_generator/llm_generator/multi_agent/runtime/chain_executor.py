@@ -823,31 +823,46 @@ def _resolve_unresolved_dollar_vars(value: Any, last_id: Any,
 
 
 def _collection_path_of(path: Any) -> str:
-    """COLLECTION path for a by-id path whose LAST segment is an UNRESOLVED placeholder:
-    ``/api/messages/${message_id}`` / ``/api/messages/{id}`` / ``/api/messages/:id`` ->
-    ``/api/messages``. Only strips a trailing ${x}/{x}/:x segment (the recovery case);
-    returns the input unchanged otherwise (so ``/api/messages/search`` is left alone)."""
+    """COLLECTION path for a by-id path with an UNRESOLVED placeholder: the prefix before
+    the FIRST ${x}/{x}/:x segment. ``/api/messages/${message_id}`` -> ``/api/messages``;
+    FIX #81 (instagram live): ALSO the ACTION-SUFFIX shape ``/api/posts/${post_id}/like``
+    -> ``/api/posts`` and the nested collection ``/api/events/${event_id}/attendees`` ->
+    ``/api/events`` — a mid-path placeholder previously left the path parametrised, so
+    list/create recovery was guard-skipped and the step fell to the global last_id (the
+    chain user's OWN register id → follow-YOURSELF 400) or the literal token (422).
+    Returns the input unchanged when no placeholder (``/api/messages/search`` untouched)."""
     p = str(path or "").split("?", 1)[0].rstrip("/")
     segs = p.split("/")
-    if segs and (segs[-1].startswith("${") or segs[-1].startswith("{")
-                 or segs[-1].startswith(":")):
-        return "/".join(segs[:-1]) or "/"
+    for i, s in enumerate(segs):
+        if s.startswith("${") or s.startswith("{") or s.startswith(":"):
+            return "/".join(segs[:i]) or "/"
     return p
 
 
-def _recover_id_via_list(base: str, coll_path: str, token: Any) -> Any:
+def _recover_id_via_list(base: str, coll_path: str, token: Any, avoid: Any = None) -> Any:
     """RECOVERY for an unresolvable path var: GET the resource collection and return a real
     row's id. Seed data populates every business collection, so a chain step that targets a
     resource it never CREATED (no prior POST to capture an id from) still hits a LIVE row
-    instead of sending the literal ``${x_id}`` → 404 (outlook run-22). Best-effort: never
-    raises; returns None on any failure, an empty collection, or a still-parametrised path."""
+    instead of sending the literal ``${x_id}`` → 404 (outlook run-22). FIX #81: ``avoid`` =
+    the chain user's OWN registered id — an action on the users collection (follow/unfollow)
+    must not target SELF (400 "cannot follow yourself", instagram live) — prefer a row whose
+    id differs; the only row still wins over a literal. Best-effort: never raises; returns
+    None on any failure, an empty collection, or a still-parametrised path."""
     if not coll_path or "${" in coll_path or "{" in coll_path or ":" in coll_path.split("/")[-1]:
         return None
     try:
         r = _http("GET", base + coll_path, token=token, body=None)
         if not _status_ok(r.get("status"), [200]):
             return None
-        return _extract_resource_id(json.loads(r.get("body_text") or "{}"))
+        payload = json.loads(r.get("body_text") or "{}")
+        if avoid is not None:
+            rows = payload.get("items") if isinstance(payload, Mapping) else payload
+            if isinstance(rows, list):
+                for row in rows:
+                    rid = row.get("id") if isinstance(row, Mapping) else None
+                    if rid is not None and str(rid) != str(avoid):
+                        return rid
+        return _extract_resource_id(payload)
     except Exception:
         return None
 
@@ -930,6 +945,7 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     last_id: Any = None
     last_id_by_resource: Dict[str, Any] = {}  # resource -> its last-created id (FK resolution, fix #10)
     last_reg_creds: Dict[str, Any] = {}  # creds of the last successful /auth/register → reused if a later /auth/login 401s
+    own_user_id: Any = None  # the chain user's own id (from /auth/register) — recovery must not target SELF (FIX #81)
     unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
     # #59c: STORED chains (registered by an older framework, or hand-edited) can
     # carry the auth-save clobber in their persisted steps — normalize-time
@@ -997,7 +1013,7 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                             _rtoken, _can_recover = _vv, True
                             break
                 if _can_recover:
-                    _rid = _recover_id_via_list(base, _pcoll, _rtoken)
+                    _rid = _recover_id_via_list(base, _pcoll, _rtoken, avoid=own_user_id)
                     if _rid is None:
                         # even the list is empty — owner-scoped reads + a fresh
                         # chain user own NOTHING (run-29 M3): create a row (#32).
@@ -1212,6 +1228,10 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                     _res = _resource_from_path(path)
                     if _res:
                         last_id_by_resource[_res] = _cid
+                    # The chain user's OWN id — a later recovery on an action path
+                    # (follow/unfollow) must prefer a DIFFERENT row (FIX #81).
+                    if str(step.get("path", "")).rstrip("/").endswith("/auth/register"):
+                        own_user_id = _cid
             except Exception:
                 pass
             # Capture the SUBSTITUTED creds of a successful /auth/register so a later
