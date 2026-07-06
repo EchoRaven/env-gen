@@ -128,7 +128,7 @@ class HealPipeline:
             from .backend_scaffold import (
                 repair_backend_auth_dependency, repair_auth_import_paths,
                 repair_inline_token_auth, repair_auth_enforcement_middleware,
-                repair_custom_routes_router_prologue)
+                repair_custom_routes_router_prologue, repair_integrity_error_handler)
             be_dir = _P(out_dir) / "app" / "backend"
             # custom_routes using @router.<verb> without defining router (run-34):
             # NameError at import silently killed the WHOLE custom router — including the
@@ -171,6 +171,14 @@ class HealPipeline:
                 orch._logger.warning(
                     "Backend auth-enforcement middleware injected (FIX #47): /api/ "
                     "business routes now require a valid bearer JWT.")
+            # FIX #82 (instagram run-2): unchecked path-id FK INSERTs surface DB
+            # ForeignKeyViolation as a raw 500 — chains tolerate 404 on by-id actions,
+            # never 500 → business_chain wedges. Map integrity errors to REST statuses.
+            ih = repair_integrity_error_handler(be_dir)
+            if ih.get("injected"):
+                orch._logger.warning(
+                    "Backend IntegrityError→REST mapping injected (FIX #82): FK "
+                    "violation → 404, unique → 409, other integrity → 400 (no raw 500s).")
         except Exception as exc:
             orch._logger.debug("backend auth repair skipped: %s", exc)
 

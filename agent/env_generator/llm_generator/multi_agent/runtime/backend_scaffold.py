@@ -445,6 +445,69 @@ def repair_auth_enforcement_middleware(backend_dir) -> Dict[str, object]:
         return {"injected": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+_INTEGRITY_HANDLER = '''
+
+# === BY-CONSTRUCTION IntegrityError → REST-status mapping (FIX #82, instagram run-2) ===
+# Lane-written action handlers (POST /api/users/{id}/follow) INSERT a row whose FK comes
+# from the path WITHOUT checking the target exists, so a missing target escapes as a raw
+# 500 (psycopg ForeignKeyViolation) — but verifier chains tolerate [..., 404] on by-id
+# actions, so the 500 wedges business_chain forever on a semantically-reasonable app.
+# Map DB integrity errors to the statuses REST (and the chains) expect:
+# foreign-key violation (23503) → 404, unique violation (23505) → 409, other → 400.
+from fastapi.responses import JSONResponse as _FWIntegrityJSON
+try:
+    from sqlalchemy.exc import IntegrityError as _FWIntegrityError
+except Exception:
+    _FWIntegrityError = None
+
+if _FWIntegrityError is not None:
+    @app.exception_handler(_FWIntegrityError)
+    async def _framework_integrity_error_handler(request, exc):
+        code = getattr(getattr(exc, "orig", None), "pgcode", None) or ""
+        if code == "23503":
+            status, detail = 404, "referenced resource not found"
+        elif code == "23505":
+            status, detail = 409, "duplicate resource"
+        else:
+            status, detail = 400, "integrity constraint violated"
+        return _FWIntegrityJSON(status_code=status, content={"detail": detail})
+# === end integrity mapping ===
+'''
+
+
+def repair_integrity_error_handler(backend_dir) -> Dict[str, object]:
+    """FIX #82 (instagram-core-di run-2, 2026-07-06, live): the business_chain hardcoded a
+    by-id action on a row that doesn't exist (POST /api/users/1001/follow) and correctly
+    tolerated a 404 — but the lane handler INSERTs the path id as an FK unchecked, so the
+    DB's ForeignKeyViolation surfaced as a raw 500 (in NO expect list) → validation wedged
+    7 post-cap cycles → STUCK abort. Inject a framework-owned global IntegrityError
+    exception handler into main.py (23503→404, 23505→409, other→400). Idempotent,
+    best-effort, never raises."""
+    try:
+        be = Path(backend_dir)
+        main_py = be / "main.py"
+        if not main_py.exists():
+            return {"injected": False, "reason": "no main.py"}
+        src = main_py.read_text(encoding="utf-8")
+        if "_framework_integrity_error_handler" in src:
+            return {"injected": False, "reason": "already present"}
+        if "app = FastAPI" not in src and "app=FastAPI" not in src:
+            return {"injected": False, "reason": "no FastAPI app"}
+        m = re.search(r"^@app\.(?:get|post|put|delete|patch)\(", src, re.M)
+        if m:
+            at = m.start()
+            new_src = src[:at] + _INTEGRITY_HANDLER.lstrip("\n") + "\n\n" + src[at:]
+        else:
+            marker = 'if __name__ == "__main__":'
+            idx = src.rfind(marker)
+            new_src = (src[:idx] + _INTEGRITY_HANDLER + "\n\n" + src[idx:]) if idx != -1 \
+                else src.rstrip() + "\n" + _INTEGRITY_HANDLER
+        main_py.write_text(new_src, encoding="utf-8")
+        return {"injected": True}
+    except Exception as exc:
+        return {"injected": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
 def repair_backend_packaging(backend_dir) -> Dict[str, object]:
     """Make the backend pip-installable in docker. The lane variably writes a
     pyproject.toml with ``build-backend = "hatchling.build"`` but a FLAT module
