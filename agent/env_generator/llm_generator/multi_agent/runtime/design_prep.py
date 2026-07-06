@@ -263,17 +263,53 @@ async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
             shown += 1
 
     client = getattr(llm, "_client", llm)
-    # FIX #88: JSON mode + a 16k output budget. Run-8 live: the -customtools model emitted
-    # a TOOL CALL on this no-tools call (20 tokens, finish=tool_calls) → regex found no
-    # JSON → silent skeleton; and 4k max_tokens cannot hold a ~93-component enriched doc
-    # (truncated JSON parses to None the same silent way). Providers without the kwarg
-    # degrade gracefully (TypeError → plain retry).
     _msgs = [Message.user_multimodal(parts)]
+    # FIX #92 (run-12 live): the -customtools variant RESISTS no-tools long-form output —
+    # #88's JSON mode stopped the hallucinated tool call (run-8) but the model then
+    # answered finish=STOP with completion_tokens=11 (an empty object) on the same prompt
+    # that produced 34 build_notes via the tool-driven AGENT path (run-9). Play WITH the
+    # tuning: offer ONE function whose parameters ARE the enriched doc and FORCE the call.
+    _submit_tool = [{
+        "type": "function",
+        "function": {
+            "name": "submit_enriched_design_system",
+            "description": ("Submit the COMPLETE enriched design_system document "
+                            "(same shape as the skeleton, with your enrichment filled in)."),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "design_system": {"type": "object"},
+                    "assets": {"type": "array", "items": {"type": "object"}},
+                    "screens": {"type": "array", "items": {"type": "object"}},
+                },
+                "required": ["design_system", "screens"],
+            },
+        },
+    }]
+    resp = None
     try:
         resp = await client.chat(_msgs, temperature=0.0, max_tokens=16000,
-                                 response_mime_type="application/json")
+                                 tools=_submit_tool, tool_choice="required")
     except TypeError:
-        resp = await client.chat(_msgs, temperature=0.0, max_tokens=16000)
+        resp = None
+    for tc in (getattr(resp, "tool_calls", None) or []):
+        fn = tc.get("function") if isinstance(tc, dict) else getattr(tc, "function", None)
+        args = (fn or {}).get("arguments") if isinstance(fn, dict) else getattr(fn, "arguments", None)
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except Exception:
+                args = None
+        if isinstance(args, dict) and args.get("screens") is not None:
+            return args
+    # FIX #88 fallback ladder: JSON mode text → plain text. (4k was too small for a
+    # ~100-component doc; 16k throughout.)
+    if resp is None or not (getattr(resp, "content", "") or "").strip():
+        try:
+            resp = await client.chat(_msgs, temperature=0.0, max_tokens=16000,
+                                     response_mime_type="application/json")
+        except TypeError:
+            resp = await client.chat(_msgs, temperature=0.0, max_tokens=16000)
     text = getattr(resp, "content", "") or ""
     m = re.search(r"\{.*\}", text, re.DOTALL)
     if not m:

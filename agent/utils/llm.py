@@ -1780,7 +1780,18 @@ class GoogleClient(BaseLLMClient):
             # perturbation (which only breaks streaks after the fact). Self-disables
             # for the session if the model/tool-surface ever rejects it (see
             # _do_call). Toggle via ENVGEN_GEMINI_VALIDATED_FC=0.
-            if (google_tools
+            # FIX #92: tool_choice='required'/'any' forces a function call (Gemini
+            # mode=ANY) — the single-shot enrich delivers its doc AS the forced call
+            # (the -customtools variant resists no-tools long-form output: 11-20
+            # completion tokens on a 9k-token prompt, run-8/run-12 live).
+            if google_tools and str(tool_choice or "").lower() in ("required", "any"):
+                try:
+                    cfg.tool_config = types.ToolConfig(
+                        function_calling_config=types.FunctionCallingConfig(
+                            mode=types.FunctionCallingConfigMode.ANY))
+                except Exception:
+                    pass
+            elif (google_tools
                     and not getattr(self, "_validated_fc_disabled", False)
                     and os.environ.get("ENVGEN_GEMINI_VALIDATED_FC", "1").lower()
                         not in ("0", "false", "no", "off")):
