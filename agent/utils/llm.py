@@ -1762,6 +1762,16 @@ class GoogleClient(BaseLLMClient):
                 system_instruction=system_instruction,
                 tools=google_tools,
             )
+            # FIX #88 (instagram run-8, live): a NO-TOOLS single-shot call still came back
+            # finish=tool_calls on the -customtools variant (the model hallucinated a tool
+            # call; 20 completion tokens instead of the requested JSON) → the caller's JSON
+            # parse silently failed. JSON mode (response_mime_type='application/json')
+            # makes tool-call emission impossible and guarantees parseable text.
+            if kwargs.get("response_mime_type"):
+                try:
+                    cfg.response_mime_type = str(kwargs["response_mime_type"])
+                except Exception:
+                    pass
             # MALFORMED_FUNCTION_CALL mitigation (google-genai 1.61 + gemini-3.x):
             # ask Gemini to VALIDATE generated tool calls against the declared
             # schema. MALFORMED stems from the model emitting tool-call codegen that

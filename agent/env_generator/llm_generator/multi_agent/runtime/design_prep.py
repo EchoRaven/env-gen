@@ -263,7 +263,17 @@ async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
             shown += 1
 
     client = getattr(llm, "_client", llm)
-    resp = await client.chat([Message.user_multimodal(parts)], temperature=0.0, max_tokens=4000)
+    # FIX #88: JSON mode + a 16k output budget. Run-8 live: the -customtools model emitted
+    # a TOOL CALL on this no-tools call (20 tokens, finish=tool_calls) → regex found no
+    # JSON → silent skeleton; and 4k max_tokens cannot hold a ~93-component enriched doc
+    # (truncated JSON parses to None the same silent way). Providers without the kwarg
+    # degrade gracefully (TypeError → plain retry).
+    _msgs = [Message.user_multimodal(parts)]
+    try:
+        resp = await client.chat(_msgs, temperature=0.0, max_tokens=16000,
+                                 response_mime_type="application/json")
+    except TypeError:
+        resp = await client.chat(_msgs, temperature=0.0, max_tokens=16000)
     text = getattr(resp, "content", "") or ""
     m = re.search(r"\{.*\}", text, re.DOTALL)
     if not m:
