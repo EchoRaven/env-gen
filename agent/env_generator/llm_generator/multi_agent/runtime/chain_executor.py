@@ -652,9 +652,12 @@ def _extract_resource_id(payload: Any) -> Any:
     return None
 
 
-# A path placeholder the verifier left unresolved: ``${msg_id}`` / ``${var.x}`` or a
-# bare ``{id}`` (never a substituted value, since saved vars are replaced first).
-_UNRESOLVED_PLACEHOLDER = re.compile(r"\$\{[^}]+\}|\{[a-zA-Z_][^}]*\}")
+# A path placeholder the verifier left unresolved: ``${msg_id}`` / ``${var.x}``, a
+# bare ``{id}`` (never a substituted value, since saved vars are replaced first), or —
+# FIX #89 (instagram run-8 live) — python-format EMPTY/positional braces ``{}``/``{0}``
+# (the alpha-first-char requirement made the whole recovery ladder BLIND to them: the
+# literal ``/api/posts/{}/like`` hit the int path param → 422 → 7-cycle wedge → STUCK).
+_UNRESOLVED_PLACEHOLDER = re.compile(r"\$\{[^}]+\}|\{[a-zA-Z_][^}]*\}|\{\d*\}")
 # Variable names a step REFERENCES: ${var}, ${var.name}, or bare {name} (path-param style).
 _VAR_REF = re.compile(r"\$\{(?:var\.)?(\w+)\}|\{(\w+)\}")
 
