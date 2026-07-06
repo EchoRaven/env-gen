@@ -390,11 +390,31 @@ def _columns_of(table: Dict[str, Any]) -> List[Any]:
     return []
 
 
+def _counter_default(col: Any) -> Any:
+    """FIX #97 (instagram run-15, live): ``post.likes_count += 1`` hit a NULL counter
+    (seed omitted the column, no DB default) → TypeError → 500 → business_chain wedge.
+    A counter column — integer-family ``*_count``, non-PK, non-FK, no explicit
+    default — gets ``default 0`` BY CONSTRUCTION so a row that omits it can never
+    surface NULL to handler code. Applied by BOTH the DDL and the ORM renderer."""
+    if not isinstance(col, dict):
+        return col
+    name = str(col.get("name") or "").strip().lower()
+    ctype = str(col.get("type") or "").strip().lower()
+    if (name.endswith("_count")
+            and col.get("default") is None
+            and not (col.get("primary_key") or col.get("pk"))
+            and not (col.get("references") or col.get("fk"))
+            and ("int" in ctype or "serial" in ctype or "number" in ctype)):
+        return {**col, "default": 0}
+    return col
+
+
 def _render_column(table_name: str, col: Any) -> str:
     if not isinstance(col, dict):
         raise ValueError(
             f"database_scaffold: table {table_name!r} has a non-mapping column: {col!r}"
         )
+    col = _counter_default(col)
     cname = str(col.get("name") or "").strip()
     ctype = str(col.get("type") or "").strip()
     if not cname:

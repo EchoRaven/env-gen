@@ -99,6 +99,8 @@ def _fk_target(col: Dict[str, Any]) -> Optional[str]:
 
 
 def _render_column(col: Dict[str, Any]) -> Optional[str]:
+    from .database_scaffold import _counter_default
+    col = _counter_default(col)   # FIX #97: *_count integers default 0 by construction
     name = str(col.get("name") or "").strip()
     if not name or _is_constraint_pseudo_column(col):
         return None
