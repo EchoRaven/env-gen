@@ -845,7 +845,14 @@ def render_schema_sql(tables: Dict[str, Any]) -> str:
 
         cols = _columns_of(table)
         if not cols:
-            raise ValueError(f"database_scaffold: table {name!r} has no columns")
+            # FIX #90 (instagram run-9, live): a lane registered a placeholder table
+            # ('dummy') with NO columns at M2 kickoff and this raise KILLED the whole
+            # run post-M1-delivery. The MODELS renderer already tolerates the shape by
+            # synthesising an `id` PK — do the SAME here so both renderers agree and a
+            # junk registration degrades to a harmless one-column table, never a dead run.
+            cols = [{"name": "id", "type": "integer", "primary_key": True}]
+            lines.append(f"-- table {name!r} was registered with no columns; "
+                         "id PK synthesised (FIX #90)")
         # FIX #32: split real columns from mis-modeled table constraints so a
         # pseudo-column like {"name":"unique(a,b)","type":"constraint"} renders as
         # a trailing ``UNIQUE (a, b)`` clause, not a broken column definition.
@@ -859,7 +866,9 @@ def render_schema_sql(tables: Dict[str, Any]) -> str:
                 continue  # unparseable pseudo-constraint → drop (don't break DDL)
             rendered_cols.append(_render_column(name, c))
         if not rendered_cols:
-            raise ValueError(f"database_scaffold: table {name!r} has no real columns")
+            # FIX #90: all columns were constraint pseudo-columns → same synthesis.
+            rendered_cols = [_render_column(name, {"name": "id", "type": "integer",
+                                                   "primary_key": True})]
         lines.append(f"CREATE TABLE IF NOT EXISTS {_quote_ident(name)} (")
         lines.append(",\n".join(rendered_cols + constraint_lines))
         lines.append(");")
