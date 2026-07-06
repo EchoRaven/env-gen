@@ -463,6 +463,115 @@ def build_design_analyst_briefing(output_dir, resolved: Dict) -> str:
     )
 
 
+# ── FIX #80: deterministic completion pass (model-variance hardening) ────────
+# The analyst SHOULD crop+eyedrop+map assets per component, but an LLM that batches
+# decompose+palette and finishes early leaves crop=null / colors={} / assets=[] (seen live,
+# gemini-3.1 customtools run 2026-07-05). The framework owns the floor: everything below is
+# measured/derived deterministically, so the doc's guarantees hold regardless of the model.
+_GENERIC_ASSET_TOKENS = {"icon", "icons", "image", "img", "asset", "assets"}
+
+
+def _asset_tokens(file_name: str) -> List[str]:
+    """Meaningful lowercase tokens of an asset filename: 'icons/Also_from_Meta_12cc7c0e.svg'
+    → ['also', 'from', 'meta'] (content-hash / numeric suffixes dropped)."""
+    import re
+    toks = [t.lower() for t in re.split(r"[_\-\s]+", Path(file_name).stem) if t]
+    toks = [t for t in toks if not re.fullmatch(r"[0-9a-f]{6,}|\d+", t)]
+    return toks
+
+
+def _component_words(comp: Dict) -> set:
+    import re
+    text = " ".join(str(comp.get(k) or "") for k in ("id", "role", "state")).lower()
+    return set(re.findall(r"[a-z0-9]+", text))
+
+
+def _reference_path(screen: Dict, resolved: Dict, output_dir: Path) -> Optional[Path]:
+    name = str(screen.get("reference") or "")
+    if not name:
+        return None
+    staged = output_dir / "design" / "references" / name
+    if staged.is_file():
+        return staged
+    for r in resolved.get("references") or []:
+        if Path(r).name == name and Path(r).is_file():
+            return Path(r)
+    return None
+
+
+def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
+    """Deterministically COMPLETE an accepted design_system doc in place (never raises):
+
+     - every component with a region gets a physical crop at design/crops/<screen>__<id>.png
+       (existing crops kept) so lanes/gates can view each component in isolation;
+     - a component missing colors.bg gets it MEASURED (region_background on its region);
+     - a component with assets:[] gets conservative filename-token → id/role/state matches
+       (all meaningful tokens must appear as whole words; generic names like icon_* never map);
+    then rewrites design_system.json/.md. Measured facts and analyst output are never changed."""
+    import logging
+    out = Path(output_dir)
+    stats = {"components": 0, "cropped": 0, "bg_filled": 0, "asset_mapped": 0}
+    try:
+        from .material_prep import _open_rgb, crop_region, region_background
+        import re as _re
+
+        asset_toks = []
+        for a in ds.get("assets") or []:
+            toks = _asset_tokens(str(a.get("file") or a.get("id") or ""))
+            if toks and not set(toks) <= _GENERIC_ASSET_TOKENS:
+                asset_toks.append((a.get("id"), toks))
+
+        for screen in ds.get("screens") or []:
+            ref = _reference_path(screen, resolved or {}, out)
+            im = None
+            if ref is not None:
+                try:
+                    im = _open_rgb(ref)
+                except Exception:
+                    im = None
+            sname = _re.sub(r"[^A-Za-z0-9_\-]", "-", str(screen.get("name") or "screen"))
+            for comp in screen.get("components") or []:
+                stats["components"] += 1
+                region = comp.get("region")
+                region = tuple(region) if isinstance(region, (list, tuple)) and len(region) == 4 else None
+
+                crop_rel = comp.get("crop")
+                if not (crop_rel and (out / crop_rel).is_file()):
+                    comp_crop = None
+                    if ref is not None and region:
+                        cid = _re.sub(r"[^A-Za-z0-9_\-]", "-", str(comp.get("id") or "component"))
+                        rel = f"design/crops/{sname}__{cid}.png"
+                        try:
+                            crop_region(ref, region, out / rel)
+                            comp_crop = rel
+                            stats["cropped"] += 1
+                        except Exception:
+                            comp_crop = None
+                    comp["crop"] = comp_crop
+
+                colors = comp.setdefault("colors", {})
+                if not colors.get("bg") and im is not None and region:
+                    bg = region_background(im, region)
+                    if bg:
+                        colors["bg"] = bg
+                        stats["bg_filled"] += 1
+
+                if not comp.get("assets") and asset_toks:
+                    words = _component_words(comp)
+                    matched = [aid for aid, toks in asset_toks if all(t in words for t in toks)]
+                    if matched:
+                        comp["assets"] = matched
+                        stats["asset_mapped"] += 1
+
+        _write_design_system(out / "design", ds)
+        logging.getLogger("Orchestrator").info(
+            "Design-Prep completion pass: %(components)d components — %(cropped)d cropped, "
+            "%(bg_filled)d bg measured, %(asset_mapped)d asset-mapped (deterministic floor)", stats)
+    except Exception:
+        pass
+    return ds
+
+
 def load_valid_design_system(path) -> Optional[Dict]:
     """Load design_system.json ONLY if it parses AND is structurally a design doc (has a
     ``design_system`` block or ``screens``). Returns None on a missing/unreadable/malformed file

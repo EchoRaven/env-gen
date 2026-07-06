@@ -1999,7 +1999,8 @@ class Orchestrator:
             try:
                 from .runtime.design_prep import (
                     resolve_design_input, write_skeleton_design_system, run_design_prep,
-                    load_valid_design_system, design_system_summary_for_requirements)
+                    load_valid_design_system, complete_design_system,
+                    design_system_summary_for_requirements)
                 resolved = resolve_design_input(
                     self._design_input, None, getattr(self, "_reference_images", None))
                 write_skeleton_design_system(resolved, self.output_dir)   # the agent's starting doc
@@ -2020,6 +2021,10 @@ class Orchestrator:
                         self.output_dir, self.llm)
                     ds = load_valid_design_system(dsp)
                 if ds is not None:
+                    # FIX #80: deterministic completion floor — an analyst that skipped the
+                    # per-component crop/eyedrop/asset mapping (model variance) must not ship a
+                    # hollow doc; the framework crops+measures+maps what's missing itself.
+                    ds = complete_design_system(ds, resolved, self.output_dir)
                     self._design_system = ds
                     self._logger.info(
                         "Design-Prep: design_system.json ready (%d screens, %d real assets) [%s]",
