@@ -234,5 +234,131 @@ def audit_authored_seed(data: Any) -> List[str]:
     return issues
 
 
+def amplify_authored_seed(data: Any, min_total: int = None) -> Any:
+    """FIX #84 (instagram run-5, live): deterministically AMPLIFY a realistic-but-thin
+    authored seed to the density floor by cloning-and-perturbing the lane's OWN rows —
+    the lane authored 9 believable rows, the gate demands >= 10, and 7 remediation
+    dispatches went unanswered → STUCK-abort while the DB was already dense (the gate
+    audits the FILE). The framework owns the density floor like #74 owns demo
+    concentration.
+
+    Clones get: a fresh pk (int max+n / string suffix), perturbed unique credentials
+    (email/username/handle/slug), timestamps shifted minutes apart, and ``<x>_id`` FK
+    values rotated within the seed's own ``<x>s`` id pool; the tuple of a clone's FK
+    fields is deduped against every existing row so join-table UNIQUE constraints can't
+    collide (an exhausted combo space just stops cloning that table). Marker-flagged
+    (placeholder) seeds are NOT amplified — garbage×N is garbage; dense/clean seeds
+    return None (untouched). Pure + deterministic; returns the amplified mapping or
+    None when no change is needed/possible."""
+    import copy
+    import os
+    issues = audit_authored_seed(data)
+    if not issues or any("placeholder content" in i for i in issues):
+        return None
+    if not any("structured row" in i for i in issues):
+        return None
+    if min_total is None:
+        try:
+            min_total = int(os.environ.get("ENVGEN_SEED_MIN_TOTAL_ROWS",
+                                           str(_MIN_AUTHORED_TOTAL_ROWS)))
+        except Exception:
+            min_total = _MIN_AUTHORED_TOTAL_ROWS
+
+    out = copy.deepcopy(data)
+    tables = {t: rows for t, rows in out.items()
+              if isinstance(rows, list) and any(isinstance(r, dict) for r in rows)}
+    if not tables:
+        return None
+
+    # id pools per table (for FK rotation) + existing FK-field combos per table
+    pools: Dict[str, List[Any]] = {
+        t: [r["id"] for r in rows if isinstance(r, dict) and r.get("id") is not None]
+        for t, rows in tables.items()}
+    int_id_next: Dict[str, int] = {
+        t: (max([i for i in ids if isinstance(i, int)] or [0]) + 1)
+        for t, ids in pools.items()}
+
+    def _fk_fields(row: dict) -> List[str]:
+        return sorted(k for k in row if k != "id" and str(k).endswith("_id"))
+
+    def _combo(row: dict):
+        return tuple((k, row.get(k)) for k in _fk_fields(row))
+
+    seen_combos: Dict[str, set] = {}
+    for t, rows in tables.items():
+        seen_combos[t] = {_combo(r) for r in rows if isinstance(r, dict) and _fk_fields(r)}
+
+    def _shift_ts(val: str, n: int) -> str:
+        try:
+            from datetime import datetime, timedelta
+            s = str(val)
+            suffix = "Z" if s.endswith("Z") else ""
+            dt = datetime.fromisoformat(s.rstrip("Z"))
+            return (dt + timedelta(minutes=7 * n + 3)).isoformat() + suffix
+        except Exception:
+            return val
+
+    total = sum(len([r for r in rows if isinstance(r, dict)]) for rows in tables.values())
+    n = 0
+    stalled = False
+    while total < min_total and not stalled:
+        stalled = True
+        for t, rows in tables.items():
+            if total >= min_total:
+                break
+            src_rows = [r for r in rows if isinstance(r, dict)]
+            if not src_rows:
+                continue
+            base = src_rows[n % len(src_rows)]
+            clone = copy.deepcopy(base)
+            n += 1
+            # fresh pk
+            if "id" in clone:
+                if isinstance(clone["id"], int):
+                    clone["id"] = int_id_next[t]
+                    int_id_next[t] += 1
+                else:
+                    clone["id"] = f"{clone['id']}-a{n}"
+            # unique credentials
+            v = clone.get("email")
+            if isinstance(v, str) and "@" in v:
+                local, _, dom = v.partition("@")
+                clone["email"] = f"{local}+a{n}@{dom}"
+            for k in ("username", "handle", "slug"):
+                if isinstance(clone.get(k), str):
+                    clone[k] = f"{clone[k]}-a{n}"
+            # timestamps drift apart
+            for k, v in list(clone.items()):
+                if str(k).endswith("_at") and isinstance(v, str):
+                    clone[k] = _shift_ts(v, n)
+            # rotate FK values within their pools; dedup the combo (UNIQUE safety)
+            fks = _fk_fields(clone)
+            placed = False
+            for attempt in range(4 + max((len(pools.get(str(k)[:-3] + "s", []))
+                                          for k in fks), default=0)):
+                for k in fks:
+                    ref = str(k)[:-3]
+                    pool = pools.get(ref + "s") or pools.get(ref) or []
+                    if pool:
+                        cur = clone.get(k)
+                        idx = (pool.index(cur) if cur in pool else 0)
+                        clone[k] = pool[(idx + n + attempt) % len(pool)]
+                if not fks or _combo(clone) not in seen_combos.get(t, set()):
+                    placed = True
+                    break
+            if not placed:
+                continue                                   # combo space exhausted → skip
+            if fks:
+                seen_combos.setdefault(t, set()).add(_combo(clone))
+            rows.append(clone)
+            if clone.get("id") is not None:
+                pools.setdefault(t, []).append(clone["id"])
+            total += 1
+            stalled = False
+    grew = total > sum(len([r for r in rows if isinstance(r, dict)])
+                       for rows in data.values() if isinstance(rows, list))
+    return out if grew else None
+
+
 __all__ = ["SeedReport", "audit_seed_data", "detect_placeholder_score",
-           "audit_authored_seed"]
+           "audit_authored_seed", "amplify_authored_seed"]

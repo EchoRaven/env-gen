@@ -988,10 +988,27 @@ CMD ["python", "main.py"]
 # ONLY-IF-ABSENT so authored content is never clobbered and the agent isn't anchored).
 
 
-def _ensure_seed_json(be: Path) -> None:
+def _ensure_seed_json(be: Path, amplify: bool = False) -> None:
     p = be / "seed_data.json"
     if not p.exists():
         p.write_text("{}\n", encoding="utf-8")
+        return
+    if not amplify:
+        return
+    # FIX #84 (instagram run-5): a lane-authored REALISTIC-but-thin seed (9 rows vs the
+    # 10-row floor) wedged the authored-seed-quality gate for 7 remediation cycles →
+    # STUCK-abort, while the live DB was already dense. The framework owns the density
+    # floor: clone-and-perturb the lane's own rows up to the floor and write the file
+    # back (marker/placeholder seeds are NOT amplified — that stays a lane job).
+    try:
+        import json as _json
+        from .seed_audit import amplify_authored_seed
+        data = _json.loads(p.read_text(encoding="utf-8"))
+        amped = amplify_authored_seed(data)
+        if amped is not None:
+            p.write_text(_json.dumps(amped, indent=2) + "\n", encoding="utf-8")
+    except Exception:
+        pass
 
 _RESET_SH = '''#!/usr/bin/env bash
 # Framework-generated business-data reset (best-effort; keeps tenancy/identity spine).
@@ -1920,7 +1937,7 @@ def write_backend_skeleton(
     w("auth_dependency.py", _AUTH_DEPENDENCY_PY)
     w("main.py", render_skeleton_main(endpoints, tables))
     w("schemas.py", _SCHEMAS_PY)
-    _ensure_seed_json(be)
+    _ensure_seed_json(be, amplify=True)   # FIX #84: density floor by construction
     w("pyproject.toml", render_pyproject(be))
     w("Dockerfile", _DOCKERFILE)
     w("reset.sh", _RESET_SH)
