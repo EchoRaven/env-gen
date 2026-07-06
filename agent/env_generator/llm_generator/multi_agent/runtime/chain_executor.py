@@ -311,6 +311,18 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
             st["body"] = _ab
         if pth.startswith("/api/") and not st.get("auth"):
             st["auth"] = "token"
+        # FIX #91 (instagram run-11, live): a step expecting EXACTLY {401} is an
+        # UNAUTHENTICATED-DENIAL probe by definition — a valid token defeats its own
+        # expectation. The verifier authored `auth:"token", expect:[401]` (and the
+        # auto-bearer above would add auth anyway) → the CORRECT backend returns 200
+        # → chain wedges forever. Strip the contradictory auth so the probe really
+        # goes tokenless. Cross-user denial probes (403/404 expectations, intruder
+        # tokens) are untouched — only the pure-{401} shape is tokenless semantics.
+        _exp401 = st.get("expect")
+        _exp401 = _exp401 if isinstance(_exp401, (list, tuple, set)) else (
+            [_exp401] if _exp401 is not None else [])
+        if {int(x) for x in _exp401 if str(x).isdigit()} == {401}:
+            st.pop("auth", None)
         out.append(st)
     # CANONICAL TOKEN-AUTH: a verifier can reference auth="<var>" that no step
     # actually saves (it saved under a different name, or a bare "token" while the
@@ -987,6 +999,17 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     _steps = [dict(s) if isinstance(s, Mapping) else s
               for s in (chain.get("steps") or [])]
     _drop_auth_save_clobbers(_steps)
+    # FIX #91 runtime guard (same #59c rationale — STORED chains bypass normalize):
+    # a step expecting EXACTLY {401} is an unauthenticated-denial probe; an authored
+    # (or auto-attached) auth ref contradicts its own expectation — the correct
+    # backend then 200s and the chain wedges forever (run-11 live: GET /api/feed
+    # auth:'token' expect:[401]). Strip it so the probe really goes tokenless.
+    for _s in _steps:
+        if isinstance(_s, dict):
+            _e = _s.get("expect")
+            _e = _e if isinstance(_e, (list, tuple, set)) else ([_e] if _e is not None else [])
+            if {int(x) for x in _e if str(x).isdigit()} == {401}:
+                _s.pop("auth", None)
     for idx, step in enumerate(_steps):
         variables["rand"] = f"{_rand_base}{idx:02d}"
         method = str(step.get("method", "GET")).upper()
