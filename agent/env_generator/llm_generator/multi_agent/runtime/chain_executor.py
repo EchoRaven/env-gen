@@ -1245,7 +1245,7 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                 and str(step.get("path", "")).rstrip("/") == "/auth/login"
                 and last_reg_creds):
             _lb = dict(body) if isinstance(body, Mapping) else {}
-            for _ck in ("email", "username", "password"):
+            for _ck in ("email", "username", "password", "tenant_id"):
                 if last_reg_creds.get(_ck):
                     _lb[_ck] = last_reg_creds[_ck]
             _res3 = _http(method, base + path, token=token, body=_lb)
@@ -1346,7 +1346,12 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
             # retry with the identity that actually exists.
             if str(step.get("path", "")).rstrip("/") == "/auth/register" \
                     and isinstance(body, Mapping):
-                last_reg_creds = {_k: body[_k] for _k in ("email", "username", "password")
+                # FIX #101 (run-19 live): tenant_id carried too — a verifier that puts
+                # ${rand} in BOTH register and login mints different emails AND
+                # different tenants per step; the retry with the register's email/
+                # password but the login's OWN tenant still 401s on a multi-tenant AS.
+                last_reg_creds = {_k: body[_k]
+                                  for _k in ("email", "username", "password", "tenant_id")
                                   if body.get(_k)}
         if ok and isinstance(step.get("save"), Mapping):
             try:
