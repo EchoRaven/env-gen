@@ -944,6 +944,46 @@ def _recover_id_via_create(base: str, coll_path: str, token: Any) -> Any:
         return None
 
 
+def _register_aux_user_id(base: str) -> Any:
+    """FIX #100 (instagram run-18, live): LAST-RESORT id for a USERS-resource placeholder
+    when every other rung starves (register 409'd with no id in the body, login carries
+    no user object, NO /api/users collection exists, no prior list step). The platform AS
+    is the one id source that exists BY CONSTRUCTION: mint a fresh AUXILIARY user and
+    take its id from the response envelope, the nested user object, or the token's JWT
+    ``sub`` claim (the AS mints sub=<user id> — a platform invariant). The aux user is
+    guaranteed ≠ the chain user, so follow/unfollow-style actions get a REAL other user.
+    Best-effort; never raises; None on any failure."""
+    import base64
+    try:
+        _n = str(int(time.time() * 1000))[-9:]
+        body = {"email": f"aux_{_n}@example.com", "password": "Chain123!x",
+                "name": "Aux Chain", "username": f"aux_{_n}"}
+        r = _http("POST", base + "/auth/register", body=body)
+        if not _status_ok(r.get("status"), [200, 201]):
+            return None
+        try:
+            p = json.loads(r.get("body_text") or "{}")
+        except Exception:
+            p = {}
+        rid = _extract_resource_id(p)
+        if rid is None and isinstance(p.get("user"), Mapping):
+            rid = p["user"].get("id")
+        if rid is None:
+            tok = p.get("access_token") or p.get("token")
+            if isinstance(tok, str) and tok.count(".") == 2:
+                seg = tok.split(".")[1]
+                seg += "=" * (-len(seg) % 4)
+                try:
+                    sub = json.loads(base64.urlsafe_b64decode(seg.encode())).get("sub")
+                except Exception:
+                    sub = None
+                if sub is not None:
+                    rid = int(sub) if str(sub).isdigit() else sub
+        return rid
+    except Exception:
+        return None
+
+
 def _reverify_denial_via_fresh_intruder(base, method, path, body, expect) -> bool:
     """#78: a cross-user DENIAL step (expect 403/404) got a 2xx (apparent leak). Register a
     GUARANTEED-fresh intruder and re-run the SAME request as them. The recurring false-positive
@@ -1075,6 +1115,11 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                         # even the list is empty — owner-scoped reads + a fresh
                         # chain user own NOTHING (run-29 M3): create a row (#32).
                         _rid = _recover_id_via_create(base, _pcoll, _rtoken)
+                    if _rid is None and _pres in ("user",):
+                        # FIX #100: users-resource placeholder with NO source anywhere
+                        # → mint an auxiliary user via the platform AS (id from the
+                        # envelope or the JWT sub claim); guaranteed ≠ chain user.
+                        _rid = _register_aux_user_id(base)
             # (3) GLOBAL last_id — absolute last resort, NON-denial only. Usually
             #     the WRONG resource (a same-resource id would have won at (1)),
             #     kept only for the rare ambiguous case. A denial step must NEVER
