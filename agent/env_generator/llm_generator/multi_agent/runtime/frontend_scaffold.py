@@ -15,6 +15,7 @@ throwing stub so the BUILD always succeeds (one unimplemented call beats a dead
 app that won't build at all).
 """
 
+import json
 import re
 import shutil
 from pathlib import Path
@@ -399,6 +400,234 @@ def neutralize_frontend_external_backgrounds(frontend_dir) -> Dict[str, object]:
                 except Exception:
                     pass
         result["neutralized"] = sorted(touched)
+    except Exception as exc:  # never break generation/validation
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+# ── FIX #111: localize EXTERNAL image URLs (JSX <img src> + seed rows) ─────────────────
+# Companion to #75b (which covers CSS url() backgrounds). The sandbox is OFFLINE: an
+# external image host (i.pravatar.cc / images.unsplash.com / via.placeholder.com — all
+# seen in live run artifacts) can NEVER resolve, so every such <img> renders the
+# broken-image glyph and the visual gate scores the wound. Two carriers remain after
+# #75b: (a) frontend source <img src="https://…"> / poster= / image-ish object props
+# (avatar_url: 'https://…' — unsplash URLs carry NO extension, so the FIELD NAME is the
+# signal); (b) seed_data.json image-ish string fields — those DB rows render as
+# <img src> at runtime and break identically. Rewrite to a STAGED real asset under
+# frontend/public/assets/ when a filename-token match exists (design-prep's
+# ingest_assets stages them), else to a DETERMINISTIC generated placeholder SVG under
+# /assets/placeholders/ (md5(url) → same URL always maps to the same file; avatar-ish
+# context gets a circle-person glyph, other imagery a landscape glyph). SAFETY: only a
+# URL carrying an IMAGE SIGNAL is touched — image file extension, a known stock/
+# placeholder host, an <img/poster carrier, or an image-ish property/field name.
+# Navigation (<a href>), API bases, issuer URLs are never image-signaled → untouched.
+_IMG_FIELD_RE = re.compile(
+    r"(?:avatar|image|img|photo|picture|thumb(?:nail)?|banner|cover|logo|poster|"
+    r"profile_pic|media)(?:_?url|_?src|_?path)?$", re.I)
+_IMG_EXT_RE = re.compile(r"\.(?:png|jpe?g|gif|webp|svg|avif|ico|bmp)(?:[?#]|$)", re.I)
+_STOCK_HOST_RE = re.compile(
+    r"(?:^|\.)(?:pravatar\.cc|unsplash\.com|picsum\.photos|placeholder\.com|"
+    r"placehold\.(?:co|it)|dummyimage\.com|placekitten\.com|gravatar\.com|"
+    r"randomuser\.me|loremflickr\.com|placeimg\.com|fakeimg\.pl)$", re.I)
+# <img src=…> / poster=…  (JSX attr); group(2)=quote, group(3)=url
+_IMG_ATTR_RE = re.compile(
+    r"""((?:<img\b[^>]*?\bsrc|<source\b[^>]*?\bsrc|\bposter)\s*=\s*[{]?\s*(['"]))"""
+    r"""(https?://[^'"]+)(\2)""")
+# imageish_key: 'https://…' / imageishKey: "https://…"  (JS object prop or JSON-ish)
+_IMG_PROP_RE = re.compile(
+    r"""(\b([A-Za-z_][\w]*)\s*[:=]\s*(['"]))(https?://[^'"]+)(\3)""")
+# `https://…${expr}…` — THE dominant real pattern (run-26: fallback avatars keyed on
+# user id). The whole literal is replaced by ONE quoted local ref; the ${} variety is
+# lost but a stable placeholder beats N broken-image glyphs. Balance-guarded in the
+# callback so a nested backtick inside ${} can never truncate-corrupt the rewrite.
+_TPL_URL_RE = re.compile(r"`(https?://[^`]*)`")
+# any quoted external URL whose URL ALONE is image-signaled (extension / stock host) —
+# catches src={x || 'https://picsum…'} where the quote is not adjacent to the attr
+_BARE_IMG_STR_RE = re.compile(r"""(['"])(https?://[^'"]+)\1""")
+_PLACEHOLDER_DIRNAME = "placeholders"
+_AVATAR_CTX_RE = re.compile(r"avatar|profile|user|face|person", re.I)
+
+_PH_AVATAR_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">'
+    '<circle cx="48" cy="48" r="48" fill="{bg}"/>'
+    '<circle cx="48" cy="38" r="16" fill="{fg}"/>'
+    '<path d="M16 88a32 22 0 0 1 64 0z" fill="{fg}"/></svg>')
+_PH_IMAGE_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 64">'
+    '<rect width="96" height="64" rx="4" fill="{bg}"/>'
+    '<circle cx="30" cy="24" r="8" fill="{fg}"/>'
+    '<path d="M8 56l24-20 16 12 20-16 20 24z" fill="{fg}"/></svg>')
+_PH_TONES = [("#e2e8f0", "#94a3b8"), ("#e7e5e4", "#a8a29e"), ("#e0e7ff", "#a5b4fc"),
+             ("#dcfce7", "#86efac"), ("#fee2e2", "#fca5a5"), ("#fef3c7", "#fcd34d"),
+             ("#f3e8ff", "#d8b4fe"), ("#cffafe", "#67e8f9")]
+
+
+def _host_of(url: str) -> str:
+    m = re.match(r"https?://([^/:?#]+)", url)
+    return (m.group(1) if m else "").lower()
+
+
+def _is_image_signaled(url: str, *, field: str = "", carrier_is_img: bool = False) -> bool:
+    if carrier_is_img or _IMG_EXT_RE.search(url) or _STOCK_HOST_RE.search(_host_of(url)):
+        return True
+    return bool(field and _IMG_FIELD_RE.search(field))
+
+
+def _staged_assets(public_dir: Path) -> List[str]:
+    """Relative asset paths under public/assets/ (excluding our own placeholders)."""
+    adir = public_dir / "assets"
+    if not adir.is_dir():
+        return []
+    out = []
+    for f in adir.rglob("*"):
+        if (f.is_file() and _IMG_EXT_RE.search(f.name + "?")
+                and _PLACEHOLDER_DIRNAME not in f.relative_to(adir).parts):
+            out.append(str(f.relative_to(adir)))
+    return sorted(out)
+
+
+def _match_staged_asset(url: str, field: str, assets: List[str]) -> Optional[str]:
+    """Best filename-token overlap between the URL path + field name and a staged asset."""
+    want = set(re.findall(r"[a-z]{3,}", (field + " " + re.sub(r"https?://[^/]+", "", url)).lower()))
+    want -= {"http", "https", "photo", "image", "img", "www"}
+    best, best_n = None, 0
+    for a in assets:
+        toks = {t for t in re.split(r"[_\-\s./]+", Path(a).stem.lower())
+                if len(t) >= 3 and not re.fullmatch(r"[0-9a-f]{6,}|\d+", t)}
+        n = len(want & toks)
+        if n > best_n:
+            best, best_n = a, n
+    return best
+
+
+def _placeholder_ref(public_dir: Path, url: str, avatarish: bool) -> str:
+    """Ensure a deterministic placeholder SVG exists; return its /assets/ URL."""
+    import hashlib
+    k = int(hashlib.md5(url.encode("utf-8")).hexdigest(), 16) % len(_PH_TONES)
+    bg, fg = _PH_TONES[k]
+    kind = "avatar" if avatarish else "img"
+    name = f"ph-{kind}-{k}.svg"
+    pdir = public_dir / "assets" / _PLACEHOLDER_DIRNAME
+    pdir.mkdir(parents=True, exist_ok=True)
+    f = pdir / name
+    if not f.is_file():
+        tpl = _PH_AVATAR_SVG if avatarish else _PH_IMAGE_SVG
+        f.write_text(tpl.format(bg=bg, fg=fg), encoding="utf-8")
+    return f"/assets/{_PLACEHOLDER_DIRNAME}/{name}"
+
+
+def _local_ref_for(url: str, field: str, public_dir: Path, assets: List[str]) -> str:
+    hit = _match_staged_asset(url, field, assets)
+    if hit:
+        return f"/assets/{hit}"
+    avatarish = bool(_AVATAR_CTX_RE.search(field or "") or _AVATAR_CTX_RE.search(url))
+    return _placeholder_ref(public_dir, url, avatarish)
+
+
+def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
+    """Rewrite image-signaled EXTERNAL URLs in frontend source to local /assets/ refs
+    (staged real asset by token match, else deterministic placeholder SVG). Best-effort,
+    idempotent, never raises. See the FIX #111 block comment for the safety rails."""
+    result: Dict[str, object] = {"localized": []}
+    try:
+        fe = Path(frontend_dir)
+        src_dir = fe / "src"
+        public_dir = fe / "public"
+        if not src_dir.is_dir():
+            return result
+        assets = _staged_assets(public_dir)
+        touched: List[str] = []
+        for f in src_dir.rglob("*"):
+            if f.suffix not in (".jsx", ".tsx", ".js", ".ts") or not f.is_file():
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            if "http://" not in txt and "https://" not in txt:
+                continue
+
+            def _attr_repl(m):
+                return (m.group(1)
+                        + _local_ref_for(m.group(3), "", public_dir, assets)
+                        + m.group(4))
+
+            def _prop_repl(m):
+                field, url = m.group(2), m.group(4)
+                if not _is_image_signaled(url, field=field):
+                    return m.group(0)
+                return (m.group(1)
+                        + _local_ref_for(url, field, public_dir, assets)
+                        + m.group(5))
+
+            def _tpl_repl(m):
+                body = m.group(1)
+                # balance guard: a nested backtick inside ${} truncates the match at
+                # that backtick, leaving an unclosed ${ in body → skip, never corrupt
+                if re.sub(r"\$\{[^}]*\}", "", body).count("${"):
+                    return m.group(0)
+                if not _is_image_signaled(body):
+                    return m.group(0)  # e.g. `https://api.example.com/v1/${id}` — keep
+                return '"' + _local_ref_for(body, "", public_dir, assets) + '"'
+
+            def _bare_repl(m):
+                url = m.group(2)
+                if not _is_image_signaled(url):        # URL-alone signal: ext/stock host
+                    return m.group(0)
+                return (m.group(1)
+                        + _local_ref_for(url, "", public_dir, assets)
+                        + m.group(1))
+
+            new = _IMG_ATTR_RE.sub(_attr_repl, txt)   # <img src>/<source src>/poster=
+            new = _IMG_PROP_RE.sub(_prop_repl, new)   # image-ish object props
+            new = _TPL_URL_RE.sub(_tpl_repl, new)     # `https://…${expr}…` fallbacks
+            new = _BARE_IMG_STR_RE.sub(_bare_repl, new)  # src={x || 'https://picsum…'}
+            if new != txt:
+                try:
+                    f.write_text(new, encoding="utf-8")
+                    touched.append(str(f.relative_to(src_dir)))
+                except Exception:
+                    pass
+        result["localized"] = sorted(touched)
+    except Exception as exc:  # never break generation/validation
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+def localize_seed_external_images(backend_dir, frontend_dir) -> Dict[str, object]:
+    """Rewrite image-signaled EXTERNAL URLs inside seed_data.json to local /assets/ refs
+    — seed rows render as <img src> at runtime and break identically offline. The seed
+    fingerprint changes with the content, so the loader re-seeds on next boot (#99).
+    Best-effort, idempotent, never raises."""
+    result: Dict[str, object] = {"localized": 0}
+    try:
+        seed = Path(backend_dir) / "seed_data.json"
+        public_dir = Path(frontend_dir) / "public"
+        if not seed.is_file():
+            return result
+        data = json.loads(seed.read_text(encoding="utf-8"))
+        assets = _staged_assets(public_dir)
+        count = 0
+
+        def _walk(node):
+            nonlocal count
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    if (isinstance(v, str) and v.startswith(("http://", "https://"))
+                            and _is_image_signaled(v, field=str(k))):
+                        node[k] = _local_ref_for(v, str(k), public_dir, assets)
+                        count += 1
+                    else:
+                        _walk(v)
+            elif isinstance(node, list):
+                for v in node:
+                    _walk(v)
+
+        _walk(data)
+        if count:
+            seed.write_text(json.dumps(data, indent=2, ensure_ascii=False),
+                            encoding="utf-8")
+        result["localized"] = count
     except Exception as exc:  # never break generation/validation
         result["error"] = f"{type(exc).__name__}: {exc}"
     return result

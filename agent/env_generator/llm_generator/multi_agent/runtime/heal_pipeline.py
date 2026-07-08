@@ -670,6 +670,28 @@ class HealPipeline:
                 orch._logger.warning(
                     "Frontend external stock-photo backgrounds neutralized to an in-palette "
                     "gradient (self-contained + reference-matching): %s", _bg.get("neutralized"))
+            # FIX #111 (companion to #75b, runs 24+26 autopsy): external <img src> hosts
+            # (pravatar/unsplash/placeholder — seen in live artifacts, in BOTH frontend
+            # source and seed rows) can never resolve in the offline sandbox → the
+            # broken-image glyph is a permanent visual-score wound. Localize image-signaled
+            # external URLs to staged /assets/ (token match) or a deterministic placeholder
+            # SVG; navigation hrefs/API bases are never image-signaled → untouched.
+            try:
+                from .frontend_scaffold import (
+                    localize_frontend_external_images, localize_seed_external_images)
+                _li = localize_frontend_external_images(fe)
+                if _li.get("localized"):
+                    orch._logger.warning(
+                        "Frontend external image URLs localized to /assets/ (offline "
+                        "sandbox, broken-image fix): %s", _li.get("localized"))
+                _ls = localize_seed_external_images(_P(out_dir) / "app" / "backend", fe)
+                if _ls.get("localized"):
+                    orch._logger.warning(
+                        "Seed-data external image URLs localized to /assets/ (%s fields; "
+                        "seed fingerprint changes → loader re-seeds on next boot)",
+                        _ls.get("localized"))
+            except Exception as _lie:
+                orch._logger.debug("external-image localization skipped: %s", _lie)
             rep = repair_frontend_api_exports(fe)
             if rep.get("repaired"):
                 orch._logger.warning(
