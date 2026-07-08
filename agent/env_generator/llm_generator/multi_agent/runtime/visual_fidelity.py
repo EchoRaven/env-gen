@@ -370,8 +370,19 @@ async def capture_route_screenshots(
         try:
             ctx = await browser.new_context(viewport=_VIEWPORT)
             if token:
-                await ctx.add_init_script(
-                    f"localStorage.setItem('token', {json.dumps(token)});")
+                # FIX #103 (runs 9+21, live): the app's storage KEY is pure lane variance
+                # ('token' vs 'access_token' vs camelCase …) — a mismatch bounced every
+                # auth route to /login ("authenticated session rejected — skipping
+                # judgment") and collapsed visual coverage to the login screens. Inject
+                # the SAME token under every common alias in BOTH storages; extra keys
+                # are inert to the app.
+                _tok_js = json.dumps(token)
+                _aliases = ("token", "access_token", "auth_token",
+                            "authToken", "accessToken", "jwt")
+                await ctx.add_init_script(";".join(
+                    f"localStorage.setItem('{k}', {_tok_js});"
+                    f"sessionStorage.setItem('{k}', {_tok_js})"
+                    for k in _aliases) + ";")
             page = await ctx.new_page()
             for screen in screens:
                 if not screen.get("route"):
