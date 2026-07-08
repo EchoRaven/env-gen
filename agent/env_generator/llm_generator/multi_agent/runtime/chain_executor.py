@@ -661,6 +661,18 @@ def _extract_resource_id(payload: Any) -> Any:
         if isinstance(items, list) and items and isinstance(items[0], Mapping) \
                 and items[0].get("id") is not None:
             return items[0]["id"]
+        # FIX #114 (run-30 STUCK, live-replayed): the platform register/login envelope
+        # is {"access_token":…, "user":{"id":N}} — no top-level id/item/items — so the
+        # chain's FIRST step captured nothing and the global-last-id rung starved; a
+        # later action path whose every other rung dead-ends (no bare collection, not
+        # a users resource) sent the LITERAL {id} → 422 → 7-cycle wedge → STUCK abort.
+        # Accept the id of a nested one-level dict when the payload has EXACTLY ONE
+        # such dict (unambiguous). Register precedes everything (authoring rule +
+        # normalize's ensure-user-before-login), so last_id is now always populated.
+        nested = [v["id"] for v in payload.values()
+                  if isinstance(v, Mapping) and v.get("id") is not None]
+        if len(nested) == 1:
+            return nested[0]
     return None
 
 
