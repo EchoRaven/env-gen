@@ -281,7 +281,60 @@ class DecomposeReferenceTool(BaseTool):
             "next": f"read('{out_rel}') and build each component to its measured colors"})
 
 
-MATERIAL_PREP_TOOL_CLASSES = [SampleColorTool, CropReferenceTool, ExtractPaletteTool, ZoomCompareTool]
+class MeasureLayoutTool(BaseTool):
+    """MEASURE spacing / column-count / content-width off a reference (§15 — 肉眼量不准，用 PIL 测)."""
+
+    NAME = "measure_layout"
+    DESCRIPTION = (
+        "MEASURE layout geometry off a reference screenshot with pixel scanning (spacing / columns "
+        "/ width are impossible to eyeball — measure them, PIPELINE.md §15). "
+        "metric='grid_columns' → column count + pitch (a HINT — robust for clean/UI grids, but a "
+        "photo grid's 2x2 spanning tiles can hide a gutter and undercount; CONFIRM by view_image-"
+        "ing the grid crop and use pitch_px+width to sanity-check). metric='content_width' → the "
+        "content bounding box (find the true left/"
+        "right edges, e.g. explore ~1110px vs feed ~935px). metric='row_spacing' → the y-centers "
+        "of stacked items + the gap between them (e.g. nav glyph→first-item 183px, item gap 56px). "
+        "Pass `region` to scope to one component (a nav column, a grid). Theme-agnostic (content = "
+        "pixels far from the region background), works on light AND dark UIs.\n"
+        "Example: measure_layout(image='design/references/ig_explore.png', region=[0.24,0.1,1,1], metric='grid_columns')"
+    )
+
+    def __init__(self, *, workspace: Workspace):
+        super().__init__(name=self.NAME, category=ToolCategory.SEARCH)
+        if workspace is None:
+            raise ValueError(f"{self.NAME}: workspace is required")
+        self.workspace = workspace
+
+    @property
+    def tool_definition(self):
+        return create_tool_param(name=self.NAME, description=self.DESCRIPTION, parameters={
+            "type": "object",
+            "properties": {
+                "image": {"type": "string", "description": "reference image path"},
+                "region": _REGION_SCHEMA,
+                "metric": {"type": "string",
+                           "enum": ["grid_columns", "content_width", "row_spacing"],
+                           "default": "content_width"},
+            },
+            "required": ["image", "metric"],
+        })
+
+    async def execute(self, image: str, metric: str = "content_width", region=None) -> ToolResult:
+        p = self.workspace.resolve(image)
+        if not p.exists():
+            return ToolResult.fail(f"reference image not found: {image}")
+        try:
+            im = mp._open_rgb(str(p))
+            data = mp.measure_layout(im, _region(region), metric)
+            if isinstance(data, dict) and data.get("error"):
+                return ToolResult.fail(data["error"])
+            return ToolResult(success=True, data=data)
+        except Exception as exc:
+            return ToolResult.fail(f"measure_layout failed: {type(exc).__name__}: {exc}")
+
+
+MATERIAL_PREP_TOOL_CLASSES = [SampleColorTool, CropReferenceTool, ExtractPaletteTool,
+                              ZoomCompareTool, MeasureLayoutTool]
 
 
 def create_material_prep_tools(workspace: Workspace = None) -> list:
@@ -295,5 +348,5 @@ def create_material_prep_vision_tools(workspace: Workspace = None, llm_client=No
 
 
 __all__ = ["SampleColorTool", "CropReferenceTool", "ExtractPaletteTool", "ZoomCompareTool",
-           "DecomposeReferenceTool", "MATERIAL_PREP_TOOL_CLASSES", "create_material_prep_tools",
-           "create_material_prep_vision_tools"]
+           "MeasureLayoutTool", "DecomposeReferenceTool", "MATERIAL_PREP_TOOL_CLASSES",
+           "create_material_prep_tools", "create_material_prep_vision_tools"]

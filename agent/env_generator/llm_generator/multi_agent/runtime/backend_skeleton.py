@@ -99,6 +99,8 @@ def _fk_target(col: Dict[str, Any]) -> Optional[str]:
 
 
 def _render_column(col: Dict[str, Any]) -> Optional[str]:
+    from .database_scaffold import _counter_default
+    col = _counter_default(col)   # FIX #97: *_count integers default 0 by construction
     name = str(col.get("name") or "").strip()
     if not name or _is_constraint_pseudo_column(col):
         return None
@@ -390,6 +392,29 @@ class _Session(Session):
                     pass
         return raw.cursor(*args, **kwargs)
 
+    def execute(self, statement, params=None, *args, **kwargs):
+        """FIX #86: ALSO accept RAW-string SQL in the psycopg style (instagram run-7 M3:
+        a lane get_db yielded a raw psycopg connection while its handlers mixed
+        ``execute(text(...)).mappings()`` with ``execute("... %s", (v,))`` — no single
+        handle type served both, and the TextClause reaching psycopg raised
+        ``TypeError: TextClause has no len()`` -> 500 -> validation wedge). A plain-str
+        statement is coerced to text(); %s positional params become named binds; rows
+        come back DICT-LIKE (``row["col"]``) matching the dict_row habit. TextClause /
+        ORM statements take the native path untouched."""
+        if isinstance(statement, str):
+            from sqlalchemy import text as _text
+            if isinstance(params, (list, tuple)) and "%s" in statement:
+                parts = statement.split("%s")
+                stmt = parts[0]
+                bound = {}
+                for i, chunk in enumerate(parts[1:]):
+                    stmt += f":p{i}" + chunk
+                    if i < len(params):
+                        bound[f"p{i}"] = params[i]
+                return super().execute(_text(stmt), bound, *args, **kwargs).mappings()
+            return super().execute(_text(statement), params, *args, **kwargs).mappings()
+        return super().execute(statement, params, *args, **kwargs)
+
 
 SessionLocal = sessionmaker(
     bind=engine, class_=_Session, autoflush=False, autocommit=False, future=True)
@@ -472,6 +497,7 @@ import os
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import Base, engine, get_db
@@ -799,7 +825,7 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
     business handlers projected from the contract (static routes before param routes)."""
     from .route_projector import (_generate_handler, _norm_path, _resource_model, _truthy,
                                   _owner_fk, _TARGET_FK_NAMES)
-    from .backend_scaffold import _AUTH_MIDDLEWARE
+    from .backend_scaffold import _AUTH_MIDDLEWARE, _INTEGRITY_HANDLER
 
     meta = _models_meta(tables)
     # Per-user-PRIVATE tables (owner_scoped_reads in the contract metadata): their reads
@@ -878,7 +904,12 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
     # handler OVERRIDES the projected one for the same METHOD+path (first-registered
     # wins in Starlette) — the documented lane-override intent, which the old footer
     # placement silently inverted.
-    body = (_MAIN_HEADER + "\n\n" + mid + "\n\n\n"
+    # FIX #82 lives HERE by construction (not only the heal-time injection): the skeleton
+    # regenerates main.py every pre-validation cycle, so an injected-only handler raced the
+    # regen and the deployed container could hold an un-healed main.py (run-3, 2026-07-06:
+    # unchecked path-id FK INSERT → raw 500 → business_chain wedged on a tolerated-404 chain).
+    integ = _INTEGRITY_HANDLER.strip("\n")
+    body = (_MAIN_HEADER + "\n\n" + mid + "\n\n\n" + integ + "\n\n\n"
             + custom_include + "\n\n\n"
             + "\n\n\n".join(static_blocks + param_blocks) + _MAIN_FOOTER)
     return body
@@ -983,10 +1014,27 @@ CMD ["python", "main.py"]
 # ONLY-IF-ABSENT so authored content is never clobbered and the agent isn't anchored).
 
 
-def _ensure_seed_json(be: Path) -> None:
+def _ensure_seed_json(be: Path, amplify: bool = False) -> None:
     p = be / "seed_data.json"
     if not p.exists():
         p.write_text("{}\n", encoding="utf-8")
+        return
+    if not amplify:
+        return
+    # FIX #84 (instagram run-5): a lane-authored REALISTIC-but-thin seed (9 rows vs the
+    # 10-row floor) wedged the authored-seed-quality gate for 7 remediation cycles →
+    # STUCK-abort, while the live DB was already dense. The framework owns the density
+    # floor: clone-and-perturb the lane's own rows up to the floor and write the file
+    # back (marker/placeholder seeds are NOT amplified — that stays a lane job).
+    try:
+        import json as _json
+        from .seed_audit import amplify_authored_seed
+        data = _json.loads(p.read_text(encoding="utf-8"))
+        amped = amplify_authored_seed(data)
+        if amped is not None:
+            p.write_text(_json.dumps(amped, indent=2) + "\n", encoding="utf-8")
+    except Exception:
+        pass
 
 _RESET_SH = '''#!/usr/bin/env bash
 # Framework-generated business-data reset (best-effort; keeps tenancy/identity spine).
@@ -1811,11 +1859,34 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "    try:\n"
         "        applied = _applied_fingerprint(db)\n"
         "        if applied == fp:\n"
-        "            # Same source, already applied — but still heal the sequences: a\n"
-        "            # container restarted on a pre-#56 database boots down this path\n"
-        "            # with its sequences still inside the seeded id range (run-41).\n"
-        "            _sync_sequences(db)\n"
-        "            return\n"
+        "            # FIX #99 (instagram run-17 M3, live): reset.sh clears business rows\n"
+        "            # via Base.metadata, but _seed_meta is a RAW-SQL table it never\n"
+        "            # touches — the surviving fingerprint made this path SKIP re-seeding\n"
+        "            # an EMPTY database (posts=0 after the M2 reset) → every chain\n"
+        "            # id-source starved → literal ${x_id} → 422 wedge. Same fingerprint\n"
+        "            # + ALL seed-managed business tables empty ⇒ the data was wiped:\n"
+        "            # fall through and re-apply. users/tenants excluded (the identity\n"
+        "            # spine survives resets and would mask the wipe).\n"
+        "            _any_rows = False\n"
+        "            for _t in _ORDER:\n"
+        "                if _t in ('users', 'tenants'):\n"
+        "                    continue\n"
+        "                _cls = getattr(models, _CLASS.get(_t, ''), None)\n"
+        "                if _cls is None:\n"
+        "                    continue\n"
+        "                try:\n"
+        "                    if db.query(_cls).first() is not None:\n"
+        "                        _any_rows = True\n"
+        "                        break\n"
+        "                except Exception:\n"
+        "                    continue\n"
+        "            if _any_rows:\n"
+        "                # Same source, already applied — but still heal the sequences: a\n"
+        "                # container restarted on a pre-#56 database boots down this path\n"
+        "                # with its sequences still inside the seeded id range (run-41).\n"
+        "                _sync_sequences(db)\n"
+        "                return\n"
+        "            print('seed: fingerprint matched but business tables are EMPTY (post-reset wipe) — re-seeding (FIX #99)')\n"
         "        if applied is not None:\n"
         "            _reset_seeded_tables(db)\n"
         "        for t in _ORDER:\n"
@@ -1915,7 +1986,7 @@ def write_backend_skeleton(
     w("auth_dependency.py", _AUTH_DEPENDENCY_PY)
     w("main.py", render_skeleton_main(endpoints, tables))
     w("schemas.py", _SCHEMAS_PY)
-    _ensure_seed_json(be)
+    _ensure_seed_json(be, amplify=True)   # FIX #84: density floor by construction
     w("pyproject.toml", render_pyproject(be))
     w("Dockerfile", _DOCKERFILE)
     w("reset.sh", _RESET_SH)

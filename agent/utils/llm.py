@@ -1762,6 +1762,16 @@ class GoogleClient(BaseLLMClient):
                 system_instruction=system_instruction,
                 tools=google_tools,
             )
+            # FIX #88 (instagram run-8, live): a NO-TOOLS single-shot call still came back
+            # finish=tool_calls on the -customtools variant (the model hallucinated a tool
+            # call; 20 completion tokens instead of the requested JSON) → the caller's JSON
+            # parse silently failed. JSON mode (response_mime_type='application/json')
+            # makes tool-call emission impossible and guarantees parseable text.
+            if kwargs.get("response_mime_type"):
+                try:
+                    cfg.response_mime_type = str(kwargs["response_mime_type"])
+                except Exception:
+                    pass
             # MALFORMED_FUNCTION_CALL mitigation (google-genai 1.61 + gemini-3.x):
             # ask Gemini to VALIDATE generated tool calls against the declared
             # schema. MALFORMED stems from the model emitting tool-call codegen that
@@ -1770,7 +1780,18 @@ class GoogleClient(BaseLLMClient):
             # perturbation (which only breaks streaks after the fact). Self-disables
             # for the session if the model/tool-surface ever rejects it (see
             # _do_call). Toggle via ENVGEN_GEMINI_VALIDATED_FC=0.
-            if (google_tools
+            # FIX #92: tool_choice='required'/'any' forces a function call (Gemini
+            # mode=ANY) — the single-shot enrich delivers its doc AS the forced call
+            # (the -customtools variant resists no-tools long-form output: 11-20
+            # completion tokens on a 9k-token prompt, run-8/run-12 live).
+            if google_tools and str(tool_choice or "").lower() in ("required", "any"):
+                try:
+                    cfg.tool_config = types.ToolConfig(
+                        function_calling_config=types.FunctionCallingConfig(
+                            mode=types.FunctionCallingConfigMode.ANY))
+                except Exception:
+                    pass
+            elif (google_tools
                     and not getattr(self, "_validated_fc_disabled", False)
                     and os.environ.get("ENVGEN_GEMINI_VALIDATED_FC", "1").lower()
                         not in ("0", "false", "no", "off")):

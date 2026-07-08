@@ -1101,7 +1101,40 @@ def start_kickoff(
         "expected_attendees": expected_attendees,
         "started_at": started_at,
         "phase": "awaiting_decisions",
+        # FIX #95: carried so a timeout retry can re-broadcast the SAME request
+        # without re-deriving the requirement bundle.
+        "requirements": requirements_list,
     }
+
+
+def rebroadcast_kickoff_request(
+    hubs: Any,
+    kickoff_handle: Mapping[str, Any],
+    only: Optional[List[str]] = None,
+    agent: str = "orchestrator",
+) -> None:
+    """FIX #95 (runs 4/10/13, live): Gemini MALFORMED storms come in 20-50min BURSTS;
+    a milestone kickoff landing in one times out with ZERO drafts to reconcile and the
+    run hard-aborts — twice discarding runs that had ALREADY delivered milestones. Before
+    aborting, the orchestrator re-broadcasts the kickoff_request to the MISSING lanes
+    (``only``) and drives one more window: if the burst passed, the run continues. Reuses
+    the handle's meeting + requirements — no duplicate meeting, roadmap intact."""
+    recipients = list(only or kickoff_handle.get("expected_attendees") or [])
+    if not recipients:
+        return
+    hubs.eventhub.publish_event(
+        source_hub="orchestrator",
+        event_type="kickoff_request",
+        payload={
+            "meeting_id": kickoff_handle.get("meeting_id"),
+            "milestone_index": kickoff_handle.get("milestone_index"),
+            "requirements": list(kickoff_handle.get("requirements") or []),
+            "expected_sections": list(EXPECTED_SECTIONS),
+        },
+        recipients=recipients,
+        priority="high",
+        caller=agent,
+    )
 
 
 def _derive_response_key(path: Any) -> str:

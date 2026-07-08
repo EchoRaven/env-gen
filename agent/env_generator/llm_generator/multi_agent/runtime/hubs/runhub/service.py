@@ -202,7 +202,14 @@ class RunHub:
         fail_count = 0
 
         try:
-            # Stage 1: compose up
+            # Stage 1: compose up. FIX #113: `up` implicit-builds when images are
+            # missing — re-stage design assets first so a lane checkout window that
+            # dropped tracked public/assets/ files can't bake an asset-less image.
+            try:
+                from ...frontend_scaffold import ensure_assets_staged_for_build
+                ensure_assets_staged_for_build(generated_dir)
+            except Exception:
+                pass
             self.update_run_status(run_id, "starting_compose", agent="runhub")
             up_result = compose.up()
             if up_result.returncode != 0:

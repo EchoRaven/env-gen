@@ -1571,6 +1571,35 @@ profiles:
         hub_commit_gate: 0
         knowledge_sync: 1
 
+  # Design Analyst — one-shot pre-generation agent (NOT a resident lane). Spawned once at
+  # run start with the reference set + staged real-asset manifest; runs the Page-Mimicry field
+  # manual's per-component measure loop (crop + eyedrop + pixel geometry) and emits
+  # design/design_system.json + .md that the frontend/backend lanes build FROM. Detect+measure,
+  # never guess. Tools: the material-prep chain (reference_images = sample_color/crop_reference/
+  # extract_palette/zoom_compare/measure_layout; vision_tools = decompose_reference) + file read/write.
+  design_analyst:
+    name: "Design Analyst"
+    reasoning_effort: "high"
+    description: "One-shot pre-generation design agent: decomposes each reference into components and MEASURES each (crop + eyedrop + pixel geometry) → emits design/design_system.json + .md the lanes build from. Measure, never guess."
+    tool_categories: ["file", "reasoning", "vision", "reference", "communication", "memory", "project", "analysis", "knowledge_read", "runtime", "progress"]
+    include_vision: true
+    timeout: 3600
+    prompts:
+      template: "v3/design_analyst.j2"
+      system_macro: "design_analyst_system_prompt"
+      task_macro: "design_analyst_task_prompt"
+    flags:
+      dynamic: true
+      can_spawn: false
+    skills: []
+    tool_bundles:
+      - reasoning_tools
+      - project_tools
+      - analysis_tools
+      - knowledge_read_tools
+      - reference_images
+      - vision_tools
+
 resident_lanes:
   # roster aligned to the 6-lane
   # reality. Retired: design (merged into frontend),

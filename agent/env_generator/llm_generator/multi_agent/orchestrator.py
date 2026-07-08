@@ -164,8 +164,15 @@ FWVAL_STUCK_ABORT_AFTER = max(3, int(os.environ.get("ENVGEN_DELIVERY_STUCK_ABORT
 # WHEN forward progress (source/contract/chain change) occurred since the latch. Capped so a
 # genuinely wedged run still fails fast; FWVAL_NO_DELIVER_ABORT_S bounds the total regardless.
 FWVAL_ABORT_GRACE_MAX = max(0, int(os.environ.get("ENVGEN_DELIVERY_ABORT_GRACE_MAX") or "3"))
-VISUAL_DEFERRAL_ESCAPE_S = 900   # max wall-clock a milestone may defer on visuals
-VISUAL_TOTAL_JUDGMENTS_CAP = 10  # per-milestone hard cap on real visual judgments
+# FIX #112 (runs 24+26 autopsy): remediation rounds take 3-10 min and scores DO rise
+# +0.1-0.4/round, but the old 900s window fit only 1-3 rounds — the gate released
+# below threshold mid-convergence. Size the window for 5-6 rounds (#110 gives the lane
+# eyes; this gives it time) and keep the judgment cap from becoming the new binding
+# constraint. Env-tunable; runs are time-unlimited by user directive.
+VISUAL_DEFERRAL_ESCAPE_S = float(os.environ.get(
+    "ENVGEN_VISUAL_ESCAPE_S") or "2400")   # max wall-clock a milestone may defer on visuals
+VISUAL_TOTAL_JUDGMENTS_CAP = int(os.environ.get(
+    "ENVGEN_VISUAL_JUDGMENTS_CAP") or "14")  # per-milestone hard cap on real visual judgments
 
 
 def _fwval_should_attempt(attempts: int, last_attempt_ts: float, now: float,
@@ -296,6 +303,7 @@ class Orchestrator:
         name: str = "generated_app",
         reference_images: List[str] = None,
         verbose: bool = False,
+        design_input: str = None,
     ):
         self._logger = logging.getLogger("Orchestrator")
         if verbose:
@@ -315,6 +323,7 @@ class Orchestrator:
         from .runtime.run_budget import RunBudget
         self._budget = RunBudget(self.output_dir, self._logger)
 
+        self._design_input = design_input  # Design-Prep phase input dir (Task 5); None → off
         self._reference_images = list(reference_images or [])
         # Merge in any reference images the UI (or a prior step) already dropped
         # into <workspace>/references/ — that is the store the monitor's
@@ -1242,10 +1251,43 @@ class Orchestrator:
                             self._kickoff_handle, _ls, "driver_wedged",
                         )
                     if kickoff_receipt.get("phase") == "timeout_fallback":
+                        # FIX #95 (runs 4/10/13, live): Gemini MALFORMED storms are
+                        # 20-50min BURSTS — a kickoff landing in one times out with
+                        # ZERO drafts and the abort discards runs that had ALREADY
+                        # delivered milestones (run-13: M1+M2). ONE bounded retry:
+                        # re-broadcast the kickoff_request to the missing lanes and
+                        # drive one more window; if the burst passed, the run lives.
+                        self._logger.error(
+                            "Kickoff timed out (missing=%s) — FIX #95: ONE retry "
+                            "(re-broadcast + one more drive window) before aborting.",
+                            kickoff_receipt.get("missing"))
+                        try:
+                            run_kickoff.rebroadcast_kickoff_request(
+                                self.hubs, self._kickoff_handle,
+                                only=list(kickoff_receipt.get("missing") or []) or None)
+                        except Exception as _rb_err:
+                            self._logger.warning("kickoff re-broadcast failed: %s", _rb_err)
+                        # the driver times out on handle['started_at'] — without a reset
+                        # the retry window would expire INSTANTLY.
+                        self._kickoff_handle["started_at"] = time.time()
+                        try:
+                            kickoff_receipt = await asyncio.wait_for(
+                                self._drive_kickoff_to_completion(self._kickoff_handle),
+                                timeout=run_kickoff.KICKOFF_TIMEOUT_SEC + 600,
+                            )
+                        except asyncio.TimeoutError:
+                            try:
+                                _ls2 = run_kickoff.try_synthesize(
+                                    self.hubs, self._kickoff_handle)
+                            except Exception:
+                                _ls2 = {"status": "unknown"}
+                            kickoff_receipt = self._kickoff_fallback_or_reconcile(
+                                self._kickoff_handle, _ls2, "driver_wedged")
+                    if kickoff_receipt.get("phase") == "timeout_fallback":
                         raise RuntimeError(
                             "Kickoff timed out after "
                             f"{run_kickoff.KICKOFF_TIMEOUT_SEC:.0f}s without "
-                            "a ready synthesis. Missing="
+                            "a ready synthesis (incl. one FIX #95 retry). Missing="
                             f"{kickoff_receipt.get('missing')} "
                             f"last_status={kickoff_receipt.get('last_status')!r}. "
                             "kickoff_failed event emitted; aborting."
@@ -1987,7 +2029,100 @@ class Orchestrator:
         if res.spec is not None:
             self._reference_spec = res.spec
             self._reference_spec_summary = res.spec_summary
-        return res.requirements
+        # Design-Prep phase (opt-in via --design-input): now that component_specs are measured
+        # on disk, write the SKELETON design_system.json (measured palette + component regions +
+        # staged real assets), then have the dedicated design_analyst AGENT measure each component
+        # (crop + eyedrop + geometry) and enrich the doc. If no spawn_service (or the agent can't
+        # finish), fall back to the single-shot enrich. Best-effort — a failure leaves the run
+        # references-only.
+        if getattr(self, "_design_input", None):
+            try:
+                from .runtime.design_prep import (
+                    resolve_design_input, write_skeleton_design_system, run_design_prep,
+                    load_valid_design_system, complete_design_system,
+                    design_system_is_enriched, design_system_summary_for_requirements)
+                resolved = resolve_design_input(
+                    self._design_input, None, getattr(self, "_reference_images", None))
+                write_skeleton_design_system(resolved, self.output_dir)   # the agent's starting doc
+                agent_done = await self._spawn_design_analyst(resolved)
+                dsp = self.output_dir / "design" / "design_system.json"
+                # Validate the agent's output: parseable AND a design doc. A spawned LLM that wrote
+                # MALFORMED JSON must not discard the whole phase — rebuild via the single-shot
+                # enrich (which re-lays a valid skeleton + doc) instead.
+                ds = load_valid_design_system(dsp) if agent_done else None
+                # FIX #85a: an agent doc that parses but was never ENRICHED (run-5/6 live:
+                # build_notes 0/98, all scales empty — the analyst wrote a script it could
+                # not execute and finished) must ALSO fall back to the single-shot enrich,
+                # not ship hollow. Parseability alone is not success.
+                if ds is not None and not design_system_is_enriched(ds):
+                    self._logger.warning(
+                        "design_analyst doc is UNENRICHED (no build_notes/typography, empty "
+                        "scales) — running the single-shot enrich fallback over it")
+                    ds = None
+                used_agent = ds is not None
+                if ds is None:
+                    if agent_done:
+                        self._logger.warning(
+                            "design_analyst produced no valid design_system.json — single-shot fallback")
+                    await run_design_prep(
+                        self._design_input, None,
+                        getattr(self, "_reference_images", None),
+                        self.output_dir, self.llm)
+                    ds = load_valid_design_system(dsp)
+                if ds is not None:
+                    # FIX #80: deterministic completion floor — an analyst that skipped the
+                    # per-component crop/eyedrop/asset mapping (model variance) must not ship a
+                    # hollow doc; the framework crops+measures+maps what's missing itself.
+                    ds = complete_design_system(ds, resolved, self.output_dir)
+                    self._design_system = ds
+                    self._logger.info(
+                        "Design-Prep: design_system.json ready (%d screens, %d real assets) [%s]",
+                        len(ds.get("screens") or []), len(ds.get("assets") or []),
+                        "agent" if used_agent else "single-shot fallback")
+                    # Fold the measured design system into the requirements every lane reads, so
+                    # it drives the build from turn 1 (non-voluntary), mirroring the reference-spec
+                    # summary. Stored + appended to the returned requirements below.
+                    self._design_system_req_suffix = design_system_summary_for_requirements(ds)
+            except Exception as dp_err:
+                self._logger.warning("Design-Prep phase failed (continuing): %s", dp_err)
+        return res.requirements + getattr(self, "_design_system_req_suffix", "")
+
+    async def _spawn_design_analyst(self, resolved) -> bool:
+        """Spawn the one-shot design_analyst agent to MEASURE each component and enrich
+        design/design_system.json. Returns True iff it finished. Best-effort: no spawn_service, a
+        spawn error, or a timeout → False (the caller uses the single-shot fallback)."""
+        spawn_service = getattr(self, "spawn_service", None)
+        if spawn_service is None:
+            return False
+        from .agent_spawn_service import AgentSpawnRequest
+        from .runtime.design_prep import build_design_analyst_briefing
+        agent_id = "design_analyst_1"
+        spawned = False
+        try:
+            briefing = build_design_analyst_briefing(self.output_dir, resolved)
+            res = await spawn_service.spawn(AgentSpawnRequest(
+                agent_id=agent_id, agent_type="design_analyst", config_key="design_analyst",
+                task="Measure a design system from the references -> design_system.json",
+                parent_id="orchestrator", role="design_analyst", resident=False,
+                metadata={"description": briefing}))
+            spawned = True
+            ev = getattr(res, "task_done_event", None)
+            if ev is None:
+                return False
+            timeout = float(os.environ.get("ENVGEN_DESIGN_ANALYST_TIMEOUT", "1800"))
+            await asyncio.wait_for(ev.wait(), timeout=timeout)
+            self._logger.info("design_analyst finished — design_system.json enriched")
+            return True
+        except Exception as exc:
+            self._logger.warning(
+                "design_analyst agent unavailable/incomplete (%s) — single-shot fallback", exc)
+            return False
+        finally:
+            if spawned:
+                try:
+                    await spawn_service.terminate(agent_id, wait=False)
+                except Exception:
+                    pass
 
     @property
     def _vf_gate(self):
@@ -2423,19 +2558,32 @@ class Orchestrator:
                     # SKIPS once a gate-passing run exists). _maybe_run_visual_fidelity
                     # self-guards (pass latch + per-source attempt cap); the deferral
                     # now ALWAYS terminates via _visual_release_decision's escapes —
-                    # the 900s wall-clock ANCHORED to the first defer (no longer reset
+                    # the escape_s wall-clock (2400s dflt, #112) ANCHORED to the first defer (no longer reset
                     # by lane churn — PIPE-C3), the per-source attempt cap, or the
                     # per-milestone total-judgment cap.
                     await self._maybe_run_visual_fidelity()
                     return
-                # release: an escape fired — deliver anyway, loudly, below-threshold.
-                self._logger.warning(
-                    "Visual fidelity deferral RELEASED (escape after %ss deferred / "
-                    "%s attempts / %s total judged) — delivering anyway "
-                    "(recorded as below-threshold).",
-                    int(_now - self._vf_gate.deferred_since),
-                    self._vf_gate.attempts,
-                    self._vf_gate.total_judgments)
+                # FIX #102 (run-20, live): the escape often fires SECONDS after the lane
+                # lands its fix — run-20's release verdict came from a 23:45 capture of
+                # PRE-fix source (broken icon refs) while the delivered image serves all
+                # 47 icons with 200. Drive ONE final fresh capture+judge before releasing;
+                # _maybe_run_visual_fidelity self-guards (pass latch + per-source attempt
+                # cap), so this re-judges ONLY when the source actually changed since the
+                # stale verdict — the recorded score then reflects the DELIVERED source.
+                await self._maybe_run_visual_fidelity()
+                if self._vf_gate.passed:
+                    self._logger.warning(
+                        "Visual fidelity PASSED on the final pre-release re-judge "
+                        "(fresh capture of the delivered source).")
+                else:
+                    # release: an escape fired — deliver anyway, loudly, below-threshold.
+                    self._logger.warning(
+                        "Visual fidelity deferral RELEASED (escape after %ss deferred / "
+                        "%s attempts / %s total judged) — delivering anyway "
+                        "(recorded as below-threshold).",
+                        int(_now - self._vf_gate.deferred_since),
+                        self._vf_gate.attempts,
+                        self._vf_gate.total_judgments)
             # TEST-USER SQUAD BLOCKING GATE (§3.5, 2026-06-22): the verify->fix loop the
             # user's flow diagram puts INSIDE each milestone. The app is up (api_smoke
             # booted it; the visual gate just shot it), so spawn the three modality

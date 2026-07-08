@@ -238,6 +238,19 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
                 and st["body"].get("email") and st["body"].get("password"):
             st["path"] = "/auth/register"
             pth = "/auth/register"
+        # CANONICAL AUTH PATH (#79, instagram-core opt6 abort): the OAuth AS is mounted at BOTH
+        # "/" and "/api", so a verifier can author the auth round-trip at /api/auth/register|login
+        # — a valid, equivalent endpoint. But EVERY auth invariant below (canonical save,
+        # expect-union, body-default, ensure-user-before-login, auth-first reorder) keys on the
+        # un-prefixed "/auth/*" form, so an /api-prefixed auth step bypassed ALL of them — most
+        # damagingly the body-default, leaving a body-less POST /api/auth/register that the
+        # framework AS 422'd ("email and password are required") every cycle → business_chain
+        # failed for 75min → NO-CONVERGENCE ABORT (auth_and_profile chain, register step body=null).
+        # Collapse to the canonical path (SAME handler, mounted at both) so all invariants apply —
+        # mirrors the /oauth/register repoint just above.
+        if pth in ("/api/auth/register", "/api/auth/login"):
+            st["path"] = pth[len("/api"):]
+            pth = st["path"]
         # CANONICAL TOKEN SAVE: an /auth/* step ALWAYS saves the token under the
         # canonical var "token" — merged, never skipped when the verifier already
         # authored a custom save (e.g. {"commenter_token": "access_token"}). The
@@ -298,6 +311,18 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
             st["body"] = _ab
         if pth.startswith("/api/") and not st.get("auth"):
             st["auth"] = "token"
+        # FIX #91 (instagram run-11, live): a step expecting EXACTLY {401} is an
+        # UNAUTHENTICATED-DENIAL probe by definition — a valid token defeats its own
+        # expectation. The verifier authored `auth:"token", expect:[401]` (and the
+        # auto-bearer above would add auth anyway) → the CORRECT backend returns 200
+        # → chain wedges forever. Strip the contradictory auth so the probe really
+        # goes tokenless. Cross-user denial probes (403/404 expectations, intruder
+        # tokens) are untouched — only the pure-{401} shape is tokenless semantics.
+        _exp401 = st.get("expect")
+        _exp401 = _exp401 if isinstance(_exp401, (list, tuple, set)) else (
+            [_exp401] if _exp401 is not None else [])
+        if {int(x) for x in _exp401 if str(x).isdigit()} == {401}:
+            st.pop("auth", None)
         out.append(st)
     # CANONICAL TOKEN-AUTH: a verifier can reference auth="<var>" that no step
     # actually saves (it saved under a different name, or a bare "token" while the
@@ -639,9 +664,12 @@ def _extract_resource_id(payload: Any) -> Any:
     return None
 
 
-# A path placeholder the verifier left unresolved: ``${msg_id}`` / ``${var.x}`` or a
-# bare ``{id}`` (never a substituted value, since saved vars are replaced first).
-_UNRESOLVED_PLACEHOLDER = re.compile(r"\$\{[^}]+\}|\{[a-zA-Z_][^}]*\}")
+# A path placeholder the verifier left unresolved: ``${msg_id}`` / ``${var.x}``, a
+# bare ``{id}`` (never a substituted value, since saved vars are replaced first), or —
+# FIX #89 (instagram run-8 live) — python-format EMPTY/positional braces ``{}``/``{0}``
+# (the alpha-first-char requirement made the whole recovery ladder BLIND to them: the
+# literal ``/api/posts/{}/like`` hit the int path param → 422 → 7-cycle wedge → STUCK).
+_UNRESOLVED_PLACEHOLDER = re.compile(r"\$\{[^}]+\}|\{[a-zA-Z_][^}]*\}|\{\d*\}")
 # Variable names a step REFERENCES: ${var}, ${var.name}, or bare {name} (path-param style).
 _VAR_REF = re.compile(r"\$\{(?:var\.)?(\w+)\}|\{(\w+)\}")
 
@@ -678,8 +706,13 @@ def _status_ok(status: Any, expect: List[int]) -> bool:
         return bool(status and 200 <= status < 300)
     if status in expect:
         return True
+    # FIX #104 (instagram run-21 M3, live): a MIXED list (expect [200, 404] — "success
+    # OR tolerated-404") disabled the all-2xx family rule, so an actual 201 wedged the
+    # chain on a working flow. The verifier's success ARM is still family-toleranced:
+    # a 2xx actual passes when the expect contains ANY 2xx member. Pure denial probes
+    # ([401] / [403,404]) contain no 2xx and still reject every success status.
     return (isinstance(status, int) and 200 <= status < 300
-            and all(isinstance(e, int) and 200 <= e < 300 for e in expect))
+            and any(isinstance(e, int) and 200 <= e < 300 for e in expect))
 
 
 # A plain-string 4xx detail ('text is required', 'missing field email') — some
@@ -766,6 +799,37 @@ def _resource_from_path(path: Any) -> Optional[str]:
     return last[:-1] if last.endswith("s") and len(last) > 1 else last
 
 
+def _harvest_resource_ids(payload: Any, into: Dict[str, Any]) -> None:
+    """FIX #83 (instagram run-3, live): harvest resource ids from a step's RESPONSE BODY.
+
+    The verifier wires chains the way a human would — GET /api/feed, then act on
+    ``${post_id}`` FROM the feed — but capture was envelope-only and keyed by the PATH's
+    resource ('feed'), and content-feed apps have NO bare /api/posts collection, so list/
+    create recovery dead-ended and the LITERAL ``${post_id}`` reached the int path param
+    (422 → wedge → STUCK). Harvest instead: every top-level key whose value is a list of
+    dicts with an ``id`` → ``into[singular(key)] = first id``; plus ONE level of nested
+    dicts inside the first row ({"posts":[{"user":{"id":42}}]} → user=42) since nested
+    actors (post author) are often the only source of a second resource's id. setdefault
+    ONLY — an id captured from the chain's own create stays authoritative."""
+    if not isinstance(payload, Mapping):
+        return
+
+    def _singular(k: str) -> str:
+        k = str(k).lower()
+        return k[:-1] if k.endswith("s") and len(k) > 1 else k
+
+    for k, v in payload.items():
+        if isinstance(v, list) and v and isinstance(v[0], Mapping):
+            row = v[0]
+            if row.get("id") is not None:
+                into.setdefault(_singular(k), row["id"])
+            for k2, v2 in row.items():
+                if isinstance(v2, Mapping) and v2.get("id") is not None:
+                    into.setdefault(_singular(k2), v2["id"])
+        elif isinstance(v, Mapping) and v.get("id") is not None:
+            into.setdefault(_singular(k), v["id"])
+
+
 def _resolve_unresolved_dollar_vars(value: Any, last_id: Any,
                                     by_resource: Optional[Mapping[str, Any]] = None) -> Any:
     """BODY counterpart of execute_chain's path UNRESOLVED-VARIABLE FALLBACK. A
@@ -810,31 +874,46 @@ def _resolve_unresolved_dollar_vars(value: Any, last_id: Any,
 
 
 def _collection_path_of(path: Any) -> str:
-    """COLLECTION path for a by-id path whose LAST segment is an UNRESOLVED placeholder:
-    ``/api/messages/${message_id}`` / ``/api/messages/{id}`` / ``/api/messages/:id`` ->
-    ``/api/messages``. Only strips a trailing ${x}/{x}/:x segment (the recovery case);
-    returns the input unchanged otherwise (so ``/api/messages/search`` is left alone)."""
+    """COLLECTION path for a by-id path with an UNRESOLVED placeholder: the prefix before
+    the FIRST ${x}/{x}/:x segment. ``/api/messages/${message_id}`` -> ``/api/messages``;
+    FIX #81 (instagram live): ALSO the ACTION-SUFFIX shape ``/api/posts/${post_id}/like``
+    -> ``/api/posts`` and the nested collection ``/api/events/${event_id}/attendees`` ->
+    ``/api/events`` — a mid-path placeholder previously left the path parametrised, so
+    list/create recovery was guard-skipped and the step fell to the global last_id (the
+    chain user's OWN register id → follow-YOURSELF 400) or the literal token (422).
+    Returns the input unchanged when no placeholder (``/api/messages/search`` untouched)."""
     p = str(path or "").split("?", 1)[0].rstrip("/")
     segs = p.split("/")
-    if segs and (segs[-1].startswith("${") or segs[-1].startswith("{")
-                 or segs[-1].startswith(":")):
-        return "/".join(segs[:-1]) or "/"
+    for i, s in enumerate(segs):
+        if s.startswith("${") or s.startswith("{") or s.startswith(":"):
+            return "/".join(segs[:i]) or "/"
     return p
 
 
-def _recover_id_via_list(base: str, coll_path: str, token: Any) -> Any:
+def _recover_id_via_list(base: str, coll_path: str, token: Any, avoid: Any = None) -> Any:
     """RECOVERY for an unresolvable path var: GET the resource collection and return a real
     row's id. Seed data populates every business collection, so a chain step that targets a
     resource it never CREATED (no prior POST to capture an id from) still hits a LIVE row
-    instead of sending the literal ``${x_id}`` → 404 (outlook run-22). Best-effort: never
-    raises; returns None on any failure, an empty collection, or a still-parametrised path."""
+    instead of sending the literal ``${x_id}`` → 404 (outlook run-22). FIX #81: ``avoid`` =
+    the chain user's OWN registered id — an action on the users collection (follow/unfollow)
+    must not target SELF (400 "cannot follow yourself", instagram live) — prefer a row whose
+    id differs; the only row still wins over a literal. Best-effort: never raises; returns
+    None on any failure, an empty collection, or a still-parametrised path."""
     if not coll_path or "${" in coll_path or "{" in coll_path or ":" in coll_path.split("/")[-1]:
         return None
     try:
         r = _http("GET", base + coll_path, token=token, body=None)
         if not _status_ok(r.get("status"), [200]):
             return None
-        return _extract_resource_id(json.loads(r.get("body_text") or "{}"))
+        payload = json.loads(r.get("body_text") or "{}")
+        if avoid is not None:
+            rows = payload.get("items") if isinstance(payload, Mapping) else payload
+            if isinstance(rows, list):
+                for row in rows:
+                    rid = row.get("id") if isinstance(row, Mapping) else None
+                    if rid is not None and str(rid) != str(avoid):
+                        return rid
+        return _extract_resource_id(payload)
     except Exception:
         return None
 
@@ -866,6 +945,46 @@ def _recover_id_via_create(base: str, coll_path: str, token: Any) -> Any:
             if not _status_ok(r.get("status"), []):
                 return None
         return _extract_resource_id(json.loads(r.get("body_text") or "{}"))
+    except Exception:
+        return None
+
+
+def _register_aux_user_id(base: str) -> Any:
+    """FIX #100 (instagram run-18, live): LAST-RESORT id for a USERS-resource placeholder
+    when every other rung starves (register 409'd with no id in the body, login carries
+    no user object, NO /api/users collection exists, no prior list step). The platform AS
+    is the one id source that exists BY CONSTRUCTION: mint a fresh AUXILIARY user and
+    take its id from the response envelope, the nested user object, or the token's JWT
+    ``sub`` claim (the AS mints sub=<user id> — a platform invariant). The aux user is
+    guaranteed ≠ the chain user, so follow/unfollow-style actions get a REAL other user.
+    Best-effort; never raises; None on any failure."""
+    import base64
+    try:
+        _n = str(int(time.time() * 1000))[-9:]
+        body = {"email": f"aux_{_n}@example.com", "password": "Chain123!x",
+                "name": "Aux Chain", "username": f"aux_{_n}"}
+        r = _http("POST", base + "/auth/register", body=body)
+        if not _status_ok(r.get("status"), [200, 201]):
+            return None
+        try:
+            p = json.loads(r.get("body_text") or "{}")
+        except Exception:
+            p = {}
+        rid = _extract_resource_id(p)
+        if rid is None and isinstance(p.get("user"), Mapping):
+            rid = p["user"].get("id")
+        if rid is None:
+            tok = p.get("access_token") or p.get("token")
+            if isinstance(tok, str) and tok.count(".") == 2:
+                seg = tok.split(".")[1]
+                seg += "=" * (-len(seg) % 4)
+                try:
+                    sub = json.loads(base64.urlsafe_b64decode(seg.encode())).get("sub")
+                except Exception:
+                    sub = None
+                if sub is not None:
+                    rid = int(sub) if str(sub).isdigit() else sub
+        return rid
     except Exception:
         return None
 
@@ -917,6 +1036,7 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     last_id: Any = None
     last_id_by_resource: Dict[str, Any] = {}  # resource -> its last-created id (FK resolution, fix #10)
     last_reg_creds: Dict[str, Any] = {}  # creds of the last successful /auth/register → reused if a later /auth/login 401s
+    own_user_id: Any = None  # the chain user's own id (from /auth/register) — recovery must not target SELF (FIX #81)
     unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
     # #59c: STORED chains (registered by an older framework, or hand-edited) can
     # carry the auth-save clobber in their persisted steps — normalize-time
@@ -924,6 +1044,17 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     _steps = [dict(s) if isinstance(s, Mapping) else s
               for s in (chain.get("steps") or [])]
     _drop_auth_save_clobbers(_steps)
+    # FIX #91 runtime guard (same #59c rationale — STORED chains bypass normalize):
+    # a step expecting EXACTLY {401} is an unauthenticated-denial probe; an authored
+    # (or auto-attached) auth ref contradicts its own expectation — the correct
+    # backend then 200s and the chain wedges forever (run-11 live: GET /api/feed
+    # auth:'token' expect:[401]). Strip it so the probe really goes tokenless.
+    for _s in _steps:
+        if isinstance(_s, dict):
+            _e = _s.get("expect")
+            _e = _e if isinstance(_e, (list, tuple, set)) else ([_e] if _e is not None else [])
+            if {int(x) for x in _e if str(x).isdigit()} == {401}:
+                _s.pop("auth", None)
     for idx, step in enumerate(_steps):
         variables["rand"] = f"{_rand_base}{idx:02d}"
         method = str(step.get("method", "GET")).upper()
@@ -984,11 +1115,16 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                             _rtoken, _can_recover = _vv, True
                             break
                 if _can_recover:
-                    _rid = _recover_id_via_list(base, _pcoll, _rtoken)
+                    _rid = _recover_id_via_list(base, _pcoll, _rtoken, avoid=own_user_id)
                     if _rid is None:
                         # even the list is empty — owner-scoped reads + a fresh
                         # chain user own NOTHING (run-29 M3): create a row (#32).
                         _rid = _recover_id_via_create(base, _pcoll, _rtoken)
+                    if _rid is None and _pres in ("user",):
+                        # FIX #100: users-resource placeholder with NO source anywhere
+                        # → mint an auxiliary user via the platform AS (id from the
+                        # envelope or the JWT sub claim); guaranteed ≠ chain user.
+                        _rid = _register_aux_user_id(base)
             # (3) GLOBAL last_id — absolute last resort, NON-denial only. Usually
             #     the WRONG resource (a same-resource id would have won at (1)),
             #     kept only for the rare ambiguous case. A denial step must NEVER
@@ -1114,7 +1250,7 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                 and str(step.get("path", "")).rstrip("/") == "/auth/login"
                 and last_reg_creds):
             _lb = dict(body) if isinstance(body, Mapping) else {}
-            for _ck in ("email", "username", "password"):
+            for _ck in ("email", "username", "password", "tenant_id"):
                 if last_reg_creds.get(_ck):
                     _lb[_ck] = last_reg_creds[_ck]
             _res3 = _http(method, base + path, token=token, body=_lb)
@@ -1189,7 +1325,12 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
             # later get/update/delete step can target a real row even when the verifier
             # didn't wire an explicit save. Never overrides an explicit save.
             try:
-                _cid = _extract_resource_id(json.loads(res.get("body_text") or "{}"))
+                _payload = json.loads(res.get("body_text") or "{}")
+                # FIX #83: list/nested ids in the body (a feed's posts + their authors)
+                # resolve later ${x_id} refs when no bare collection endpoint exists.
+                # setdefault-only — never clobbers an explicitly created/captured id.
+                _harvest_resource_ids(_payload, last_id_by_resource)
+                _cid = _extract_resource_id(_payload)
                 if _cid is not None:
                     last_id = _cid
                     # ALSO index by resource so a later FK body field (`${calendar_id}`)
@@ -1199,6 +1340,10 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                     _res = _resource_from_path(path)
                     if _res:
                         last_id_by_resource[_res] = _cid
+                    # The chain user's OWN id — a later recovery on an action path
+                    # (follow/unfollow) must prefer a DIFFERENT row (FIX #81).
+                    if str(step.get("path", "")).rstrip("/").endswith("/auth/register"):
+                        own_user_id = _cid
             except Exception:
                 pass
             # Capture the SUBSTITUTED creds of a successful /auth/register so a later
@@ -1206,7 +1351,12 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
             # retry with the identity that actually exists.
             if str(step.get("path", "")).rstrip("/") == "/auth/register" \
                     and isinstance(body, Mapping):
-                last_reg_creds = {_k: body[_k] for _k in ("email", "username", "password")
+                # FIX #101 (run-19 live): tenant_id carried too — a verifier that puts
+                # ${rand} in BOTH register and login mints different emails AND
+                # different tenants per step; the retry with the register's email/
+                # password but the login's OWN tenant still 401s on a multi-tenant AS.
+                last_reg_creds = {_k: body[_k]
+                                  for _k in ("email", "username", "password", "tenant_id")
                                   if body.get(_k)}
         if ok and isinstance(step.get("save"), Mapping):
             try:

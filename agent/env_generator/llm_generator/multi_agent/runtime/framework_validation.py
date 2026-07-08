@@ -228,7 +228,18 @@ class FrameworkValidation:
             # (e.g. the DDL/auth fix, not a new endpoint) stayed capped and never got
             # re-validated → no delivery. Now any real source change → fresh budget.
             _app_sig = orch._compute_app_source_signature()
-            if _app_sig is None or _app_sig != getattr(orch, "_fwval_healed_sig", None):
+            # FIX #107 (instagram run-25, live): the heal-on-change gate SKIPPED every
+            # repair while docker_up wedged 7 cycles — the lane's diagnosis edits never
+            # reached integration, so the signature stayed constant and the frontend
+            # import/export reconcilers (which fix exactly this build-failure class,
+            # and DID fix run-25's App.jsx when run directly) never fired. When the
+            # last failure set contains a BUILD-class check, force the heal pass —
+            # the repairs are idempotent; the wasteful-tick concern is the healthy path.
+            _build_wedged = bool(
+                {"docker_up", "frontend_build"} & set(
+                    getattr(orch, "_fwval_failure_set", None) or ()))
+            if (_app_sig is None or _build_wedged
+                    or _app_sig != getattr(orch, "_fwval_healed_sig", None)):
                 # SKELETON根治: regenerate the WHOLE backend from the contract FIRST, so
                 # validation runs on the deterministic, by-construction app — not on the
                 # lane's variably-structured one. The backend repairs below then no-op on

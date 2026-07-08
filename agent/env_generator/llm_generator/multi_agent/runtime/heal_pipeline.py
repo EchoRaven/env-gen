@@ -128,7 +128,8 @@ class HealPipeline:
             from .backend_scaffold import (
                 repair_backend_auth_dependency, repair_auth_import_paths,
                 repair_inline_token_auth, repair_auth_enforcement_middleware,
-                repair_custom_routes_router_prologue)
+                repair_custom_routes_router_prologue, repair_integrity_error_handler,
+                repair_custom_routes_db_handle, repair_custom_routes_param_types)
             be_dir = _P(out_dir) / "app" / "backend"
             # custom_routes using @router.<verb> without defining router (run-34):
             # NameError at import silently killed the WHOLE custom router — including the
@@ -171,6 +172,29 @@ class HealPipeline:
                 orch._logger.warning(
                     "Backend auth-enforcement middleware injected (FIX #47): /api/ "
                     "business routes now require a valid bearer JWT.")
+            # FIX #82 (instagram run-2): unchecked path-id FK INSERTs surface DB
+            # ForeignKeyViolation as a raw 500 — chains tolerate 404 on by-id actions,
+            # never 500 → business_chain wedges. Map integrity errors to REST statuses.
+            ih = repair_integrity_error_handler(be_dir)
+            if ih.get("injected"):
+                orch._logger.warning(
+                    "Backend IntegrityError→REST mapping injected (FIX #82): FK "
+                    "violation → 404, unique → 409, other integrity → 400 (no raw 500s).")
+            # FIX #86 (run-7 M3): a lane-local raw-psycopg get_db in custom_routes
+            # shadows the framework Session → every text()/.mappings() handler 500s.
+            dbh = repair_custom_routes_db_handle(be_dir)
+            if dbh.get("repaired"):
+                orch._logger.warning(
+                    "custom_routes.py lane get_db (raw psycopg) rewritten to delegate to "
+                    "the framework Session (FIX #86) — dual-style DB handle restored.")
+            # FIX #106 (run-23): a `param: str` annotation on an integer-PK by-id route
+            # makes Postgres reject the comparison (int = varchar) → 500 on every read,
+            # and the lane's by-id GET shadows the projected one by design.
+            pt = repair_custom_routes_param_types(be_dir)
+            if pt.get("fixed"):
+                orch._logger.warning(
+                    "custom_routes.py path-param annotations corrected (FIX #106): %s "
+                    "str→int on integer-PK routes.", pt.get("fixed"))
         except Exception as exc:
             orch._logger.debug("backend auth repair skipped: %s", exc)
 
@@ -646,6 +670,28 @@ class HealPipeline:
                 orch._logger.warning(
                     "Frontend external stock-photo backgrounds neutralized to an in-palette "
                     "gradient (self-contained + reference-matching): %s", _bg.get("neutralized"))
+            # FIX #111 (companion to #75b, runs 24+26 autopsy): external <img src> hosts
+            # (pravatar/unsplash/placeholder — seen in live artifacts, in BOTH frontend
+            # source and seed rows) can never resolve in the offline sandbox → the
+            # broken-image glyph is a permanent visual-score wound. Localize image-signaled
+            # external URLs to staged /assets/ (token match) or a deterministic placeholder
+            # SVG; navigation hrefs/API bases are never image-signaled → untouched.
+            try:
+                from .frontend_scaffold import (
+                    localize_frontend_external_images, localize_seed_external_images)
+                _li = localize_frontend_external_images(fe)
+                if _li.get("localized"):
+                    orch._logger.warning(
+                        "Frontend external image URLs localized to /assets/ (offline "
+                        "sandbox, broken-image fix): %s", _li.get("localized"))
+                _ls = localize_seed_external_images(_P(out_dir) / "app" / "backend", fe)
+                if _ls.get("localized"):
+                    orch._logger.warning(
+                        "Seed-data external image URLs localized to /assets/ (%s fields; "
+                        "seed fingerprint changes → loader re-seeds on next boot)",
+                        _ls.get("localized"))
+            except Exception as _lie:
+                orch._logger.debug("external-image localization skipped: %s", _lie)
             rep = repair_frontend_api_exports(fe)
             if rep.get("repaired"):
                 orch._logger.warning(

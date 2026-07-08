@@ -370,8 +370,19 @@ async def capture_route_screenshots(
         try:
             ctx = await browser.new_context(viewport=_VIEWPORT)
             if token:
-                await ctx.add_init_script(
-                    f"localStorage.setItem('token', {json.dumps(token)});")
+                # FIX #103 (runs 9+21, live): the app's storage KEY is pure lane variance
+                # ('token' vs 'access_token' vs camelCase …) — a mismatch bounced every
+                # auth route to /login ("authenticated session rejected — skipping
+                # judgment") and collapsed visual coverage to the login screens. Inject
+                # the SAME token under every common alias in BOTH storages; extra keys
+                # are inert to the app.
+                _tok_js = json.dumps(token)
+                _aliases = ("token", "access_token", "auth_token",
+                            "authToken", "accessToken", "jwt")
+                await ctx.add_init_script(";".join(
+                    f"localStorage.setItem('{k}', {_tok_js});"
+                    f"sessionStorage.setItem('{k}', {_tok_js})"
+                    for k in _aliases) + ";")
             page = await ctx.new_page()
             for screen in screens:
                 if not screen.get("route"):
@@ -641,12 +652,27 @@ async def run_visual_fidelity(
     shots = await capture(judged_screens)
     _auth_routes = [s["name"] for s in judged_screens if s.get("auth")]
     if _auth_routes and set(_auth_bounced) >= set(_auth_routes):
+        # FIX #105 (run-22 live, recurring): the wholesale rejection is usually a RACE —
+        # a parallel validation cycle reset the DB (down -v → reseed → the token's sub
+        # points at a user that no longer exists) or rotated the JWT keys between the
+        # mint and the capture. Re-mint ONCE against the current app state and retry
+        # the capture before skipping the whole judgment.
+        try:
+            token2 = _mint_token(be_port, demo=_seed_demo_login(project_dir))
+        except Exception:
+            token2 = None
+        if token2 and token2 != token:
+            token = token2          # `capture` late-binds `token` — no redefinition needed
+            _auth_bounced.clear()
+            _blank_screens.clear()
+            shots = await capture(judged_screens)
+    if _auth_routes and set(_auth_bounced) >= set(_auth_routes):
         # The minted token was rejected wholesale (e.g. the validation cycle
         # rebuilt the app between mint and capture, rotating the JWT keys).
         return {"passed": False, "auth_unavailable": True,
                 "summary": ("authenticated session rejected — every auth route "
                             "redirected to /login despite a freshly minted "
-                            "token; skipping judgment"),
+                            "token (incl. one re-mint retry); skipping judgment"),
                 "screens": [], "skipped": skipped}
     if judged_screens and not shots and not _blank_screens:
         return {"passed": False,
@@ -873,9 +899,39 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None) -> str:
             lines.append("Do these, in order:")
             for i, f in enumerate(fixes, 1):
                 lines.append(f"{i}. {f}")
+    adv = _asset_usage_advisory(output_dir)
+    if adv:
+        lines.append(adv)
     lines.append("\nReference images: use list_reference_images / view_image. "
                  "Your screenshots from the last gate run are in design/visual_gate/.")
     return "\n".join(lines)
+
+
+def _asset_usage_advisory(output_dir: Any) -> str:
+    """ADVISORY block (Design-Prep): when design/design_system.json maps components to REAL staged
+    assets that the frontend does not reference, tell the lane to use them instead of drawing
+    approximations. Best-effort; '' when there is no design_system or nothing to flag."""
+    if output_dir is None:
+        return ""
+    try:
+        import json as _json
+        from pathlib import Path as _P
+        ds_path = _P(output_dir) / "design" / "design_system.json"
+        if not ds_path.is_file():
+            return ""
+        ds = _json.loads(ds_path.read_text(encoding="utf-8"))
+        from .frontend_audit import audit_asset_usage
+        unused = audit_asset_usage(_P(output_dir) / "app" / "frontend", ds).get("unused_mapped") or []
+        if not unused:
+            return ""
+        out = ["\n## Real assets not used (advisory — use the STAGED asset, do not draw it):"]
+        for u in unused[:20]:
+            out.append(f"- component `{u['component']}` should render real asset "
+                       f"`{u['asset']}` → reference `/assets/{u['file']}` "
+                       f"(<img src='/assets/{u['file']}'/> or import it), not a hand-drawn shape.")
+        return "\n".join(out)
+    except Exception:
+        return ""
 
 
 try:  # FIX #75a: how many mid-rebuild blank captures to absorb before a still-blank

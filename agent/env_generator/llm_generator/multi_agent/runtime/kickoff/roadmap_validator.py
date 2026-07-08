@@ -146,7 +146,7 @@ def _is_nonempty_str(value: Any) -> bool:
     return isinstance(value, str) and value.strip() != ""
 
 
-def _check_contract(contract: Any) -> List[Finding]:
+def _check_contract(contract: Any, milestone_index: int = 1) -> List[Finding]:
     """Validate the ``contract`` block: endpoints + data_model + auth."""
     findings: List[Finding] = []
     if not isinstance(contract, Mapping):
@@ -240,16 +240,35 @@ def _check_contract(contract: Any) -> List[Finding]:
     # --- data_model --------------------------------------------------------
     data_model = contract.get("data_model")
     if not isinstance(data_model, Mapping):
+        # FIX #108 (instagram run-27 M3, live — sibling of #96): a milestone-2+ backend
+        # section that OMITS data_model (or writes null) is legitimate on the cumulative
+        # contract; the unconditional shape error made synthesis 'conflict' and aborted
+        # a run that had already delivered M1+M2. Milestone 1 still hard-requires it.
         findings.append(_finding(
-            "contract", "data_model_shape", "error",
-            "contract.data_model MUST be a mapping with key 'tables'",
+            "contract", "data_model_shape",
+            "error" if int(milestone_index or 1) <= 1 else "warning",
+            "contract.data_model MUST be a mapping with key 'tables'"
+            if int(milestone_index or 1) <= 1 else
+            "contract.data_model missing/non-mapping — OK for a milestone 2+ slice "
+            "on the cumulative contract (M1 registered the tables)",
         ))
     else:
         tables = data_model.get("tables")
         if not isinstance(tables, list) or len(tables) == 0:
+            # FIX #96 (instagram run-14 M2, live): the contract is CUMULATIVE — a
+            # vertical slice at milestone 2+ routinely adds endpoints on the tables
+            # M1 already registered, so an EMPTY tables list there is legitimate.
+            # The unconditional error made kickoff synthesis validation_failed →
+            # run abort right after M1 delivered (and right after the #95 retry
+            # had successfully recovered the missing sections). Milestone 1 (the
+            # walking skeleton) still hard-requires tables.
             findings.append(_finding(
-                "contract", "data_model.tables_missing", "error",
-                "contract.data_model.tables MUST be a non-empty list",
+                "contract", "data_model.tables_missing",
+                "error" if int(milestone_index or 1) <= 1 else "warning",
+                "contract.data_model.tables MUST be a non-empty list"
+                if int(milestone_index or 1) <= 1 else
+                "contract.data_model.tables is empty — OK for a milestone 2+ "
+                "slice on the cumulative contract (M1 registered the tables)",
             ))
         else:
             for idx, tbl in enumerate(tables):
@@ -691,7 +710,7 @@ def validate_roadmap(
             f"{milestone_index!r}",
         ))
 
-    findings.extend(_check_contract(roadmap.get("contract")))
+    findings.extend(_check_contract(roadmap.get("contract"), milestone_index))
     findings.extend(_check_task_tree(roadmap.get("task_tree")))
     findings.extend(_check_acceptance_predicates(
         roadmap.get("acceptance_predicates")

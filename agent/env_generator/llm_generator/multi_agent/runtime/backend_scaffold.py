@@ -399,9 +399,22 @@ async def _framework_auth_guard(request, call_next):
         auth = request.headers.get("authorization", "")
         if auth.lower().startswith("bearer ") and _FW_PEM:
             try:
-                _fw_jwt.decode(auth.split(" ", 1)[1].strip(), _FW_PEM,
-                               algorithms=[_FWALG], options={"verify_aud": False})
+                _fw_claims = _fw_jwt.decode(
+                    auth.split(" ", 1)[1].strip(), _FW_PEM,
+                    algorithms=[_FWALG], options={"verify_aud": False})
                 ok = True
+                # FIX #109 (instagram run-28, live): lanes routinely write handlers
+                # that read request.state.user_id, believing the middleware injects
+                # it (their own comments say so) — it never did, so those handlers
+                # 401'd VALID tokens. Make the convention true: expose the sub claim
+                # (int-coerced when numeric) on request.state.
+                try:
+                    _fw_sub = _fw_claims.get("sub")
+                    request.state.user_id = (int(_fw_sub) if str(_fw_sub).isdigit()
+                                             else _fw_sub)
+                    request.state.user = {"id": request.state.user_id}
+                except Exception:
+                    pass
             except Exception:
                 ok = False
         if not ok:
@@ -443,6 +456,203 @@ def repair_auth_enforcement_middleware(backend_dir) -> Dict[str, object]:
         return {"injected": True}
     except Exception as exc:
         return {"injected": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+_INTEGRITY_HANDLER = '''
+
+# === BY-CONSTRUCTION IntegrityError → REST-status mapping (FIX #82, instagram run-2) ===
+# Lane-written action handlers (POST /api/users/{id}/follow) INSERT a row whose FK comes
+# from the path WITHOUT checking the target exists, so a missing target escapes as a raw
+# 500 (psycopg ForeignKeyViolation) — but verifier chains tolerate [..., 404] on by-id
+# actions, so the 500 wedges business_chain forever on a semantically-reasonable app.
+# Map DB integrity errors to the statuses REST (and the chains) expect:
+# foreign-key violation (23503) → 404, unique violation (23505) → 409, other → 400.
+from fastapi.responses import JSONResponse as _FWIntegrityJSON
+try:
+    from sqlalchemy.exc import IntegrityError as _FWIntegrityError
+except Exception:
+    _FWIntegrityError = None
+
+if _FWIntegrityError is not None:
+    @app.exception_handler(_FWIntegrityError)
+    async def _framework_integrity_error_handler(request, exc):
+        _orig = getattr(exc, "orig", None)
+        # psycopg2 carries pgcode; psycopg 3 (the pyproject driver) carries sqlstate.
+        code = (getattr(_orig, "pgcode", None) or getattr(_orig, "sqlstate", None) or "")
+        text = str(_orig or exc).lower()
+        if code == "23503" or "foreign key" in text:
+            status, detail = 404, "referenced resource not found"
+        elif code == "23505" or "unique constraint" in text or "duplicate key" in text:
+            status, detail = 409, "duplicate resource"
+        else:
+            status, detail = 400, "integrity constraint violated"
+        return _FWIntegrityJSON(status_code=status, content={"detail": detail})
+# === end integrity mapping ===
+'''
+
+
+def repair_integrity_error_handler(backend_dir) -> Dict[str, object]:
+    """FIX #82 (instagram-core-di run-2, 2026-07-06, live): the business_chain hardcoded a
+    by-id action on a row that doesn't exist (POST /api/users/1001/follow) and correctly
+    tolerated a 404 — but the lane handler INSERTs the path id as an FK unchecked, so the
+    DB's ForeignKeyViolation surfaced as a raw 500 (in NO expect list) → validation wedged
+    7 post-cap cycles → STUCK abort. Inject a framework-owned global IntegrityError
+    exception handler into main.py (23503→404, 23505→409, other→400). Idempotent,
+    best-effort, never raises."""
+    try:
+        be = Path(backend_dir)
+        main_py = be / "main.py"
+        if not main_py.exists():
+            return {"injected": False, "reason": "no main.py"}
+        src = main_py.read_text(encoding="utf-8")
+        if "_framework_integrity_error_handler" in src:
+            return {"injected": False, "reason": "already present"}
+        if "app = FastAPI" not in src and "app=FastAPI" not in src:
+            return {"injected": False, "reason": "no FastAPI app"}
+        m = re.search(r"^@app\.(?:get|post|put|delete|patch)\(", src, re.M)
+        if m:
+            at = m.start()
+            new_src = src[:at] + _INTEGRITY_HANDLER.lstrip("\n") + "\n\n" + src[at:]
+        else:
+            marker = 'if __name__ == "__main__":'
+            idx = src.rfind(marker)
+            new_src = (src[:idx] + _INTEGRITY_HANDLER + "\n\n" + src[idx:]) if idx != -1 \
+                else src.rstrip() + "\n" + _INTEGRITY_HANDLER
+        main_py.write_text(new_src, encoding="utf-8")
+        return {"injected": True}
+    except Exception as exc:
+        return {"injected": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def repair_custom_routes_db_handle(backend_dir) -> Dict[str, object]:
+    """FIX #86 (instagram run-7 M3 STUCK, live traceback): custom_routes.py defined its
+    OWN ``get_db()`` yielding a RAW psycopg connection, shadowing the framework's
+    SQLAlchemy Session — while its business handlers were written SQLAlchemy-style
+    (``db.execute(text(...)).mappings()``), so psycopg's _convert_query raised
+    ``TypeError: TextClause has no len()`` → unfollow/explore 500 → the validation
+    wedged 7 post-cap cycles. Rewrite the lane's psycopg get_db into a delegation to
+    the framework's database.get_db (whose _Session serves BOTH styles: native
+    TextClause/ORM, .cursor(), and — with the FIX #86 execute shim — plain-str SQL).
+    AST-precise, idempotent, best-effort, never raises."""
+    import ast
+    try:
+        be = Path(backend_dir)
+        cr = be / "custom_routes.py"
+        if not cr.exists():
+            return {"repaired": False, "reason": "no custom_routes.py"}
+        src = cr.read_text(encoding="utf-8")
+        if "_framework_get_db" in src:
+            return {"repaired": False, "reason": "already delegated"}
+        tree = ast.parse(src)
+        target = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "get_db":
+                body_src = ast.get_source_segment(src, node) or ""
+                if "psycopg" in body_src and ".connect(" in body_src:
+                    target = node
+                    break
+        if target is None:
+            return {"repaired": False, "reason": "no lane psycopg get_db"}
+        lines = src.splitlines(keepends=True)
+        indent = " " * target.col_offset
+        repl = (
+            f"{indent}def get_db():\n"
+            f"{indent}    # framework-normalized (FIX #86): the canonical Session serves both\n"
+            f"{indent}    # SQLAlchemy-style and raw psycopg-style handlers; a lane-local raw\n"
+            f"{indent}    # psycopg connection breaks every text()/.mappings() call with a 500.\n"
+            f"{indent}    from database import get_db as _framework_get_db\n"
+            f"{indent}    yield from _framework_get_db()\n"
+        )
+        start = target.lineno - 1
+        end = target.end_lineno
+        new_src = "".join(lines[:start]) + repl + "".join(lines[end:])
+        ast.parse(new_src)   # never write a syntax error
+        cr.write_text(new_src, encoding="utf-8")
+        return {"repaired": True}
+    except Exception as exc:
+        return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def repair_custom_routes_param_types(backend_dir) -> Dict[str, object]:
+    """FIX #106 (instagram run-23, live): the lane annotated a by-id path param as ``str``
+    while the column is an INTEGER PK → SQLAlchemy compared ``posts.id = '20'::VARCHAR`` →
+    Postgres 'operator does not exist: integer = character varying' → 500 on EVERY by-id
+    read. And by DESIGN the lane's by-id GET shadows the safe projected read (the
+    isolation tradeoff in _custom_route_overrides_projected), so the type bug wedged the
+    run. Deterministic repair: parse the framework-generated models.py for integer-PK
+    tables, then rewrite ``<param>: str`` to ``<param>: int`` on every custom route whose
+    path's resource segment maps to such a table. AST-anchored, idempotent, best-effort."""
+    import ast
+    import re as _re
+    try:
+        be = Path(backend_dir)
+        cr, mp = be / "custom_routes.py", be / "models.py"
+        if not cr.exists() or not mp.exists():
+            return {"fixed": 0, "reason": "missing files"}
+        int_pk_tables: set = set()
+        mtree = ast.parse(mp.read_text(encoding="utf-8"))
+        for node in ast.walk(mtree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            tname, pk_int = None, False
+            for st in node.body:
+                seg = ast.get_source_segment(mp.read_text(encoding="utf-8"), st) or ""
+                if "__tablename__" in seg:
+                    m = _re.search(r"__tablename__\s*=\s*['\"]([^'\"]+)", seg)
+                    if m:
+                        tname = m.group(1).lower()
+                if "primary_key" in seg and _re.search(r"\b(Integer|BigInteger)\b", seg):
+                    pk_int = True
+            if tname and pk_int:
+                int_pk_tables.add(tname)
+        if not int_pk_tables:
+            return {"fixed": 0, "reason": "no integer-PK tables"}
+
+        src = cr.read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        lines = src.splitlines(keepends=True)
+        fixed = 0
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            # route path from a @router.<verb>('<path>') decorator
+            path = None
+            for dec in node.decorator_list:
+                if (isinstance(dec, ast.Call) and dec.args
+                        and isinstance(dec.args[0], ast.Constant)
+                        and isinstance(dec.args[0].value, str)):
+                    path = dec.args[0].value
+                    break
+            if not path:
+                continue
+            segs = [s for s in path.strip("/").split("/") if s and s != "api"]
+            params = [s[1:-1] for s in segs if s.startswith("{") and s.endswith("}")]
+            if not params:
+                continue
+            # resource = segment before the FIRST param; must be an integer-PK table
+            try:
+                first_param_idx = next(i for i, s in enumerate(segs) if s.startswith("{"))
+            except StopIteration:
+                continue
+            res = segs[first_param_idx - 1].lower() if first_param_idx >= 1 else ""
+            if res not in int_pk_tables:
+                continue
+            for arg in list(node.args.args) + list(node.args.kwonlyargs):
+                if (arg.arg in params and isinstance(arg.annotation, ast.Name)
+                        and arg.annotation.id == "str"):
+                    ln = arg.annotation.lineno - 1
+                    c0, c1 = arg.annotation.col_offset, arg.annotation.end_col_offset
+                    line = lines[ln]
+                    if line[c0:c1] == "str":
+                        lines[ln] = line[:c0] + "int" + line[c1:]
+                        fixed += 1
+        if fixed:
+            new_src = "".join(lines)
+            ast.parse(new_src)   # never write a syntax error
+            cr.write_text(new_src, encoding="utf-8")
+        return {"fixed": fixed}
+    except Exception as exc:
+        return {"fixed": 0, "error": f"{type(exc).__name__}: {exc}"}
 
 
 def repair_backend_packaging(backend_dir) -> Dict[str, object]:

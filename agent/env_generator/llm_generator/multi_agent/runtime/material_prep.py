@@ -17,9 +17,11 @@ truth, not the model's guess. Best-effort: returns {} / None rather than raising
 
 from __future__ import annotations
 
+import re
+import shutil
 from collections import Counter
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 Region = Tuple[float, float, float, float]  # (x0,y0,x1,y1) as 0..1 fractions
 
@@ -412,6 +414,301 @@ def make_side_by_side(ref_path, mine_path, save_path, *, region: Optional[Region
     return canvas.size
 
 
+# ── §15 PIL layout measurement (columns / width / spacing) — theme-agnostic ──
+def _rgb_dist(a, b) -> float:
+    """redmean distance between two RGB tuples (0=identical). No hex round-trip (fast per-pixel)."""
+    rm = (a[0] + b[0]) / 2.0
+    dr, dg, db = a[0] - b[0], a[1] - b[1], a[2] - b[2]
+    return ((2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db) ** 0.5
+
+
+def _region_px(im, region):
+    W, H = im.size
+    x0, y0, x1, y1 = region or (0.0, 0.0, 1.0, 1.0)
+    return (max(0, int(x0 * W)), max(0, int(y0 * H)),
+            min(W, int(x1 * W)), min(H, int(y1 * H)))
+
+
+def _bg_rgb(im, region):
+    hexc = region_background(im, region)
+    rgb = _rgb_of_hex(hexc) if hexc else None
+    return rgb or (0, 0, 0)
+
+
+def content_bounds(im, region: Optional[Region] = None, *, thresh: float = 60.0,
+                   step: int = 2) -> Dict[str, object]:
+    """Bounding box of CONTENT (pixels far from the region's measured background) — §15① content
+    width/edges. Returns px + 0..1 fractions (of the FULL image), or {"content": False} if empty."""
+    W, H = im.size
+    px0, py0, px1, py1 = _region_px(im, region)
+    bg = _bg_rgb(im, region)
+    minx = miny = 10 ** 9
+    maxx = maxy = -1
+    for y in range(py0, py1, step):
+        for x in range(px0, px1, step):
+            if _rgb_dist(im.getpixel((x, y)), bg) > thresh:
+                if x < minx: minx = x
+                if x > maxx: maxx = x
+                if y < miny: miny = y
+                if y > maxy: maxy = y
+    if maxx < 0:
+        return {"content": False}
+    return {"content": True,
+            "left_px": minx, "right_px": maxx, "top_px": miny, "bottom_px": maxy,
+            "width_px": maxx - minx, "height_px": maxy - miny,
+            "left": round(minx / W, 4), "right": round(maxx / W, 4),
+            "top": round(miny / H, 4), "bottom": round(maxy / H, 4),
+            "width": round((maxx - minx) / W, 4), "height": round((maxy - miny) / H, 4)}
+
+
+def _bands(counts, coords, *, min_run: int = 1):
+    """Group consecutive 'has-content' samples into bands → list of (start,end,center)."""
+    bands = []
+    run_start = None
+    for i, c in enumerate(counts):
+        if c:
+            if run_start is None:
+                run_start = i
+        else:
+            if run_start is not None:
+                if i - run_start >= min_run:
+                    bands.append((coords[run_start], coords[i - 1]))
+                run_start = None
+    if run_start is not None and len(coords) - run_start >= min_run:
+        bands.append((coords[run_start], coords[-1]))
+    return [(s, e, (s + e) // 2) for s, e in bands]
+
+
+def grid_columns(im, region: Optional[Region] = None, *, thresh: float = 60.0,
+                 step: int = 2, min_fill: float = 0.15) -> Dict[str, object]:
+    """Count content columns of a grid — §15② (推翻 '3列' → 数出真列数). Content columns (x with
+    >``min_fill`` content-vs-bg rows) form bands; ``columns`` = the band count, and ``pitch_px`` =
+    the column pitch (smallest band-to-band spacing) for cross-checking. Robust for UI/clean grids;
+    APPROXIMATE for photo grids with spanning cells (a 2×2 explore tile hides a gutter and merges
+    two bands → undercount). The caller should CONFIRM the count by view_image-ing the grid crop
+    (a vision pass counts columns reliably); use pitch_px + width to sanity-check. Returns
+    {columns, pitch_px, band_centers_px, gap_centers_px}."""
+    px0, py0, px1, py1 = _region_px(im, region)
+    bg = _bg_rgb(im, region)
+    rows = max(1, (py1 - py0) // step)
+    counts, coords = [], []
+    for x in range(px0, px1, step):
+        n = sum(1 for y in range(py0, py1, step)
+                if _rgb_dist(im.getpixel((x, y)), bg) > thresh)
+        counts.append(1 if n >= min_fill * rows else 0)
+        coords.append(x)
+    bands = _bands(counts, coords)
+    centers = [c for _, _, c in bands]
+    gaps = [(bands[i][1] + bands[i + 1][0]) // 2 for i in range(len(bands) - 1)]
+    pitch = None
+    if len(centers) >= 2:
+        pitch = min(centers[i + 1] - centers[i] for i in range(len(centers) - 1))
+    return {"columns": len(bands), "pitch_px": pitch,
+            "band_centers_px": centers, "gap_centers_px": gaps}
+
+
+def row_bands(im, region: Optional[Region] = None, *, thresh: float = 60.0,
+              step: int = 2, min_fill: float = 0.15,
+              cluster_px: Optional[int] = None) -> Dict[str, object]:
+    """Y-centers of stacked items (nav-item / row spacing) — §15③ (glyph→首项 183px, 项间 56px).
+    Raw content bands FRAGMENT a structured item (a line icon has internal gaps → several sub-
+    bands), so the raw bands are CLUSTERED into items by y-proximity (the manual's "聚类成各图标 y
+    中心"): consecutive bands within ``cluster_px`` (default = half the typical band spacing) are one
+    item. ``item_gap_px`` is the typical (outlier-trimmed) inter-item gap; large gaps (section
+    breaks like glyph→first-item) are in ``section_gaps_px``. Returns {items, item_centers_px,
+    item_gap_px, first_gap_px, section_gaps_px, bands, centers_px, gaps_px}."""
+    px0, py0, px1, py1 = _region_px(im, region)
+    bg = _bg_rgb(im, region)
+    cols = max(1, (px1 - px0) // step)
+    counts, coords = [], []
+    for y in range(py0, py1, step):
+        n = sum(1 for x in range(px0, px1, step)
+                if _rgb_dist(im.getpixel((x, y)), bg) > thresh)
+        counts.append(1 if n >= min_fill * cols else 0)
+        coords.append(y)
+    bands = _bands(counts, coords)
+    centers = [c for _, _, c in bands]
+    if len(centers) < 2:
+        return {"items": len(centers), "item_centers_px": centers,
+                "item_gap_px": 0, "first_gap_px": (centers[0] - py0) if centers else 0,
+                "section_gaps_px": [], "bands": len(bands), "centers_px": centers, "gaps_px": []}
+    raw_gaps = [centers[i + 1] - centers[i] for i in range(len(centers) - 1)]
+    if cluster_px is None:                                   # adaptive: half the typical (upper-half) gap
+        srt = sorted(raw_gaps)
+        upper = srt[len(srt) // 2:]
+        typ = upper[len(upper) // 2] if upper else srt[-1]
+        cluster_px = max(8, int(typ * 0.5))
+    items: List[int] = []
+    cur = [centers[0]]
+    for c in centers[1:]:
+        if c - cur[-1] <= cluster_px:
+            cur.append(c)
+        else:
+            items.append(sum(cur) // len(cur))
+            cur = [c]
+    items.append(sum(cur) // len(cur))
+    item_gaps = [items[i + 1] - items[i] for i in range(len(items) - 1)]
+    # typical item gap = median of the outlier-trimmed gaps; big gaps are section breaks
+    ig_sorted = sorted(item_gaps)
+    small = ig_sorted[:max(1, int(len(ig_sorted) * 0.7))] if ig_sorted else []
+    item_gap = small[len(small) // 2] if small else 0
+    section = [g for g in item_gaps if item_gap and g > 1.8 * item_gap]
+    return {"items": len(items), "item_centers_px": items,
+            "item_gap_px": item_gap, "first_gap_px": items[0] - py0,
+            "section_gaps_px": section,
+            "bands": len(bands), "centers_px": centers, "gaps_px": item_gaps}
+
+
+def measure_layout(im, region: Optional[Region], metric: str) -> Dict[str, object]:
+    """Dispatch §15 measurements. metric ∈ {content_width, grid_columns, row_spacing}."""
+    if metric in ("content_width", "content_bounds"):
+        return content_bounds(im, region)
+    if metric == "grid_columns":
+        return grid_columns(im, region)
+    if metric in ("row_spacing", "row_bands", "nav_spacing"):
+        return row_bands(im, region)
+    return {"error": f"unknown metric '{metric}' (want content_width|grid_columns|row_spacing)"}
+
+
+# ── Design-Prep: real-asset ingestion + staging (deterministic) ──────────────
+_IMG_EXT = {".png": "png", ".jpg": "jpg", ".jpeg": "jpg", ".webp": "webp",
+            ".gif": "gif", ".svg": "svg", ".bmp": "bmp", ".ico": "ico"}
+_SVG_LEN_RE = re.compile(r'\b(width|height)\s*=\s*["\']?\s*([0-9.]+)', re.I)
+_SVG_VB_RE = re.compile(r'viewBox\s*=\s*["\']\s*[-0-9.]+\s+[-0-9.]+\s+([0-9.]+)\s+([0-9.]+)', re.I)
+_HEX_RE = re.compile(r'#[0-9a-fA-F]{6}\b')
+
+
+def _slug(stem: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", stem.strip().lower()).strip("-")
+    return s or "asset"
+
+
+def _dominant_colors(im, n: int = 4) -> List[str]:
+    """Top-``n`` dominant colors of a raster (median-cut quantize). Transparent pixels are
+    composited over white first so an icon's real ink dominates, not the fill-over-black."""
+    try:
+        if im.mode in ("RGBA", "LA") or "transparency" in getattr(im, "info", {}):
+            from PIL import Image
+            base = Image.new("RGB", im.size, (255, 255, 255))
+            base.paste(im.convert("RGBA"), mask=im.convert("RGBA").split()[-1])
+            im = base
+        small = im.convert("RGB").resize((48, 48))
+        q = small.quantize(colors=max(2, n))
+        pal = q.getpalette() or []
+        counts = Counter(q.getdata())
+        out: List[str] = []
+        for idx, _cnt in counts.most_common(n):
+            rgb = pal[idx * 3:idx * 3 + 3]
+            if len(rgb) == 3:
+                out.append(_hex(rgb))
+        return out
+    except Exception:
+        return []
+
+
+def _svg_dims(text: str) -> Optional[list]:
+    # viewBox is the most reliable intrinsic size (an inner element's width/height must not win).
+    vb = _SVG_VB_RE.search(text)
+    if vb:
+        try:
+            return [int(round(float(vb.group(1)))), int(round(float(vb.group(2))))]
+        except ValueError:
+            pass
+    # else the ROOT width/height — take the FIRST match of each (the <svg> element's), not a later
+    # inner <rect width=..>'s (which mis-sized IG's comment icon to [2,24]).
+    dims: Dict[str, float] = {}
+    for name, val in _SVG_LEN_RE.findall(text):
+        k = name.lower()
+        if k in dims:
+            continue
+        try:
+            dims[k] = float(val)
+        except ValueError:
+            pass
+    if "width" in dims and "height" in dims:
+        return [int(round(dims["width"])), int(round(dims["height"]))]
+    return None
+
+
+def _ingest_one(path: Path, rel: Path) -> Optional[Dict]:
+    suffix = path.suffix.lower()
+    kind = _IMG_EXT.get(suffix)
+    if not kind:
+        return None
+    dims: Optional[list] = None
+    transparent = False
+    colors: List[str] = []
+    if kind == "svg":
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            text = ""
+        dims = _svg_dims(text)
+        transparent = True  # vector assets are transparent by convention
+        seen: List[str] = []
+        for h in _HEX_RE.findall(text):
+            h = h.lower()
+            if h not in seen:
+                seen.append(h)
+        colors = seen[:4]
+    else:
+        try:
+            from PIL import Image
+            im = Image.open(path)
+            dims = [im.width, im.height]
+            transparent = im.mode in ("RGBA", "LA", "P") and (
+                im.mode in ("RGBA", "LA") or "transparency" in getattr(im, "info", {}))
+            colors = _dominant_colors(im)
+        except Exception:
+            dims, transparent, colors = None, False, []
+    return {
+        "id": _slug(path.stem),
+        "file": rel.as_posix(),
+        "type": kind,
+        "dims": dims,
+        "transparent": bool(transparent),
+        "dominant_colors": colors,
+        "staged_path": f"public/assets/{rel.as_posix()}",
+    }
+
+
+def ingest_assets(assets_dir, stage_dir) -> List[Dict]:
+    """Scan a user-provided ``assets/`` folder → a manifest (one entry per image) + physically
+    stage each file into ``stage_dir`` (preserving any icons/ logos/ subfolder grouping so
+    ``staged_path`` = ``public/assets/<relpath>``). Deterministic, best-effort: missing dir → [],
+    unreadable files skipped, never raises. Manifest entry:
+    {id, file, type, dims:[w,h]|None, transparent, dominant_colors:[hex], staged_path}."""
+    src = Path(assets_dir)
+    if not src.is_dir():
+        return []
+    stage = Path(stage_dir)
+    manifest: List[Dict] = []
+    seen_ids: Dict[str, int] = {}
+    for path in sorted(src.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(src)
+        try:
+            entry = _ingest_one(path, rel)
+        except Exception:
+            entry = None
+        if not entry:
+            continue
+        base_id = entry["id"]
+        seen_ids[base_id] = seen_ids.get(base_id, 0) + 1
+        if seen_ids[base_id] > 1:
+            entry["id"] = f"{base_id}-{seen_ids[base_id]}"
+        try:
+            dest = stage / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, dest)
+        except Exception:
+            continue
+        manifest.append(entry)
+    return manifest
+
+
 __all__ = ["row_mode_color", "region_background", "find_accent", "extract_palette",
            "crop_region", "decompose_reference", "make_side_by_side",
-           "color_distance", "spec_color_deviations", "theme_inversion"]
+           "color_distance", "spec_color_deviations", "theme_inversion",
+           "ingest_assets"]

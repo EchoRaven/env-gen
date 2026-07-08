@@ -1080,6 +1080,10 @@ class RegistryHub:
         if schema is not None:
             from .database_scaffold import normalize_table_schema
             stored_schema: Any = normalize_table_schema(schema)
+            # (FIX #90 note: an empty-columns registration is LEGAL here — kickoff and
+            # seed flows register name-first shapes routinely. The junk-table fatality
+            # is fixed render-side: database_scaffold synthesises an `id` PK instead of
+            # raising, mirroring what render_models always did.)
         else:
             stored_schema = (existing or {}).get("schema") or {}
         table = {

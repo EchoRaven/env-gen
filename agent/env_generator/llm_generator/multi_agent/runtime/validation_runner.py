@@ -117,11 +117,17 @@ def _http(method: str, url: str, *, token: Optional[str] = None,
     req.add_header("Content-Type", "application/json")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
+    # FIX #98 (instagram run-16, live): 2048 bytes TRUNCATED any list response past 2KB
+    # mid-JSON — once #74/#84 made seeds dense, explore/feed bodies blew the cap, so
+    # json.loads failed SILENTLY in both the chain's save-dig and the auto-capture/
+    # harvest → last_id never set → literal ${post_id} → 422 wedge, while the verifier's
+    # wiring (save: posts.0.id) was perfect. Read the full body (512KB safety bound —
+    # a 50-row page is ~20-30KB); display truncation stays at note-construction time.
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            return {"status": r.status, "body_text": r.read(2048).decode("utf-8", "replace"), "error": None}
+            return {"status": r.status, "body_text": r.read(524288).decode("utf-8", "replace"), "error": None}
     except urllib.error.HTTPError as e:
-        return {"status": e.code, "body_text": (e.read(2048).decode("utf-8", "replace") if e.fp else ""), "error": None}
+        return {"status": e.code, "body_text": (e.read(524288).decode("utf-8", "replace") if e.fp else ""), "error": None}
     except Exception as e:
         return {"status": None, "body_text": "", "error": f"{type(e).__name__}: {e}"}
 
@@ -364,6 +370,13 @@ def run_smoke_validation(
         return _finalize(checks, None, endpoint_results)
     try:
         # 1. Clean boot (no stale postgres volume — see DockerUpTool fresh=True).
+        # FIX #113: re-stage design assets by construction before the image build —
+        # a lane checkout window can transiently drop tracked public/assets/ files.
+        try:
+            from .frontend_scaffold import ensure_assets_staged_for_build
+            ensure_assets_staged_for_build(compose_file)
+        except Exception:
+            pass
         _compose(compose_file, "down", "-v", "--remove-orphans", cwd=cwd, timeout=120)
         up = _compose(compose_file, "up", "-d", "--build", "--remove-orphans", cwd=cwd, timeout=up_timeout)
         if up.returncode != 0:
