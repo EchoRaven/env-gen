@@ -370,6 +370,13 @@ def run_smoke_validation(
         return _finalize(checks, None, endpoint_results)
     try:
         # 1. Clean boot (no stale postgres volume — see DockerUpTool fresh=True).
+        # FIX #113: re-stage design assets by construction before the image build —
+        # a lane checkout window can transiently drop tracked public/assets/ files.
+        try:
+            from .frontend_scaffold import ensure_assets_staged_for_build
+            ensure_assets_staged_for_build(compose_file)
+        except Exception:
+            pass
         _compose(compose_file, "down", "-v", "--remove-orphans", cwd=cwd, timeout=120)
         up = _compose(compose_file, "up", "-d", "--build", "--remove-orphans", cwd=cwd, timeout=up_timeout)
         if up.returncode != 0:

@@ -2528,6 +2528,28 @@ def pin_frontend_build_tooling(frontend_dir) -> Dict[str, object]:
         return {"pinned": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+def ensure_assets_staged_for_build(anchor) -> List[str]:
+    """FIX #113 (run-29 M4 live): re-stage design assets at EVERY docker-build entry
+    point. The staged assets are TRACKED files in the codehub repo, so a lane
+    integration checkout window can drop them from the working tree; staging only on
+    framework validation ticks let a lane-triggered build bake an asset-less tree into
+    the image — the visual judge then scored broken-image glyphs (dm_inbox 0.00, every
+    /assets/icons/*.svg 404 while the JS bundle loaded fine) and burned the judgment
+    budget on a self-inflicted state. ``anchor`` may be the compose FILE, the docker/
+    dir, or the output root — walk up to whichever parent owns design/assets. Idempotent
+    copy, no-op without design/assets (non-design-input runs), never raises."""
+    try:
+        p = Path(anchor)
+        if p.is_file():
+            p = p.parent
+        for cand in (p, *p.parents):
+            if (cand / "design" / "assets").is_dir():
+                return stage_design_assets(cand)
+    except Exception:
+        pass
+    return []
+
+
 def stage_design_assets(output_dir) -> List[str]:
     """Copy the Design-Prep staged real assets ``<output_dir>/design/assets/*`` into the served
     frontend ``<output_dir>/app/frontend/public/assets/`` (Vite serves + bundles ``public/``), so

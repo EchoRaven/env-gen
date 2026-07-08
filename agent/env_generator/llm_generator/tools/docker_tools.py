@@ -64,6 +64,16 @@ def _run_compose(
     pin classic. This is the runtime-side companion to the content-side
     Dockerfile lint at multi_agent/dockerfile_lint.py.
     """
+    # FIX #113 (run-29 M4): any build-triggering compose call re-stages the design
+    # assets first — a lane integration checkout can transiently drop the tracked
+    # public/assets/ files, and an image built in that window ships broken-image
+    # glyphs the visual judge scores 0.00. Idempotent, no-op without design/assets.
+    if any(a in ("build", "--build") for a in args):
+        try:
+            from multi_agent.runtime.frontend_scaffold import ensure_assets_staged_for_build
+            ensure_assets_staged_for_build(compose_file)
+        except Exception:
+            pass
     cmd = ["docker", "compose", "-f", str(compose_file)] + args
     return subprocess.run(
         cmd,
