@@ -240,9 +240,17 @@ def _check_contract(contract: Any, milestone_index: int = 1) -> List[Finding]:
     # --- data_model --------------------------------------------------------
     data_model = contract.get("data_model")
     if not isinstance(data_model, Mapping):
+        # FIX #108 (instagram run-27 M3, live — sibling of #96): a milestone-2+ backend
+        # section that OMITS data_model (or writes null) is legitimate on the cumulative
+        # contract; the unconditional shape error made synthesis 'conflict' and aborted
+        # a run that had already delivered M1+M2. Milestone 1 still hard-requires it.
         findings.append(_finding(
-            "contract", "data_model_shape", "error",
-            "contract.data_model MUST be a mapping with key 'tables'",
+            "contract", "data_model_shape",
+            "error" if int(milestone_index or 1) <= 1 else "warning",
+            "contract.data_model MUST be a mapping with key 'tables'"
+            if int(milestone_index or 1) <= 1 else
+            "contract.data_model missing/non-mapping — OK for a milestone 2+ slice "
+            "on the cumulative contract (M1 registered the tables)",
         ))
     else:
         tables = data_model.get("tables")
