@@ -706,8 +706,13 @@ def _status_ok(status: Any, expect: List[int]) -> bool:
         return bool(status and 200 <= status < 300)
     if status in expect:
         return True
+    # FIX #104 (instagram run-21 M3, live): a MIXED list (expect [200, 404] — "success
+    # OR tolerated-404") disabled the all-2xx family rule, so an actual 201 wedged the
+    # chain on a working flow. The verifier's success ARM is still family-toleranced:
+    # a 2xx actual passes when the expect contains ANY 2xx member. Pure denial probes
+    # ([401] / [403,404]) contain no 2xx and still reject every success status.
     return (isinstance(status, int) and 200 <= status < 300
-            and all(isinstance(e, int) and 200 <= e < 300 for e in expect))
+            and any(isinstance(e, int) and 200 <= e < 300 for e in expect))
 
 
 # A plain-string 4xx detail ('text is required', 'missing field email') — some
