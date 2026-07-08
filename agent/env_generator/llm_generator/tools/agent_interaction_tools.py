@@ -791,6 +791,37 @@ Args:
             except Exception:
                 pass  # never block delivery on a gate-eval error
 
+        # GUARD 2c (FIX #117, run-32 autopsy): the FINAL milestone's VISUAL gate is not
+        # part of the objective gate report the LLM sees, so a mid-deferral
+        # deliver_project (run-32: 1406s into a 3600s remediation window, scores
+        # 0.1-0.4 vs 0.65) exits the coordination loop, TERMINATES the lanes, and the
+        # post-loop path cuts the release mid-convergence — silently voiding
+        # #112/#112b's whole point. The orchestrator runtime stamps
+        # ``_visual_defer_check`` (bound to Orchestrator._visual_delivery_defer_active)
+        # alongside ``_is_final_milestone``; it returns False the moment the gate
+        # passes OR the bounded escape fires, so this can never deadlock. A missing or
+        # broken check never blocks (back-compat + fail-open).
+        _vf_check = getattr(self.agent, "_visual_defer_check", None) if self.agent else None
+        if callable(_vf_check):
+            try:
+                _vf_defer = bool(_vf_check())
+            except Exception:
+                _vf_defer = False
+            if _vf_defer:
+                return ToolResult(
+                    success=False,
+                    error_message=(
+                        "deliver_project DEFERRED — the final milestone's VISUAL fidelity "
+                        "gate is still converging (it is not part of the objective gate "
+                        "report). The frontend is inside its bounded remediation window: "
+                        "let it digest the visual remediation tasks (capture_webpage / "
+                        "zoom_compare against the references, then fix). The framework "
+                        "will deliver automatically when the gate passes or its bounded "
+                        "escape fires — do NOT keep calling deliver_project; work the "
+                        "remediation tasks instead."
+                    ),
+                )
+
         # Set delivered flag
         self._delivered = True
         

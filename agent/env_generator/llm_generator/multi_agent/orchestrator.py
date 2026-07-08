@@ -993,6 +993,9 @@ class Orchestrator:
                         try:
                             _orch_agent_ms._is_final_milestone = self._is_final_milestone
                             _orch_agent_ms._milestone_progress = (_m_idx, len(milestones))
+                            # FIX #117: deliver_project must not cut the visual
+                            # remediation window short (run-32: exited at 1406s/3600s).
+                            _orch_agent_ms._visual_defer_check = self._visual_delivery_defer_active
                         except Exception:
                             pass
                     # Per-milestone visual state: anchor the deferral clock and the
@@ -1061,6 +1064,9 @@ class Orchestrator:
                             if _orch_agent_ms is not None:
                                 _orch_agent_ms._is_final_milestone = self._is_final_milestone
                                 _orch_agent_ms._milestone_progress = (_m_idx, len(milestones))
+                                # FIX #117: keep the deliver_project visual guard stamped
+                                # through milestone-plan revisions too.
+                                _orch_agent_ms._visual_defer_check = self._visual_delivery_defer_active
                         except Exception:
                             pass
                         # P1+P4: kickoff requirement = the detailed detail (phase TASK) +
@@ -1893,6 +1899,39 @@ class Orchestrator:
     def _kickoff_fallback_or_reconcile(self, *args, **kwargs):
         from .runtime.kickoff_driver import KickoffDriver
         return KickoffDriver(self)._kickoff_fallback_or_reconcile(*args, **kwargs)
+
+    def _visual_delivery_defer_active(self) -> bool:
+        """FIX #117 (run-32 autopsy): True while the FINAL milestone's visual gate is
+        actively deferring — deliver_project consults this (stamped onto the
+        orchestrator agent as ``_visual_defer_check``) and rejects, keeping the
+        coordination loop (and the lanes it drives) alive so the remediation window
+        (#112/#112b) actually gets its time. run-32: the LLM called deliver_project at
+        1406s into a 3600s window (its objective gate report is all-green — visuals
+        are not one of its checks) → loop exited → lanes terminated → post-loop path
+        cut the release mid-convergence. Returns False the moment the gate passes OR
+        the bounded escape fires (nothing can deadlock); getattr-pure + never raises
+        (a broken check must never block delivery)."""
+        try:
+            if not getattr(self, "_reference_images", None):
+                return False
+            if not getattr(self, "_is_final_milestone", True):
+                return False
+            if os.environ.get("ENVGEN_VISUAL_BLOCKING", "1").lower() in (
+                    "0", "false", "no", "off"):
+                return False
+            gate = getattr(self, "_vf_gate", None)
+            if gate is None or getattr(gate, "passed", False):
+                return False
+            _since = getattr(gate, "deferred_since", None)
+            if _since is None:
+                # final milestone reached but the deliver-check hasn't anchored the
+                # deferral yet — the gate is still ahead, not cleared: defer.
+                return True
+            return _visual_release_decision(
+                _since, getattr(gate, "attempts", 0),
+                getattr(gate, "total_judgments", 0), time.time()) == "defer"
+        except Exception:
+            return False
 
     @staticmethod
     def _coordination_tick_due(*, event_set, now, last_tick_at, loop_start, stuck_sec):
