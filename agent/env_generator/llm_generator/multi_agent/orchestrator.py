@@ -164,8 +164,15 @@ FWVAL_STUCK_ABORT_AFTER = max(3, int(os.environ.get("ENVGEN_DELIVERY_STUCK_ABORT
 # WHEN forward progress (source/contract/chain change) occurred since the latch. Capped so a
 # genuinely wedged run still fails fast; FWVAL_NO_DELIVER_ABORT_S bounds the total regardless.
 FWVAL_ABORT_GRACE_MAX = max(0, int(os.environ.get("ENVGEN_DELIVERY_ABORT_GRACE_MAX") or "3"))
-VISUAL_DEFERRAL_ESCAPE_S = 900   # max wall-clock a milestone may defer on visuals
-VISUAL_TOTAL_JUDGMENTS_CAP = 10  # per-milestone hard cap on real visual judgments
+# FIX #112 (runs 24+26 autopsy): remediation rounds take 3-10 min and scores DO rise
+# +0.1-0.4/round, but the old 900s window fit only 1-3 rounds — the gate released
+# below threshold mid-convergence. Size the window for 5-6 rounds (#110 gives the lane
+# eyes; this gives it time) and keep the judgment cap from becoming the new binding
+# constraint. Env-tunable; runs are time-unlimited by user directive.
+VISUAL_DEFERRAL_ESCAPE_S = float(os.environ.get(
+    "ENVGEN_VISUAL_ESCAPE_S") or "2400")   # max wall-clock a milestone may defer on visuals
+VISUAL_TOTAL_JUDGMENTS_CAP = int(os.environ.get(
+    "ENVGEN_VISUAL_JUDGMENTS_CAP") or "14")  # per-milestone hard cap on real visual judgments
 
 
 def _fwval_should_attempt(attempts: int, last_attempt_ts: float, now: float,
@@ -2551,7 +2558,7 @@ class Orchestrator:
                     # SKIPS once a gate-passing run exists). _maybe_run_visual_fidelity
                     # self-guards (pass latch + per-source attempt cap); the deferral
                     # now ALWAYS terminates via _visual_release_decision's escapes —
-                    # the 900s wall-clock ANCHORED to the first defer (no longer reset
+                    # the escape_s wall-clock (2400s dflt, #112) ANCHORED to the first defer (no longer reset
                     # by lane churn — PIPE-C3), the per-source attempt cap, or the
                     # per-milestone total-judgment cap.
                     await self._maybe_run_visual_fidelity()
