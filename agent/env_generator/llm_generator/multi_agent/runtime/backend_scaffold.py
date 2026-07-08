@@ -399,9 +399,22 @@ async def _framework_auth_guard(request, call_next):
         auth = request.headers.get("authorization", "")
         if auth.lower().startswith("bearer ") and _FW_PEM:
             try:
-                _fw_jwt.decode(auth.split(" ", 1)[1].strip(), _FW_PEM,
-                               algorithms=[_FWALG], options={"verify_aud": False})
+                _fw_claims = _fw_jwt.decode(
+                    auth.split(" ", 1)[1].strip(), _FW_PEM,
+                    algorithms=[_FWALG], options={"verify_aud": False})
                 ok = True
+                # FIX #109 (instagram run-28, live): lanes routinely write handlers
+                # that read request.state.user_id, believing the middleware injects
+                # it (their own comments say so) — it never did, so those handlers
+                # 401'd VALID tokens. Make the convention true: expose the sub claim
+                # (int-coerced when numeric) on request.state.
+                try:
+                    _fw_sub = _fw_claims.get("sub")
+                    request.state.user_id = (int(_fw_sub) if str(_fw_sub).isdigit()
+                                             else _fw_sub)
+                    request.state.user = {"id": request.state.user_id}
+                except Exception:
+                    pass
             except Exception:
                 ok = False
         if not ok:
