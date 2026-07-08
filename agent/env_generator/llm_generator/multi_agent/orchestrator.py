@@ -2556,14 +2556,27 @@ class Orchestrator:
                     # per-milestone total-judgment cap.
                     await self._maybe_run_visual_fidelity()
                     return
-                # release: an escape fired — deliver anyway, loudly, below-threshold.
-                self._logger.warning(
-                    "Visual fidelity deferral RELEASED (escape after %ss deferred / "
-                    "%s attempts / %s total judged) — delivering anyway "
-                    "(recorded as below-threshold).",
-                    int(_now - self._vf_gate.deferred_since),
-                    self._vf_gate.attempts,
-                    self._vf_gate.total_judgments)
+                # FIX #102 (run-20, live): the escape often fires SECONDS after the lane
+                # lands its fix — run-20's release verdict came from a 23:45 capture of
+                # PRE-fix source (broken icon refs) while the delivered image serves all
+                # 47 icons with 200. Drive ONE final fresh capture+judge before releasing;
+                # _maybe_run_visual_fidelity self-guards (pass latch + per-source attempt
+                # cap), so this re-judges ONLY when the source actually changed since the
+                # stale verdict — the recorded score then reflects the DELIVERED source.
+                await self._maybe_run_visual_fidelity()
+                if self._vf_gate.passed:
+                    self._logger.warning(
+                        "Visual fidelity PASSED on the final pre-release re-judge "
+                        "(fresh capture of the delivered source).")
+                else:
+                    # release: an escape fired — deliver anyway, loudly, below-threshold.
+                    self._logger.warning(
+                        "Visual fidelity deferral RELEASED (escape after %ss deferred / "
+                        "%s attempts / %s total judged) — delivering anyway "
+                        "(recorded as below-threshold).",
+                        int(_now - self._vf_gate.deferred_since),
+                        self._vf_gate.attempts,
+                        self._vf_gate.total_judgments)
             # TEST-USER SQUAD BLOCKING GATE (§3.5, 2026-06-22): the verify->fix loop the
             # user's flow diagram puts INSIDE each milestone. The app is up (api_smoke
             # booted it; the visual gate just shot it), so spawn the three modality
