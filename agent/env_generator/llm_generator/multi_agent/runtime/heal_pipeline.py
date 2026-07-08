@@ -129,7 +129,7 @@ class HealPipeline:
                 repair_backend_auth_dependency, repair_auth_import_paths,
                 repair_inline_token_auth, repair_auth_enforcement_middleware,
                 repair_custom_routes_router_prologue, repair_integrity_error_handler,
-                repair_custom_routes_db_handle)
+                repair_custom_routes_db_handle, repair_custom_routes_param_types)
             be_dir = _P(out_dir) / "app" / "backend"
             # custom_routes using @router.<verb> without defining router (run-34):
             # NameError at import silently killed the WHOLE custom router — including the
@@ -187,6 +187,14 @@ class HealPipeline:
                 orch._logger.warning(
                     "custom_routes.py lane get_db (raw psycopg) rewritten to delegate to "
                     "the framework Session (FIX #86) — dual-style DB handle restored.")
+            # FIX #106 (run-23): a `param: str` annotation on an integer-PK by-id route
+            # makes Postgres reject the comparison (int = varchar) → 500 on every read,
+            # and the lane's by-id GET shadows the projected one by design.
+            pt = repair_custom_routes_param_types(be_dir)
+            if pt.get("fixed"):
+                orch._logger.warning(
+                    "custom_routes.py path-param annotations corrected (FIX #106): %s "
+                    "str→int on integer-PK routes.", pt.get("fixed"))
         except Exception as exc:
             orch._logger.debug("backend auth repair skipped: %s", exc)
 

@@ -560,6 +560,88 @@ def repair_custom_routes_db_handle(backend_dir) -> Dict[str, object]:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+def repair_custom_routes_param_types(backend_dir) -> Dict[str, object]:
+    """FIX #106 (instagram run-23, live): the lane annotated a by-id path param as ``str``
+    while the column is an INTEGER PK → SQLAlchemy compared ``posts.id = '20'::VARCHAR`` →
+    Postgres 'operator does not exist: integer = character varying' → 500 on EVERY by-id
+    read. And by DESIGN the lane's by-id GET shadows the safe projected read (the
+    isolation tradeoff in _custom_route_overrides_projected), so the type bug wedged the
+    run. Deterministic repair: parse the framework-generated models.py for integer-PK
+    tables, then rewrite ``<param>: str`` to ``<param>: int`` on every custom route whose
+    path's resource segment maps to such a table. AST-anchored, idempotent, best-effort."""
+    import ast
+    import re as _re
+    try:
+        be = Path(backend_dir)
+        cr, mp = be / "custom_routes.py", be / "models.py"
+        if not cr.exists() or not mp.exists():
+            return {"fixed": 0, "reason": "missing files"}
+        int_pk_tables: set = set()
+        mtree = ast.parse(mp.read_text(encoding="utf-8"))
+        for node in ast.walk(mtree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            tname, pk_int = None, False
+            for st in node.body:
+                seg = ast.get_source_segment(mp.read_text(encoding="utf-8"), st) or ""
+                if "__tablename__" in seg:
+                    m = _re.search(r"__tablename__\s*=\s*['\"]([^'\"]+)", seg)
+                    if m:
+                        tname = m.group(1).lower()
+                if "primary_key" in seg and _re.search(r"\b(Integer|BigInteger)\b", seg):
+                    pk_int = True
+            if tname and pk_int:
+                int_pk_tables.add(tname)
+        if not int_pk_tables:
+            return {"fixed": 0, "reason": "no integer-PK tables"}
+
+        src = cr.read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        lines = src.splitlines(keepends=True)
+        fixed = 0
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            # route path from a @router.<verb>('<path>') decorator
+            path = None
+            for dec in node.decorator_list:
+                if (isinstance(dec, ast.Call) and dec.args
+                        and isinstance(dec.args[0], ast.Constant)
+                        and isinstance(dec.args[0].value, str)):
+                    path = dec.args[0].value
+                    break
+            if not path:
+                continue
+            segs = [s for s in path.strip("/").split("/") if s and s != "api"]
+            params = [s[1:-1] for s in segs if s.startswith("{") and s.endswith("}")]
+            if not params:
+                continue
+            # resource = segment before the FIRST param; must be an integer-PK table
+            try:
+                first_param_idx = next(i for i, s in enumerate(segs) if s.startswith("{"))
+            except StopIteration:
+                continue
+            res = segs[first_param_idx - 1].lower() if first_param_idx >= 1 else ""
+            if res not in int_pk_tables:
+                continue
+            for arg in list(node.args.args) + list(node.args.kwonlyargs):
+                if (arg.arg in params and isinstance(arg.annotation, ast.Name)
+                        and arg.annotation.id == "str"):
+                    ln = arg.annotation.lineno - 1
+                    c0, c1 = arg.annotation.col_offset, arg.annotation.end_col_offset
+                    line = lines[ln]
+                    if line[c0:c1] == "str":
+                        lines[ln] = line[:c0] + "int" + line[c1:]
+                        fixed += 1
+        if fixed:
+            new_src = "".join(lines)
+            ast.parse(new_src)   # never write a syntax error
+            cr.write_text(new_src, encoding="utf-8")
+        return {"fixed": fixed}
+    except Exception as exc:
+        return {"fixed": 0, "error": f"{type(exc).__name__}: {exc}"}
+
+
 def repair_backend_packaging(backend_dir) -> Dict[str, object]:
     """Make the backend pip-installable in docker. The lane variably writes a
     pyproject.toml with ``build-backend = "hatchling.build"`` but a FLAT module
