@@ -429,11 +429,28 @@ class EnvGenAgent(
         "submit_runbook",
         "submit_postmortem",
     }
+    # FIX #110 (runs 24+26 autopsy, 2026-07-08): the visual-gate remediation tasks carry
+    # perfect measured diffs + an EXECUTABLE zoom_compare mandate (#53), yet zoom_compare
+    # and capture_webpage were called ZERO times across entire runs — the ~10-slot ranker
+    # crowded the visual verify tools out of every step's offered subset (the documented
+    # never-offered class: V25 / _ORCH_AUDIT_FLOW / _KNOWLEDGE_DOC_FLOW). The frontend
+    # lane was structurally BLIND to its own render: it edited CSS from prose, never saw
+    # a capture, and self-certified visual tasks complete. Force-offer the verify chain
+    # where the fixing happens (edit_code) and where verification happens (run_checks);
+    # bundle-intersected, so only lanes granting these tools (frontend/design) see them.
+    _VISUAL_VERIFY_FLOW = {
+        "capture_webpage",
+        "zoom_compare",
+        "sample_color",
+        "crop_reference",
+        "compare_with_screenshot",
+        "extract_palette",
+    }
     ACTION_STAGE_ALWAYS_INCLUDE: Dict[str, Set[str]] = {
         "communicate": {"check_inbox", "send_message", "ask_agent", "broadcast", "report_progress", "finish"}
                         | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _MILESTONE_FLOW | _KNOWLEDGE_DOC_FLOW,
-        "edit_code": {"read", "edit", "apply_patch", "write", "finish"} | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _CONTRACT_READ | _REFERENCE_VIEW,
-        "run_checks": {"lint", "test_api", "finish"} | _CLAIM_FLOW | _VALIDATION_FLOW | _CONTRACT_READ,
+        "edit_code": {"read", "edit", "apply_patch", "write", "finish"} | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _CONTRACT_READ | _REFERENCE_VIEW | _VISUAL_VERIFY_FLOW,
+        "run_checks": {"lint", "test_api", "finish"} | _CLAIM_FLOW | _VALIDATION_FLOW | _CONTRACT_READ | _REFERENCE_VIEW | _VISUAL_VERIFY_FLOW,
         "delegate_team": {"finish"},
         # ``submit_retro`` + ``deliverability_check`` are the pre-delivery gate
         # tools — without them force-offered the ranker crowds them out and the
