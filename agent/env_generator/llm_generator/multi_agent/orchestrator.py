@@ -166,13 +166,15 @@ FWVAL_STUCK_ABORT_AFTER = max(3, int(os.environ.get("ENVGEN_DELIVERY_STUCK_ABORT
 FWVAL_ABORT_GRACE_MAX = max(0, int(os.environ.get("ENVGEN_DELIVERY_ABORT_GRACE_MAX") or "3"))
 # FIX #112 (runs 24+26 autopsy): remediation rounds take 3-10 min and scores DO rise
 # +0.1-0.4/round, but the old 900s window fit only 1-3 rounds — the gate released
-# below threshold mid-convergence. Size the window for 5-6 rounds (#110 gives the lane
-# eyes; this gives it time) and keep the judgment cap from becoming the new binding
-# constraint. Env-tunable; runs are time-unlimited by user directive.
+# below threshold mid-convergence (run-29 M4: dm_inbox 0.00→0.40→0.60 still climbing
+# at the escape). #110 gives the lane eyes; this gives it time. #112b: user directive
+# 2026-07-08 ("900s还是太短...可以长一点") → a full hour (~6-15 rounds); the judgment
+# cap scales with it so it can't become the new binding constraint. Env-tunable; the
+# per-source attempt cap (3) still releases early when the lane stops iterating.
 VISUAL_DEFERRAL_ESCAPE_S = float(os.environ.get(
-    "ENVGEN_VISUAL_ESCAPE_S") or "2400")   # max wall-clock a milestone may defer on visuals
+    "ENVGEN_VISUAL_ESCAPE_S") or "3600")   # max wall-clock a milestone may defer on visuals
 VISUAL_TOTAL_JUDGMENTS_CAP = int(os.environ.get(
-    "ENVGEN_VISUAL_JUDGMENTS_CAP") or "14")  # per-milestone hard cap on real visual judgments
+    "ENVGEN_VISUAL_JUDGMENTS_CAP") or "20")  # per-milestone hard cap on real visual judgments
 
 
 def _fwval_should_attempt(attempts: int, last_attempt_ts: float, now: float,
