@@ -652,12 +652,27 @@ async def run_visual_fidelity(
     shots = await capture(judged_screens)
     _auth_routes = [s["name"] for s in judged_screens if s.get("auth")]
     if _auth_routes and set(_auth_bounced) >= set(_auth_routes):
+        # FIX #105 (run-22 live, recurring): the wholesale rejection is usually a RACE —
+        # a parallel validation cycle reset the DB (down -v → reseed → the token's sub
+        # points at a user that no longer exists) or rotated the JWT keys between the
+        # mint and the capture. Re-mint ONCE against the current app state and retry
+        # the capture before skipping the whole judgment.
+        try:
+            token2 = _mint_token(be_port, demo=_seed_demo_login(project_dir))
+        except Exception:
+            token2 = None
+        if token2 and token2 != token:
+            token = token2          # `capture` late-binds `token` — no redefinition needed
+            _auth_bounced.clear()
+            _blank_screens.clear()
+            shots = await capture(judged_screens)
+    if _auth_routes and set(_auth_bounced) >= set(_auth_routes):
         # The minted token was rejected wholesale (e.g. the validation cycle
         # rebuilt the app between mint and capture, rotating the JWT keys).
         return {"passed": False, "auth_unavailable": True,
                 "summary": ("authenticated session rejected — every auth route "
                             "redirected to /login despite a freshly minted "
-                            "token; skipping judgment"),
+                            "token (incl. one re-mint retry); skipping judgment"),
                 "screens": [], "skipped": skipped}
     if judged_screens and not shots and not _blank_screens:
         return {"passed": False,
