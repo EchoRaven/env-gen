@@ -625,6 +625,17 @@ profiles:
         - view_image
         - copy_reference_image
         - verify_api_contract
+        # FIX #116 (run-32 live): the visual VERIFY chain. #110 force-offers these at
+        # the ranker layer, but tooling.py intersects always_include with THIS
+        # allowlist — without them here the lane stayed structurally blind to its own
+        # render (zero zoom_compare/capture_webpage calls across every run; visual
+        # remediation edited CSS from prose). Capture your build, compare against the
+        # reference, eyedrop the actual pixels — then edit.
+        - capture_webpage
+        - zoom_compare
+        - sample_color
+        - crop_reference
+        - extract_palette
         # commit + the branch/worktree conflict flow (commit-only pipeline).
         - codehub_commit
         - codehub_resolve_merge_conflict
@@ -667,6 +678,14 @@ profiles:
         - view_image
         - copy_reference_image
         - verify_api_contract
+        # FIX #116: visual VERIFY chain — a P1 visual-remediation fix task runs in
+        # THIS phase; without these the lane fixes pixels it cannot see (see the
+        # implementation:action block note).
+        - capture_webpage
+        - zoom_compare
+        - sample_color
+        - crop_reference
+        - extract_palette
         - codehub_commit
         - codehub_resolve_merge_conflict
         - glob
