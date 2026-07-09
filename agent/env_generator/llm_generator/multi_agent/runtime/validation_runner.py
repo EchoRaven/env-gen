@@ -269,6 +269,23 @@ def _probe_body(ep: Any) -> dict:
     return body
 
 
+def _id_in_rows(new_id, rows) -> bool:
+    """FIX #122 (runs 35+41, live): TYPE-TOLERANT id containment for the
+    write-persist readback. The POST envelope carries an int id but a lane GET
+    handler may stringify every value ("id":"3") — type-strict equality reported
+    'write not persisted' on a correctly-persisting app and wedged the run.
+    Compare as strings (the platform treats "8"/8 as the same id everywhere
+    else); a None id never matches."""
+    if new_id is None:
+        return False
+    try:
+        want = str(new_id)
+        return any(isinstance(r, dict) and r.get("id") is not None
+                   and str(r.get("id")) == want for r in (rows or []))
+    except Exception:
+        return False
+
+
 def run_smoke_validation(
     project_dir: Any,
     business_endpoints: List[Mapping[str, Any]],
@@ -550,7 +567,7 @@ def run_smoke_validation(
                 persist_warnings.append(f"POST {ppath} ok but GET readback is not an items[] list — persistence not verifiable")
                 continue
             if new_id is not None:
-                contains = any(isinstance(r, dict) and r.get("id") == new_id for r in rows)
+                contains = _id_in_rows(new_id, rows)   # FIX #122: type-tolerant
                 if not _first_scored:
                     # FIRST verifiable POST = the blocking gate (byte-identical to prior behavior).
                     persist_ok = contains
