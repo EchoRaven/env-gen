@@ -2376,6 +2376,17 @@ class Orchestrator:
                         "Framework deliver declined: delivery gate has %d failed check(s): %s",
                         len(_failed), _failed,
                     )
+                # FIX #120 (run-38): a STALE build:* failure checklist (transient
+                # run_validation fail mid visual-churn, never re-recorded) must not
+                # ride the no-convergence watchdog to an abort — deterministically
+                # re-arm the framework's own api_smoke (bounded per milestone) so
+                # fresh build:* truth gets recorded without depending on the verifier.
+                try:
+                    from .runtime.framework_validation import (
+                        maybe_refresh_stale_build_checklist)
+                    maybe_refresh_stale_build_checklist(self, _failed)
+                except Exception:
+                    pass
                 # FORWARD-PROGRESS GUARANTEE for POST-api_smoke gate blockers (audit #2).
                 # The deterministic stuck-abort ladder lives in the api_smoke-FAILING branch
                 # of _maybe_run_framework_validation, so once api_smoke passes, a delivery-gate

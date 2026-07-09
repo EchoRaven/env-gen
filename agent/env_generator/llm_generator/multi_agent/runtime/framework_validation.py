@@ -102,6 +102,44 @@ def _fwval_is_chain_authoring_progress(fset, chain_sig, prev_chain_sig,
         return False
 
 
+def maybe_refresh_stale_build_checklist(orch: Any, failed_checks) -> bool:
+    """FIX #120 (run-38 STUCK, 2026-07-09): a transient run_validation failure
+    (mid visual-window rebuild churn) stamped all four ``build:*`` CodeHub checks =
+    failure, and NOTHING re-ran validation afterwards — the checklist remediation
+    messages the VERIFIER (LLM-dependent; it never complied), so an
+    otherwise-deliverable run hit the 75-min no-convergence wall on
+    ``verification_checklist_not_ready`` alone. Deterministic self-heal: when the
+    deliver gate declines with that blocker, reset the framework's own api_smoke
+    attempt counter (BOUNDED per milestone) so the fast retry re-runs validation —
+    the shared RunValidationTool records FRESH build:* truth either way (a pass
+    supersedes the stale failure; a real failure re-records with fresh evidence).
+    Returns True when a refresh was armed. Never raises."""
+    try:
+        if "verification_checklist_not_ready" not in set(failed_checks or ()):
+            return False
+        ms = str(getattr(orch, "_current_milestone_version", "") or "")
+        budget = getattr(orch, "_checklist_refresh_by_ms", None)
+        if budget is None:
+            budget = {}
+            orch._checklist_refresh_by_ms = budget
+        if budget.get(ms, 0) >= 3:
+            return False
+        budget[ms] = budget.get(ms, 0) + 1
+        orch._framework_validation_attempts = 0
+        try:
+            orch._logger.warning(
+                "STALE BUILD-CHECKLIST self-heal (FIX #120): "
+                "verification_checklist_not_ready is blocking delivery — resetting "
+                "the framework validation attempt counter (refresh %s/3 for v%s) so "
+                "api_smoke re-runs and records FRESH build:* checks itself.",
+                budget[ms], ms)
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
+
+
 def restore_regressed_chains(orch: Any, fset):
     """REGRESSION GUARD (restore-on-regression): if business_chain passed before
     (high-water) and is now failing AND the contract (endpoint id set) is
