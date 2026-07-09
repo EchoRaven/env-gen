@@ -573,6 +573,80 @@ def repair_custom_routes_db_handle(backend_dir) -> Dict[str, object]:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+# Framework-owned backend files a lane repair must never rewrite.
+_FRAMEWORK_OWNED_BACKEND = {
+    "auth_dependency.py", "jwt_manager.py", "main.py", "database.py",
+    "oauth_routes.py", "seed_loader.py"}
+
+
+def repair_jwt_decode_audience(backend_dir) -> Dict[str, object]:
+    """FIX #118 (instagram run-33, 2026-07-08, root PROVEN in-container): the framework
+    AS mints proper OAuth2 RS256 tokens WITH an ``aud`` claim, and PyJWT REJECTS any
+    aud-carrying token when the caller passes no ``audience=`` (InvalidAudienceError).
+    A lane that writes its OWN guard — ``jwt.decode(token, key, algorithms=[ALG])`` —
+    therefore 401s EVERY valid token ("Invalid token") and business_chain wedges on a
+    healthy app (GET /api/feed → 401; decode-with-audience returned the sub fine).
+    Same class as #109: the lane's belief about auth is foreseeably wrong, so the
+    framework owns the floor. Append ``options={"verify_aud": False}`` to lane
+    ``jwt.decode`` calls that verify a signature but pass neither ``audience=`` nor
+    ``options=`` — signature verification is untouched; audience enforcement stays the
+    framework guard's job (auth_dependency verifies aud correctly). AST-located,
+    surgical text insertion (no reformat), bottom-up (positions stay valid),
+    idempotent, best-effort, never raises; framework-owned files are never touched."""
+    import ast
+    result: Dict[str, object] = {"repaired": []}
+    try:
+        be = Path(backend_dir)
+        if not be.is_dir():
+            return result
+        touched: List[str] = []
+        for f in sorted(be.glob("*.py")):
+            if f.name in _FRAMEWORK_OWNED_BACKEND:
+                continue
+            try:
+                src = f.read_text(encoding="utf-8")
+                tree = ast.parse(src)
+            except Exception:
+                continue
+            sites = []
+            for node in ast.walk(tree):
+                if not (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and node.func.attr == "decode"
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id in ("jwt", "pyjwt")):
+                    continue
+                kwnames = {k.arg for k in node.keywords if k.arg}
+                if "audience" in kwnames or "options" in kwnames:
+                    continue  # already audience-aware / introspection decode
+                # only a VERIFYING decode (key present) is a guard worth repairing
+                if not ("algorithms" in kwnames or len(node.args) >= 2):
+                    continue
+                if node.end_lineno is None or node.end_col_offset is None:
+                    continue
+                sites.append((node.end_lineno, node.end_col_offset))
+            if not sites:
+                continue
+            lines = src.splitlines(keepends=True)
+            for (el, ec) in sorted(sites, reverse=True):
+                line = lines[el - 1]
+                # ec is just past the closing ')': insert before it
+                lines[el - 1] = (line[:ec - 1]
+                                 + ', options={"verify_aud": False}'
+                                 + line[ec - 1:])
+            new_src = "".join(lines)
+            try:
+                ast.parse(new_src)   # never write a syntax error
+            except Exception:
+                continue
+            f.write_text(new_src, encoding="utf-8")
+            touched.append(f.name)
+        result["repaired"] = touched
+    except Exception as exc:  # never break generation/validation
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
 def repair_custom_routes_param_types(backend_dir) -> Dict[str, object]:
     """FIX #106 (instagram run-23, live): the lane annotated a by-id path param as ``str``
     while the column is an INTEGER PK → SQLAlchemy compared ``posts.id = '20'::VARCHAR`` →

@@ -187,6 +187,19 @@ class HealPipeline:
                 orch._logger.warning(
                     "custom_routes.py lane get_db (raw psycopg) rewritten to delegate to "
                     "the framework Session (FIX #86) — dual-style DB handle restored.")
+            # FIX #118 (run-33): a lane-written jwt.decode without audience= rejects
+            # every aud-carrying framework token (PyJWT InvalidAudienceError) → 401
+            # "Invalid token" on all authed endpoints → business_chain wedge.
+            try:
+                from .backend_scaffold import repair_jwt_decode_audience
+                _jda = repair_jwt_decode_audience(be_dir)
+                if _jda.get("repaired"):
+                    orch._logger.warning(
+                        "lane jwt.decode calls made aud-tolerant (verify_aud=False, "
+                        "FIX #118 — framework tokens carry aud; signature checks "
+                        "untouched): %s", _jda.get("repaired"))
+            except Exception as _jda_exc:
+                orch._logger.debug("jwt-decode audience repair skipped: %s", _jda_exc)
             # FIX #106 (run-23): a `param: str` annotation on an integer-PK by-id route
             # makes Postgres reject the comparison (int = varchar) → 500 on every read,
             # and the lane's by-id GET shadows the projected one by design.
