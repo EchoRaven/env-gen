@@ -2,6 +2,24 @@
 # Each agent is just: prompt template + tools + settings
 # No custom class needed - all loaded via ConfigurableAgent
 #
+# PER-COMPONENT MODEL CONFIG (runtime/llm_overrides.py, 2026-07-09):
+#   Any profile may run its OWN model instead of the run's global --model:
+#       profiles:
+#         frontend:
+#           llm:
+#             model: gemini-3.1-flash      # optional
+#             provider: google             # optional (defaults to the global)
+#   Non-agent framework call sites use a top-level map (all optional):
+#       component_models:
+#         visual_judge:      {model: ...}  # visual-fidelity judge
+#         design_enrich:     {model: ...}  # design-prep single-shot enrichment
+#         milestone_plan:    {model: ...}  # milestone planning
+#         reference_compile: {model: ...}  # reference-spec compilation
+#         test_user_judge:   {model: ...}  # browser test-user UI judge
+#   Env vars override everything, per run: ENVGEN_MODEL_<COMPONENT> /
+#   ENVGEN_PROVIDER_<COMPONENT> (uppercased, e.g. ENVGEN_MODEL_FRONTEND,
+#   ENVGEN_MODEL_VISUAL_JUDGE). api_key/base/timeouts inherit from the global.
+#
 # Prompt templates are in prompts/v2/ - structured format with:
 #   - Identity (role, expertise, responsibilities)
 #   - Environment (workspace, inputs, outputs)

@@ -237,9 +237,17 @@ class AgentSpawnService:
             if custom_name is None and requested_agent_type != resolved_config_key:
                 custom_name = requested_agent_type
 
+            # Per-component MODEL config (user feature, 2026-07-09): each profile may
+            # run its own model (profiles.<key>.llm in agents_config.yaml, or
+            # ENVGEN_MODEL_<KEY> env). No override → the orchestrator's global LLM.
+            try:
+                from .runtime.llm_overrides import get_component_llm
+                _agent_llm = get_component_llm(self._orchestrator, resolved_config_key)
+            except Exception:
+                _agent_llm = self._orchestrator.llm
             agent = create_agent(
                 agent_id=request.agent_id,
-                llm=self._orchestrator.llm,
+                llm=_agent_llm or self._orchestrator.llm,
                 workspace_manager=self._orchestrator.workspace,
                 config_override={
                     "_config_key": resolved_config_key,

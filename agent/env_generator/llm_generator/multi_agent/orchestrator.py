@@ -916,8 +916,9 @@ class Orchestrator:
                 if not _milestones_explicit and not _force_single_ms:
                     try:
                         from .runtime.reference_materials import plan_milestones
+                        from .runtime.llm_overrides import get_component_llm as _gcl
                         _planned = await plan_milestones(
-                            self.llm, raw_req,
+                            _gcl(self, "milestone_plan") or self.llm, raw_req,
                             getattr(self, "_reference_spec", None) or {})
                     except Exception as exc:
                         self._logger.error("milestone planning raised: %s", exc)
@@ -2057,10 +2058,11 @@ class Orchestrator:
         reference image/doc/spec state only for what this run actually produced,
         so a best-effort failure leaves prior state untouched."""
         from .runtime.reference_materials import compile_reference_materials
+        from .runtime.llm_overrides import get_component_llm as _gcl_rc
         res = await compile_reference_materials(
             raw_req,
             output_dir=self.output_dir,
-            llm=self.llm,
+            llm=_gcl_rc(self, "reference_compile") or self.llm,
             logger=self._logger,
             reference_images=getattr(self, "_reference_images", None),
         )
@@ -2105,10 +2107,18 @@ class Orchestrator:
                     if agent_done:
                         self._logger.warning(
                             "design_analyst produced no valid design_system.json — single-shot fallback")
+                    # Per-component MODEL config: the enrichment analyst call may run
+                    # its own model (component_models.design_enrich /
+                    # ENVGEN_MODEL_DESIGN_ENRICH).
+                    try:
+                        from .runtime.llm_overrides import get_component_llm
+                        _enrich_llm = get_component_llm(self, "design_enrich") or self.llm
+                    except Exception:
+                        _enrich_llm = self.llm
                     await run_design_prep(
                         self._design_input, None,
                         getattr(self, "_reference_images", None),
-                        self.output_dir, self.llm)
+                        self.output_dir, _enrich_llm)
                     ds = load_valid_design_system(dsp)
                 if ds is not None:
                     # FIX #80: deterministic completion floor — an analyst that skipped the

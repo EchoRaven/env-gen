@@ -480,9 +480,14 @@ class HealPipeline:
                     "delivery time (no false-negative report).", version)
                 return
             eps = business_endpoints(registryhub.get_endpoints())
+            try:
+                from .llm_overrides import get_component_llm
+                _tu_llm = get_component_llm(orch, "test_user_judge") or getattr(orch, "llm", None)
+            except Exception:
+                _tu_llm = getattr(orch, "llm", None)
             report = run_test_user_validation(
                 proj, eps, version=version, base_url=base, compose_file=compose,
-                llm=getattr(orch, "llm", None))
+                llm=_tu_llm)
             summ = report.get("summary", {})
             if summ.get("verdict") == "PASS":
                 orch._logger.warning(

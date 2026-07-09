@@ -1013,7 +1013,14 @@ class VisualFidelityGate:
                 # this check).
                 return
             self.attempts = self.attempts + 1
-            result = await run_visual_fidelity(orch.output_dir, refs, orch.llm)
+            # Per-component MODEL config: the visual JUDGE may run its own model
+            # (component_models.visual_judge / ENVGEN_MODEL_VISUAL_JUDGE).
+            try:
+                from .llm_overrides import get_component_llm
+                _judge_llm = get_component_llm(orch, "visual_judge") or orch.llm
+            except Exception:
+                _judge_llm = orch.llm
+            result = await run_visual_fidelity(orch.output_dir, refs, _judge_llm)
             if result.get("capture_unavailable") or result.get("auth_unavailable"):
                 # Not a judgment — the app wasn't reachable (mid-rebuild) or
                 # the authed session was rejected wholesale (token mint failed
