@@ -647,6 +647,103 @@ def repair_jwt_decode_audience(backend_dir) -> Dict[str, object]:
     return result
 
 
+def _route_param_annotations(src: str) -> Dict[tuple, Dict[str, str]]:
+    """(method, path-template) → {param_name: 'int'|'str'} for every decorated route
+    whose decorator is ``@<obj>.<verb>('<path>')``. Best-effort; ignores routes whose
+    annotations aren't simple Names."""
+    import ast
+    out: Dict[tuple, Dict[str, str]] = {}
+    try:
+        tree = ast.parse(src)
+    except Exception:
+        return out
+    verbs = {"get", "post", "put", "patch", "delete"}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for dec in node.decorator_list:
+            if not (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute)
+                    and dec.func.attr in verbs and dec.args
+                    and isinstance(dec.args[0], ast.Constant)
+                    and isinstance(dec.args[0].value, str)):
+                continue
+            path = dec.args[0].value
+            params = {s[1:-1] for s in path.strip("/").split("/")
+                      if s.startswith("{") and s.endswith("}")}
+            if not params:
+                continue
+            anns: Dict[str, str] = {}
+            for arg in list(node.args.args) + list(node.args.kwonlyargs):
+                if (arg.arg in params and isinstance(arg.annotation, ast.Name)
+                        and arg.annotation.id in ("int", "str")):
+                    anns[arg.arg] = arg.annotation.id
+            if anns:
+                out[(dec.func.attr, path)] = anns
+    return out
+
+
+def repair_custom_routes_param_types_vs_projection(backend_dir) -> Dict[str, object]:
+    """FIX #119 (instagram run-35 M4 STUCK, 2026-07-09, live-diagnosed): the lane's
+    custom GET /api/users/{username} annotated the param ``int`` while the contract
+    (and the framework PROJECTION in main.py) is string-keyed — the custom router
+    overrides the projected route by design, so every real username 422/500'd and the
+    run aborted on business_endpoints_reachable. FIX #106's table-PK heuristic covers
+    only the ``str``-on-integer-PK direction; the PROJECTED signature is the
+    contract-derived source of truth for BOTH directions. For each custom route whose
+    (method, path-template) EXACTLY matches a projected route, rewrite any path-param
+    annotation that differs from the projection's. AST-anchored surgical edit
+    (bottom-up, no reformat), parse-guarded, idempotent, best-effort, never raises."""
+    import ast
+    try:
+        be = Path(backend_dir)
+        cr, mn = be / "custom_routes.py", be / "main.py"
+        if not cr.exists() or not mn.exists():
+            return {"fixed": 0, "reason": "missing files"}
+        projected = _route_param_annotations(mn.read_text(encoding="utf-8"))
+        if not projected:
+            return {"fixed": 0, "reason": "no projected routes"}
+        src = cr.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(src)
+        except Exception:
+            return {"fixed": 0, "reason": "custom_routes unparseable"}
+        verbs = {"get", "post", "put", "patch", "delete"}
+        edits = []  # (lineno, col0, col1, old, new)
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for dec in node.decorator_list:
+                if not (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute)
+                        and dec.func.attr in verbs and dec.args
+                        and isinstance(dec.args[0], ast.Constant)
+                        and isinstance(dec.args[0].value, str)):
+                    continue
+                want = projected.get((dec.func.attr, dec.args[0].value))
+                if not want:
+                    continue
+                for arg in list(node.args.args) + list(node.args.kwonlyargs):
+                    tgt = want.get(arg.arg)
+                    if (tgt and isinstance(arg.annotation, ast.Name)
+                            and arg.annotation.id in ("int", "str")
+                            and arg.annotation.id != tgt):
+                        edits.append((arg.annotation.lineno - 1,
+                                      arg.annotation.col_offset,
+                                      arg.annotation.end_col_offset,
+                                      arg.annotation.id, tgt))
+        if not edits:
+            return {"fixed": 0}
+        lines = src.splitlines(keepends=True)
+        for (ln, c0, c1, old, new) in sorted(edits, reverse=True):
+            if lines[ln][c0:c1] == old:
+                lines[ln] = lines[ln][:c0] + new + lines[ln][c1:]
+        new_src = "".join(lines)
+        ast.parse(new_src)   # never write a syntax error
+        cr.write_text(new_src, encoding="utf-8")
+        return {"fixed": len(edits)}
+    except Exception as exc:
+        return {"fixed": 0, "error": f"{type(exc).__name__}: {exc}"}
+
+
 def repair_custom_routes_param_types(backend_dir) -> Dict[str, object]:
     """FIX #106 (instagram run-23, live): the lane annotated a by-id path param as ``str``
     while the column is an INTEGER PK → SQLAlchemy compared ``posts.id = '20'::VARCHAR`` →

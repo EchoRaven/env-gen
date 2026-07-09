@@ -203,6 +203,18 @@ class HealPipeline:
             # FIX #106 (run-23): a `param: str` annotation on an integer-PK by-id route
             # makes Postgres reject the comparison (int = varchar) → 500 on every read,
             # and the lane's by-id GET shadows the projected one by design.
+            # FIX #119 (run-35 M4): the PROJECTED signature is the contract truth for
+            # path-param types in BOTH directions (run-35: lane wrote username: int on
+            # a string-keyed route → every real username 422/500 → STUCK).
+            try:
+                from .backend_scaffold import repair_custom_routes_param_types_vs_projection
+                _pv = repair_custom_routes_param_types_vs_projection(be_dir)
+                if _pv.get("fixed"):
+                    orch._logger.warning(
+                        "custom_routes.py path-param annotations aligned to the PROJECTED "
+                        "signatures (FIX #119): %s param(s) corrected.", _pv.get("fixed"))
+            except Exception as _pv_exc:
+                orch._logger.debug("param-vs-projection repair skipped: %s", _pv_exc)
             pt = repair_custom_routes_param_types(be_dir)
             if pt.get("fixed"):
                 orch._logger.warning(
