@@ -892,15 +892,24 @@ def _spec_snippet(output_dir: Any, screen_name: str) -> str:
         return ""
 
 
-def remediation_text(result: Mapping[str, Any], output_dir: Any = None) -> str:
+def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
+                     latched: Optional[set] = None) -> str:
     """Actionable task body for the frontend lane from a failed gate result —
     per screen: missing components first, then the judge's per-dimension notes
-    (weakest dimension first), then the ordered deviations."""
+    (weakest dimension first), then the ordered deviations.
+
+    ``latched`` (FIX #129) = the milestone's sticky-passed screen names. A screen
+    that already cleared the bar in a prior round is EXCLUDED from the fix list
+    even if the noisy judge scored it low THIS round — otherwise the frontend is
+    told to re-work a screen it already got right and can REGRESS it. The gate is
+    still open (some OTHER screen never latched), so remediation must focus the
+    lane's effort on the screens that have never hit the bar."""
+    latched = latched or set()
     lines = ["Visual fidelity below threshold vs the reference designs. "
              "Fix the implemented screens to match the references:"]
     dim_titles = {d["key"]: d["title"] for d in _DIMENSIONS}
     for r in result.get("screens", []):
-        if r.get("passed"):
+        if r.get("passed") or r.get("name") in latched:
             continue
         lines.append(f"\n## {r['name']}  (route {r['route']}, similarity {r['similarity']:.2f})")
         if output_dir is not None:
@@ -1135,7 +1144,8 @@ class VisualFidelityGate:
             try:
                 _vt = orch.hubs.workhub.create_task(
                     title=f"UI does not match reference designs (visual gate, attempt {self.attempts})",
-                    description=remediation_text(result, getattr(orch, "output_dir", None)),
+                    description=remediation_text(result, getattr(orch, "output_dir", None),
+                                                 latched=self._passed_screens),
                     assignee="frontend",
                     agent="orchestrator",
                     priority="P1",
