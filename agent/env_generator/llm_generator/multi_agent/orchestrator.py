@@ -989,16 +989,8 @@ class Orchestrator:
                     # deliver_project tool can reject a premature FINAL delivery during an
                     # earlier milestone (deliver_project ends the run; earlier milestones
                     # cut a per-milestone release + advance — they must NOT final-deliver).
+                    self._stamp_milestone_flags_on_orch_agent(_m_idx, len(milestones))
                     _orch_agent_ms = self._agents.get("orchestrator")
-                    if _orch_agent_ms is not None:
-                        try:
-                            _orch_agent_ms._is_final_milestone = self._is_final_milestone
-                            _orch_agent_ms._milestone_progress = (_m_idx, len(milestones))
-                            # FIX #117: deliver_project must not cut the visual
-                            # remediation window short (run-32: exited at 1406s/3600s).
-                            _orch_agent_ms._visual_defer_check = self._visual_delivery_defer_active
-                        except Exception:
-                            pass
                     # Per-milestone visual state: anchor the deferral clock and the
                     # total-judgment backstop to THIS milestone (PIPE-C3 — within a
                     # milestone neither is reset by lane churn).
@@ -1130,6 +1122,9 @@ class Orchestrator:
                                 _m_idx, _clear_err,
                             )
                         await self._respawn_core_lanes()
+                        # FIX #123: the respawn just created a FRESH orchestrator agent —
+                        # re-stamp the milestone flags + the #117 visual-defer check on it.
+                        self._stamp_milestone_flags_on_orch_agent(_m_idx, len(milestones))
 
                     # Charter §8: orchestrator wire is ONE call site — boot
                     # the kickoff coordinator. start_kickoff opens the
@@ -1900,6 +1895,26 @@ class Orchestrator:
     def _kickoff_fallback_or_reconcile(self, *args, **kwargs):
         from .runtime.kickoff_driver import KickoffDriver
         return KickoffDriver(self)._kickoff_fallback_or_reconcile(*args, **kwargs)
+
+    def _stamp_milestone_flags_on_orch_agent(self, m_idx: int, total: int) -> None:
+        """FIX #123 (run-42, live): stamp the milestone flags + the #117 visual-defer
+        check onto the CURRENT orchestrator agent instance. The original stamp ran
+        only at the top of the milestone iteration — but _respawn_core_lanes()
+        (milestone 2+) creates FRESH agent instances, so every stamp was LOST for
+        the rest of the milestone: the new orchestrator agent defaulted to
+        _is_final_milestone=True with NO _visual_defer_check, and run-42's LLM
+        deliver_project sailed through mid-visual-window (1397s/3600s, the exact
+        bypass #117 was built to close). Call at the iteration top AND immediately
+        after every respawn. Idempotent; never raises."""
+        try:
+            a = self._agents.get("orchestrator")
+            if a is None:
+                return
+            a._is_final_milestone = bool(getattr(self, "_is_final_milestone", True))
+            a._milestone_progress = (m_idx, total)
+            a._visual_defer_check = self._visual_delivery_defer_active
+        except Exception:
+            pass
 
     def _visual_delivery_defer_active(self) -> bool:
         """FIX #117 (run-32 autopsy): True while the FINAL milestone's visual gate is
