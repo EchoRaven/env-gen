@@ -863,17 +863,45 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                         f'        valid["{tfk}"] = _parent.id',
                     ]
                     bound.append(tfk)
+            # FIX #124 (instagram run-43 M1, live): an ACTION-suffix POST whose action
+            # segment did NOT resolve to its own model falls back here with cls = the
+            # PARENT entity — the generic create then INSERTS A NEW PARENT on the action
+            # route (POST /api/users/{id}/unfollow → User(**{}) → NotNull → 400 on the
+            # HAPPY PATH; the chain wedged 35+ min while follow — whose 'follow' segment
+            # DID map to the Follow association — worked). A semantically-unmappable
+            # action must 404 ("not implemented") instead: every chain expect-family
+            # tolerates 404, and the lane's custom handler — registered BEFORE the
+            # projected routes — wins the match the moment it exists.
+            _segs_np = [g for g in str(path).strip("/").split("/")
+                        if g and not (g.startswith("{") or g.startswith(":"))]
+            _last_np = (_segs_np[-1].lower() if _segs_np else "")
+            _action_unmapped = (
+                m == "POST" and params and not str(path).rstrip("/").endswith("}")
+                and not bound
+                and _last_np not in (str(table).lower(),
+                                     str(table).lower().rstrip("s"))
+            )
+            if _action_unmapped:
+                body_lines = [
+                    "    raise HTTPException(status_code=404, detail="
+                    "\"action endpoint not implemented by the projection — "
+                    "the app's own handler serves this route\")",
+                ]
             if m == "POST" and auth:
                 ofk = _owner_fk(meta, exclude=tuple(bound))
                 if ofk:
                     body_lines += [f'    valid.setdefault("{ofk}", _fw_uid(user))']
+            if not _action_unmapped:
+                body_lines += [
+                    "    try:",
+                    f"        obj = {cls}(**valid)",
+                    "        db.add(obj)",
+                ]
+        if body_lines and body_lines[0].lstrip().startswith("raise HTTPException(status_code=404"):
+            pass  # FIX #124 stub body is complete — no create/commit footer
+        else:
             body_lines += [
-                "    try:",
-                f"        obj = {cls}(**valid)",
-                "        db.add(obj)",
-            ]
-        body_lines += [
-            "        db.commit()",
+                "        db.commit()",
             "        db.refresh(obj)",
             f"        return {{\"item\": {_serialize_expr('obj', cols)}}}",
             "    except HTTPException:",
