@@ -394,6 +394,21 @@ def run_smoke_validation(
             ensure_assets_staged_for_build(compose_file)
         except Exception:
             pass
+        # FIX #125 (run-43 M3, live): #119's param-vs-projection repair is wired into
+        # tools/docker_tools._run_compose (#121) + heal — but the FRAMEWORK VALIDATION
+        # build goes through THIS module's own _compose, so the repair never fired here
+        # and the validation image kept baking the lane's `username: int` on a
+        # string-keyed route → GET /api/users/{username} 422/500 →
+        # business_endpoints_reachable wedged (repair fixes it standalone: fixed=2).
+        # Apply it to app/backend before the clean-boot build (same build-input floor
+        # as the #113 asset staging above).
+        try:
+            from .backend_scaffold import repair_custom_routes_param_types_vs_projection
+            _be = compose_file.parent.parent / "app" / "backend"
+            if _be.is_dir():
+                repair_custom_routes_param_types_vs_projection(_be)
+        except Exception:
+            pass
         _compose(compose_file, "down", "-v", "--remove-orphans", cwd=cwd, timeout=120)
         up = _compose(compose_file, "up", "-d", "--build", "--remove-orphans", cwd=cwd, timeout=up_timeout)
         if up.returncode != 0:
