@@ -351,8 +351,19 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         # expression (default `api.get(`/`fetch(`/`apiGet(`, or a named services/api helper
         # that is invoked) — a genuine stub imports nothing and calls nothing.
         _has_call = _has_real_api_call(comp_file_text)
-        _declared_but_inert = bool(apis) and not _has_call and not any(
-            tok in comp_file_text for tok in _HANDLER_TOKENS)
+        # FIX #126 (run-44 M1 STUCK, live): a page that COMPOSES real child
+        # components delegates its fetching + handlers to them — the user's own
+        # model ("pages compose COMPONENTS"). HomeFeedPage rendered 5 real children
+        # (SideNavigation/MainFeed/RightSidebar/…) that carry the behavior, yet the
+        # page file itself had no api call / handler token → falsely flagged an inert
+        # stub → deliverability_ui_page_unwired wedged M1 7 cycles on a working app.
+        # Mirror the existing service-module delegation tolerance: credit a page that
+        # imports >=1 component from a components/ path AND renders a custom JSX child.
+        _composes_child = bool(re.search(
+            r"import\s+\w+\s+from\s+['\"][^'\"]*components/\w+['\"]",
+            comp_file_text)) and bool(re.search(r"<[A-Z]\w+[\s/>]", comp_file_text))
+        _declared_but_inert = (bool(apis) and not _has_call and not _composes_child
+                               and not any(tok in comp_file_text for tok in _HANDLER_TOKENS))
         if _placeholder or _declared_but_inert:
             missing.append(
                 f"component `{component}` is a placeholder stub — it renders no real "
