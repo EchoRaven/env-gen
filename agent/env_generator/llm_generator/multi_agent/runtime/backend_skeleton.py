@@ -733,15 +733,33 @@ def _custom_route_overrides_projected(method, path):
     return True                                       # actions / search / novel → custom wins
 
 try:
-    from custom_routes import router as _custom_router
-    # Keep only the custom routes that legitimately override (or add) — drop the ones
-    # duplicating a standard-CRUD endpoint so the safe projected handler serves those.
-    _custom_router.routes = [
-        _r for _r in list(getattr(_custom_router, "routes", []))
-        if _custom_route_overrides_projected(
-            next(iter(getattr(_r, "methods", []) or ["GET"])), getattr(_r, "path", ""))
-    ]
-    app.include_router(_custom_router)
+    import custom_routes as _custom_mod
+    from fastapi import APIRouter as _APIRouter
+    # FIX #127 (instagram run-46 M3, live): include EVERY APIRouter the lane defines,
+    # not only the one named `router`. run-46's lane wrote a correct repost handler on
+    # a SECOND router (`hidden_router = APIRouter()`) that the old single-name import
+    # left orphaned → the projected #124 fallback (404) served the route and the
+    # verifier's expect [200,201] chains wedged. Discover all module-level APIRouter
+    # instances; prefer `router` FIRST (its routes register before any twin) then the
+    # rest by definition order; apply the same override policy to each.
+    _seen_r = set()
+    _routers = []
+    _named = getattr(_custom_mod, "router", None)
+    if isinstance(_named, _APIRouter):
+        _routers.append(_named); _seen_r.add(id(_named))
+    for _rn in vars(_custom_mod):
+        _rv = getattr(_custom_mod, _rn, None)
+        if isinstance(_rv, _APIRouter) and id(_rv) not in _seen_r:
+            _routers.append(_rv); _seen_r.add(id(_rv))
+    for _custom_router in _routers:
+        # Keep only the custom routes that legitimately override (or add) — drop the
+        # ones duplicating a standard-CRUD endpoint so the safe projected handler serves.
+        _custom_router.routes = [
+            _r for _r in list(getattr(_custom_router, "routes", []))
+            if _custom_route_overrides_projected(
+                next(iter(getattr(_r, "methods", []) or ["GET"])), getattr(_r, "path", ""))
+        ]
+        app.include_router(_custom_router)
 except ImportError as _custom_imp:
     # ONLY "custom_routes does not exist" is benign. A NESTED broken import (the lane's
     # `import asyncpg` with the package missing) also lands here — and silently dropping
