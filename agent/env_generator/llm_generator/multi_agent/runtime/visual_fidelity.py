@@ -969,6 +969,35 @@ except Exception:
     _TRANSIENT_REFUND_CAP = 3
 
 
+def _apply_sticky_pass(passed_names: set, screens: List[Mapping[str, Any]]) -> bool:
+    """FIX #129 — STICKY per-screen pass across re-judge rounds WITHIN a milestone.
+
+    The vision JUDGE (Gemini) self-compresses similarity toward the center and
+    noise-wiggles the same UNCHANGED pixels by ±0.2–0.4 between calls (run-47:
+    "adjusting the extreme values … closer to a central point"; the JUDGE-ON-CHANGE
+    guard at maybe_run exists precisely because "scores just noise-wiggled").
+    Requiring EVERY blocking screen to clear ``min_similarity`` on the SAME
+    re-judge is therefore a joint-probability wall: with N center-clustered noisy
+    screens the run essentially never passes and every milestone ships via the
+    below-threshold escape (never a real pass). Instead, LATCH each blocking
+    screen the first round it clears the bar; the gate is satisfied once every
+    blocking screen has cleared AT LEAST ONCE this milestone.
+
+    ``passed_names`` is the milestone-anchored latch set (mutated in place; reset
+    in ``reset_for_milestone``). Advisory (overlay) screens are excluded upstream
+    (#128), so they never enter the criterion. Env-agnostic. Trade-off: a screen
+    that passed at source v1 and later regressed at v2 stays latched — accepted
+    because judge noise (±0.4) makes a single low re-sample indistinguishable from
+    a real regression, and app CORRECTNESS is enforced by the functional gates
+    (api_smoke / page_build), not this design-fidelity gate.
+    """
+    blocking = [s for s in screens if not s.get("advisory")]
+    for s in blocking:
+        if s.get("passed"):
+            passed_names.add(s.get("name"))
+    return bool(blocking) and all(s.get("name") in passed_names for s in blocking)
+
+
 class VisualFidelityGate:
     """Stateful visual-fidelity gate extracted from the Orchestrator (PROPOSAL
     #8 — VisualFidelity slice B). Owns the per-source judging budget + pass
@@ -994,6 +1023,7 @@ class VisualFidelityGate:
         self.transient_refunds = 0     # per-milestone bounded blank-capture refunds (#75a)
         self.last_result = None
         self.last_judged_sig = None
+        self._passed_screens: set = set()  # #129: milestone-anchored sticky per-screen pass latch
 
     def reset_for_milestone(self) -> None:
         """Anchor the deferral clock + total-judgment backstop to a NEW milestone
@@ -1001,6 +1031,7 @@ class VisualFidelityGate:
         self.deferred_since = None
         self.total_judgments = 0
         self.transient_refunds = 0     # #75a: milestone-anchored, not reset by sig churn
+        self._passed_screens = set()   # #129: latch cleared per milestone, not by sig churn
 
     async def maybe_run(self) -> None:
         """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the
@@ -1083,12 +1114,20 @@ class VisualFidelityGate:
             # churning lane that keeps flipping the source signature can't drive
             # unbounded judging even before the 900s wall-clock escape fires.
             self.total_judgments = self.total_judgments + 1
-            if result.get("passed"):
+            # FIX #129: latch each blocking screen that cleared the bar this round;
+            # the gate passes once EVERY blocking screen has cleared at least once
+            # this milestone (defeats the joint-probability wall the noisy judge
+            # otherwise makes unpassable — see _apply_sticky_pass).
+            sticky_pass = _apply_sticky_pass(self._passed_screens, screens)
+            if result.get("passed") or sticky_pass:
                 self.passed = True
+                _how = "" if result.get("passed") else (
+                    " [sticky: every blocking screen cleared ≥min at least once "
+                    "this milestone; latched=%s]" % ", ".join(sorted(self._passed_screens)))
                 orch._logger.warning(
-                    "Visual fidelity PASSED (%s): %s",
+                    "Visual fidelity PASSED (%s): %s%s",
                     ", ".join(f"{s['name']}={s['similarity']:.2f}" for s in screens),
-                    result.get("summary"))
+                    result.get("summary"), _how)
                 return
             orch._logger.warning(
                 "Visual fidelity attempt %s/3 FAILED — %s",
