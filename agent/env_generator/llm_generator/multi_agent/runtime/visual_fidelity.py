@@ -202,8 +202,26 @@ def map_reference_screens(
                 if route is None and ((not known) or r in known):
                     route = r
                 break
-        screens.append({"name": p.stem, "path": str(p), "route": route, "auth": auth})
+        # FIX #128 (visual-gate autopsy, run-47): an OVERLAY / interaction-STATE
+        # reference (search_flyout = feed + a notifications MODAL; *_dropdown, *_popup,
+        # …) has no URL route that reproduces it — route capture navigates to the base
+        # page, so the judge compares unrelated images → PERMANENT 0.00 → the "every
+        # screen ≥ min" gate is mathematically unpassable and every milestone escapes
+        # below-threshold, while the false 0.00 pollutes the frontend's remediation
+        # with an un-fixable target. Mark such screens ADVISORY: still judged +
+        # reported, but excluded from the BLOCKING pass criterion. Name-based on
+        # generic UI interaction-state vocabulary (env-agnostic).
+        advisory = bool(_OVERLAY_NAME_RE.search(stem))
+        screens.append({"name": p.stem, "path": str(p), "route": route,
+                        "auth": auth, "advisory": advisory})
     return screens
+
+
+# Interaction-STATE name tokens — a reference so named is an overlay reachable only by
+# a click/hover, never a URL route, so it can't be fairly scored by route-capture.
+_OVERLAY_NAME_RE = re.compile(
+    r"(?:^|_)(?:flyout|modal|popup|pop_?over|dropdown|drop_?down|overlay|dialog|"
+    r"drawer|tooltip|toast|sheet|menu|context_?menu|lightbox)(?:_|$)")
 
 
 # ---------------------------------------------------------------------------
@@ -702,6 +720,7 @@ async def run_visual_fidelity(
                             "similarity": 0.0, "passed": False, "dimensions": {},
                             "deviations": [_dev],
                             "blank": screen["name"] in _blank_screens,
+                            "advisory": bool(screen.get("advisory")),
                             "screenshot": None,
                             "reference": screen.get("path")})
             continue
@@ -709,6 +728,7 @@ async def run_visual_fidelity(
         results.append({"name": screen["name"], "route": screen["route"],
                         "similarity": verdict["similarity"],
                         "passed": verdict["similarity"] >= min_similarity,
+                        "advisory": bool(screen.get("advisory")),
                         "dimensions": verdict.get("dimensions", {}),
                         "deviations": verdict["deviations"],
                         "fixes": verdict.get("fixes", []),
@@ -721,10 +741,18 @@ async def run_visual_fidelity(
                             project_dir, screen["name"], shot),
                         "summary": verdict.get("summary", "")})
 
-    passed = all(r["passed"] for r in results)
-    failing = [f"{r['name']}({r['similarity']:.2f})" for r in results if not r["passed"]]
-    summary = ("all %d screens ≥ %.2f" % (len(results), min_similarity) if passed
+    # FIX #128: ADVISORY screens (overlay/flyout/modal interaction states) are judged +
+    # reported but never BLOCK — they have no URL route that reproduces them, so their
+    # score is a route-capture artifact, not a frontend-quality signal.
+    _blocking = [r for r in results if not r.get("advisory")]
+    passed = all(r["passed"] for r in _blocking)
+    failing = [f"{r['name']}({r['similarity']:.2f})" for r in _blocking if not r["passed"]]
+    _adv_note = [f"{r['name']}({r['similarity']:.2f})" for r in results
+                 if r.get("advisory")]
+    summary = ("all %d screens ≥ %.2f" % (len(_blocking), min_similarity) if passed
                else "below %.2f: %s" % (min_similarity, ", ".join(failing)))
+    if _adv_note:
+        summary += " [advisory (overlay, non-blocking): %s]" % ", ".join(_adv_note)
     if _blank_screens:
         summary += " [blank capture: %s]" % ", ".join(_blank_screens)
     # FIX #75a: a REFUNDABLE transient ONLY when EVERY judged screen was a blank shell
