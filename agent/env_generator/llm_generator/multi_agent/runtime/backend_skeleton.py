@@ -390,6 +390,29 @@ class _Session(Session):
                     kwargs["cursor_factory"] = RealDictCursor
                 except Exception:
                     pass
+        # FIX #131 (instagram run-53 M1, live): a lane hand-writes EITHER driver's dict-
+        # cursor idiom -- psycopg2 ``cursor(cursor_factory=RealDictCursor)`` OR psycopg3
+        # ``cursor(row_factory=dict_row)`` -- but this connection speaks only ONE driver;
+        # forwarding the FOREIGN kwarg verbatim raises "Connection.cursor() got an
+        # unexpected keyword argument 'cursor_factory'" -> 500 (GET /api/feed, business_chain
+        # wedge). Translate the mismatched factory to the kwarg THIS driver accepts, then
+        # DROP any foreign leftover so it never reaches raw.cursor() (psycopg3 connection
+        # module is "psycopg"; psycopg2 is "psycopg2").
+        _drv = type(raw).__module__.split(".", 1)[0]
+        if _drv == "psycopg" and "cursor_factory" in kwargs:
+            kwargs.pop("cursor_factory", None)
+            try:
+                from psycopg.rows import dict_row
+                kwargs.setdefault("row_factory", dict_row)
+            except Exception:
+                pass
+        elif _drv == "psycopg2" and "row_factory" in kwargs:
+            kwargs.pop("row_factory", None)
+            try:
+                from psycopg2.extras import RealDictCursor
+                kwargs.setdefault("cursor_factory", RealDictCursor)
+            except Exception:
+                pass
         return raw.cursor(*args, **kwargs)
 
     def execute(self, statement, params=None, *args, **kwargs):
