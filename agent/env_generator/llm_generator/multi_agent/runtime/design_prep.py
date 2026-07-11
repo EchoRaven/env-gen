@@ -240,7 +240,17 @@ _SCREEN_PROMPT = (
     " - typography (role sizes/weights you can read), and assets (manifest ids this "
     "component should render).\n"
     "Also submit layout (one line) and, if readable, global type_scale/radius_scale/"
-    "iconography. Submit via the function — nothing else."
+    "iconography.\n"
+    "ALSO CLASSIFY the screen itself (FIX #132 — the visual gate navigates by URL, so it "
+    "must know which references are reachable pages and which are interaction states):\n"
+    " - kind: 'page' if the screenshot is a full standalone screen, 'overlay' if it shows "
+    "a modal/dialog/flyout/dropdown/sheet rendered OVER another page (dimmed or visible "
+    "background page = overlay).\n"
+    " - requires_auth: true if the screen shows logged-in user data (feed, profile, inbox), "
+    "false for public screens (login, signup, landing).\n"
+    " - route: the SPA path this screen would live at (e.g. '/', '/login', '/explore', "
+    "'/reels', '/messages'); for an overlay, the route of the page UNDER it.\n"
+    "Submit via the function — nothing else."
 )
 
 _SCREEN_TOOL = [{
@@ -253,6 +263,12 @@ _SCREEN_TOOL = [{
             "type": "object",
             "properties": {
                 "layout": {"type": "string"},
+                # FIX #132: screen-level classification — the visual gate reads these as
+                # the AUTHORITATIVE reference->route/overlay mapping (filename heuristics
+                # become the fallback).
+                "kind": {"type": "string", "enum": ["page", "overlay"]},
+                "requires_auth": {"type": "boolean"},
+                "route": {"type": "string"},
                 "components": {"type": "array", "items": {
                     "type": "object",
                     "properties": {
@@ -368,9 +384,19 @@ async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
                     comps = first.get("components")
                 if not layout:
                     layout = first.get("layout")
-        enriched_screens.append({"name": s.get("name"),
-                                 "layout": str(layout or ""),
-                                 "components": comps or []})
+        _entry = {"name": s.get("name"),
+                  "layout": str(layout or ""),
+                  "components": comps or []}
+        # FIX #132: harvest the screen-level classification (kind/requires_auth/route) —
+        # tolerate both the flat tool-call shape and a full-doc screens[0] shape.
+        _first = (doc.get("screens") or [{}])[0] if isinstance(doc.get("screens"), list) else {}
+        for _ck in ("kind", "requires_auth", "route"):
+            _cv = doc.get(_ck)
+            if _cv is None and isinstance(_first, dict):
+                _cv = _first.get(_ck)
+            if _cv is not None:
+                _entry[_ck] = _cv
+        enriched_screens.append(_entry)
         for k in ("type_scale", "radius_scale", "shadow_scale", "iconography", "palette"):
             v = doc.get(k) or dsx.get(k)
             if v and not scales.get(k):
@@ -429,6 +455,12 @@ def _merge_enrichment(skeleton: Dict, enriched: Dict) -> Dict:
             continue
         if es.get("layout"):
             s["layout"] = es["layout"]
+        # FIX #132: screen-level classification flows through the merge (else the analyst's
+        # kind/requires_auth/route would be silently discarded — only the skeleton copy is
+        # what gets written to design_system.json).
+        for _ck in ("kind", "requires_auth", "route"):
+            if es.get(_ck) is not None:
+                s[_ck] = es[_ck]
         e_comps = {c.get("id"): c for c in (es.get("components") or []) if isinstance(c, dict)}
         for c in s.get("components") or []:
             ec = e_comps.get(c.get("id"))

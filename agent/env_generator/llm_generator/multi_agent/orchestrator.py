@@ -2553,13 +2553,16 @@ class Orchestrator:
                     # Those must ship as the REAL page, not the fallback — block harder on them.
                     if _unbuilt and getattr(self, "_reference_images", None):
                         try:
-                            from .runtime.visual_fidelity import map_reference_screens
+                            from .runtime.visual_fidelity import (
+                                load_screen_classifications, map_reference_screens)
                             _known_routes = set()
                             for _pg in (_rh.list_ui_pages() or {}).values() if _rh else []:
                                 if isinstance(_pg, dict) and _pg.get("route"):
                                     _known_routes.add(str(_pg["route"]))
                             _ref_routes = {str(s.get("route")) for s in map_reference_screens(
-                                list(self._reference_images), _known_routes) if s.get("route")}
+                                list(self._reference_images), _known_routes,
+                                classifications=load_screen_classifications(self.output_dir),
+                            ) if s.get("route")}  # FIX #132: authoritative mapping wins
                             _ref_unbuilt = referenced_unbuilt_pages(_rh, _app_root, _ref_routes)
                         except Exception as _ru_exc:
                             self._logger.debug("referenced-unbuilt detect skipped: %s", _ru_exc)

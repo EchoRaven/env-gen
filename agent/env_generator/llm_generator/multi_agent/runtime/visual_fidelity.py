@@ -149,16 +149,52 @@ def design_premises_text() -> str:
 _VIEWPORT = {"width": 1380, "height": 900}
 
 
+def load_screen_classifications(project_dir: Any) -> Dict[str, Dict[str, Any]]:
+    """FIX #132 — the AUTHORITATIVE reference->screen classification from
+    design_system.json (the design-prep analyst labels every reference with
+    kind=page|overlay, requires_auth and a suggested route BY LOOKING AT THE
+    PIXELS). Returns {screen_name: {kind?, requires_auth?, route?}} keyed by the
+    screens[].name (= reference filename stem). Empty dict on any failure —
+    the filename heuristics below remain the fallback."""
+    out: Dict[str, Dict[str, Any]] = {}
+    try:
+        dsp = Path(project_dir) / "design" / "design_system.json"
+        if not dsp.is_file():
+            return out
+        ds = json.loads(dsp.read_text(encoding="utf-8"))
+        for s in ds.get("screens") or []:
+            if not isinstance(s, Mapping) or not s.get("name"):
+                continue
+            rec: Dict[str, Any] = {}
+            for k in ("kind", "requires_auth", "route"):
+                if s.get(k) is not None:
+                    rec[k] = s[k]
+            if rec:
+                out[str(s["name"])] = rec
+    except Exception:
+        return {}
+    return out
+
+
 def map_reference_screens(
     reference_images: List[Any],
     known_routes: Optional[set] = None,
+    classifications: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """[{name, path, route, auth}] for every reference image whose filename maps
     to a route. Two layers: the common-screen keyword table, then a GENERIC
     fallback matching the filename against the app's actual routes (so an
     arbitrary app's "boards.png" maps to its /boards screen without any
-    catalog). Unmappable images get route=None (skipped, not failed)."""
+    catalog). Unmappable images get route=None (skipped, not failed).
+
+    FIX #132: ``classifications`` (from load_screen_classifications) is the
+    AUTHORITATIVE per-screen mapping the design-prep analyst produced from the
+    reference PIXELS. When present for a screen it wins over the filename
+    heuristics: kind=='overlay' -> advisory (the #128 name regex becomes the
+    fallback); requires_auth -> auth; route -> used when the app actually
+    serves it (a semantic suggestion never navigates to a 404)."""
     known = {str(r) for r in (known_routes or set())}
+    cls = classifications or {}
     screens: List[Dict[str, Any]] = []
     for ref in reference_images or []:
         p = Path(ref)
@@ -167,6 +203,12 @@ def map_reference_screens(
         stem = re.sub(r"[^a-z0-9]+", "_", p.stem.lower())
         segs = [s for s in stem.split("_") if s]
         route, auth = None, True
+        _cl = cls.get(p.stem) or cls.get(stem) or {}
+        if isinstance(_cl.get("requires_auth"), bool):
+            auth = _cl["requires_auth"]
+        _cl_route = str(_cl.get("route") or "").strip()
+        if _cl_route and known and _cl_route in known:
+            route = _cl_route  # authoritative route the app actually serves
         # Candidates from the full stem AND every TRAILING suffix of its segments.
         # Reference files are conventionally named ``<appname>_<screen>`` (e.g.
         # ``outlook_inbox``, ``outlook_calendar_event``); the leading app-name segment
@@ -185,10 +227,11 @@ def map_reference_screens(
             _add("_".join(segs[i:]))   # drop leading segment(s) — the app name
         if segs:
             _add(segs[-1])             # the trailing screen token alone
-        # GENERIC FIRST (domain-agnostic): match the screenshot filename to a
-        # declared route, or "/" for a home/landing screen — so an arbitrary app's
-        # screens map without the social catalog biasing ambiguous names.
-        if known:
+        # GENERIC (domain-agnostic): match the screenshot filename to a declared
+        # route, or "/" for a home/landing screen — so an arbitrary app's screens
+        # map without the social catalog biasing ambiguous names. #132: only when
+        # the AUTHORITATIVE route above did not already resolve.
+        if known and route is None:
             route = next((c for c in cands if c in known), None)
             if route is None and (stem in _HOME_STEMS or (segs and segs[-1] in _HOME_STEMS)) and "/" in known:
                 route = "/"
@@ -198,7 +241,8 @@ def map_reference_screens(
         # non-social app whose screen name contains a social token isn't mis-routed.
         for keys, r, a in _ROUTE_KEYWORDS:
             if any(k in stem for k in keys):
-                auth = a
+                if not isinstance(_cl.get("requires_auth"), bool):
+                    auth = a               # #132: authoritative requires_auth wins
                 if route is None and ((not known) or r in known):
                     route = r
                 break
@@ -209,9 +253,15 @@ def map_reference_screens(
         # screen ≥ min" gate is mathematically unpassable and every milestone escapes
         # below-threshold, while the false 0.00 pollutes the frontend's remediation
         # with an un-fixable target. Mark such screens ADVISORY: still judged +
-        # reported, but excluded from the BLOCKING pass criterion. Name-based on
-        # generic UI interaction-state vocabulary (env-agnostic).
-        advisory = bool(_OVERLAY_NAME_RE.search(stem))
+        # reported, but excluded from the BLOCKING pass criterion. FIX #132: the
+        # analyst's pixel-level kind classification is authoritative when present
+        # ('overlay' -> advisory, 'page' -> blocking even if the filename says
+        # otherwise); the name regex remains the fallback.
+        _kind = str(_cl.get("kind") or "").strip().lower()
+        if _kind in ("page", "overlay"):
+            advisory = _kind == "overlay"
+        else:
+            advisory = bool(_OVERLAY_NAME_RE.search(stem))
         screens.append({"name": p.stem, "path": str(p), "route": route,
                         "auth": auth, "advisory": advisory})
     return screens
@@ -466,6 +516,9 @@ _JUDGE_INSTRUCTIONS = (
     'icons + labels, logo wordmark top-left\'>"}}, ...'
     ' — for "components" also include "missing": ["<component>", ...]}},\n'
     '  "similarity": <0.0-1.0 overall>,\n'
+    '  "empty_state": <true|false — true when the implementation shows an EMPTY/'
+    "placeholder state (e.g. 'No items yet') because its data is missing, so the "
+    "reference's real design skeleton never rendered and cannot be judged>,\n"
     '  "deviations": ["<WHERE on the screen + WHAT differs, ordered by impact, '
     'e.g. \'header: implementation centers the logo; reference left-aligns it '
     'next to search\'>", ...],\n'
@@ -538,7 +591,11 @@ def _parse_verdict(text: str) -> Dict[str, Any]:
     devs = [str(x)[:300] for x in (data.get("deviations") or []) if str(x).strip()][:10]
     fixes = [str(x)[:300] for x in (data.get("fixes") or []) if str(x).strip()][:10]
     return {"similarity": sim, "dimensions": dims, "deviations": devs,
-            "fixes": fixes, "summary": str(data.get("summary", ""))[:300]}
+            "fixes": fixes, "summary": str(data.get("summary", ""))[:300],
+            # FIX #133: the judge's empty-state observation becomes REPORTABLE (it was
+            # told to ignore data-empty states — now it also flags them so the framework
+            # can remind the BACKEND lane to seed the missing rows).
+            "empty_state": bool(data.get("empty_state"))}
 
 
 async def judge_screen_pair(llm: Any, screen: Mapping[str, Any], screenshot_path: str) -> Dict[str, Any]:
@@ -605,7 +662,9 @@ async def run_visual_fidelity(
                 _app.read_text(encoding="utf-8", errors="ignore")))
     except Exception:
         pass
-    screens = map_reference_screens(reference_images, known_routes)
+    screens = map_reference_screens(
+        reference_images, known_routes,
+        classifications=load_screen_classifications(project_dir))  # FIX #132
     judged_screens = [s for s in screens if s.get("route")][:max_screens]
     skipped = [s["name"] for s in screens if not s.get("route")]
     if not judged_screens:
@@ -729,6 +788,7 @@ async def run_visual_fidelity(
                         "similarity": verdict["similarity"],
                         "passed": verdict["similarity"] >= min_similarity,
                         "advisory": bool(screen.get("advisory")),
+                        "empty_state": bool(verdict.get("empty_state")),  # FIX #133
                         "dimensions": verdict.get("dimensions", {}),
                         "deviations": verdict["deviations"],
                         "fixes": verdict.get("fixes", []),
@@ -1033,6 +1093,7 @@ class VisualFidelityGate:
         self.last_result = None
         self.last_judged_sig = None
         self._passed_screens: set = set()  # #129: milestone-anchored sticky per-screen pass latch
+        self._seed_reminder_sent = False   # #133: one backend seed reminder per milestone
 
     def reset_for_milestone(self) -> None:
         """Anchor the deferral clock + total-judgment backstop to a NEW milestone
@@ -1041,6 +1102,7 @@ class VisualFidelityGate:
         self.total_judgments = 0
         self.transient_refunds = 0     # #75a: milestone-anchored, not reset by sig churn
         self._passed_screens = set()   # #129: latch cleared per milestone, not by sig churn
+        self._seed_reminder_sent = False  # #133: re-armed per milestone
 
     async def maybe_run(self) -> None:
         """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the
@@ -1173,5 +1235,52 @@ class VisualFidelityGate:
                     pass
             except Exception as exc:
                 orch._logger.error("visual-fidelity task creation failed: %s", exc)
+            # FIX #133: EMPTY-STATE screens are a BACKEND-data problem the frontend
+            # cannot style away — the reference's design skeleton (feed cards, video
+            # chrome) only renders WITH rows, so the judge can never fairly score the
+            # screen (run-47/50: reels "No reels available" pinned 0.0-0.4 all window).
+            # Remind the BACKEND lane ONCE per milestone to seed the missing rows
+            # (workhub.create_task does NOT dedupe — the guard prevents a task per
+            # re-judge round; reset in reset_for_milestone).
+            try:
+                _empty = sorted({str(r.get("name")) for r in screens
+                                 if r.get("empty_state") and not r.get("passed")})
+                if _empty and not self._seed_reminder_sent:
+                    self._seed_reminder_sent = True
+                    _bt = orch.hubs.workhub.create_task(
+                        title="Visual gate: screen(s) render an EMPTY state — seed the missing rows",
+                        description=(
+                            "The visual-fidelity judge flagged these screens as EMPTY-state: "
+                            + ", ".join(_empty) + ". Their reference design only renders when "
+                            "the backing table has rows (e.g. a reels page needs video posts), "
+                            "so the screen can never match the reference no matter what the "
+                            "frontend does. Add realistic seed rows (>=3) for each screen's "
+                            "backing table(s) to app/backend/seed_data.json — keep FK "
+                            "references consistent with the existing seed users/posts."),
+                        assignee="backend",
+                        agent="orchestrator",
+                        priority="P1",
+                    )
+                    try:
+                        from tools.communication_tools import _create_message
+                        _bmsg = _create_message(
+                            source_agent_id="orchestrator",
+                            target_agent_id="backend",
+                            content=(
+                                "Seed-data task assigned "
+                                f"(task_id={(_bt or {}).get('id')}): the visual gate found "
+                                f"EMPTY-state screen(s) [{', '.join(_empty)}] whose design "
+                                "cannot render without data. Add seed rows for their backing "
+                                "tables to app/backend/seed_data.json NOW."),
+                            msg_type="task_ready",
+                            priority="urgent",
+                            persist=True,
+                            tags=["visual_fidelity", "seed_data"],
+                        )
+                        await orch.message_bus.send(_bmsg)
+                    except Exception:
+                        pass
+            except Exception as exc:
+                orch._logger.error("empty-state seed reminder failed (non-fatal): %s", exc)
         except Exception as exc:
             orch._logger.error("visual fidelity gate raised (non-fatal): %s", exc)
