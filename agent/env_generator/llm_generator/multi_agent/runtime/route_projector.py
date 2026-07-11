@@ -611,7 +611,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         if auth and owner_scoped_tables and parent_table in set(owner_scoped_tables):
             _p_ofk = _owner_fk(parent_meta)
             if _p_ofk:
-                _parent_owner_filter = f'.filter(getattr({parent_cls}, "{_p_ofk}") == _fw_uid(user))'
+                _parent_owner_filter = f'.filter(getattr({parent_cls}, "{_p_ofk}") == _fw_owner_val({parent_cls}, "{_p_ofk}", user))'
 
     body_lines: List[str] = []
     m = method.upper()
@@ -643,7 +643,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             # leak existence), exactly like the PUT/DELETE owner gate. Opt-in via
             # the resource's owner_scoped_reads contract signal; open by default.
             body_lines += [
-                f'    if getattr(obj, "{owner_fk}", None) != _fw_uid(user):',
+                f'    if getattr(obj, "{owner_fk}", None) != _fw_owner_val(type(obj), "{owner_fk}", user):',
                 '        raise HTTPException(status_code=404, detail="not found")',
             ]
         body_lines += [
@@ -671,7 +671,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         ]
         if owner_fk:
             body_lines.append(
-                f'    _q = _q.filter(getattr({cls}, "{owner_fk}") == _fw_uid(user))')
+                f'    _q = _q.filter(getattr({cls}, "{owner_fk}") == _fw_owner_val({cls}, "{owner_fk}", user))')
         body_lines += [
             "    obj = _q.first()",
             "    if obj is not None:",
@@ -690,7 +690,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             # can't even probe existence). Safe default for projected CRUD; broader
             # rules (admin/moderator) go in the lane's custom_routes.
             body_lines += [
-                f'    if getattr(obj, "{owner_fk}", None) != _fw_uid(user):',
+                f'    if getattr(obj, "{owner_fk}", None) != _fw_owner_val(type(obj), "{owner_fk}", user):',
                 '        raise HTTPException(status_code=404, detail="not found")',
             ]
         body_lines += [
@@ -743,7 +743,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         ]
         if owner_scoped_reads and owner_fk:
             body_lines.append(
-                f'    query = query.filter(getattr({cls}, "{owner_fk}") == _fw_uid(user))')
+                f'    query = query.filter(getattr({cls}, "{owner_fk}") == _fw_owner_val({cls}, "{owner_fk}", user))')
         body_lines += [
             "    if term:",
             f"        cols_to_search = [c for c in {_search_cols!r} if hasattr({cls}, c)]",
@@ -777,7 +777,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         if _me and _me[0]:
             _ucls, _ucols = _me
             body_lines = [
-                (f"    obj = db.get({_ucls}, _fw_uid(user)) if user is not None else None"
+                (f"    obj = db.get({_ucls}, _fw_owner_val({_ucls}, 'id', user)) if user is not None else None"
                  if auth else f"    obj = db.query({_ucls}).first()"),
                 "    if obj is None:",
                 '        raise HTTPException(status_code=404, detail="not found")',
@@ -790,7 +790,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         if owner_scoped_reads and owner_fk:
             # PRIVATE resource: the list is the caller's own rows only.
             body_lines = [
-                f'    rows = db.query({cls}).filter(getattr({cls}, "{owner_fk}") == _fw_uid(user)).limit(100).all()',
+                f'    rows = db.query({cls}).filter(getattr({cls}, "{owner_fk}") == _fw_owner_val({cls}, "{owner_fk}", user)).limit(100).all()',
                 f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": len(rows)}}",
             ]
         else:
@@ -824,7 +824,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             _ucls = (_me_u[0] if (_me_u and _me_u[0]) else None) or cls
             body_lines += [
                 "    try:",
-                f"        obj = db.get({_ucls}, _fw_uid(user))" if auth else f"        obj = db.query({_ucls}).first()",
+                f"        obj = db.get({_ucls}, _fw_owner_val({_ucls}, 'id', user))" if auth else f"        obj = db.query({_ucls}).first()",
                 "        if obj is None:",
                 '            raise HTTPException(status_code=404, detail="not found")',
                 "        for k, v in valid.items():",
@@ -843,7 +843,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             ]
             if owner_fk:
                 body_lines += [
-                    f'        if getattr(obj, "{owner_fk}", None) != _fw_uid(user):',
+                    f'        if getattr(obj, "{owner_fk}", None) != _fw_owner_val(type(obj), "{owner_fk}", user):',
                     '            raise HTTPException(status_code=404, detail="not found")',
                 ]
             body_lines += [
@@ -890,7 +890,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             if m == "POST" and auth:
                 ofk = _owner_fk(meta, exclude=tuple(bound))
                 if ofk:
-                    body_lines += [f'    valid.setdefault("{ofk}", _fw_uid(user))']
+                    body_lines += [f'    valid.setdefault("{ofk}", _fw_owner_val({cls}, "{ofk}", user))']
             if not _action_unmapped:
                 body_lines += [
                     "    try:",
@@ -1102,6 +1102,24 @@ def project_missing_routes(
             "        return int(_v)\n"
             "    except (TypeError, ValueError):\n"
             "        return _v\n"
+            # FIX #134 (instagram run-57, live): coerce to the OWNER COLUMN's type — a
+            # TEXT owner column (lane DDL: messages.sender_id) + the int-coerced sub
+            # binds `text = integer` -> psycopg UndefinedFunction -> every scoped read
+            # 500s, and a Python-level ownership check ("16" != 16) denies every owner.
+            "def _fw_owner_val(cls, col, user):  # noqa: F811\n"
+            "    _v = _fw_uid(user)\n"
+            "    try:\n"
+            "        _pt = getattr(cls, col).type.python_type\n"
+            "    except Exception:\n"
+            "        return _v\n"
+            "    try:\n"
+            "        if _pt is str and not isinstance(_v, str):\n"
+            "            return str(_v)\n"
+            "        if _pt is int and not isinstance(_v, int):\n"
+            "            return int(_v)\n"
+            "    except (TypeError, ValueError):\n"
+            "        pass\n"
+            "    return _v\n"
             "try:\n"
             "    from models import *  # noqa: F401,F403\n"
             "except Exception:\n"

@@ -545,6 +545,28 @@ def _fw_uid(user):
     except (TypeError, ValueError):
         return _v
 
+
+def _fw_owner_val(cls, col, user):
+    """FIX #134 (instagram run-57, live): _fw_uid coerced to THIS owner column's TYPE.
+    _fw_uid int-coerces a digit sub (the run-39 fix for INTEGER owner columns) — but a
+    lane may declare the owner column TEXT (messages.sender_id was), and then the SQL
+    bind is `text = integer` -> psycopg UndefinedFunction -> every scoped read 500s,
+    while a PYTHON-level ownership check ("16" != 16) silently denies every owner.
+    Look at the ORM column's python_type and coerce to match; unknown -> _fw_uid as-is."""
+    _v = _fw_uid(user)
+    try:
+        _pt = getattr(cls, col).type.python_type
+    except Exception:
+        return _v
+    try:
+        if _pt is str and not isinstance(_v, str):
+            return str(_v)
+        if _pt is int and not isinstance(_v, int):
+            return int(_v)
+    except (TypeError, ValueError):
+        pass
+    return _v
+
 Base.metadata.create_all(bind=engine)
 
 
