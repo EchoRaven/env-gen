@@ -1195,6 +1195,37 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
         status = res.get("status")
         ok = _status_ok(status, expect)
         autofilled: List[str] = []
+        # FIX #136 (instagram run-52/58/60 — 3rd occurrence of the class): a verifier-
+        # authored step with a LITERAL numeric id (POST /api/posts/4/repost) 404s when
+        # the seed doesn't reach that id — the ${placeholder} recovery ladder above
+        # never fires for literals, so the authored id went out verbatim and the chain
+        # wedged 7 post-cap cycles on a functionally-correct app (run-60: seed had
+        # posts 1-2, the chain hardcoded 4; the backend "fixed" the live DB but not
+        # seed_data.json, so every clean-boot regressed it). If a NON-denial step
+        # fails with 404 and its AUTHORED path (not a substituted one — a substituted
+        # id was really captured and must fail honestly) carries a literal numeric id
+        # segment, retry ONCE with a recovered REAL id (same-resource captured id ->
+        # live list recovery -> global last_id). Positive semantics preserved: the
+        # retry exercises the same happy path against an id that EXISTS; a genuinely
+        # broken endpoint fails the retry too and is recorded as before.
+        if (not ok and status == 404
+                and re.search(r"/\d+(?=/|$)", str(step.get("path") or ""))
+                and not _is_cross_user_denial(step)):
+            _lcoll = re.split(r"/\d+(?=/|$)", str(step.get("path") or "").split("?", 1)[0])[0]
+            _lres = _resource_from_path(_lcoll)
+            _lid = last_id_by_resource.get(_lres) if _lres else None
+            if _lid is None and _lcoll:
+                _lid = _recover_id_via_list(base, _lcoll, token, avoid=own_user_id)
+            if _lid is None:
+                _lid = last_id
+            if _lid is not None and str(_lid).strip():
+                _lpath = re.sub(r"/\d+(?=/|$)", "/" + str(_lid), path, count=1)
+                if _lpath != path:
+                    _res3 = _http(method, base + _lpath, token=token, body=body)
+                    if _status_ok(_res3.get("status"), expect):
+                        res, status, ok = _res3, _res3.get("status"), True
+                        path = _lpath
+                        autofilled.append(f"literal-id->{_lid}")
         # MISSING-FIELD AUTO-REPAIR (2026-06-24): a write step can 422 because the
         # LIVE handler requires a body field the chain didn't send — either the
         # verifier under-authored the body, OR (observed v19: POST
