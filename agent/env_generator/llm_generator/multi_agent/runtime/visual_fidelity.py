@@ -708,8 +708,10 @@ async def judge_screen_pair(llm: Any, screen: Mapping[str, Any], screenshot_path
                                  temperature=0.0, max_tokens=3000)
         return _parse_verdict(getattr(resp, "content", "") or "")
     except Exception as exc:
+        # judge_error marks a TRANSIENT failure — #142 must never cache it
+        # (a frozen 0.0 would pin a healthy screen for the whole milestone).
         return {"similarity": 0.0, "dimensions": {}, "deviations": [f"judge call failed: {exc}"[:200]],
-                "summary": "judge error"}
+                "summary": "judge error", "judge_error": True}
 
 
 # ---------------------------------------------------------------------------
@@ -725,6 +727,7 @@ async def run_visual_fidelity(
     out_dir: Optional[Path] = None,
     capture_fn: Optional[Callable] = None,
     judge_fn: Optional[Callable] = None,
+    verdict_cache: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Compare the running app against the reference designs.
 
@@ -870,7 +873,26 @@ async def run_visual_fidelity(
                             "screenshot": None,
                             "reference": screen.get("path")})
             continue
-        verdict = await judge(llm, screen, shot)
+        # FIX #142: identical pixels ⇒ identical verdict. run-65 M4 (#141b
+        # history): 3 byte-identical explore captures scored 0.00 then 0.30 —
+        # ±0.3 judge noise on unchanged screens phantom-reset #138 plateau
+        # tracking and made #129 sticky-pass luck-dependent. Cache the verdict
+        # by (screen, capture md5) for the milestone; pixels change → re-judge.
+        _ck = None
+        if verdict_cache is not None:
+            try:
+                import hashlib as _hl
+                _ck = f"{screen['name']}:{_hl.md5(Path(shot).read_bytes()).hexdigest()}"
+            except Exception:
+                _ck = None
+        if _ck is not None and _ck in verdict_cache:
+            verdict = verdict_cache[_ck]
+        else:
+            verdict = await judge(llm, screen, shot)
+            if _ck is not None and isinstance(verdict, dict) \
+                    and verdict.get("similarity") is not None \
+                    and not verdict.get("judge_error"):
+                verdict_cache[_ck] = verdict
         results.append({"name": screen["name"], "route": screen["route"],
                         "similarity": verdict["similarity"],
                         "passed": verdict["similarity"] >= min_similarity,
@@ -1183,6 +1205,7 @@ class VisualFidelityGate:
         self._seed_reminder_sent = False   # #133: one backend seed reminder per milestone
         self._best_by_screen: Dict[str, float] = {}  # #138: best similarity per blocking screen
         self.plateau_rounds = 0            # #138: consecutive judgments with no new best
+        self._verdict_cache: Dict[str, Dict[str, Any]] = {}  # #142: (screen, shot-md5) → verdict
 
     def reset_for_milestone(self) -> None:
         """Anchor the deferral clock + total-judgment backstop to a NEW milestone
@@ -1194,6 +1217,7 @@ class VisualFidelityGate:
         self._seed_reminder_sent = False  # #133: re-armed per milestone
         self._best_by_screen = {}      # #138: plateau tracking is per milestone
         self.plateau_rounds = 0
+        self._verdict_cache = {}       # #142: pixel-keyed verdicts are per milestone
 
     async def maybe_run(self) -> None:
         """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the
@@ -1241,7 +1265,8 @@ class VisualFidelityGate:
                 _judge_llm = get_component_llm(orch, "visual_judge") or orch.llm
             except Exception:
                 _judge_llm = orch.llm
-            result = await run_visual_fidelity(orch.output_dir, refs, _judge_llm)
+            result = await run_visual_fidelity(orch.output_dir, refs, _judge_llm,
+                                               verdict_cache=self._verdict_cache)
             if result.get("capture_unavailable") or result.get("auth_unavailable"):
                 # Not a judgment — the app wasn't reachable (mid-rebuild) or
                 # the authed session was rejected wholesale (token mint failed
