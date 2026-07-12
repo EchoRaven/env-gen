@@ -412,6 +412,55 @@ _CAPTURE_BLANK_PROBE = (
     " return {textLen: t.length, nodes: n}; }")
 
 
+# FIX #141 — theme-variant capture. run-64 M2 live: login_dark.png ≡
+# login_light.png (identical md5, mean=249 near-white) — the capture never
+# switched the app to dark, so the dark reference variant was judged against
+# LIGHT pixels and structurally capped ~0.3; a blocking screen that can never
+# pass ran every visual window to the 3600s anchor. A dark/light screen is
+# captured with (1) prefers-color-scheme emulation, (2) common theme storage
+# keys pre-set + reload so class-strategy apps BOOT themed, and (3) a post-load
+# force of the `dark` class / data-theme. All three are inert on apps that
+# ignore them.
+_THEME_TOKEN_RE = re.compile(r"(?:^|[_\-])(dark|light)(?:[_\-]|$)", re.IGNORECASE)
+_THEME_STORAGE_KEYS = ("theme", "color-theme", "ui-theme", "darkMode")
+
+
+def screen_color_scheme(screen: Mapping[str, Any]) -> Optional[str]:
+    """'dark'/'light' for a theme-variant screen, else None. An explicit
+    screen['scheme'] (future design-prep classification) wins over the
+    name-token heuristic (login_dark / feed-light reference stems)."""
+    _s = str(screen.get("scheme") or "").strip().lower()
+    if _s in ("dark", "light"):
+        return _s
+    m = _THEME_TOKEN_RE.search(str(screen.get("name") or ""))
+    return m.group(1).lower() if m else None
+
+
+def _theme_storage_js(scheme: Optional[str]) -> str:
+    """JS that pre-sets (or, scheme=None, clears) the common theme storage
+    keys so the app boots in the wanted theme after a reload."""
+    if scheme is None:
+        body = ";".join(f"localStorage.removeItem('{k}')"
+                        for k in _THEME_STORAGE_KEYS)
+    else:
+        vals = {"theme": scheme, "color-theme": scheme, "ui-theme": scheme,
+                "darkMode": "true" if scheme == "dark" else "false"}
+        body = ";".join(f"localStorage.setItem('{k}', '{v}')"
+                        for k, v in vals.items())
+    return "try { " + body + " } catch (e) {}"
+
+
+def _theme_class_js(scheme: str) -> str:
+    """JS that force-applies the theme AFTER the app booted — covers apps
+    that read a root class/attribute but no storage key."""
+    add = "add" if scheme == "dark" else "remove"
+    return ("(() => { const de = document.documentElement; "
+            f"de.classList.{add}('dark'); "
+            f"document.body && document.body.classList.{add}('dark'); "
+            f"de.setAttribute('data-theme', '{scheme}'); "
+            f"de.style.colorScheme = '{scheme}';" + " })()")
+
+
 async def capture_route_screenshots(
     base_url: str,
     screens: List[Dict[str, Any]],
@@ -452,12 +501,27 @@ async def capture_route_screenshots(
                     f"sessionStorage.setItem('{k}', {_tok_js})"
                     for k in _aliases) + ";")
             page = await ctx.new_page()
+            _applied_scheme: Optional[str] = None   # FIX #141 emulation state
+            _storage_dirty = False                  # theme keys we set last screen
             for screen in screens:
                 if not screen.get("route"):
                     continue
                 try:
+                    # FIX #141: theme-variant screens (login_dark/login_light)
+                    # boot the app in the wanted scheme; unthemed screens after
+                    # a themed one get the keys cleared so nothing leaks.
+                    _scheme = screen_color_scheme(screen)
+                    _want = _scheme or "light"
+                    if _want != (_applied_scheme or "light"):
+                        await page.emulate_media(color_scheme=_want)
+                        _applied_scheme = _want
                     await page.goto(base_url + screen["route"],
                                     wait_until="networkidle", timeout=20000)
+                    if _scheme or _storage_dirty:
+                        await page.evaluate(_theme_storage_js(_scheme))
+                        _storage_dirty = _scheme is not None
+                        await page.reload(wait_until="networkidle",
+                                          timeout=20000)
                     await page.wait_for_timeout(1200)
                     if screen.get("auth"):
                         final = (page.url or "").split("?", 1)[0].rstrip("/")
@@ -482,9 +546,32 @@ async def capture_route_screenshots(
                             continue  # skip the shot — do not feed a blank 0.00 to the judge
                     except Exception:
                         pass  # probe error → treat as non-blank (never false-skip)
+                    if _scheme:
+                        # FIX #141 (3): class/attribute-strategy apps with no
+                        # storage key — force the theme on the booted document.
+                        try:
+                            await page.evaluate(_theme_class_js(_scheme))
+                            await page.wait_for_timeout(400)
+                        except Exception:
+                            pass
                     dest = out_dir / f"{screen['name']}.png"
                     await page.screenshot(path=str(dest))
                     shots[screen["name"]] = str(dest)
+                    # #141b: keep a per-round copy — run-64 M2's 0.00↔0.40
+                    # score oscillation could not be root-caused because every
+                    # judge round overwrote these files. Soft-capped; failures
+                    # never break the capture.
+                    try:
+                        _hist = out_dir / "history"
+                        _hist.mkdir(exist_ok=True)
+                        if sum(1 for _ in _hist.iterdir()) < 500:
+                            import shutil as _sh
+                            from datetime import datetime as _dt
+                            _stamp = _dt.now().strftime("%H%M%S")
+                            _sh.copyfile(dest,
+                                         _hist / f"{_stamp}_{screen['name']}.png")
+                    except Exception:
+                        pass
                 except Exception:
                     continue
         finally:
