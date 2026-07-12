@@ -175,6 +175,15 @@ VISUAL_DEFERRAL_ESCAPE_S = float(os.environ.get(
     "ENVGEN_VISUAL_ESCAPE_S") or "3600")   # max wall-clock a milestone may defer on visuals
 VISUAL_TOTAL_JUDGMENTS_CAP = int(os.environ.get(
     "ENVGEN_VISUAL_JUDGMENTS_CAP") or "20")  # per-milestone hard cap on real visual judgments
+# FIX #138 (log-mining runs 50-62): the final visual window averaged 65m31s = ~40% of a
+# run's TOTAL wall-clock, and in 7/7 delivered runs it ended via the 3600s escape — never
+# a pass. When the judged scores show NO improvement for several consecutive real
+# judgments (no blocking screen beats its best-so-far), the remaining wait buys nothing:
+# escape early. Conservative: any real per-screen improvement re-arms the counter.
+VISUAL_PLATEAU_ROUNDS = int(os.environ.get(
+    "ENVGEN_VISUAL_PLATEAU_ROUNDS") or "4")   # consecutive no-improvement judgments
+VISUAL_PLATEAU_MIN_S = float(os.environ.get(
+    "ENVGEN_VISUAL_PLATEAU_MIN_S") or "1500")  # never plateau-escape before this deferral floor
 
 
 def _fwval_should_attempt(attempts: int, last_attempt_ts: float, now: float,
@@ -278,19 +287,31 @@ def _abort_grace_should_defer(is_deliver_stuck: bool, grace_used: int,
 def _visual_release_decision(deferred_since, attempts: int, total_judgments: int,
                              now: float, *, attempt_cap: int = 3,
                              escape_s: float = VISUAL_DEFERRAL_ESCAPE_S,
-                             total_cap: int = VISUAL_TOTAL_JUDGMENTS_CAP) -> str:
+                             total_cap: int = VISUAL_TOTAL_JUDGMENTS_CAP,
+                             plateau_rounds: int = 0,
+                             plateau_cap: int = VISUAL_PLATEAU_ROUNDS,
+                             plateau_min_s: float = VISUAL_PLATEAU_MIN_S) -> str:
     """Decide the visual-blocked delivery path. Returns:
       * ``"defer"``  — keep blocking the release; the lane should iterate.
       * ``"release"``— escape: deliver anyway (recorded below-threshold).
     Escapes (so the deferral ALWAYS terminates — PIPE-C3): the per-milestone
     wall-clock since the FIRST defer exceeds ``escape_s`` (anchored, NOT reset by
     lane churn), OR the per-source attempt budget is spent, OR the per-milestone
-    total real-judgment cap is hit (vision-cost backstop)."""
+    total real-judgment cap is hit (vision-cost backstop), OR — FIX #138 — the
+    judged scores have PLATEAUED (``plateau_rounds`` consecutive real judgments
+    with no blocking screen beating its best-so-far) after at least
+    ``plateau_min_s`` of deferral: further waiting buys nothing (log-mining runs
+    50-62: the window averaged ~65min = ~40% of total wall-clock and 7/7 ended
+    on the timer, never a pass)."""
     if deferred_since is not None and (now - deferred_since) > escape_s:
         return "release"
     if total_judgments >= total_cap:
         return "release"
     if attempts >= attempt_cap:
+        return "release"
+    if (plateau_cap > 0 and plateau_rounds >= plateau_cap
+            and deferred_since is not None
+            and (now - deferred_since) >= plateau_min_s):
         return "release"
     return "defer"
 
@@ -1945,7 +1966,8 @@ class Orchestrator:
                 return True
             return _visual_release_decision(
                 _since, getattr(gate, "attempts", 0),
-                getattr(gate, "total_judgments", 0), time.time()) == "defer"
+                getattr(gate, "total_judgments", 0), time.time(),
+                plateau_rounds=getattr(gate, "plateau_rounds", 0)) == "defer"
         except Exception:
             return False
 
@@ -2624,6 +2646,7 @@ class Orchestrator:
                     self._vf_gate.attempts,
                     self._vf_gate.total_judgments,
                     _now,
+                    plateau_rounds=getattr(self._vf_gate, "plateau_rounds", 0),
                 )
                 if _vf_decision == "defer":
                     self._logger.warning(
@@ -2657,13 +2680,16 @@ class Orchestrator:
                         "(fresh capture of the delivered source).")
                 else:
                     # release: an escape fired — deliver anyway, loudly, below-threshold.
+                    _plat = getattr(self._vf_gate, "plateau_rounds", 0)
                     self._logger.warning(
                         "Visual fidelity deferral RELEASED (escape after %ss deferred / "
-                        "%s attempts / %s total judged) — delivering anyway "
+                        "%s attempts / %s total judged%s) — delivering anyway "
                         "(recorded as below-threshold).",
                         int(_now - self._vf_gate.deferred_since),
                         self._vf_gate.attempts,
-                        self._vf_gate.total_judgments)
+                        self._vf_gate.total_judgments,
+                        (" / PLATEAU %s no-improvement rounds — #138 early escape"
+                         % _plat) if _plat >= VISUAL_PLATEAU_ROUNDS else "")
             # TEST-USER SQUAD BLOCKING GATE (§3.5, 2026-06-22): the verify->fix loop the
             # user's flow diagram puts INSIDE each milestone. The app is up (api_smoke
             # booted it; the visual gate just shot it), so spawn the three modality

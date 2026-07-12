@@ -1094,6 +1094,8 @@ class VisualFidelityGate:
         self.last_judged_sig = None
         self._passed_screens: set = set()  # #129: milestone-anchored sticky per-screen pass latch
         self._seed_reminder_sent = False   # #133: one backend seed reminder per milestone
+        self._best_by_screen: Dict[str, float] = {}  # #138: best similarity per blocking screen
+        self.plateau_rounds = 0            # #138: consecutive judgments with no new best
 
     def reset_for_milestone(self) -> None:
         """Anchor the deferral clock + total-judgment backstop to a NEW milestone
@@ -1103,6 +1105,8 @@ class VisualFidelityGate:
         self.transient_refunds = 0     # #75a: milestone-anchored, not reset by sig churn
         self._passed_screens = set()   # #129: latch cleared per milestone, not by sig churn
         self._seed_reminder_sent = False  # #133: re-armed per milestone
+        self._best_by_screen = {}      # #138: plateau tracking is per milestone
+        self.plateau_rounds = 0
 
     async def maybe_run(self) -> None:
         """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the
@@ -1185,6 +1189,22 @@ class VisualFidelityGate:
             # churning lane that keeps flipping the source signature can't drive
             # unbounded judging even before the 900s wall-clock escape fires.
             self.total_judgments = self.total_judgments + 1
+            # FIX #138: plateau tracking — a real judgment where NO blocking screen
+            # beats its best-so-far (+0.02 noise epsilon) increments plateau_rounds;
+            # ANY genuine improvement re-arms it. _visual_release_decision escapes
+            # early once the scores have flatlined (log-mining runs 50-62: the final
+            # window averaged ~65min, ~40% of total wall-clock, and never passed).
+            _improved = False
+            for _s in screens:
+                if _s.get("advisory"):
+                    continue
+                _n, _sim = str(_s.get("name")), float(_s.get("similarity") or 0.0)
+                if _sim > self._best_by_screen.get(_n, 0.0) + 0.02:
+                    self._best_by_screen[_n] = _sim
+                    _improved = True
+                elif _n not in self._best_by_screen:
+                    self._best_by_screen[_n] = _sim
+            self.plateau_rounds = 0 if _improved else self.plateau_rounds + 1
             # FIX #129: latch each blocking screen that cleared the bar this round;
             # the gate passes once EVERY blocking screen has cleared at least once
             # this milestone (defeats the joint-probability wall the noisy judge
