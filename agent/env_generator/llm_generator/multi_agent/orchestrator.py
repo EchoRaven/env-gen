@@ -316,6 +316,28 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
     return "defer"
 
 
+# FIX #139: registry-state check classes a lane can flip during the delivery tail —
+# a FRESH milestone-gate verdict outranks a final-gate re-read that fails ONLY on
+# these (ig run-61: a chain re-registered status='registered' 1s before the final
+# evaluation; outlook run-28/31 were the live-probe flavor of the same drift).
+FINAL_GATE_DRIFT_CLASSES = frozenset({
+    "business_chain_failing", "verification_checklist_not_ready"})
+
+
+def _final_gate_drift_waiver(ms_cleared_at, failed_checks, now: float,
+                             *, window_s: float = 900.0) -> bool:
+    """True when a failed FINAL gate should be waived in favor of the milestone
+    verdict: the milestone gate evaluated fully clear within ``window_s`` and the
+    final failure set is non-empty and ONLY registry-state drift classes
+    (structural failures — docker/contract/build — are never waived)."""
+    if ms_cleared_at is None:
+        return False
+    if (now - ms_cleared_at) > window_s:
+        return False
+    failed = set(failed_checks or [])
+    return bool(failed) and failed <= FINAL_GATE_DRIFT_CLASSES
+
+
 class Orchestrator:
     """Multi-Agent Orchestrator."""
     
@@ -1728,6 +1750,30 @@ class Orchestrator:
                     wait_backend_ready(self.output_dir)
                     gate = self._validate_delivery_gate()
                 if not gate["ok"]:
+                    # FIX #139 (ig run-61 + outlook run-28/31 — final-gate/milestone-gate
+                    # state DRIFT): this gate re-reads MUTABLE hub state, and a lane that
+                    # touches the chain registry during the multi-minute delivery tail
+                    # (run-61: the verifier re-registered a chain — status='registered',
+                    # NEVER RUN — 1 second before this evaluation) flips
+                    # business_chain_failing on a run whose milestone gate evaluated
+                    # fully CLEAR minutes earlier and cut every release. When the
+                    # milestone verdict is FRESH and the failure set is ONLY the
+                    # registry-state class (not structural: docker/contract/build),
+                    # honor the milestone verdict — loudly.
+                    _ms_clear = getattr(self, "_milestone_gate_cleared_at", None)
+                    _failed = set(gate.get("failed_checks") or [])
+                    if _final_gate_drift_waiver(_ms_clear, _failed, time.time()):
+                        self._logger.warning(
+                            "FINAL-GATE DRIFT WAIVER (#139): the milestone gate evaluated "
+                            "fully CLEAR %ss ago and every release was cut; the final "
+                            "re-evaluation failed only on %s — registry state a lane "
+                            "mutated during the delivery tail (run-61 class), not a "
+                            "regression of the delivered artifact. Honoring the "
+                            "milestone verdict.",
+                            int(time.time() - _ms_clear), sorted(_failed))
+                        gate = dict(gate)
+                        gate["ok"] = True
+                if not gate["ok"]:
                     report = self._format_delivery_gate_report(gate)
                     raise RuntimeError(f"Delivery gate failed.\n{report}")
             
@@ -2869,6 +2915,13 @@ class Orchestrator:
             # milestone that produced them (the verify->fix loop). The deterministic
             # _run_test_user_validation above stays as the post-release safety net.
             self._project_delivered = True
+            # FIX #139: stamp the moment the milestone gate evaluated CLEAR — the
+            # post-loop FINAL gate re-reads MUTABLE hub state and a lane touching the
+            # chain registry during the delivery tail (run-61: a re-registered chain
+            # is status='registered', never-run -> business_chain_failing) can kill a
+            # fully-delivered run seconds after this verdict. The final gate honors
+            # this stamp for registry-state-class failures within a short window.
+            self._milestone_gate_cleared_at = time.time()
             ev = getattr(self, "_project_delivered_event", None)
             if ev is not None:
                 try:
