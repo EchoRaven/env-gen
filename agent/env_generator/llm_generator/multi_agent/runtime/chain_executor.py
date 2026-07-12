@@ -538,6 +538,32 @@ def synthesize_default_chain(endpoints: List[Mapping[str, Any]]) -> List[Dict[st
     return [{"name": "framework_default_crud", "steps": norm}] if norm else []
 
 
+def load_seed_ids(project_dir: Any) -> Dict[str, Any]:
+    """FIX #144: {table → first explicit non-None row id} from the authored
+    app/backend/seed_data.json. These ids are guaranteed present after every
+    clean boot (#130/#135), making them a deterministic recovery source for
+    literal-id 404s — immune to the collection-name mismatch that defeats
+    live-list recovery (posts listed via /api/feed, not /api/posts)."""
+    out: Dict[str, Any] = {}
+    try:
+        p = Path(project_dir) / "app" / "backend" / "seed_data.json"
+        if not p.exists():
+            return out
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(data, Mapping):
+            return out
+        for table, rows in data.items():
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if isinstance(row, Mapping) and row.get("id") is not None:
+                    out[str(table)] = row["id"]
+                    break
+    except Exception:
+        return {}
+    return out
+
+
 def load_verifier_chains(project_dir: Any) -> List[Dict[str, Any]]:
     """Chains from the REGISTRY store (written via the registration tool).
     Deterministic file read so the validation runner needs no live hub. When the
@@ -1030,9 +1056,12 @@ def _reverify_denial_via_fresh_intruder(base, method, path, body, expect) -> boo
         return True  # any failure → conservative → keep the leak verdict
 
 
-def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
+def execute_chain(base: str, chain: Mapping[str, Any],
+                  seed_ids: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """Run one chain; returns {name, steps: [...], broken: [...]}.
-    Deterministic wiring; never raises."""
+    Deterministic wiring; never raises. ``seed_ids`` (#144): {resource →
+    known-present id from seed_data.json}, a recovery rung for literal-id
+    404s (see the FIX #136 block)."""
     # ${rand} mints a UNIQUE value PER STEP (the prompt's contract: "${rand} mints a
     # unique value, ${var} reuses a saved one"). It used to be minted ONCE per execution
     # — so the canonical multi-user pattern (register user A → … → register user B), which
@@ -1216,6 +1245,21 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
             _lid = last_id_by_resource.get(_lres) if _lres else None
             if _lid is None and _lcoll:
                 _lid = _recover_id_via_list(base, _lcoll, token, avoid=own_user_id)
+            if _lid is None and seed_ids:
+                # FIX #144 (run-66 M2, 4th occurrence of the literal-id class):
+                # live-list recovery is defeated when the resource's list lives
+                # at a different collection (posts listed via /api/feed) — but
+                # the authored seed ids are guaranteed present after every
+                # clean boot (#130/#135). Deterministic, no network. seed
+                # tables are PLURAL ('posts'); _resource_from_path singularizes
+                # ('post') — try both. The collection tail itself ('posts'
+                # from /api/posts/9/like) covers steps whose _lres is None.
+                _coll_tail = _lcoll.rstrip("/").rsplit("/", 1)[-1] if _lcoll else ""
+                for _k in (_lres, f"{_lres}s" if _lres else None,
+                           _coll_tail or None):
+                    if _k and seed_ids.get(_k) is not None:
+                        _lid = seed_ids[_k]
+                        break
             if _lid is None:
                 _lid = last_id
             if _lid is not None and str(_lid).strip():
@@ -1458,7 +1502,8 @@ def run_chains(base: str, project_dir: Any,
     if not chains:
         return {"source": "missing", "chains": [],
                 "broken": [AUTHORING_INSTRUCTIONS], "total_steps": 0}
-    results = [execute_chain(base, ch) for ch in chains]
+    _seed_ids = load_seed_ids(project_dir)  # #144: literal-id recovery rung
+    results = [execute_chain(base, ch, seed_ids=_seed_ids) for ch in chains]
     broken = [b for r in results for b in r["broken"]]
     total = sum(len(r["steps"]) for r in results)
     # Record pass/fail back onto the registry records (best-effort) — the
