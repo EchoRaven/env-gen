@@ -184,6 +184,8 @@ VISUAL_PLATEAU_ROUNDS = int(os.environ.get(
     "ENVGEN_VISUAL_PLATEAU_ROUNDS") or "4")   # consecutive no-improvement judgments
 VISUAL_PLATEAU_MIN_S = float(os.environ.get(
     "ENVGEN_VISUAL_PLATEAU_MIN_S") or "1500")  # never plateau-escape before this deferral floor
+VISUAL_IDLE_S = float(os.environ.get(
+    "ENVGEN_VISUAL_IDLE_S") or "600")  # FIX #145: idle-source escape (0 disables)
 
 
 def _fwval_should_attempt(attempts: int, last_attempt_ts: float, now: float,
@@ -290,7 +292,9 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
                              total_cap: int = VISUAL_TOTAL_JUDGMENTS_CAP,
                              plateau_rounds: int = 0,
                              plateau_cap: int = VISUAL_PLATEAU_ROUNDS,
-                             plateau_min_s: float = VISUAL_PLATEAU_MIN_S) -> str:
+                             plateau_min_s: float = VISUAL_PLATEAU_MIN_S,
+                             last_judgment_at=None,
+                             idle_s: float = VISUAL_IDLE_S) -> str:
     """Decide the visual-blocked delivery path. Returns:
       * ``"defer"``  — keep blocking the release; the lane should iterate.
       * ``"release"``— escape: deliver anyway (recorded below-threshold).
@@ -312,6 +316,17 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
     if (plateau_cap > 0 and plateau_rounds >= plateau_cap
             and deferred_since is not None
             and (now - deferred_since) >= plateau_min_s):
+        return "release"
+    # FIX #145 (run-68 M4): the gate judges on SOURCE CHANGE — when the
+    # frontend stops producing changes the plateau counter freezes below its
+    # cap and only the 3600s anchor releases (run-68: last judgment 13:59,
+    # anchor release 14:21 = 22min of zero new evidence). A frozen source is
+    # the strongest plateau evidence there is: no change → no new judgments →
+    # the scores are final. Same deferral floor as #138.
+    if (idle_s > 0 and last_judgment_at is not None
+            and deferred_since is not None
+            and (now - deferred_since) >= plateau_min_s
+            and (now - last_judgment_at) >= idle_s):
         return "release"
     return "defer"
 
@@ -2013,7 +2028,8 @@ class Orchestrator:
             return _visual_release_decision(
                 _since, getattr(gate, "attempts", 0),
                 getattr(gate, "total_judgments", 0), time.time(),
-                plateau_rounds=getattr(gate, "plateau_rounds", 0)) == "defer"
+                plateau_rounds=getattr(gate, "plateau_rounds", 0),
+                last_judgment_at=getattr(gate, "last_judgment_at", None)) == "defer"
         except Exception:
             return False
 
@@ -2693,6 +2709,7 @@ class Orchestrator:
                     self._vf_gate.total_judgments,
                     _now,
                     plateau_rounds=getattr(self._vf_gate, "plateau_rounds", 0),
+                    last_judgment_at=getattr(self._vf_gate, "last_judgment_at", None),
                 )
                 if _vf_decision == "defer":
                     self._logger.warning(

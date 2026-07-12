@@ -1206,6 +1206,7 @@ class VisualFidelityGate:
         self._best_by_screen: Dict[str, float] = {}  # #138: best similarity per blocking screen
         self.plateau_rounds = 0            # #138: consecutive judgments with no new best
         self._verdict_cache: Dict[str, Dict[str, Any]] = {}  # #142: (screen, shot-md5) → verdict
+        self.last_judgment_at = None       # #145: wall-clock of the last real judgment
 
     def reset_for_milestone(self) -> None:
         """Anchor the deferral clock + total-judgment backstop to a NEW milestone
@@ -1218,6 +1219,7 @@ class VisualFidelityGate:
         self._best_by_screen = {}      # #138: plateau tracking is per milestone
         self.plateau_rounds = 0
         self._verdict_cache = {}       # #142: pixel-keyed verdicts are per milestone
+        self.last_judgment_at = None   # #145: idle-source stamp is per milestone
 
     async def maybe_run(self) -> None:
         """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the
@@ -1301,6 +1303,7 @@ class VisualFidelityGate:
             # churning lane that keeps flipping the source signature can't drive
             # unbounded judging even before the 900s wall-clock escape fires.
             self.total_judgments = self.total_judgments + 1
+            self.last_judgment_at = time.time()  # #145: idle-source escape stamp
             # FIX #138: plateau tracking — a real judgment where NO blocking screen
             # beats its best-so-far (+0.02 noise epsilon) increments plateau_rounds;
             # ANY genuine improvement re-arms it. _visual_release_decision escapes
