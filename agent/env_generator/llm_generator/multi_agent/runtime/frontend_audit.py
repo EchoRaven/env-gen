@@ -309,7 +309,18 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         # `/channel/:handle`≡`/channel/:channelId`) while still hard-flagging a
         # genuinely-absent route (`/feed/library` with no matching wired path).
         if not _route_is_wired(route, app_jsx):
-            missing.append(f"route `{route}` not wired in App.jsx")
+            # FIX #146 (run-69 M3 STUCK, live): declared-route vs implemented-
+            # route DRIFT — ui_page `messages_page` declared `/messages` but the
+            # lane wired MessagesPage at `/direct` (a legitimate choice; real
+            # Instagram uses /direct). The page was built and reachable, yet the
+            # stale registry string blocked delivery for 7 no-change cycles.
+            # When the declared COMPONENT is demonstrably rendered by some OTHER
+            # wired route, accept wired-with-drift — the app is the authority on
+            # where its screens live. A component rendered nowhere still flags.
+            _elem_re = re.compile(
+                r"element=\{\s*<" + re.escape(component or "") + r"[\s/>]")
+            if not (component and _elem_re.search(app_jsx)):
+                missing.append(f"route `{route}` not wired in App.jsx")
     for api in apis:
         # Match the declared path against the source allowing each {param}/:param to be
         # ANY single path segment. The lane writes the call as `/api/posts/${postId}/like`
