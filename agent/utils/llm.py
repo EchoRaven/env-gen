@@ -1801,6 +1801,22 @@ class GoogleClient(BaseLLMClient):
                             mode=types.FunctionCallingConfigMode.VALIDATED))
                 except Exception:
                     pass  # older SDK without VALIDATED → skip silently
+            elif (not google_tools
+                    and os.environ.get("ENVGEN_GEMINI_FC_NONE", "1").lower()
+                        not in ("0", "false", "no", "off")):
+                # FIX #140 (log-mining runs 50-62): EVERY run's first ~90s hit a
+                # deterministic 9-18-retry MALFORMED_FUNCTION_CALL cluster on
+                # tools=0 requests (13/13 runs; kickoff roadmap/spec authoring,
+                # ~40k-char prompts) — the -customtools variant attempts tool-call
+                # codegen even with NO declared tools, and the re-roll retries the
+                # same doomed prompt. mode=NONE tells Gemini function calling is
+                # unavailable for this request → plain-text output, no codegen.
+                try:
+                    cfg.tool_config = types.ToolConfig(
+                        function_calling_config=types.FunctionCallingConfig(
+                            mode=types.FunctionCallingConfigMode.NONE))
+                except Exception:
+                    pass  # older SDK without NONE → skip silently
             # OBSERVABILITY: surface Gemini's thinking (it's a thinking model and
             # reasons regardless; include_thoughts just RETURNS the summary). Lets us
             # see WHY an agent did something (e.g. called run_validation early) instead
