@@ -21,6 +21,40 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+# FIX #143 — content-based owner routing for docker_up build failures.
+# run-65 M4 (2nd occurrence of the run-52 class): a frontend syntax error
+# (Unterminated regex in HomeFeedPage.jsx) broke the build; the docker_up
+# check went to the VERIFIER (two-hop: diagnose → file a bug to the owner)
+# and under contention that hop took 47min — the 75-min no-convergence
+# FAIL-FAST killed the run one minute after the bug was finally filed. The
+# captured build tail (validation_runner: 3000-char up tail + container
+# logs) already names the offending file, so the owner is deterministically
+# classifiable — route the P0 straight to the lane that can edit the file.
+# Both-signals/no-signal tails keep the verifier route (a lane without
+# docker tools must not dead-end on an error it cannot see — smoke-notes
+# 2026-06-19).
+_FE_BUILD_RE = re.compile(
+    r"\.jsx\b|\.tsx\b|\bvite\b|\brollup\b|\besbuild\b|npm (?:ERR|error)|"
+    r"Unterminated regular expression|node_modules|\[frontend[ \]]",
+    re.IGNORECASE)
+_BE_BUILD_RE = re.compile(
+    r"\.py\b|\bpip\b|\bpoetry\b|\buvicorn\b|ModuleNotFoundError|"
+    r"\balembic\b|\[backend[ \]]",
+    re.IGNORECASE)
+
+
+def docker_up_owner(detail: str) -> str:
+    """'frontend'/'backend' when the build-failure tail names exactly one
+    side's toolchain; 'verifier' (the diagnose-first route) otherwise."""
+    d = str(detail or "")
+    fe = bool(_FE_BUILD_RE.search(d))
+    be = bool(_BE_BUILD_RE.search(d))
+    if fe and not be:
+        return "frontend"
+    if be and not fe:
+        return "backend"
+    return "verifier"
+
 
 class RemediationDispatcher:
     """Routes failed-gate remediation back to the owning lane. Stateless —
@@ -270,6 +304,20 @@ class RemediationDispatcher:
                     continue  # one dispatch per milestone (storm control)
                 owner, title, how = spec
                 detail = str(c.get("detail") or "")
+                if name == "docker_up":
+                    # FIX #143: when the captured build tail names exactly one
+                    # side's toolchain, skip the verifier diagnose-hop and P0
+                    # the lane that owns the failing source — the tail already
+                    # carries file:line, no docker tools needed to act on it.
+                    _own = docker_up_owner(detail)
+                    if _own != "verifier":
+                        owner = _own
+                        title = (f"Docker build fails in YOUR ({_own}) build — "
+                                 "fix the named source file (blocks delivery)")
+                        how = ("the build-error tail below names the failing "
+                               "file (e.g. a parse/import error with file:line)."
+                               " Fix that source file directly — you do NOT "
+                               "need docker tools; the error is in your code.")
                 task = orch.hubs.workhub.create_task(
                     title=title,
                     description=(
