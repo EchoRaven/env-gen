@@ -559,6 +559,36 @@ class AgentMessaging:
                 await self._handle_task_ready(urgent_msg)
                 return True
 
+            # FIX #147 (run-71 M2 STUCK, live): the verifier claimed BUSY for
+            # 13min with ZERO step activity (its last finish was 19:53:01, the
+            # in-flight loop never returned) — every gate-check remediation
+            # task_ready was deferred "for later" and the deferred queue never
+            # drained (drain only runs in a handler's finally) → 7-cycle
+            # no-convergence abort with all 3 milestones' work done. When the
+            # lane claims busy but its agentic loop has produced NO step for
+            # ENVGEN_LANE_WEDGE_S (default 600s; 0 disables), the loop is
+            # WEDGED, not busy: force-reset to IDLE (the wedged loop's finally,
+            # if it ever runs, is harmless — depth uses max(0, n-1)) and handle
+            # this task_ready NOW in the urgent-drain context (which
+            # demonstrably still runs while the loop is wedged).
+            import os as _os
+            _last = getattr(self, "_last_step_activity", None)
+            try:
+                _wedge_s = float(_os.environ.get("ENVGEN_LANE_WEDGE_S", "600") or 600)
+            except Exception:
+                _wedge_s = 600.0
+            if (_last is not None and _wedge_s > 0
+                    and (time.time() - _last) >= _wedge_s):
+                self._logger.warning(
+                    f"[{self.agent_id}] lane claims busy (state={self._processing_state}, "
+                    f"depth={getattr(self, '_agentic_loop_depth', 0)}) but NO step activity "
+                    f"for {int(time.time() - _last)}s — declaring the in-flight loop WEDGED "
+                    "(FIX #147), force-resetting to IDLE and handling this task_ready now")
+                self._processing_state = ProcessingState.IDLE
+                self._agentic_loop_depth = 0
+                await self._handle_task_ready(urgent_msg)
+                return True
+
             queued = list(getattr(self, "_deferred_task_ready_messages", []) or [])
             queued_ids = {
                 getattr(item.header, "message_id", None)

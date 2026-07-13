@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, Dict, List, Optional, Set
 
 from utils.llm import Message
@@ -53,6 +54,7 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
         # and hung the frontend lane silently for 13min (V30). This monotonic depth counter
         # is reset-proof; decremented in the finally below.
         self._agentic_loop_depth = getattr(self, "_agentic_loop_depth", 0) + 1
+        self._last_step_activity = time.time()  # #147: loop-enter counts as activity
         # V30 liveness: log loop ENTER so a stall BEFORE the first step (the silent pre-step
         # hang the frontend hit) is observable, and depth>1 surfaces unexpected nesting.
         self._logger.info(
@@ -178,6 +180,10 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
         self._last_hub_pulse_prompt = None
         try:
             for step in range(max_steps):
+                # FIX #147: step-activity stamp — the busy-wedge watchdog
+                # (messaging.py) treats a lane with no stamp movement for
+                # ENVGEN_LANE_WEDGE_S as wedged, not busy.
+                self._last_step_activity = time.time()
                 if self._shutdown_requested:
                     return {"success": False, "error": "Shutdown requested", "files_created": files_created}
 
