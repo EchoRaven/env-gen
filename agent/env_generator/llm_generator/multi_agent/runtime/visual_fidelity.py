@@ -1113,7 +1113,8 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
         if _theme_variant_enabled():
             # A2b: theme-variant screens need the RENDER MECHANISM stated, not
             # just the hex values.
-            lines.extend(_theme_variant_lines(str(r.get("name") or "")))
+            lines.extend(_theme_variant_lines(
+                str(r.get("name") or ""), output_dir, str(r.get("route") or "")))
         if output_dir is not None:
             _sn = _spec_snippet(output_dir, str(r.get("name") or ""))
             if _sn:
@@ -1307,7 +1308,8 @@ def _theme_variant_enabled() -> bool:
         not in ("0", "false", "no", "off")
 
 
-def _theme_variant_lines(screen_name: str) -> List[str]:
+def _theme_variant_lines(screen_name: str, output_dir: Any = None,
+                         route: str = "") -> List[str]:
     """A2b: the THEME MECHANISM block for a theme-variant failing screen.
     login_dark sat at 0.15 across run-73/75/76 while its measured dark hexes
     were already inlined (A2): the missing piece was HOW a dark variant is
@@ -1330,7 +1332,28 @@ def _theme_variant_lines(screen_name: str) -> List[str]:
                "cleared, no `html.dark`). The light appearance must come from "
                "the default (non-dark:) styles of the SAME page component that "
                "also serves the dark variant — do NOT fork a separate page.")
-    return [f"THEME VARIANT ({scheme.upper()} capture): {how}"]
+    lines = [f"THEME VARIANT ({scheme.upper()} capture): {how}"]
+    if scheme == "dark" and output_dir is not None and route:
+        # run-78 autopsy: the lane wrote perfect dark: variants (measured
+        # hexes) into components no page imports, while the WIRED page file
+        # stayed bg-white — point the work at the file that actually renders.
+        try:
+            comp = _page_component_for_route(output_dir, route)
+            if comp:
+                _pf = (Path(output_dir) / "app" / "frontend" / "src" / "pages"
+                       / f"{comp}.jsx")
+                if _pf.is_file() and "dark:" not in _pf.read_text(
+                        encoding="utf-8", errors="ignore"):
+                    lines.append(
+                        f"  ⚠ app/frontend/src/pages/{comp}.jsx (the file WIRED at "
+                        f"{route}) currently has no `dark:` variant at all — dark "
+                        "styles written in any other file that this page does not "
+                        "import are DEAD code and never render. Add the dark: "
+                        "variants IN THIS FILE (or in components it actually "
+                        "imports).")
+        except Exception:
+            pass
+    return lines
 
 
 def _asset_usage_advisory(output_dir: Any, exclude: Optional[set] = None,
