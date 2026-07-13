@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import re
 import subprocess
@@ -26,6 +27,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from .validation_runner import _service_host_port
+
+_LOG = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Reference-image → route mapping. Reference screenshots are conventionally
@@ -1077,10 +1080,29 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
     lines = ["Visual fidelity below threshold vs the reference designs. "
              "Fix the implemented screens to match the references:"]
     dim_titles = {d["key"]: d["title"] for d in _DIMENSIONS}
+    # A1: run the staged-asset audit ONCE; per-screen results feed the
+    # first-position mandates below, the remainder feeds the tail advisory.
+    _audit = _load_asset_audit(output_dir)
+    _ab_on = _brand_asset_fix_enabled()
+    _emitted: set = set()
+    _mandated_screens = 0
     for r in result.get("screens", []):
         if r.get("passed") or r.get("name") in latched:
             continue
         lines.append(f"\n## {r['name']}  (route {r['route']}, similarity {r['similarity']:.2f})")
+        if _ab_on and _audit is not None:
+            # A1: a failing screen whose reference components map to staged real
+            # assets the code never references gets the asset mandate FIRST —
+            # run-50 class: the lane draws a generic approximation while the
+            # real wordmark/glyph sits staged and unreferenced, and the judge
+            # correctly scores the brand-less screen 0.2-0.4.
+            _fx, _em = _screen_asset_fix_lines(
+                str(r.get("name") or ""), str(r.get("route") or ""),
+                _audit.get("unused_by_screen") or {}, output_dir)
+            if _fx:
+                lines.extend(_fx)
+                _emitted |= _em
+                _mandated_screens += 1
         if output_dir is not None:
             _sn = _spec_snippet(output_dir, str(r.get("name") or ""))
             if _sn:
@@ -1105,33 +1127,118 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
             lines.append("Do these, in order:")
             for i, f in enumerate(fixes, 1):
                 lines.append(f"{i}. {f}")
-    adv = _asset_usage_advisory(output_dir)
+    adv = _asset_usage_advisory(
+        output_dir, exclude=_emitted,
+        unused=(_audit.get("unused_mapped") if _audit is not None else None))
     if adv:
         lines.append(adv)
+    if _audit is not None:
+        # A1 observability: one stable-prefix line per remediation build so the
+        # per-round trend is greppable across runs (gate the escalate-to-gate
+        # decision on this data).
+        _LOG.info(
+            "BRAND-ASSET AUDIT: %d unused mapped asset(s) total; %d mandated "
+            "first-position on %d failing screen(s)",
+            len(_audit.get("unused_mapped") or []), len(_emitted), _mandated_screens)
     lines.append("\nReference images: use list_reference_images / view_image. "
                  "Your screenshots from the last gate run are in design/visual_gate/.")
     return "\n".join(lines)
 
 
-def _asset_usage_advisory(output_dir: Any) -> str:
+def _brand_asset_fix_enabled() -> bool:
+    """A1 kill switch: ENVGEN_BRAND_ASSET_FIX=0 reverts to the tail-advisory-only
+    behavior (first-position mandates off)."""
+    return str(os.environ.get("ENVGEN_BRAND_ASSET_FIX", "1")).strip().lower() \
+        not in ("0", "false", "no", "off")
+
+
+def _load_asset_audit(output_dir: Any) -> Optional[Dict[str, Any]]:
+    """Run the staged-asset usage audit once per remediation build. None when
+    there is no design_system (references-only run) or on any error."""
+    if output_dir is None:
+        return None
+    try:
+        ds_path = Path(output_dir) / "design" / "design_system.json"
+        if not ds_path.is_file():
+            return None
+        ds = json.loads(ds_path.read_text(encoding="utf-8"))
+        from .frontend_audit import audit_asset_usage
+        return audit_asset_usage(Path(output_dir) / "app" / "frontend", ds)
+    except Exception:
+        return None
+
+
+def _page_component_for_route(output_dir: Any, route: str) -> str:
+    """Resolve the ui_page COMPONENT wired at ``route`` from the registry store
+    (shared/hubs/registryhub_ui_pages.json) by ROUTE equality — the visual screen
+    name (login_dark) and the ui_page name (login) do not align, routes do
+    (A1 supervisor requirement: route↔route, no name fuzzy-matching). '' when
+    the store is absent or no page declares the route."""
+    try:
+        recs = json.loads(
+            (Path(output_dir) / "shared" / "hubs" / "registryhub_ui_pages.json")
+            .read_text(encoding="utf-8"))
+        want = str(route or "").rstrip("/") or "/"
+        for name, rec in (recs.items() if isinstance(recs, dict) else []):
+            if name == "_meta" or not isinstance(rec, dict):
+                continue
+            have = str(rec.get("route") or "").rstrip("/") or "/"
+            if have == want and rec.get("component"):
+                return str(rec["component"])
+    except Exception:
+        pass
+    return ""
+
+
+def _screen_asset_fix_lines(screen_name: str, route: str,
+                            unused_by_screen: Mapping[str, Any],
+                            output_dir: Any) -> tuple:
+    """A1: the FIRST-position block for one failing screen — mandate rendering
+    the staged real assets its reference components map to, naming the target
+    page file (route-aligned) and the exact /assets/ path. Returns
+    (lines, {(component, asset), ...}) — the pairs are excluded from the tail
+    advisory so nothing is stated twice."""
+    ents = list(unused_by_screen.get(screen_name) or [])
+    if not ents:
+        return [], set()
+    comp = _page_component_for_route(output_dir, route)
+    where = (f"app/frontend/src/pages/{comp}.jsx (the page wired at route {route})"
+             if comp else f"the page component wired at route {route}")
+    lines = ["USE THE REAL STAGED ASSETS FIRST — this screen's reference "
+             "components are mapped to staged files your code never references; "
+             "render them before any other fix:"]
+    emitted = set()
+    for u in ents[:6]:
+        lines.append(
+            f"- render `/assets/{u['file']}` for component `{u['component']}` in "
+            f"{where} (<img src='/assets/{u['file']}'/> or import the SVG) — "
+            "do NOT draw an approximation.")
+        emitted.add((u.get("component"), u.get("asset")))
+    if len(ents) > 6:
+        lines.append(f"- (+{len(ents) - 6} more mapped assets unreferenced on this "
+                     f"screen — see design/design_system.json screens `{screen_name}`)")
+    return lines, emitted
+
+
+def _asset_usage_advisory(output_dir: Any, exclude: Optional[set] = None,
+                          unused: Optional[List[dict]] = None) -> str:
     """ADVISORY block (Design-Prep): when design/design_system.json maps components to REAL staged
     assets that the frontend does not reference, tell the lane to use them instead of drawing
-    approximations. Best-effort; '' when there is no design_system or nothing to flag."""
+    approximations. A1: ``exclude`` = (component, asset) pairs already mandated first-position on a
+    failing screen (not repeated here); ``unused`` = precomputed audit rows (audit runs once).
+    Best-effort; '' when there is no design_system or nothing to flag."""
     if output_dir is None:
         return ""
     try:
-        import json as _json
-        from pathlib import Path as _P
-        ds_path = _P(output_dir) / "design" / "design_system.json"
-        if not ds_path.is_file():
-            return ""
-        ds = _json.loads(ds_path.read_text(encoding="utf-8"))
-        from .frontend_audit import audit_asset_usage
-        unused = audit_asset_usage(_P(output_dir) / "app" / "frontend", ds).get("unused_mapped") or []
-        if not unused:
+        if unused is None:
+            _audit = _load_asset_audit(output_dir)
+            unused = (_audit.get("unused_mapped") if _audit is not None else None) or []
+        excl = exclude or set()
+        rows = [u for u in unused if (u.get("component"), u.get("asset")) not in excl]
+        if not rows:
             return ""
         out = ["\n## Real assets not used (advisory — use the STAGED asset, do not draw it):"]
-        for u in unused[:20]:
+        for u in rows[:20]:
             out.append(f"- component `{u['component']}` should render real asset "
                        f"`{u['asset']}` → reference `/assets/{u['file']}` "
                        f"(<img src='/assets/{u['file']}'/> or import it), not a hand-drawn shape.")

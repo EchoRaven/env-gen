@@ -563,9 +563,11 @@ def audit_asset_usage(frontend_dir: Any, design_system: Mapping[str, Any]) -> Di
     REAL asset that no frontend file actually references. For every ``screens[].components[].assets``
     id, resolve its manifest ``file`` and check whether ANY frontend ``src`` file mentions that
     file's basename (e.g. ``ig.svg``); if none do, the lane drew an approximation instead of using
-    the real asset → report ``{component, asset, file}``. Best-effort; ``{"unused_mapped": []}`` on
-    any error or missing design_system."""
-    out: Dict[str, Any] = {"unused_mapped": []}
+    the real asset → report ``{component, asset, file}``. A1: also returns the same entries scoped
+    per screen (``unused_by_screen: {screen_name: [entry,...]}``) so the visual remediation can
+    mandate the assets FIRST on exactly the failing screens. Best-effort; empty shapes on any
+    error or missing design_system."""
+    out: Dict[str, Any] = {"unused_mapped": [], "unused_by_screen": {}}
     try:
         ds = design_system or {}
         assets_by_id = {a.get("id"): a for a in (ds.get("assets") or []) if isinstance(a, dict)}
@@ -585,7 +587,9 @@ def audit_asset_usage(frontend_dir: Any, design_system: Mapping[str, Any]) -> Di
                     continue
         blob = "\n".join(blob_parts)
         seen = set()
+        seen_per_screen = set()
         for screen in (ds.get("screens") or []):
+            sname = str(screen.get("name") or "") if isinstance(screen, dict) else ""
             for comp in (screen.get("components") or []):
                 if not isinstance(comp, dict):
                     continue
@@ -598,13 +602,20 @@ def audit_asset_usage(frontend_dir: Any, design_system: Mapping[str, Any]) -> Di
                     base = Path(fname).name
                     if not base:
                         continue
-                    key = (cid, aid)
-                    if key in seen:
+                    if base in blob:
                         continue
-                    if base not in blob:
+                    entry = {"component": cid, "asset": aid, "file": fname}
+                    key = (cid, aid)
+                    if key not in seen:
                         seen.add(key)
-                        out["unused_mapped"].append(
-                            {"component": cid, "asset": aid, "file": fname})
+                        out["unused_mapped"].append(entry)
+                    # A1: per-screen scoping — the SAME (component, asset) pair can
+                    # legitimately recur on several screens (nav rails), so the
+                    # by-screen map dedupes per screen, not globally.
+                    skey = (sname, cid, aid)
+                    if sname and skey not in seen_per_screen:
+                        seen_per_screen.add(skey)
+                        out["unused_by_screen"].setdefault(sname, []).append(dict(entry))
     except Exception:
-        return {"unused_mapped": []}
+        return {"unused_mapped": [], "unused_by_screen": {}}
     return out
