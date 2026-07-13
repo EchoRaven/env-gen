@@ -1110,6 +1110,10 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
             # A2: numeric skeleton right after the asset mandate, before the
             # measured colors — structure first, then paint.
             lines.extend(_layout_geometry_lines(_ds, str(r.get("name") or "")))
+        if _theme_variant_enabled():
+            # A2b: theme-variant screens need the RENDER MECHANISM stated, not
+            # just the hex values.
+            lines.extend(_theme_variant_lines(str(r.get("name") or "")))
         if output_dir is not None:
             _sn = _spec_snippet(output_dir, str(r.get("name") or ""))
             if _sn:
@@ -1294,6 +1298,39 @@ def _screen_asset_fix_lines(screen_name: str, route: str,
         lines.append(f"- (+{len(ents) - 6} more mapped assets unreferenced on this "
                      f"screen — see design/design_system.json screens `{screen_name}`)")
     return lines, emitted
+
+
+
+def _theme_variant_enabled() -> bool:
+    """A2b kill switch: ENVGEN_THEME_VARIANT_FIX=0 drops the mechanism block."""
+    return str(os.environ.get("ENVGEN_THEME_VARIANT_FIX", "1")).strip().lower() \
+        not in ("0", "false", "no", "off")
+
+
+def _theme_variant_lines(screen_name: str) -> List[str]:
+    """A2b: the THEME MECHANISM block for a theme-variant failing screen.
+    login_dark sat at 0.15 across run-73/75/76 while its measured dark hexes
+    were already inlined (A2): the missing piece was HOW a dark variant is
+    rendered — the gate (#141) captures the SAME route component with
+    html.dark + [data-theme=dark] + prefers-color-scheme:dark, so without
+    dark-variant CSS the dark capture photographs light pixels and the judge's
+    low score is honest (run-65). State the mechanism; forbid a forked page."""
+    scheme = screen_color_scheme({"name": screen_name})
+    if scheme is None:
+        return []
+    if scheme == "dark":
+        how = ("the gate renders this route with `html.dark` set, "
+               "`[data-theme=\"dark\"]`, and prefers-color-scheme:dark emulated. "
+               "Implement the dark styles on the SAME page component via Tailwind "
+               "`dark:` variants (set `darkMode: 'class'` in tailwind.config) or "
+               "`.dark`-scoped CSS — do NOT fork a separate page. Use the "
+               "measured dark hex values from the geometry/spec blocks above.")
+    else:
+        how = ("the gate renders this route in LIGHT mode (theme storage keys "
+               "cleared, no `html.dark`). The light appearance must come from "
+               "the default (non-dark:) styles of the SAME page component that "
+               "also serves the dark variant — do NOT fork a separate page.")
+    return [f"THEME VARIANT ({scheme.upper()} capture): {how}"]
 
 
 def _asset_usage_advisory(output_dir: Any, exclude: Optional[set] = None,
