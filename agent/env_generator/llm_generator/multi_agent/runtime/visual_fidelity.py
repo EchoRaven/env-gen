@@ -1080,10 +1080,13 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
     lines = ["Visual fidelity below threshold vs the reference designs. "
              "Fix the implemented screens to match the references:"]
     dim_titles = {d["key"]: d["title"] for d in _DIMENSIONS}
-    # A1: run the staged-asset audit ONCE; per-screen results feed the
-    # first-position mandates below, the remainder feeds the tail advisory.
-    _audit = _load_asset_audit(output_dir)
+    # A1/A2: load the design system + run the staged-asset audit ONCE;
+    # per-screen results feed the first-position mandates and the geometry
+    # blocks below, the audit remainder feeds the tail advisory.
+    _ds = _load_design_system(output_dir)
+    _audit = _load_asset_audit(output_dir, ds=_ds)
     _ab_on = _brand_asset_fix_enabled()
+    _geo_on = _layout_geometry_enabled()
     _emitted: set = set()
     _mandated_screens = 0
     for r in result.get("screens", []):
@@ -1103,6 +1106,10 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
                 lines.extend(_fx)
                 _emitted |= _em
                 _mandated_screens += 1
+        if _geo_on:
+            # A2: numeric skeleton right after the asset mandate, before the
+            # measured colors — structure first, then paint.
+            lines.extend(_layout_geometry_lines(_ds, str(r.get("name") or "")))
         if output_dir is not None:
             _sn = _spec_snippet(output_dir, str(r.get("name") or ""))
             if _sn:
@@ -1152,20 +1159,89 @@ def _brand_asset_fix_enabled() -> bool:
         not in ("0", "false", "no", "off")
 
 
-def _load_asset_audit(output_dir: Any) -> Optional[Dict[str, Any]]:
-    """Run the staged-asset usage audit once per remediation build. None when
-    there is no design_system (references-only run) or on any error."""
+def _load_design_system(output_dir: Any) -> Optional[Dict[str, Any]]:
+    """design/design_system.json as a dict; None when absent/invalid (a
+    references-only run) — the A-direction remediation enrichments key off
+    this one load."""
     if output_dir is None:
         return None
     try:
         ds_path = Path(output_dir) / "design" / "design_system.json"
         if not ds_path.is_file():
             return None
-        ds = json.loads(ds_path.read_text(encoding="utf-8"))
+        return json.loads(ds_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _load_asset_audit(output_dir: Any, ds: Optional[Mapping[str, Any]] = None
+                      ) -> Optional[Dict[str, Any]]:
+    """Run the staged-asset usage audit once per remediation build. None when
+    there is no design_system (references-only run) or on any error."""
+    if ds is None:
+        ds = _load_design_system(output_dir)
+    if ds is None:
+        return None
+    try:
         from .frontend_audit import audit_asset_usage
         return audit_asset_usage(Path(output_dir) / "app" / "frontend", ds)
     except Exception:
         return None
+
+
+def _layout_geometry_enabled() -> bool:
+    """A2 kill switch: ENVGEN_LAYOUT_GEOMETRY_FIX=0 drops the geometry block."""
+    return str(os.environ.get("ENVGEN_LAYOUT_GEOMETRY_FIX", "1")).strip().lower() \
+        not in ("0", "false", "no", "off")
+
+
+def _layout_geometry_lines(ds: Optional[Mapping[str, Any]], screen_name: str) -> List[str]:
+    """A2: the measured LAYOUT GEOMETRY block for one failing screen — the
+    analyst layout sentence + each component's normalized region rendered as
+    viewport percentages (+ bg hex). A1 validation (run-75) drove asset
+    coverage on the failing screens to 100% while their scores stayed
+    0.15-0.40: the residual gap is the SKELETON (single- vs two-column login =
+    the 0.0→0.4 jump class), which was never stated numerically — #52's
+    _spec_snippet carries colors, this carries geometry. Empty when nothing
+    is measured."""
+    if ds is None:
+        return []
+    try:
+        screen = next(
+            (s for s in (ds.get("screens") or [])
+             if isinstance(s, dict) and str(s.get("name") or "") == screen_name),
+            None)
+        if screen is None:
+            return []
+        rows: List[str] = []
+        layout = str(screen.get("layout") or "").strip()
+        for comp in (screen.get("components") or [])[:10]:
+            if not isinstance(comp, dict):
+                continue
+            reg = comp.get("region")
+            if not (isinstance(reg, (list, tuple)) and len(reg) == 4):
+                continue
+            try:
+                x1, y1, x2, y2 = (float(v) for v in reg)
+            except Exception:
+                continue
+            bg = (comp.get("colors") or {}).get("bg") if isinstance(
+                comp.get("colors"), Mapping) else None
+            rows.append(
+                f"  · {comp.get('id')}: x {x1 * 100:.0f}-{x2 * 100:.0f}% "
+                f"(width {(x2 - x1) * 100:.0f}%), y {y1 * 100:.0f}-{y2 * 100:.0f}% "
+                f"(height {(y2 - y1) * 100:.0f}%)"
+                + (f", bg {bg}" if bg else ""))
+        if not rows and not layout:
+            return []
+        lines = ["LAYOUT GEOMETRY (measured from the reference — match the "
+                 "SKELETON first, then style):"]
+        if layout:
+            lines.append(f"  structure: {layout}")
+        lines.extend(rows)
+        return lines
+    except Exception:
+        return []
 
 
 def _page_component_for_route(output_dir: Any, route: str) -> str:
