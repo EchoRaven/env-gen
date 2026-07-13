@@ -93,7 +93,7 @@ class AgentMessaging:
                 self._logger.info(f"[{self.agent_id}] Queued interrupt: {msg_type} from {inbox_msg['from']}")
 
         await self._priority_queue.put(message)
-        await self._message_queue.put(message)
+        await self._enqueue_for_dispatch(message)
         await self._maybe_schedule_resident_message_wakeup(message, inbox_msg)
 
     def get_inbox_messages(self, limit: int = 10, clear: bool = True) -> List[Dict]:
@@ -308,6 +308,35 @@ class AgentMessaging:
             self._logger.debug(f"[{self.agent_id}] Sent delivery ACK for {msg_id[:8]}... to {sender}")
         except Exception as e:
             self._logger.warning(f"[{self.agent_id}] Failed to send delivery ACK: {e}")
+
+
+    async def _enqueue_for_dispatch(self, message) -> None:
+        """FIX #150 (run-71/run-77 REAL-wedge root, USR2-proven live): never
+        park the SENDER on the bounded dispatch queue. run-77 09:56: SEVEN
+        tasks sat parked at `await self._message_queue.put(...)` — the target
+        lane's _main_loop was itself stuck inside _dispatch_message, so its
+        Queue(100) never drained; the backend's post-FINISH notification flush
+        parked on it and the finishing loop never unwound (state stuck
+        PROCESSING_TASK 12min until the #147/#149 watchdog rescue). By this
+        point the message already reached _subscription_inbox, the priority
+        queue, and the interrupt channel for urgent types — the bounded queue
+        only feeds ordinary _main_loop dispatch, and a 100-deep backlog means
+        that dispatch is already dead. Drop THAT copy loudly instead of
+        cascading the stall into every sender."""
+        _put_nowait = getattr(self._message_queue, "put_nowait", None)
+        if _put_nowait is None:
+            # duck-typed queue without a non-blocking put (test doubles) —
+            # legacy path; the real asyncio.Queue always has put_nowait.
+            await self._message_queue.put(message)
+            return
+        try:
+            _put_nowait(message)
+        except asyncio.QueueFull:
+            self._logger.warning(
+                f"[{self.agent_id}] dispatch queue FULL "
+                f"({self._message_queue.maxsize} pending) — dropping the "
+                "ordinary-dispatch copy (inbox + priority-queue copies kept) "
+                "instead of parking the sender (FIX #150)")
 
     async def _pickup_undelivered_inbox_events(self) -> int:
         """Drain cross-process events from the on-disk inbox.
