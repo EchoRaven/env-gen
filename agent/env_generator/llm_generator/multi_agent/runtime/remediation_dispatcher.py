@@ -56,6 +56,52 @@ def docker_up_owner(detail: str) -> str:
     return "verifier"
 
 
+# FIX #148 — content-based owner routing for business_chain_failing.
+# run-72 M4 (1st occurrence, recorded → pre-authorized): a contract-REGISTERED
+# action endpoint (POST /api/users/{id}/unfollow) was never implemented by the
+# lane, and the projection deliberately serves route_projector's FIX #124 stub
+# 404 for it ("action endpoint not implemented by the projection — the app's
+# own handler serves this route"). business_chain_failing routed to the
+# VERIFIER — which can only re-author chains, not add a backend route — so the
+# blocker spun 7 post-cap cycles to STUCK-abort. The chain executor already
+# records the 404 body into each broken-step string (execute_chain: note =
+# body_text[:160], and the #124 stub fits), so the owner is deterministically
+# classifiable from the registry's last_result — mirror #143 and P0 the
+# BACKEND with the exact endpoint list. Broken steps WITHOUT the stub
+# signature keep the verifier diagnose-first route unchanged.
+_ACTION_404_RE = re.compile(r"action endpoint not implemented", re.IGNORECASE)
+
+
+def action_unimplemented_broken(broken) -> List[str]:
+    """The broken-step strings whose 404 body carries the projection's
+    action-endpoint stub signature (route_projector FIX #124) — a registered
+    ACTION route only the backend lane can implement."""
+    return [str(b) for b in (broken or []) if _ACTION_404_RE.search(str(b))]
+
+
+def _chain_action_404s(orch) -> List[str]:
+    """Re-derive the #124-stub broken steps from the chain registry's
+    last_result (the gate-level failed_checks carry names only — same
+    re-derivation pattern as the business_chain_api_coverage branch).
+    Best-effort: no registryhub / malformed records → [] (verifier route)."""
+    try:
+        chains = orch.hubs.registryhub.get_verification_chains() or {}
+        broken: List[str] = []
+        for name, rec in (chains.items() if isinstance(chains, dict) else []):
+            if name == "_meta" or not isinstance(rec, dict):
+                continue
+            broken.extend((rec.get("last_result") or {}).get("broken") or [])
+        seen: set = set()
+        out: List[str] = []
+        for b in action_unimplemented_broken(broken):
+            if b not in seen:
+                seen.add(b)
+                out.append(b)
+        return out
+    except Exception:
+        return []
+
+
 class RemediationDispatcher:
     """Routes failed-gate remediation back to the owning lane. Stateless —
     reads/writes the orchestrator's collaborators + per-milestone guards live."""
@@ -667,6 +713,28 @@ class RemediationDispatcher:
                     _persist[name] = 0
                 owner, title, how = spec
                 _extra = ""
+                if name == "business_chain_failing":
+                    # FIX #148: the failing steps answering the projection's #124
+                    # action-endpoint stub 404 need a BACKEND route, not a chain
+                    # re-author — route the P0 to the lane that can add it.
+                    _act = _chain_action_404s(orch)
+                    if _act:
+                        owner = "backend"
+                        title = ("Implement the registered ACTION endpoint(s) — "
+                                 "the projection serves a deliberate 404 stub "
+                                 "(blocks delivery)")
+                        how = (
+                            "a verification chain hits contract-REGISTERED action "
+                            "endpoint(s) answering the projection's 404 stub. The "
+                            "framework does NOT project a semantically-unmappable "
+                            "action route (a POST whose action segment maps to no "
+                            "model) — YOUR handler must serve it, and it is missing/"
+                            "unmounted. For EACH endpoint below, implement the real "
+                            "action semantics in app/backend (e.g. custom_routes.py: "
+                            "unfollow = delete the follows row) and register it "
+                            "status=implemented; if a registration is junk/obsolete, "
+                            "deprecate it via registryhub_deprecate_endpoint instead:"
+                            "\n- " + "\n- ".join(_act[:8]))
                 if name == "business_chain_api_coverage":
                     # Hand the verifier the EXACT uncovered endpoints. The generic "cover the
                     # uncovered endpoints" left it guessing — run v17 got business_chain green
