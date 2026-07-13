@@ -392,12 +392,21 @@ class AgentMessaging:
             self._logger.info(f"[{self.agent_id}] picked up {picked} undelivered cross-process event(s)")
         return picked
 
-    async def _check_and_handle_urgent(self) -> bool:
+    async def _check_and_handle_urgent(self, from_loop: bool = False) -> bool:
         """Check for urgent messages and handle them.
 
         Drain the on-disk inbox first so cross-process events (e.g. chat
         messages published by the monitor server) make it into the priority
         queue before we pull from it.
+
+        ``from_loop`` (#149): True when the caller IS the running agentic loop
+        (step boundary / between action rounds). A drain the loop itself
+        executes proves the loop is alive, so the #147 wedge branch must not
+        fire there — all four run-72/73 WEDGED declarations were healthy
+        mid-step lanes (the backend loop declared wedged at 00:32:29 completed
+        its task normally at 00:43:16), and the force-reset spawned CONCURRENT
+        loops in the same lane. The resident poller (base.run_loop) keeps the
+        default False and retains the run-71 real-wedge rescue.
         """
         try:
             await self._pickup_undelivered_inbox_events()
@@ -571,19 +580,27 @@ class AgentMessaging:
             # if it ever runs, is harmless — depth uses max(0, n-1)) and handle
             # this task_ready NOW in the urgent-drain context (which
             # demonstrably still runs while the loop is wedged).
+            # #149 guards on the branch below: (a) never fire from an IN-LOOP
+            # drain — the loop executing this code is by definition not wedged
+            # (all 4 run-72/73 declarations were healthy mid-step lanes, and
+            # the reset spawned concurrent double-authoring loops); (b) a real
+            # reset bumps _loop_generation so the undead loop's finally cannot
+            # stomp the replacement loop's state/depth (step_runner unwind
+            # checks its entry generation).
             import os as _os
             _last = getattr(self, "_last_step_activity", None)
             try:
                 _wedge_s = float(_os.environ.get("ENVGEN_LANE_WEDGE_S", "600") or 600)
             except Exception:
                 _wedge_s = 600.0
-            if (_last is not None and _wedge_s > 0
+            if (not from_loop and _last is not None and _wedge_s > 0
                     and (time.time() - _last) >= _wedge_s):
                 self._logger.warning(
                     f"[{self.agent_id}] lane claims busy (state={self._processing_state}, "
                     f"depth={getattr(self, '_agentic_loop_depth', 0)}) but NO step activity "
                     f"for {int(time.time() - _last)}s — declaring the in-flight loop WEDGED "
                     "(FIX #147), force-resetting to IDLE and handling this task_ready now")
+                self._loop_generation = getattr(self, "_loop_generation", 0) + 1
                 self._processing_state = ProcessingState.IDLE
                 self._agentic_loop_depth = 0
                 await self._handle_task_ready(urgent_msg)
