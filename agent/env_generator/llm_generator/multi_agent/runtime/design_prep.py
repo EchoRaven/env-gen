@@ -45,6 +45,7 @@ def resolve_design_input(design_input: Optional[str],
     references: List[str] = []
     docs: List[str] = []
     assets_dir: Optional[str] = None
+    dataset_dir: Optional[str] = None
 
     try:
         if design_input:
@@ -53,7 +54,12 @@ def resolve_design_input(design_input: Optional[str],
             docs = _list_files(root / "docs", _DOC_EXTS)
             adir = root / "assets"
             assets_dir = str(adir) if adir.is_dir() else None
-            return {"references": references, "docs": docs, "assets_dir": assets_dir}
+            # F1: the FOURTH channel — a dataset/ folder of REAL structured data
+            # (JSON/CSV) ingested recursively (a folder path, like assets/).
+            ddir = root / "dataset"
+            dataset_dir = str(ddir) if ddir.is_dir() else None
+            return {"references": references, "docs": docs,
+                    "assets_dir": assets_dir, "dataset_dir": dataset_dir}
 
         # back-compat: references-only
         references = list(reference_images or [])
@@ -61,7 +67,8 @@ def resolve_design_input(design_input: Optional[str],
             references.extend(_list_files(Path(reference_dir), _IMG_EXTS))
     except Exception:
         pass
-    return {"references": references, "docs": docs, "assets_dir": assets_dir}
+    return {"references": references, "docs": docs,
+            "assets_dir": assets_dir, "dataset_dir": dataset_dir}
 
 
 # ── deterministic skeleton design_system (measure, no LLM) ───────────────────
@@ -162,6 +169,17 @@ def build_skeleton_design_system(resolved: Dict, output_dir,
         except Exception:
             assets = []
 
+    # F1: the dataset/ channel — real structured data rows, staged into
+    # design/dataset/ (build-infra copies them to app/backend/dataset/).
+    dataset: List[Dict] = []
+    ddir = resolved.get("dataset_dir")
+    if ddir:
+        try:
+            from .material_prep import ingest_dataset
+            dataset = ingest_dataset(ddir, out / "design" / "dataset")
+        except Exception:
+            dataset = []
+
     palette = _measure_palette(references)
     theme = _theme_from_palette(palette)
 
@@ -186,6 +204,7 @@ def build_skeleton_design_system(resolved: Dict, output_dir,
             "iconography": {},
         },
         "assets": assets,
+        "dataset": dataset,
         "screens": screens,
     }
 

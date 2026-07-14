@@ -17,6 +17,7 @@ truth, not the model's guess. Best-effort: returns {} / None rather than raising
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 from collections import Counter
@@ -708,7 +709,68 @@ def ingest_assets(assets_dir, stage_dir) -> List[Dict]:
     return manifest
 
 
+_DATA_EXTS = {".json", ".csv", ".ndjson", ".jsonl"}
+
+
+def _dataset_record_count(path: Path, kind: str) -> Optional[int]:
+    """Best-effort row count for a staged data file — a top-level JSON array's
+    length, or a dict's summed list lengths, or line count for ndjson/csv.
+    None when unknown (never raises)."""
+    try:
+        if kind in ("ndjson", "jsonl", "csv"):
+            n = sum(1 for ln in path.read_text(encoding="utf-8", errors="ignore").splitlines()
+                    if ln.strip())
+            return max(0, n - 1) if kind == "csv" else n
+        data = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
+        if isinstance(data, list):
+            return len(data)
+        if isinstance(data, dict):
+            return sum(len(v) for v in data.values() if isinstance(v, list))
+    except Exception:
+        return None
+    return None
+
+
+def ingest_dataset(dataset_dir, stage_dir) -> List[Dict]:
+    """F1 — the FOURTH design-input channel. Scan a user-provided ``dataset/`` folder of
+    REAL structured data (JSON/CSV/NDJSON) → a manifest + physically stage each file into
+    ``stage_dir`` (preserving subfolders). Mirrors ``ingest_assets`` but for data rows, not
+    images: the design-prep phase carries these into the app's seed so the DB ships REAL
+    domain data deterministically (not LLM-synthesized). ``staged_path`` points at the
+    app-relative runtime location ``backend/dataset/<relpath>`` (build-infra copies it next
+    to seed_data.json). Deterministic, best-effort: missing dir → [], unreadable files
+    skipped, never raises. Manifest entry: {id, file, type, records:int|None, staged_path}."""
+    src = Path(dataset_dir)
+    if not src.is_dir():
+        return []
+    stage = Path(stage_dir)
+    manifest: List[Dict] = []
+    seen_ids: Dict[str, int] = {}
+    for path in sorted(src.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in _DATA_EXTS:
+            continue
+        rel = path.relative_to(src)
+        kind = path.suffix.lower().lstrip(".")
+        base_id = _slug(path.stem)
+        seen_ids[base_id] = seen_ids.get(base_id, 0) + 1
+        entry_id = base_id if seen_ids[base_id] == 1 else f"{base_id}-{seen_ids[base_id]}"
+        try:
+            dest = stage / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, dest)
+        except Exception:
+            continue
+        manifest.append({
+            "id": entry_id,
+            "file": rel.as_posix(),
+            "type": kind,
+            "records": _dataset_record_count(path, kind),
+            "staged_path": f"backend/dataset/{rel.as_posix()}",
+        })
+    return manifest
+
+
 __all__ = ["row_mode_color", "region_background", "find_accent", "extract_palette",
            "crop_region", "decompose_reference", "make_side_by_side",
            "color_distance", "spec_color_deviations", "theme_inversion",
-           "ingest_assets"]
+           "ingest_assets", "ingest_dataset"]
