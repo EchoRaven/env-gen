@@ -389,6 +389,41 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
                 f"page imports page `{_imp[1]}` — pages may only compose "
                 "components; extract the shared UI into src/components/ and "
                 "navigate between pages via routes/links")
+
+    # FIX #151 (googlemaps run-3, live): the lane can build a real API-calling page
+    # (SearchPage: useEffect + api.searchPlaces) AND wire App.jsx's route to a DIFFERENT,
+    # hardcoded-mock twin (SearchResults), leaving the real one an orphan. The checks above
+    # inspect the DECLARED component, so a route that RENDERS a static mock ships mock data
+    # while every gate passes. Verify what the route ACTUALLY renders: if the page declares
+    # data (non-empty apis_used) and App.jsx wires the route to a component that is NOT the
+    # declared one, HAS its own file, and itself makes no api call nor composes an
+    # api-calling child → the user sees a static mock. Empty-apis pages (legit static) and
+    # API-calling wired elements never flag. Domain-agnostic; no app specifics.
+    if route and apis and not page.get("_is_component"):
+        _elem = _route_element(app_jsx, route)
+        if _elem and _elem != component:
+            _wired_text = None
+            for _cand in (frontend_src / "pages" / f"{_elem}.jsx",
+                          frontend_src / "components" / f"{_elem}.jsx"):
+                if _src_cache.get(str(_cand)) is not None:
+                    _wired_text = _src_cache[str(_cand)]
+                    break
+            if _wired_text is None:
+                for _fn, _tx in _src_cache.items():
+                    if Path(_fn).stem == _elem:
+                        _wired_text = _tx
+                        break
+            if _wired_text is not None:
+                _wired_composes = bool(re.search(
+                    r"import\s+\w+\s+from\s+['\"][^'\"]*components/\w+['\"]",
+                    _wired_text)) and bool(re.search(r"<[A-Z]\w+[\s/>]", _wired_text))
+                if not _has_real_api_call(_wired_text) and not _wired_composes:
+                    missing.append(
+                        f"route {route} is wired to `{_elem}` which is a STATIC MOCK "
+                        f"(no api call) while the page declares apis_used — the real data "
+                        f"never renders. Wire the route to the component that calls the API "
+                        f"(likely the `{component}`/`...Page` twin) or make `{_elem}` fetch "
+                        "its data via src/services/api.js.")
     return (not missing), missing
 
 
