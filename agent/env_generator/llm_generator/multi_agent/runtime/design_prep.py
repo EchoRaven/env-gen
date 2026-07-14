@@ -823,6 +823,32 @@ def design_system_summary_for_requirements(ds: Dict) -> str:
         lines.append(f"{s.get('name')}: " + " ".join(parts)[:600])
     lines.append("Full doc: design/design_system.json (+ .md); crops: design/crops/. "
                  "MEASURE, DON'T GUESS — the colors are sampled truth.")
+
+    # F2b: a real dataset AUTHORITATIVELY defines the schema of the tables it fills.
+    # Without this the backend lane builds its own guessed columns and the framework's
+    # real rows (seed_dataset.json) can't be inserted (column mismatch — googlemaps
+    # run-1: places had no `category` column, 0 rows loaded). State the EXACT tables +
+    # columns so the contract matches the data and the loader inserts cleanly.
+    from pathlib import Path as _P
+    dataset = [d for d in (ds.get("dataset") or [])
+               if isinstance(d, dict) and d.get("columns")]
+    if dataset:
+        lines.append(
+            "\n\n## REAL DATASET (BINDING — these tables are seeded from REAL data staged "
+            "at app/backend/seed_dataset.json, which the framework loads AUTOMATICALLY):")
+        for d in dataset[:20]:
+            table = _P(str(d.get("file") or "")).stem or str(d.get("id") or "")
+            cols = ", ".join(str(c) for c in (d.get("columns") or [])[:40])
+            n = d.get("records")
+            lines.append(f"- table `{table}` ({n} real rows) — build it with EXACTLY these "
+                         f"columns (match names + plausible types): {cols}")
+        lines.append(
+            "RULES: (1) the backend MUST create these tables with these EXACT column names "
+            "(add a primary key + any FK/owner columns you need, but do NOT rename or drop "
+            "the listed columns) so the real rows load. (2) do NOT author these tables' rows "
+            "in seed_data.json — the framework seeds them from seed_dataset.json; you only "
+            "author users + any association/child rows the app needs. (3) the frontend reads "
+            "these exact field names from the API responses.")
     return "\n".join(lines)
 
 

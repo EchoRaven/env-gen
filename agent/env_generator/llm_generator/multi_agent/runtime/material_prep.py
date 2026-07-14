@@ -712,6 +712,30 @@ def ingest_assets(assets_dir, stage_dir) -> List[Dict]:
 _DATA_EXTS = {".json", ".csv", ".ndjson", ".jsonl"}
 
 
+def _dataset_columns(path: Path, kind: str) -> List[str]:
+    """F2b: the union of row keys (first-seen order) for a JSON-array data file — the
+    schema the real dataset defines, so the contract can build a matching table. []
+    for non-JSON or non-array data (never raises)."""
+    if kind not in ("json",):
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+    cols: List[str] = []
+    seen = set()
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        for k in row.keys():
+            if k not in seen:
+                seen.add(k)
+                cols.append(k)
+    return cols
+
+
 def _dataset_record_count(path: Path, kind: str) -> Optional[int]:
     """Best-effort row count for a staged data file — a top-level JSON array's
     length, or a dict's summed list lengths, or line count for ndjson/csv.
@@ -765,6 +789,7 @@ def ingest_dataset(dataset_dir, stage_dir) -> List[Dict]:
             "file": rel.as_posix(),
             "type": kind,
             "records": _dataset_record_count(path, kind),
+            "columns": _dataset_columns(path, kind),
             "staged_path": f"backend/dataset/{rel.as_posix()}",
         })
     return manifest

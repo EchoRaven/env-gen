@@ -1077,6 +1077,26 @@ CMD ["python", "main.py"]
 # ONLY-IF-ABSENT so authored content is never clobbered and the agent isn't anchored).
 
 
+def _ensure_seed_dataset(be: Path, output_dir: Any) -> bool:
+    """F2/F2b: (re)assemble the design-prep REAL dataset (design/dataset/*.json) into the
+    framework-owned app/backend/seed_dataset.json (the lane never authors this; the loader
+    merges it OVER seed_data.json). Called from BOTH the upfront build-infra AND every
+    per-milestone skeleton write, so the real data lands regardless of design-prep timing
+    (googlemaps run-1: the upfront call missed it). Absent design/dataset/ → no-op → zero
+    regression. Best-effort; returns True iff it wrote a non-empty seed_dataset.json."""
+    try:
+        from .material_prep import assemble_seed_dataset
+        real = assemble_seed_dataset(Path(output_dir) / "design" / "dataset")
+        if real:
+            import json as _json
+            (be / "seed_dataset.json").write_text(
+                _json.dumps(real, indent=2) + "\n", encoding="utf-8")
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _ensure_seed_json(be: Path, amplify: bool = False) -> None:
     p = be / "seed_data.json"
     if not p.exists():
@@ -1139,20 +1159,7 @@ def write_backend_build_infra(output_dir: Any) -> Dict[str, Any]:
     be.mkdir(parents=True, exist_ok=True)
     written: Dict[str, str] = {}
     _ensure_seed_json(be)
-    # F2: assemble the design-prep REAL dataset (design/dataset/*.json) into the
-    # framework-owned seed_dataset.json. The lane never authors this file (it is NOT in
-    # _BACKEND_LANE_OWNED), so the real rows survive the lane's from-scratch seed_data.json
-    # authoring; the generated loader merges seed_dataset.json OVER seed_data.json (dataset
-    # tables authoritative). Absent design/dataset/ → nothing written → zero regression.
-    try:
-        from .material_prep import assemble_seed_dataset
-        _real = assemble_seed_dataset(Path(output_dir) / "design" / "dataset")
-        if _real:
-            import json as _json
-            (be / "seed_dataset.json").write_text(
-                _json.dumps(_real, indent=2) + "\n", encoding="utf-8")
-    except Exception:
-        pass
+    _ensure_seed_dataset(be, output_dir)   # F2/F2b: stage the real dataset seed
     for name, content in (("pyproject.toml", render_pyproject(be)),
                           ("Dockerfile", _DOCKERFILE),
                           ("reset.sh", _RESET_SH)):
@@ -2106,6 +2113,7 @@ def write_backend_skeleton(
     w("main.py", render_skeleton_main(endpoints, tables))
     w("schemas.py", _SCHEMAS_PY)
     _ensure_seed_json(be, amplify=True)   # FIX #84: density floor by construction
+    _ensure_seed_dataset(be, output_dir)  # F2b: re-assert the real dataset seed every milestone
     w("pyproject.toml", render_pyproject(be))
     w("Dockerfile", _DOCKERFILE)
     w("reset.sh", _RESET_SH)
