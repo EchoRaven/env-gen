@@ -770,7 +770,33 @@ def ingest_dataset(dataset_dir, stage_dir) -> List[Dict]:
     return manifest
 
 
+def assemble_seed_dataset(design_dataset_dir) -> Dict[str, List]:
+    """F2 — fold the staged real dataset (design/dataset/*.json) into a single
+    ``{table: [rows]}`` seed dict: each JSON file whose stem is a table name and whose
+    content is a row ARRAY contributes that table. Files that are not JSON arrays
+    (MANIFEST.md, a config object) are skipped. This is what the build-infra writes to
+    the framework-owned app/backend/seed_dataset.json (which the loader merges OVER the
+    lane's seed_data.json). Deterministic, best-effort: missing dir / bad file → skipped,
+    never raises."""
+    src = Path(design_dataset_dir)
+    out: Dict[str, List] = {}
+    if not src.is_dir():
+        return out
+    for path in sorted(src.rglob("*.json")):
+        if not path.is_file():
+            continue
+        try:
+            rows = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
+        except Exception:
+            continue
+        if isinstance(rows, list) and rows:
+            # the file stem IS the table name — keep it VERBATIM (no _slug: it would
+            # rewrite transit_stops → transit-stops and break the ORM table match).
+            out[path.stem] = rows
+    return out
+
+
 __all__ = ["row_mode_color", "region_background", "find_accent", "extract_palette",
            "crop_region", "decompose_reference", "make_side_by_side",
            "color_distance", "spec_color_deviations", "theme_inversion",
-           "ingest_assets", "ingest_dataset"]
+           "ingest_assets", "ingest_dataset", "assemble_seed_dataset"]

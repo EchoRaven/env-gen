@@ -1139,6 +1139,20 @@ def write_backend_build_infra(output_dir: Any) -> Dict[str, Any]:
     be.mkdir(parents=True, exist_ok=True)
     written: Dict[str, str] = {}
     _ensure_seed_json(be)
+    # F2: assemble the design-prep REAL dataset (design/dataset/*.json) into the
+    # framework-owned seed_dataset.json. The lane never authors this file (it is NOT in
+    # _BACKEND_LANE_OWNED), so the real rows survive the lane's from-scratch seed_data.json
+    # authoring; the generated loader merges seed_dataset.json OVER seed_data.json (dataset
+    # tables authoritative). Absent design/dataset/ → nothing written → zero regression.
+    try:
+        from .material_prep import assemble_seed_dataset
+        _real = assemble_seed_dataset(Path(output_dir) / "design" / "dataset")
+        if _real:
+            import json as _json
+            (be / "seed_dataset.json").write_text(
+                _json.dumps(_real, indent=2) + "\n", encoding="utf-8")
+    except Exception:
+        pass
     for name, content in (("pyproject.toml", render_pyproject(be)),
                           ("Dockerfile", _DOCKERFILE),
                           ("reset.sh", _RESET_SH)):
@@ -1677,13 +1691,26 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "    finally:\n"
         "        db.close()\n\n\n"
         "def _load_rows():\n"
+        "    # Base = the lane-authored seed_data.json (users + demo rows), else the embedded _SEED.\n"
+        "    base = _SEED\n"
         "    try:\n"
         "        data = json.loads(Path(__file__).with_name('seed_data.json').read_text(encoding='utf-8'))\n"
         "        if isinstance(data, dict) and any(data.values()):\n"
-        "            return data\n"
+        "            base = data\n"
         "    except Exception:\n"
         "        pass\n"
-        "    return _SEED\n\n\n"
+        "    # F2 dual-source: merge the framework-owned seed_dataset.json (design-prep REAL\n"
+        "    # data — the lane cannot author/clobber it) OVER the base; dataset tables win, so\n"
+        "    # the DB ships real domain rows deterministically. Absent file → base unchanged.\n"
+        "    try:\n"
+        "        real = json.loads(Path(__file__).with_name('seed_dataset.json').read_text(encoding='utf-8'))\n"
+        "        if isinstance(real, dict) and any(real.values()):\n"
+        "            merged = dict(base)\n"
+        "            merged.update({k: v for k, v in real.items() if isinstance(v, list) and v})\n"
+        "            return merged\n"
+        "    except Exception:\n"
+        "        pass\n"
+        "    return base\n\n\n"
         "def _applied_fingerprint(db):\n"
         "    from sqlalchemy import text as _text\n"
         "    try:\n"

@@ -305,14 +305,29 @@ def compute_deliverability(hub_registry, app_root,
     try:
         import json as _json
         _seed_path = Path(app_root) / "backend" / "seed_data.json"
-        _authored = False
+        _data = {}
         if _seed_path.exists():
             try:
                 _data = _json.loads(_seed_path.read_text(encoding="utf-8"))
-                _authored = isinstance(_data, dict) and any(
-                    isinstance(v, list) and v for v in _data.values())
+                if not isinstance(_data, dict):
+                    _data = {}
             except Exception:
-                _authored = False
+                _data = {}
+        # F2: the framework-owned seed_dataset.json (design-prep REAL data the loader
+        # merges into the DB) counts toward BOTH the authored check and the quality
+        # row-floor — a run whose real rows live there must not trip the gate just
+        # because the lane's seed_data.json is thin. Merged view; dataset tables win.
+        _real = {}
+        try:
+            _ds_path = Path(app_root) / "backend" / "seed_dataset.json"
+            if _ds_path.exists():
+                _rd = _json.loads(_ds_path.read_text(encoding="utf-8"))
+                if isinstance(_rd, dict):
+                    _real = _rd
+        except Exception:
+            _real = {}
+        _data = {**_data, **{k: v for k, v in _real.items() if isinstance(v, list) and v}}
+        _authored = any(isinstance(v, list) and v for v in _data.values())
         if not _authored:
             blockers.append(
                 "authored seed missing: app/backend/seed_data.json is absent or empty — "
