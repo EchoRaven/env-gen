@@ -467,7 +467,23 @@ def _host_of(url: str) -> str:
     return (m.group(1) if m else "").lower()
 
 
+# F3: a Leaflet/XYZ map-TILE url is not a content image — it is the live basemap the
+# interactive map depends on, and localizing it to a placeholder SVG makes the map DOA
+# (its .png suffix otherwise trips _IMG_EXT_RE). Exempt the two unambiguous signatures:
+# the {z}/{x}/{y} tile template, and known tile-service hosts.
+_MAP_TILE_RE = re.compile(
+    r"\{z\}.*\{x\}.*\{y\}|\{x\}.*\{y\}.*\{z\}"
+    r"|\btile\.openstreetmap\.org|\btile\.opentopomap\.org"
+    r"|\bbasemaps\.cartocdn\.com|\b[abc]\.tile\.|\btiles?\.stadiamaps\.com", re.I)
+
+
+def _is_map_tile_url(url: str) -> bool:
+    return bool(_MAP_TILE_RE.search(url or ""))
+
+
 def _is_image_signaled(url: str, *, field: str = "", carrier_is_img: bool = False) -> bool:
+    if _is_map_tile_url(url):
+        return False  # F3: map tiles are never a localizable content image
     if carrier_is_img or _IMG_EXT_RE.search(url) or _STOCK_HOST_RE.search(_host_of(url)):
         return True
     return bool(field and _IMG_FIELD_RE.search(field))
@@ -548,6 +564,8 @@ def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
                 continue
 
             def _attr_repl(m):
+                if _is_map_tile_url(m.group(3)):
+                    return m.group(0)  # F3: never localize a map-tile URL
                 return (m.group(1)
                         + _local_ref_for(m.group(3), "", public_dir, assets)
                         + m.group(4))
@@ -2341,6 +2359,8 @@ _COMMON_FRONTEND_LIBS = {
     # icon / UI / animation libs LLM frontends reach for constantly
     "lucide-react": "^0.408.0", "@heroicons/react": "^2.1.4",
     "@headlessui/react": "^2.1.2", "react-router": "^6.26.0",
+    # F3: interactive maps (Google-Maps-style envs) — react-leaflet 4 pairs with leaflet 1.9
+    "leaflet": "^1.9.4", "react-leaflet": "^4.2.1",
 }
 
 # Roots the framework already provides (declared as deps by construction) — never
