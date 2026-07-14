@@ -546,7 +546,8 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
 # controls are SOFTER (the call site may build the URL; a handler may be wired
 # indirectly) → NOT promoted to hard blockers here.
 _HARD_MISS_MARKERS = ("not wired in App.jsx", "not found — expected",
-                      "is a placeholder stub")  # #39 G2: a stub page = a shipped-blank page
+                      "is a placeholder stub",  # #39 G2: a stub page = a shipped-blank page
+                      "STATIC MOCK")  # #151: a route wired to a mock twin ships mock data
 
 
 def _is_hard_miss(missing_line: str) -> bool:
