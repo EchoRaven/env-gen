@@ -186,6 +186,31 @@ def _resolve_workspace_path(
 
 # ===== Lint Utilities =====
 
+def _esbuild_syntax_check(file_path: Path) -> Tuple[bool, str]:
+    """JSX/TSX write-time syntax check via esbuild (FIX #165). esbuild is the JSX-native
+    parser the frontend build uses, reachable via ``npx --no-install esbuild`` (no download).
+    Returns ``(False, error)`` ONLY when esbuild actually parsed the file and reported a
+    syntax error (its message cites the file). Any tool problem — esbuild not cached, npx
+    absent, timeout, an npm resolution error that is NOT a file syntax error — degrades to
+    ``(True, "")`` so a missing tool never blocks a write (no regression vs the old skip)."""
+    try:
+        result = subprocess.run(
+            ['npx', '--no-install', 'esbuild', str(file_path), '--log-level=error'],
+            capture_output=True, text=True, timeout=25,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return True, ""  # tool unavailable/slow → skip, never block a write on it
+    if result.returncode == 0:
+        return True, ""
+    stderr = (result.stderr or "").strip()
+    # A real esbuild syntax error cites the FILE (e.g. "…/Search.jsx:913:0"). An npx /
+    # package-resolution failure (esbuild not cached) does NOT name the file → skip, so a
+    # missing tool is never mistaken for a broken file.
+    if file_path.name in stderr:
+        return False, (stderr[:500] + "..." if len(stderr) > 500 else stderr)
+    return True, ""
+
+
 def run_lint(file_path: Path) -> Tuple[bool, str]:
     """
     Run linter on a file and return (success, errors).
@@ -211,11 +236,20 @@ def run_lint(file_path: Path) -> Tuple[bool, str]:
         except FileNotFoundError:
             return True, ""  # No python = skip
     
-    elif suffix in ('.js', '.jsx', '.ts', '.tsx'):
-        # JavaScript/TypeScript: basic syntax check
+    elif suffix in ('.jsx', '.tsx'):
+        # FIX #165 (gmrun8 SearchPage.jsx): JSX-bearing files need a JSX-AWARE parser.
+        # `node --check` can't parse JSX (ERR_UNKNOWN_FILE_EXTENSION) — the old code
+        # SKIPPED .jsx entirely (returned True), so a .jsx truncated to a missing `}`
+        # sailed through every write and only surfaced at the docker build (esbuild),
+        # i.e. during delivery (gmrun8: SearchPage.jsx 331 `{` vs 330 `}` → post-delivery
+        # docker_up wedge → stuck_abort). `tsc` (the old .tsx path) false-positives a
+        # standalone JSX/TSX file (no tsconfig / no --jsx). esbuild is the JSX-native
+        # parser the build itself uses; it parses .jsx AND .tsx, syntax-only, no config.
+        return _esbuild_syntax_check(file_path)
+    elif suffix in ('.js', '.ts'):
+        # Non-JSX JS/TS: node --check (.js) / tsc (.ts) — unchanged.
         try:
-            if suffix in ('.ts', '.tsx'):
-                # TypeScript - use tsc if available
+            if suffix == '.ts':
                 result = subprocess.run(
                     ['npx', 'tsc', '--noEmit', '--skipLibCheck', str(file_path)],
                     capture_output=True,
@@ -223,14 +257,7 @@ def run_lint(file_path: Path) -> Tuple[bool, str]:
                     timeout=30,
                     cwd=file_path.parent
                 )
-            elif suffix == '.jsx':
-                # `node --check` does not support JSX syntax and will
-                # always fail with ERR_UNKNOWN_FILE_EXTENSION on .jsx files.
-                # Skip parser-level lint here; downstream project lint/build
-                # will still catch real syntax issues.
-                return True, ""
             else:
-                # JavaScript - use node syntax check
                 result = subprocess.run(
                     ['node', '--check', str(file_path)],
                     capture_output=True,
