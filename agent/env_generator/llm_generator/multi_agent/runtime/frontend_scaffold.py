@@ -2658,6 +2658,88 @@ def stage_missing_seed_photos(output_dir) -> List[str]:
         return []
 
 
+# FIX #169 (gmrun7): the lane references Material-Symbol icons beyond the ones the
+# design-input staged, so `/assets/icons/<name>_24.svg` 404s → broken/blank icons across the
+# UI. A generic neutral SVG placeholder ALWAYS resolves the 404; when egress is available
+# (the design-input prep fetched icons the same way), fetch the REAL Material Symbol by name
+# for correct fidelity. Best-effort — a fetch failure degrades to the placeholder.
+_FE_ASSET_RE = re.compile(r"/assets/((?:icons|placeholders)/[\w./-]+\.(?:svg|png))", re.I)
+_MS_URL = ("https://fonts.gstatic.com/s/i/short-term/release/"
+           "materialsymbolsoutlined/{name}/default/24px.svg")
+_PLACEHOLDER_ICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" '
+    'fill="none" stroke="#9aa0a6" stroke-width="2" stroke-linecap="round" '
+    'stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/>'
+    '<circle cx="12" cy="12" r="2.5"/></svg>\n')
+
+
+def _fetch_material_symbol(name: str) -> Optional[str]:
+    """Fetch the outlined Material Symbol ``name`` (24px SVG) from the public gstatic endpoint
+    the design-input prep uses. Returns the SVG text, or None on any failure (no egress, 404,
+    timeout) so the caller falls back to a placeholder. Best-effort, bounded."""
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            _MS_URL.format(name=name),
+            headers={"User-Agent": "Mozilla/5.0 (envgen asset staging)"})
+        with urllib.request.urlopen(req, timeout=6) as r:
+            if getattr(r, "status", 200) != 200:
+                return None
+            body = r.read().decode("utf-8", errors="ignore")
+            return body if body.lstrip().startswith("<svg") else None
+    except Exception:
+        return None
+
+
+def stage_missing_frontend_assets(output_dir) -> List[str]:
+    """Guarantee every LOCAL icon/placeholder the FRONTEND source references resolves. Scans
+    src for ``/assets/(icons|placeholders)/…`` refs; for each one missing from public/assets,
+    stages the REAL Material Symbol (icons, when egress allows) or a neutral placeholder SVG,
+    so no <img> ever 404s. Photos are #168's job (seed-driven) and are NOT touched here.
+    Returns the staged relative paths; best-effort ``[]`` on any fault."""
+    try:
+        out = Path(output_dir)
+        src = out / "app" / "frontend" / "src"
+        pub = out / "app" / "frontend" / "public" / "assets"
+        if not src.is_dir():
+            return []
+        refs: set = set()
+        for f in (list(src.rglob("*.jsx")) + list(src.rglob("*.js"))
+                  + list(src.rglob("*.tsx")) + list(src.rglob("*.ts"))):
+            if "node_modules" in f.parts:
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for m in _FE_ASSET_RE.finditer(txt):
+                refs.add(m.group(1))
+        staged: List[str] = []
+        for rel in sorted(refs):
+            dest = pub / rel
+            if dest.exists():
+                continue
+            body = None
+            if rel.startswith("icons/") and dest.suffix.lower() == ".svg":
+                # icons/<name>_24.svg → Material Symbol <name> (drop a trailing _<size>)
+                stem = Path(rel).stem
+                sym = re.sub(r"_\d+$", "", stem)
+                body = _fetch_material_symbol(sym)
+            if body is None:
+                body = _PLACEHOLDER_ICON_SVG if dest.suffix.lower() == ".svg" else None
+            if body is None:
+                continue  # a non-svg placeholder we can't synthesize cheaply — skip
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(body, encoding="utf-8")
+                staged.append(rel)
+            except Exception:
+                continue
+        return staged
+    except Exception:
+        return []
+
+
 def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
     """Gap-fill a minimal buildable Vite+React+Tailwind+nginx frontend. Writes
     each standard file ONLY when missing/empty, so a lane that produced code is
@@ -2678,6 +2760,12 @@ def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
         # /assets/photos/*.jpg (seed photo_url with no real photo) 404s → broken <img>.
         try:
             stage_missing_seed_photos(frontend_dir.parent.parent)
+        except Exception:
+            pass
+        # FIX #169: stage the icons/placeholders the frontend references but that were never
+        # staged (a missing /assets/icons/*.svg 404s → broken icons across the UI).
+        try:
+            stage_missing_frontend_assets(frontend_dir.parent.parent)
         except Exception:
             pass
         # GENERALITY: baseline copy derives the display name from the project
