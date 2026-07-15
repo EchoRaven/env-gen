@@ -2830,12 +2830,19 @@ class Orchestrator:
                     # attempt-cap + wall-clock decision, never deadlocks): keep deferring
                     # while the fix lands, then escape and ship loudly.
                     from .runtime.test_user_squad import squad_release_decision
+                    from .runtime.test_user_runner import browser_gate_decision
                     _bg_now = time.time()
                     if getattr(self, "_tu_browser_deferred_since", None) is None:
                         self._tu_browser_deferred_since = _bg_now
                     _bg_decision = squad_release_decision(
                         self._tu_browser_deferred_since,
                         getattr(self, "_tu_browser_attempts", 0), _bg_now)
+                    # FIX #152: a HARD-unusable app (login broken / login-wall hollow) NEVER
+                    # escape-releases — the bounded escape only applies to SOFT defects. A
+                    # release nobody can log into is worthless; hold to FAIL-FAST instead of
+                    # shipping a dead app (run-4: 401'd every core page yet escaped after
+                    # 7 attempts). ENVGEN_TESTUSER_HARD_GATE=0 disables.
+                    _bg_decision = browser_gate_decision(_bg_report, _bg_decision)
                     self._tu_browser_attempts = getattr(self, "_tu_browser_attempts", 0) + 1
                     if _bg_decision == "defer":
                         self._logger.warning(

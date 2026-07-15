@@ -628,3 +628,26 @@ def browser_report_unusable(report: Optional[Mapping[str, Any]]) -> bool:
         return False
     return bool((not report.get("auth_ok")) or report.get("blank_pages")
                 or report.get("auth_redirect_pages") or report.get("hollow_frontend"))
+
+
+def browser_gate_decision(report: Mapping[str, Any], squad_decision: str) -> str:
+    """FIX #152 — 'defer' | 'release'. Given the app is UNUSABLE (browser_report_unusable
+    already True) and the bounded escape's verdict (``squad_decision`` from
+    squad_release_decision), decide whether to actually release.
+
+    A HARD-unusable app — login itself is broken (``auth_ok`` False) or a logged-in user is
+    bounced to a LOGIN WALL on the app's own pages (``hollow_frontend``) — must NEVER
+    escape-release: a milestone nobody can even log into is worthless, so hold it (→ the
+    75-min FAIL-FAST STUCK is the honest outcome, not shipping a dead app). googlemaps run-4:
+    a bare-fetch/no-token UI 401'd every core page to /login, the test-user caught it, yet
+    the 900s/3-attempt escape shipped it after 9614s/7 attempts. SOFT-unusable (auth works,
+    only a secondary page blank or a benign console error) keeps the bounded escape so a
+    minor defect never deadlocks the run. ENVGEN_TESTUSER_HARD_GATE=0 restores the old
+    always-escape (safety valve if the hard gate ever false-STUCKs). Pure + env-agnostic."""
+    import os as _os
+    if str(_os.environ.get("ENVGEN_TESTUSER_HARD_GATE", "1")).strip().lower() in (
+            "0", "false", "no", "off"):
+        return squad_decision
+    if not report.get("auth_ok") or report.get("hollow_frontend"):
+        return "defer"  # hard-unusable: never escape a dead app
+    return squad_decision  # soft-unusable: honor the bounded escape
