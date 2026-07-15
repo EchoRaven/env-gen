@@ -936,15 +936,25 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             # the param name (generic — {username}→users.username works for
             # ANY app), else an honest 404 (the gate only checks 2xx shapes).
             _resolver = None
-            for _mn, _mm in (models or {}).items():
-                # the models dict shape is {table: {"cls": str, "cols": [name,...]}} —
-                # the prior _mm.get("columns")/"class_name" keys never existed, so this
-                # resolver was dead (always 404). Read the real keys.
-                _col_names = list(_mm.get("cols") or [])
-                if last_param in _col_names:
-                    _resolver = (_mm.get("cls") or _mn.capitalize(),
-                                 last_param, _col_names)
-                    break
+            # FIX #162 (gmrun7 transit 500): a GENERIC id param is a meaningless resolver
+            # signal — EVERY model has an ``id`` column, so ``last_param in _col_names``
+            # matched the FIRST model (the tenants spine, TEXT id) for an unmappable path
+            # like ``/api/transit/{id}/departures`` → ``db.query(Tenant).filter(Tenant.id ==
+            # id)`` with ``id: int`` → ``operator does not exist: text = integer`` → 500 on
+            # every call (M2 wedge). Resolve ONLY via a DISTINCTIVE (non-id) param that
+            # uniquely names a column (username/slug/handle); a generic-id unmappable path
+            # falls to the honest 404 stub below (a param-path 404 is exempted by the
+            # reachability gate; the lane implements the real handler in custom_routes.py).
+            if not _is_id_param(last_param):
+                for _mn, _mm in (models or {}).items():
+                    # the models dict shape is {table: {"cls": str, "cols": [name,...]}} —
+                    # the prior _mm.get("columns")/"class_name" keys never existed, so this
+                    # resolver was dead (always 404). Read the real keys.
+                    _col_names = list(_mm.get("cols") or [])
+                    if last_param in _col_names:
+                        _resolver = (_mm.get("cls") or _mn.capitalize(),
+                                     last_param, _col_names)
+                        break
             if _resolver:
                 _cls, _col, _col_names = _resolver
                 body_lines = [
