@@ -72,6 +72,74 @@ def _backend_host_port(compose_file: Path, cwd: Path) -> Optional[int]:
     return _service_host_port(compose_file, cwd, "backend")
 
 
+# ── FIX #157 (gmrun5): a 5xx probe must report the backend ROOT CAUSE ──────────
+# gmrun5 wedged 50min → STUCK on `GET /api/transit/{id}/departures → 500`: the
+# remediation carried NOTHING beyond "→ 500", so the backend lane guessed
+# ("parameter type"), guessed wrong, reported done, and never re-engaged — while
+# the real cause (custom_routes.py:202 comparing a TEXT column to an integer →
+# `operator does not exist: text = integer`) sat in the container logs the whole
+# time. Third instance of the "gate knows more than it says" class (run-4's
+# blank-no-rootcause → #154 exact call sites). Pull the log tail on a 5xx and
+# hand the lane the salient last-traceback line, file:line first.
+
+def extract_salient_traceback(logs_text: str, limit: int = 320) -> str:
+    """The salient line of the LAST Python traceback in a (docker) log tail:
+    ``<file>:<line> in <func> — <exception message>`` where the frame is the
+    innermost ``/app/`` (lane-owned) frame, falling back to the last frame of the
+    block. Strips ``service-1 |``-style compose prefixes. '' when no traceback."""
+    try:
+        if not logs_text:
+            return ""
+        text = re.sub(r"(?m)^[\w.-]+\s*\|\s?", "", logs_text)
+        marker = "Traceback (most recent call last):"
+        idx = text.rfind(marker)
+        if idx == -1:
+            return ""
+        block = text[idx:]
+        frames = list(re.finditer(
+            r'File "(?P<path>[^"]+)", line (?P<line>\d+), in (?P<fn>\S+)', block))
+        if not frames:
+            return ""
+        app_frames = [m for m in frames if m.group("path").startswith("/app")]
+        frame = (app_frames or frames)[-1]
+        # the exception line: first non-indented `Some.Error: message` line after
+        # the LAST frame of the block (postgres LINE/HINT continuations excluded).
+        exc = ""
+        tail = block[frames[-1].end():]
+        for ln in tail.splitlines():
+            if not ln or ln[0] in " \t":
+                continue
+            if re.match(r"^[\w.]+(Error|Exception|Warning)?\s*:", ln) and ": " in ln:
+                exc = ln.strip()
+                break
+        fname = Path(frame.group("path")).name
+        head = f"{fname}:{frame.group('line')} in {frame.group('fn')}"
+        return (f"{head} — {exc}" if exc else head)[:limit]
+    except Exception:
+        return ""
+
+
+def compose_unreachable_detail(unreachable: List[str], salient: str) -> str:
+    """The ``business_endpoints_reachable`` failure detail. With a backend
+    traceback, budget the endpoint list down so the file:line root cause lands
+    INSIDE the first 300 chars (the urgent-wake message truncates there —
+    gmrun5's lane acted on exactly that prefix); without one, the plain join."""
+    joined = "; ".join(unreachable)
+    if not salient:
+        return joined[:800]
+    return f"{joined[:220]} | backend traceback: {salient}"[:800]
+
+
+def _backend_logs_tail(compose_file: Path, cwd: Path, tail: int = 200) -> str:
+    """Last ``tail`` lines of the backend service's logs; '' on any fault."""
+    try:
+        r = _compose(compose_file, "logs", "--no-color", "--tail", str(tail),
+                     "backend", cwd=cwd, timeout=30)
+        return (r.stdout or "") + "\n" + (r.stderr or "")
+    except Exception:
+        return ""
+
+
 def wait_backend_ready(project_dir: Any, timeout_s: int = 90, gap_s: float = 3.0) -> bool:
     """Bounded wait until the compose BACKEND answers HTTP (<500).
 
@@ -537,8 +605,17 @@ def run_smoke_validation(
             _sv = _shape_violation(method, path, res["status"], res["body_text"])
             if _sv:
                 shape_violations.append(_sv)
+        # FIX #157: on a 5xx (backend crash-in-handler, not a mere 404), pull the
+        # backend log tail and attach the salient traceback line — the remediation
+        # task then carries the ROOT CAUSE (file:line + exception), not just "→ 500"
+        # (gmrun5: the bare 500 sent the lane down a wrong guess → 50min wedge).
+        _salient = ""
+        if unreachable and any(
+                (r.get("status_code") or 0) >= 500 for r in endpoint_results):
+            _salient = extract_salient_traceback(_backend_logs_tail(compose_file, cwd))
         _add("business_endpoints_reachable", not unreachable,
-             ("; ".join(unreachable))[:800] if unreachable else f"{len(business_endpoints or [])} endpoint(s) reachable")
+             compose_unreachable_detail(unreachable, _salient) if unreachable
+             else f"{len(business_endpoints or [])} endpoint(s) reachable")
         _add("business_endpoints_implemented", not unimplemented,
              ("; ".join(unimplemented))[:800] if unimplemented
              else f"{len(business_endpoints or [])} registered-implemented endpoint(s) serve their route")
