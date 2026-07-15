@@ -121,6 +121,22 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
         return []
 
 
+def _bare_fetch_blockers(app_root) -> List[str]:
+    """#154 (§6-1, gmrun4): bare unauthenticated ``fetch('/api/…')`` call sites →
+    delivery blockers. Purely static (frontend source only), recomputed each gate
+    tick, best-effort ``[]`` on any fault. ``ENVGEN_BARE_FETCH_GATE=0`` disables."""
+    if os.environ.get("ENVGEN_BARE_FETCH_GATE", "1").lower() in ("0", "false", "no", "off"):
+        return []
+    try:
+        from .frontend_audit import bare_authed_fetch_blockers
+    except Exception:
+        return []
+    try:
+        return bare_authed_fetch_blockers(Path(app_root) / "frontend" / "src")
+    except Exception:
+        return []
+
+
 def _seed_summary(hub_registry) -> Dict[str, Any]:
     try:
         from .seed_audit import audit_seed_data
@@ -276,6 +292,15 @@ def compute_deliverability(hub_registry, app_root,
     # App.jsx? component file on disk?), low-false-positive, and self-clearing
     # once the lane wires the page — never a permanent block.
     blockers.extend(_ui_page_wiring_blockers(hub_registry, app_root))
+
+    # BARE-FETCH-NO-TOKEN gate (#154, gmrun4 root cause). Like the ui_page gate
+    # above, NOT relaxed on a functionally-validated app: api_smoke probes the
+    # backend with a FRAMEWORK-minted token, so a frontend that never attaches
+    # the user's token 401s at runtime while every functional check stays green
+    # (gmrun4: delivered 4 milestones, browser showed a login wall). Static,
+    # low-false-positive (literal '/api/' URLs only, public endpoints and any
+    # auth evidence excused), self-clearing once the lane wires the token.
+    blockers.extend(_bare_fetch_blockers(app_root))
 
     # Seed gate: the backend drifts on seed-data registration (the same
     # bookkeeping-the-LLM-never-does class as ui_flow/visual). On a functionally-

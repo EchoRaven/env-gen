@@ -655,6 +655,22 @@ class RemediationDispatcher:
                 "screens look like the references (~a dozen for the primary "
                 "table), believable names/subjects/bodies/timestamps, mixed "
                 "states (read/unread, flagged), FK-valid ids."),
+            "deliverability_bare_authed_fetch": (
+                # #154 (§6-1, gmrun4): the frontend calls authed /api/ endpoints with a
+                # bare fetch() that never attaches the Authorization token — every such
+                # request 401s at runtime, pages render empty / bounce to the login
+                # wall, while api_smoke (framework-minted token) stays green. The owner
+                # is unambiguous: only the frontend lane can wire the token.
+                "frontend", "Attach the auth token to every frontend /api/ call (blocks delivery)",
+                "frontend code calls authed /api/ endpoints with a BARE fetch() that "
+                "never attaches the Authorization token — at runtime every such request "
+                "answers 401, so pages render empty or bounce to the login wall (the "
+                "backend and api_smoke are fine; the framework token they use is not "
+                "available to your bare call). For EACH flagged call site: route the "
+                "call through the authed api client (src/services/api.js — its "
+                "request() attaches authHeaders()) or add an Authorization: Bearer "
+                "<token from localStorage> header at the call site. If services/api.js "
+                "itself is flagged, fix IT to attach authHeaders() on every request."),
             "verification_checklist_not_ready": (
                 "verifier", "Record a green verification/build checklist (blocks delivery)",
                 "the build checklist is NOT all-green — it needs the CodeHub checks "
@@ -754,6 +770,21 @@ class RemediationDispatcher:
                                 "dedicated coverage chain (auth round-trip first, then a step per "
                                 "endpoint) that hits EACH of them, register it, and re-run "
                                 "run_validation:\n- " + "\n- ".join(_unc))
+                    except Exception:
+                        pass
+                if name == "deliverability_bare_authed_fetch":
+                    # #154: hand the lane the EXACT call sites (file:line + URL).
+                    # Imprecise diagnosis is why gmrun4's lane missed 7 repair
+                    # attempts ("blank page" told it nothing about the token).
+                    try:
+                        from .frontend_audit import bare_authed_fetch_blockers
+                        _root = getattr(orch, "output_dir", None)
+                        if _root:
+                            _off = bare_authed_fetch_blockers(
+                                Path(_root) / "app" / "frontend" / "src")
+                            if _off:
+                                _extra = ("\n\nExact call sites:\n- "
+                                          + "\n- ".join(_off[:10]))
                     except Exception:
                         pass
                 task = orch.hubs.workhub.create_task(

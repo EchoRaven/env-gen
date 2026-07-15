@@ -594,6 +594,136 @@ def ui_page_delivery_blockers(frontend_src: Any, workhub: Any) -> List[str]:
     return blockers
 
 
+# FIX #154 (§6-1, gmrun4 root cause): a component (or the lane's OWN services/api.js —
+# gmrun4 overwrote the baseline with a token-less version) calls an authed /api/ endpoint
+# with a bare ``fetch()`` that never attaches the Authorization token → every request 401s
+# at runtime → empty pages / login wall. api_smoke can never see this (it probes endpoints
+# with a FRAMEWORK-minted token) and #151's ``_has_real_api_call`` counts any ``fetch(`` as
+# a real call without checking auth. Flag it STATICALLY, with file:line precision — gmrun4's
+# lane missed 7 repair attempts because the diagnosis said "blank page", not "this call
+# site lacks the token".
+#
+# Precision-first (HANDOFF §6-1 danger list): only a LITERAL '/api/'-rooted URL counts
+# (a variable URL — the baseline api.js ``fetch(path, …)`` wrapper — is invisible to us and
+# skipped); the framework control plane ``/api/v1/*`` (TenantPicker's pre-auth tenants
+# call) and auth/login/register/health-style public endpoints are allowlisted; ANY auth
+# evidence in the call's remaining arguments (Authorization/bearer/token/authHeaders()/
+# credential/jwt) clears it; an opaque options identifier (``fetch(url, opts)``) is
+# trusted. A missed bare fetch is acceptable (the #152/#153 runtime gates back this up);
+# a false block must be near-impossible — and even then the remediation ("route through
+# the authed api client") is trivially satisfiable, so the gate is always self-clearing.
+_PUBLIC_FETCH_PATH_MARKERS = (
+    "/api/v1/",  # framework control plane (tenants/reset/admin) — public infra by design
+    "/auth/", "/login", "/register", "/logout", "/signup", "/token", "/oauth",
+    "/health", "/public/", "/.well-known/")
+
+_AUTH_EVIDENCE_RE = re.compile(r"auth|bearer|token|credential|jwt|api[-_]?key", re.I)
+
+_BARE_FETCH_RE = re.compile(r"\bfetch\s*\(")
+
+
+def _balanced_call_span(text: str, open_idx: int) -> str:
+    """``text[open_idx:...]`` from the ``(`` at ``open_idx`` through its balanced close.
+    Quote-aware ('' "" ``) so parens inside string/template literals never unbalance the
+    scan; backslash escapes honored. Falls back to a bounded slice on malformed source."""
+    depth, i, n, quote = 0, open_idx, len(text), None
+    while i < n:
+        ch = text[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"', "`"):
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return text[open_idx:i + 1]
+        i += 1
+    return text[open_idx:open_idx + 600]
+
+
+def _leading_string_literal(inner: str) -> Tuple[Optional[str], str]:
+    """Split a call's argument text into (first string literal, the REST of the args).
+    Returns ``(None, inner)`` when the first argument is not a string/template literal."""
+    inner = inner.lstrip()
+    if not inner or inner[0] not in "'\"`":
+        return None, inner
+    q, j, chars = inner[0], 1, []
+    while j < len(inner):
+        c = inner[j]
+        if c == "\\" and j + 1 < len(inner):
+            chars.append(inner[j:j + 2])
+            j += 2
+            continue
+        if c == q:
+            break
+        chars.append(c)
+        j += 1
+    return "".join(chars), inner[j + 1:]
+
+
+def bare_authed_fetch_blockers(frontend_src: Any, limit: int = 12) -> List[str]:
+    """Scan EVERY frontend source file for a bare ``fetch()`` of a literal authed
+    ``/api/…`` URL whose call site shows no auth evidence → delivery-blocker strings
+    (``app/frontend/src/<rel>:<line>`` precision). Purely static, recomputed from code
+    truth each gate tick (self-clearing), best-effort ``[]`` on any fault."""
+    blockers: List[str] = []
+    try:
+        src = Path(frontend_src)
+        if not src.is_dir():
+            return []
+        files = sorted(
+            f for f in (list(src.rglob("*.jsx")) + list(src.rglob("*.js"))
+                        + list(src.rglob("*.tsx")) + list(src.rglob("*.ts")))
+            if "node_modules" not in f.parts)
+        total = 0
+        for f in files:
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for m in _BARE_FETCH_RE.finditer(text):
+                open_idx = text.index("(", m.start())
+                span = _balanced_call_span(text, open_idx)
+                literal, rest = _leading_string_literal(span[1:-1])
+                if literal is None:
+                    continue  # variable URL (e.g. the api.js request(path) wrapper)
+                static_text = re.sub(r"\$\{[^}]*\}", "", literal)
+                if not static_text.startswith("/api/"):
+                    continue  # not an authed same-origin API literal
+                if any(p in static_text for p in _PUBLIC_FETCH_PATH_MARKERS):
+                    continue  # public endpoint — carries no token by design
+                if _AUTH_EVIDENCE_RE.search(rest):
+                    continue  # the call site attaches auth some way
+                arg2 = rest.lstrip().lstrip(",").strip()
+                if arg2 and re.match(r"^[A-Za-z_$][\w$.]*(\(\))?$", arg2):
+                    continue  # opaque options identifier — may carry auth built elsewhere
+                total += 1
+                if len(blockers) < limit:
+                    rel = f.relative_to(src).as_posix()
+                    line = text.count("\n", 0, m.start()) + 1
+                    blockers.append(
+                        f"frontend calls an authed API via bare unauthenticated fetch(): "
+                        f"app/frontend/src/{rel}:{line} fetches '{static_text}' with no "
+                        f"Authorization header — at runtime the backend answers 401 and the "
+                        f"page renders empty / bounces to the login wall (api_smoke cannot "
+                        f"see this: it uses a framework-minted token). Route the call "
+                        f"through the authed api client (src/services/api.js attaches "
+                        f"authHeaders()) or attach the Bearer token at this call site.")
+        if total > len(blockers):
+            blockers.append(
+                f"… and {total - len(blockers)} more bare unauthenticated fetch() call "
+                f"site(s) — the same fix applies to each.")
+    except Exception:
+        return []
+    return blockers
+
+
 def audit_asset_usage(frontend_dir: Any, design_system: Mapping[str, Any]) -> Dict[str, Any]:
     """ADVISORY (never a hard block): flag each component the Design-Prep design_system maps to a
     REAL asset that no frontend file actually references. For every ``screens[].components[].assets``
