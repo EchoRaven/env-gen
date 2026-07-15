@@ -554,6 +554,60 @@ def _is_hard_miss(missing_line: str) -> bool:
     return any(mark in missing_line for mark in _HARD_MISS_MARKERS)
 
 
+# FIX #166 (gmrun7): a declared MAP page must render a REAL map library, not a fake <div>.
+# gmrun7's home_map "map" was a blank `<div className="bg-[#ffffff]">` — leaflet was never
+# imported (not in package.json, nowhere in src), so the app's dominant visual element was a
+# decorative background. The prompt's <map_surface_template> was IGNORED; a GATE enforces it.
+# Egress-robust: a STATIC source check (a tile probe would false-fail offline where OSM tiles
+# can't load). Domain-agnostic — no gmaps specifics.
+_MAP_LIB_MARKERS = (
+    "react-leaflet", "MapContainer", "TileLayer", "from 'leaflet'", 'from "leaflet"',
+    "mapbox-gl", "maplibre-gl", "google.maps", "L.map(", "leaflet/dist/leaflet")
+
+
+def _map_tokens(s: Any) -> set:
+    """Word tokens of a name/route, splitting snake/kebab/slash AND camelCase, so ``map`` is a
+    WORD (``home_map``/``/map``/``HomeMap`` → has ``map``) but a substring is not
+    (``sitemap``/``roadmap`` → does NOT)."""
+    txt = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(s or ""))
+    return {t for t in re.split(r"[^A-Za-z0-9]+", txt.lower()) if t}
+
+
+def _is_map_page(name: str, page: Mapping[str, Any]) -> bool:
+    """True iff this ui_page is a geographic MAP surface — ``map`` is a word in its name or
+    route, or its ``must_have`` names a map. Substring-only matches (sitemap/roadmap) do NOT
+    qualify."""
+    if not isinstance(page, Mapping):
+        return False
+    toks = _map_tokens(name) | _map_tokens(page.get("route")) | _map_tokens(page.get("name"))
+    if "map" in toks:
+        return True
+    mh = " ".join(str(x) for x in (page.get("must_have") or []))
+    return "map" in _map_tokens(mh)
+
+
+def _frontend_uses_map_lib(frontend_src: Any) -> bool:
+    """True iff ANY frontend source file references a real map library (react-leaflet /
+    leaflet / mapbox / maplibre / google.maps). Best-effort; False on any fault."""
+    try:
+        src = Path(frontend_src)
+        if not src.is_dir():
+            return False
+        for f in (list(src.rglob("*.jsx")) + list(src.rglob("*.js"))
+                  + list(src.rglob("*.tsx")) + list(src.rglob("*.ts"))):
+            if "node_modules" in f.parts:
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            if any(m in text for m in _MAP_LIB_MARKERS):
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def ui_page_delivery_blockers(frontend_src: Any, workhub: Any) -> List[str]:
     """Declared ui_pages with a HARD wiring defect → delivery blocker strings.
 
@@ -589,6 +643,22 @@ def ui_page_delivery_blockers(frontend_src: Any, workhub: Any) -> List[str]:
             if hard:
                 blockers.append(
                     f"ui_page `{name}` declared but unusable: " + "; ".join(hard))
+        # FIX #166: if ANY declared page is a MAP surface but the frontend uses NO map
+        # library anywhere, the map is a fake background — block delivery on every map page
+        # (one static scan, not per-page). "declared but unusable" prefix so it routes to the
+        # frontend lane like the other ui_page blockers.
+        _map_pages = [n for n, p in pages.items()
+                      if isinstance(p, dict)
+                      and str(p.get("route") or "").strip().startswith("/")
+                      and _is_map_page(n, p)]
+        if _map_pages and not _frontend_uses_map_lib(src):
+            for _mn in _map_pages:
+                blockers.append(
+                    f"ui_page `{_mn}` declared but unusable: it is a MAP surface but the "
+                    f"frontend uses NO map library (a fake <div> background, not a map) — "
+                    f"build the REAL Leaflet map (react-leaflet MapContainer + OSM TileLayer "
+                    f"with an explicit height, markers from the places data, per the "
+                    f"map_surface_template). A CSS box pretending to be a map is rejected.")
     except Exception:
         pass
     return blockers
