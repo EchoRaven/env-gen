@@ -724,15 +724,21 @@ def _dataset_columns(path: Path, kind: str) -> List[str]:
         return []
     if not isinstance(data, list):
         return []
+    # FIX #158: sanitize each column name to a valid, non-keyword identifier (the SAME
+    # function the ORM render + seed-key assembly use) so the requirements-binding block
+    # tells the backend the FINAL safe name — a real dataset column like ``from`` never
+    # reaches the contract as a Python keyword that would break ``import models``.
+    from .backend_skeleton import safe_column_name
     cols: List[str] = []
     seen = set()
     for row in data:
         if not isinstance(row, dict):
             continue
         for k in row.keys():
-            if k not in seen:
-                seen.add(k)
-                cols.append(k)
+            sk = safe_column_name(k)
+            if sk not in seen:
+                seen.add(sk)
+                cols.append(sk)
     return cols
 
 
@@ -817,7 +823,18 @@ def assemble_seed_dataset(design_dataset_dir) -> Dict[str, List]:
         if isinstance(rows, list) and rows:
             # the file stem IS the table name — keep it VERBATIM (no _slug: it would
             # rewrite transit_stops → transit-stops and break the ORM table match).
-            out[path.stem] = rows
+            # FIX #158: sanitize the ROW KEYS to the safe identifier so a seed key equals
+            # the ORM ATTRIBUTE the loader inserts through (a keyword column ``from`` is
+            # exposed as attribute ``from_``; a raw ``from`` key would be dropped by the
+            # loader's hasattr filter → that column silently NULL). Same function as render.
+            from .backend_skeleton import safe_column_name
+            fixed = []
+            for r in rows:
+                if isinstance(r, dict):
+                    fixed.append({safe_column_name(k): v for k, v in r.items()})
+                else:
+                    fixed.append(r)
+            out[path.stem] = fixed
     return out
 
 

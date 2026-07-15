@@ -17,12 +17,40 @@ become generic lists; richer business logic is a later lane-override extension).
 
 from __future__ import annotations
 
+import keyword
 import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from .database_scaffold import _columns_of, _is_constraint_pseudo_column
+
+
+def safe_column_name(name: str) -> str:
+    """FIX #158 (gmrun6): map a column name to a valid, non-keyword Python IDENTIFIER
+    usable as an ORM attribute — the single sanitize the whole dataset channel shares
+    (render + requirements-binding + seed-key assembly), so the ORM attribute, the DB
+    column, and the seed-dataset key stay equal and data still lands.
+
+    A real dataset can carry a column named after a Python keyword (transit_lines.``from``
+    = the OSM line origin) or a non-identifier (``2019``, ``a-b``). Rendered verbatim as an
+    attribute (``from = Column(Text)``) it is a SyntaxError that breaks ``import models`` →
+    the backend crashes on every boot (gmrun6 backend_health wedge). Rule: a hard keyword
+    gets a trailing underscore (PEP 8: ``from``→``from_``, ``class``→``class_``); a non-
+    identifier has its illegal characters replaced with ``_`` and a leading digit prefixed
+    (``col_``); empty → ``col``. IDEMPOTENT (``from_`` stays ``from_``) so applying it at
+    several stages never double-mangles."""
+    s = str(name or "").strip()
+    if not s:
+        return "col"
+    if s.isidentifier():
+        return s + "_" if keyword.iskeyword(s) else s
+    s2 = re.sub(r"\W", "_", s)
+    if s2 and s2[0].isdigit():
+        s2 = "col_" + s2
+    if not s2 or not s2.isidentifier():
+        return "col"
+    return s2 + "_" if keyword.iskeyword(s2) else s2
 
 # ── SQL type → SQLAlchemy type ──────────────────────────────────────────────
 _SA_TYPE = {
@@ -156,6 +184,13 @@ def _render_column(col: Dict[str, Any]) -> Optional[str]:
             else:
                 _sd_sql = "'" + d.replace("'", "''") + "'"
             kw.append(f"server_default=text({_sd_sql!r})")
+    # FIX #158: the ORM ATTRIBUTE must be a valid, non-keyword identifier. When the DB
+    # column name is a keyword/non-identifier (a real dataset column like ``from``), use a
+    # safe attribute AND pin the original DB column name as Column's first positional arg,
+    # so the table's DDL column keeps the contract name while ``import models`` stays valid.
+    attr = safe_column_name(name)
+    if attr != name:
+        return f"    {attr} = Column({', '.join([repr(name)] + args + kw)})"
     return f"    {name} = Column({', '.join(args + kw)})"
 
 
