@@ -82,11 +82,24 @@ def _backend_host_port(compose_file: Path, cwd: Path) -> Optional[int]:
 # blank-no-rootcause → #154 exact call sites). Pull the log tail on a 5xx and
 # hand the lane the salient last-traceback line, file:line first.
 
+# FIX #161 (gmrun7): the innermost ``/app/`` frame is usually the framework's DB session
+# wrapper (``database.py:80 in execute → super().execute(...)``) — the actual fix site is
+# the HANDLER one frame out (``main.py:519 in _projected_..._departures`` / a lane
+# ``custom_routes.py`` handler). Real run-7 traceback frames were main.py:229 (auth guard),
+# main.py:519 (the projected handler), database.py:80 (execute) → the bare-innermost rule
+# picked database.py, pointing the lane at framework infra it must not edit. De-prioritize
+# the pure-infra backend files so the salient frame names the handler that built the query.
+_INFRA_BACKEND_FILES = frozenset({
+    "database.py", "seed_data.py", "seed_dataset.py", "models.py"})
+
+
 def extract_salient_traceback(logs_text: str, limit: int = 320) -> str:
     """The salient line of the LAST Python traceback in a (docker) log tail:
-    ``<file>:<line> in <func> — <exception message>`` where the frame is the
-    innermost ``/app/`` (lane-owned) frame, falling back to the last frame of the
-    block. Strips ``service-1 |``-style compose prefixes. '' when no traceback."""
+    ``<file>:<line> in <func> — <exception message>``. The frame is the innermost ``/app/``
+    frame that is NOT pure framework infra (``database.py``/``models.py``/``seed_*.py`` —
+    the DB/ORM wrappers a bug never lives in), so it names the actual HANDLER; falls back to
+    the innermost ``/app/`` frame, then the last frame. Strips ``service-1 |`` compose
+    prefixes. '' when no traceback."""
     try:
         if not logs_text:
             return ""
@@ -101,7 +114,9 @@ def extract_salient_traceback(logs_text: str, limit: int = 320) -> str:
         if not frames:
             return ""
         app_frames = [m for m in frames if m.group("path").startswith("/app")]
-        frame = (app_frames or frames)[-1]
+        handler_frames = [m for m in app_frames
+                          if Path(m.group("path")).name not in _INFRA_BACKEND_FILES]
+        frame = (handler_frames or app_frames or frames)[-1]
         # the exception line: first non-indented `Some.Error: message` line after
         # the LAST frame of the block (postgres LINE/HINT continuations excluded).
         exc = ""
