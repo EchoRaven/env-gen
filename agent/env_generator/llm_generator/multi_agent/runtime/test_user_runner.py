@@ -505,6 +505,31 @@ async def run_browser_test_user(
                     report["pages"].append(rec)
                 # B-direction: assert the app rendered at least one real seeded value.
                 report["real_data"] = real_data_verdict(walk_texts, seed_values or [])
+                # FIX #160: the bare walk found no salient value — but a map/search/list app
+                # renders real data only on a SEARCH page WITH a query. Before concluding
+                # no_real_data, DRIVE the search route(s) with a seed-derived token (the
+                # searched value is guaranteed to be in the assertion set) and re-judge.
+                # Best-effort + bounded (only when the cheap bare walk came up empty).
+                _rd = report["real_data"]
+                if _rd.get("checked") and not _rd.get("rendered"):
+                    _tok = search_query_token(seed_values or [])
+                    _cands = search_route_candidates(pages)
+                    for _c in _cands[:2] if _tok else []:
+                        try:
+                            await page.goto(search_query_url(base_url, _c["route"], _tok),
+                                            wait_until="networkidle", timeout=20000)
+                            await page.wait_for_timeout(1500)
+                            _sp = await page.evaluate(_PROBE)
+                            walk_texts.append(str(_sp.get("text", "")))
+                            report.setdefault("search_drives", []).append(
+                                {"route": _c["route"], "token": _tok,
+                                 "textLen": _sp.get("textLen", 0)})
+                        except Exception as _sd_exc:
+                            report.setdefault("search_drives", []).append(
+                                {"route": _c["route"], "error": str(_sd_exc)[:120]})
+                        if real_data_verdict(walk_texts, seed_values or []).get("rendered"):
+                            break
+                    report["real_data"] = real_data_verdict(walk_texts, seed_values or [])
             finally:
                 await browser.close()
     except Exception as exc:
@@ -837,6 +862,66 @@ def real_data_verdict(page_texts: Optional[List[str]],
         matched = [v for v in vals if v.strip().lower() in blob]
     return {"checked": checked, "rendered": bool(matched), "matched": matched[:8],
             "sample_values": vals[:5], "n_values": len(vals), "n_texts": len(texts)}
+
+
+# ── FIX #160: drive a SEARCH query with a salient seed term ──────────────────
+# gmrun7 M1 false-flagged no_real_data: the walk visits routes BARE, but a map/search/list
+# app renders real data only on a search page WITH a query (its home shows chips + map pins;
+# a bare /search shows "No results" or a default query that may miss the salient-seed set).
+# When the bare walk finds no real data, drive the search route(s) with a token derived from
+# a salient seed value — guaranteeing the searched value is in the assertion set — then
+# re-judge. Pure helpers (unit-tested); the playwright glue is thin + best-effort.
+_SEARCH_ROUTE_HINTS = ("search", "explore", "browse", "results", "discover", "find", "list")
+
+
+def search_query_token(seed_values: Optional[List[str]]) -> Optional[str]:
+    """A single query term from the FIRST salient seed value that yields a usable word —
+    its first alphanumeric word of length >= 3 that is not a pure number (``"Pinecrest
+    Diner"`` → ``"Pinecrest"``; ``"401 Geary Street"`` → ``"Geary"``). None when no value
+    has such a word."""
+    for v in (seed_values or []):
+        if not isinstance(v, str):
+            continue
+        for w in re.findall(r"[^\W\d_][\w'-]*", v, flags=re.UNICODE):
+            if len(w) >= 3:
+                return w
+    return None
+
+
+def _canon_seg_len(route: str) -> int:
+    return len([s for s in str(route or "").split("/") if s])
+
+
+def search_route_candidates(pages: Optional[List[Mapping[str, Any]]]) -> List[Dict[str, Any]]:
+    """Declared pages that look like a SEARCH/list surface — route or name carries a search
+    hint — excluding auth routes and parameterised routes (a bare ``?q=`` needs a static
+    path). Deduped by route, order preserved."""
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for pg in (pages or []):
+        if not isinstance(pg, Mapping):
+            continue
+        route = str(pg.get("route") or "").strip()
+        name = str(pg.get("name") or "").strip()
+        if not route or route in seen:
+            continue
+        if any(seg in route for seg in _AUTH_ROUTE_SEGS):
+            continue
+        if _is_param_seg(route.rsplit("/", 1)[-1]) or ":" in route or "{" in route:
+            continue
+        hay = (route + " " + name).lower()
+        if any(h in hay for h in _SEARCH_ROUTE_HINTS):
+            seen.add(route)
+            out.append({"name": name or route, "route": route})
+    return out
+
+
+def search_query_url(base_url: str, route: str, token: str) -> str:
+    """``<base><route>?q=<t>&query=<t>&search=<t>`` — carry a few common param aliases so the
+    drive is robust to whichever name the app reads; the extras are ignored."""
+    from urllib.parse import quote
+    t = quote(str(token), safe="")
+    return f"{base_url.rstrip('/')}{route}?q={t}&query={t}&search={t}"
 
 
 def extract_seed_display_values(project_dir: Any) -> List[str]:
