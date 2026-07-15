@@ -24,10 +24,137 @@ CALL-TIME inside ``maybe_run`` (never module-top: that would cycle).
 
 from __future__ import annotations
 
+import hashlib
+import os
 import time
+from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from progress import EventType
+
+
+# ── FIX #155 (§6-2): fresh api_smoke before cut on post-smoke backend drift ──
+# gmrun3 (precise timeline): last api_smoke PASSED @05:15 → visual escape @05:33 →
+# backend lane EDITED custom_routes.py @05:34-35 (broken middleware, crashes at
+# import) → cut @05:37. The cut-time _merge_committed_agent_work() imports late
+# lane commits into the release snapshot AFTER every gate check — a structural
+# window, not a fluke — and the delivery gate reuses the mid-milestone smoke, so
+# the delivered archive cold-start-crashes (every request 500). Close it: stamp a
+# backend source signature when the framework smoke PASSES; at cut time, if the
+# committed backend differs, run ONE fresh RunValidationTool pass (clean docker
+# boot + probes, recorded like any run) and HOLD the cut on failure. The failed
+# run flips build:* checks red → the existing verification_checklist_not_ready /
+# failing-check remediation rails drive the lane; a lane fix changes the sig and
+# re-arms the fresh smoke. Same-sig failures are cached — never a docker churn.
+
+def backend_source_signature(app_root: Any) -> Optional[str]:
+    """Stable content hash of ``app/backend/**/*.py`` — the code that EXECUTES at
+    backend boot (the lane-owned custom_routes.py included). Deliberately excludes
+    .sql/.json/frontend: the heal pipeline's DDL/dataset writers are not byte-stable
+    (ORM-introspection ordering), so hashing them would false-drift every cut.
+    ``None`` when the backend dir is missing or on any fault (caller must NOT block
+    delivery on our own failure)."""
+    try:
+        be = Path(app_root) / "backend"
+        if not be.is_dir():
+            return None
+        h = hashlib.sha256()
+        for f in sorted(be.rglob("*.py"), key=lambda p: str(p)):
+            if "__pycache__" in f.parts or not f.is_file():
+                continue
+            h.update(str(f.relative_to(be)).encode() + b"\0")
+            h.update(f.read_bytes())
+        return h.hexdigest()
+    except Exception:
+        return None
+
+
+def fresh_smoke_decision(cur_sig: Optional[str], validated_sig: Optional[str],
+                         pass_sig: Optional[str], fail_sig: Optional[str]) -> str:
+    """Pure cut-time decision: ``cut`` | ``smoke`` | ``hold``.
+
+    ``cut``   — current backend already validated (by the last passing framework
+                smoke, or by a previous cut-time fresh smoke), or we cannot compute
+                a signature (our own fault must never block delivery).
+    ``hold``  — this EXACT backend already failed a cut-time fresh smoke: hold the
+                release (the recorded failing run drives remediation) without
+                re-booting docker every tick.
+    ``smoke`` — the backend drifted after the last validated state (or no framework
+                smoke ever stamped one, e.g. the verifier's run won the race): run
+                one fresh smoke now."""
+    if cur_sig is None:
+        return "cut"
+    if validated_sig is not None and cur_sig == validated_sig:
+        return "cut"
+    if pass_sig is not None and cur_sig == pass_sig:
+        return "cut"
+    if fail_sig is not None and cur_sig == fail_sig:
+        return "hold"
+    return "smoke"
+
+
+async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
+    """Cut-time guard: ``True`` → proceed to create_release, ``False`` → hold this
+    tick. Called AFTER _commit_framework_delivery (the tree is final). Best-effort:
+    any internal fault returns True — infra must never block delivery."""
+    try:
+        if os.environ.get("ENVGEN_FRESH_SMOKE_GATE", "1").lower() in (
+                "0", "false", "no", "off"):
+            return True
+        out_dir = getattr(orch, "output_dir", None)
+        if not out_dir:
+            return True
+        app_root = Path(out_dir) / "app"
+        if not app_root.exists():
+            app_root = Path(out_dir)
+        cur = backend_source_signature(app_root)
+        decision = fresh_smoke_decision(
+            cur,
+            getattr(orch, "_smoke_backend_sig", None),
+            getattr(orch, "_fresh_smoke_pass_sig", None),
+            getattr(orch, "_fresh_smoke_fail_sig", None))
+        if decision == "cut":
+            return True
+        if decision == "hold":
+            orch._logger.warning(
+                "RELEASE HELD: the backend still matches the tree that FAILED the "
+                "pre-cut fresh api_smoke — waiting for a lane fix (the failing run's "
+                "checks are dispatched); not re-booting docker on an unchanged tree. "
+                "Set ENVGEN_FRESH_SMOKE_GATE=0 to disable.")
+            return False
+        orch._logger.warning(
+            "PRE-CUT FRESH SMOKE: backend source changed AFTER the last passing "
+            "api_smoke (post-smoke lane edit / late merge — the gmrun3 cold-start-"
+            "crash window). Re-validating the exact release tree before cutting.")
+        from tools.validation_tools import RunValidationTool
+        tool = RunValidationTool(workspace=None)
+        tool._hubs = getattr(orch, "hubs", None)
+        tool._agent_id = "orchestrator"
+        res = await tool.execute()
+        data = getattr(res, "data", None) or {}
+        if data.get("runhub_run_id"):
+            orch._fresh_smoke_pass_sig = cur
+            orch._smoke_backend_sig = cur
+            orch._logger.warning(
+                "PRE-CUT FRESH SMOKE PASSED (run %s) — the release ships a "
+                "validated backend.", data.get("runhub_run_id"))
+            return True
+        orch._fresh_smoke_fail_sig = cur
+        _failed = [f"{c.get('name')}:{(c.get('detail') or '')[:60]}"
+                   for c in (data.get("checks") or []) if c.get("status") == "fail"]
+        orch._logger.error(
+            "RELEASE HELD: the post-smoke backend edit FAILS a fresh api_smoke "
+            "(%s) — NOT cutting a release that crashes on cold start (gmrun3 "
+            "class). The failing run is recorded; remediation routes to the lane. "
+            "A backend source change re-arms this check.",
+            _failed or (getattr(res, "error_message", "") or "?")[:160])
+        return False
+    except Exception as _exc:
+        try:
+            orch._logger.debug("fresh-smoke-before-cut skipped on fault: %s", _exc)
+        except Exception:
+            pass
+        return True
 
 
 def snapshot_passing_chains(orch: Any) -> None:
@@ -484,6 +611,13 @@ class FrameworkValidation:
             if _attempts < FWVAL_FAST_CAP:
                 orch._framework_validation_attempts = _attempts + 1
             from tools.validation_tools import RunValidationTool
+            # FIX #155: signature of the backend tree this smoke will validate —
+            # computed BEFORE execute() (a lane merge can land during the await;
+            # the stamp must describe the tree docker actually built, never newer).
+            _app_root_155 = Path(getattr(orch, "output_dir", ".")) / "app"
+            if not _app_root_155.exists():
+                _app_root_155 = Path(getattr(orch, "output_dir", "."))
+            _pre_smoke_sig = backend_source_signature(_app_root_155)
             tool = RunValidationTool(workspace=None)
             tool._hubs = orch.hubs
             tool._agent_id = "orchestrator"
@@ -549,6 +683,10 @@ class FrameworkValidation:
                         "checks": [{"name": "business_chain", "status": "fail",
                                     "detail": _err}]}
             if data and data.get("runhub_run_id"):
+                # FIX #155: remember WHICH backend this passing smoke validated, so
+                # the cut-time freshness check can demand a re-smoke iff it drifts.
+                if _pre_smoke_sig is not None:
+                    orch._smoke_backend_sig = _pre_smoke_sig
                 orch._logger.warning(
                     "Framework validation: api_smoke PASSED → recorded RunHub run %s "
                     "(%s endpoints) — delivery-gate run requirement satisfied.",

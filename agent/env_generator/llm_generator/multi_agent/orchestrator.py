@@ -2906,6 +2906,20 @@ class Orchestrator:
             # COMMITTED head, so uncommitted skeleton/infra/projection writes would
             # otherwise be excluded from the snapshot the user boots.
             self._commit_framework_delivery()
+            # FIX #155 (§6-2, gmrun3 cold-start-crash class): the merge above imports
+            # any LATE lane commit into the release tree AFTER every gate check ran —
+            # gmrun3's broken custom_routes middleware landed 2min before the cut and
+            # shipped unvalidated (delivered archive 500s on every request). If the
+            # committed backend differs from what the last passing api_smoke
+            # validated, run ONE fresh smoke on the exact release tree and HOLD the
+            # cut on failure (the recorded failing run drives remediation; a lane fix
+            # re-arms). Best-effort inside the helper; ENVGEN_FRESH_SMOKE_GATE=0 off.
+            try:
+                from .runtime.framework_validation import ensure_fresh_smoke_before_cut
+                if not await ensure_fresh_smoke_before_cut(self):
+                    return  # held: post-smoke backend drift failed the fresh smoke
+            except Exception as _fs_exc:
+                self._logger.debug("fresh-smoke-before-cut skipped: %s", _fs_exc)
             # Gate fully clear → cut the release from the integration branch.
             # Multi-milestone: the release tag is the CURRENT milestone version
             # (1.0.0/1.1.0/1.2.0/…) so releases accumulate in
