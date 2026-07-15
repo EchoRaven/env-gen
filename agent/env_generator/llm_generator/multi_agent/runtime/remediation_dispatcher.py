@@ -436,7 +436,16 @@ class RemediationDispatcher:
                 # route vs a missing component. Match only the stub-body reasons.
                 is_stub = any(s in _b.lower() for s in (
                     "placeholder", "stub", "renders no real", "no real ui"))
-                if is_stub:
+                # FIX #171: a #166 MAP blocker shares the "declared but unusable" prefix, but
+                # the map page IS wired — the "add a Route" message is misleading and drops the
+                # actionable "build the real Leaflet map" instruction. Pass the blocker's own
+                # reason (everything after "declared but unusable: ") through verbatim.
+                is_map = ("map surface" in _b.lower() or "no map library" in _b.lower())
+                if is_map:
+                    _reason = _b.split("declared but unusable:", 1)[-1].strip() or _b
+                    n_stub += 1  # count as a build-real-content fix, not an unwired-route one
+                    lines.append(f"  - {comp} (route {route}): FAKE MAP — {_reason}")
+                elif is_stub:
                     n_stub += 1
                     lines.append(
                         f"  - {comp} (route {route}): STUB — the file "
