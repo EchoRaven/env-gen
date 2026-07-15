@@ -2595,6 +2595,69 @@ def stage_design_assets(output_dir) -> List[str]:
     return copied
 
 
+_SEED_IMG_RE = re.compile(r"/assets/([\w./-]+\.(?:jpe?g|png|webp|gif))", re.IGNORECASE)
+
+
+def stage_missing_seed_photos(output_dir) -> List[str]:
+    """FIX #168 (gmrun7): guarantee every LOCAL image the SEED references actually exists.
+    A seed ``photo_url`` like ``/assets/photos/restaurant_2.jpg`` is a local path, but the
+    design-input provided no place photos, so the file was never created → every <img> 404s
+    (a broken-image glyph on every card). The external-image localizer only handles remote
+    stock URLs, not a missing local path. Generate a neutral placeholder IMAGE (correct
+    format) at each missing seed-referenced local image path so images always resolve.
+    Skips icons/ and placeholders/ (framework-owned, already staged) and remote URLs.
+    Returns the generated relative paths; best-effort ``[]`` on any fault."""
+    try:
+        out = Path(output_dir)
+        be = out / "app" / "backend"
+        pub = out / "app" / "frontend" / "public" / "assets"
+        if not (out / "app" / "frontend").is_dir():
+            return []
+        import json as _json
+        refs: set = set()
+        for fn in ("seed_dataset.json", "seed_data.json"):
+            fp = be / fn
+            if not fp.exists():
+                continue
+            try:
+                txt = fp.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for m in _SEED_IMG_RE.finditer(txt):
+                rel = m.group(1)
+                if rel.startswith(("icons/", "placeholders/")):
+                    continue
+                refs.add(rel)
+        if not refs:
+            return []
+        try:
+            from PIL import Image, ImageDraw
+        except Exception:
+            return []
+        staged: List[str] = []
+        for rel in sorted(refs):
+            dest = pub / rel
+            if dest.exists():
+                continue  # a real asset already there — never overwrite
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                img = Image.new("RGB", (400, 300), (233, 236, 239))  # neutral gray card
+                d = ImageDraw.Draw(img)
+                d.rectangle([1, 1, 398, 298], outline=(206, 212, 218), width=2)
+                # a simple "image" glyph (frame + sun) so it reads as a photo placeholder
+                d.rectangle([150, 120, 250, 190], outline=(173, 181, 189), width=3)
+                d.ellipse([168, 134, 190, 156], fill=(173, 181, 189))
+                d.polygon([(155, 186), (185, 156), (215, 186)], fill=(173, 181, 189))
+                fmt = "PNG" if dest.suffix.lower() == ".png" else "JPEG"
+                img.save(dest, fmt)
+                staged.append(rel)
+            except Exception:
+                continue
+        return staged
+    except Exception:
+        return []
+
+
 def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
     """Gap-fill a minimal buildable Vite+React+Tailwind+nginx frontend. Writes
     each standard file ONLY when missing/empty, so a lane that produced code is
@@ -2609,6 +2672,12 @@ def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
         # frontend serves them. frontend_dir is <output>/app/frontend → output = parents[1].
         try:
             stage_design_assets(frontend_dir.parent.parent)
+        except Exception:
+            pass
+        # FIX #168: guarantee every LOCAL image the seed references resolves — a missing
+        # /assets/photos/*.jpg (seed photo_url with no real photo) 404s → broken <img>.
+        try:
+            stage_missing_seed_photos(frontend_dir.parent.parent)
         except Exception:
             pass
         # GENERALITY: baseline copy derives the display name from the project
