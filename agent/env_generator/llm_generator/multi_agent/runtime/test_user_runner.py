@@ -514,6 +514,18 @@ async def run_browser_test_user(
                 if _rd.get("checked") and not _rd.get("rendered"):
                     _tok = search_query_token(seed_values or [])
                     _cands = search_route_candidates(pages)
+                    # FIX #163 (gmrun8): the delivery flow restarts the compose stack per
+                    # validation cycle (~60-90s), so a multi-page walk can catch a restart
+                    # mid-way → API calls 401/fail → no data → a FALSE no_real_data. Before
+                    # concluding, re-confirm the app is SETTLED (frontend mounted + API up)
+                    # so the search-drive runs against a live backend, not a restarting one.
+                    if _tok and _cands:
+                        try:
+                            await _wait_frontend_ready(page, base_url)
+                            if api_base_url:
+                                await _wait_api_ready(page, api_base_url)
+                        except Exception:
+                            pass
                     for _c in _cands[:2] if _tok else []:
                         try:
                             await page.goto(search_query_url(base_url, _c["route"], _tok),
@@ -873,19 +885,32 @@ def real_data_verdict(page_texts: Optional[List[str]],
 # re-judge. Pure helpers (unit-tested); the playwright glue is thin + best-effort.
 _SEARCH_ROUTE_HINTS = ("search", "explore", "browse", "results", "discover", "find", "list")
 
+# FIX #163 (gmrun8): a leading STOP-WORD makes a poor search token. "The Little Chihuahua"
+# → the first word is "The", and searching "The" matches too much / not the place, so the
+# salient value never renders → a FALSE no_real_data even on a healthy app. Skip these.
+_QUERY_STOPWORDS = frozenset({
+    "the", "a", "an", "of", "and", "or", "for", "to", "in", "on", "at", "by",
+    "with", "my", "our", "your", "new", "el", "la", "le", "de"})
+
 
 def search_query_token(seed_values: Optional[List[str]]) -> Optional[str]:
-    """A single query term from the FIRST salient seed value that yields a usable word —
-    its first alphanumeric word of length >= 3 that is not a pure number (``"Pinecrest
-    Diner"`` → ``"Pinecrest"``; ``"401 Geary Street"`` → ``"Geary"``). None when no value
-    has such a word."""
+    """A single DISTINCTIVE query term from the FIRST salient seed value that yields a usable
+    word — its first alphanumeric word of length >= 3 that is not a pure number NOR a stop-
+    word (``"The Little Chihuahua"`` → ``"Little"``; ``"Pinecrest Diner"`` → ``"Pinecrest"``;
+    ``"401 Geary Street"`` → ``"Geary"``). Falls back to the first non-number word (even a
+    stop-word) if a value is ALL stop-words; None when no value has a usable word."""
+    _fallback = None
     for v in (seed_values or []):
         if not isinstance(v, str):
             continue
         for w in re.findall(r"[^\W\d_][\w'-]*", v, flags=re.UNICODE):
-            if len(w) >= 3:
+            if len(w) < 3:
+                continue
+            if w.lower() not in _QUERY_STOPWORDS:
                 return w
-    return None
+            if _fallback is None:
+                _fallback = w  # remember a stop-word in case the value is all stop-words
+    return _fallback
 
 
 def _canon_seg_len(route: str) -> int:
