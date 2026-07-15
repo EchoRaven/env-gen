@@ -272,30 +272,59 @@ async def _drive_auth_form(page: Any, creds: Mapping[str, str], *, max_steps: in
     return await page.evaluate(_TOKEN_JS)
 
 
+async def _frontend_rendered(page) -> bool:
+    """True if the SPA appears MOUNTED — the React root has children, or the body has any
+    text. FIX #159: a Vite dev server serves the index.html shell (HTTP 200) while the JS
+    bundle is still rebuilding, so ``_wait_frontend_ready``'s bare ``< 500`` signal declared
+    readiness before React mounted → the walk saw an empty ``document.body`` → every page
+    false-flagged 'blank'. This distinguishes 'shell served but not yet mounted' from a
+    settled app. On ANY probe error (no ``evaluate``, context destroyed mid-navigation) →
+    True: we cannot tell, so never BLOCK readiness on the probe (degrade to the old
+    server-responds behaviour). Env-agnostic — ``#root`` is the Vite/CRA convention, with a
+    body-text fallback for any other mount node."""
+    try:
+        return bool(await page.evaluate(
+            "() => { const r = document.getElementById('root') || document.body;"
+            " return !!(r && ((r.children && r.children.length > 0)"
+            " || ((document.body && document.body.innerText || '').trim().length > 0))); }"))
+    except Exception:
+        return True
+
+
 async def _wait_frontend_ready(page, base_url: str, attempts: int = 15,
                                gap_ms: int = 2000, timeout_ms: int = 4000) -> bool:
-    """Poll ``base_url`` until the frontend SERVES (any response < 500). Returns True once
-    reachable, False if it never comes up within ~attempts*gap.
+    """Poll ``base_url`` until the frontend SERVES (any response < 500) AND the SPA has
+    MOUNTED. Returns True once ready, False if the server never comes up within
+    ~attempts*gap.
 
     The delivery flow restarts the compose stack per milestone, so the browser walk can fire
     while the FRONTEND container is DOWN / rebuilding → every ``goto`` raises
     net::ERR_CONNECTION_REFUSED → auth_ok=False + all pages 'blank' → a FALSE 'unusable' that
     escape-ships a HEALTHY app (outlook run-28 v1.2.0, live: the final walk hit ERR_CONNECTION_
-    REFUSED at /login mid container-restart). Waiting for readiness (and reporting ran=False
-    when it never comes up → the gate treats it as 'could not run' / skip, never 'unusable')
-    makes the verdict reflect the SETTLED app. Bounded + best-effort. ENV-AGNOSTIC."""
+    REFUSED at /login mid container-restart). FIX #159 (gmrun7 M1, live): the server can also
+    respond 200 with the index SHELL while the JS bundle is still building → the SPA hasn't
+    mounted → an empty body → a FALSE ``blank=['login']`` (playwright-verified the same /login
+    renders a real 41-char form once settled). So readiness now also waits for the SPA to
+    MOUNT (``_frontend_rendered``). CRUCIALLY, a genuinely-blank app still proceeds after the
+    poll budget (``served`` → True), so the walk still CATCHES a real blank — readiness must
+    never SUPPRESS a true defect, only settle a transient one. Bounded + best-effort. ENV-AGNOSTIC."""
+    served = False
     for _ in range(max(1, attempts)):
         try:
             r = await page.goto(base_url + "/", wait_until="commit", timeout=timeout_ms)
             if r is None or (getattr(r, "status", None) or 200) < 500:
-                return True
+                served = True
+                if await _frontend_rendered(page):
+                    return True
         except Exception:
             pass
         try:
             await page.wait_for_timeout(gap_ms)
         except Exception:
             pass
-    return False
+    # Server responded but never observably mounted within the budget → let the walk run
+    # (it will correctly flag a genuine blank); never came up at all → skip (ran=False).
+    return served
 
 
 def _api_probe_once(api_base_url: str, timeout: int = 4) -> bool:
