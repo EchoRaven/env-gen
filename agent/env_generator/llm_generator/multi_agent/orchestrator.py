@@ -2847,11 +2847,12 @@ class Orchestrator:
                     if _bg_decision == "defer":
                         self._logger.warning(
                             "DELIVERY DEFERRED: browser test-user found the app UNUSABLE "
-                            "(auth_ok=%s blank=%s login_wall=%s hollow=%s) — P0 dispatched to "
-                            "the frontend; re-testing after the fix lands (attempt %s, %ss "
-                            "deferred). Set ENVGEN_TESTUSER_BROWSER_GATE=0 to disable.",
+                            "(auth_ok=%s blank=%s login_wall=%s hollow=%s no_real_data=%s) — P0 "
+                            "dispatched to the frontend; re-testing after the fix lands (attempt "
+                            "%s, %ss deferred). Set ENVGEN_TESTUSER_BROWSER_GATE=0 to disable.",
                             _bg_report.get("auth_ok"), _bg_report.get("blank_pages"),
                             _bg_report.get("auth_redirect_pages"), _bg_report.get("hollow_frontend"),
+                            _bg_report.get("no_real_data"),
                             self._tu_browser_attempts,
                             int(_bg_now - self._tu_browser_deferred_since))
                         return  # hold this milestone's release until the UI is usable

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
@@ -41,8 +42,8 @@ _PROBE = """() => {
   const inputs = document.querySelectorAll('input, textarea, select').length;
   const pw = document.querySelectorAll('input[type=password]').length;
   const signin = /\\b(sign ?in|log ?in|sign ?up|create account)\\b/i.test(txt);
-  return { textLen: txt.length, sample: txt.slice(0, 120), buttons: btns,
-           inputs: inputs, pw: pw, signin: signin };
+  return { textLen: txt.length, sample: txt.slice(0, 120), text: txt.slice(0, 4000),
+           buttons: btns, inputs: inputs, pw: pw, signin: signin };
 }"""
 
 
@@ -337,6 +338,7 @@ async def run_browser_test_user(
     demo_login: Optional[Mapping[str, str]] = None,
     chrome_path: Optional[str] = None,
     api_base_url: Optional[str] = None,
+    seed_values: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Drive a real browser through the app. ``pages`` is [{name, route, auth}].
     Returns {ran, steps:[{step,ok,note}], pages:[{name,route,ok,blank,console_errors,
@@ -412,6 +414,7 @@ async def run_browser_test_user(
                     step("auth flow", False, f"exception: {exc}")
 
                 # ---- 2 + 3. visit each page, screenshot, blank/console checks ----
+                walk_texts: List[str] = []  # B-direction: real-data assertion corpus
                 for pg in pages or []:
                     route = str((pg or {}).get("route") or "").strip()
                     name = str((pg or {}).get("name") or route or "page")
@@ -447,6 +450,7 @@ async def run_browser_test_user(
                         rec["blank"] = (_tl < _MIN_TEXT)
                         rec["sample"] = probe.get("sample", "")
                         rec["controls"] = probe.get("buttons", 0) + probe.get("inputs", 0)
+                        walk_texts.append(str(probe.get("text", "")))
                         # HOLLOW-PAGE detection: the test-user is logged in (token stored
                         # above), so a PROTECTED route that bounces to the auth URL OR
                         # renders the login form in place (password field + sign-in copy)
@@ -470,6 +474,8 @@ async def run_browser_test_user(
                     except Exception as exc:
                         rec["note"] = f"navigation failed: {exc}"
                     report["pages"].append(rec)
+                # B-direction: assert the app rendered at least one real seeded value.
+                report["real_data"] = real_data_verdict(walk_texts, seed_values or [])
             finally:
                 await browser.close()
     except Exception as exc:
@@ -502,10 +508,17 @@ def _finalize_walkthrough(report: Dict[str, Any]) -> Dict[str, Any]:
     protected = [p for p in pages
                  if not any(seg in str(p.get("route") or "") for seg in _AUTH_ROUTE_SEGS)]
     report["hollow_frontend"] = bool(protected) and len(redirected) >= max(1, (len(protected) + 1) // 2)
+    # NO REAL DATA (B-direction): the walk collected page text + salient seed values and
+    # NO seed value rendered anywhere (checked=True, rendered=False) → the frontend is
+    # showing a mock twin / placeholder / a silently-failing fetch, not real backend data.
+    # checked=False (no seed values or no page text) ⇒ SKIP, never flag.
+    rd = report.get("real_data") or {}
+    report["no_real_data"] = bool(rd.get("checked") and not rd.get("rendered"))
     report["summary"] = (
         f"auth_ok={auth_ok}; pages={len(pages)}; "
         f"blank={blanks or '∅'}; console_errors={errs or '∅'}; "
-        f"login_wall={redirected or '∅'}; hollow={report['hollow_frontend']}")
+        f"login_wall={redirected or '∅'}; hollow={report['hollow_frontend']}; "
+        f"real_data={'∅' if report['no_real_data'] else (rd.get('matched') or 'n/a')}")
     return report
 
 
@@ -580,6 +593,18 @@ def format_feedback(report: Mapping[str, Any]) -> str:
     if not report.get("ran"):
         return f"Test-user could not run: {report.get('summary', 'unknown')}"
     lines = [f"TEST-USER report — {report.get('summary', '')}"]
+    if report.get("no_real_data"):
+        rd = report.get("real_data") or {}
+        lines.append(
+            "  ‼ NO REAL DATA: the app logs in and renders, but NONE of the real seeded "
+            f"values (e.g. {', '.join((rd.get('sample_values') or [])[:3]) or 'the seeded rows'}) "
+            "appear on ANY page — the frontend is showing MOCK/placeholder data or its data "
+            "fetch is silently failing. Root causes to check, in order: (1) a route wired to "
+            "a hardcoded-mock component instead of the API-calling one (switch App.jsx to the "
+            "real page); (2) a component calling authed /api/ with a BARE fetch() that omits "
+            "the Authorization token (route it through the shared api service so it 401s no "
+            "more); (3) the list maps over the wrong response shape. Fix this — a UI of fake "
+            "data is not a delivery.")
     if report.get("hollow_frontend"):
         lines.append(
             "  ‼ HOLLOW FRONTEND: logged in, but the PROTECTED pages "
@@ -614,9 +639,10 @@ def format_feedback(report: Mapping[str, Any]) -> str:
 def browser_report_unusable(report: Optional[Mapping[str, Any]]) -> bool:
     """PRE-RELEASE GATE predicate (2026-06-30): True iff the browser walk RAN and found an
     OBJECTIVE "a real user cannot use this app" signal — login broken (``auth_ok`` False),
-    protected pages rendering BLANK (``blank_pages``), or bounced to a LOGIN WALL
-    (``auth_redirect_pages`` / ``hollow_frontend``). The delivery flow uses this to HOLD a
-    release so a non-functional UI never ships as "delivered".
+    protected pages rendering BLANK (``blank_pages``), bounced to a LOGIN WALL
+    (``auth_redirect_pages`` / ``hollow_frontend``), or rendering ZERO real seeded data
+    (``no_real_data`` — a mock twin / placeholder / silently-failing fetch). The delivery
+    flow uses this to HOLD a release so a non-functional UI never ships as "delivered".
 
     Deliberately EXCLUDES the SOFT signals ``visual_mismatches`` and ``error_pages`` (console
     errors): those stay ADVISORY — the walk still dispatches them as a P0 remediation task,
@@ -627,7 +653,8 @@ def browser_report_unusable(report: Optional[Mapping[str, Any]]) -> bool:
     if not isinstance(report, dict) or not report.get("ran"):
         return False
     return bool((not report.get("auth_ok")) or report.get("blank_pages")
-                or report.get("auth_redirect_pages") or report.get("hollow_frontend"))
+                or report.get("auth_redirect_pages") or report.get("hollow_frontend")
+                or report.get("no_real_data"))
 
 
 def browser_gate_decision(report: Mapping[str, Any], squad_decision: str) -> str:
@@ -651,3 +678,154 @@ def browser_gate_decision(report: Mapping[str, Any], squad_decision: str) -> str
     if not report.get("auth_ok") or report.get("hollow_frontend"):
         return "defer"  # hard-unusable: never escape a dead app
     return squad_decision  # soft-unusable: honor the bounded escape
+
+
+# ── B-direction: does the app render REAL seeded data (not a mock twin / placeholder)? ──
+# googlemaps run-3 shipped a mock-twin frontend: logged in, pages non-blank, no console
+# errors — but every core screen rendered hardcoded fake rows instead of the 171 real
+# seeded places. The blank/redirect gate missed it. This asserts real data actually
+# renders somewhere in the walked app.
+_SEED_NOISE_COLS = frozenset({
+    "id", "uuid", "guid", "slug", "password", "password_hash", "hash", "salt",
+    "token", "access_token", "refresh_token", "secret", "api_key", "key",
+    "url", "uri", "href", "link", "website", "photo_url", "image", "image_url",
+    "img", "icon", "avatar", "thumbnail", "src",
+    "lat", "lng", "latitude", "longitude", "coordinates", "coord", "geo",
+    "phone", "tel", "fax", "zip", "postcode", "color", "colour", "hex",
+    "created_at", "updated_at", "deleted_at", "timestamp", "date", "datetime",
+    "price_level", "rating", "review_count", "count", "order", "index", "position",
+})
+_SEED_STOPWORDS = frozenset({
+    "home", "search", "results", "result", "profile", "settings", "setting",
+    "menu", "save", "saved", "share", "filter", "sort", "loading", "error",
+    "page", "welcome", "dashboard", "login", "logout", "sign in", "log in",
+    "sign up", "create account", "no results", "not found", "untitled",
+    "true", "false", "none", "null", "unknown", "other", "default", "active",
+})
+_NAME_COLS = frozenset({"name", "title", "label", "headline", "heading", "display_name"})
+_SEED_URLISH = re.compile(r"^(https?://|www\.|mailto:)|://|@[\w.-]+\.\w", re.I)
+_SEED_HEX = re.compile(r"^#?[0-9a-f]{6,8}$", re.I)
+_SEED_SLUG = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)+$")  # lowercase api-ish slug/enum
+
+
+def _seed_value_ok(col: str, v: Any) -> bool:
+    """A value is a SALIENT real display value iff it's a human-readable string (≥5 chars,
+    has letters) that isn't an id/coord/url/#hex/enum/generic-UI-word. Lowercase single
+    tokens (restaurant, tram) are treated as enum categories and dropped — proper names
+    are capitalized or multi-word."""
+    if not isinstance(v, str):
+        return False
+    s = v.strip()
+    if len(s) < 5:
+        return False
+    c = (col or "").strip().lower()
+    if c in _SEED_NOISE_COLS or c.endswith("_id") or c.endswith("_ids") or c.endswith("_at"):
+        return False
+    low = s.lower()
+    if low in _SEED_STOPWORDS:
+        return False
+    if not any(ch.isalpha() for ch in s):        # pure number / punctuation
+        return False
+    if _SEED_URLISH.search(s) or _SEED_HEX.match(s):
+        return False
+    if " " not in s and (s == low or _SEED_SLUG.match(low)):
+        return False                             # lowercase single-word enum / slug
+    return True
+
+
+def _seed_salience(v: str) -> float:
+    return ((10.0 if " " in v else 0.0)
+            + (3.0 if any(ch.isupper() for ch in v) else 0.0)
+            + min(len(v), 40) / 10.0)
+
+
+def salient_seed_values(seed_map: Mapping[str, Any], limit: int = 40) -> List[str]:
+    """Pick the human-visible 'real' values from a merged seed map ({table: [row, ...]}) —
+    multi-word proper names, authors, addresses a real-data frontend must render — dropping
+    ids/coords/urls/#hex/enums/UI words. Deduped case-insensitively and capped at ``limit``,
+    but DIVERSIFIED across columns (round-robin) so a verbose column — long templated
+    descriptions — can't crowd out a compact, highly-renderable one (place names are the
+    field a list/card most often shows). Pure + domain-agnostic."""
+    # group candidates by (table, column), each group internally ranked by salience
+    groups: Dict[Any, List[str]] = {}
+    if isinstance(seed_map, Mapping):
+        for table, rows in seed_map.items():
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if not isinstance(row, Mapping):
+                    continue
+                for col, val in row.items():
+                    if _seed_value_ok(col, val):
+                        groups.setdefault((table, col), []).append(val.strip())
+    # A name/title column is the canonical display field — keep its ROW ORDER (a default
+    # list/card renders the FIRST rows, so their names must be covered) instead of favouring
+    # the longest. Other columns rank by salience.
+    for key, g in groups.items():
+        if str(key[1]).strip().lower() not in _NAME_COLS:
+            g.sort(key=_seed_salience, reverse=True)
+    # round-robin across columns, NAME columns first so first-row names lead, then the rest
+    # by their best value's salience — every column contributes before any one fills the cap.
+    order = sorted(
+        groups,
+        key=lambda k: (str(k[1]).strip().lower() in _NAME_COLS, _seed_salience(groups[k][0])),
+        reverse=True)
+    out: List[str] = []
+    seen = set()
+    idx = 0
+    while len(out) < max(1, limit) and order:
+        drained: List[Any] = []
+        for key in order:
+            g = groups[key]
+            if idx >= len(g):
+                drained.append(key)
+                continue
+            v = g[idx]
+            k = v.lower()
+            if k not in seen:
+                seen.add(k)
+                out.append(v)
+                if len(out) >= max(1, limit):
+                    break
+        order = [k for k in order if k not in drained]
+        idx += 1
+    return out
+
+
+def real_data_verdict(page_texts: Optional[List[str]],
+                      seed_values: Optional[List[str]]) -> Dict[str, Any]:
+    """Pure: does ANY salient seed value render in ANY walked page's text? Returns
+    {checked, rendered, matched, n_values, n_texts}. ``checked`` is False (⇒ the gate
+    SKIPS, never flags) when there are no seed values or no page produced text — so a
+    legitimately static app is safe. Case-insensitive substring; a GLOBAL assertion (one
+    hit anywhere passes the app) tolerates pages that need a query to populate."""
+    texts = [t for t in (page_texts or []) if isinstance(t, str) and t.strip()]
+    vals = [v for v in (seed_values or []) if isinstance(v, str) and v.strip()]
+    checked = bool(vals) and bool(texts)
+    matched: List[str] = []
+    if checked:
+        blob = "\n".join(texts).lower()
+        matched = [v for v in vals if v.strip().lower() in blob]
+    return {"checked": checked, "rendered": bool(matched), "matched": matched[:8],
+            "sample_values": vals[:5], "n_values": len(vals), "n_texts": len(texts)}
+
+
+def extract_seed_display_values(project_dir: Any) -> List[str]:
+    """Read the dual-source seed (framework ``seed_dataset.json`` ∪ lane ``seed_data.json``
+    under ``<project>/app/backend``) and return its salient display values. Missing/broken
+    files → [] (skip — never flag on absence)."""
+    be = Path(project_dir) / "app" / "backend"
+    merged: Dict[str, List[Any]] = {}
+    for fname in ("seed_data.json", "seed_dataset.json"):
+        fp = be / fname
+        if not fp.exists():
+            continue
+        try:
+            data = json.loads(fp.read_text())
+        except Exception:
+            continue
+        if isinstance(data, Mapping):
+            for table, rows in data.items():
+                if isinstance(rows, list):
+                    merged.setdefault(table, []).extend(rows)
+    return salient_seed_values(merged)

@@ -524,7 +524,8 @@ class HealPipeline:
         from .visual_fidelity import _service_host_port
         from .validation_runner import _backend_host_port
         from .test_user_runner import (
-            run_browser_test_user, format_feedback, judge_against_references)
+            run_browser_test_user, format_feedback, judge_against_references,
+            extract_seed_display_values)
         cwd = compose.parent
         fe_port = (_service_host_port(compose, cwd, "frontend")
                    or _service_host_port(compose, cwd, "ui") or 8080)
@@ -576,9 +577,17 @@ class HealPipeline:
         # Log in as the SEEDED demo user (populated screens that match the references) rather
         # than a fresh user that, under tenant-scoping, sees empty lists on every page.
         from .visual_fidelity import _seed_demo_login
+        # B-direction: the salient real seeded values (place names, authors, addresses) the
+        # walk asserts render SOMEWHERE — catches a mock-twin / placeholder / no-token fetch
+        # frontend that logs in + renders but shows zero real backend data (run-3). Empty →
+        # the assertion self-skips (never false-flags a static app). Best-effort.
+        try:
+            _seed_vals = extract_seed_display_values(proj)
+        except Exception:
+            _seed_vals = []
         report = asyncio.run(run_browser_test_user(
             base, pages, out_dir, register=True, api_base_url=api_base,
-            demo_login=_seed_demo_login(proj)))
+            demo_login=_seed_demo_login(proj), seed_values=_seed_vals))
         if not report.get("ran"):
             orch._logger.warning("BROWSER test-user (v%s): could not run — %s",
                                  version, report.get("summary"))
