@@ -877,7 +877,16 @@ _INVENTED_HONEST = frozenset({
 _INVENTED_HONEST_SUBSTR = (
     "error", "fail", "invalid", "loading", "not found", "no results",
     "unavailable", "required", "missing", "please ",
+    # "…not available/set/provided/specified" absence phrasings (archive audit)
+    "not available", "not set", "not provided", "not specified", "not listed",
+    "no data", "no info", "coming soon",
 )
+# A fallback that SIGNALS ABSENCE (rather than asserting a fabricated value) is honest even
+# when multi-word: "No description", "Unknown Place", "Anonymous User". Prefix-matched.
+_INVENTED_HONEST_PREFIX = ("no ", "unknown", "anonymous", "select ", "choose ", "enter ",
+                           "untitled", "loading", "search")
+_HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{3,8}$")
+_ASSET_EXT = re.compile(r"\.(svg|png|jpe?g|gif|webp|ico|avif|bmp)($|\?|#)", re.I)
 # member.field || 'literal'     and     ? member.field : 'literal'
 _INVENTED_OR = re.compile(r"""(\b\w+(?:\.\w+)+)\s*\|\|\s*(['"])(.*?)\2""")
 _INVENTED_TERNARY = re.compile(r"""\?\s*(\b\w+(?:\.\w+)+)\s*:\s*(['"])(.*?)\2""")
@@ -894,6 +903,15 @@ def _is_fabricated_fallback_literal(s: str) -> bool:
     if low in _INVENTED_HONEST:
         return False
     if any(sub in low for sub in _INVENTED_HONEST_SUBSTR):
+        return False
+    if low.startswith(_INVENTED_HONEST_PREFIX):   # "No description", "Unknown Place", "Anonymous User"
+        return False
+    # Styling / placeholder-asset defaults are NOT display DATA: a hex color, or an asset
+    # path ('/assets/…', '…/ph-img-1.svg') — a placeholder image is an HONEST "no photo"
+    # state, not a fabricated value. (archive audit: gmrun4 #3b82f6, gmrun7 ph-img-1.svg)
+    if _HEX_COLOR.match(t):
+        return False
+    if t.startswith("/") or _ASSET_EXT.search(t):
         return False
     # Honest ZERO / empty-count state — '0', '0.0', '$0', '0%', '0 reviews', '0 results'.
     # gmrun11 ABORTED because `place.review_count || '0'` was flagged as fabricated: '0' is
