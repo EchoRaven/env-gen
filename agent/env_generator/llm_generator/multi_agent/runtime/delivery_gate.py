@@ -957,6 +957,12 @@ def _deliverability_check_token(blocker: str) -> str:
         # functionally_validated — functional validation is exactly the
         # blind spot.
         return "deliverability_bare_authed_fetch"
+    if "placeholder stub" in low:
+        # #173 (gmrun9): a GET route handler that does NO DB read and returns a
+        # hardcoded empty collection → a permanently-empty page (the departures
+        # `return {"items": []}` the lane shipped). Deterministic AST; NOT relaxed
+        # on functionally_validated — api_smoke never asserts a non-empty body.
+        return "deliverability_placeholder_stub_handler"
     # Unmapped blocker — surface verbatim under a catch-all so the operator
     # sees it instead of silently dropping; future canonicalization work can
     # move it into a named token.

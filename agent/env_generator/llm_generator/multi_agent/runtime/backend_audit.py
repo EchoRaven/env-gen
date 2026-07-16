@@ -30,7 +30,7 @@ from __future__ import annotations
 import ast
 import logging
 from pathlib import Path
-from typing import Any, Dict, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 
 from .route_projector import (
     _duplicate_routes, _existing_routes, _express_to_fastapi, _norm_path,
@@ -278,4 +278,125 @@ def sync_endpoint_statuses(project_dir: Any, registryhub: Any) -> Dict[str, Any]
     return out
 
 
-__all__ = ["served_routes", "sync_endpoint_statuses", "BackendAuditError"]
+# ── FIX #173: PLACEHOLDER-STUB backend handlers ───────────────────────────────
+# gmrun9 shipped a GET handler `def get_departures(...): return {"items": []}` (the lane's
+# comment literally said "This is a stub for departures") even though real seed data existed
+# (transit_stops.line_refs → transit_lines). The DeparturesPage then permanently rendered
+# "No departures found." — a placeholder page. The no_real_data browser gate was fooled by a
+# weak token on the walk. A GET route handler that never touches the DB and returns a
+# hardcoded EMPTY collection can NEVER serve real data → catch it by construction here (the
+# backend twin of frontend_audit's ui_page_delivery_blockers), so delivery HOLDS until the
+# handler queries the real table. Deterministic AST, best-effort, recomputed each gate tick.
+_COLLECTION_KEYS = frozenset({
+    "items", "results", "data", "rows", "list", "records", "departures", "entries",
+    "content", "docs", "objects", "elements", "collection",
+})
+# Attribute/name calls that indicate the handler actually reads the DB (so it's not a
+# constant stub even if one branch returns an empty guard).
+# NB: exclude the ambiguous ``get`` (dict.get / query_params.get) — it would mask a real
+# stub. The listed attrs are strong SQLAlchemy read signals.
+_DB_CALL_ATTRS = frozenset({
+    "query", "execute", "scalars", "scalar", "all", "first", "one", "one_or_none",
+    "filter", "filter_by", "count", "fetchall", "fetchone", "exec",
+})
+_DB_CALL_NAMES = frozenset({"select", "text"})
+
+
+def _handler_http_methods(fn: Any) -> Set[str]:
+    """HTTP methods this function is a route handler for — {'GET', ...} from
+    ``@router.get`` / ``@app.post`` / ``@api.get(...)`` decorators. Empty ⇒ not a route."""
+    methods: Set[str] = set()
+    for dec in getattr(fn, "decorator_list", []) or []:
+        target = dec.func if isinstance(dec, ast.Call) else dec
+        if isinstance(target, ast.Attribute) and target.attr.lower() in (
+                "get", "post", "put", "patch", "delete", "options", "head"):
+            methods.add(target.attr.upper())
+    return methods
+
+
+def _is_empty_collection_literal(node: Any) -> bool:
+    """True iff ``node`` is an empty list ``[]`` or a dict-envelope whose collection key(s)
+    (``items`` / ``results`` / …) map to an empty list (``{"items": []}`` /
+    ``{"items": [], "total": 0}``). A NON-empty collection value (static options) or a
+    dynamic value (a comprehension over query rows) makes it NOT an empty-stub literal."""
+    if isinstance(node, ast.List):
+        return len(node.elts) == 0
+    if isinstance(node, ast.Dict):
+        saw_collection = False
+        for k, v in zip(node.keys, node.values):
+            key = (k.value.lower() if isinstance(k, ast.Constant)
+                   and isinstance(k.value, str) else None)
+            if key in _COLLECTION_KEYS:
+                if isinstance(v, ast.List) and len(v.elts) == 0:
+                    saw_collection = True
+                else:
+                    return False  # collection key with real/dynamic value ⇒ not an empty stub
+        return saw_collection
+    return False
+
+
+def _returns_only_empty_collections(fn: Any) -> bool:
+    """Every value-bearing ``return`` in the body is an empty-collection literal, and there
+    is at least one — so the handler can only ever emit an empty collection."""
+    # Walk only the BODY (not decorator_list / arg defaults) so nothing outside the
+    # implementation is mistaken for a return.
+    returns = [n for stmt in fn.body for n in ast.walk(stmt)
+               if isinstance(n, ast.Return) and n.value is not None]
+    if not returns:
+        return False
+    return all(_is_empty_collection_literal(r.value) for r in returns)
+
+
+def _reads_db(fn: Any) -> bool:
+    """The handler body calls something that reads the DB (``db.query(...)``, ``.all()``,
+    ``select(...)`` …) — then an empty return is a legitimate empty result, not a stub.
+    Walks only ``fn.body`` — CRUCIALLY not the decorator_list, so the handler's own
+    ``@router.get`` (a ``.get`` Call) is not mistaken for a DB read."""
+    for stmt in fn.body:
+        for n in ast.walk(stmt):
+            if isinstance(n, ast.Call):
+                f = n.func
+                if isinstance(f, ast.Attribute) and f.attr.lower() in _DB_CALL_ATTRS:
+                    return True
+                if isinstance(f, ast.Name) and f.id.lower() in _DB_CALL_NAMES:
+                    return True
+    return False
+
+
+def stub_handler_blockers(backend_dir: Any) -> List[str]:
+    """Delivery blockers for PLACEHOLDER-STUB backend handlers: a GET route handler that
+    does NO DB read and returns only a hardcoded EMPTY collection. Best-effort + pure;
+    ``[]`` on any fault or a non-dir path. ``ENVGEN_STUB_HANDLER_GATE=0`` disables."""
+    import os as _os
+    blockers: List[str] = []
+    if _os.environ.get("ENVGEN_STUB_HANDLER_GATE", "1").strip().lower() in (
+            "0", "false", "no", "off"):
+        return blockers
+    root = Path(backend_dir)
+    if not root.is_dir():
+        return blockers
+    for py in sorted(root.rglob("*.py")):
+        if "__pycache__" in py.parts:
+            continue
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if "GET" not in _handler_http_methods(node):  # only READ/collection endpoints
+                continue
+            if _reads_db(node):
+                continue
+            if _returns_only_empty_collections(node):
+                blockers.append(
+                    f"backend handler `{node.name}` ({py.name}) is a PLACEHOLDER STUB — a GET "
+                    "route that returns a hardcoded EMPTY collection with NO database query, so "
+                    "its page can never render real data (gmrun9 shipped exactly this for "
+                    "transit departures). Query the real seeded table(s) and return the rows.")
+    return blockers
+
+
+__all__ = ["served_routes", "sync_endpoint_statuses", "BackendAuditError",
+           "stub_handler_blockers"]

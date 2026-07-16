@@ -294,6 +294,18 @@ class RemediationDispatcher:
                 "placeholders), enough rows that list screens look like the references "
                 "(e.g. ~a dozen inbox messages). Write valid JSON: "
                 "{\"users\": [...], \"<table>\": [...], ...}."),
+            "deliverability_placeholder_stub_handler": (
+                # #173 (gmrun9): the lane "implemented" a GET route as
+                # `return {"items": []}` (no DB read) — a placeholder that renders an
+                # empty page forever, even though real seed data existed. The BACKEND
+                # lane owns the handler.
+                "backend", "Replace the placeholder-stub GET handler with a real query "
+                "(blocks delivery)",
+                "a GET route handler returns a HARDCODED empty collection (e.g. "
+                "`return {\"items\": []}`) with NO database query, so its page can never "
+                "show real data. Query the real seeded table(s) — join/scope as the "
+                "resource needs (e.g. a stop's departures from its lines) — and return the "
+                "actual rows. Do NOT return a hardcoded empty/placeholder collection."),
             "frontend_dead_controls": (
                 "frontend", "Bind the dead frontend controls (blocks delivery)",
                 "interactive markup (<form>/submit button) with NO bound handler — a "

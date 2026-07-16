@@ -137,6 +137,22 @@ def _bare_fetch_blockers(app_root) -> List[str]:
         return []
 
 
+def _stub_handler_blockers(app_root) -> List[str]:
+    """#173 (gmrun9): a GET route handler that does NO DB read and returns only a hardcoded
+    EMPTY collection is a PLACEHOLDER STUB (backend twin of a mock page) → delivery blocker.
+    The lane 'implemented' /api/transit/{id}/departures as ``return {"items": []}`` while real
+    seed data existed; the DeparturesPage then shipped 'No departures found.' forever. Static
+    AST, recomputed each gate tick, best-effort ``[]``. ``ENVGEN_STUB_HANDLER_GATE=0`` off."""
+    try:
+        from .backend_audit import stub_handler_blockers
+    except Exception:
+        return []
+    try:
+        return stub_handler_blockers(Path(app_root) / "backend")
+    except Exception:
+        return []
+
+
 def _seed_summary(hub_registry) -> Dict[str, Any]:
     try:
         from .seed_audit import audit_seed_data
@@ -301,6 +317,12 @@ def compute_deliverability(hub_registry, app_root,
     # low-false-positive (literal '/api/' URLs only, public endpoints and any
     # auth evidence excused), self-clearing once the lane wires the token.
     blockers.extend(_bare_fetch_blockers(app_root))
+
+    # PLACEHOLDER-STUB backend handler gate (#173, gmrun9). A GET route that returns a
+    # hardcoded empty collection with no DB read renders a permanently-empty page — the
+    # backend twin of a mock frontend. Static AST on the served backend tree, self-clearing
+    # once the handler queries the real table.
+    blockers.extend(_stub_handler_blockers(app_root))
 
     # Seed gate: the backend drifts on seed-data registration (the same
     # bookkeeping-the-LLM-never-does class as ui_flow/visual). On a functionally-
