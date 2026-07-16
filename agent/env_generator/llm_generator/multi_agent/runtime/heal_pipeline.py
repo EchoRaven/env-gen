@@ -618,7 +618,8 @@ class HealPipeline:
         # It MUST escalate to a P0 fix like any other UI defect.
         broken = ((not report.get("auth_ok")) or report.get("blank_pages")
                   or report.get("error_pages") or report.get("visual_mismatches")
-                  or report.get("hollow_frontend") or report.get("auth_redirect_pages"))
+                  or report.get("hollow_frontend") or report.get("auth_redirect_pages")
+                  or report.get("fake_map_pages"))  # #172: fake-div map surface
         if broken:
             try:
                 fb = format_feedback(report)

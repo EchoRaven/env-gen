@@ -42,8 +42,12 @@ _PROBE = """() => {
   const inputs = document.querySelectorAll('input, textarea, select').length;
   const pw = document.querySelectorAll('input[type=password]').length;
   const signin = /\\b(sign ?in|log ?in|sign ?up|create account)\\b/i.test(txt);
+  // #172: a REAL map root from any common web-map lib. A fake `bg-[...]` <div> has none →
+  // mapEls === 0 while the surface still renders content (not blank).
+  const mapEls = document.querySelectorAll(
+    '.leaflet-container, .mapboxgl-map, .maplibregl-map, .gm-style, .ol-viewport').length;
   return { textLen: txt.length, sample: txt.slice(0, 120), text: txt.slice(0, 4000),
-           buttons: btns, inputs: inputs, pw: pw, signin: signin };
+           buttons: btns, inputs: inputs, pw: pw, signin: signin, mapEls: mapEls };
 }"""
 
 
@@ -443,6 +447,7 @@ async def run_browser_test_user(
                     step("auth flow", False, f"exception: {exc}")
 
                 # ---- 2 + 3. visit each page, screenshot, blank/console checks ----
+                from .frontend_audit import _is_map_page  # #172: map-surface identity
                 walk_texts: List[str] = []  # B-direction: real-data assertion corpus
                 for pg in pages or []:
                     route = str((pg or {}).get("route") or "").strip()
@@ -480,6 +485,20 @@ async def run_browser_test_user(
                         rec["sample"] = probe.get("sample", "")
                         rec["controls"] = probe.get("buttons", 0) + probe.get("inputs", 0)
                         walk_texts.append(str(probe.get("text", "")))
+                        # #172: is this a MAP surface, and did a REAL map render at runtime?
+                        # A real web-map lib creates its container div on mount (fast); a fake
+                        # `bg-[...]` background <div> never does. Re-poll a few times so a
+                        # slow-mounting real map (map gated on a data fetch) is not
+                        # false-flagged — mirrors the blank re-poll above.
+                        rec["is_map_surface"] = _is_map_page(name, pg or {})
+                        _mapn = int(probe.get("mapEls", 0) or 0)
+                        if rec["is_map_surface"] and _mapn == 0 and not rec["blank"]:
+                            for _ in range(3):
+                                await page.wait_for_timeout(1200)
+                                _mapn = int((await page.evaluate(_PROBE)).get("mapEls", 0) or 0)
+                                if _mapn > 0:
+                                    break
+                        rec["map_rendered"] = _mapn > 0
                         # HOLLOW-PAGE detection: the test-user is logged in (token stored
                         # above), so a PROTECTED route that bounces to the auth URL OR
                         # renders the login form in place (password field + sign-in copy)
@@ -561,11 +580,22 @@ def _finalize_walkthrough(report: Dict[str, Any]) -> Dict[str, Any]:
     blanks = [p["name"] for p in pages if p.get("blank")]
     errs = [p["name"] for p in pages if p.get("console_errors")]
     redirected = [p["name"] for p in pages if p.get("redirected_to_login")]
+    # FIX #172 (gmrun9 M3, runtime-verified): a declared MAP SURFACE that rendered content
+    # but has ZERO real map in the DOM (no .leaflet-container / mapbox / maplibre / gm-style)
+    # is a FAKE-DIV map — the exact regression the M2/M3 redesign shipped (HomeMapPage swapped
+    # <MapCanvas> for a `bg-[#a0d7ea]` div; MapCanvas.jsx went orphaned so the #166 SOURCE
+    # scan still saw react-leaflet and passed). Runtime truth, not source presence. Excludes
+    # BLANK map pages (already caught by blank_pages) so the signal means specifically
+    # "rendered a fake map". SOFT-unusable (bounded-defer + escape), never a hard hold.
+    fake_maps = [p["name"] for p in pages
+                 if p.get("is_map_surface") and not p.get("map_rendered")
+                 and not p.get("blank")]
     auth_ok = all(s["ok"] for s in steps) if steps else False
     report["auth_ok"] = auth_ok
     report["blank_pages"] = blanks
     report["error_pages"] = errs
     report["auth_redirect_pages"] = redirected
+    report["fake_map_pages"] = fake_maps
     # HOLLOW FRONTEND: the app builds + serves, the login form is present, but a logged-in
     # user cannot actually reach the app — at least half the PROTECTED pages bounce to the
     # login form. A milestone in this state must NOT ship (the gate reads this flag); it is
@@ -584,6 +614,7 @@ def _finalize_walkthrough(report: Dict[str, Any]) -> Dict[str, Any]:
         f"auth_ok={auth_ok}; pages={len(pages)}; "
         f"blank={blanks or '∅'}; console_errors={errs or '∅'}; "
         f"login_wall={redirected or '∅'}; hollow={report['hollow_frontend']}; "
+        f"fake_map={fake_maps or '∅'}; "
         f"real_data={'∅' if report['no_real_data'] else (rd.get('matched') or 'n/a')}")
     return report
 
@@ -671,6 +702,17 @@ def format_feedback(report: Mapping[str, Any]) -> str:
             "the Authorization token (route it through the shared api service so it 401s no "
             "more); (3) the list maps over the wrong response shape. Fix this — a UI of fake "
             "data is not a delivery.")
+    if report.get("fake_map_pages"):
+        lines.append(
+            "  ‼ FAKE MAP: the map surface(s) "
+            f"{report.get('fake_map_pages')} render a plain colored <div> background (e.g. "
+            "`bg-[#a0d7ea]`) with NO real map — there is zero .leaflet-container in the DOM at "
+            "runtime. A Google-Maps-style app whose main screen has no map is not a delivery. "
+            "Build the REAL interactive map on that page: render <MapContainer> from "
+            "react-leaflet with a <TileLayer> (OpenStreetMap tiles) and a <Marker> per seeded "
+            "place at its real lat/lng — do NOT fake it with a background div, an image, or a "
+            "single static pin. If a MapCanvas/Map component already exists in the source, "
+            "IMPORT and render it on the map page (it may have been orphaned).")
     if report.get("hollow_frontend"):
         lines.append(
             "  ‼ HOLLOW FRONTEND: logged in, but the PROTECTED pages "
@@ -686,6 +728,8 @@ def format_feedback(report: Mapping[str, Any]) -> str:
         flags = []
         if p.get("blank"):
             flags.append("BLANK (renders no real content)")
+        if p.get("is_map_surface") and not p.get("map_rendered") and not p.get("blank"):
+            flags.append("FAKE MAP (colored <div>, no real .leaflet-container — build a real map)")
         if p.get("redirected_to_login"):
             flags.append("REDIRECTED TO LOGIN (session not restored — protected page shows the auth form)")
         if p.get("console_errors"):
@@ -706,9 +750,11 @@ def browser_report_unusable(report: Optional[Mapping[str, Any]]) -> bool:
     """PRE-RELEASE GATE predicate (2026-06-30): True iff the browser walk RAN and found an
     OBJECTIVE "a real user cannot use this app" signal — login broken (``auth_ok`` False),
     protected pages rendering BLANK (``blank_pages``), bounced to a LOGIN WALL
-    (``auth_redirect_pages`` / ``hollow_frontend``), or rendering ZERO real seeded data
-    (``no_real_data`` — a mock twin / placeholder / silently-failing fetch). The delivery
-    flow uses this to HOLD a release so a non-functional UI never ships as "delivered".
+    (``auth_redirect_pages`` / ``hollow_frontend``), rendering ZERO real seeded data
+    (``no_real_data`` — a mock twin / placeholder / silently-failing fetch), or a declared
+    MAP SURFACE rendering a FAKE-DIV map instead of a real map at runtime (``fake_map_pages``
+    — #172). The delivery flow uses this to HOLD a release so a non-functional UI never ships
+    as "delivered".
 
     Deliberately EXCLUDES the SOFT signals ``visual_mismatches`` and ``error_pages`` (console
     errors): those stay ADVISORY — the walk still dispatches them as a P0 remediation task,
@@ -720,7 +766,7 @@ def browser_report_unusable(report: Optional[Mapping[str, Any]]) -> bool:
         return False
     return bool((not report.get("auth_ok")) or report.get("blank_pages")
                 or report.get("auth_redirect_pages") or report.get("hollow_frontend")
-                or report.get("no_real_data"))
+                or report.get("no_real_data") or report.get("fake_map_pages"))
 
 
 def browser_gate_decision(report: Mapping[str, Any], squad_decision: str) -> str:
