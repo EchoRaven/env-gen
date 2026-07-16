@@ -869,6 +869,10 @@ _INVENTED_HONEST = frozenset({
     "untitled", "anonymous", "guest", "unnamed", "no name", "no title", "placeholder",
     "—", "-", "--", "...", "…", "loading", "loading...", "please wait", "empty",
     "no results", "no data", "not found", "not available", "unavailable", "default",
+    # honest STATE/enum defaults (not fabricated DATA — a missing status shown as its
+    # base state, not a fake specific value like a rating or a place name)
+    "active", "inactive", "pending", "enabled", "disabled", "draft", "published",
+    "open", "closed", "online", "offline", "public", "private", "archived",
 })
 _INVENTED_HONEST_SUBSTR = (
     "error", "fail", "invalid", "loading", "not found", "no results",
@@ -891,6 +895,16 @@ def _is_fabricated_fallback_literal(s: str) -> bool:
         return False
     if any(sub in low for sub in _INVENTED_HONEST_SUBSTR):
         return False
+    # Honest ZERO / empty-count state — '0', '0.0', '$0', '0%', '0 reviews', '0 results'.
+    # gmrun11 ABORTED because `place.review_count || '0'` was flagged as fabricated: '0' is
+    # the legitimate "none yet" display, NOT invented data, so the lane could never clear it
+    # → 75min non-convergence. Only a NON-ZERO number is a fabricated value.
+    _first = re.sub(r"[,$%]", "", t.split()[0]) if t.split() else ""
+    try:
+        if float(_first) == 0.0:
+            return False
+    except ValueError:
+        pass
     if any(ch.isdigit() for ch in t):            # rating / price / count / date
         return True
     if " " in t:                                 # name / address / sentence
