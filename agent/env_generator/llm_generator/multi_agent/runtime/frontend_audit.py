@@ -899,6 +899,15 @@ def _is_fabricated_fallback_literal(s: str) -> bool:
     t = (s or "").strip()
     if not t:
         return False
+    # The lane often writes the honest em-dash / ellipsis empty-state as a JS unicode escape
+    # ('—' → '—'). The STATIC source then contains digits (2014) and would false-flag as
+    # fabricated → M2 abort. Decode \uXXXX / \xXX to the RENDERED character before classifying
+    # (safe: an escape resolves to a single symbol char, never fabricated data).
+    if "\\u" in t or "\\x" in t:
+        t = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)),
+                   re.sub(r"\\x([0-9a-fA-F]{2})", lambda m: chr(int(m.group(1), 16)), t)).strip()
+        if not t:
+            return False
     low = t.lower()
     if low in _INVENTED_HONEST:
         return False
