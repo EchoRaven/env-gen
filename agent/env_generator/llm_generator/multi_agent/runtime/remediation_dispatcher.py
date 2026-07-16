@@ -306,6 +306,18 @@ class RemediationDispatcher:
                 "show real data. Query the real seeded table(s) — join/scope as the "
                 "resource needs (e.g. a stop's departures from its lines) — and return the "
                 "actual rows. Do NOT return a hardcoded empty/placeholder collection."),
+            "deliverability_fabricated_field_fallback": (
+                # #175 (gmrun9): the frontend renders `place.rating || '4.5'` /
+                # `? place.name : 'HI Point Montara Lighthouse'` — invented data. The
+                # FRONTEND lane owns the fix.
+                "frontend", "Remove the fabricated member-field fallbacks (blocks delivery)",
+                "the frontend renders a member field with a HARDCODED realistic fallback "
+                "(`place.rating || '4.5'`, `? place.name : 'HI Point Montara Lighthouse'`) — "
+                "fake data whenever the field is absent (often ALWAYS, if the field name "
+                "drifted from the backend response). For EACH flagged site: render only the "
+                "real field, and if it can be missing show an honest empty state ('—'/'N/A') "
+                "— never a realistic fake value. Also fix any drifted field NAME to match the "
+                "API response (e.g. review_count, not reviews)."),
             "frontend_dead_controls": (
                 "frontend", "Bind the dead frontend controls (blocks delivery)",
                 "interactive markup (<form>/submit button) with NO bound handler — a "

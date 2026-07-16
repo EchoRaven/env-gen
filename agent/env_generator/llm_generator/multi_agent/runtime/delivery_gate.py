@@ -963,6 +963,12 @@ def _deliverability_check_token(blocker: str) -> str:
         # `return {"items": []}` the lane shipped). Deterministic AST; NOT relaxed
         # on functionally_validated — api_smoke never asserts a non-empty body.
         return "deliverability_placeholder_stub_handler"
+    if "fabricated fallback" in low:
+        # #175 (gmrun9): the frontend renders `place.rating || '4.5'` /
+        # `? place.name : 'HI Point Montara Lighthouse'` → invented data whenever
+        # the field is absent (often always, on a field-name drift). Static JSX
+        # scan; the no-placeholder/mock bar #170's prompt rule failed to hold.
+        return "deliverability_fabricated_field_fallback"
     # Unmapped blocker — surface verbatim under a catch-all so the operator
     # sees it instead of silently dropping; future canonicalization work can
     # move it into a named token.

@@ -153,6 +153,23 @@ def _stub_handler_blockers(app_root) -> List[str]:
         return []
 
 
+def _invented_field_blockers(app_root) -> List[str]:
+    """#175 (gmrun9): frontend member-field fallbacks to FABRICATED display literals
+    (``place.rating || '4.5'`` / ``? place.name : 'HI Point Montara Lighthouse'``) render
+    invented data whenever the field is absent (often ALWAYS — gmrun9's `place.reviews`
+    drifted from the model's `review_count`). The user's no-placeholder/mock bar; #170's
+    prompt rule was ignored so this ENFORCES it. Static, best-effort ``[]``.
+    ``ENVGEN_INVENTED_FIELD_GATE=0`` disables."""
+    try:
+        from .frontend_audit import invented_field_fallback_blockers
+    except Exception:
+        return []
+    try:
+        return invented_field_fallback_blockers(Path(app_root) / "frontend" / "src")
+    except Exception:
+        return []
+
+
 def _seed_summary(hub_registry) -> Dict[str, Any]:
     try:
         from .seed_audit import audit_seed_data
@@ -323,6 +340,12 @@ def compute_deliverability(hub_registry, app_root,
     # backend twin of a mock frontend. Static AST on the served backend tree, self-clearing
     # once the handler queries the real table.
     blockers.extend(_stub_handler_blockers(app_root))
+
+    # FABRICATED member-field fallback gate (#175, gmrun9). The frontend renders
+    # `place.rating || '4.5'` / `? place.name : 'HI Point Montara Lighthouse'` — invented data
+    # shown whenever the real field is absent (often always, on a field-name drift). Static
+    # scan of the frontend JSX, self-clearing once the fake literal is removed.
+    blockers.extend(_invented_field_blockers(app_root))
 
     # Seed gate: the backend drifts on seed-data registration (the same
     # bookkeeping-the-LLM-never-does class as ui_flow/visual). On a functionally-

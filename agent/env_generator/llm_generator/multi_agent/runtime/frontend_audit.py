@@ -855,3 +855,95 @@ def audit_asset_usage(frontend_dir: Any, design_system: Mapping[str, Any]) -> Di
     except Exception:
         return {"unused_mapped": [], "unused_by_screen": {}}
     return out
+
+
+# ── FIX #175: FABRICATED member-field fallbacks (invented-data placeholders) ──────────────
+# gmrun9's delivered SearchResultsPage rendered `place.rating || '4.5'`,
+# `place.reviews || '1,234'` (the model field is `review_count` — the name DRIFTED so the
+# fallback fired on EVERY row), `place.address || 'San Francisco, CA'`, and ternary fakes
+# `? selectedPlace.name : 'HI Point Montara Lighthouse'`. Each renders FABRICATED data when
+# the real field is absent — the user's "no placeholder/mock" bar. #170 added a PROMPT rule;
+# the lane ignored it, so this is the ENFORCING gate. Deterministic + static, best-effort.
+_INVENTED_HONEST = frozenset({
+    "n/a", "na", "n.a.", "tbd", "tba", "unknown", "none", "null", "nil", "unset",
+    "untitled", "anonymous", "guest", "unnamed", "no name", "no title", "placeholder",
+    "—", "-", "--", "...", "…", "loading", "loading...", "please wait", "empty",
+    "no results", "no data", "not found", "not available", "unavailable", "default",
+})
+_INVENTED_HONEST_SUBSTR = (
+    "error", "fail", "invalid", "loading", "not found", "no results",
+    "unavailable", "required", "missing", "please ",
+)
+# member.field || 'literal'     and     ? member.field : 'literal'
+_INVENTED_OR = re.compile(r"""(\b\w+(?:\.\w+)+)\s*\|\|\s*(['"])(.*?)\2""")
+_INVENTED_TERNARY = re.compile(r"""\?\s*(\b\w+(?:\.\w+)+)\s*:\s*(['"])(.*?)\2""")
+
+
+def _is_fabricated_fallback_literal(s: str) -> bool:
+    """True iff a fallback STRING looks like real DOMAIN DATA (a fabricated rating/price/count
+    with a digit, a multi-word name/address/sentence, or a capitalized proper noun) rather
+    than an honest absence/error/loading convention."""
+    t = (s or "").strip()
+    if not t:
+        return False
+    low = t.lower()
+    if low in _INVENTED_HONEST:
+        return False
+    if any(sub in low for sub in _INVENTED_HONEST_SUBSTR):
+        return False
+    if any(ch.isdigit() for ch in t):            # rating / price / count / date
+        return True
+    if " " in t:                                 # name / address / sentence
+        return True
+    if t[:1].isupper() and len(t) >= 4 and t.isalpha():  # proper-noun default (Hotel, Place)
+        return True
+    return False
+
+
+def invented_field_fallback_blockers(frontend_src: Any, limit: int = 20) -> List[str]:
+    """#175: frontend member-field fallbacks to FABRICATED display literals
+    (``place.rating || '4.5'`` / ``? place.name : 'HI Point Montara Lighthouse'``) →
+    delivery blockers. Static, recomputed each gate tick, best-effort ``[]`` on any fault.
+    ``ENVGEN_INVENTED_FIELD_GATE=0`` disables."""
+    import os as _os
+    if _os.environ.get("ENVGEN_INVENTED_FIELD_GATE", "1").strip().lower() in (
+            "0", "false", "no", "off"):
+        return []
+    try:
+        src = Path(frontend_src)
+        if not src.is_dir():
+            return []
+    except Exception:
+        return []
+    seen = set()
+    blockers: List[str] = []
+    try:
+        files = list(src.rglob("*.jsx")) + list(src.rglob("*.tsx"))
+    except Exception:
+        return []
+    for f in sorted(files):
+        if "node_modules" in f.parts:
+            continue
+        try:
+            lines = f.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except Exception:
+            continue
+        for i, line in enumerate(lines, 1):
+            for rx in (_INVENTED_OR, _INVENTED_TERNARY):
+                for m in rx.finditer(line):
+                    member, lit = m.group(1), m.group(3)
+                    if not _is_fabricated_fallback_literal(lit):
+                        continue
+                    key = (f.name, i, member, lit)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    blockers.append(
+                        f"frontend renders a FABRICATED fallback `{member} || '{lit}'` "
+                        f"({f.name}:{i}) — it shows invented data whenever `{member}` is "
+                        "absent (often ALWAYS, if the field name drifted from the backend). "
+                        "Render ONLY the real field (e.g. `{" + member + "}`), or an honest "
+                        "empty state ('—' / 'N/A') — never a realistic fake value.")
+                    if len(blockers) >= limit:
+                        return blockers
+    return blockers
