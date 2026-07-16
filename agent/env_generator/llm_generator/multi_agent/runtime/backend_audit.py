@@ -302,49 +302,69 @@ _DB_CALL_ATTRS = frozenset({
 _DB_CALL_NAMES = frozenset({"select", "text"})
 
 
-def _handler_http_methods(fn: Any) -> Set[str]:
-    """HTTP methods this function is a route handler for — {'GET', ...} from
-    ``@router.get`` / ``@app.post`` / ``@api.get(...)`` decorators. Empty ⇒ not a route."""
-    methods: Set[str] = set()
+def _handler_routes(fn: Any) -> Set[Tuple[str, str]]:
+    """The (METHOD, normalized-path) routes this function serves — parsed from its
+    ``@router.get("/x")`` / ``@app.post("/y")`` decorators. Empty ⇒ not a route handler.
+    A function can carry several route decorators (e.g. ``/api/x`` + ``/api/v1/x``)."""
+    routes: Set[Tuple[str, str]] = set()
     for dec in getattr(fn, "decorator_list", []) or []:
-        target = dec.func if isinstance(dec, ast.Call) else dec
-        if isinstance(target, ast.Attribute) and target.attr.lower() in (
-                "get", "post", "put", "patch", "delete", "options", "head"):
-            methods.add(target.attr.upper())
-    return methods
+        if not isinstance(dec, ast.Call):
+            continue
+        target = dec.func
+        if not (isinstance(target, ast.Attribute) and target.attr.lower() in (
+                "get", "post", "put", "patch", "delete", "options", "head")):
+            continue
+        method = target.attr.upper()
+        path = None
+        if dec.args and isinstance(dec.args[0], ast.Constant) and isinstance(dec.args[0].value, str):
+            path = dec.args[0].value
+        else:  # @router.get(path="/x")
+            for kw in dec.keywords or []:
+                if kw.arg == "path" and isinstance(kw.value, ast.Constant) \
+                        and isinstance(kw.value.value, str):
+                    path = kw.value.value
+        if path:
+            routes.add(_norm_route(method, path))
+    return routes
 
 
-def _is_empty_collection_literal(node: Any) -> bool:
-    """True iff ``node`` is an empty list ``[]`` or a dict-envelope whose collection key(s)
-    (``items`` / ``results`` / …) map to an empty list (``{"items": []}`` /
-    ``{"items": [], "total": 0}``). A NON-empty collection value (static options) or a
-    dynamic value (a comprehension over query rows) makes it NOT an empty-stub literal."""
+def _placeholder_collection_literal(node: Any) -> bool:
+    """True iff ``node`` is a HARDCODED collection with no real data behind it:
+      • an empty list ``[]`` (the classic stub), or
+      • a list whose elements include a dict/object literal (hardcoded MOCK rows —
+        ``[{"id": "dep_1", "line": "A"}]``), or
+      • a dict-envelope whose collection key(s) (``items`` / ``results`` / …) map to
+        either of the above (``{"items": []}`` / ``{"items": [{...}]}``).
+    A NON-empty list of scalars (static options ``["driving", "walking"]``) or a dynamic
+    value (a comprehension over query rows) is NOT a placeholder."""
     if isinstance(node, ast.List):
-        return len(node.elts) == 0
+        if len(node.elts) == 0:
+            return True  # empty stub
+        return any(isinstance(e, ast.Dict) for e in node.elts)  # hardcoded mock rows
     if isinstance(node, ast.Dict):
         saw_collection = False
         for k, v in zip(node.keys, node.values):
             key = (k.value.lower() if isinstance(k, ast.Constant)
                    and isinstance(k.value, str) else None)
             if key in _COLLECTION_KEYS:
-                if isinstance(v, ast.List) and len(v.elts) == 0:
+                if _placeholder_collection_literal(v):
                     saw_collection = True
                 else:
-                    return False  # collection key with real/dynamic value ⇒ not an empty stub
+                    return False  # collection key with real/dynamic/scalar value ⇒ not placeholder
         return saw_collection
     return False
 
 
-def _returns_only_empty_collections(fn: Any) -> bool:
-    """Every value-bearing ``return`` in the body is an empty-collection literal, and there
-    is at least one — so the handler can only ever emit an empty collection."""
+def _returns_only_placeholder_collections(fn: Any) -> bool:
+    """Every value-bearing ``return`` in the body is a placeholder-collection literal (empty
+    or hardcoded mock rows), and there is at least one — the handler emits only fake data."""
     # Walk only the BODY (not decorator_list / arg defaults) so nothing outside the
     # implementation is mistaken for a return.
     returns = [n for stmt in fn.body for n in ast.walk(stmt)
                if isinstance(n, ast.Return) and n.value is not None]
     if not returns:
         return False
-    return all(_is_empty_collection_literal(r.value) for r in returns)
+    return all(_placeholder_collection_literal(r.value) for r in returns)
 
 
 def _reads_db(fn: Any) -> bool:
@@ -364,17 +384,27 @@ def _reads_db(fn: Any) -> bool:
 
 
 def stub_handler_blockers(backend_dir: Any) -> List[str]:
-    """Delivery blockers for PLACEHOLDER-STUB backend handlers: a GET route handler that
-    does NO DB read and returns only a hardcoded EMPTY collection. Best-effort + pure;
-    ``[]`` on any fault or a non-dir path. ``ENVGEN_STUB_HANDLER_GATE=0`` disables."""
+    """Delivery blockers for PLACEHOLDER-STUB backend handlers: a GET route whose SERVED
+    handler does NO DB read and returns only a hardcoded EMPTY-or-MOCK collection.
+
+    Route-aware so a dead PROJECTED fallback (``_projected_*``, shadowed by a real custom
+    handler that is registered first / wins) is never flagged — only the handler that
+    actually serves the route. gmrun9 v1.3.0: the projected departures stub was shadowed by
+    a custom handler returning MOCK rows (``[{"line": "A", "time": "5 min"}]``) — the served
+    handler was the mock, so THAT is the placeholder, not the (shadowed) projected one.
+
+    Best-effort + pure; ``[]`` on any fault or a non-dir path.
+    ``ENVGEN_STUB_HANDLER_GATE=0`` disables."""
     import os as _os
-    blockers: List[str] = []
+    from collections import defaultdict
     if _os.environ.get("ENVGEN_STUB_HANDLER_GATE", "1").strip().lower() in (
             "0", "false", "no", "off"):
-        return blockers
+        return []
     root = Path(backend_dir)
     if not root.is_dir():
-        return blockers
+        return []
+    # 1) collect every GET route handler with its verdicts
+    handlers: List[Dict[str, Any]] = []
     for py in sorted(root.rglob("*.py")):
         if "__pycache__" in py.parts:
             continue
@@ -385,17 +415,37 @@ def stub_handler_blockers(backend_dir: Any) -> List[str]:
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            if "GET" not in _handler_http_methods(node):  # only READ/collection endpoints
+            get_routes = {r for r in _handler_routes(node) if r[0] == "GET"}
+            if not get_routes:
                 continue
-            if _reads_db(node):
-                continue
-            if _returns_only_empty_collections(node):
-                blockers.append(
-                    f"backend handler `{node.name}` ({py.name}) is a PLACEHOLDER STUB — a GET "
-                    "route that returns a hardcoded EMPTY collection with NO database query, so "
-                    "its page can never render real data (gmrun9 shipped exactly this for "
-                    "transit departures). Query the real seeded table(s) and return the rows.")
-    return blockers
+            handlers.append({
+                "name": node.name,
+                "file": py.name,
+                "projected": node.name.startswith("_projected_"),
+                "reads_db": _reads_db(node),
+                "placeholder": _returns_only_placeholder_collections(node),
+                "routes": get_routes,
+            })
+    # 2) group by route; the SERVED handler wins (a non-projected custom handler shadows the
+    #    projected fallback). Flag a route only when EVERY served handler is a no-DB placeholder.
+    by_route: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    for h in handlers:
+        for r in h["routes"]:
+            by_route[r].append(h)
+    flagged: Dict[str, str] = {}  # handler name → file (dedup: a handler can serve >1 route)
+    for _route, hs in by_route.items():
+        non_projected = [h for h in hs if not h["projected"]]
+        served = non_projected or hs
+        if served and all((not h["reads_db"] and h["placeholder"]) for h in served):
+            for h in served:
+                flagged[h["name"]] = h["file"]
+    return [
+        f"backend handler `{name}` ({file}) is a PLACEHOLDER STUB — a GET route whose served "
+        "handler returns a hardcoded empty/mock collection with NO database query, so its page "
+        "can never render real data (gmrun9 shipped exactly this for transit departures). "
+        "Query the real seeded table(s) and return the rows."
+        for name, file in sorted(flagged.items())
+    ]
 
 
 __all__ = ["served_routes", "sync_endpoint_statuses", "BackendAuditError",
