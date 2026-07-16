@@ -704,6 +704,31 @@ class RemediationDispatcher:
                 "request() attaches authHeaders()) or add an Authorization: Bearer "
                 "<token from localStorage> header at the call site. If services/api.js "
                 "itself is flagged, fix IT to attach authHeaders() on every request."),
+            "deliverability_placeholder_stub_handler": (
+                # #173 (gmrun9/gmrun10, live): a GET route whose SERVED handler does no DB
+                # read and returns a hardcoded empty/mock collection → a permanently
+                # empty/fake page. Minted by the delivery-gate canonicalization → owner MUST
+                # live in THIS gate-level map (the _CHECK_OWNER entry is dead code). BACKEND.
+                "backend", "Replace the placeholder-stub GET handler with a real query (blocks delivery)",
+                "a GET route handler returns a HARDCODED empty or mock collection (e.g. "
+                "`return {\"items\": []}` or `return {\"items\": [{\"line\": \"A\", \"time\": "
+                "\"5 min\"}]}`) with NO database query, so its page can never show real data. "
+                "Query the real seeded table(s) — join/scope as the resource needs (e.g. a "
+                "stop's departures from its lines) — and return the ACTUAL rows. Do NOT "
+                "return a hardcoded empty/mock collection."),
+            "deliverability_fabricated_field_fallback": (
+                # #175 (gmrun9/gmrun10, live): the frontend renders `place.rating || '4.5'` /
+                # `? place.name : 'HI Point Montara Lighthouse'` — invented data whenever the
+                # field is absent (often ALWAYS, on a field-name drift). Gate-minted → owner
+                # MUST be in THIS map. FRONTEND.
+                "frontend", "Remove the fabricated member-field fallbacks (blocks delivery)",
+                "the frontend renders a member field with a HARDCODED realistic fallback "
+                "(`place.rating || '4.5'`, `? place.name : 'HI Point Montara Lighthouse'`) — "
+                "fake data shown whenever the field is absent (often ALWAYS, if the field name "
+                "drifted from the API response, e.g. `place.reviews` when the API returns "
+                "`review_count`). For EACH flagged site: render ONLY the real field, and if it "
+                "can be missing show an honest empty state ('—' / 'N/A') — never a realistic "
+                "fake value. Fix any drifted field NAME to match the API response."),
             "verification_checklist_not_ready": (
                 "verifier", "Record a green verification/build checklist (blocks delivery)",
                 "the build checklist is NOT all-green — it needs the CodeHub checks "
