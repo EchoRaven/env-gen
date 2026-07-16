@@ -324,6 +324,16 @@ def _handler_routes(fn: Any) -> Set[Tuple[str, str]]:
                         and isinstance(kw.value.value, str):
                     path = kw.value.value
         if path:
+            # Skip framework-owned CONTROL-SURFACE routes (tenants / control plane / health /
+            # oauth …): a hardcoded default there (e.g. get_tenants → the "default" tenant) is
+            # intentional infra, not an app placeholder — the lane can't/shouldn't rewrite it,
+            # so flagging it would churn to a NO-CONVERGENCE abort. Mirrors the FIXED_KINDS
+            # skip every other backend audit already applies.
+            try:
+                if is_control_surface_path(path):
+                    continue
+            except Exception:
+                pass
             routes.add(_norm_route(method, path))
     return routes
 
