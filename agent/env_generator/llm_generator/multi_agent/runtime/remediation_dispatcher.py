@@ -729,6 +729,20 @@ class RemediationDispatcher:
                 "`review_count`). For EACH flagged site: render ONLY the real field, and if it "
                 "can be missing show an honest empty state ('—' / 'N/A') — never a realistic "
                 "fake value. Fix any drifted field NAME to match the API response."),
+            "deliverability_ui_flow_missing": (
+                # A critical UI flow (login/signup/search/…) lacks a validation:ui_flow record.
+                # Gate-minted but genuinely UNOWNED before (not in _GATE_OWNER / _COVERED_ELSEWHERE
+                # / any helper) → logged "NO remediation owner" and relied on incidental clearing
+                # (blocked gmrun12 M2). The VERIFIER runs+records the flow (non-destructive,
+                # mirrors verification_checklist_not_ready); a genuinely broken flow routes on to
+                # the frontend via bug_create. dead_artifacts is INTENTIONALLY left unowned — its
+                # "wire-or-remove" remediation is destructive and needs a bespoke design.
+                "verifier", "Record the missing critical UI flow validations (blocks delivery)",
+                "one or more CRITICAL UI flows lack a validation:ui_flow record. run_validation to "
+                "EXERCISE and RECORD each named flow (e.g. login / signup / search); if a flow just "
+                "isn't recorded yet, run_validation records it; if a flow FAILS, bug_create for the "
+                "owning lane (usually frontend) and re-run once fixed. Re-run until every critical "
+                "flow has a passing validation:ui_flow record."),
             "verification_checklist_not_ready": (
                 "verifier", "Record a green verification/build checklist (blocks delivery)",
                 "the build checklist is NOT all-green — it needs the CodeHub checks "
