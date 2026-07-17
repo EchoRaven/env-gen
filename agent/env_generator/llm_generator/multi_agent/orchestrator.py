@@ -2760,10 +2760,13 @@ class Orchestrator:
             # defects via bug_create (-> debugger -> owning lane). While open P0s remain
             # and attempts/wall-clock are not exhausted, DEFER the release (return) so the
             # fixes land before this milestone ships; then escape (never deadlock), loudly.
-            # Env-gated (default-off) until validated on a live run.
-            if (os.environ.get("ENVGEN_TESTUSER_SQUAD", "0").lower() in ("1", "true", "yes", "on")
+            # #179: default-ON (validated live on gmrun13 — spawned 9 agents, filed real
+            # defects); disable with ENVGEN_TESTUSER_SQUAD=0.
+            from .runtime.test_user_squad import squad_gate_enabled
+            if (squad_gate_enabled(os.environ)
                     and not getattr(self, "_tu_squad_passed", False)):
-                from .runtime.test_user_squad import run_squad_for_delivery, squad_release_decision
+                from .runtime.test_user_squad import (
+                    run_squad_for_delivery, squad_release_decision, squad_gate_outcome)
                 _now = time.time()
                 if getattr(self, "_tu_squad_deferred_since", None) is None:
                     self._tu_squad_deferred_since = _now
@@ -2777,11 +2780,20 @@ class Orchestrator:
                     except Exception as _tu_exc:
                         self._logger.debug("test-user squad gate run failed: %s", _tu_exc)
                         _tu_result = {"ran": False}
-                    self._tu_squad_attempts = getattr(self, "_tu_squad_attempts", 0) + 1
                     _p0 = int((_tu_result.get("bugs") or {}).get("p0", 0))
-                    if _tu_result.get("ran") and _p0 == 0:
+                    _tu_outcome = squad_gate_outcome(ran=bool(_tu_result.get("ran")), p0=_p0)
+                    if _tu_outcome == "pass":
                         self._tu_squad_passed = True  # clean -> fall through to release
-                    else:
+                    elif _tu_outcome == "retry":
+                        # #179: the squad couldn't run yet (app ports not resolved / empty
+                        # contract) — defer WITHOUT burning an attempt so flaky first-attempt
+                        # port timing can't erode the escape budget; wall-clock is the backstop.
+                        self._logger.info(
+                            "test-user squad not ready (%s) — deferring without burning an "
+                            "attempt", _tu_result.get("reason"))
+                        return
+                    else:  # 'defect' — squad ran and filed P0s: burn an attempt and defer
+                        self._tu_squad_attempts = getattr(self, "_tu_squad_attempts", 0) + 1
                         self._logger.warning(
                             "DELIVERY DEFERRED: test-user squad found %d P0 defect(s) "
                             "(attempt %s, %ss deferred) — filed to the debugger/owning lane; "
