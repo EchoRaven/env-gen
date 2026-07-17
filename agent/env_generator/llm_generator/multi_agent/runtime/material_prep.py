@@ -673,10 +673,24 @@ def _ingest_one(path: Path, rel: Path) -> Optional[Dict]:
     }
 
 
-# #183: web-font extensions — staged alongside images so real typography reaches the clone
-# (a font never opens as an image, so _ingest_one returns None and it would otherwise be dropped,
-# forcing generic fonts = a clone giveaway; "文字风格一致").
+# #183/#184: NON-image design-input assets that ingest must stage anyway. A font/video/audio
+# never opens as an image, so _ingest_one returns None and it would be dropped — losing real
+# typography ("文字风格一致") and, far worse for a video-centric clone, the actual VIDEOS
+# (gmtiktok staged 35 jpg thumbnails but 0 mp4). Recognized non-image types are staged with a
+# minimal manifest entry so design_system assets[] carries them and lanes can reference them.
 _FONT_EXTS = {".woff2", ".woff", ".ttf", ".otf", ".eot"}
+_VIDEO_EXTS = {".mp4", ".webm", ".mov", ".m4v", ".ogv"}
+_AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".ogg", ".aac", ".flac"}
+
+
+def _nonimage_asset_type(suffix: str) -> Optional[str]:
+    if suffix in _FONT_EXTS:
+        return "font"
+    if suffix in _VIDEO_EXTS:
+        return "video"
+    if suffix in _AUDIO_EXTS:
+        return "audio"
+    return None
 
 
 def ingest_assets(assets_dir, stage_dir) -> List[Dict]:
@@ -700,15 +714,15 @@ def ingest_assets(assets_dir, stage_dir) -> List[Dict]:
         except Exception:
             entry = None
         if not entry:
-            # #183: a font never opens as an image (_ingest_one → None); stage it anyway with a
-            # minimal entry so the real typography reaches the app instead of falling back to
-            # generic fonts. Non-image, non-font files are still skipped.
-            if path.suffix.lower() in _FONT_EXTS:
-                entry = {"id": path.stem, "file": rel.as_posix(), "type": "font",
-                         "dims": None, "transparent": False, "dominant_colors": [],
-                         "staged_path": f"public/assets/{rel.as_posix()}"}
-            else:
+            # #183/#184: a font/video/audio never opens as an image (_ingest_one → None); stage
+            # recognized non-image assets anyway with a minimal entry so real typography AND the
+            # actual video/audio reach the app. Other non-image files are still skipped.
+            _atype = _nonimage_asset_type(path.suffix.lower())
+            if not _atype:
                 continue
+            entry = {"id": path.stem, "file": rel.as_posix(), "type": _atype,
+                     "dims": None, "transparent": False, "dominant_colors": [],
+                     "staged_path": f"public/assets/{rel.as_posix()}"}
         base_id = entry["id"]
         seen_ids[base_id] = seen_ids.get(base_id, 0) + 1
         if seen_ids[base_id] > 1:
