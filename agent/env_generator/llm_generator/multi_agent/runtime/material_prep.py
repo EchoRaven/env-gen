@@ -673,6 +673,12 @@ def _ingest_one(path: Path, rel: Path) -> Optional[Dict]:
     }
 
 
+# #183: web-font extensions — staged alongside images so real typography reaches the clone
+# (a font never opens as an image, so _ingest_one returns None and it would otherwise be dropped,
+# forcing generic fonts = a clone giveaway; "文字风格一致").
+_FONT_EXTS = {".woff2", ".woff", ".ttf", ".otf", ".eot"}
+
+
 def ingest_assets(assets_dir, stage_dir) -> List[Dict]:
     """Scan a user-provided ``assets/`` folder → a manifest (one entry per image) + physically
     stage each file into ``stage_dir`` (preserving any icons/ logos/ subfolder grouping so
@@ -694,7 +700,15 @@ def ingest_assets(assets_dir, stage_dir) -> List[Dict]:
         except Exception:
             entry = None
         if not entry:
-            continue
+            # #183: a font never opens as an image (_ingest_one → None); stage it anyway with a
+            # minimal entry so the real typography reaches the app instead of falling back to
+            # generic fonts. Non-image, non-font files are still skipped.
+            if path.suffix.lower() in _FONT_EXTS:
+                entry = {"id": path.stem, "file": rel.as_posix(), "type": "font",
+                         "dims": None, "transparent": False, "dominant_colors": [],
+                         "staged_path": f"public/assets/{rel.as_posix()}"}
+            else:
+                continue
         base_id = entry["id"]
         seen_ids[base_id] = seen_ids.get(base_id, 0) + 1
         if seen_ids[base_id] > 1:
