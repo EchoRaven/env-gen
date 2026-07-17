@@ -162,8 +162,14 @@ def plan_test_user_goals(
             "modality": "browser", "kind": "page", "name": f"page_{slug}",
             "goal": (f"Open the '{pg['name']}' page ({pg['route']}) as the user and exercise every "
                      f"interactive control on it; assert each control's RESULT matches its intent "
-                     f"(navigation / API call + status / DOM change) and the page renders real "
-                     f"content (not blank/placeholder) with no console errors."),
+                     f"(navigation / API call + status / DOM change). Then VERIFY the objective "
+                     f"signals a real user would notice (#181): the page shows REAL seeded data "
+                     f"(specific realistic rows — NOT an empty state, placeholder/lorem/'Untitled' "
+                     f"filler, or one value repeated); if it shows a MAP it is a REAL interactive "
+                     f"map (draggable tiles + real markers), NOT a static image or a colored box; "
+                     f"and you actually reached this page logged-in, not bounced to a login wall. "
+                     f"FILE A P0 for any blank/placeholder content, fake map, or auth bounce you "
+                     f"find. No console errors."),
             "acceptance": acc or None,
         })
 
