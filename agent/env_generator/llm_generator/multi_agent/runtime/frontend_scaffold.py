@@ -2598,6 +2598,75 @@ def stage_design_assets(output_dir) -> List[str]:
 _SEED_IMG_RE = re.compile(r"/assets/([\w./-]+\.(?:jpe?g|png|webp|gif))", re.IGNORECASE)
 
 
+# FIX #178 (gmrun12): the pipeline sources icons + the OSM map for real, but ENTITY PHOTOS had
+# NO real source, so every seed photo_url became a gray placeholder (82 identical gray cards).
+# Add a real-photo channel: derive a query from the image ref (its category/type, which the
+# dataset channel encodes in the filename) and fetch a real photo (Unsplash when
+# ENVGEN_UNSPLASH_KEY is set, cached per query). The placeholder stays as the fallback.
+_UNSPLASH_PHOTO_CACHE: Dict[str, List[str]] = {}
+
+
+def _photo_query_from_ref(rel: str) -> str:
+    """'photos/restaurant_2.jpg' → 'restaurant', 'photos/coffee_shop_1.jpg' → 'coffee shop'."""
+    stem = Path(rel).stem
+    stem = re.sub(r"[ _-]*\d+$", "", stem)          # strip the trailing _N index
+    return re.sub(r"[ _-]+", " ", stem).strip().lower()
+
+
+def _photo_index_from_ref(rel: str) -> int:
+    """Trailing number ('restaurant_4' → 4), else 1 — pick a DIFFERENT photo per file."""
+    m = re.search(r"(\d+)\.\w+$", Path(rel).name) or re.search(r"(\d+)$", Path(rel).stem)
+    try:
+        return max(1, int(m.group(1))) if m else 1
+    except Exception:
+        return 1
+
+
+def _unsplash_photo_urls(query: str, key: str, want: int = 8) -> List[str]:
+    """Search Unsplash for `query` (cached per query). Returns raw imgix-sizable URLs. []-safe."""
+    if query in _UNSPLASH_PHOTO_CACHE:
+        return _UNSPLASH_PHOTO_CACHE[query]
+    urls: List[str] = []
+    try:
+        import json as _json
+        import urllib.parse
+        import urllib.request
+        q = urllib.parse.urlencode({"query": query, "per_page": max(want, 5),
+                                    "orientation": "landscape", "content_filter": "high"})
+        req = urllib.request.Request("https://api.unsplash.com/search/photos?" + q,
+                                     headers={"Authorization": "Client-ID " + key})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            d = _json.load(r)
+        urls = [x["urls"]["raw"] for x in (d.get("results") or [])
+                if isinstance(x, dict) and (x.get("urls") or {}).get("raw")]
+    except Exception:
+        urls = []
+    _UNSPLASH_PHOTO_CACHE[query] = urls
+    return urls
+
+
+def _fetch_real_seed_photo(query: str, index: int, dest: Any, key: str) -> bool:
+    """Fetch ONE real 400x300 photo for `query` (round-robin by `index`), save to `dest`.
+    True on success. Best-effort; never raises."""
+    try:
+        import urllib.request
+        urls = _unsplash_photo_urls(query, key)
+        if not urls:
+            return False
+        raw = urls[(max(1, index) - 1) % len(urls)]
+        src = raw + "&w=400&h=300&fit=crop&crop=entropy&q=80&fm=jpg"
+        with urllib.request.urlopen(
+                urllib.request.Request(src, headers={"User-Agent": "envgen-photo/1.0"}),
+                timeout=30) as r:
+            data = r.read()
+        if len(data) > 3000 and data[:2] == b"\xff\xd8":
+            Path(dest).write_bytes(data)
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def stage_missing_seed_photos(output_dir) -> List[str]:
     """FIX #168 (gmrun7): guarantee every LOCAL image the SEED references actually exists.
     A seed ``photo_url`` like ``/assets/photos/restaurant_2.jpg`` is a local path, but the
@@ -2632,8 +2701,12 @@ def stage_missing_seed_photos(output_dir) -> List[str]:
             return []
         try:
             from PIL import Image, ImageDraw
+            _pil = True
         except Exception:
-            return []
+            _pil = False   # placeholder unavailable, but a real fetch may still stage photos
+        import os as _os
+        _key = (_os.environ.get("ENVGEN_UNSPLASH_KEY")
+                or _os.environ.get("UNSPLASH_ACCESS_KEY"))
         staged: List[str] = []
         for rel in sorted(refs):
             dest = pub / rel
@@ -2641,6 +2714,18 @@ def stage_missing_seed_photos(output_dir) -> List[str]:
                 continue  # a real asset already there — never overwrite
             try:
                 dest.parent.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                continue
+            # #178: a REAL photo first (Unsplash by the ref's category/type); the neutral
+            # placeholder below is only the fallback (no key / fetch failed / no PIL).
+            if _key:
+                _q = _photo_query_from_ref(rel)
+                if _q and _fetch_real_seed_photo(_q, _photo_index_from_ref(rel), dest, _key):
+                    staged.append(rel)
+                    continue
+            if not _pil:
+                continue
+            try:
                 img = Image.new("RGB", (400, 300), (233, 236, 239))  # neutral gray card
                 d = ImageDraw.Draw(img)
                 d.rectangle([1, 1, 398, 298], outline=(206, 212, 218), width=2)
