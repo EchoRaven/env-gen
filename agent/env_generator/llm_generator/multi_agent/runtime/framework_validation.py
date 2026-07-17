@@ -157,6 +157,34 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
         return True
 
 
+# #182: markers used to surface the ACTUAL failure line from a long build/validation log rather
+# than a blind prefix slice (which grabs meaningless cached-build fragments — image hashes, a
+# chopped 'ghcr.io'->'cr.io'). Build failures sit at the END, not the start.
+_ERR_MARKERS = (
+    "error:", "err!", "failed to solve", "build failed", "has already been declared",
+    "npm err", "syntaxerror", "modulenotfound", "traceback", "exit code", "exited with",
+    "no space left", "cannot find", "not found", "permission denied", "denied", "unhealthy",
+    "fatal:",
+)
+
+
+def _salient_error(detail: Any, cap: int = 400) -> str:
+    """Surface the ACTUAL error line(s) from a (possibly long, multi-line) build/validation log,
+    instead of a blind PREFIX slice. gmtiktok STUCK-aborted with "Real blocker: docker_up:
+    cr.io/astral-sh/uv" — a prefix fragment of the cached backend build — while the real failure
+    was a frontend "'LoginPage' has already been declared" at the END (#182). Returns the last few
+    marker-matching lines; if none match, returns the TAIL (never the misleading prefix). Pure;
+    ``""`` on empty input."""
+    if not detail:
+        return ""
+    text = str(detail).replace("\\n", "\n")
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    hits = [ln for ln in lines if any(m in ln.lower() for m in _ERR_MARKERS)]
+    if hits:
+        return " | ".join(hits[-3:])[:cap]
+    return text[-cap:].strip()
+
+
 def snapshot_passing_chains(orch: Any) -> None:
     """REGRESSION GUARD (snapshot-on-green): called when api_smoke fully passes
     (business_chain green). Snapshot the verification chains + the contract
@@ -829,7 +857,7 @@ class FrameworkValidation:
                             # root-surfacing message instead of limping to the wall-clock.
                             _blocker = ", ".join(sorted(_fset)) or (str(_summ)[:120] or "unknown")
                             _root_detail = "; ".join(
-                                "{}: {}".format(c.get("name"), str(c.get("detail"))[:400])
+                                "{}: {}".format(c.get("name"), _salient_error(c.get("detail")))
                                 for c in ((data or {}).get("checks") or [])
                                 if isinstance(c, dict) and c.get("status") == "fail"
                                 and c.get("detail")
