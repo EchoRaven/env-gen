@@ -171,6 +171,60 @@ class RemediationDispatcher:
         except Exception as exc:
             orch._logger.error("unimplemented-route dispatch failed: %s", exc)
 
+    async def dispatch_route_consolidation(self, dups) -> None:
+        """#180: the contract registered ONE logical endpoint at VERSION-VARIANT duplicate
+        paths (e.g. GET /api/directions AND GET /api/v1/directions). The lane implements one
+        and leaves the other a projected empty stub that the frontend may actually call → the
+        page renders empty, and #173 flags that stub with a "query the table" remediation that
+        CANNOT fix a path mismatch (run-13: 80min no-convergence abort on exactly this). Route
+        the CORRECT fix — consolidate to ONE path — to the backend lane. ONE P0 task + urgent
+        wake per milestone (guard reset by _fwval_rearm_owner_dispatch). Best-effort: never
+        raises into the coordination loop."""
+        orch = self._orch
+        if not dups:
+            return
+        try:
+            milestone = getattr(orch, "_current_milestone_version", "")
+            if getattr(orch, "_route_consolidation_dispatched", None) == milestone:
+                return
+            lines = "\n".join(f"  - {d.get('method')} at {d.get('paths')}" for d in dups)
+            task = orch.hubs.workhub.create_task(
+                title="Version-variant DUPLICATE route(s) — consolidate to ONE path (blocks delivery)",
+                description=(
+                    "The contract registered the SAME logical endpoint under version-variant "
+                    "duplicate paths:\n" f"{lines}\n"
+                    "A frontend client calls only ONE of each pair; the other is left an "
+                    "unimplemented projected stub that returns an empty collection, so its page "
+                    "renders empty (it may ALSO be flagged separately as a placeholder-stub). Do "
+                    "NOT implement the stub path as a new handler — CONSOLIDATE: serve the real "
+                    "logic at the path the frontend api client actually calls, and DEPRECATE the "
+                    "duplicate via registryhub_deprecate_endpoint so it leaves the contract. That "
+                    "clears both the duplicate and any stub flag on it."),
+                assignee="backend",
+                agent="orchestrator",
+                priority="P0",
+            )
+            orch._route_consolidation_dispatched = milestone
+            from tools.communication_tools import _create_message
+            await orch.message_bus.send(_create_message(
+                source_agent_id="orchestrator",
+                target_agent_id="backend",
+                content=(
+                    "URGENT: the contract has version-variant DUPLICATE routes "
+                    f"{[d.get('paths') for d in dups]}. Claim task {(task or {}).get('id')} and "
+                    "CONSOLIDATE each to the single path the frontend calls (deprecate the "
+                    "duplicate) — do NOT implement the stub path separately."),
+                msg_type="task_ready",
+                priority="urgent",
+                persist=True,
+                tags=["route_consolidation", "remediation"],
+            ))
+            orch._logger.warning(
+                "ROUTE-CONSOLIDATION remediation dispatched to backend (task %s): %s",
+                (task or {}).get("id"), [d.get("paths") for d in dups])
+        except Exception as exc:
+            orch._logger.error("route-consolidation dispatch failed: %s", exc)
+
     async def dispatch_frontend_navigable(self, data) -> None:
         """frontend_navigable feedback loop: a blank-shell frontend (page
         components present but 0 routes wired, or 0 pages) FAILS the navigable

@@ -2878,6 +2878,54 @@ class Orchestrator:
                     # so a later milestone starts with a fresh attempt/wall-clock allowance.
                     self._tu_browser_deferred_since = None
                     self._tu_browser_attempts = 0
+            # SOFT CONTRACT ROUTE-CONSISTENCY GATE (#180, 2026-07-16): run-13 aborted (80min
+            # no-convergence) because the contract registered ONE endpoint at version-variant
+            # duplicate paths (GET /api/directions + GET /api/v1/directions); the lane
+            # implemented one and left the other a projected empty stub the frontend called,
+            # and #173's "query the table" remediation can't fix a path mismatch. Detect the
+            # duplication and route the CORRECT "consolidate to one path" remediation to the
+            # backend lane. SOFT: bounded defer→escape (mirrors the browser gate) so it NEVER
+            # hard-aborts — a residual duplicate escapes-with-warning, never deadlocks.
+            # ENVGEN_ROUTE_CONSISTENCY_GATE=0 disables.
+            if (os.environ.get("ENVGEN_ROUTE_CONSISTENCY_GATE", "1").strip().lower()
+                    not in ("0", "false", "no", "off")):
+                _rc_dups = []
+                try:
+                    from .runtime.contract_drift import version_variant_duplicate_routes
+                    _rh = getattr(self.hubs, "registryhub", None)
+                    if _rh is not None:
+                        _rc_dups = version_variant_duplicate_routes(_rh.get_endpoints())
+                except Exception as _rc_exc:
+                    self._logger.debug("route-consistency gate skipped: %s", _rc_exc)
+                if _rc_dups:
+                    try:
+                        from .runtime.remediation_dispatcher import RemediationDispatcher
+                        await RemediationDispatcher(self).dispatch_route_consolidation(_rc_dups)
+                    except Exception as _rc_dexc:
+                        self._logger.debug("route-consolidation dispatch skipped: %s", _rc_dexc)
+                    from .runtime.test_user_squad import squad_release_decision
+                    _rc_now = time.time()
+                    if getattr(self, "_rc_deferred_since", None) is None:
+                        self._rc_deferred_since = _rc_now
+                    _rc_decision = squad_release_decision(
+                        self._rc_deferred_since, getattr(self, "_rc_attempts", 0), _rc_now)
+                    self._rc_attempts = getattr(self, "_rc_attempts", 0) + 1
+                    if _rc_decision == "defer":
+                        self._logger.warning(
+                            "DELIVERY DEFERRED: contract has %d version-variant DUPLICATE "
+                            "route(s) %s — consolidate remediation dispatched to backend; "
+                            "re-checking after the fix lands (attempt %s, %ss deferred). SOFT: "
+                            "escapes after the cap. Set ENVGEN_ROUTE_CONSISTENCY_GATE=0 to "
+                            "disable.", len(_rc_dups), [d.get("paths") for d in _rc_dups],
+                            self._rc_attempts, int(_rc_now - self._rc_deferred_since))
+                        return  # hold this milestone's release until the routes consolidate
+                    self._logger.warning(
+                        "Route-consistency gate RELEASED (escape after %ss deferred / %s "
+                        "attempts) — delivering with version-variant duplicate route(s), loudly.",
+                        int(_rc_now - self._rc_deferred_since), self._rc_attempts)
+                else:
+                    self._rc_deferred_since = None
+                    self._rc_attempts = 0
             # Flush any committed-but-unmerged lane work into integration BEFORE
             # snapshotting the release. Observed (instagram MM, 2026-06-08): the
             # backend committed the final milestone's routes to agent/backend 11s

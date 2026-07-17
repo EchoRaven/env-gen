@@ -325,6 +325,7 @@ class FrameworkValidation:
             "_frontend_navigable_dispatched",
             "_unwired_ui_pages_dispatched",
             "_chain_task_dispatched",
+            "_route_consolidation_dispatched",  # #180 version-variant duplicate-route gate
         ):
             try:
                 setattr(self._orch, _guard, None)
