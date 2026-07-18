@@ -681,6 +681,23 @@ class HealPipeline:
                 orch._logger.warning(
                     "Frontend escaped-backtick template delimiters un-escaped (esbuild "
                     "parse fix, prevents docker_up build wedge): %s", _eb.get("repaired"))
+            # FIX #190 (§3-6, gmrun3/5/7/8/11 + tiktok-r1): a re-emitted import →
+            # "Identifier 'X' has already been declared" → build FAIL → docker_up
+            # wedge. Parse-level like the backtick fix, so it runs right after it.
+            try:
+                from .frontend_scaffold import repair_frontend_duplicate_imports
+                _di = repair_frontend_duplicate_imports(fe)
+                if _di.get("repaired"):
+                    orch._logger.warning(
+                        "Frontend duplicate import bindings deduped (identifier-"
+                        "already-declared build-wedge fix): %s", _di.get("repaired"))
+                if _di.get("conflicts"):
+                    orch._logger.warning(
+                        "Frontend import-binding CONFLICTS left for the lane (mixed "
+                        "clauses, not auto-fixable): %s",
+                        (_di.get("conflicts") or [])[:6])
+            except Exception as _die:
+                orch._logger.debug("duplicate-import dedup skipped: %s", _die)
             # USED-BUT-UNIMPORTED JSX identifiers (#40, run-33 M1): `<Mail/>` with no
             # import BUILDS fine but crashes the page at render (ReferenceError → blank +
             # console error → browser-gate deferral churn). Import them via lucide-react —

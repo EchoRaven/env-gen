@@ -143,6 +143,136 @@ def _unescape_jsx_attr_quotes(src: str) -> str:
     return _JSX_ESCQ_RE.sub(r'\1"\2"', src)
 
 
+# FIX #190 — duplicate import-binding dedup (§3-6: heal/codegen re-emits an
+# import that already exists → esbuild "Identifier 'api' has already been
+# declared" → the whole npm build fails → docker_up wedges; gmrun3/5/7/8/11 +
+# tiktok-r1, nondeterministic recover-vs-abort).
+_IMPORT_FROM_RE = re.compile(
+    r"^\s*import\s+(?P<clause>[^'\"]+?)\s+from\s+['\"](?P<src>[^'\"]+)['\"];?\s*$")
+
+
+def _import_clause_bindings(clause: str) -> Tuple[Optional[str], Optional[str], List[Tuple[str, str]]]:
+    """(default, namespace, [(orig, local), ...]) introduced by an import clause.
+    Handles: D | D, {a, b as c} | {a, b as c} | * as N | D, * as N."""
+    default = namespace = None
+    named: List[Tuple[str, str]] = []
+    head = clause.split("{", 1)[0]
+    m = re.search(r"\*\s+as\s+(\w+)", head)
+    if m:
+        namespace = m.group(1)
+    m = re.match(r"\s*([A-Za-z_$][\w$]*)\s*(?:,|$)", head)
+    if m and m.group(1) != "as":
+        default = m.group(1)
+    if "{" in clause and "}" in clause:
+        inner = clause.split("{", 1)[1].rsplit("}", 1)[0]
+        for part in inner.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            am = re.match(r"([\w$]+)\s+as\s+([\w$]+)$", part)
+            if am:
+                named.append((am.group(1), am.group(2)))
+            elif re.match(r"[\w$]+$", part):
+                named.append((part, part))
+    return default, namespace, named
+
+
+def dedupe_import_bindings(src: str) -> Tuple[str, bool, List[str]]:
+    """Drop/rewrite import lines whose local bindings are already bound earlier
+    in the file. Conservative: full-collision lines are dropped; a PURE-named
+    line with partial collisions keeps only its fresh names; a mixed clause
+    with partial collisions is left untouched and reported (never guess
+    semantics). Multi-line named imports are joined into one logical line for
+    analysis. Returns (new_src, changed, conflicts)."""
+    lines = src.splitlines(keepends=True)
+    out: List[str] = []
+    bound: Set[str] = set()
+    conflicts: List[str] = []
+    changed = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        logical = line
+        span = 1
+        stripped = line.strip()
+        if (stripped.startswith("import") and "from" not in stripped
+                and "{" in stripped and "}" not in stripped):
+            # multi-line named import — join until the `} from '...'` line
+            j = i + 1
+            buf = [line]
+            while j < len(lines) and "from" not in lines[j]:
+                buf.append(lines[j])
+                j += 1
+            if j < len(lines):
+                buf.append(lines[j])
+                logical = "".join(buf)
+                span = j - i + 1
+        m = _IMPORT_FROM_RE.match(" ".join(logical.split()))
+        if not m:
+            out.extend(lines[i:i + span])
+            i += span
+            continue
+        default, namespace, named = _import_clause_bindings(m.group("clause"))
+        locals_ = ([default] if default else []) + \
+                  ([namespace] if namespace else []) + [loc for _, loc in named]
+        if not locals_:
+            out.append(logical)
+            i += span
+            continue
+        collided = [l for l in locals_ if l in bound]
+        fresh = [l for l in locals_ if l not in bound]
+        if not collided:
+            bound.update(locals_)
+            out.append(logical)
+        elif not fresh:
+            changed = True  # fully redundant — drop
+        elif default is None and namespace is None and named:
+            kept = [(o, l) for o, l in named if l not in bound]
+            inner = ", ".join(o if o == l else f"{o} as {l}" for o, l in kept)
+            out.append(f"import {{ {inner} }} from '{m.group('src')}';\n")
+            bound.update(l for _, l in kept)
+            changed = True
+        else:
+            conflicts.append(" ".join(logical.split()))
+            bound.update(fresh)
+            out.append(logical)
+        i += span
+    return "".join(out), changed, conflicts
+
+
+def repair_frontend_duplicate_imports(frontend_dir) -> Dict[str, object]:
+    """FIX #190: dedupe colliding import bindings across the frontend source —
+    the 'Identifier X has already been declared' build-wedge class. Idempotent;
+    best-effort; never raises. {"repaired": [relpaths] | [], "conflicts": [...]}"""
+    repaired: List[str] = []
+    all_conflicts: List[str] = []
+    try:
+        src_dir = Path(frontend_dir) / "src"
+        if not src_dir.is_dir():
+            return {"repaired": repaired}
+        for f in src_dir.rglob("*"):
+            if f.suffix not in _FRONT_EXTS or not f.is_file():
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            if txt.count("import") < 2:
+                continue
+            new, changed, conflicts = dedupe_import_bindings(txt)
+            if conflicts:
+                all_conflicts.extend(f"{f.name}: {c}" for c in conflicts)
+            if changed:
+                try:
+                    f.write_text(new, encoding="utf-8")
+                    repaired.append(str(f.relative_to(src_dir)))
+                except Exception:
+                    continue
+        return {"repaired": repaired, "conflicts": all_conflicts}
+    except Exception:
+        return {"repaired": repaired, "conflicts": all_conflicts}
+
+
 def repair_frontend_escaped_backticks(frontend_dir) -> Dict[str, object]:
     """Un-escape template-literal delimiter backticks, escaped newlines, AND escaped JSX
     attribute quotes across the frontend source so an LLM-emitted ``className={\`...\`}`` /
