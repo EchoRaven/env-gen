@@ -769,7 +769,11 @@ class RemediationDispatcher:
                 "\"5 min\"}]}`) with NO database query, so its page can never show real data. "
                 "Query the real seeded table(s) — join/scope as the resource needs (e.g. a "
                 "stop's departures from its lines) — and return the ACTUAL rows. Do NOT "
-                "return a hardcoded empty/mock collection."),
+                "return a hardcoded empty/mock collection. #201: if the flagged handler is a "
+                "FRAMEWORK `_projected_*` stub (in main.py, which you CANNOT edit), the path "
+                "maps to NO backing table — DECLARE the backing table for that resource, or "
+                "REMOVE the endpoint from the contract; the projector then reads it "
+                "automatically."),
             "deliverability_fabricated_field_fallback": (
                 # #175 (gmrun9/gmrun10, live): the frontend renders `place.rating || '4.5'` /
                 # `? place.name : 'HI Point Montara Lighthouse'` — invented data whenever the

@@ -442,20 +442,43 @@ def stub_handler_blockers(backend_dir: Any) -> List[str]:
     for h in handlers:
         for r in h["routes"]:
             by_route[r].append(h)
-    flagged: Dict[str, str] = {}  # handler name → file (dedup: a handler can serve >1 route)
+    flagged: Dict[str, Dict[str, Any]] = {}  # handler name → {file, projected, routes}
     for _route, hs in by_route.items():
         non_projected = [h for h in hs if not h["projected"]]
         served = non_projected or hs
         if served and all((not h["reads_db"] and h["placeholder"]) for h in served):
             for h in served:
-                flagged[h["name"]] = h["file"]
-    return [
-        f"backend handler `{name}` ({file}) is a PLACEHOLDER STUB — a GET route whose served "
-        "handler returns a hardcoded empty/mock collection with NO database query, so its page "
-        "can never render real data (gmrun9 shipped exactly this for transit departures). "
-        "Query the real seeded table(s) and return the rows."
-        for name, file in sorted(flagged.items())
-    ]
+                rec = flagged.setdefault(
+                    h["name"], {"file": h["file"], "projected": h["projected"],
+                                "routes": set()})
+                rec["routes"] |= {f"{m} {p}" for m, p in h["routes"]}
+
+    def _msg(name: str, rec: Dict[str, Any]) -> str:
+        _routes = ", ".join(sorted(rec["routes"])) or "a GET route"
+        if rec["projected"]:
+            # FIX #201 (r10 wall): a FRAMEWORK `_projected_*` stub is regenerated in
+            # main.py every cycle — the lane CANNOT edit it, so "replace the handler"
+            # is non-actionable and #173 walls forever. The projector stubs a GET only
+            # when the path maps to NO table (#200 resolves name/segment drift), so the
+            # lane-actionable remedy is a CONTRACT change it owns: declare the backing
+            # table, or drop the endpoint. NOT a HARD-vs-SOFT change — still blocks.
+            return (
+                f"endpoint {_routes} has a FRAMEWORK-projected PLACEHOLDER STUB "
+                f"(`{name}` in {rec['file']}) returning an empty/mock collection with NO "
+                "database query — because the path maps to NO backing table. You CANNOT "
+                "edit the projected handler; instead make the endpoint resolvable: declare "
+                "the backing table for this resource (kickoff_declare_table / "
+                "registryhub_register_table with the columns its page needs), or if the "
+                "endpoint is not real, REMOVE it from the contract. Once a table backs the "
+                "route the projector reads it automatically.")
+        return (
+            f"backend handler `{name}` ({rec['file']}) is a PLACEHOLDER STUB — the served "
+            f"handler for {_routes} returns a hardcoded empty/mock collection with NO "
+            "database query, so its page can never render real data (gmrun9 shipped exactly "
+            "this for transit departures). Query the real seeded table(s) and return the "
+            "rows. Do NOT return a hardcoded empty/mock collection.")
+
+    return [_msg(name, rec) for name, rec in sorted(flagged.items())]
 
 
 __all__ = ["served_routes", "sync_endpoint_statuses", "BackendAuditError",
