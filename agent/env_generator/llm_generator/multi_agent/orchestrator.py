@@ -152,6 +152,14 @@ FWVAL_NO_DELIVER_ABORT_S = int(os.environ.get("ENVGEN_NO_DELIVER_ABORT_S", "4500
 # this cap so a verifier that oscillates FOREVER (never converging) still aborts (no
 # livelock). Env-gated. ~this-many re-authorings of room before giving up on the verifier.
 FWVAL_CHAIN_CHURN_CAP = max(2, int(os.environ.get("ENVGEN_CHAIN_CHURN_CAP") or "8"))
+# FIX #186 (tiktok-r2): the api_smoke stuck ladder keyed only on (failure_set,
+# chain_sig) — blind to APP-SOURCE edits, so it STUCK-ABORTed ~20s before the
+# backend lane landed its /auth/login fix. (The delivery-gate ladder already
+# counts source edits via _deliver_progress_sig; this closes the same gap here.)
+# A changed app-source signature grants a BOUNDED stuck-counter reset — capped by
+# this budget so an r3-style forever-thrash (edits every cycle, failure set never
+# clears) still aborts. ~this-many edit-graces of room before giving up.
+FWVAL_SOURCE_CHURN_CAP = max(2, int(os.environ.get("ENVGEN_SOURCE_CHURN_CAP") or "8"))
 FWVAL_STUCK_ABORT_AFTER = max(3, int(os.environ.get("ENVGEN_DELIVERY_STUCK_ABORT_AFTER") or "7"))  # env-gated (default 7); …then FAIL FAST: redispatch+terminal didn't help on an
 #   unchanged failure set with no lane progress → abort early with the root surfaced, instead
 #   of limping to the wall-clock cap (PROPOSAL #5). ~1 slow-retry interval past the cap (~11 min)

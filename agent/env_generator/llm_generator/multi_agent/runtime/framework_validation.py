@@ -257,6 +257,24 @@ def _fwval_is_chain_authoring_progress(fset, chain_sig, prev_chain_sig,
         return False
 
 
+def _fwval_is_source_edit_progress(app_sig, prev_app_sig, source_churn, cap) -> bool:
+    """True iff the integrated APP SOURCE signature changed since the last validation
+    cycle AND the bounded churn budget isn't spent — a lane is actively editing code
+    the check-level failure set can't see yet, so the stuck counter should reset
+    (tiktok-r2: STUCK-ABORT fired ~20s before the backend lane landed its
+    /auth/login fix). Unlike the #71 chain grace this is NOT failure-set-restricted:
+    a source edit can fix any failure class. Bounded by ``cap`` so a lane that
+    thrashes FOREVER without clearing the failure set still aborts (no livelock —
+    tiktok-r3's 75-min fabricated-field churn stays bounded). Fix #186."""
+    try:
+        return bool(
+            app_sig is not None and prev_app_sig is not None
+            and app_sig != prev_app_sig
+            and int(source_churn or 0) < int(cap))
+    except Exception:
+        return False
+
+
 def maybe_refresh_stale_build_checklist(orch: Any, failed_checks) -> bool:
     """FIX #120 (run-38 STUCK, 2026-07-09): a transient run_validation failure
     (mid visual-window rebuild churn) stamped all four ``build:*`` CodeHub checks =
@@ -397,8 +415,10 @@ class FrameworkValidation:
             from .lifecycle import all_business_endpoints_implemented
             from ..orchestrator import (
                 _fwval_should_attempt, _fwval_failure_set, _fwval_stuck_decision,
-                _fwval_can_early_return, FWVAL_FAST_CAP, FWVAL_CHAIN_CHURN_CAP)
+                _fwval_can_early_return, FWVAL_FAST_CAP, FWVAL_CHAIN_CHURN_CAP,
+                FWVAL_SOURCE_CHURN_CAP)
             _FWVAL_CHAIN_CHURN_CAP = FWVAL_CHAIN_CHURN_CAP
+            _FWVAL_SOURCE_CHURN_CAP = FWVAL_SOURCE_CHURN_CAP
             registryhub = getattr(orch.hubs, "registryhub", None)
             if registryhub is None:
                 return
@@ -760,7 +780,9 @@ class FrameworkValidation:
                     orch._fwval_failure_set = _fset
                     orch._fwval_stuck_count = 0
                     orch._fwval_chain_churn = 0   # #71: fresh chain-churn budget per failure set
+                    orch._fwval_source_churn = 0  # #186: fresh source-churn budget too
                     orch._fwval_chain_sig = _chain_sig
+                    orch._fwval_app_sig = _app_sig
                     if _prev_fset is not None:
                         # An actual change (not the first sight) → fresh fast budget,
                         # exactly like a rising endpoint count (FIX #31).
@@ -787,14 +809,39 @@ class FrameworkValidation:
                     orch._fwval_chain_churn = getattr(orch, "_fwval_chain_churn", 0) + 1
                     orch._fwval_stuck_count = 0
                     orch._fwval_chain_sig = _chain_sig
+                    orch._fwval_app_sig = _app_sig
                     orch._logger.warning(
                         "CHAIN-AUTHORING PROGRESS: business_chain still failing but the "
                         "verifier re-authored the chains (churn %s/%s) — resetting the "
                         "stuck budget to let it converge (bounded).",
                         orch._fwval_chain_churn, _FWVAL_CHAIN_CHURN_CAP)
+                # SOURCE-EDIT PROGRESS (#186, tiktok-r2): a lane is actively editing the
+                # integrated app source — the failure set can't reflect the fix until the
+                # next validation runs, so give the edit a bounded grace instead of
+                # counting it toward the abort (r2 was STUCK-ABORTed ~20s before the
+                # backend lane landed its /auth/login fix). Post-FAST-CAP gated like the
+                # chain grace (below the cap there is no abort risk to spend budget on);
+                # churn-capped so an r3-style forever-thrash still aborts.
+                elif (_attempts >= FWVAL_FAST_CAP
+                      and _fwval_is_source_edit_progress(
+                          _app_sig, getattr(orch, "_fwval_app_sig", None),
+                          getattr(orch, "_fwval_source_churn", 0),
+                          _FWVAL_SOURCE_CHURN_CAP)):
+                    orch._fwval_source_churn = getattr(orch, "_fwval_source_churn", 0) + 1
+                    orch._fwval_stuck_count = 0
+                    orch._fwval_chain_sig = _chain_sig
+                    orch._fwval_app_sig = _app_sig
+                    orch._logger.warning(
+                        "SOURCE-EDIT PROGRESS: failure set %s unchanged but the app "
+                        "source signature moved — a lane is actively editing (churn "
+                        "%s/%s); resetting the stuck budget to let the fix land "
+                        "(bounded).",
+                        sorted(_fset) or "(none)",
+                        orch._fwval_source_churn, _FWVAL_SOURCE_CHURN_CAP)
                 else:
                     # Same failure set as last validation → no functional progress.
                     orch._fwval_chain_sig = _chain_sig
+                    orch._fwval_app_sig = _app_sig
                     orch._fwval_stuck_count = getattr(orch, "_fwval_stuck_count", 0) + 1
                     # Only escalate once the FAST budget is spent (the converging
                     # window is over); below the cap we are still in the normal
