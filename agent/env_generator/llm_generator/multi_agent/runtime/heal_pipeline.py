@@ -698,6 +698,21 @@ class HealPipeline:
                         (_di.get("conflicts") or [])[:6])
             except Exception as _die:
                 orch._logger.debug("duplicate-import dedup skipped: %s", _die)
+            # FIX #191 (tiktok-r3 NO-CONVERGENCE): deterministically rewrite the
+            # exact fabricated-fallback sites the #175 HARD gate flags
+            # (`x.rating || '4.5'` → `x.rating ?? '—'`) — r3's lane thrashed
+            # 75min on this edit and the run aborted. Shares the gate's regexes,
+            # so the heal clears precisely what the gate blocks.
+            try:
+                from .frontend_audit import repair_fabricated_fallbacks
+                _ff = repair_fabricated_fallbacks(fe / "src")
+                if _ff.get("repaired"):
+                    orch._logger.warning(
+                        "Fabricated member-field fallbacks rewritten to honest empty "
+                        "states (#175 gate sites, deterministic): %s",
+                        (_ff.get("sites") or [])[:8])
+            except Exception as _ffe:
+                orch._logger.debug("fabricated-fallback heal skipped: %s", _ffe)
             # USED-BUT-UNIMPORTED JSX identifiers (#40, run-33 M1): `<Mail/>` with no
             # import BUILDS fine but crashes the page at render (ReferenceError → blank +
             # console error → browser-gate deferral churn). Import them via lucide-react —

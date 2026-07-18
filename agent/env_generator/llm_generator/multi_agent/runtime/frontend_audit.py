@@ -988,3 +988,59 @@ def invented_field_fallback_blockers(frontend_src: Any, limit: int = 20) -> List
                     if len(blockers) >= limit:
                         return blockers
     return blockers
+
+
+def repair_fabricated_fallbacks(frontend_src: Any) -> Dict[str, Any]:
+    """FIX #191 (tiktok-r3 NO-CONVERGENCE): DETERMINISTIC rewrite of the exact
+    sites the #175 gate flags — `member || 'fabricated'` → `member ?? '—'` and
+    ternary fakes' literal branch → '—' (an honest empty state per the gate's
+    own remediation text). Shares the gate's regexes + literal classifier, so
+    the heal clears precisely what the gate blocks, BY CONSTRUCTION — r3's
+    frontend lane thrashed 75min on exactly this edit and the run aborted. The
+    gate stays HARD; field-name drift then shows as honest '—' cells, which the
+    no_real_data browser gate still owns. Idempotent; best-effort; never raises.
+    Returns {"repaired": [relpaths], "sites": ["file:line before→after", ...]}."""
+    repaired: List[str] = []
+    sites: List[str] = []
+    try:
+        src = Path(frontend_src)
+        if not src.is_dir():
+            return {"repaired": repaired, "sites": sites}
+        files = [f for f in (list(src.rglob("*.jsx")) + list(src.rglob("*.tsx")))
+                 if "node_modules" not in f.parts]
+    except Exception:
+        return {"repaired": repaired, "sites": sites}
+    for f in sorted(files):
+        try:
+            lines = f.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
+        except Exception:
+            continue
+        changed = False
+        new_lines: List[str] = []
+        for i, line in enumerate(lines, 1):
+            def _sub_or(m):
+                member, lit = m.group(1), m.group(3)
+                if not _is_fabricated_fallback_literal(lit):
+                    return m.group(0)
+                sites.append(f"{f.name}:{i} `{member} || '{lit}'` → `{member} ?? '—'`")
+                return f"{member} ?? '—'"
+
+            def _sub_ternary(m):
+                member, lit = m.group(1), m.group(3)
+                if not _is_fabricated_fallback_literal(lit):
+                    return m.group(0)
+                sites.append(f"{f.name}:{i} `? {member} : '{lit}'` → `? {member} : '—'`")
+                return f"? {member} : '—'"
+
+            new = _INVENTED_OR.sub(_sub_or, line)
+            new = _INVENTED_TERNARY.sub(_sub_ternary, new)
+            if new != line:
+                changed = True
+            new_lines.append(new)
+        if changed:
+            try:
+                f.write_text("".join(new_lines), encoding="utf-8")
+                repaired.append(f.name)
+            except Exception:
+                continue
+    return {"repaired": repaired, "sites": sites}
