@@ -429,6 +429,36 @@ def _resource_model(path: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tu
                 _jm = _match_model(_cand, models)
                 if _jm:
                     return _jm
+    # FIX #200 (r10 live): a GET path whose segments don't LITERALLY equal a table
+    # name projected an empty-collection STUB → #173 HARD-blocked it, and — being a
+    # FRAMEWORK handler in main.py — the lane couldn't fix it → guaranteed wall.
+    # Two deterministic rungs, tried only when nothing matched exactly (so no
+    # existing resolution changes):
+    if chosen is None and _non_param:
+        _res_segs = [s for s, _ in _non_param]
+        # (1) MULTI-SEGMENT JOIN: adjacent non-param segments joined with '_' name a
+        #     table the path split across a hierarchy (/api/live/streams → live_streams).
+        for _i in range(len(_res_segs) - 1):
+            _joined = f"{_res_segs[_i]}_{_res_segs[_i + 1]}"
+            _jm = _match_model(_joined, models)
+            if _jm:
+                chosen = _jm
+                break
+        # (2) SUFFIX MATCH: the resource segment names the CORE of a qualified table
+        #     (/api/messages → direct_messages). Fallback-only, and length-guarded
+        #     (≥3 chars) so a tiny segment can't spuriously suffix-hit a big table.
+        if chosen is None:
+            for _seg in reversed(_res_segs):
+                _sl = _seg.lower()
+                if len(_sl.rstrip("s")) < 3:
+                    continue
+                _cands = [t for t in models
+                          if t.lower().endswith("_" + _sl)
+                          or t.lower().endswith("_" + _sl.rstrip("s"))
+                          or t.lower().endswith("_" + _sl.rstrip("s") + "s")]
+                if len(_cands) == 1:  # unambiguous only
+                    chosen = (_cands[0], models[_cands[0]])
+                    break
     if chosen is None:
         segs = {seg for seg, is_p in _segments(path) if not is_p}
         if segs & set(_FEED_SHAPED_TOKENS):
