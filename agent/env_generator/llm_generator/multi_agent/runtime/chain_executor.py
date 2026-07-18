@@ -1079,6 +1079,10 @@ def execute_chain(base: str, chain: Mapping[str, Any],
     last_reg_creds: Dict[str, Any] = {}  # creds of the last successful /auth/register → reused if a later /auth/login 401s
     own_user_id: Any = None  # the chain user's own id (from /auth/register) — recovery must not target SELF (FIX #81)
     unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
+    # FIX #188: var → step-action whose OK response lacked the save path — the
+    # silent-capture-failure class behind the "GET x → 200 marked failed" triage
+    # confusion (225x across logs): the 200 step LOOKED fine, downstream broke.
+    save_failed_by_var: Dict[str, str] = {}
     # #59c: STORED chains (registered by an older framework, or hand-edited) can
     # carry the auth-save clobber in their persisted steps — normalize-time
     # guarding alone can't reach them, so guard the runtime copy too.
@@ -1192,6 +1196,17 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         # _is_denial after it is always safe (short-circuit).
         if (_UNRESOLVED_PLACEHOLDER.search(path)
                 and method == "GET" and not _is_denial):
+            # #188: when the starving var traces to an upstream OK-step whose save
+            # captured nothing, SAY so — the capture bug (envelope/field-name
+            # drift) is the actionable root, not "no data".
+            _sf_hint = ""
+            for _uv in re.findall(r"\$\{(\w+)\}", str(path)):
+                if save_failed_by_var.get(_uv):
+                    _sf_hint = (" NOTE: ${" + _uv + "} save failed at step '"
+                                + save_failed_by_var[_uv]
+                                + "' (response lacked the save path) — fix that "
+                                "capture, not this read.")
+                    break
             recorded.append({
                 "action": str(step.get("action") or step.get("path") or ""),
                 "method": method, "path": str(step.get("path") or ""),
@@ -1199,7 +1214,7 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 "note": ("skipped — unsatisfiable by data: the chain user owns no "
                          + str(_pres or "row") + " and the collection cannot create one "
                          "(no POST / empty list). Endpoint reachability is proven by "
-                         "api_smoke; this read has no data to target.")})
+                         "api_smoke; this read has no data to target." + _sf_hint)})
             continue
         body = _subst(step.get("body"), variables) if step.get("body") else None
         # BODY UNRESOLVED-VARIABLE FALLBACK — the body counterpart of the path fallback
@@ -1220,6 +1235,19 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         elif not isinstance(_exp, (list, tuple, set)):
             _exp = [_exp]
         expect = [int(x) for x in _exp if str(x).isdigit()]
+        # FIX #188: record which authored variables are STILL unresolved in the
+        # outgoing request (path/body literal ${...}, or an auth ref no step
+        # captured) — a later failure on this step names them + their cause
+        # instead of surfacing a bare status the reader can't act on.
+        _unres_vars = set(re.findall(r"\$\{(\w+)\}", str(path)))
+        try:
+            if body is not None:
+                _unres_vars |= set(re.findall(r"\$\{(\w+)\}", json.dumps(body)))
+        except Exception:
+            pass
+        _auth_ref = str(step.get("auth") or "")
+        if _auth_ref and _auth_ref not in variables:
+            _unres_vars.add(_auth_ref)
         res = _http(method, base + path, token=token, body=body)
         status = res.get("status")
         ok = _status_ok(status, expect)
@@ -1365,6 +1393,25 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         note = ""
         if not ok:
             note = (res.get("error") or res.get("body_text") or "")[:160]
+            # FIX #188 honesty: a pure-DENIAL probe (expect has no 2xx) that got a
+            # success must SAY so — the raw "→ 200 ({body})" read as nonsense in
+            # 225x of triage lines and hid the real meaning (the request was not
+            # rejected: an auth/isolation hole, or a mis-authored probe).
+            if (expect and isinstance(status, int) and 200 <= status < 300
+                    and not any(200 <= e < 300 for e in expect)):
+                note = ("DENIAL-PROBE got success — the request was NOT rejected "
+                        f"(expected denial {expect}). " + note)
+            # FIX #188 causality: the request went out with unresolved variables —
+            # name each one and (when known) the upstream step whose save failed,
+            # so the reader chases the CAPTURE bug, not this step's status.
+            if _unres_vars:
+                _hints = []
+                for _v in sorted(_unres_vars):
+                    _src = save_failed_by_var.get(_v)
+                    _hints.append(
+                        f"${{{_v}}} save failed at step '{_src}'" if _src
+                        else f"${{{_v}}} never captured by any prior step")
+                note = "unresolved " + "; ".join(_hints) + " — " + note
             if status in (404, 405):
                 # 404/405 is normally 'missing' (endpoint not built yet → soft, so the
                 # whole chain isn't failed on a not-yet-implemented endpoint). BUT a 404
@@ -1403,6 +1450,8 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         entry = {"action": str(step.get("action") or path), "method": method,
                  "path": path, "status": status, "ok": ok, "kind": kind,
                  "note": note}
+        if expect:
+            entry["expect"] = list(expect)  # #188: the broken line shows intent
         if autofilled:
             entry["autofilled"] = autofilled
         recorded.append(entry)
@@ -1450,10 +1499,13 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 payload = json.loads(res.get("body_text") or "{}")
             except Exception:
                 payload = {}
+            _save_failed: List[str] = []  # #188: silent-capture-failure surfacing
             for var, dotted in step["save"].items():
+                _captured = False
                 val = _dig(payload, dotted)
                 if val is not None:
                     variables[str(var)] = str(val)
+                    _captured = True
                 elif "." not in str(dotted) and str(dotted) not in variables:
                     # REVERSED-MAPPING TOLERANCE: the contract is
                     # save:{var_name: response_dotted_path}, but verifiers often
@@ -1469,6 +1521,21 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                     rev = _dig(payload, str(var))
                     if rev is not None:
                         variables[str(dotted)] = str(rev)
+                        _captured = True
+                if not _captured and str(var) not in variables:
+                    # #188: the step SUCCEEDED but captured nothing for this var —
+                    # today this is silent, and the first visible symptom is a
+                    # baffling downstream failure (the "200 marked failed" triage
+                    # class). Record it on THIS entry + index it for the causal
+                    # hint on whichever later step starves. Diagnostic only.
+                    _save_failed.append(f"{var}<-{dotted}")
+                    save_failed_by_var[str(var)] = str(
+                        step.get("action") or step.get("path") or "")
+            if _save_failed:
+                entry["save_failed"] = [f.split("<-", 1)[0] for f in _save_failed]
+                entry["note"] = ((entry["note"] + " | ") if entry["note"] else "") + (
+                    "save FAILED (response lacks the path): "
+                    + ", ".join(_save_failed))
         if kind == "broken":
             # Don't abort — just mark the vars this step was supposed to provide as
             # unsatisfied, so ONLY its dependents are skipped; independent steps run on.
@@ -1479,8 +1546,13 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             if isinstance(step.get("save"), Mapping):
                 unsatisfied.update(str(k) for k in step["save"].keys()
                                    if str(k) not in variables)
-    broken = [f"{s['method']} {s['path']} → {s['status']} ({s['note']})"
-              for s in recorded if s["kind"] == "broken"]
+    # #188: broken lines carry the authored expectation — "GET x → 200 ({body})"
+    # with a hidden expect [401] read as nonsense in 225x of triage lines.
+    broken = [
+        (f"{s['method']} {s['path']} → {s['status']} "
+         + (f"(expected {s['expect']}; {s['note']})" if s.get("expect")
+            else f"({s['note']})"))
+        for s in recorded if s["kind"] == "broken"]
     return {"name": str(chain.get("name") or "chain"), "steps": recorded,
             "broken": broken}
 
