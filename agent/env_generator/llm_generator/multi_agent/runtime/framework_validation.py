@@ -257,6 +257,25 @@ def _fwval_is_chain_authoring_progress(fset, chain_sig, prev_chain_sig,
         return False
 
 
+def _should_regen_skeleton(app_sig, healed_sig, build_wedged,
+                           contract_sig, healed_contract_sig) -> bool:
+    """FIX #203: decide whether to regenerate the by-construction backend skeleton
+    this tick. Fires on (a) an app-SOURCE change (the original heal-on-change
+    trigger), (b) a build wedge (force the repairs), OR — the fix — (c) a CONTRACT
+    change (tables/endpoints registry version moved). r10/r11: the lane registered
+    the missing backing tables mid-run, but the gate keyed ONLY on app-source, so
+    the skeleton never re-projected the stubbed endpoints against the new tables →
+    the `{items:[]}` stubs persisted → #173 wall. A contract change now re-projects
+    them. Pure."""
+    if app_sig is None or build_wedged:
+        return True
+    if app_sig != healed_sig:
+        return True
+    if contract_sig != healed_contract_sig:
+        return True
+    return False
+
+
 def _fwval_is_source_edit_progress(app_sig, prev_app_sig, source_churn, cap) -> bool:
     """True iff the integrated APP SOURCE signature changed since the last validation
     cycle AND the bounded churn budget isn't spent — a lane is actively editing code
@@ -452,8 +471,21 @@ class FrameworkValidation:
             _build_wedged = bool(
                 {"docker_up", "frontend_build"} & set(
                     getattr(orch, "_fwval_failure_set", None) or ()))
-            if (_app_sig is None or _build_wedged
-                    or _app_sig != getattr(orch, "_fwval_healed_sig", None)):
+            # FIX #203: also regen when the CONTRACT (tables/endpoints registry
+            # versions) changed — a mid-run table registration doesn't touch
+            # app/backend/*.py, so the app-source-only gate never re-projected the
+            # stubbed endpoints against the new table (r10/r11 #173 wall).
+            _contract_sig = None
+            try:
+                _rh = getattr(orch.hubs, "registryhub", None)
+                _vers = _rh.get_versions() if _rh is not None else {}
+                _contract_sig = (_vers.get("registryhub_tables"),
+                                 _vers.get("registryhub_endpoints"))
+            except Exception:
+                _contract_sig = None
+            if _should_regen_skeleton(
+                    _app_sig, getattr(orch, "_fwval_healed_sig", None), _build_wedged,
+                    _contract_sig, getattr(orch, "_fwval_healed_contract_sig", None)):
                 # SKELETON根治: regenerate the WHOLE backend from the contract FIRST, so
                 # validation runs on the deterministic, by-construction app — not on the
                 # lane's variably-structured one. The backend repairs below then no-op on
@@ -519,6 +551,7 @@ class FrameworkValidation:
                 # implemented-endpoint count (below) or a CHANGED failure set (after the
                 # validation result is known) — never on self-induced signature churn.
                 orch._fwval_healed_sig = orch._compute_app_source_signature()
+                orch._fwval_healed_contract_sig = _contract_sig  # #203: contract we projected
             # FIX #26: fire when the contract is implemented by registryhub registration
             # OR by route code present in the integrated source (registration lags
             # the actual code). api_smoke is the real arbiter downstream.
