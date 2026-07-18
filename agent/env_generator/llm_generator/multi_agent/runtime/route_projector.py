@@ -334,8 +334,15 @@ def _param_column_type(param: str, path: str, models: Dict[str, Dict[str, Any]])
 
 def _match_model(seg: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tuple[str, Dict[str, Any]]]:
     cand = seg.lower()
+    # FIX #202 (r11 live): the y→ies irregular plural — a segment 'activity'
+    # must match table 'activities' (also category/categories, story/stories,
+    # company/companies). Only the regular +s/-s was handled, so an '-y' resource
+    # GET shipped an empty stub → #173 wall. Derive the -ies form of an -y segment.
+    _ies = (cand[:-1] + "ies") if cand.endswith("y") and len(cand) > 2 else None
     for table, meta in models.items():
-        if cand == table or cand + "s" == table or cand == table.rstrip("s") or cand.rstrip("s") == table.rstrip("s"):
+        if (cand == table or cand + "s" == table or cand == table.rstrip("s")
+                or cand.rstrip("s") == table.rstrip("s")
+                or (_ies is not None and _ies == table)):
             return (table, meta)
     return None
 
