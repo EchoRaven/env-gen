@@ -1059,7 +1059,12 @@ def _lane_third_party_imports(be_dir: Any) -> List[str]:
         be = Path(be_dir)
         if not be.is_dir():
             return out
-        local = {f.stem for f in be.glob("*.py")}
+        # FIX #189 (tiktok-r5): union the skeleton's OWN module names — when
+        # custom_routes.py is absent, main.py's guarded `import custom_routes`
+        # hook otherwise reads as third-party and the framework itself writes a
+        # non-existent pip dep → uv fails → docker_up wedges to STUCK-ABORT.
+        from .backend_scaffold import _SKELETON_LOCAL_MODULES
+        local = {f.stem for f in be.glob("*.py")} | set(_SKELETON_LOCAL_MODULES)
         stdlib = getattr(sys, "stdlib_module_names", frozenset())
         seen: set = set()
         for f in sorted(be.glob("*.py")):

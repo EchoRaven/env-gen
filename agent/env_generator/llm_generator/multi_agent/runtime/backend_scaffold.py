@@ -883,5 +883,92 @@ def repair_backend_packaging(backend_dir) -> Dict[str, object]:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+# FIX #189: real distributions the backend scaffold/Dockerfile stack actually
+# uses — NEVER stripped even when a lane shadows one with a local file (removing
+# the real install would break transitive imports; the shadow is a different
+# bug that surfaces elsewhere).
+_KNOWN_REAL_DISTS = {
+    "fastapi", "uvicorn", "starlette", "pydantic", "psycopg", "psycopg2",
+    "psycopg2-binary", "sqlalchemy", "alembic", "python-jose", "passlib",
+    "python-multipart", "httpx", "requests", "bcrypt", "pyjwt", "jinja2",
+    "aiofiles", "email-validator", "python-dotenv", "orjson",
+}
+
+# FIX #189 (r5 actual root): module names the backend skeleton OWNS by
+# construction — incl. custom_routes, the one lane-override hook main.py
+# imports under an except-ImportError guard. When the file is ABSENT at
+# render time, _lane_third_party_imports used to see that import as
+# third-party and the FRAMEWORK ITSELF wrote "custom_routes" into pyproject
+# deps → uv resolution failed → docker_up wedged → STUCK-ABORT (tiktok-r5).
+# Reserved names never become pip deps, file present or not.
+_SKELETON_LOCAL_MODULES = {
+    "database", "models", "seed_data", "main", "schemas", "auth_dependency",
+    "custom_routes", "jwt_manager", "oauth_routes", "oauth_store",
+    "user_bootstrap",
+}
+
+
+def _pep503(name: str) -> str:
+    """PEP-503 normalization: case-insensitive, runs of -_. collapse to '-'."""
+    return re.sub(r"[-_.]+", "-", str(name).strip().lower())
+
+
+def sanitize_pyproject_local_deps(backend_dir) -> Dict[str, object]:
+    """FIX #189 (tiktok-r5 STUCK-ABORT, 2026-07-18): the lane hallucinated the
+    app's OWN ``custom_routes.py`` into a pip dependency (``custom-routes``) —
+    uv resolution failed ("was not found in the package registry") → the backend
+    image never built → docker_up wedged 7 post-cap cycles → abort, while the
+    lane never landed the one-line fix. A dependency whose PEP-503 name matches
+    a LOCAL module/package of the backend can never need installing (the local
+    file shadows site-packages at runtime) — strip it DETERMINISTICALLY at heal
+    time instead of waiting on a lane. Conservative: _KNOWN_REAL_DISTS are never
+    stripped. Idempotent; best-effort; never raises."""
+    try:
+        be = Path(backend_dir)
+        pp = be / "pyproject.toml"
+        if not pp.exists():
+            return {"repaired": False, "reason": "no pyproject.toml"}
+        # skeleton-reserved names count as local even when the FILE is absent
+        # (r5: the dep referenced a custom_routes.py that was never written).
+        local = {_pep503(n) for n in _SKELETON_LOCAL_MODULES}
+        for f in be.glob("*.py"):
+            local.add(_pep503(f.stem))
+        for d in be.iterdir():
+            if d.is_dir() and (d / "__init__.py").exists():
+                local.add(_pep503(d.name))
+        src_pkg_root = be / "src"
+        if src_pkg_root.is_dir():
+            for sub in src_pkg_root.iterdir():
+                if sub.is_dir() and (sub / "__init__.py").exists():
+                    local.add(_pep503(sub.name))
+        src = pp.read_text(encoding="utf-8", errors="ignore")
+        # closing ] anchored at line start — a mid-entry ']' (uvicorn[standard])
+        # must not close the list early. Single-line dep lists don't match → safe
+        # no-op (generated pyprojects are pretty-printed multi-line).
+        m = re.search(r"(?ms)^(\s*dependencies\s*=\s*\[)(.*?)(^\s*\])", src)
+        if not m:
+            return {"repaired": False, "reason": "no [project] dependencies list"}
+        head, body, tail = m.group(1), m.group(2), m.group(3)
+        kept_lines: List[str] = []
+        dropped: List[str] = []
+        for line in body.splitlines():
+            entry = line.strip().strip(",").strip("\"'")
+            if not entry or entry.startswith("#"):
+                kept_lines.append(line)
+                continue
+            dep_name = _pep503(re.split(r"[<>=!~\[; ]", entry, 1)[0])
+            if dep_name in local and dep_name not in _KNOWN_REAL_DISTS:
+                dropped.append(entry)
+                continue
+            kept_lines.append(line)
+        if not dropped:
+            return {"repaired": False, "reason": "no local-module deps"}
+        new_src = src[:m.start()] + head + "\n".join(kept_lines) + tail + src[m.end():]
+        pp.write_text(new_src, encoding="utf-8")
+        return {"repaired": True, "dropped": dropped, "pyproject": str(pp)}
+    except Exception as exc:
+        return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
 __all__ = ["repair_backend_auth_dependency", "repair_auth_import_paths",
            "repair_backend_packaging"]

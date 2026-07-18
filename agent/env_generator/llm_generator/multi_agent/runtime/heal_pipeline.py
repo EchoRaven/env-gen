@@ -237,13 +237,24 @@ class HealPipeline:
             if not out_dir:
                 return
             from pathlib import Path as _P
-            from .backend_scaffold import repair_backend_packaging
+            from .backend_scaffold import (repair_backend_packaging,
+                                           sanitize_pyproject_local_deps)
             rep = repair_backend_packaging(_P(out_dir) / "app" / "backend")
             if rep.get("repaired"):
                 orch._logger.warning(
                     "Backend packaging made build-safe (hatchling flat-layout → "
                     "wheel bypass-selection so `pip install .` installs deps without "
                     "failing package detection): %s", rep.get("pyproject"))
+            # FIX #189 (tiktok-r5): a hallucinated LOCAL-module dep
+            # (custom_routes.py listed as pip dep "custom-routes") kills uv
+            # resolution → docker_up wedges to STUCK-ABORT. Deterministic strip.
+            rep2 = sanitize_pyproject_local_deps(_P(out_dir) / "app" / "backend")
+            if rep2.get("repaired"):
+                orch._logger.warning(
+                    "Backend pyproject sanitized: dropped local-module dep(s) %s — "
+                    "these are the app's OWN files, not pip packages (uv would fail "
+                    "the whole docker build on them): %s",
+                    rep2.get("dropped"), rep2.get("pyproject"))
         except Exception as exc:
             orch._logger.debug("backend packaging repair skipped: %s", exc)
 
