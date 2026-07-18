@@ -401,12 +401,34 @@ def _resource_model(path: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tu
     A feed/timeline path that names no table resolves to the app's primary content
     table — shape-derived (timestamp + owner FK + richness), domain-agnostic."""
     chosen: Optional[Tuple[str, Dict[str, Any]]] = None
-    for seg, is_p in _segments(path):
+    _segs = _segments(path)
+    for seg, is_p in _segs:
         if is_p:
             continue
         m = _match_model(seg, models)
         if m:
             chosen = m
+    # FIX #198 (r8 live): an ACTION path `/api/<parent>/{param}/<verb>` whose
+    # trailing verb names no model of its own (POST .../{id}/like) resolves to
+    # the PARENT here → FIX #124 then 404s it. But the lane commonly models the
+    # relation as a PARENT-PREFIXED join (`video_likes`), and #196 provisions a
+    # bare `likes` — neither of which _match_model('like') finds. When the verb
+    # tail is unmatched AND sits after a `<resource>/{param}`, try the join
+    # names `<parent_singular>_<verb>[s]` so a correctly-modeled interaction
+    # actually gets its insert handler instead of a 404.
+    _non_param = [(s, i) for i, (s, is_p) in enumerate(_segs) if not is_p and s != "api"]
+    if len(_segs) >= 3 and _non_param:
+        _last_s = _non_param[-1][0]
+        _last_i = _non_param[-1][1]
+        _verb_unmatched = _match_model(_last_s, models) is None
+        _prev_is_param = _last_i >= 1 and _segs[_last_i - 1][1]
+        if _verb_unmatched and _prev_is_param and len(_non_param) >= 2:
+            _parent_seg = _non_param[-2][0]
+            _parent_sing = _parent_seg.rstrip("s") or _parent_seg
+            for _cand in (f"{_parent_sing}_{_last_s}", f"{_parent_sing}_{_last_s}s"):
+                _jm = _match_model(_cand, models)
+                if _jm:
+                    return _jm
     if chosen is None:
         segs = {seg for seg, is_p in _segments(path) if not is_p}
         if segs & set(_FEED_SHAPED_TOKENS):
