@@ -442,11 +442,38 @@ def stub_handler_blockers(backend_dir: Any) -> List[str]:
     for h in handlers:
         for r in h["routes"]:
             by_route[r].append(h)
+    # FIX #206: aggregate/computed qualifiers. A FRAMEWORK stub whose route ends in
+    # one of these ('suggested creators', 'trending videos') is a genuinely-computed
+    # view with no plain backing table — an honest empty state, not a fixable stub.
+    # SOFT (skip) it; the no_real_data browser gate stays the backstop. Lane-custom
+    # stubs + non-aggregate framework stubs stay HARD. ENVGEN_AGGREGATE_STUB_SOFT=0 off.
+    _AGG = {"suggested", "recommended", "popular", "trending", "featured",
+            "discover", "explore", "nearby", "foryou", "for-you", "top",
+            "highlights", "picks", "spotlight"}
+    _agg_soft = _os.environ.get("ENVGEN_AGGREGATE_STUB_SOFT", "1").strip().lower() \
+        not in ("0", "false", "no", "off")
+
+    def _is_aggregate_route(routes) -> bool:
+        for r in routes:
+            _p = str(r[1] if isinstance(r, tuple) else r).split("?", 1)[0]
+            _segs = [s for s in _p.strip("/").split("/")
+                     if s and not (s.startswith("{") or s.startswith(":"))]
+            if _segs and _segs[-1].lower().replace("_", "").replace("-", "") in {
+                    a.replace("_", "").replace("-", "") for a in _AGG}:
+                return True
+        return False
+
     flagged: Dict[str, Dict[str, Any]] = {}  # handler name → {file, projected, routes}
     for _route, hs in by_route.items():
         non_projected = [h for h in hs if not h["projected"]]
         served = non_projected or hs
         if served and all((not h["reads_db"] and h["placeholder"]) for h in served):
+            # #206: a PROJECTED stub on an aggregate route is a soft/honest empty
+            # state — skip it (only when ALL served handlers are framework-projected;
+            # a lane custom handler on the route keeps it HARD, the lane owns it).
+            if (_agg_soft and all(h["projected"] for h in served)
+                    and _is_aggregate_route([_route])):
+                continue
             for h in served:
                 rec = flagged.setdefault(
                     h["name"], {"file": h["file"], "projected": h["projected"],
