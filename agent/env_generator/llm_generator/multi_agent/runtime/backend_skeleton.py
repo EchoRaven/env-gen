@@ -2197,11 +2197,26 @@ def interaction_tables_to_provision(
         uid_type = _pk_type_of(tbl_lower["users"])
         for verb, parents in sorted(by_verb.items()):
             table_name = _INTERACTION_VERBS[verb]
-            existing = tbl_lower.get(table_name)
-            # already a real join table (FK to users AND to a parent) → skip
-            if isinstance(existing, dict) and _table_has_fk_to(existing, "users") and any(
-                    _table_has_fk_to(existing, p.rstrip("s")) or _table_has_fk_to(existing, p)
-                    for p in parents):
+            # PROVISION IFF #198 can't resolve an EXISTING join. Candidate names
+            # mirror #198's resolution exactly: the bare `<verb>s`/`<verb>` AND the
+            # parent-prefixed `<parent_singular>_<verb>[s]` (video_likes) — so #196
+            # never creates a duplicate `likes` when the lane already modeled
+            # `video_likes`. The verb-in-name check (via the candidate set) keeps a
+            # CONTENT table like `comments` (user+video FKs but no verb in its name)
+            # from being mistaken for the like join.
+            _cands = {table_name, verb}
+            for p in parents:
+                _ps = (p.rstrip("s") or p)
+                _cands |= {f"{_ps}_{verb}", f"{_ps}_{verb}s", f"{p}_{verb}", f"{p}_{verb}s"}
+            _resolved = False
+            for _cn in _cands:
+                _ex = tbl_lower.get(_cn)
+                if isinstance(_ex, dict) and _table_has_fk_to(_ex, "users") and any(
+                        _table_has_fk_to(_ex, p.rstrip("s")) or _table_has_fk_to(_ex, p)
+                        for p in parents):
+                    _resolved = True
+                    break
+            if _resolved:
                 continue
             cols = [{"name": "id", "primary_key": True, "type": "integer"},
                     {"name": "user_id", "references": "users.id", "type": uid_type}]
