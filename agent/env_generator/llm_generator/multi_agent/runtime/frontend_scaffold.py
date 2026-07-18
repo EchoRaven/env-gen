@@ -2552,6 +2552,98 @@ def render_measured_base_css(design_system) -> str:
             "  /* #208: measured canvas — reference ground-truth, by construction */\n"
             f"  body {{\n    background-color: {_bg};\n    color: {text};\n  }}\n}}\n")
 
+
+# FIX #209 — when the MEASURED theme is dark, remap the lane's light-neutral
+# Tailwind utilities to dark equivalents in the generated JSX. r14 showed the lane
+# renders a LIGHT page for a DARK reference (`min-h-screen bg-zinc-50 text-zinc-900`,
+# nav `bg-white`), so a page-level `bg-zinc-50` paints over the measured black body
+# (#208) → ~0.5 fidelity. The measured palette reaches the theme tokens but the lane
+# doesn't USE them (visual GAP 3, soft consumption). A source-level shade inversion
+# of the common light neutrals (white/50/100/200/300 → dark; dark text → light) makes
+# the page render dark like the reference — deterministic, reversible, no !important.
+# Brand/accent utilities (bg-accent, bg-red-500, text-white, already-dark surfaces)
+# are left untouched; the caller gates this on theme==dark so light apps are inert.
+_NEUTRAL_FAMS = frozenset({"zinc", "gray", "slate", "neutral", "stone"})
+# light background shade → dark surface shade (lightest → near-black canvas).
+_BG_LIGHT_TO_DARK = {"50": "950", "100": "900", "200": "800", "300": "800"}
+# dark text shade → a single light token (readable on the dark canvas).
+_TEXT_DARK_SHADES = frozenset({"600", "700", "800", "900", "950"})
+_DARKIFY_RE = re.compile(
+    r"(?<![\w-])((?:[a-z][a-z0-9]*:)*)(bg|text|border|divide|ring)-"
+    r"(white|black|zinc|gray|slate|neutral|stone)(?:-(\d{2,3}))?(?![\w-])"
+)
+
+
+def darkify_light_utilities(src: str) -> Tuple[str, int]:
+    """#209: return (rewritten source, replacements) with the common light-neutral
+    Tailwind utilities inverted to dark equivalents. Pure/deterministic; the caller
+    applies it only when the measured theme is dark."""
+    count = 0
+
+    def _repl(m: "re.Match") -> str:
+        nonlocal count
+        pre, prop, fam, shade = m.group(1), m.group(2), m.group(3), m.group(4)
+        orig = m.group(0)
+        if fam not in _NEUTRAL_FAMS and fam not in ("white", "black"):
+            return orig  # brand/accent family — never touch
+        new = orig
+        if prop == "bg":
+            if fam == "white":
+                new = f"{pre}bg-zinc-950"
+            elif fam in _NEUTRAL_FAMS and shade in _BG_LIGHT_TO_DARK:
+                new = f"{pre}bg-zinc-{_BG_LIGHT_TO_DARK[shade]}"
+        elif prop == "text":
+            if fam == "black" or (fam in _NEUTRAL_FAMS and shade in _TEXT_DARK_SHADES):
+                new = f"{pre}text-zinc-100"
+        elif prop in ("border", "divide", "ring"):
+            if fam == "white" or (fam in _NEUTRAL_FAMS and shade in _BG_LIGHT_TO_DARK):
+                new = f"{pre}{prop}-zinc-800"
+        if new != orig:
+            count += 1
+        return new
+
+    return _DARKIFY_RE.sub(_repl, src), count
+
+
+def enforce_measured_dark_theme(frontend_dir) -> Dict[str, Any]:
+    """#209 wiring: when the MEASURED theme (design_system.json) is dark, rewrite the
+    lane's light-neutral Tailwind utilities to dark equivalents across every source
+    file under src/. Gated strictly on theme==dark — a light (or unstated) measured
+    theme is a no-op, so light apps keep exactly what the lane wrote. Best-effort."""
+    fe = Path(frontend_dir)
+    out_dir = fe.parent.parent
+    ds_path = out_dir / "design" / "design_system.json"
+    if not ds_path.exists():
+        return {"skipped": True, "reason": "no design_system.json"}
+    try:
+        ds = json.loads(ds_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"skipped": True, "reason": "unreadable design_system.json"}
+    if _theme_default(ds) != "dark":
+        return {"skipped": True, "reason": "measured theme is not dark"}
+    src_dir = fe / "src"
+    if not src_dir.exists():
+        return {"skipped": True, "reason": "no src/"}
+    changed: List[str] = []
+    total = 0
+    for p in sorted(src_dir.rglob("*")):
+        if p.suffix.lower() not in (".jsx", ".tsx", ".js", ".ts"):
+            continue
+        try:
+            cur = p.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        new, n = darkify_light_utilities(cur)
+        if n and new != cur:
+            try:
+                p.write_text(new, encoding="utf-8")
+            except Exception:
+                continue
+            changed.append(str(p.relative_to(fe)))
+            total += n
+    return {"darkened": changed, "replacements": total}
+
+
 _BASELINE_POSTCSS = """export default { plugins: { tailwindcss: {}, autoprefixer: {} } }
 """
 

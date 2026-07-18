@@ -667,7 +667,8 @@ class HealPipeline:
                 repair_frontend_missing_local_exports, normalize_frontend_api_base,
                 repair_frontend_escaped_backticks, repair_frontend_unimported_icons,
                 repair_frontend_default_export_wrapper,
-                neutralize_frontend_external_backgrounds)
+                neutralize_frontend_external_backgrounds,
+                enforce_measured_dark_theme)
             from pathlib import Path as _P
             fe = _P(out_dir) / "app" / "frontend"
             # SYNTAX FIRST: the lane intermittently escapes template-literal delimiters
@@ -769,6 +770,25 @@ class HealPipeline:
                 orch._logger.warning(
                     "Frontend external stock-photo backgrounds neutralized to an in-palette "
                     "gradient (self-contained + reference-matching): %s", _bg.get("neutralized"))
+            # FIX #209 (tiktok-r14 autopsy, companion to #208): the lane renders a LIGHT
+            # page for a DARK reference (`min-h-screen bg-zinc-50 text-zinc-900`, nav
+            # `bg-white`) — a page-level light background paints over the measured black
+            # body (#208) → the app reads ~0.5 fidelity despite the palette being wired in.
+            # The measured colors reach the theme tokens but the lane hand-writes generic
+            # zinc/white classes instead (visual GAP 3, soft consumption). When the MEASURED
+            # theme is dark, invert the common light-neutral utilities to dark equivalents
+            # so the page renders dark like the reference — deterministic, gated on
+            # theme==dark (light apps untouched), brand/accent utilities preserved.
+            try:
+                _dk = enforce_measured_dark_theme(fe)
+                if _dk.get("replacements"):
+                    orch._logger.warning(
+                        "Frontend light-neutral utilities darkened to the MEASURED dark "
+                        "theme (%s swaps across %s files; lane wrote a light page for a dark "
+                        "reference): %s", _dk.get("replacements"),
+                        len(_dk.get("darkened") or []), (_dk.get("darkened") or [])[:8])
+            except Exception as _dke:
+                orch._logger.debug("measured-dark-theme enforcement skipped: %s", _dke)
             # FIX #111 (companion to #75b, runs 24+26 autopsy): external <img src> hosts
             # (pravatar/unsplash/placeholder — seen in live artifacts, in BOTH frontend
             # source and seed rows) can never resolve in the offline sandbox → the
