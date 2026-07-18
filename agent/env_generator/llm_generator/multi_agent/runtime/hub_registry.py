@@ -27,6 +27,40 @@ from .project import (
     now_ts,
 )
 
+# FIX #193 — canonical validation-record vocabulary. Writers historically passed
+# whatever status string the calling agent used ('success'/'failure'/...), while
+# every reader compares against 'passed'/'failed' — so real records (verified on
+# instagram run80's archive) were invisible to the UI-evidence/flow/retry
+# consumers. Unknown strings pass through unchanged (never guess).
+_VALIDATION_STATUS_CANON = {
+    "success": "passed", "passed": "passed", "pass": "passed", "ok": "passed",
+    "failure": "failed", "failed": "failed", "fail": "failed",
+    "skipped": "skipped", "skip": "skipped",
+    "error": "error",
+}
+
+
+def _canon_validation_status(status: Any) -> str:
+    try:
+        s = str(status or "error").strip().lower()
+    except Exception:
+        return "error"
+    return _VALIDATION_STATUS_CANON.get(s, s or "error")
+
+
+def _flatten_validation_metadata(ev: dict) -> dict:
+    """Reader-side metadata shape: evidence minus the reserved envelope keys,
+    with a NESTED evidence['metadata'] dict merged in (setdefault — explicit
+    top-level keys win). Callers routinely put the check kind at
+    evidence.metadata.check; readers expect metadata.check."""
+    md = {k: v for k, v in (ev or {}).items()
+          if k not in ("summary", "execution_mode", "duration_seconds", "artifacts")}
+    nested = md.pop("metadata", None)
+    if isinstance(nested, dict):
+        for k, v in nested.items():
+            md.setdefault(k, v)
+    return md
+
 
 class HubRegistry:
     """
@@ -297,7 +331,7 @@ class HubRegistry:
         self.codehub.record_check(
             pr_id="main",
             name=f"validation:{task_id}",
-            status=status,
+            status=_canon_validation_status(status),
             evidence={
                 "summary": summary,
                 "execution_mode": execution_mode,
@@ -318,7 +352,17 @@ class HubRegistry:
             return []
 
     def get_validation_results(self, status: str = None, agent: str = None, limit: int = 100) -> list:
-        """Return validation results from CodeHub.checks."""
+        """Return validation results from CodeHub.checks.
+
+        FIX #193 (instagram run80 archive, verified): writers pass status
+        vocabulary VERBATIM ('success' from the agent tool calls) and often nest
+        the check kind under evidence['metadata'] — while every reader compares
+        status=='passed' and reads metadata.get('check'). ui_flow records were
+        therefore INVISIBLE to _has_passing_ui_evidence / flow_coverage / the
+        retry decider / remediation-task creation, and the UI gates cleared only
+        via the functionally_validated waiver. Normalize ONCE here (canonical
+        status vocabulary + nested-metadata flatten) so every consumer sees the
+        canonical shape."""
         checks = self._validation_checks_from_codehub()
         results = []
         for check in checks:
@@ -327,10 +371,10 @@ class HubRegistry:
             record = {
                 "task_id": task_id,
                 "name": check.get("name", ""),
-                "status": check.get("status", "error"),
+                "status": _canon_validation_status(check.get("status", "error")),
                 "summary": ev.get("summary", ""),
                 "execution_mode": ev.get("execution_mode", "auto"),
-                "metadata": {k: v for k, v in ev.items() if k not in ("summary", "execution_mode", "duration_seconds", "artifacts")},
+                "metadata": _flatten_validation_metadata(ev),
                 "recorded_by": check.get("agent", ""),
                 "recorded_at": check.get("updated_at", 0),
                 "pr_id": check.get("pr_id", "main"),

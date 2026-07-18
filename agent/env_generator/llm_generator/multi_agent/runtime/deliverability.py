@@ -17,9 +17,19 @@ from pathlib import Path
 # real-backend / blank-UI app currently gets the coverage/seed/visual/ui_flow gates waived.
 # When ENVGEN_REQUIRE_UI_EVIDENCE is enabled, the UI-facing gates additionally require at
 # least ONE passing browser/UI validation record before they may be downgraded — closing the
-# "api_smoke green, blank screen shipped" class. Default-off (byte-identical) until validated
-# on a live run, then flip it on.
+# "api_smoke green, blank screen shipped" class.
+# FIX #193: default-ON. It was default-off because the evidence matcher was
+# double-dead (status 'success' vs 'passed' + check nested at
+# evidence.metadata.check — verified on run80's archive): enabling it would have
+# blocked EVERY delivery. get_validation_results now canonicalizes both, the
+# ui_flow records healthy runs already write (7 in run80) match, and the
+# blank-UI waiver is finally closed. ENVGEN_REQUIRE_UI_EVIDENCE=0 reverts.
 _UI_EVIDENCE_CHECKS = {"ui_flow", "ui_smoke", "ui_page_reachable", "test_user"}
+
+
+def _require_ui_evidence() -> bool:
+    return os.environ.get("ENVGEN_REQUIRE_UI_EVIDENCE", "1").lower() in (
+        "1", "true", "yes", "on")
 
 
 def _has_passing_ui_evidence(hub_registry) -> bool:
@@ -303,12 +313,10 @@ def compute_deliverability(hub_registry, app_root,
         and mcp_counts.get("failed", 0) == 0
     )
     # UI-facing gates (visual / ui_flow) may downgrade only when the app is functionally
-    # validated AND (when ENVGEN_REQUIRE_UI_EVIDENCE is on) at least one UI/browser/test-user
-    # record passed — so a backend-only-validated, blank-UI app no longer waives them.
-    # Default-off ⇒ ui_validated == functionally_validated (byte-identical).
-    _require_ui = os.environ.get("ENVGEN_REQUIRE_UI_EVIDENCE", "0").lower() in ("1", "true", "yes", "on")
+    # validated AND (#193, default-ON) at least one UI/browser/test-user record
+    # passed — so a backend-only-validated, blank-UI app no longer waives them.
     ui_validated = functionally_validated and (
-        _has_passing_ui_evidence(hub_registry) if _require_ui else True)
+        _has_passing_ui_evidence(hub_registry) if _require_ui_evidence() else True)
 
     coverage = _coverage_summary(hub_registry, app_root)
     if not coverage.get("is_clean", True) and not functionally_validated:

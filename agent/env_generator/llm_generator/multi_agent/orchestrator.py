@@ -625,20 +625,24 @@ class Orchestrator:
             return []
 
     def _get_validation_results(self, limit: int = 200) -> list:
-        """Return validation records shaped for legacy orchestrator consumers."""
+        """Return validation records shaped for legacy orchestrator consumers.
+        #193: same canonical status vocabulary + nested-metadata flatten as
+        hub_registry.get_validation_results — the two readers must agree."""
+        from .runtime.hub_registry import (
+            _canon_validation_status, _flatten_validation_metadata)
         checks = self._get_validation_checks()
         records = []
         for c in checks:
             ev = c.get("evidence", {}) or {}
             records.append({
                 "task_id": c.get("name", "").removeprefix("validation:"),
-                "status": c.get("status", "error"),
+                "status": _canon_validation_status(c.get("status", "error")),
                 "summary": ev.get("summary", ""),
                 "execution_mode": ev.get("execution_mode", "auto"),
                 "duration_seconds": ev.get("duration_seconds"),
                 "artifacts": ev.get("artifacts", []),
                 "evidence": ev,
-                "metadata": ev,
+                "metadata": _flatten_validation_metadata(ev),
                 "recorded_by": c.get("agent", ""),
                 "recorded_at": c.get("updated_at", 0),
             })
