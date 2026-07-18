@@ -698,6 +698,22 @@ class HealPipeline:
                         (_di.get("conflicts") or [])[:6])
             except Exception as _die:
                 orch._logger.debug("duplicate-import dedup skipped: %s", _die)
+            # FIX #194 (§3-6 second half): a re-emitted WHOLE component/const →
+            # "X already declared" build FAIL. Byte-identical later copies are
+            # removed deterministically; different bodies are only reported.
+            try:
+                from .frontend_scaffold import repair_frontend_duplicate_declarations
+                _dd = repair_frontend_duplicate_declarations(fe)
+                if _dd.get("repaired"):
+                    orch._logger.warning(
+                        "Frontend byte-identical duplicate declarations removed "
+                        "(already-declared build-wedge fix): %s", _dd.get("repaired"))
+                if _dd.get("conflicts"):
+                    orch._logger.warning(
+                        "Frontend duplicate declarations with DIFFERENT bodies left "
+                        "for the lane: %s", (_dd.get("conflicts") or [])[:6])
+            except Exception as _dde:
+                orch._logger.debug("duplicate-declaration dedup skipped: %s", _dde)
             # FIX #191 (tiktok-r3 NO-CONVERGENCE): deterministically rewrite the
             # exact fabricated-fallback sites the #175 HARD gate flags
             # (`x.rating || '4.5'` → `x.rating ?? '—'`) — r3's lane thrashed

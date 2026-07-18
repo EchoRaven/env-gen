@@ -273,6 +273,199 @@ def repair_frontend_duplicate_imports(frontend_dir) -> Dict[str, object]:
         return {"repaired": repaired, "conflicts": all_conflicts}
 
 
+# FIX #194 — byte-identical duplicate TOP-LEVEL declaration removal (§3-6's
+# second half: a re-emitted component/const → "X already declared" → build FAIL
+# → docker_up wedge). Only an IDENTICAL later copy is deleted; different bodies
+# are reported, never guessed.
+_DECL_RE = re.compile(
+    r"^(?P<prefix>export\s+(?:default\s+)?)?(?:async\s+)?"
+    r"(?P<kind>function|class|const|let|var)\s+(?P<name>[A-Za-z_$][\w$]*)",
+    re.M)
+
+
+def _code_mask(src: str) -> List[bool]:
+    """mask[i] = True iff src[i] is CODE (not inside a string/template/comment).
+    Template ``${...}`` interiors count as code; nested backticks inside them
+    are handled by a small state stack."""
+    mask = [True] * len(src)
+    stack: List[str] = []  # states: SQ DQ TPL LC BC; TPL${ pushes 'EXPR'
+    i = 0
+    n = len(src)
+    while i < n:
+        c = src[i]
+        st = stack[-1] if stack else "CODE"
+        if st in ("SQ", "DQ", "TPL"):
+            mask[i] = False
+            if c == "\\":
+                if i + 1 < n:
+                    mask[i + 1] = False
+                i += 2
+                continue
+            if (st == "SQ" and c == "'") or (st == "DQ" and c == '"') \
+                    or (st == "TPL" and c == "`"):
+                stack.pop()
+            elif st == "TPL" and c == "$" and i + 1 < n and src[i + 1] == "{":
+                mask[i + 1] = False
+                stack.append("EXPR")
+                i += 2
+                continue
+            i += 1
+            continue
+        if st == "LC":
+            if c == "\n":
+                stack.pop()
+            else:
+                mask[i] = False
+            i += 1
+            continue
+        if st == "BC":
+            mask[i] = False
+            if c == "*" and i + 1 < n and src[i + 1] == "/":
+                mask[i + 1] = False
+                stack.pop()
+                i += 2
+                continue
+            i += 1
+            continue
+        # CODE or EXPR (template interpolation) — strings/comments can start
+        if c == "'":
+            stack.append("SQ")
+            mask[i] = False
+        elif c == '"':
+            stack.append("DQ")
+            mask[i] = False
+        elif c == "`":
+            stack.append("TPL")
+            mask[i] = False
+        elif c == "/" and i + 1 < n and src[i + 1] == "/":
+            stack.append("LC")
+            mask[i] = False
+        elif c == "/" and i + 1 < n and src[i + 1] == "*":
+            stack.append("BC")
+            mask[i] = False
+        elif st == "EXPR" and c == "}":
+            stack.pop()  # end of ${...}; the brace belongs to the template
+            mask[i] = False
+        i += 1
+    return mask
+
+
+def _extract_block_end(src: str, mask: List[bool], start: int) -> Optional[int]:
+    """End index (exclusive, incl. trailing ';'/newline) of the declaration
+    starting at ``start``. Balances (){}[] over CODE chars only; a declaration
+    with no opening bracket ends at the first code ';' or line end."""
+    depth = 0
+    brace_opened = False
+    i = start
+    n = len(src)
+    while i < n:
+        if mask[i]:
+            c = src[i]
+            if c in "({[":
+                depth += 1
+                if c == "{":
+                    brace_opened = True
+            elif c in ")}]":
+                depth -= 1
+                # ONLY a closing BRACE ends a block — `function F() {` balances
+                # its parameter parens back to depth 0 first, and ending there
+                # truncated every function to its header (both copies looked
+                # identical → wrong removal).
+                if c == "}" and depth == 0 and brace_opened:
+                    # consume optional trailing ';' and ONE newline
+                    j = i + 1
+                    while j < n and src[j] in " \t":
+                        j += 1
+                    if j < n and src[j] == ";":
+                        j += 1
+                    if j < n and src[j] == "\n":
+                        j += 1
+                    return j
+            elif c == ";" and depth == 0:
+                j = i + 1
+                if j < n and src[j] == "\n":
+                    j += 1
+                return j
+            elif c == "\n" and depth == 0 and not brace_opened:
+                return i + 1
+        i += 1
+    return None
+
+
+def dedupe_identical_toplevel_blocks(src: str) -> Tuple[str, List[str], List[str]]:
+    """Remove later top-level declarations whose (whitespace-normalized) text is
+    IDENTICAL to an earlier declaration of the same name. Different bodies →
+    kept + reported in conflicts. Returns (new_src, removed_names, conflicts)."""
+    try:
+        mask = _code_mask(src)
+        seen: Dict[str, str] = {}
+        drops: List[Tuple[int, int]] = []
+        removed: List[str] = []
+        conflicts: List[str] = []
+
+        def _norm(t: str) -> str:
+            return "\n".join(line.rstrip() for line in t.strip().splitlines())
+
+        for m in _DECL_RE.finditer(src):
+            if not mask[m.start()]:
+                continue  # declaration-looking text inside a string/comment
+            end = _extract_block_end(src, mask, m.start())
+            if end is None:
+                continue
+            name = m.group("name")
+            block = _norm(src[m.start():end])
+            if name not in seen:
+                seen[name] = block
+            elif seen[name] == block:
+                drops.append((m.start(), end))
+                removed.append(name)
+            else:
+                conflicts.append(
+                    f"{name}: duplicate top-level declaration with a DIFFERENT "
+                    "body — not auto-removable, the lane must consolidate")
+        if not drops:
+            return src, [], conflicts
+        out = []
+        pos = 0
+        for s, e in drops:
+            out.append(src[pos:s])
+            pos = e
+        out.append(src[pos:])
+        return "".join(out), removed, conflicts
+    except Exception:
+        return src, [], []
+
+
+def repair_frontend_duplicate_declarations(frontend_dir) -> Dict[str, object]:
+    """FIX #194: apply dedupe_identical_toplevel_blocks across the frontend
+    source. Idempotent; best-effort; never raises."""
+    repaired: Dict[str, List[str]] = {}
+    all_conflicts: List[str] = []
+    try:
+        src_dir = Path(frontend_dir) / "src"
+        if not src_dir.is_dir():
+            return {"repaired": False}
+        for f in src_dir.rglob("*"):
+            if f.suffix not in _FRONT_EXTS or not f.is_file():
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            new, removed, conflicts = dedupe_identical_toplevel_blocks(txt)
+            if conflicts:
+                all_conflicts.extend(f"{f.name}: {c}" for c in conflicts)
+            if removed:
+                try:
+                    f.write_text(new, encoding="utf-8")
+                    repaired[str(f.relative_to(src_dir))] = removed
+                except Exception:
+                    continue
+        return {"repaired": repaired or False, "conflicts": all_conflicts}
+    except Exception:
+        return {"repaired": repaired or False, "conflicts": all_conflicts}
+
+
 def repair_frontend_escaped_backticks(frontend_dir) -> Dict[str, object]:
     """Un-escape template-literal delimiter backticks, escaped newlines, AND escaped JSX
     attribute quotes across the frontend source so an LLM-emitted ``className={\`...\`}`` /
