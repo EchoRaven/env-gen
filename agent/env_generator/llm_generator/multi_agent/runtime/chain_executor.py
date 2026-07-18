@@ -432,6 +432,58 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
             "save": {_INTRUDER: "access_token"},
             "expect": [200, 201, 409],
         })
+    # FIX #192a — framework-injected cross-user isolation probe. Empirical
+    # (2026-07-18): the last 5 SUCCESS archives carry ZERO denial steps — a pure
+    # 2xx sweep can't distinguish a tenancy-enforcing backend from one returning
+    # dummy 2xx (smoke_feed_77: a cross-user MUTATE returned 200, ungated). When
+    # the chain has no denial step but DOES register an authed user and create a
+    # row on a bare /api/<coll> (id saved), append the framework's own probe:
+    # intruder PUT on the standard item shape — served by the PROJECTED
+    # owner-safe write handler BY CONSTRUCTION (writes stay projected), so a
+    # legit app denies (403/404; 401 for token quirks) and a leaky one 2xxes and
+    # fails honestly. Bare-collection creates ONLY: action paths (/x/{id}/like)
+    # may hit custom handlers with body-validation-before-ownership (422 risk).
+    try:
+        _has_denial = any(
+            (lambda _e: any(str(c) in ("401", "403") for c in (
+                _e if isinstance(_e, (list, tuple, set)) else [_e])))(s.get("expect"))
+            for s in out) or any(
+            str(s.get("action", "")).startswith("framework_isolation_probe")
+            for s in out)
+        if not _has_denial:
+            _probe_target = None
+            for s in out:
+                _p = str(s.get("path", "")).split("?", 1)[0].rstrip("/")
+                _segs = [x for x in _p.strip("/").split("/") if x]
+                if (str(s.get("method", "")).upper() == "POST"
+                        and len(_segs) == 2 and _segs[0] == "api"
+                        and not _segs[1].startswith("{")
+                        and "$" not in _segs[1]
+                        and s.get("auth")
+                        and isinstance(s.get("save"), Mapping) and s["save"]):
+                    _idvar = next(iter(s["save"].keys()))
+                    _probe_target = (_p, str(_idvar))
+                    break
+            if _probe_target:
+                _coll_path, _idvar = _probe_target
+                if not any(_INTRUDER in (s.get("save") or {}) for s in out):
+                    out.insert(0, {
+                        "method": "POST", "path": "/auth/register",
+                        "body": {"email": "intruder_${rand}@example.com",
+                                 "password": "Chain123!x", "name": "Chain Intruder"},
+                        "save": {_INTRUDER: "access_token"},
+                        "expect": [200, 201, 409],
+                    })
+                out.append({
+                    "action": "framework_isolation_probe_"
+                              + _coll_path.rsplit("/", 1)[-1],
+                    "method": "PUT",
+                    "path": _coll_path + "/${" + _idvar + "}",
+                    "auth": _INTRUDER, "body": {},
+                    "expect": [401, 403, 404],
+                })
+    except Exception:
+        pass  # best-effort: a probe-injection fault must never break authoring
     return out, errors
 
 
