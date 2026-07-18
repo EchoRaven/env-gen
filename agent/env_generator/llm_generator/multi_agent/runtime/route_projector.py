@@ -466,6 +466,20 @@ def _resource_model(path: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tu
                 if len(_cands) == 1:  # unambiguous only
                     chosen = (_cands[0], models[_cands[0]])
                     break
+        # (3) PREFIX MATCH (#205, r13 live): a shorthand segment names the CORE of
+        #     a `<segment>_<...>` compound table (/api/live → live_streams). The '_'
+        #     boundary + UNIQUENESS guard keep it from spuriously hitting a substring
+        #     (cat↛category) or an ambiguous pair (two live_* tables).
+        if chosen is None:
+            for _seg in reversed(_res_segs):
+                _sl = _seg.lower()
+                if len(_sl.rstrip("s")) < 3:
+                    continue
+                _pre = _sl.rstrip("s")
+                _cands = [t for t in models if t.lower().startswith(_pre + "_")]
+                if len(_cands) == 1:
+                    chosen = (_cands[0], models[_cands[0]])
+                    break
     if chosen is None:
         segs = {seg for seg, is_p in _segments(path) if not is_p}
         if segs & set(_FEED_SHAPED_TOKENS):
