@@ -843,6 +843,21 @@ def render_schema_sql(tables: Dict[str, Any]) -> str:
     if not tables:
         return "\n".join(lines) + "\n"
 
+    # FIX #197 (r7 docker_up killer): reconcile FK types HERE too, exactly as
+    # render_models does — otherwise the ORM coerces a spine FK (author_id →
+    # INTEGER users.id) while this DDL renders it TEXT, and `CREATE TABLE videos`
+    # aborts on the TEXT→INTEGER FK clash → docker_up wedges every cycle (the
+    # framework re-emits the mismatch, so the lane can never fix it → 75-min
+    # wall). The reconciler mutates the col dicts in place; _columns_of returns
+    # those same dicts below, so the rendered types match the ORM by construction.
+    try:
+        from .backend_skeleton import _reconcile_fk_types_in_map
+        _by_name = {str(n).lower(): _columns_of(t)
+                    for n, t in tables.items() if isinstance(t, dict)}
+        _reconcile_fk_types_in_map(_by_name)
+    except Exception:
+        pass  # best-effort: reconciliation must never break DDL emission
+
     for table_id, table in tables.items():
         if not isinstance(table, dict):
             raise ValueError(f"database_scaffold: table {table_id!r} is not a mapping")
