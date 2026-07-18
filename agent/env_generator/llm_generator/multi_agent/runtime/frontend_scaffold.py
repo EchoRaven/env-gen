@@ -2478,6 +2478,80 @@ export default {
 # so `@apply bg-ig-bg` resolves. Projected empty once; the lane fills it; preserved.
 _BASELINE_TAILWIND_THEME = "export default {}\n"
 
+
+# FIX #208 — hard-wire the MEASURED palette into the build by construction. The
+# design-prep palette (design_system.json) otherwise reaches the frontend only as
+# prose + a voluntary file read (visual GAP 2), so the app paints guessed colors
+# while the ground-truth ones sit unused. Projecting them into tailwind.theme.js +
+# a base CSS layer makes the app's overall color impression (dark TikTok canvas,
+# brand accent) match the reference regardless of what the lane hand-writes.
+_HEX_RE_208 = re.compile(r"^#[0-9a-fA-F]{3,8}$")
+
+
+def _palette_of(design_system) -> Dict[str, Any]:
+    ds = design_system or {}
+    inner = ds.get("design_system") if isinstance(ds.get("design_system"), dict) else ds
+    pal = inner.get("palette") or inner.get("colors") or {}
+    return pal if isinstance(pal, dict) else {}
+
+
+def _theme_default(design_system) -> str:
+    ds = design_system or {}
+    inner = ds.get("design_system") if isinstance(ds.get("design_system"), dict) else ds
+    th = inner.get("theme") or {}
+    d = str((th or {}).get("default") or "").strip().lower()
+    return d if d in ("dark", "light") else ""
+
+
+def render_measured_tailwind_theme(design_system) -> str:
+    """#208: tailwind.theme.js exporting the MEASURED colors as named tokens
+    (bg / accent / accent-<hue>), so `bg-bg`, `text-accent`, `bg-accent-red`
+    resolve to the reference's real hex. Empty palette → the empty baseline."""
+    pal = _palette_of(design_system)
+    colors: Dict[str, str] = {}
+    _bg = pal.get("bg") or pal.get("background")
+    if isinstance(_bg, str) and _HEX_RE_208.match(_bg):
+        colors["bg"] = _bg
+    _acc = pal.get("accent")
+    if isinstance(_acc, str) and _HEX_RE_208.match(_acc):
+        colors["accent"] = _acc
+    for hue, hexv in (pal.get("accents") or {}).items():
+        if isinstance(hexv, str) and _HEX_RE_208.match(hexv):
+            colors[f"accent-{str(hue).lower()}"] = hexv
+    if not colors:
+        return "export default {}\n"
+    _lines = ",\n".join(f"      '{k}': '{v}'" for k, v in colors.items())
+    return ("export default {\n  theme: {\n    extend: {\n      colors: {\n"
+            f"{_lines}\n      }},\n    }},\n  }},\n}}\n")
+
+
+def render_measured_base_css(design_system) -> str:
+    """#208: index.css + a base layer painting `body` with the MEASURED background
+    and a theme-derived default text color, so the canvas matches the reference by
+    construction. No measured palette → the plain baseline (no injected layer)."""
+    base = "@tailwind base;\n@tailwind components;\n@tailwind utilities;\n"
+    pal = _palette_of(design_system)
+    _bg = pal.get("bg") or pal.get("background")
+    if not (isinstance(_bg, str) and _HEX_RE_208.match(_bg)):
+        return base
+    # derive default text from theme (dark canvas → light text, and vice-versa);
+    # if the theme is unstated, infer from the background luminance.
+    theme = _theme_default(design_system)
+    if not theme:
+        try:
+            _h = _bg.lstrip("#")
+            if len(_h) == 3:
+                _h = "".join(c * 2 for c in _h)
+            _lum = (int(_h[0:2], 16) * 0.299 + int(_h[2:4], 16) * 0.587
+                    + int(_h[4:6], 16) * 0.114)
+            theme = "dark" if _lum < 128 else "light"
+        except Exception:
+            theme = "dark"
+    text = "#f5f5f5" if theme == "dark" else "#18181b"
+    return (base + "\n@layer base {\n"
+            "  /* #208: measured canvas — reference ground-truth, by construction */\n"
+            f"  body {{\n    background-color: {_bg};\n    color: {text};\n  }}\n}}\n")
+
 _BASELINE_POSTCSS = """export default { plugins: { tailwindcss: {}, autoprefixer: {} } }
 """
 
@@ -3193,9 +3267,57 @@ def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content, encoding="utf-8")
             written.append(rel)
+        # FIX #208: hard-wire the MEASURED palette by construction. tailwind.theme.js
+        # becomes FRAMEWORK-OWNED (like the pinned tailwind.config.js) carrying the
+        # measured colors as tokens; index.css gets a base layer painting `body`
+        # with the measured background (idempotent — appended once, lane content
+        # preserved). No design_system.json / no palette → both untouched.
+        try:
+            _apply_measured_palette(frontend_dir)
+        except Exception:
+            pass
         return {"scaffolded": bool(written), "written": written}
     except Exception as exc:
         return {"scaffolded": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _apply_measured_palette(frontend_dir) -> None:
+    """#208 wiring: read <output>/design/design_system.json and, when it carries a
+    measured palette, overwrite tailwind.theme.js with the measured tokens and
+    inject the measured `body` background into index.css (idempotent). Best-effort."""
+    import json as _json
+    out_dir = Path(frontend_dir).parent.parent
+    ds_path = out_dir / "design" / "design_system.json"
+    if not ds_path.exists():
+        return
+    try:
+        ds = _json.loads(ds_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    if not _palette_of(ds):
+        return
+    # tailwind.theme.js — framework-owned (measured tokens win over a lane guess).
+    _theme = render_measured_tailwind_theme(ds)
+    if _theme.strip() and _theme != "export default {}\n":
+        (Path(frontend_dir) / "tailwind.theme.js").write_text(_theme, encoding="utf-8")
+    # index.css — inject the measured body layer ONCE (preserve lane styles).
+    _css_p = Path(frontend_dir) / "src" / "index.css"
+    _measured = render_measured_base_css(ds)
+    if "@layer base" not in _measured:
+        return
+    _layer = _measured.split("@layer base", 1)[1]
+    _block = "@layer base" + _layer
+    try:
+        cur = _css_p.read_text(encoding="utf-8") if _css_p.exists() else ""
+    except Exception:
+        cur = ""
+    if "#208: measured canvas" in cur:
+        return  # already injected
+    if not cur.strip():
+        _css_p.parent.mkdir(parents=True, exist_ok=True)
+        _css_p.write_text(_measured, encoding="utf-8")
+    else:
+        _css_p.write_text(cur.rstrip() + "\n\n" + _block, encoding="utf-8")
 
 
 __all__ = [
