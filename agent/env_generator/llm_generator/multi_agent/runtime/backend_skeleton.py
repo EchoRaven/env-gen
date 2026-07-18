@@ -2123,6 +2123,112 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
     return body
 
 
+# FIX #196 — user→content INTERACTION verbs whose action endpoint
+# (POST /api/<parent>/{id}/<verb>) needs a join table to record WHO did it.
+# follow/subscribe/block are user→USER (dual-role FKs, ambiguous) → EXCLUDED.
+_INTERACTION_VERBS = {
+    "like": "likes", "save": "saves", "favorite": "favorites",
+    "favourite": "favorites", "bookmark": "bookmarks", "watchlist": "watchlists",
+    "pin": "pins", "star": "stars", "react": "reactions", "vote": "votes",
+    "upvote": "votes", "downvote": "votes",
+}
+# an "un-" prefix undoes the same relation → shares the base table (unlike→likes).
+_INTERACTION_UNDO_PREFIX = "un"
+
+
+def _pk_type_of(table: Mapping[str, Any]) -> str:
+    for c in ((table or {}).get("schema") or {}).get("columns", []):
+        if isinstance(c, dict) and (c.get("primary_key") or c.get("pk")):
+            return str(c.get("type") or "text")
+    return "text"
+
+
+def _table_has_fk_to(table: Mapping[str, Any], target: str) -> bool:
+    for c in ((table or {}).get("schema") or {}).get("columns", []):
+        if isinstance(c, dict) and str(c.get("references") or "").split(".")[0] == target:
+            return True
+    return False
+
+
+def interaction_tables_to_provision(
+    endpoints: List[Mapping[str, Any]], tables: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """FIX #196 (r6 root): return join-table specs to add for interaction action
+    endpoints (POST /api/<parent>/{param}/<verb>) that have NO backing join table
+    — the like/save/favorite BUTTON otherwise 404s (projector #124). Named to the
+    verb's canonical plural so _resource_model resolves the action segment to it;
+    one table per verb carrying a user_id FK + one nullable <parent>_id FK per
+    distinct likeable parent (multi-parent → shared table). Conservative: skips
+    when a backing table already exists, when the parent has no table, and for
+    the excluded user→user verbs. Pure; never raises."""
+    try:
+        tbl_lower = {str(k).lower(): v for k, v in (tables or {}).items()}
+        # users is the framework SPINE table — always present in the rendered app
+        # even when the caller's contract dict omits it. Guarantee it so the actor
+        # FK resolves and detection isn't skipped on a spine-only users case.
+        tbl_lower.setdefault("users", {"name": "users", "schema": {"columns": [
+            {"name": "id", "primary_key": True, "type": "integer"}]}})
+        # verb -> {parent_table, ...} collected across all interaction endpoints
+        by_verb: Dict[str, set] = {}
+        for ep in (endpoints or []):
+            if str(ep.get("method", "")).upper() != "POST":
+                continue
+            segs = [s for s in str(ep.get("path", "")).strip("/").split("/") if s]
+            if segs and segs[0] == "api":
+                segs = segs[1:]
+            # shape: <parent> {param} <verb>
+            if len(segs) != 3:
+                continue
+            parent, param, verb = segs
+            if not (param.startswith("{") or param.startswith(":")):
+                continue
+            verb = verb.lower()
+            if verb.startswith(_INTERACTION_UNDO_PREFIX) and verb[2:] in _INTERACTION_VERBS:
+                verb = verb[2:]
+            if verb not in _INTERACTION_VERBS:
+                continue
+            parent_l = parent.lower()
+            # the parent must be a real content table (not users → that's follow-shaped)
+            if parent_l == "users" or (parent_l not in tbl_lower
+                                       and parent_l.rstrip("s") not in tbl_lower):
+                continue
+            by_verb.setdefault(verb, set()).add(parent_l)
+        out: List[Dict[str, Any]] = []
+        uid_type = _pk_type_of(tbl_lower["users"])
+        for verb, parents in sorted(by_verb.items()):
+            table_name = _INTERACTION_VERBS[verb]
+            existing = tbl_lower.get(table_name)
+            # already a real join table (FK to users AND to a parent) → skip
+            if isinstance(existing, dict) and _table_has_fk_to(existing, "users") and any(
+                    _table_has_fk_to(existing, p.rstrip("s")) or _table_has_fk_to(existing, p)
+                    for p in parents):
+                continue
+            cols = [{"name": "id", "primary_key": True, "type": "integer"},
+                    {"name": "user_id", "references": "users.id", "type": uid_type}]
+            seen_fk = set()
+            for p in sorted(parents):
+                p_table = p if p in tbl_lower else (p.rstrip("s") if p.rstrip("s") in tbl_lower else p)
+                singular = p_table.rstrip("s") or p_table
+                fk = singular + "_id"
+                if fk in seen_fk:
+                    continue
+                seen_fk.add(fk)
+                cols.append({"name": fk, "references": f"{p_table}.id",
+                             "type": _pk_type_of(tbl_lower[p_table])})
+            cols.append({"name": "created_at", "type": "timestamp"})
+            out.append({
+                "name": table_name,
+                "schema": {"columns": cols},
+                "metadata": {"framework_provisioned": True,
+                             "owner_scoped_reads": False},
+                "status": "implemented",
+                "provider": "framework",
+            })
+        return out
+    except Exception:
+        return []
+
+
 def write_backend_skeleton(
     output_dir: Any,
     endpoints: List[Mapping[str, Any]],
@@ -2137,6 +2243,20 @@ def write_backend_skeleton(
     be = Path(output_dir) / "app" / "backend"
     be.mkdir(parents=True, exist_ok=True)
     written: Dict[str, str] = {}
+
+    # FIX #196: provision missing interaction join tables (like/save/favorite/…)
+    # BEFORE rendering models/DDL/seed, so the projector's existing action-mapping
+    # (#124) serves POST /api/<parent>/{id}/<verb> end-to-end instead of 404ing a
+    # non-functional button (r6's business_chain killer). Additive + strict
+    # detection → apps with no interaction endpoints are byte-identical.
+    try:
+        _provision = interaction_tables_to_provision(endpoints, tables)
+        if _provision:
+            tables = dict(tables or {})
+            for _spec in _provision:
+                tables.setdefault(_spec["name"], _spec)
+    except Exception:
+        pass
 
     def w(name: str, content: str) -> None:
         (be / name).write_text(content, encoding="utf-8")
