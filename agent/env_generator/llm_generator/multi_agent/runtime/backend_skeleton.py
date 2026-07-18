@@ -2135,6 +2135,14 @@ _INTERACTION_VERBS = {
 # an "un-" prefix undoes the same relation → shares the base table (unlike→likes).
 _INTERACTION_UNDO_PREFIX = "un"
 
+# FIX #204 — user→USER verbs (POST /api/users/{id}/follow): a self-referential
+# join with TWO distinguishable user FKs. verb → (table, actor_fk, target_fk);
+# target_fk MUST be a name the projector's _target_fk recognises
+# (_TARGET_FK_NAMES) so it binds the path user, and the actor_fk is the caller.
+_USER_USER_VERBS = {
+    "follow": ("follows", "follower_id", "followed_id"),
+}
+
 
 def _pk_type_of(table: Mapping[str, Any]) -> str:
     for c in ((table or {}).get("schema") or {}).get("columns", []):
@@ -2238,6 +2246,48 @@ def interaction_tables_to_provision(
                              "owner_scoped_reads": False},
                 "status": "implemented",
                 "provider": "framework",
+            })
+
+        # FIX #204: user→USER follow (POST /api/users/{param}/follow). #196 above
+        # excludes it (parent==users), so provision the self-referential `follows`
+        # here with two distinguishable user FKs — the projector then serves the
+        # follow button by construction (verified: followed_id←path, follower_id←caller).
+        _uu_seen: set = set()
+        for ep in (endpoints or []):
+            if str(ep.get("method", "")).upper() != "POST":
+                continue
+            segs = [s for s in str(ep.get("path", "")).strip("/").split("/") if s]
+            if segs and segs[0] == "api":
+                segs = segs[1:]
+            if len(segs) != 3:
+                continue
+            parent, param, verb = segs
+            if parent.lower() != "users" or not (param.startswith("{") or param.startswith(":")):
+                continue
+            verb = verb.lower()
+            if verb.startswith(_INTERACTION_UNDO_PREFIX) and verb[2:] in _USER_USER_VERBS:
+                verb = verb[2:]
+            spec = _USER_USER_VERBS.get(verb)
+            if not spec or verb in _uu_seen:
+                continue
+            _uu_seen.add(verb)
+            tname, actor_fk, target_fk = spec
+            existing = tbl_lower.get(tname)
+            # skip if a real self-referential join already exists (2 user FKs)
+            if isinstance(existing, dict):
+                _ufks = sum(1 for c in (existing.get("schema") or {}).get("columns", [])
+                            if str(c.get("references") or "").split(".")[0] == "users")
+                if _ufks >= 2:
+                    continue
+            out.append({
+                "name": tname,
+                "schema": {"columns": [
+                    {"name": "id", "primary_key": True, "type": "integer"},
+                    {"name": actor_fk, "references": "users.id", "type": uid_type},
+                    {"name": target_fk, "references": "users.id", "type": uid_type},
+                    {"name": "created_at", "type": "timestamp"}]},
+                "metadata": {"framework_provisioned": True, "owner_scoped_reads": False},
+                "status": "implemented", "provider": "framework",
             })
         return out
     except Exception:
