@@ -1612,6 +1612,13 @@ class RegistryHub:
                 # — collapse those to a path param FIRST so endpoint_id's {param}/:param
                 # normalization yields /api/notes/{} (matching the registered endpoint).
                 p = _re.sub(r"\$\{[^}]+\}", "{x}", str(step.get("path") or ""))
+                # FIX #137 (instagram run-61, live; also seen run-52): a LITERAL numeric
+                # segment (GET /api/posts/1 — the verifier binding a REAL seed id into a
+                # by-id step) must ALSO match the registered {id} template. It didn't, so
+                # the verifier's rewrite-with-real-ids was REJECTED ("endpoints NOT
+                # registered: GET /api/posts/1") — locking it out of its own remediation
+                # path and leaving the stale failing chain to 404 forever.
+                p = _re.sub(r"/\d+(?=/|$)", "/{x}", p)
                 return self.endpoint_id(step.get("method") or "GET", p)
 
             unregistered = sorted({

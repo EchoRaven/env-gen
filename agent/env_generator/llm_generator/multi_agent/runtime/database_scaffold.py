@@ -424,7 +424,27 @@ def _render_column(table_name: str, col: Any) -> str:
             f"database_scaffold: column {cname!r} in table {table_name!r} has no type"
         )
     _sqlt = _sql_type(ctype)
-    _is_pk = bool(col.get("primary_key") or col.get("pk"))
+    # FIX #199 (r9 docker_up killer): a lane sometimes types a column as a full
+    # DDL fragment — ``type: "integer primary key"`` / ``"text not null"`` /
+    # ``"text unique"`` — so the constraint is EMBEDDED in the type string. The
+    # constraints below are also appended from the flags, so an embedded copy
+    # DOUBLES it: ``"id" integer primary key PRIMARY KEY`` → postgres "multiple
+    # primary keys for table" → docker_up wedge. Strip the embedded constraint
+    # words from the rendered type and FOLD them into the flags (so a type-only
+    # declaration keeps its constraint) — mirrors the CHECK-in-type handling.
+    _emb_pk = _emb_nn = _emb_uniq = False
+    _low = _sqlt.lower()
+    if "primary key" in _low:
+        _emb_pk = True
+        _sqlt = re.sub(r"\s*primary\s+key\s*", " ", _sqlt, flags=re.IGNORECASE).strip()
+    if re.search(r"\bnot\s+null\b", _sqlt, re.IGNORECASE):
+        _emb_nn = True
+        _sqlt = re.sub(r"\s*not\s+null\s*", " ", _sqlt, flags=re.IGNORECASE).strip()
+    if re.search(r"\bunique\b", _sqlt, re.IGNORECASE):
+        _emb_uniq = True
+        _sqlt = re.sub(r"\s*\bunique\b\s*", " ", _sqlt, flags=re.IGNORECASE).strip()
+    _sqlt = _sqlt.strip() or "text"  # a bare "primary key" type leaves nothing
+    _is_pk = bool(col.get("primary_key") or col.get("pk")) or _emb_pk
     # A bare integer PRIMARY KEY does NOT auto-increment on Postgres (unlike
     # SQLite): ``id INTEGER PRIMARY KEY`` forces every INSERT to supply id, so the
     # framework's projected CRUD handlers (which never send id) hit
@@ -442,9 +462,9 @@ def _render_column(table_name: str, col: Any) -> str:
     # Optional constraints — honored ONLY when explicitly declared.
     if _is_pk:
         parts.append("PRIMARY KEY")
-    if col.get("nullable") is False or col.get("not_null"):
+    if (col.get("nullable") is False or col.get("not_null") or _emb_nn) and not _is_pk:
         parts.append("NOT NULL")
-    if col.get("unique"):
+    if col.get("unique") or _emb_uniq:
         parts.append("UNIQUE")
     default = col.get("default")
     if default is not None:
@@ -842,6 +862,21 @@ def render_schema_sql(tables: Dict[str, Any]) -> str:
     ]
     if not tables:
         return "\n".join(lines) + "\n"
+
+    # FIX #197 (r7 docker_up killer): reconcile FK types HERE too, exactly as
+    # render_models does — otherwise the ORM coerces a spine FK (author_id →
+    # INTEGER users.id) while this DDL renders it TEXT, and `CREATE TABLE videos`
+    # aborts on the TEXT→INTEGER FK clash → docker_up wedges every cycle (the
+    # framework re-emits the mismatch, so the lane can never fix it → 75-min
+    # wall). The reconciler mutates the col dicts in place; _columns_of returns
+    # those same dicts below, so the rendered types match the ORM by construction.
+    try:
+        from .backend_skeleton import _reconcile_fk_types_in_map
+        _by_name = {str(n).lower(): _columns_of(t)
+                    for n, t in tables.items() if isinstance(t, dict)}
+        _reconcile_fk_types_in_map(_by_name)
+    except Exception:
+        pass  # best-effort: reconciliation must never break DDL emission
 
     for table_id, table in tables.items():
         if not isinstance(table, dict):

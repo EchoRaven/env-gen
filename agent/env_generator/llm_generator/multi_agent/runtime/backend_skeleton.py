@@ -17,12 +17,40 @@ become generic lists; richer business logic is a later lane-override extension).
 
 from __future__ import annotations
 
+import keyword
 import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from .database_scaffold import _columns_of, _is_constraint_pseudo_column
+
+
+def safe_column_name(name: str) -> str:
+    """FIX #158 (gmrun6): map a column name to a valid, non-keyword Python IDENTIFIER
+    usable as an ORM attribute — the single sanitize the whole dataset channel shares
+    (render + requirements-binding + seed-key assembly), so the ORM attribute, the DB
+    column, and the seed-dataset key stay equal and data still lands.
+
+    A real dataset can carry a column named after a Python keyword (transit_lines.``from``
+    = the OSM line origin) or a non-identifier (``2019``, ``a-b``). Rendered verbatim as an
+    attribute (``from = Column(Text)``) it is a SyntaxError that breaks ``import models`` →
+    the backend crashes on every boot (gmrun6 backend_health wedge). Rule: a hard keyword
+    gets a trailing underscore (PEP 8: ``from``→``from_``, ``class``→``class_``); a non-
+    identifier has its illegal characters replaced with ``_`` and a leading digit prefixed
+    (``col_``); empty → ``col``. IDEMPOTENT (``from_`` stays ``from_``) so applying it at
+    several stages never double-mangles."""
+    s = str(name or "").strip()
+    if not s:
+        return "col"
+    if s.isidentifier():
+        return s + "_" if keyword.iskeyword(s) else s
+    s2 = re.sub(r"\W", "_", s)
+    if s2 and s2[0].isdigit():
+        s2 = "col_" + s2
+    if not s2 or not s2.isidentifier():
+        return "col"
+    return s2 + "_" if keyword.iskeyword(s2) else s2
 
 # ── SQL type → SQLAlchemy type ──────────────────────────────────────────────
 _SA_TYPE = {
@@ -156,6 +184,13 @@ def _render_column(col: Dict[str, Any]) -> Optional[str]:
             else:
                 _sd_sql = "'" + d.replace("'", "''") + "'"
             kw.append(f"server_default=text({_sd_sql!r})")
+    # FIX #158: the ORM ATTRIBUTE must be a valid, non-keyword identifier. When the DB
+    # column name is a keyword/non-identifier (a real dataset column like ``from``), use a
+    # safe attribute AND pin the original DB column name as Column's first positional arg,
+    # so the table's DDL column keeps the contract name while ``import models`` stays valid.
+    attr = safe_column_name(name)
+    if attr != name:
+        return f"    {attr} = Column({', '.join([repr(name)] + args + kw)})"
     return f"    {name} = Column({', '.join(args + kw)})"
 
 
@@ -390,6 +425,29 @@ class _Session(Session):
                     kwargs["cursor_factory"] = RealDictCursor
                 except Exception:
                     pass
+        # FIX #131 (instagram run-53 M1, live): a lane hand-writes EITHER driver's dict-
+        # cursor idiom -- psycopg2 ``cursor(cursor_factory=RealDictCursor)`` OR psycopg3
+        # ``cursor(row_factory=dict_row)`` -- but this connection speaks only ONE driver;
+        # forwarding the FOREIGN kwarg verbatim raises "Connection.cursor() got an
+        # unexpected keyword argument 'cursor_factory'" -> 500 (GET /api/feed, business_chain
+        # wedge). Translate the mismatched factory to the kwarg THIS driver accepts, then
+        # DROP any foreign leftover so it never reaches raw.cursor() (psycopg3 connection
+        # module is "psycopg"; psycopg2 is "psycopg2").
+        _drv = type(raw).__module__.split(".", 1)[0]
+        if _drv == "psycopg" and "cursor_factory" in kwargs:
+            kwargs.pop("cursor_factory", None)
+            try:
+                from psycopg.rows import dict_row
+                kwargs.setdefault("row_factory", dict_row)
+            except Exception:
+                pass
+        elif _drv == "psycopg2" and "row_factory" in kwargs:
+            kwargs.pop("row_factory", None)
+            try:
+                from psycopg2.extras import RealDictCursor
+                kwargs.setdefault("cursor_factory", RealDictCursor)
+            except Exception:
+                pass
         return raw.cursor(*args, **kwargs)
 
     def execute(self, statement, params=None, *args, **kwargs):
@@ -521,6 +579,28 @@ def _fw_uid(user):
         return int(_v)
     except (TypeError, ValueError):
         return _v
+
+
+def _fw_owner_val(cls, col, user):
+    """FIX #134 (instagram run-57, live): _fw_uid coerced to THIS owner column's TYPE.
+    _fw_uid int-coerces a digit sub (the run-39 fix for INTEGER owner columns) — but a
+    lane may declare the owner column TEXT (messages.sender_id was), and then the SQL
+    bind is `text = integer` -> psycopg UndefinedFunction -> every scoped read 500s,
+    while a PYTHON-level ownership check ("16" != 16) silently denies every owner.
+    Look at the ORM column's python_type and coerce to match; unknown -> _fw_uid as-is."""
+    _v = _fw_uid(user)
+    try:
+        _pt = getattr(cls, col).type.python_type
+    except Exception:
+        return _v
+    try:
+        if _pt is str and not isinstance(_v, str):
+            return str(_v)
+        if _pt is int and not isinstance(_v, int):
+            return int(_v)
+    except (TypeError, ValueError):
+        pass
+    return _v
 
 Base.metadata.create_all(bind=engine)
 
@@ -733,15 +813,33 @@ def _custom_route_overrides_projected(method, path):
     return True                                       # actions / search / novel → custom wins
 
 try:
-    from custom_routes import router as _custom_router
-    # Keep only the custom routes that legitimately override (or add) — drop the ones
-    # duplicating a standard-CRUD endpoint so the safe projected handler serves those.
-    _custom_router.routes = [
-        _r for _r in list(getattr(_custom_router, "routes", []))
-        if _custom_route_overrides_projected(
-            next(iter(getattr(_r, "methods", []) or ["GET"])), getattr(_r, "path", ""))
-    ]
-    app.include_router(_custom_router)
+    import custom_routes as _custom_mod
+    from fastapi import APIRouter as _APIRouter
+    # FIX #127 (instagram run-46 M3, live): include EVERY APIRouter the lane defines,
+    # not only the one named `router`. run-46's lane wrote a correct repost handler on
+    # a SECOND router (`hidden_router = APIRouter()`) that the old single-name import
+    # left orphaned → the projected #124 fallback (404) served the route and the
+    # verifier's expect [200,201] chains wedged. Discover all module-level APIRouter
+    # instances; prefer `router` FIRST (its routes register before any twin) then the
+    # rest by definition order; apply the same override policy to each.
+    _seen_r = set()
+    _routers = []
+    _named = getattr(_custom_mod, "router", None)
+    if isinstance(_named, _APIRouter):
+        _routers.append(_named); _seen_r.add(id(_named))
+    for _rn in vars(_custom_mod):
+        _rv = getattr(_custom_mod, _rn, None)
+        if isinstance(_rv, _APIRouter) and id(_rv) not in _seen_r:
+            _routers.append(_rv); _seen_r.add(id(_rv))
+    for _custom_router in _routers:
+        # Keep only the custom routes that legitimately override (or add) — drop the
+        # ones duplicating a standard-CRUD endpoint so the safe projected handler serves.
+        _custom_router.routes = [
+            _r for _r in list(getattr(_custom_router, "routes", []))
+            if _custom_route_overrides_projected(
+                next(iter(getattr(_r, "methods", []) or ["GET"])), getattr(_r, "path", ""))
+        ]
+        app.include_router(_custom_router)
 except ImportError as _custom_imp:
     # ONLY "custom_routes does not exist" is benign. A NESTED broken import (the lane's
     # `import asyncpg` with the package missing) also lands here — and silently dropping
@@ -961,7 +1059,12 @@ def _lane_third_party_imports(be_dir: Any) -> List[str]:
         be = Path(be_dir)
         if not be.is_dir():
             return out
-        local = {f.stem for f in be.glob("*.py")}
+        # FIX #189 (tiktok-r5): union the skeleton's OWN module names — when
+        # custom_routes.py is absent, main.py's guarded `import custom_routes`
+        # hook otherwise reads as third-party and the framework itself writes a
+        # non-existent pip dep → uv fails → docker_up wedges to STUCK-ABORT.
+        from .backend_scaffold import _SKELETON_LOCAL_MODULES
+        local = {f.stem for f in be.glob("*.py")} | set(_SKELETON_LOCAL_MODULES)
         stdlib = getattr(sys, "stdlib_module_names", frozenset())
         seen: set = set()
         for f in sorted(be.glob("*.py")):
@@ -1012,6 +1115,26 @@ CMD ["python", "main.py"]
 # the infra writers below guarantee a seed_data.json ALWAYS exists (empty ``{}`` if the
 # lane hasn't authored one yet — falsy, so the loader still uses its fallback; written
 # ONLY-IF-ABSENT so authored content is never clobbered and the agent isn't anchored).
+
+
+def _ensure_seed_dataset(be: Path, output_dir: Any) -> bool:
+    """F2/F2b: (re)assemble the design-prep REAL dataset (design/dataset/*.json) into the
+    framework-owned app/backend/seed_dataset.json (the lane never authors this; the loader
+    merges it OVER seed_data.json). Called from BOTH the upfront build-infra AND every
+    per-milestone skeleton write, so the real data lands regardless of design-prep timing
+    (googlemaps run-1: the upfront call missed it). Absent design/dataset/ → no-op → zero
+    regression. Best-effort; returns True iff it wrote a non-empty seed_dataset.json."""
+    try:
+        from .material_prep import assemble_seed_dataset
+        real = assemble_seed_dataset(Path(output_dir) / "design" / "dataset")
+        if real:
+            import json as _json
+            (be / "seed_dataset.json").write_text(
+                _json.dumps(real, indent=2) + "\n", encoding="utf-8")
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _ensure_seed_json(be: Path, amplify: bool = False) -> None:
@@ -1076,6 +1199,7 @@ def write_backend_build_infra(output_dir: Any) -> Dict[str, Any]:
     be.mkdir(parents=True, exist_ok=True)
     written: Dict[str, str] = {}
     _ensure_seed_json(be)
+    _ensure_seed_dataset(be, output_dir)   # F2/F2b: stage the real dataset seed
     for name, content in (("pyproject.toml", render_pyproject(be)),
                           ("Dockerfile", _DOCKERFILE),
                           ("reset.sh", _RESET_SH)):
@@ -1574,6 +1698,27 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         f"_PASSWORD_SALT = {_SEED_PASSWORD_SALT!r}\n"
         f"_SEED = {seed!r}\n"
         f"_USER_BOOTSTRAP = {bootstrap_spec!r}\n\n\n"
+        "def _coerce_nested_for_string_cols(cls, vals):\n"
+        "    # FIX #156 (gmrun3: routes 0/8 rows): a REAL-dataset value can be a nested\n"
+        "    # list/dict (routes.steps = list-of-dict) while the contract typed the column\n"
+        "    # String/Text — the driver cannot adapt it, the INSERT dies at the per-table\n"
+        "    # commit, and the rollback drops EVERY row of that table. JSON-serialize a\n"
+        "    # nested value ONLY when the target column is String/Text; a native JSON/ARRAY\n"
+        "    # column keeps the structured value (Text subclasses String; JSON does not).\n"
+        "    try:\n"
+        "        from sqlalchemy import String as _SAStr\n"
+        "        cols = cls.__table__.columns\n"
+        "    except Exception:\n"
+        "        return vals\n"
+        "    out = dict(vals)\n"
+        "    for k, v in vals.items():\n"
+        "        if isinstance(v, (list, dict)) and k in cols:\n"
+        "            try:\n"
+        "                if isinstance(cols[k].type, _SAStr):\n"
+        "                    out[k] = json.dumps(v, ensure_ascii=False, default=str)\n"
+        "            except Exception:\n"
+        "                pass\n"
+        "    return out\n\n\n"
         "def _ensure_canonical_rows():\n"
         "    # FIX #72: every user (seeded OR freshly-registered) must have the canonical\n"
         "    # per-user named rows the lane's handlers require (a 'Sent' folder / a\n"
@@ -1614,13 +1759,26 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "    finally:\n"
         "        db.close()\n\n\n"
         "def _load_rows():\n"
+        "    # Base = the lane-authored seed_data.json (users + demo rows), else the embedded _SEED.\n"
+        "    base = _SEED\n"
         "    try:\n"
         "        data = json.loads(Path(__file__).with_name('seed_data.json').read_text(encoding='utf-8'))\n"
         "        if isinstance(data, dict) and any(data.values()):\n"
-        "            return data\n"
+        "            base = data\n"
         "    except Exception:\n"
         "        pass\n"
-        "    return _SEED\n\n\n"
+        "    # F2 dual-source: merge the framework-owned seed_dataset.json (design-prep REAL\n"
+        "    # data — the lane cannot author/clobber it) OVER the base; dataset tables win, so\n"
+        "    # the DB ships real domain rows deterministically. Absent file → base unchanged.\n"
+        "    try:\n"
+        "        real = json.loads(Path(__file__).with_name('seed_dataset.json').read_text(encoding='utf-8'))\n"
+        "        if isinstance(real, dict) and any(real.values()):\n"
+        "            merged = dict(base)\n"
+        "            merged.update({k: v for k, v in real.items() if isinstance(v, list) and v})\n"
+        "            return merged\n"
+        "    except Exception:\n"
+        "        pass\n"
+        "    return base\n\n\n"
         "def _applied_fingerprint(db):\n"
         "    from sqlalchemy import text as _text\n"
         "    try:\n"
@@ -1867,40 +2025,69 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "            # + ALL seed-managed business tables empty ⇒ the data was wiped:\n"
         "            # fall through and re-apply. users/tenants excluded (the identity\n"
         "            # spine survives resets and would mask the wipe).\n"
-        "            _any_rows = False\n"
+        "            # FIX #130 (instagram-core-di run-49 M3, live) REFINES #99: the old\n"
+        "            # guard skipped re-seeding when ANY business table had rows, but a\n"
+        "            # PARTIAL state fools that: a child write-handler that does NOT validate\n"
+        "            # its parent FK (POST /api/posts/{id}/like -> 201 on a NON-EXISTENT\n"
+        "            # post) leaves ORPHAN child rows, so `likes` is non-empty while `posts`\n"
+        "            # was wiped -> seed skipped -> posts stays EMPTY -> the repost/like chain\n"
+        "            # 404s forever (business_chain wedge). Re-seed when ANY seed-PROVIDED\n"
+        "            # content table is EMPTY (incomplete), not only when ALL are; the all-\n"
+        "            # empty post-reset wipe #99 targeted is a subset of incomplete.\n"
+        "            _seed_incomplete = False\n"
         "            for _t in _ORDER:\n"
         "                if _t in ('users', 'tenants'):\n"
         "                    continue\n"
+        "                if not (data.get(_t) or []):\n"
+        "                    continue  # seed provides no rows for this table — not a completeness signal\n"
         "                _cls = getattr(models, _CLASS.get(_t, ''), None)\n"
         "                if _cls is None:\n"
         "                    continue\n"
         "                try:\n"
-        "                    if db.query(_cls).first() is not None:\n"
-        "                        _any_rows = True\n"
+        "                    if db.query(_cls).first() is None:\n"
+        "                        _seed_incomplete = True\n"
         "                        break\n"
         "                except Exception:\n"
         "                    continue\n"
-        "            if _any_rows:\n"
-        "                # Same source, already applied — but still heal the sequences: a\n"
-        "                # container restarted on a pre-#56 database boots down this path\n"
-        "                # with its sequences still inside the seeded id range (run-41).\n"
+        "            if not _seed_incomplete:\n"
+        "                # Fully applied — heal the sequences (a container restarted on a\n"
+        "                # pre-#56 database boots here with its sequences still inside the\n"
+        "                # seeded id range, run-41) and skip re-seeding.\n"
         "                _sync_sequences(db)\n"
         "                return\n"
-        "            print('seed: fingerprint matched but business tables are EMPTY (post-reset wipe) — re-seeding (FIX #99)')\n"
+        "            print('seed: fingerprint matched but a seed-provided table is EMPTY (partial wipe / orphan pollution) — re-seeding (FIX #130)')\n"
         "        if applied is not None:\n"
         "            _reset_seeded_tables(db)\n"
         "        for t in _ORDER:\n"
         "            cls = getattr(models, _CLASS.get(t, ''), None)\n"
         "            if cls is None:\n"
         "                continue\n"
+        "            # FIX #135 (instagram run-58, live): a PARTIALLY-wiped table must still\n"
+        "            # receive its MISSING seed rows BY PK. The old all-or-nothing 'table\n"
+        "            # non-empty -> skip' left the #130 re-seed impotent: test-registered\n"
+        "            # users survive a wipe (users non-empty, but WITHOUT the seed ids), the\n"
+        "            # users table was skipped wholesale, and every posts row (user_id=1)\n"
+        "            # then died on posts_user_id_fkey -> silently swallowed per-row ->\n"
+        "            # posts stayed EMPTY forever -> business_chain repost 404 wedge.\n"
+        "            # Rows with an explicit PK are upserted-by-existence; rows without one\n"
+        "            # keep the legacy skip (can't identify them).\n"
+        "            _pk_name = (_PK.get(t) or ['id'])[0]\n"
         "            try:\n"
-        "                if db.query(cls).first() is not None:\n"
-        "                    continue\n"
+        "                _has_rows = db.query(cls).first() is not None\n"
         "            except Exception:\n"
         "                continue\n"
         "            owner = _OWNER_COL.get(t)\n"
         "            for i, row in enumerate(data.get(t, [])):\n"
         "                row = dict(row)\n"
+        "                if _has_rows:\n"
+        "                    _pkv = row.get(_pk_name)\n"
+        "                    if _pkv is None:\n"
+        "                        continue  # no explicit PK -> legacy skip for this row\n"
+        "                    try:\n"
+        "                        if db.get(cls, _pkv) is not None:\n"
+        "                            continue  # this seed row already present\n"
+        "                    except Exception:\n"
+        "                        continue\n"
         "                if t == 'users':\n"
         "                    # ALWAYS hash the known seed password — the agent-authored\n"
         "                    # seed_data.json often carries a PLACEHOLDER password_hash\n"
@@ -1918,7 +2105,8 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "                    if not row.get(_ic):\n"
         "                        row[_ic] = 'https://picsum.photos/seed/' + t + str(i) + '/400/400'\n"
         "                try:\n"
-        "                    db.add(cls(**{k: v for k, v in row.items() if hasattr(cls, k)}))\n"
+        "                    db.add(cls(**_coerce_nested_for_string_cols(\n"
+        "                        cls, {k: v for k, v in row.items() if hasattr(cls, k)})))\n"
         "                except Exception:\n"
         "                    pass\n"
         "            try:\n"
@@ -1935,6 +2123,177 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
     return body
 
 
+# FIX #196 — user→content INTERACTION verbs whose action endpoint
+# (POST /api/<parent>/{id}/<verb>) needs a join table to record WHO did it.
+# follow/subscribe/block are user→USER (dual-role FKs, ambiguous) → EXCLUDED.
+_INTERACTION_VERBS = {
+    "like": "likes", "save": "saves", "favorite": "favorites",
+    "favourite": "favorites", "bookmark": "bookmarks", "watchlist": "watchlists",
+    "pin": "pins", "star": "stars", "react": "reactions", "vote": "votes",
+    "upvote": "votes", "downvote": "votes",
+}
+# an "un-" prefix undoes the same relation → shares the base table (unlike→likes).
+_INTERACTION_UNDO_PREFIX = "un"
+
+# FIX #204 — user→USER verbs (POST /api/users/{id}/follow): a self-referential
+# join with TWO distinguishable user FKs. verb → (table, actor_fk, target_fk);
+# target_fk MUST be a name the projector's _target_fk recognises
+# (_TARGET_FK_NAMES) so it binds the path user, and the actor_fk is the caller.
+_USER_USER_VERBS = {
+    "follow": ("follows", "follower_id", "followed_id"),
+}
+
+
+def _pk_type_of(table: Mapping[str, Any]) -> str:
+    for c in ((table or {}).get("schema") or {}).get("columns", []):
+        if isinstance(c, dict) and (c.get("primary_key") or c.get("pk")):
+            return str(c.get("type") or "text")
+    return "text"
+
+
+def _table_has_fk_to(table: Mapping[str, Any], target: str) -> bool:
+    for c in ((table or {}).get("schema") or {}).get("columns", []):
+        if isinstance(c, dict) and str(c.get("references") or "").split(".")[0] == target:
+            return True
+    return False
+
+
+def interaction_tables_to_provision(
+    endpoints: List[Mapping[str, Any]], tables: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """FIX #196 (r6 root): return join-table specs to add for interaction action
+    endpoints (POST /api/<parent>/{param}/<verb>) that have NO backing join table
+    — the like/save/favorite BUTTON otherwise 404s (projector #124). Named to the
+    verb's canonical plural so _resource_model resolves the action segment to it;
+    one table per verb carrying a user_id FK + one nullable <parent>_id FK per
+    distinct likeable parent (multi-parent → shared table). Conservative: skips
+    when a backing table already exists, when the parent has no table, and for
+    the excluded user→user verbs. Pure; never raises."""
+    try:
+        tbl_lower = {str(k).lower(): v for k, v in (tables or {}).items()}
+        # users is the framework SPINE table — always present in the rendered app
+        # even when the caller's contract dict omits it. Guarantee it so the actor
+        # FK resolves and detection isn't skipped on a spine-only users case.
+        tbl_lower.setdefault("users", {"name": "users", "schema": {"columns": [
+            {"name": "id", "primary_key": True, "type": "integer"}]}})
+        # verb -> {parent_table, ...} collected across all interaction endpoints
+        by_verb: Dict[str, set] = {}
+        for ep in (endpoints or []):
+            if str(ep.get("method", "")).upper() != "POST":
+                continue
+            segs = [s for s in str(ep.get("path", "")).strip("/").split("/") if s]
+            if segs and segs[0] == "api":
+                segs = segs[1:]
+            # shape: <parent> {param} <verb>
+            if len(segs) != 3:
+                continue
+            parent, param, verb = segs
+            if not (param.startswith("{") or param.startswith(":")):
+                continue
+            verb = verb.lower()
+            if verb.startswith(_INTERACTION_UNDO_PREFIX) and verb[2:] in _INTERACTION_VERBS:
+                verb = verb[2:]
+            if verb not in _INTERACTION_VERBS:
+                continue
+            parent_l = parent.lower()
+            # the parent must be a real content table (not users → that's follow-shaped)
+            if parent_l == "users" or (parent_l not in tbl_lower
+                                       and parent_l.rstrip("s") not in tbl_lower):
+                continue
+            by_verb.setdefault(verb, set()).add(parent_l)
+        out: List[Dict[str, Any]] = []
+        uid_type = _pk_type_of(tbl_lower["users"])
+        for verb, parents in sorted(by_verb.items()):
+            table_name = _INTERACTION_VERBS[verb]
+            # PROVISION IFF #198 can't resolve an EXISTING join. Candidate names
+            # mirror #198's resolution exactly: the bare `<verb>s`/`<verb>` AND the
+            # parent-prefixed `<parent_singular>_<verb>[s]` (video_likes) — so #196
+            # never creates a duplicate `likes` when the lane already modeled
+            # `video_likes`. The verb-in-name check (via the candidate set) keeps a
+            # CONTENT table like `comments` (user+video FKs but no verb in its name)
+            # from being mistaken for the like join.
+            _cands = {table_name, verb}
+            for p in parents:
+                _ps = (p.rstrip("s") or p)
+                _cands |= {f"{_ps}_{verb}", f"{_ps}_{verb}s", f"{p}_{verb}", f"{p}_{verb}s"}
+            _resolved = False
+            for _cn in _cands:
+                _ex = tbl_lower.get(_cn)
+                if isinstance(_ex, dict) and _table_has_fk_to(_ex, "users") and any(
+                        _table_has_fk_to(_ex, p.rstrip("s")) or _table_has_fk_to(_ex, p)
+                        for p in parents):
+                    _resolved = True
+                    break
+            if _resolved:
+                continue
+            cols = [{"name": "id", "primary_key": True, "type": "integer"},
+                    {"name": "user_id", "references": "users.id", "type": uid_type}]
+            seen_fk = set()
+            for p in sorted(parents):
+                p_table = p if p in tbl_lower else (p.rstrip("s") if p.rstrip("s") in tbl_lower else p)
+                singular = p_table.rstrip("s") or p_table
+                fk = singular + "_id"
+                if fk in seen_fk:
+                    continue
+                seen_fk.add(fk)
+                cols.append({"name": fk, "references": f"{p_table}.id",
+                             "type": _pk_type_of(tbl_lower[p_table])})
+            cols.append({"name": "created_at", "type": "timestamp"})
+            out.append({
+                "name": table_name,
+                "schema": {"columns": cols},
+                "metadata": {"framework_provisioned": True,
+                             "owner_scoped_reads": False},
+                "status": "implemented",
+                "provider": "framework",
+            })
+
+        # FIX #204: user→USER follow (POST /api/users/{param}/follow). #196 above
+        # excludes it (parent==users), so provision the self-referential `follows`
+        # here with two distinguishable user FKs — the projector then serves the
+        # follow button by construction (verified: followed_id←path, follower_id←caller).
+        _uu_seen: set = set()
+        for ep in (endpoints or []):
+            if str(ep.get("method", "")).upper() != "POST":
+                continue
+            segs = [s for s in str(ep.get("path", "")).strip("/").split("/") if s]
+            if segs and segs[0] == "api":
+                segs = segs[1:]
+            if len(segs) != 3:
+                continue
+            parent, param, verb = segs
+            if parent.lower() != "users" or not (param.startswith("{") or param.startswith(":")):
+                continue
+            verb = verb.lower()
+            if verb.startswith(_INTERACTION_UNDO_PREFIX) and verb[2:] in _USER_USER_VERBS:
+                verb = verb[2:]
+            spec = _USER_USER_VERBS.get(verb)
+            if not spec or verb in _uu_seen:
+                continue
+            _uu_seen.add(verb)
+            tname, actor_fk, target_fk = spec
+            existing = tbl_lower.get(tname)
+            # skip if a real self-referential join already exists (2 user FKs)
+            if isinstance(existing, dict):
+                _ufks = sum(1 for c in (existing.get("schema") or {}).get("columns", [])
+                            if str(c.get("references") or "").split(".")[0] == "users")
+                if _ufks >= 2:
+                    continue
+            out.append({
+                "name": tname,
+                "schema": {"columns": [
+                    {"name": "id", "primary_key": True, "type": "integer"},
+                    {"name": actor_fk, "references": "users.id", "type": uid_type},
+                    {"name": target_fk, "references": "users.id", "type": uid_type},
+                    {"name": "created_at", "type": "timestamp"}]},
+                "metadata": {"framework_provisioned": True, "owner_scoped_reads": False},
+                "status": "implemented", "provider": "framework",
+            })
+        return out
+    except Exception:
+        return []
+
+
 def write_backend_skeleton(
     output_dir: Any,
     endpoints: List[Mapping[str, Any]],
@@ -1949,6 +2308,20 @@ def write_backend_skeleton(
     be = Path(output_dir) / "app" / "backend"
     be.mkdir(parents=True, exist_ok=True)
     written: Dict[str, str] = {}
+
+    # FIX #196: provision missing interaction join tables (like/save/favorite/…)
+    # BEFORE rendering models/DDL/seed, so the projector's existing action-mapping
+    # (#124) serves POST /api/<parent>/{id}/<verb> end-to-end instead of 404ing a
+    # non-functional button (r6's business_chain killer). Additive + strict
+    # detection → apps with no interaction endpoints are byte-identical.
+    try:
+        _provision = interaction_tables_to_provision(endpoints, tables)
+        if _provision:
+            tables = dict(tables or {})
+            for _spec in _provision:
+                tables.setdefault(_spec["name"], _spec)
+    except Exception:
+        pass
 
     def w(name: str, content: str) -> None:
         (be / name).write_text(content, encoding="utf-8")
@@ -1987,6 +2360,7 @@ def write_backend_skeleton(
     w("main.py", render_skeleton_main(endpoints, tables))
     w("schemas.py", _SCHEMAS_PY)
     _ensure_seed_json(be, amplify=True)   # FIX #84: density floor by construction
+    _ensure_seed_dataset(be, output_dir)  # F2b: re-assert the real dataset seed every milestone
     w("pyproject.toml", render_pyproject(be))
     w("Dockerfile", _DOCKERFILE)
     w("reset.sh", _RESET_SH)

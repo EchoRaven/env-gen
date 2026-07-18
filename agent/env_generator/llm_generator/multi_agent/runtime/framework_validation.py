@@ -24,10 +24,165 @@ CALL-TIME inside ``maybe_run`` (never module-top: that would cycle).
 
 from __future__ import annotations
 
+import hashlib
+import os
 import time
+from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from progress import EventType
+
+
+# ── FIX #155 (§6-2): fresh api_smoke before cut on post-smoke backend drift ──
+# gmrun3 (precise timeline): last api_smoke PASSED @05:15 → visual escape @05:33 →
+# backend lane EDITED custom_routes.py @05:34-35 (broken middleware, crashes at
+# import) → cut @05:37. The cut-time _merge_committed_agent_work() imports late
+# lane commits into the release snapshot AFTER every gate check — a structural
+# window, not a fluke — and the delivery gate reuses the mid-milestone smoke, so
+# the delivered archive cold-start-crashes (every request 500). Close it: stamp a
+# backend source signature when the framework smoke PASSES; at cut time, if the
+# committed backend differs, run ONE fresh RunValidationTool pass (clean docker
+# boot + probes, recorded like any run) and HOLD the cut on failure. The failed
+# run flips build:* checks red → the existing verification_checklist_not_ready /
+# failing-check remediation rails drive the lane; a lane fix changes the sig and
+# re-arms the fresh smoke. Same-sig failures are cached — never a docker churn.
+
+def backend_source_signature(app_root: Any) -> Optional[str]:
+    """Stable content hash of ``app/backend/**/*.py`` — the code that EXECUTES at
+    backend boot (the lane-owned custom_routes.py included). Deliberately excludes
+    .sql/.json/frontend: the heal pipeline's DDL/dataset writers are not byte-stable
+    (ORM-introspection ordering), so hashing them would false-drift every cut.
+    ``None`` when the backend dir is missing or on any fault (caller must NOT block
+    delivery on our own failure)."""
+    try:
+        be = Path(app_root) / "backend"
+        if not be.is_dir():
+            return None
+        h = hashlib.sha256()
+        for f in sorted(be.rglob("*.py"), key=lambda p: str(p)):
+            if "__pycache__" in f.parts or not f.is_file():
+                continue
+            h.update(str(f.relative_to(be)).encode() + b"\0")
+            h.update(f.read_bytes())
+        return h.hexdigest()
+    except Exception:
+        return None
+
+
+def fresh_smoke_decision(cur_sig: Optional[str], validated_sig: Optional[str],
+                         pass_sig: Optional[str], fail_sig: Optional[str]) -> str:
+    """Pure cut-time decision: ``cut`` | ``smoke`` | ``hold``.
+
+    ``cut``   — current backend already validated (by the last passing framework
+                smoke, or by a previous cut-time fresh smoke), or we cannot compute
+                a signature (our own fault must never block delivery).
+    ``hold``  — this EXACT backend already failed a cut-time fresh smoke: hold the
+                release (the recorded failing run drives remediation) without
+                re-booting docker every tick.
+    ``smoke`` — the backend drifted after the last validated state (or no framework
+                smoke ever stamped one, e.g. the verifier's run won the race): run
+                one fresh smoke now."""
+    if cur_sig is None:
+        return "cut"
+    if validated_sig is not None and cur_sig == validated_sig:
+        return "cut"
+    if pass_sig is not None and cur_sig == pass_sig:
+        return "cut"
+    if fail_sig is not None and cur_sig == fail_sig:
+        return "hold"
+    return "smoke"
+
+
+async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
+    """Cut-time guard: ``True`` → proceed to create_release, ``False`` → hold this
+    tick. Called AFTER _commit_framework_delivery (the tree is final). Best-effort:
+    any internal fault returns True — infra must never block delivery."""
+    try:
+        if os.environ.get("ENVGEN_FRESH_SMOKE_GATE", "1").lower() in (
+                "0", "false", "no", "off"):
+            return True
+        out_dir = getattr(orch, "output_dir", None)
+        if not out_dir:
+            return True
+        app_root = Path(out_dir) / "app"
+        if not app_root.exists():
+            app_root = Path(out_dir)
+        cur = backend_source_signature(app_root)
+        decision = fresh_smoke_decision(
+            cur,
+            getattr(orch, "_smoke_backend_sig", None),
+            getattr(orch, "_fresh_smoke_pass_sig", None),
+            getattr(orch, "_fresh_smoke_fail_sig", None))
+        if decision == "cut":
+            return True
+        if decision == "hold":
+            orch._logger.warning(
+                "RELEASE HELD: the backend still matches the tree that FAILED the "
+                "pre-cut fresh api_smoke — waiting for a lane fix (the failing run's "
+                "checks are dispatched); not re-booting docker on an unchanged tree. "
+                "Set ENVGEN_FRESH_SMOKE_GATE=0 to disable.")
+            return False
+        orch._logger.warning(
+            "PRE-CUT FRESH SMOKE: backend source changed AFTER the last passing "
+            "api_smoke (post-smoke lane edit / late merge — the gmrun3 cold-start-"
+            "crash window). Re-validating the exact release tree before cutting.")
+        from tools.validation_tools import RunValidationTool
+        tool = RunValidationTool(workspace=None)
+        tool._hubs = getattr(orch, "hubs", None)
+        tool._agent_id = "orchestrator"
+        res = await tool.execute()
+        data = getattr(res, "data", None) or {}
+        if data.get("runhub_run_id"):
+            orch._fresh_smoke_pass_sig = cur
+            orch._smoke_backend_sig = cur
+            orch._logger.warning(
+                "PRE-CUT FRESH SMOKE PASSED (run %s) — the release ships a "
+                "validated backend.", data.get("runhub_run_id"))
+            return True
+        orch._fresh_smoke_fail_sig = cur
+        _failed = [f"{c.get('name')}:{(c.get('detail') or '')[:60]}"
+                   for c in (data.get("checks") or []) if c.get("status") == "fail"]
+        orch._logger.error(
+            "RELEASE HELD: the post-smoke backend edit FAILS a fresh api_smoke "
+            "(%s) — NOT cutting a release that crashes on cold start (gmrun3 "
+            "class). The failing run is recorded; remediation routes to the lane. "
+            "A backend source change re-arms this check.",
+            _failed or (getattr(res, "error_message", "") or "?")[:160])
+        return False
+    except Exception as _exc:
+        try:
+            orch._logger.debug("fresh-smoke-before-cut skipped on fault: %s", _exc)
+        except Exception:
+            pass
+        return True
+
+
+# #182: markers used to surface the ACTUAL failure line from a long build/validation log rather
+# than a blind prefix slice (which grabs meaningless cached-build fragments — image hashes, a
+# chopped 'ghcr.io'->'cr.io'). Build failures sit at the END, not the start.
+_ERR_MARKERS = (
+    "error:", "err!", "failed to solve", "build failed", "has already been declared",
+    "npm err", "syntaxerror", "modulenotfound", "traceback", "exit code", "exited with",
+    "no space left", "cannot find", "not found", "permission denied", "denied", "unhealthy",
+    "fatal:",
+)
+
+
+def _salient_error(detail: Any, cap: int = 400) -> str:
+    """Surface the ACTUAL error line(s) from a (possibly long, multi-line) build/validation log,
+    instead of a blind PREFIX slice. gmtiktok STUCK-aborted with "Real blocker: docker_up:
+    cr.io/astral-sh/uv" — a prefix fragment of the cached backend build — while the real failure
+    was a frontend "'LoginPage' has already been declared" at the END (#182). Returns the last few
+    marker-matching lines; if none match, returns the TAIL (never the misleading prefix). Pure;
+    ``""`` on empty input."""
+    if not detail:
+        return ""
+    text = str(detail).replace("\\n", "\n")
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    hits = [ln for ln in lines if any(m in ln.lower() for m in _ERR_MARKERS)]
+    if hits:
+        return " | ".join(hits[-3:])[:cap]
+    return text[-cap:].strip()
 
 
 def snapshot_passing_chains(orch: Any) -> None:
@@ -102,6 +257,81 @@ def _fwval_is_chain_authoring_progress(fset, chain_sig, prev_chain_sig,
         return False
 
 
+def _should_regen_skeleton(app_sig, healed_sig, build_wedged,
+                           contract_sig, healed_contract_sig) -> bool:
+    """FIX #203: decide whether to regenerate the by-construction backend skeleton
+    this tick. Fires on (a) an app-SOURCE change (the original heal-on-change
+    trigger), (b) a build wedge (force the repairs), OR — the fix — (c) a CONTRACT
+    change (tables/endpoints registry version moved). r10/r11: the lane registered
+    the missing backing tables mid-run, but the gate keyed ONLY on app-source, so
+    the skeleton never re-projected the stubbed endpoints against the new tables →
+    the `{items:[]}` stubs persisted → #173 wall. A contract change now re-projects
+    them. Pure."""
+    if app_sig is None or build_wedged:
+        return True
+    if app_sig != healed_sig:
+        return True
+    if contract_sig != healed_contract_sig:
+        return True
+    return False
+
+
+def _fwval_is_source_edit_progress(app_sig, prev_app_sig, source_churn, cap) -> bool:
+    """True iff the integrated APP SOURCE signature changed since the last validation
+    cycle AND the bounded churn budget isn't spent — a lane is actively editing code
+    the check-level failure set can't see yet, so the stuck counter should reset
+    (tiktok-r2: STUCK-ABORT fired ~20s before the backend lane landed its
+    /auth/login fix). Unlike the #71 chain grace this is NOT failure-set-restricted:
+    a source edit can fix any failure class. Bounded by ``cap`` so a lane that
+    thrashes FOREVER without clearing the failure set still aborts (no livelock —
+    tiktok-r3's 75-min fabricated-field churn stays bounded). Fix #186."""
+    try:
+        return bool(
+            app_sig is not None and prev_app_sig is not None
+            and app_sig != prev_app_sig
+            and int(source_churn or 0) < int(cap))
+    except Exception:
+        return False
+
+
+def maybe_refresh_stale_build_checklist(orch: Any, failed_checks) -> bool:
+    """FIX #120 (run-38 STUCK, 2026-07-09): a transient run_validation failure
+    (mid visual-window rebuild churn) stamped all four ``build:*`` CodeHub checks =
+    failure, and NOTHING re-ran validation afterwards — the checklist remediation
+    messages the VERIFIER (LLM-dependent; it never complied), so an
+    otherwise-deliverable run hit the 75-min no-convergence wall on
+    ``verification_checklist_not_ready`` alone. Deterministic self-heal: when the
+    deliver gate declines with that blocker, reset the framework's own api_smoke
+    attempt counter (BOUNDED per milestone) so the fast retry re-runs validation —
+    the shared RunValidationTool records FRESH build:* truth either way (a pass
+    supersedes the stale failure; a real failure re-records with fresh evidence).
+    Returns True when a refresh was armed. Never raises."""
+    try:
+        if "verification_checklist_not_ready" not in set(failed_checks or ()):
+            return False
+        ms = str(getattr(orch, "_current_milestone_version", "") or "")
+        budget = getattr(orch, "_checklist_refresh_by_ms", None)
+        if budget is None:
+            budget = {}
+            orch._checklist_refresh_by_ms = budget
+        if budget.get(ms, 0) >= 3:
+            return False
+        budget[ms] = budget.get(ms, 0) + 1
+        orch._framework_validation_attempts = 0
+        try:
+            orch._logger.warning(
+                "STALE BUILD-CHECKLIST self-heal (FIX #120): "
+                "verification_checklist_not_ready is blocking delivery — resetting "
+                "the framework validation attempt counter (refresh %s/3 for v%s) so "
+                "api_smoke re-runs and records FRESH build:* checks itself.",
+                budget[ms], ms)
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
+
+
 def restore_regressed_chains(orch: Any, fset):
     """REGRESSION GUARD (restore-on-regression): if business_chain passed before
     (high-water) and is now failing AND the contract (endpoint id set) is
@@ -160,6 +390,7 @@ class FrameworkValidation:
             "_frontend_navigable_dispatched",
             "_unwired_ui_pages_dispatched",
             "_chain_task_dispatched",
+            "_route_consolidation_dispatched",  # #180 version-variant duplicate-route gate
         ):
             try:
                 setattr(self._orch, _guard, None)
@@ -203,8 +434,10 @@ class FrameworkValidation:
             from .lifecycle import all_business_endpoints_implemented
             from ..orchestrator import (
                 _fwval_should_attempt, _fwval_failure_set, _fwval_stuck_decision,
-                _fwval_can_early_return, FWVAL_FAST_CAP, FWVAL_CHAIN_CHURN_CAP)
+                _fwval_can_early_return, FWVAL_FAST_CAP, FWVAL_CHAIN_CHURN_CAP,
+                FWVAL_SOURCE_CHURN_CAP)
             _FWVAL_CHAIN_CHURN_CAP = FWVAL_CHAIN_CHURN_CAP
+            _FWVAL_SOURCE_CHURN_CAP = FWVAL_SOURCE_CHURN_CAP
             registryhub = getattr(orch.hubs, "registryhub", None)
             if registryhub is None:
                 return
@@ -238,8 +471,21 @@ class FrameworkValidation:
             _build_wedged = bool(
                 {"docker_up", "frontend_build"} & set(
                     getattr(orch, "_fwval_failure_set", None) or ()))
-            if (_app_sig is None or _build_wedged
-                    or _app_sig != getattr(orch, "_fwval_healed_sig", None)):
+            # FIX #203: also regen when the CONTRACT (tables/endpoints registry
+            # versions) changed — a mid-run table registration doesn't touch
+            # app/backend/*.py, so the app-source-only gate never re-projected the
+            # stubbed endpoints against the new table (r10/r11 #173 wall).
+            _contract_sig = None
+            try:
+                _rh = getattr(orch.hubs, "registryhub", None)
+                _vers = _rh.get_versions() if _rh is not None else {}
+                _contract_sig = (_vers.get("registryhub_tables"),
+                                 _vers.get("registryhub_endpoints"))
+            except Exception:
+                _contract_sig = None
+            if _should_regen_skeleton(
+                    _app_sig, getattr(orch, "_fwval_healed_sig", None), _build_wedged,
+                    _contract_sig, getattr(orch, "_fwval_healed_contract_sig", None)):
                 # SKELETON根治: regenerate the WHOLE backend from the contract FIRST, so
                 # validation runs on the deterministic, by-construction app — not on the
                 # lane's variably-structured one. The backend repairs below then no-op on
@@ -305,6 +551,7 @@ class FrameworkValidation:
                 # implemented-endpoint count (below) or a CHANGED failure set (after the
                 # validation result is known) — never on self-induced signature churn.
                 orch._fwval_healed_sig = orch._compute_app_source_signature()
+                orch._fwval_healed_contract_sig = _contract_sig  # #203: contract we projected
             # FIX #26: fire when the contract is implemented by registryhub registration
             # OR by route code present in the integrated source (registration lags
             # the actual code). api_smoke is the real arbiter downstream.
@@ -446,6 +693,13 @@ class FrameworkValidation:
             if _attempts < FWVAL_FAST_CAP:
                 orch._framework_validation_attempts = _attempts + 1
             from tools.validation_tools import RunValidationTool
+            # FIX #155: signature of the backend tree this smoke will validate —
+            # computed BEFORE execute() (a lane merge can land during the await;
+            # the stamp must describe the tree docker actually built, never newer).
+            _app_root_155 = Path(getattr(orch, "output_dir", ".")) / "app"
+            if not _app_root_155.exists():
+                _app_root_155 = Path(getattr(orch, "output_dir", "."))
+            _pre_smoke_sig = backend_source_signature(_app_root_155)
             tool = RunValidationTool(workspace=None)
             tool._hubs = orch.hubs
             tool._agent_id = "orchestrator"
@@ -511,6 +765,10 @@ class FrameworkValidation:
                         "checks": [{"name": "business_chain", "status": "fail",
                                     "detail": _err}]}
             if data and data.get("runhub_run_id"):
+                # FIX #155: remember WHICH backend this passing smoke validated, so
+                # the cut-time freshness check can demand a re-smoke iff it drifts.
+                if _pre_smoke_sig is not None:
+                    orch._smoke_backend_sig = _pre_smoke_sig
                 orch._logger.warning(
                     "Framework validation: api_smoke PASSED → recorded RunHub run %s "
                     "(%s endpoints) — delivery-gate run requirement satisfied.",
@@ -555,7 +813,9 @@ class FrameworkValidation:
                     orch._fwval_failure_set = _fset
                     orch._fwval_stuck_count = 0
                     orch._fwval_chain_churn = 0   # #71: fresh chain-churn budget per failure set
+                    orch._fwval_source_churn = 0  # #186: fresh source-churn budget too
                     orch._fwval_chain_sig = _chain_sig
+                    orch._fwval_app_sig = _app_sig
                     if _prev_fset is not None:
                         # An actual change (not the first sight) → fresh fast budget,
                         # exactly like a rising endpoint count (FIX #31).
@@ -582,14 +842,39 @@ class FrameworkValidation:
                     orch._fwval_chain_churn = getattr(orch, "_fwval_chain_churn", 0) + 1
                     orch._fwval_stuck_count = 0
                     orch._fwval_chain_sig = _chain_sig
+                    orch._fwval_app_sig = _app_sig
                     orch._logger.warning(
                         "CHAIN-AUTHORING PROGRESS: business_chain still failing but the "
                         "verifier re-authored the chains (churn %s/%s) — resetting the "
                         "stuck budget to let it converge (bounded).",
                         orch._fwval_chain_churn, _FWVAL_CHAIN_CHURN_CAP)
+                # SOURCE-EDIT PROGRESS (#186, tiktok-r2): a lane is actively editing the
+                # integrated app source — the failure set can't reflect the fix until the
+                # next validation runs, so give the edit a bounded grace instead of
+                # counting it toward the abort (r2 was STUCK-ABORTed ~20s before the
+                # backend lane landed its /auth/login fix). Post-FAST-CAP gated like the
+                # chain grace (below the cap there is no abort risk to spend budget on);
+                # churn-capped so an r3-style forever-thrash still aborts.
+                elif (_attempts >= FWVAL_FAST_CAP
+                      and _fwval_is_source_edit_progress(
+                          _app_sig, getattr(orch, "_fwval_app_sig", None),
+                          getattr(orch, "_fwval_source_churn", 0),
+                          _FWVAL_SOURCE_CHURN_CAP)):
+                    orch._fwval_source_churn = getattr(orch, "_fwval_source_churn", 0) + 1
+                    orch._fwval_stuck_count = 0
+                    orch._fwval_chain_sig = _chain_sig
+                    orch._fwval_app_sig = _app_sig
+                    orch._logger.warning(
+                        "SOURCE-EDIT PROGRESS: failure set %s unchanged but the app "
+                        "source signature moved — a lane is actively editing (churn "
+                        "%s/%s); resetting the stuck budget to let the fix land "
+                        "(bounded).",
+                        sorted(_fset) or "(none)",
+                        orch._fwval_source_churn, _FWVAL_SOURCE_CHURN_CAP)
                 else:
                     # Same failure set as last validation → no functional progress.
                     orch._fwval_chain_sig = _chain_sig
+                    orch._fwval_app_sig = _app_sig
                     orch._fwval_stuck_count = getattr(orch, "_fwval_stuck_count", 0) + 1
                     # Only escalate once the FAST budget is spent (the converging
                     # window is over); below the cap we are still in the normal
@@ -652,7 +937,7 @@ class FrameworkValidation:
                             # root-surfacing message instead of limping to the wall-clock.
                             _blocker = ", ".join(sorted(_fset)) or (str(_summ)[:120] or "unknown")
                             _root_detail = "; ".join(
-                                "{}: {}".format(c.get("name"), str(c.get("detail"))[:400])
+                                "{}: {}".format(c.get("name"), _salient_error(c.get("detail")))
                                 for c in ((data or {}).get("checks") or [])
                                 if isinstance(c, dict) and c.get("status") == "fail"
                                 and c.get("detail")

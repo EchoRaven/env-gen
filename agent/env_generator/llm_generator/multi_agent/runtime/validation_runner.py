@@ -72,6 +72,89 @@ def _backend_host_port(compose_file: Path, cwd: Path) -> Optional[int]:
     return _service_host_port(compose_file, cwd, "backend")
 
 
+# ── FIX #157 (gmrun5): a 5xx probe must report the backend ROOT CAUSE ──────────
+# gmrun5 wedged 50min → STUCK on `GET /api/transit/{id}/departures → 500`: the
+# remediation carried NOTHING beyond "→ 500", so the backend lane guessed
+# ("parameter type"), guessed wrong, reported done, and never re-engaged — while
+# the real cause (custom_routes.py:202 comparing a TEXT column to an integer →
+# `operator does not exist: text = integer`) sat in the container logs the whole
+# time. Third instance of the "gate knows more than it says" class (run-4's
+# blank-no-rootcause → #154 exact call sites). Pull the log tail on a 5xx and
+# hand the lane the salient last-traceback line, file:line first.
+
+# FIX #161 (gmrun7): the innermost ``/app/`` frame is usually the framework's DB session
+# wrapper (``database.py:80 in execute → super().execute(...)``) — the actual fix site is
+# the HANDLER one frame out (``main.py:519 in _projected_..._departures`` / a lane
+# ``custom_routes.py`` handler). Real run-7 traceback frames were main.py:229 (auth guard),
+# main.py:519 (the projected handler), database.py:80 (execute) → the bare-innermost rule
+# picked database.py, pointing the lane at framework infra it must not edit. De-prioritize
+# the pure-infra backend files so the salient frame names the handler that built the query.
+_INFRA_BACKEND_FILES = frozenset({
+    "database.py", "seed_data.py", "seed_dataset.py", "models.py"})
+
+
+def extract_salient_traceback(logs_text: str, limit: int = 320) -> str:
+    """The salient line of the LAST Python traceback in a (docker) log tail:
+    ``<file>:<line> in <func> — <exception message>``. The frame is the innermost ``/app/``
+    frame that is NOT pure framework infra (``database.py``/``models.py``/``seed_*.py`` —
+    the DB/ORM wrappers a bug never lives in), so it names the actual HANDLER; falls back to
+    the innermost ``/app/`` frame, then the last frame. Strips ``service-1 |`` compose
+    prefixes. '' when no traceback."""
+    try:
+        if not logs_text:
+            return ""
+        text = re.sub(r"(?m)^[\w.-]+\s*\|\s?", "", logs_text)
+        marker = "Traceback (most recent call last):"
+        idx = text.rfind(marker)
+        if idx == -1:
+            return ""
+        block = text[idx:]
+        frames = list(re.finditer(
+            r'File "(?P<path>[^"]+)", line (?P<line>\d+), in (?P<fn>\S+)', block))
+        if not frames:
+            return ""
+        app_frames = [m for m in frames if m.group("path").startswith("/app")]
+        handler_frames = [m for m in app_frames
+                          if Path(m.group("path")).name not in _INFRA_BACKEND_FILES]
+        frame = (handler_frames or app_frames or frames)[-1]
+        # the exception line: first non-indented `Some.Error: message` line after
+        # the LAST frame of the block (postgres LINE/HINT continuations excluded).
+        exc = ""
+        tail = block[frames[-1].end():]
+        for ln in tail.splitlines():
+            if not ln or ln[0] in " \t":
+                continue
+            if re.match(r"^[\w.]+(Error|Exception|Warning)?\s*:", ln) and ": " in ln:
+                exc = ln.strip()
+                break
+        fname = Path(frame.group("path")).name
+        head = f"{fname}:{frame.group('line')} in {frame.group('fn')}"
+        return (f"{head} — {exc}" if exc else head)[:limit]
+    except Exception:
+        return ""
+
+
+def compose_unreachable_detail(unreachable: List[str], salient: str) -> str:
+    """The ``business_endpoints_reachable`` failure detail. With a backend
+    traceback, budget the endpoint list down so the file:line root cause lands
+    INSIDE the first 300 chars (the urgent-wake message truncates there —
+    gmrun5's lane acted on exactly that prefix); without one, the plain join."""
+    joined = "; ".join(unreachable)
+    if not salient:
+        return joined[:800]
+    return f"{joined[:220]} | backend traceback: {salient}"[:800]
+
+
+def _backend_logs_tail(compose_file: Path, cwd: Path, tail: int = 200) -> str:
+    """Last ``tail`` lines of the backend service's logs; '' on any fault."""
+    try:
+        r = _compose(compose_file, "logs", "--no-color", "--tail", str(tail),
+                     "backend", cwd=cwd, timeout=30)
+        return (r.stdout or "") + "\n" + (r.stderr or "")
+    except Exception:
+        return ""
+
+
 def wait_backend_ready(project_dir: Any, timeout_s: int = 90, gap_s: float = 3.0) -> bool:
     """Bounded wait until the compose BACKEND answers HTTP (<500).
 
@@ -269,6 +352,23 @@ def _probe_body(ep: Any) -> dict:
     return body
 
 
+def _id_in_rows(new_id, rows) -> bool:
+    """FIX #122 (runs 35+41, live): TYPE-TOLERANT id containment for the
+    write-persist readback. The POST envelope carries an int id but a lane GET
+    handler may stringify every value ("id":"3") — type-strict equality reported
+    'write not persisted' on a correctly-persisting app and wedged the run.
+    Compare as strings (the platform treats "8"/8 as the same id everywhere
+    else); a None id never matches."""
+    if new_id is None:
+        return False
+    try:
+        want = str(new_id)
+        return any(isinstance(r, dict) and r.get("id") is not None
+                   and str(r.get("id")) == want for r in (rows or []))
+    except Exception:
+        return False
+
+
 def run_smoke_validation(
     project_dir: Any,
     business_endpoints: List[Mapping[str, Any]],
@@ -375,6 +475,21 @@ def run_smoke_validation(
         try:
             from .frontend_scaffold import ensure_assets_staged_for_build
             ensure_assets_staged_for_build(compose_file)
+        except Exception:
+            pass
+        # FIX #125 (run-43 M3, live): #119's param-vs-projection repair is wired into
+        # tools/docker_tools._run_compose (#121) + heal — but the FRAMEWORK VALIDATION
+        # build goes through THIS module's own _compose, so the repair never fired here
+        # and the validation image kept baking the lane's `username: int` on a
+        # string-keyed route → GET /api/users/{username} 422/500 →
+        # business_endpoints_reachable wedged (repair fixes it standalone: fixed=2).
+        # Apply it to app/backend before the clean-boot build (same build-input floor
+        # as the #113 asset staging above).
+        try:
+            from .backend_scaffold import repair_custom_routes_param_types_vs_projection
+            _be = compose_file.parent.parent / "app" / "backend"
+            if _be.is_dir():
+                repair_custom_routes_param_types_vs_projection(_be)
         except Exception:
             pass
         _compose(compose_file, "down", "-v", "--remove-orphans", cwd=cwd, timeout=120)
@@ -505,8 +620,17 @@ def run_smoke_validation(
             _sv = _shape_violation(method, path, res["status"], res["body_text"])
             if _sv:
                 shape_violations.append(_sv)
+        # FIX #157: on a 5xx (backend crash-in-handler, not a mere 404), pull the
+        # backend log tail and attach the salient traceback line — the remediation
+        # task then carries the ROOT CAUSE (file:line + exception), not just "→ 500"
+        # (gmrun5: the bare 500 sent the lane down a wrong guess → 50min wedge).
+        _salient = ""
+        if unreachable and any(
+                (r.get("status_code") or 0) >= 500 for r in endpoint_results):
+            _salient = extract_salient_traceback(_backend_logs_tail(compose_file, cwd))
         _add("business_endpoints_reachable", not unreachable,
-             ("; ".join(unreachable))[:800] if unreachable else f"{len(business_endpoints or [])} endpoint(s) reachable")
+             compose_unreachable_detail(unreachable, _salient) if unreachable
+             else f"{len(business_endpoints or [])} endpoint(s) reachable")
         _add("business_endpoints_implemented", not unimplemented,
              ("; ".join(unimplemented))[:800] if unimplemented
              else f"{len(business_endpoints or [])} registered-implemented endpoint(s) serve their route")
@@ -550,7 +674,7 @@ def run_smoke_validation(
                 persist_warnings.append(f"POST {ppath} ok but GET readback is not an items[] list — persistence not verifiable")
                 continue
             if new_id is not None:
-                contains = any(isinstance(r, dict) and r.get("id") == new_id for r in rows)
+                contains = _id_in_rows(new_id, rows)   # FIX #122: type-tolerant
                 if not _first_scored:
                     # FIRST verifiable POST = the blocking gate (byte-identical to prior behavior).
                     persist_ok = contains

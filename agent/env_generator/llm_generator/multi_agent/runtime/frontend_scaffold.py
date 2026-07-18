@@ -143,6 +143,329 @@ def _unescape_jsx_attr_quotes(src: str) -> str:
     return _JSX_ESCQ_RE.sub(r'\1"\2"', src)
 
 
+# FIX #190 — duplicate import-binding dedup (§3-6: heal/codegen re-emits an
+# import that already exists → esbuild "Identifier 'api' has already been
+# declared" → the whole npm build fails → docker_up wedges; gmrun3/5/7/8/11 +
+# tiktok-r1, nondeterministic recover-vs-abort).
+_IMPORT_FROM_RE = re.compile(
+    r"^\s*import\s+(?P<clause>[^'\"]+?)\s+from\s+['\"](?P<src>[^'\"]+)['\"];?\s*$")
+
+
+def _import_clause_bindings(clause: str) -> Tuple[Optional[str], Optional[str], List[Tuple[str, str]]]:
+    """(default, namespace, [(orig, local), ...]) introduced by an import clause.
+    Handles: D | D, {a, b as c} | {a, b as c} | * as N | D, * as N."""
+    default = namespace = None
+    named: List[Tuple[str, str]] = []
+    head = clause.split("{", 1)[0]
+    m = re.search(r"\*\s+as\s+(\w+)", head)
+    if m:
+        namespace = m.group(1)
+    m = re.match(r"\s*([A-Za-z_$][\w$]*)\s*(?:,|$)", head)
+    if m and m.group(1) != "as":
+        default = m.group(1)
+    if "{" in clause and "}" in clause:
+        inner = clause.split("{", 1)[1].rsplit("}", 1)[0]
+        for part in inner.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            am = re.match(r"([\w$]+)\s+as\s+([\w$]+)$", part)
+            if am:
+                named.append((am.group(1), am.group(2)))
+            elif re.match(r"[\w$]+$", part):
+                named.append((part, part))
+    return default, namespace, named
+
+
+def dedupe_import_bindings(src: str) -> Tuple[str, bool, List[str]]:
+    """Drop/rewrite import lines whose local bindings are already bound earlier
+    in the file. Conservative: full-collision lines are dropped; a PURE-named
+    line with partial collisions keeps only its fresh names; a mixed clause
+    with partial collisions is left untouched and reported (never guess
+    semantics). Multi-line named imports are joined into one logical line for
+    analysis. Returns (new_src, changed, conflicts)."""
+    lines = src.splitlines(keepends=True)
+    out: List[str] = []
+    bound: Set[str] = set()
+    conflicts: List[str] = []
+    changed = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        logical = line
+        span = 1
+        stripped = line.strip()
+        if (stripped.startswith("import") and "from" not in stripped
+                and "{" in stripped and "}" not in stripped):
+            # multi-line named import — join until the `} from '...'` line
+            j = i + 1
+            buf = [line]
+            while j < len(lines) and "from" not in lines[j]:
+                buf.append(lines[j])
+                j += 1
+            if j < len(lines):
+                buf.append(lines[j])
+                logical = "".join(buf)
+                span = j - i + 1
+        m = _IMPORT_FROM_RE.match(" ".join(logical.split()))
+        if not m:
+            out.extend(lines[i:i + span])
+            i += span
+            continue
+        default, namespace, named = _import_clause_bindings(m.group("clause"))
+        locals_ = ([default] if default else []) + \
+                  ([namespace] if namespace else []) + [loc for _, loc in named]
+        if not locals_:
+            out.append(logical)
+            i += span
+            continue
+        collided = [l for l in locals_ if l in bound]
+        fresh = [l for l in locals_ if l not in bound]
+        if not collided:
+            bound.update(locals_)
+            out.append(logical)
+        elif not fresh:
+            changed = True  # fully redundant — drop
+        elif default is None and namespace is None and named:
+            kept = [(o, l) for o, l in named if l not in bound]
+            inner = ", ".join(o if o == l else f"{o} as {l}" for o, l in kept)
+            out.append(f"import {{ {inner} }} from '{m.group('src')}';\n")
+            bound.update(l for _, l in kept)
+            changed = True
+        else:
+            conflicts.append(" ".join(logical.split()))
+            bound.update(fresh)
+            out.append(logical)
+        i += span
+    return "".join(out), changed, conflicts
+
+
+def repair_frontend_duplicate_imports(frontend_dir) -> Dict[str, object]:
+    """FIX #190: dedupe colliding import bindings across the frontend source —
+    the 'Identifier X has already been declared' build-wedge class. Idempotent;
+    best-effort; never raises. {"repaired": [relpaths] | [], "conflicts": [...]}"""
+    repaired: List[str] = []
+    all_conflicts: List[str] = []
+    try:
+        src_dir = Path(frontend_dir) / "src"
+        if not src_dir.is_dir():
+            return {"repaired": repaired}
+        for f in src_dir.rglob("*"):
+            if f.suffix not in _FRONT_EXTS or not f.is_file():
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            if txt.count("import") < 2:
+                continue
+            new, changed, conflicts = dedupe_import_bindings(txt)
+            if conflicts:
+                all_conflicts.extend(f"{f.name}: {c}" for c in conflicts)
+            if changed:
+                try:
+                    f.write_text(new, encoding="utf-8")
+                    repaired.append(str(f.relative_to(src_dir)))
+                except Exception:
+                    continue
+        return {"repaired": repaired, "conflicts": all_conflicts}
+    except Exception:
+        return {"repaired": repaired, "conflicts": all_conflicts}
+
+
+# FIX #194 — byte-identical duplicate TOP-LEVEL declaration removal (§3-6's
+# second half: a re-emitted component/const → "X already declared" → build FAIL
+# → docker_up wedge). Only an IDENTICAL later copy is deleted; different bodies
+# are reported, never guessed.
+_DECL_RE = re.compile(
+    r"^(?P<prefix>export\s+(?:default\s+)?)?(?:async\s+)?"
+    r"(?P<kind>function|class|const|let|var)\s+(?P<name>[A-Za-z_$][\w$]*)",
+    re.M)
+
+
+def _code_mask(src: str) -> List[bool]:
+    """mask[i] = True iff src[i] is CODE (not inside a string/template/comment).
+    Template ``${...}`` interiors count as code; nested backticks inside them
+    are handled by a small state stack."""
+    mask = [True] * len(src)
+    stack: List[str] = []  # states: SQ DQ TPL LC BC; TPL${ pushes 'EXPR'
+    i = 0
+    n = len(src)
+    while i < n:
+        c = src[i]
+        st = stack[-1] if stack else "CODE"
+        if st in ("SQ", "DQ", "TPL"):
+            mask[i] = False
+            if c == "\\":
+                if i + 1 < n:
+                    mask[i + 1] = False
+                i += 2
+                continue
+            if (st == "SQ" and c == "'") or (st == "DQ" and c == '"') \
+                    or (st == "TPL" and c == "`"):
+                stack.pop()
+            elif st == "TPL" and c == "$" and i + 1 < n and src[i + 1] == "{":
+                mask[i + 1] = False
+                stack.append("EXPR")
+                i += 2
+                continue
+            i += 1
+            continue
+        if st == "LC":
+            if c == "\n":
+                stack.pop()
+            else:
+                mask[i] = False
+            i += 1
+            continue
+        if st == "BC":
+            mask[i] = False
+            if c == "*" and i + 1 < n and src[i + 1] == "/":
+                mask[i + 1] = False
+                stack.pop()
+                i += 2
+                continue
+            i += 1
+            continue
+        # CODE or EXPR (template interpolation) — strings/comments can start
+        if c == "'":
+            stack.append("SQ")
+            mask[i] = False
+        elif c == '"':
+            stack.append("DQ")
+            mask[i] = False
+        elif c == "`":
+            stack.append("TPL")
+            mask[i] = False
+        elif c == "/" and i + 1 < n and src[i + 1] == "/":
+            stack.append("LC")
+            mask[i] = False
+        elif c == "/" and i + 1 < n and src[i + 1] == "*":
+            stack.append("BC")
+            mask[i] = False
+        elif st == "EXPR" and c == "}":
+            stack.pop()  # end of ${...}; the brace belongs to the template
+            mask[i] = False
+        i += 1
+    return mask
+
+
+def _extract_block_end(src: str, mask: List[bool], start: int) -> Optional[int]:
+    """End index (exclusive, incl. trailing ';'/newline) of the declaration
+    starting at ``start``. Balances (){}[] over CODE chars only; a declaration
+    with no opening bracket ends at the first code ';' or line end."""
+    depth = 0
+    brace_opened = False
+    i = start
+    n = len(src)
+    while i < n:
+        if mask[i]:
+            c = src[i]
+            if c in "({[":
+                depth += 1
+                if c == "{":
+                    brace_opened = True
+            elif c in ")}]":
+                depth -= 1
+                # ONLY a closing BRACE ends a block — `function F() {` balances
+                # its parameter parens back to depth 0 first, and ending there
+                # truncated every function to its header (both copies looked
+                # identical → wrong removal).
+                if c == "}" and depth == 0 and brace_opened:
+                    # consume optional trailing ';' and ONE newline
+                    j = i + 1
+                    while j < n and src[j] in " \t":
+                        j += 1
+                    if j < n and src[j] == ";":
+                        j += 1
+                    if j < n and src[j] == "\n":
+                        j += 1
+                    return j
+            elif c == ";" and depth == 0:
+                j = i + 1
+                if j < n and src[j] == "\n":
+                    j += 1
+                return j
+            elif c == "\n" and depth == 0 and not brace_opened:
+                return i + 1
+        i += 1
+    return None
+
+
+def dedupe_identical_toplevel_blocks(src: str) -> Tuple[str, List[str], List[str]]:
+    """Remove later top-level declarations whose (whitespace-normalized) text is
+    IDENTICAL to an earlier declaration of the same name. Different bodies →
+    kept + reported in conflicts. Returns (new_src, removed_names, conflicts)."""
+    try:
+        mask = _code_mask(src)
+        seen: Dict[str, str] = {}
+        drops: List[Tuple[int, int]] = []
+        removed: List[str] = []
+        conflicts: List[str] = []
+
+        def _norm(t: str) -> str:
+            return "\n".join(line.rstrip() for line in t.strip().splitlines())
+
+        for m in _DECL_RE.finditer(src):
+            if not mask[m.start()]:
+                continue  # declaration-looking text inside a string/comment
+            end = _extract_block_end(src, mask, m.start())
+            if end is None:
+                continue
+            name = m.group("name")
+            block = _norm(src[m.start():end])
+            if name not in seen:
+                seen[name] = block
+            elif seen[name] == block:
+                drops.append((m.start(), end))
+                removed.append(name)
+            else:
+                conflicts.append(
+                    f"{name}: duplicate top-level declaration with a DIFFERENT "
+                    "body — not auto-removable, the lane must consolidate")
+        if not drops:
+            return src, [], conflicts
+        out = []
+        pos = 0
+        for s, e in drops:
+            out.append(src[pos:s])
+            pos = e
+        out.append(src[pos:])
+        return "".join(out), removed, conflicts
+    except Exception:
+        return src, [], []
+
+
+def repair_frontend_duplicate_declarations(frontend_dir) -> Dict[str, object]:
+    """FIX #194: apply dedupe_identical_toplevel_blocks across the frontend
+    source. Idempotent; best-effort; never raises."""
+    repaired: Dict[str, List[str]] = {}
+    all_conflicts: List[str] = []
+    try:
+        src_dir = Path(frontend_dir) / "src"
+        if not src_dir.is_dir():
+            return {"repaired": False}
+        for f in src_dir.rglob("*"):
+            if f.suffix not in _FRONT_EXTS or not f.is_file():
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            new, removed, conflicts = dedupe_identical_toplevel_blocks(txt)
+            if conflicts:
+                all_conflicts.extend(f"{f.name}: {c}" for c in conflicts)
+            if removed:
+                try:
+                    f.write_text(new, encoding="utf-8")
+                    repaired[str(f.relative_to(src_dir))] = removed
+                except Exception:
+                    continue
+        return {"repaired": repaired or False, "conflicts": all_conflicts}
+    except Exception:
+        return {"repaired": repaired or False, "conflicts": all_conflicts}
+
+
 def repair_frontend_escaped_backticks(frontend_dir) -> Dict[str, object]:
     """Un-escape template-literal delimiter backticks, escaped newlines, AND escaped JSX
     attribute quotes across the frontend source so an LLM-emitted ``className={\`...\`}`` /
@@ -467,7 +790,23 @@ def _host_of(url: str) -> str:
     return (m.group(1) if m else "").lower()
 
 
+# F3: a Leaflet/XYZ map-TILE url is not a content image — it is the live basemap the
+# interactive map depends on, and localizing it to a placeholder SVG makes the map DOA
+# (its .png suffix otherwise trips _IMG_EXT_RE). Exempt the two unambiguous signatures:
+# the {z}/{x}/{y} tile template, and known tile-service hosts.
+_MAP_TILE_RE = re.compile(
+    r"\{z\}.*\{x\}.*\{y\}|\{x\}.*\{y\}.*\{z\}"
+    r"|\btile\.openstreetmap\.org|\btile\.opentopomap\.org"
+    r"|\bbasemaps\.cartocdn\.com|\b[abc]\.tile\.|\btiles?\.stadiamaps\.com", re.I)
+
+
+def _is_map_tile_url(url: str) -> bool:
+    return bool(_MAP_TILE_RE.search(url or ""))
+
+
 def _is_image_signaled(url: str, *, field: str = "", carrier_is_img: bool = False) -> bool:
+    if _is_map_tile_url(url):
+        return False  # F3: map tiles are never a localizable content image
     if carrier_is_img or _IMG_EXT_RE.search(url) or _STOCK_HOST_RE.search(_host_of(url)):
         return True
     return bool(field and _IMG_FIELD_RE.search(field))
@@ -548,6 +887,8 @@ def localize_frontend_external_images(frontend_dir) -> Dict[str, object]:
                 continue
 
             def _attr_repl(m):
+                if _is_map_tile_url(m.group(3)):
+                    return m.group(0)  # F3: never localize a map-tile URL
                 return (m.group(1)
                         + _local_ref_for(m.group(3), "", public_dir, assets)
                         + m.group(4))
@@ -2341,6 +2682,8 @@ _COMMON_FRONTEND_LIBS = {
     # icon / UI / animation libs LLM frontends reach for constantly
     "lucide-react": "^0.408.0", "@heroicons/react": "^2.1.4",
     "@headlessui/react": "^2.1.2", "react-router": "^6.26.0",
+    # F3: interactive maps (Google-Maps-style envs) — react-leaflet 4 pairs with leaflet 1.9
+    "leaflet": "^1.9.4", "react-leaflet": "^4.2.1",
 }
 
 # Roots the framework already provides (declared as deps by construction) — never
@@ -2575,6 +2918,236 @@ def stage_design_assets(output_dir) -> List[str]:
     return copied
 
 
+_SEED_IMG_RE = re.compile(r"/assets/([\w./-]+\.(?:jpe?g|png|webp|gif))", re.IGNORECASE)
+
+
+# FIX #178 (gmrun12): the pipeline sources icons + the OSM map for real, but ENTITY PHOTOS had
+# NO real source, so every seed photo_url became a gray placeholder (82 identical gray cards).
+# Add a real-photo channel: derive a query from the image ref (its category/type, which the
+# dataset channel encodes in the filename) and fetch a real photo (Unsplash when
+# ENVGEN_UNSPLASH_KEY is set, cached per query). The placeholder stays as the fallback.
+_UNSPLASH_PHOTO_CACHE: Dict[str, List[str]] = {}
+
+
+def _photo_query_from_ref(rel: str) -> str:
+    """'photos/restaurant_2.jpg' → 'restaurant', 'photos/coffee_shop_1.jpg' → 'coffee shop'."""
+    stem = Path(rel).stem
+    stem = re.sub(r"[ _-]*\d+$", "", stem)          # strip the trailing _N index
+    return re.sub(r"[ _-]+", " ", stem).strip().lower()
+
+
+def _photo_index_from_ref(rel: str) -> int:
+    """Trailing number ('restaurant_4' → 4), else 1 — pick a DIFFERENT photo per file."""
+    m = re.search(r"(\d+)\.\w+$", Path(rel).name) or re.search(r"(\d+)$", Path(rel).stem)
+    try:
+        return max(1, int(m.group(1))) if m else 1
+    except Exception:
+        return 1
+
+
+def _unsplash_photo_urls(query: str, key: str, want: int = 8) -> List[str]:
+    """Search Unsplash for `query` (cached per query). Returns raw imgix-sizable URLs. []-safe."""
+    if query in _UNSPLASH_PHOTO_CACHE:
+        return _UNSPLASH_PHOTO_CACHE[query]
+    urls: List[str] = []
+    try:
+        import json as _json
+        import urllib.parse
+        import urllib.request
+        q = urllib.parse.urlencode({"query": query, "per_page": max(want, 5),
+                                    "orientation": "landscape", "content_filter": "high"})
+        req = urllib.request.Request("https://api.unsplash.com/search/photos?" + q,
+                                     headers={"Authorization": "Client-ID " + key})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            d = _json.load(r)
+        urls = [x["urls"]["raw"] for x in (d.get("results") or [])
+                if isinstance(x, dict) and (x.get("urls") or {}).get("raw")]
+    except Exception:
+        urls = []
+    _UNSPLASH_PHOTO_CACHE[query] = urls
+    return urls
+
+
+def _fetch_real_seed_photo(query: str, index: int, dest: Any, key: str) -> bool:
+    """Fetch ONE real 400x300 photo for `query` (round-robin by `index`), save to `dest`.
+    True on success. Best-effort; never raises."""
+    try:
+        import urllib.request
+        urls = _unsplash_photo_urls(query, key)
+        if not urls:
+            return False
+        raw = urls[(max(1, index) - 1) % len(urls)]
+        src = raw + "&w=400&h=300&fit=crop&crop=entropy&q=80&fm=jpg"
+        with urllib.request.urlopen(
+                urllib.request.Request(src, headers={"User-Agent": "envgen-photo/1.0"}),
+                timeout=30) as r:
+            data = r.read()
+        if len(data) > 3000 and data[:2] == b"\xff\xd8":
+            Path(dest).write_bytes(data)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def stage_missing_seed_photos(output_dir) -> List[str]:
+    """FIX #168 (gmrun7): guarantee every LOCAL image the SEED references actually exists.
+    A seed ``photo_url`` like ``/assets/photos/restaurant_2.jpg`` is a local path, but the
+    design-input provided no place photos, so the file was never created → every <img> 404s
+    (a broken-image glyph on every card). The external-image localizer only handles remote
+    stock URLs, not a missing local path. Generate a neutral placeholder IMAGE (correct
+    format) at each missing seed-referenced local image path so images always resolve.
+    Skips icons/ and placeholders/ (framework-owned, already staged) and remote URLs.
+    Returns the generated relative paths; best-effort ``[]`` on any fault."""
+    try:
+        out = Path(output_dir)
+        be = out / "app" / "backend"
+        pub = out / "app" / "frontend" / "public" / "assets"
+        if not (out / "app" / "frontend").is_dir():
+            return []
+        import json as _json
+        refs: set = set()
+        for fn in ("seed_dataset.json", "seed_data.json"):
+            fp = be / fn
+            if not fp.exists():
+                continue
+            try:
+                txt = fp.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for m in _SEED_IMG_RE.finditer(txt):
+                rel = m.group(1)
+                if rel.startswith(("icons/", "placeholders/")):
+                    continue
+                refs.add(rel)
+        if not refs:
+            return []
+        try:
+            from PIL import Image, ImageDraw
+            _pil = True
+        except Exception:
+            _pil = False   # placeholder unavailable, but a real fetch may still stage photos
+        import os as _os
+        _key = (_os.environ.get("ENVGEN_UNSPLASH_KEY")
+                or _os.environ.get("UNSPLASH_ACCESS_KEY"))
+        staged: List[str] = []
+        for rel in sorted(refs):
+            dest = pub / rel
+            if dest.exists():
+                continue  # a real asset already there — never overwrite
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                continue
+            # #178: a REAL photo first (Unsplash by the ref's category/type); the neutral
+            # placeholder below is only the fallback (no key / fetch failed / no PIL).
+            if _key:
+                _q = _photo_query_from_ref(rel)
+                if _q and _fetch_real_seed_photo(_q, _photo_index_from_ref(rel), dest, _key):
+                    staged.append(rel)
+                    continue
+            if not _pil:
+                continue
+            try:
+                img = Image.new("RGB", (400, 300), (233, 236, 239))  # neutral gray card
+                d = ImageDraw.Draw(img)
+                d.rectangle([1, 1, 398, 298], outline=(206, 212, 218), width=2)
+                # a simple "image" glyph (frame + sun) so it reads as a photo placeholder
+                d.rectangle([150, 120, 250, 190], outline=(173, 181, 189), width=3)
+                d.ellipse([168, 134, 190, 156], fill=(173, 181, 189))
+                d.polygon([(155, 186), (185, 156), (215, 186)], fill=(173, 181, 189))
+                fmt = "PNG" if dest.suffix.lower() == ".png" else "JPEG"
+                img.save(dest, fmt)
+                staged.append(rel)
+            except Exception:
+                continue
+        return staged
+    except Exception:
+        return []
+
+
+# FIX #169 (gmrun7): the lane references Material-Symbol icons beyond the ones the
+# design-input staged, so `/assets/icons/<name>_24.svg` 404s → broken/blank icons across the
+# UI. A generic neutral SVG placeholder ALWAYS resolves the 404; when egress is available
+# (the design-input prep fetched icons the same way), fetch the REAL Material Symbol by name
+# for correct fidelity. Best-effort — a fetch failure degrades to the placeholder.
+_FE_ASSET_RE = re.compile(r"/assets/((?:icons|placeholders)/[\w./-]+\.(?:svg|png))", re.I)
+_MS_URL = ("https://fonts.gstatic.com/s/i/short-term/release/"
+           "materialsymbolsoutlined/{name}/default/24px.svg")
+_PLACEHOLDER_ICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" '
+    'fill="none" stroke="#9aa0a6" stroke-width="2" stroke-linecap="round" '
+    'stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/>'
+    '<circle cx="12" cy="12" r="2.5"/></svg>\n')
+
+
+def _fetch_material_symbol(name: str) -> Optional[str]:
+    """Fetch the outlined Material Symbol ``name`` (24px SVG) from the public gstatic endpoint
+    the design-input prep uses. Returns the SVG text, or None on any failure (no egress, 404,
+    timeout) so the caller falls back to a placeholder. Best-effort, bounded."""
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            _MS_URL.format(name=name),
+            headers={"User-Agent": "Mozilla/5.0 (envgen asset staging)"})
+        with urllib.request.urlopen(req, timeout=6) as r:
+            if getattr(r, "status", 200) != 200:
+                return None
+            body = r.read().decode("utf-8", errors="ignore")
+            return body if body.lstrip().startswith("<svg") else None
+    except Exception:
+        return None
+
+
+def stage_missing_frontend_assets(output_dir) -> List[str]:
+    """Guarantee every LOCAL icon/placeholder the FRONTEND source references resolves. Scans
+    src for ``/assets/(icons|placeholders)/…`` refs; for each one missing from public/assets,
+    stages the REAL Material Symbol (icons, when egress allows) or a neutral placeholder SVG,
+    so no <img> ever 404s. Photos are #168's job (seed-driven) and are NOT touched here.
+    Returns the staged relative paths; best-effort ``[]`` on any fault."""
+    try:
+        out = Path(output_dir)
+        src = out / "app" / "frontend" / "src"
+        pub = out / "app" / "frontend" / "public" / "assets"
+        if not src.is_dir():
+            return []
+        refs: set = set()
+        for f in (list(src.rglob("*.jsx")) + list(src.rglob("*.js"))
+                  + list(src.rglob("*.tsx")) + list(src.rglob("*.ts"))):
+            if "node_modules" in f.parts:
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for m in _FE_ASSET_RE.finditer(txt):
+                refs.add(m.group(1))
+        staged: List[str] = []
+        for rel in sorted(refs):
+            dest = pub / rel
+            if dest.exists():
+                continue
+            body = None
+            if rel.startswith("icons/") and dest.suffix.lower() == ".svg":
+                # icons/<name>_24.svg → Material Symbol <name> (drop a trailing _<size>)
+                stem = Path(rel).stem
+                sym = re.sub(r"_\d+$", "", stem)
+                body = _fetch_material_symbol(sym)
+            if body is None:
+                body = _PLACEHOLDER_ICON_SVG if dest.suffix.lower() == ".svg" else None
+            if body is None:
+                continue  # a non-svg placeholder we can't synthesize cheaply — skip
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(body, encoding="utf-8")
+                staged.append(rel)
+            except Exception:
+                continue
+        return staged
+    except Exception:
+        return []
+
+
 def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
     """Gap-fill a minimal buildable Vite+React+Tailwind+nginx frontend. Writes
     each standard file ONLY when missing/empty, so a lane that produced code is
@@ -2589,6 +3162,18 @@ def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
         # frontend serves them. frontend_dir is <output>/app/frontend → output = parents[1].
         try:
             stage_design_assets(frontend_dir.parent.parent)
+        except Exception:
+            pass
+        # FIX #168: guarantee every LOCAL image the seed references resolves — a missing
+        # /assets/photos/*.jpg (seed photo_url with no real photo) 404s → broken <img>.
+        try:
+            stage_missing_seed_photos(frontend_dir.parent.parent)
+        except Exception:
+            pass
+        # FIX #169: stage the icons/placeholders the frontend references but that were never
+        # staged (a missing /assets/icons/*.svg 404s → broken icons across the UI).
+        try:
+            stage_missing_frontend_assets(frontend_dir.parent.parent)
         except Exception:
             pass
         # GENERALITY: baseline copy derives the display name from the project

@@ -74,6 +74,22 @@ def _run_compose(
             ensure_assets_staged_for_build(compose_file)
         except Exception:
             pass
+        # FIX #121 (run-39 M4): a lane integration checkout between a HEAL repair and
+        # the build can revert repaired backend files (run-39: heal fixed
+        # custom_routes' username annotation on disk, but the deployed image still
+        # carried `username: int` → str probes 422 / int probes 500 → STUCK).
+        # Same build-input divergence class as #113 — apply the deterministic,
+        # idempotent projection param repair AT the build entry so whatever tree the
+        # image bakes is correct.
+        try:
+            from multi_agent.runtime.backend_scaffold import (
+                repair_custom_routes_param_types_vs_projection)
+            _root = compose_file.parent.parent
+            _be = _root / "app" / "backend"
+            if _be.is_dir():
+                repair_custom_routes_param_types_vs_projection(_be)
+        except Exception:
+            pass
     cmd = ["docker", "compose", "-f", str(compose_file)] + args
     return subprocess.run(
         cmd,

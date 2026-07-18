@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import re
 import subprocess
@@ -26,6 +27,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from .validation_runner import _service_host_port
+
+_LOG = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Reference-image → route mapping. Reference screenshots are conventionally
@@ -149,16 +152,52 @@ def design_premises_text() -> str:
 _VIEWPORT = {"width": 1380, "height": 900}
 
 
+def load_screen_classifications(project_dir: Any) -> Dict[str, Dict[str, Any]]:
+    """FIX #132 — the AUTHORITATIVE reference->screen classification from
+    design_system.json (the design-prep analyst labels every reference with
+    kind=page|overlay, requires_auth and a suggested route BY LOOKING AT THE
+    PIXELS). Returns {screen_name: {kind?, requires_auth?, route?}} keyed by the
+    screens[].name (= reference filename stem). Empty dict on any failure —
+    the filename heuristics below remain the fallback."""
+    out: Dict[str, Dict[str, Any]] = {}
+    try:
+        dsp = Path(project_dir) / "design" / "design_system.json"
+        if not dsp.is_file():
+            return out
+        ds = json.loads(dsp.read_text(encoding="utf-8"))
+        for s in ds.get("screens") or []:
+            if not isinstance(s, Mapping) or not s.get("name"):
+                continue
+            rec: Dict[str, Any] = {}
+            for k in ("kind", "requires_auth", "route"):
+                if s.get(k) is not None:
+                    rec[k] = s[k]
+            if rec:
+                out[str(s["name"])] = rec
+    except Exception:
+        return {}
+    return out
+
+
 def map_reference_screens(
     reference_images: List[Any],
     known_routes: Optional[set] = None,
+    classifications: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """[{name, path, route, auth}] for every reference image whose filename maps
     to a route. Two layers: the common-screen keyword table, then a GENERIC
     fallback matching the filename against the app's actual routes (so an
     arbitrary app's "boards.png" maps to its /boards screen without any
-    catalog). Unmappable images get route=None (skipped, not failed)."""
+    catalog). Unmappable images get route=None (skipped, not failed).
+
+    FIX #132: ``classifications`` (from load_screen_classifications) is the
+    AUTHORITATIVE per-screen mapping the design-prep analyst produced from the
+    reference PIXELS. When present for a screen it wins over the filename
+    heuristics: kind=='overlay' -> advisory (the #128 name regex becomes the
+    fallback); requires_auth -> auth; route -> used when the app actually
+    serves it (a semantic suggestion never navigates to a 404)."""
     known = {str(r) for r in (known_routes or set())}
+    cls = classifications or {}
     screens: List[Dict[str, Any]] = []
     for ref in reference_images or []:
         p = Path(ref)
@@ -167,6 +206,12 @@ def map_reference_screens(
         stem = re.sub(r"[^a-z0-9]+", "_", p.stem.lower())
         segs = [s for s in stem.split("_") if s]
         route, auth = None, True
+        _cl = cls.get(p.stem) or cls.get(stem) or {}
+        if isinstance(_cl.get("requires_auth"), bool):
+            auth = _cl["requires_auth"]
+        _cl_route = str(_cl.get("route") or "").strip()
+        if _cl_route and known and _cl_route in known:
+            route = _cl_route  # authoritative route the app actually serves
         # Candidates from the full stem AND every TRAILING suffix of its segments.
         # Reference files are conventionally named ``<appname>_<screen>`` (e.g.
         # ``outlook_inbox``, ``outlook_calendar_event``); the leading app-name segment
@@ -185,10 +230,11 @@ def map_reference_screens(
             _add("_".join(segs[i:]))   # drop leading segment(s) — the app name
         if segs:
             _add(segs[-1])             # the trailing screen token alone
-        # GENERIC FIRST (domain-agnostic): match the screenshot filename to a
-        # declared route, or "/" for a home/landing screen — so an arbitrary app's
-        # screens map without the social catalog biasing ambiguous names.
-        if known:
+        # GENERIC (domain-agnostic): match the screenshot filename to a declared
+        # route, or "/" for a home/landing screen — so an arbitrary app's screens
+        # map without the social catalog biasing ambiguous names. #132: only when
+        # the AUTHORITATIVE route above did not already resolve.
+        if known and route is None:
             route = next((c for c in cands if c in known), None)
             if route is None and (stem in _HOME_STEMS or (segs and segs[-1] in _HOME_STEMS)) and "/" in known:
                 route = "/"
@@ -198,12 +244,37 @@ def map_reference_screens(
         # non-social app whose screen name contains a social token isn't mis-routed.
         for keys, r, a in _ROUTE_KEYWORDS:
             if any(k in stem for k in keys):
-                auth = a
+                if not isinstance(_cl.get("requires_auth"), bool):
+                    auth = a               # #132: authoritative requires_auth wins
                 if route is None and ((not known) or r in known):
                     route = r
                 break
-        screens.append({"name": p.stem, "path": str(p), "route": route, "auth": auth})
+        # FIX #128 (visual-gate autopsy, run-47): an OVERLAY / interaction-STATE
+        # reference (search_flyout = feed + a notifications MODAL; *_dropdown, *_popup,
+        # …) has no URL route that reproduces it — route capture navigates to the base
+        # page, so the judge compares unrelated images → PERMANENT 0.00 → the "every
+        # screen ≥ min" gate is mathematically unpassable and every milestone escapes
+        # below-threshold, while the false 0.00 pollutes the frontend's remediation
+        # with an un-fixable target. Mark such screens ADVISORY: still judged +
+        # reported, but excluded from the BLOCKING pass criterion. FIX #132: the
+        # analyst's pixel-level kind classification is authoritative when present
+        # ('overlay' -> advisory, 'page' -> blocking even if the filename says
+        # otherwise); the name regex remains the fallback.
+        _kind = str(_cl.get("kind") or "").strip().lower()
+        if _kind in ("page", "overlay"):
+            advisory = _kind == "overlay"
+        else:
+            advisory = bool(_OVERLAY_NAME_RE.search(stem))
+        screens.append({"name": p.stem, "path": str(p), "route": route,
+                        "auth": auth, "advisory": advisory})
     return screens
+
+
+# Interaction-STATE name tokens — a reference so named is an overlay reachable only by
+# a click/hover, never a URL route, so it can't be fairly scored by route-capture.
+_OVERLAY_NAME_RE = re.compile(
+    r"(?:^|_)(?:flyout|modal|popup|pop_?over|dropdown|drop_?down|overlay|dialog|"
+    r"drawer|tooltip|toast|sheet|menu|context_?menu|lightbox)(?:_|$)")
 
 
 # ---------------------------------------------------------------------------
@@ -344,6 +415,55 @@ _CAPTURE_BLANK_PROBE = (
     " return {textLen: t.length, nodes: n}; }")
 
 
+# FIX #141 — theme-variant capture. run-64 M2 live: login_dark.png ≡
+# login_light.png (identical md5, mean=249 near-white) — the capture never
+# switched the app to dark, so the dark reference variant was judged against
+# LIGHT pixels and structurally capped ~0.3; a blocking screen that can never
+# pass ran every visual window to the 3600s anchor. A dark/light screen is
+# captured with (1) prefers-color-scheme emulation, (2) common theme storage
+# keys pre-set + reload so class-strategy apps BOOT themed, and (3) a post-load
+# force of the `dark` class / data-theme. All three are inert on apps that
+# ignore them.
+_THEME_TOKEN_RE = re.compile(r"(?:^|[_\-])(dark|light)(?:[_\-]|$)", re.IGNORECASE)
+_THEME_STORAGE_KEYS = ("theme", "color-theme", "ui-theme", "darkMode")
+
+
+def screen_color_scheme(screen: Mapping[str, Any]) -> Optional[str]:
+    """'dark'/'light' for a theme-variant screen, else None. An explicit
+    screen['scheme'] (future design-prep classification) wins over the
+    name-token heuristic (login_dark / feed-light reference stems)."""
+    _s = str(screen.get("scheme") or "").strip().lower()
+    if _s in ("dark", "light"):
+        return _s
+    m = _THEME_TOKEN_RE.search(str(screen.get("name") or ""))
+    return m.group(1).lower() if m else None
+
+
+def _theme_storage_js(scheme: Optional[str]) -> str:
+    """JS that pre-sets (or, scheme=None, clears) the common theme storage
+    keys so the app boots in the wanted theme after a reload."""
+    if scheme is None:
+        body = ";".join(f"localStorage.removeItem('{k}')"
+                        for k in _THEME_STORAGE_KEYS)
+    else:
+        vals = {"theme": scheme, "color-theme": scheme, "ui-theme": scheme,
+                "darkMode": "true" if scheme == "dark" else "false"}
+        body = ";".join(f"localStorage.setItem('{k}', '{v}')"
+                        for k, v in vals.items())
+    return "try { " + body + " } catch (e) {}"
+
+
+def _theme_class_js(scheme: str) -> str:
+    """JS that force-applies the theme AFTER the app booted — covers apps
+    that read a root class/attribute but no storage key."""
+    add = "add" if scheme == "dark" else "remove"
+    return ("(() => { const de = document.documentElement; "
+            f"de.classList.{add}('dark'); "
+            f"document.body && document.body.classList.{add}('dark'); "
+            f"de.setAttribute('data-theme', '{scheme}'); "
+            f"de.style.colorScheme = '{scheme}';" + " })()")
+
+
 async def capture_route_screenshots(
     base_url: str,
     screens: List[Dict[str, Any]],
@@ -384,12 +504,27 @@ async def capture_route_screenshots(
                     f"sessionStorage.setItem('{k}', {_tok_js})"
                     for k in _aliases) + ";")
             page = await ctx.new_page()
+            _applied_scheme: Optional[str] = None   # FIX #141 emulation state
+            _storage_dirty = False                  # theme keys we set last screen
             for screen in screens:
                 if not screen.get("route"):
                     continue
                 try:
+                    # FIX #141: theme-variant screens (login_dark/login_light)
+                    # boot the app in the wanted scheme; unthemed screens after
+                    # a themed one get the keys cleared so nothing leaks.
+                    _scheme = screen_color_scheme(screen)
+                    _want = _scheme or "light"
+                    if _want != (_applied_scheme or "light"):
+                        await page.emulate_media(color_scheme=_want)
+                        _applied_scheme = _want
                     await page.goto(base_url + screen["route"],
                                     wait_until="networkidle", timeout=20000)
+                    if _scheme or _storage_dirty:
+                        await page.evaluate(_theme_storage_js(_scheme))
+                        _storage_dirty = _scheme is not None
+                        await page.reload(wait_until="networkidle",
+                                          timeout=20000)
                     await page.wait_for_timeout(1200)
                     if screen.get("auth"):
                         final = (page.url or "").split("?", 1)[0].rstrip("/")
@@ -414,9 +549,32 @@ async def capture_route_screenshots(
                             continue  # skip the shot — do not feed a blank 0.00 to the judge
                     except Exception:
                         pass  # probe error → treat as non-blank (never false-skip)
+                    if _scheme:
+                        # FIX #141 (3): class/attribute-strategy apps with no
+                        # storage key — force the theme on the booted document.
+                        try:
+                            await page.evaluate(_theme_class_js(_scheme))
+                            await page.wait_for_timeout(400)
+                        except Exception:
+                            pass
                     dest = out_dir / f"{screen['name']}.png"
                     await page.screenshot(path=str(dest))
                     shots[screen["name"]] = str(dest)
+                    # #141b: keep a per-round copy — run-64 M2's 0.00↔0.40
+                    # score oscillation could not be root-caused because every
+                    # judge round overwrote these files. Soft-capped; failures
+                    # never break the capture.
+                    try:
+                        _hist = out_dir / "history"
+                        _hist.mkdir(exist_ok=True)
+                        if sum(1 for _ in _hist.iterdir()) < 500:
+                            import shutil as _sh
+                            from datetime import datetime as _dt
+                            _stamp = _dt.now().strftime("%H%M%S")
+                            _sh.copyfile(dest,
+                                         _hist / f"{_stamp}_{screen['name']}.png")
+                    except Exception:
+                        pass
                 except Exception:
                     continue
         finally:
@@ -448,6 +606,9 @@ _JUDGE_INSTRUCTIONS = (
     'icons + labels, logo wordmark top-left\'>"}}, ...'
     ' — for "components" also include "missing": ["<component>", ...]}},\n'
     '  "similarity": <0.0-1.0 overall>,\n'
+    '  "empty_state": <true|false — true when the implementation shows an EMPTY/'
+    "placeholder state (e.g. 'No items yet') because its data is missing, so the "
+    "reference's real design skeleton never rendered and cannot be judged>,\n"
     '  "deviations": ["<WHERE on the screen + WHAT differs, ordered by impact, '
     'e.g. \'header: implementation centers the logo; reference left-aligns it '
     'next to search\'>", ...],\n'
@@ -520,7 +681,11 @@ def _parse_verdict(text: str) -> Dict[str, Any]:
     devs = [str(x)[:300] for x in (data.get("deviations") or []) if str(x).strip()][:10]
     fixes = [str(x)[:300] for x in (data.get("fixes") or []) if str(x).strip()][:10]
     return {"similarity": sim, "dimensions": dims, "deviations": devs,
-            "fixes": fixes, "summary": str(data.get("summary", ""))[:300]}
+            "fixes": fixes, "summary": str(data.get("summary", ""))[:300],
+            # FIX #133: the judge's empty-state observation becomes REPORTABLE (it was
+            # told to ignore data-empty states — now it also flags them so the framework
+            # can remind the BACKEND lane to seed the missing rows).
+            "empty_state": bool(data.get("empty_state"))}
 
 
 async def judge_screen_pair(llm: Any, screen: Mapping[str, Any], screenshot_path: str) -> Dict[str, Any]:
@@ -546,8 +711,10 @@ async def judge_screen_pair(llm: Any, screen: Mapping[str, Any], screenshot_path
                                  temperature=0.0, max_tokens=3000)
         return _parse_verdict(getattr(resp, "content", "") or "")
     except Exception as exc:
+        # judge_error marks a TRANSIENT failure — #142 must never cache it
+        # (a frozen 0.0 would pin a healthy screen for the whole milestone).
         return {"similarity": 0.0, "dimensions": {}, "deviations": [f"judge call failed: {exc}"[:200]],
-                "summary": "judge error"}
+                "summary": "judge error", "judge_error": True}
 
 
 # ---------------------------------------------------------------------------
@@ -563,6 +730,7 @@ async def run_visual_fidelity(
     out_dir: Optional[Path] = None,
     capture_fn: Optional[Callable] = None,
     judge_fn: Optional[Callable] = None,
+    verdict_cache: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Compare the running app against the reference designs.
 
@@ -587,7 +755,9 @@ async def run_visual_fidelity(
                 _app.read_text(encoding="utf-8", errors="ignore")))
     except Exception:
         pass
-    screens = map_reference_screens(reference_images, known_routes)
+    screens = map_reference_screens(
+        reference_images, known_routes,
+        classifications=load_screen_classifications(project_dir))  # FIX #132
     judged_screens = [s for s in screens if s.get("route")][:max_screens]
     skipped = [s["name"] for s in screens if not s.get("route")]
     if not judged_screens:
@@ -702,13 +872,35 @@ async def run_visual_fidelity(
                             "similarity": 0.0, "passed": False, "dimensions": {},
                             "deviations": [_dev],
                             "blank": screen["name"] in _blank_screens,
+                            "advisory": bool(screen.get("advisory")),
                             "screenshot": None,
                             "reference": screen.get("path")})
             continue
-        verdict = await judge(llm, screen, shot)
+        # FIX #142: identical pixels ⇒ identical verdict. run-65 M4 (#141b
+        # history): 3 byte-identical explore captures scored 0.00 then 0.30 —
+        # ±0.3 judge noise on unchanged screens phantom-reset #138 plateau
+        # tracking and made #129 sticky-pass luck-dependent. Cache the verdict
+        # by (screen, capture md5) for the milestone; pixels change → re-judge.
+        _ck = None
+        if verdict_cache is not None:
+            try:
+                import hashlib as _hl
+                _ck = f"{screen['name']}:{_hl.md5(Path(shot).read_bytes()).hexdigest()}"
+            except Exception:
+                _ck = None
+        if _ck is not None and _ck in verdict_cache:
+            verdict = verdict_cache[_ck]
+        else:
+            verdict = await judge(llm, screen, shot)
+            if _ck is not None and isinstance(verdict, dict) \
+                    and verdict.get("similarity") is not None \
+                    and not verdict.get("judge_error"):
+                verdict_cache[_ck] = verdict
         results.append({"name": screen["name"], "route": screen["route"],
                         "similarity": verdict["similarity"],
                         "passed": verdict["similarity"] >= min_similarity,
+                        "advisory": bool(screen.get("advisory")),
+                        "empty_state": bool(verdict.get("empty_state")),  # FIX #133
                         "dimensions": verdict.get("dimensions", {}),
                         "deviations": verdict["deviations"],
                         "fixes": verdict.get("fixes", []),
@@ -721,10 +913,18 @@ async def run_visual_fidelity(
                             project_dir, screen["name"], shot),
                         "summary": verdict.get("summary", "")})
 
-    passed = all(r["passed"] for r in results)
-    failing = [f"{r['name']}({r['similarity']:.2f})" for r in results if not r["passed"]]
-    summary = ("all %d screens ≥ %.2f" % (len(results), min_similarity) if passed
+    # FIX #128: ADVISORY screens (overlay/flyout/modal interaction states) are judged +
+    # reported but never BLOCK — they have no URL route that reproduces them, so their
+    # score is a route-capture artifact, not a frontend-quality signal.
+    _blocking = [r for r in results if not r.get("advisory")]
+    passed = all(r["passed"] for r in _blocking)
+    failing = [f"{r['name']}({r['similarity']:.2f})" for r in _blocking if not r["passed"]]
+    _adv_note = [f"{r['name']}({r['similarity']:.2f})" for r in results
+                 if r.get("advisory")]
+    summary = ("all %d screens ≥ %.2f" % (len(_blocking), min_similarity) if passed
                else "below %.2f: %s" % (min_similarity, ", ".join(failing)))
+    if _adv_note:
+        summary += " [advisory (overlay, non-blocking): %s]" % ", ".join(_adv_note)
     if _blank_screens:
         summary += " [blank capture: %s]" % ", ".join(_blank_screens)
     # FIX #75a: a REFUNDABLE transient ONLY when EVERY judged screen was a blank shell
@@ -864,17 +1064,57 @@ def _spec_snippet(output_dir: Any, screen_name: str) -> str:
         return ""
 
 
-def remediation_text(result: Mapping[str, Any], output_dir: Any = None) -> str:
+def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
+                     latched: Optional[set] = None) -> str:
     """Actionable task body for the frontend lane from a failed gate result —
     per screen: missing components first, then the judge's per-dimension notes
-    (weakest dimension first), then the ordered deviations."""
+    (weakest dimension first), then the ordered deviations.
+
+    ``latched`` (FIX #129) = the milestone's sticky-passed screen names. A screen
+    that already cleared the bar in a prior round is EXCLUDED from the fix list
+    even if the noisy judge scored it low THIS round — otherwise the frontend is
+    told to re-work a screen it already got right and can REGRESS it. The gate is
+    still open (some OTHER screen never latched), so remediation must focus the
+    lane's effort on the screens that have never hit the bar."""
+    latched = latched or set()
     lines = ["Visual fidelity below threshold vs the reference designs. "
              "Fix the implemented screens to match the references:"]
     dim_titles = {d["key"]: d["title"] for d in _DIMENSIONS}
+    # A1/A2: load the design system + run the staged-asset audit ONCE;
+    # per-screen results feed the first-position mandates and the geometry
+    # blocks below, the audit remainder feeds the tail advisory.
+    _ds = _load_design_system(output_dir)
+    _audit = _load_asset_audit(output_dir, ds=_ds)
+    _ab_on = _brand_asset_fix_enabled()
+    _geo_on = _layout_geometry_enabled()
+    _emitted: set = set()
+    _mandated_screens = 0
     for r in result.get("screens", []):
-        if r.get("passed"):
+        if r.get("passed") or r.get("name") in latched:
             continue
         lines.append(f"\n## {r['name']}  (route {r['route']}, similarity {r['similarity']:.2f})")
+        if _ab_on and _audit is not None:
+            # A1: a failing screen whose reference components map to staged real
+            # assets the code never references gets the asset mandate FIRST —
+            # run-50 class: the lane draws a generic approximation while the
+            # real wordmark/glyph sits staged and unreferenced, and the judge
+            # correctly scores the brand-less screen 0.2-0.4.
+            _fx, _em = _screen_asset_fix_lines(
+                str(r.get("name") or ""), str(r.get("route") or ""),
+                _audit.get("unused_by_screen") or {}, output_dir)
+            if _fx:
+                lines.extend(_fx)
+                _emitted |= _em
+                _mandated_screens += 1
+        if _geo_on:
+            # A2: numeric skeleton right after the asset mandate, before the
+            # measured colors — structure first, then paint.
+            lines.extend(_layout_geometry_lines(_ds, str(r.get("name") or "")))
+        if _theme_variant_enabled():
+            # A2b: theme-variant screens need the RENDER MECHANISM stated, not
+            # just the hex values.
+            lines.extend(_theme_variant_lines(
+                str(r.get("name") or ""), output_dir, str(r.get("route") or "")))
         if output_dir is not None:
             _sn = _spec_snippet(output_dir, str(r.get("name") or ""))
             if _sn:
@@ -899,33 +1139,242 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None) -> str:
             lines.append("Do these, in order:")
             for i, f in enumerate(fixes, 1):
                 lines.append(f"{i}. {f}")
-    adv = _asset_usage_advisory(output_dir)
+    adv = _asset_usage_advisory(
+        output_dir, exclude=_emitted,
+        unused=(_audit.get("unused_mapped") if _audit is not None else None))
     if adv:
         lines.append(adv)
+    if _audit is not None:
+        # A1 observability: one stable-prefix line per remediation build so the
+        # per-round trend is greppable across runs (gate the escalate-to-gate
+        # decision on this data).
+        _LOG.info(
+            "BRAND-ASSET AUDIT: %d unused mapped asset(s) total; %d mandated "
+            "first-position on %d failing screen(s)",
+            len(_audit.get("unused_mapped") or []), len(_emitted), _mandated_screens)
     lines.append("\nReference images: use list_reference_images / view_image. "
                  "Your screenshots from the last gate run are in design/visual_gate/.")
     return "\n".join(lines)
 
 
-def _asset_usage_advisory(output_dir: Any) -> str:
+def _brand_asset_fix_enabled() -> bool:
+    """A1 kill switch: ENVGEN_BRAND_ASSET_FIX=0 reverts to the tail-advisory-only
+    behavior (first-position mandates off)."""
+    return str(os.environ.get("ENVGEN_BRAND_ASSET_FIX", "1")).strip().lower() \
+        not in ("0", "false", "no", "off")
+
+
+def _load_design_system(output_dir: Any) -> Optional[Dict[str, Any]]:
+    """design/design_system.json as a dict; None when absent/invalid (a
+    references-only run) — the A-direction remediation enrichments key off
+    this one load."""
+    if output_dir is None:
+        return None
+    try:
+        ds_path = Path(output_dir) / "design" / "design_system.json"
+        if not ds_path.is_file():
+            return None
+        return json.loads(ds_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _load_asset_audit(output_dir: Any, ds: Optional[Mapping[str, Any]] = None
+                      ) -> Optional[Dict[str, Any]]:
+    """Run the staged-asset usage audit once per remediation build. None when
+    there is no design_system (references-only run) or on any error."""
+    if ds is None:
+        ds = _load_design_system(output_dir)
+    if ds is None:
+        return None
+    try:
+        from .frontend_audit import audit_asset_usage
+        return audit_asset_usage(Path(output_dir) / "app" / "frontend", ds)
+    except Exception:
+        return None
+
+
+def _layout_geometry_enabled() -> bool:
+    """A2 kill switch: ENVGEN_LAYOUT_GEOMETRY_FIX=0 drops the geometry block."""
+    return str(os.environ.get("ENVGEN_LAYOUT_GEOMETRY_FIX", "1")).strip().lower() \
+        not in ("0", "false", "no", "off")
+
+
+def _layout_geometry_lines(ds: Optional[Mapping[str, Any]], screen_name: str) -> List[str]:
+    """A2: the measured LAYOUT GEOMETRY block for one failing screen — the
+    analyst layout sentence + each component's normalized region rendered as
+    viewport percentages (+ bg hex). A1 validation (run-75) drove asset
+    coverage on the failing screens to 100% while their scores stayed
+    0.15-0.40: the residual gap is the SKELETON (single- vs two-column login =
+    the 0.0→0.4 jump class), which was never stated numerically — #52's
+    _spec_snippet carries colors, this carries geometry. Empty when nothing
+    is measured."""
+    if ds is None:
+        return []
+    try:
+        screen = next(
+            (s for s in (ds.get("screens") or [])
+             if isinstance(s, dict) and str(s.get("name") or "") == screen_name),
+            None)
+        if screen is None:
+            return []
+        rows: List[str] = []
+        layout = str(screen.get("layout") or "").strip()
+        for comp in (screen.get("components") or [])[:10]:
+            if not isinstance(comp, dict):
+                continue
+            reg = comp.get("region")
+            if not (isinstance(reg, (list, tuple)) and len(reg) == 4):
+                continue
+            try:
+                x1, y1, x2, y2 = (float(v) for v in reg)
+            except Exception:
+                continue
+            bg = (comp.get("colors") or {}).get("bg") if isinstance(
+                comp.get("colors"), Mapping) else None
+            rows.append(
+                f"  · {comp.get('id')}: x {x1 * 100:.0f}-{x2 * 100:.0f}% "
+                f"(width {(x2 - x1) * 100:.0f}%), y {y1 * 100:.0f}-{y2 * 100:.0f}% "
+                f"(height {(y2 - y1) * 100:.0f}%)"
+                + (f", bg {bg}" if bg else ""))
+        if not rows and not layout:
+            return []
+        lines = ["LAYOUT GEOMETRY (measured from the reference — match the "
+                 "SKELETON first, then style):"]
+        if layout:
+            lines.append(f"  structure: {layout}")
+        lines.extend(rows)
+        return lines
+    except Exception:
+        return []
+
+
+def _page_component_for_route(output_dir: Any, route: str) -> str:
+    """Resolve the ui_page COMPONENT wired at ``route`` from the registry store
+    (shared/hubs/registryhub_ui_pages.json) by ROUTE equality — the visual screen
+    name (login_dark) and the ui_page name (login) do not align, routes do
+    (A1 supervisor requirement: route↔route, no name fuzzy-matching). '' when
+    the store is absent or no page declares the route."""
+    try:
+        recs = json.loads(
+            (Path(output_dir) / "shared" / "hubs" / "registryhub_ui_pages.json")
+            .read_text(encoding="utf-8"))
+        want = str(route or "").rstrip("/") or "/"
+        for name, rec in (recs.items() if isinstance(recs, dict) else []):
+            if name == "_meta" or not isinstance(rec, dict):
+                continue
+            have = str(rec.get("route") or "").rstrip("/") or "/"
+            if have == want and rec.get("component"):
+                return str(rec["component"])
+    except Exception:
+        pass
+    return ""
+
+
+def _screen_asset_fix_lines(screen_name: str, route: str,
+                            unused_by_screen: Mapping[str, Any],
+                            output_dir: Any) -> tuple:
+    """A1: the FIRST-position block for one failing screen — mandate rendering
+    the staged real assets its reference components map to, naming the target
+    page file (route-aligned) and the exact /assets/ path. Returns
+    (lines, {(component, asset), ...}) — the pairs are excluded from the tail
+    advisory so nothing is stated twice."""
+    ents = list(unused_by_screen.get(screen_name) or [])
+    if not ents:
+        return [], set()
+    comp = _page_component_for_route(output_dir, route)
+    where = (f"app/frontend/src/pages/{comp}.jsx (the page wired at route {route})"
+             if comp else f"the page component wired at route {route}")
+    lines = ["USE THE REAL STAGED ASSETS FIRST — this screen's reference "
+             "components are mapped to staged files your code never references; "
+             "render them before any other fix:"]
+    emitted = set()
+    for u in ents[:6]:
+        lines.append(
+            f"- render `/assets/{u['file']}` for component `{u['component']}` in "
+            f"{where} (<img src='/assets/{u['file']}'/> or import the SVG) — "
+            "do NOT draw an approximation.")
+        emitted.add((u.get("component"), u.get("asset")))
+    if len(ents) > 6:
+        lines.append(f"- (+{len(ents) - 6} more mapped assets unreferenced on this "
+                     f"screen — see design/design_system.json screens `{screen_name}`)")
+    return lines, emitted
+
+
+
+def _theme_variant_enabled() -> bool:
+    """A2b kill switch: ENVGEN_THEME_VARIANT_FIX=0 drops the mechanism block."""
+    return str(os.environ.get("ENVGEN_THEME_VARIANT_FIX", "1")).strip().lower() \
+        not in ("0", "false", "no", "off")
+
+
+def _theme_variant_lines(screen_name: str, output_dir: Any = None,
+                         route: str = "") -> List[str]:
+    """A2b: the THEME MECHANISM block for a theme-variant failing screen.
+    login_dark sat at 0.15 across run-73/75/76 while its measured dark hexes
+    were already inlined (A2): the missing piece was HOW a dark variant is
+    rendered — the gate (#141) captures the SAME route component with
+    html.dark + [data-theme=dark] + prefers-color-scheme:dark, so without
+    dark-variant CSS the dark capture photographs light pixels and the judge's
+    low score is honest (run-65). State the mechanism; forbid a forked page."""
+    scheme = screen_color_scheme({"name": screen_name})
+    if scheme is None:
+        return []
+    if scheme == "dark":
+        how = ("the gate renders this route with `html.dark` set, "
+               "`[data-theme=\"dark\"]`, and prefers-color-scheme:dark emulated. "
+               "Implement the dark styles on the SAME page component via Tailwind "
+               "`dark:` variants (set `darkMode: 'class'` in tailwind.config) or "
+               "`.dark`-scoped CSS — do NOT fork a separate page. Use the "
+               "measured dark hex values from the geometry/spec blocks above.")
+    else:
+        how = ("the gate renders this route in LIGHT mode (theme storage keys "
+               "cleared, no `html.dark`). The light appearance must come from "
+               "the default (non-dark:) styles of the SAME page component that "
+               "also serves the dark variant — do NOT fork a separate page.")
+    lines = [f"THEME VARIANT ({scheme.upper()} capture): {how}"]
+    if scheme == "dark" and output_dir is not None and route:
+        # run-78 autopsy: the lane wrote perfect dark: variants (measured
+        # hexes) into components no page imports, while the WIRED page file
+        # stayed bg-white — point the work at the file that actually renders.
+        try:
+            comp = _page_component_for_route(output_dir, route)
+            if comp:
+                _pf = (Path(output_dir) / "app" / "frontend" / "src" / "pages"
+                       / f"{comp}.jsx")
+                if _pf.is_file() and "dark:" not in _pf.read_text(
+                        encoding="utf-8", errors="ignore"):
+                    lines.append(
+                        f"  ⚠ app/frontend/src/pages/{comp}.jsx (the file WIRED at "
+                        f"{route}) currently has no `dark:` variant at all — dark "
+                        "styles written in any other file that this page does not "
+                        "import are DEAD code and never render. Add the dark: "
+                        "variants IN THIS FILE (or in components it actually "
+                        "imports).")
+        except Exception:
+            pass
+    return lines
+
+
+def _asset_usage_advisory(output_dir: Any, exclude: Optional[set] = None,
+                          unused: Optional[List[dict]] = None) -> str:
     """ADVISORY block (Design-Prep): when design/design_system.json maps components to REAL staged
     assets that the frontend does not reference, tell the lane to use them instead of drawing
-    approximations. Best-effort; '' when there is no design_system or nothing to flag."""
+    approximations. A1: ``exclude`` = (component, asset) pairs already mandated first-position on a
+    failing screen (not repeated here); ``unused`` = precomputed audit rows (audit runs once).
+    Best-effort; '' when there is no design_system or nothing to flag."""
     if output_dir is None:
         return ""
     try:
-        import json as _json
-        from pathlib import Path as _P
-        ds_path = _P(output_dir) / "design" / "design_system.json"
-        if not ds_path.is_file():
-            return ""
-        ds = _json.loads(ds_path.read_text(encoding="utf-8"))
-        from .frontend_audit import audit_asset_usage
-        unused = audit_asset_usage(_P(output_dir) / "app" / "frontend", ds).get("unused_mapped") or []
-        if not unused:
+        if unused is None:
+            _audit = _load_asset_audit(output_dir)
+            unused = (_audit.get("unused_mapped") if _audit is not None else None) or []
+        excl = exclude or set()
+        rows = [u for u in unused if (u.get("component"), u.get("asset")) not in excl]
+        if not rows:
             return ""
         out = ["\n## Real assets not used (advisory — use the STAGED asset, do not draw it):"]
-        for u in unused[:20]:
+        for u in rows[:20]:
             out.append(f"- component `{u['component']}` should render real asset "
                        f"`{u['asset']}` → reference `/assets/{u['file']}` "
                        f"(<img src='/assets/{u['file']}'/> or import it), not a hand-drawn shape.")
@@ -939,6 +1388,35 @@ try:  # FIX #75a: how many mid-rebuild blank captures to absorb before a still-b
     _TRANSIENT_REFUND_CAP = int(os.environ.get("ENVGEN_VISUAL_BLANK_REFUNDS", "3"))
 except Exception:
     _TRANSIENT_REFUND_CAP = 3
+
+
+def _apply_sticky_pass(passed_names: set, screens: List[Mapping[str, Any]]) -> bool:
+    """FIX #129 — STICKY per-screen pass across re-judge rounds WITHIN a milestone.
+
+    The vision JUDGE (Gemini) self-compresses similarity toward the center and
+    noise-wiggles the same UNCHANGED pixels by ±0.2–0.4 between calls (run-47:
+    "adjusting the extreme values … closer to a central point"; the JUDGE-ON-CHANGE
+    guard at maybe_run exists precisely because "scores just noise-wiggled").
+    Requiring EVERY blocking screen to clear ``min_similarity`` on the SAME
+    re-judge is therefore a joint-probability wall: with N center-clustered noisy
+    screens the run essentially never passes and every milestone ships via the
+    below-threshold escape (never a real pass). Instead, LATCH each blocking
+    screen the first round it clears the bar; the gate is satisfied once every
+    blocking screen has cleared AT LEAST ONCE this milestone.
+
+    ``passed_names`` is the milestone-anchored latch set (mutated in place; reset
+    in ``reset_for_milestone``). Advisory (overlay) screens are excluded upstream
+    (#128), so they never enter the criterion. Env-agnostic. Trade-off: a screen
+    that passed at source v1 and later regressed at v2 stays latched — accepted
+    because judge noise (±0.4) makes a single low re-sample indistinguishable from
+    a real regression, and app CORRECTNESS is enforced by the functional gates
+    (api_smoke / page_build), not this design-fidelity gate.
+    """
+    blocking = [s for s in screens if not s.get("advisory")]
+    for s in blocking:
+        if s.get("passed"):
+            passed_names.add(s.get("name"))
+    return bool(blocking) and all(s.get("name") in passed_names for s in blocking)
 
 
 class VisualFidelityGate:
@@ -966,6 +1444,12 @@ class VisualFidelityGate:
         self.transient_refunds = 0     # per-milestone bounded blank-capture refunds (#75a)
         self.last_result = None
         self.last_judged_sig = None
+        self._passed_screens: set = set()  # #129: milestone-anchored sticky per-screen pass latch
+        self._seed_reminder_sent = False   # #133: one backend seed reminder per milestone
+        self._best_by_screen: Dict[str, float] = {}  # #138: best similarity per blocking screen
+        self.plateau_rounds = 0            # #138: consecutive judgments with no new best
+        self._verdict_cache: Dict[str, Dict[str, Any]] = {}  # #142: (screen, shot-md5) → verdict
+        self.last_judgment_at = None       # #145: wall-clock of the last real judgment
 
     def reset_for_milestone(self) -> None:
         """Anchor the deferral clock + total-judgment backstop to a NEW milestone
@@ -973,6 +1457,12 @@ class VisualFidelityGate:
         self.deferred_since = None
         self.total_judgments = 0
         self.transient_refunds = 0     # #75a: milestone-anchored, not reset by sig churn
+        self._passed_screens = set()   # #129: latch cleared per milestone, not by sig churn
+        self._seed_reminder_sent = False  # #133: re-armed per milestone
+        self._best_by_screen = {}      # #138: plateau tracking is per milestone
+        self.plateau_rounds = 0
+        self._verdict_cache = {}       # #142: pixel-keyed verdicts are per milestone
+        self.last_judgment_at = None   # #145: idle-source stamp is per milestone
 
     async def maybe_run(self) -> None:
         """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the
@@ -1013,7 +1503,15 @@ class VisualFidelityGate:
                 # this check).
                 return
             self.attempts = self.attempts + 1
-            result = await run_visual_fidelity(orch.output_dir, refs, orch.llm)
+            # Per-component MODEL config: the visual JUDGE may run its own model
+            # (component_models.visual_judge / ENVGEN_MODEL_VISUAL_JUDGE).
+            try:
+                from .llm_overrides import get_component_llm
+                _judge_llm = get_component_llm(orch, "visual_judge") or orch.llm
+            except Exception:
+                _judge_llm = orch.llm
+            result = await run_visual_fidelity(orch.output_dir, refs, _judge_llm,
+                                               verdict_cache=self._verdict_cache)
             if result.get("capture_unavailable") or result.get("auth_unavailable"):
                 # Not a judgment — the app wasn't reachable (mid-rebuild) or
                 # the authed session was rejected wholesale (token mint failed
@@ -1048,12 +1546,37 @@ class VisualFidelityGate:
             # churning lane that keeps flipping the source signature can't drive
             # unbounded judging even before the 900s wall-clock escape fires.
             self.total_judgments = self.total_judgments + 1
-            if result.get("passed"):
+            self.last_judgment_at = time.time()  # #145: idle-source escape stamp
+            # FIX #138: plateau tracking — a real judgment where NO blocking screen
+            # beats its best-so-far (+0.02 noise epsilon) increments plateau_rounds;
+            # ANY genuine improvement re-arms it. _visual_release_decision escapes
+            # early once the scores have flatlined (log-mining runs 50-62: the final
+            # window averaged ~65min, ~40% of total wall-clock, and never passed).
+            _improved = False
+            for _s in screens:
+                if _s.get("advisory"):
+                    continue
+                _n, _sim = str(_s.get("name")), float(_s.get("similarity") or 0.0)
+                if _sim > self._best_by_screen.get(_n, 0.0) + 0.02:
+                    self._best_by_screen[_n] = _sim
+                    _improved = True
+                elif _n not in self._best_by_screen:
+                    self._best_by_screen[_n] = _sim
+            self.plateau_rounds = 0 if _improved else self.plateau_rounds + 1
+            # FIX #129: latch each blocking screen that cleared the bar this round;
+            # the gate passes once EVERY blocking screen has cleared at least once
+            # this milestone (defeats the joint-probability wall the noisy judge
+            # otherwise makes unpassable — see _apply_sticky_pass).
+            sticky_pass = _apply_sticky_pass(self._passed_screens, screens)
+            if result.get("passed") or sticky_pass:
                 self.passed = True
+                _how = "" if result.get("passed") else (
+                    " [sticky: every blocking screen cleared ≥min at least once "
+                    "this milestone; latched=%s]" % ", ".join(sorted(self._passed_screens)))
                 orch._logger.warning(
-                    "Visual fidelity PASSED (%s): %s",
+                    "Visual fidelity PASSED (%s): %s%s",
                     ", ".join(f"{s['name']}={s['similarity']:.2f}" for s in screens),
-                    result.get("summary"))
+                    result.get("summary"), _how)
                 return
             orch._logger.warning(
                 "Visual fidelity attempt %s/3 FAILED — %s",
@@ -1061,7 +1584,8 @@ class VisualFidelityGate:
             try:
                 _vt = orch.hubs.workhub.create_task(
                     title=f"UI does not match reference designs (visual gate, attempt {self.attempts})",
-                    description=remediation_text(result, getattr(orch, "output_dir", None)),
+                    description=remediation_text(result, getattr(orch, "output_dir", None),
+                                                 latched=self._passed_screens),
                     assignee="frontend",
                     agent="orchestrator",
                     priority="P1",
@@ -1089,5 +1613,52 @@ class VisualFidelityGate:
                     pass
             except Exception as exc:
                 orch._logger.error("visual-fidelity task creation failed: %s", exc)
+            # FIX #133: EMPTY-STATE screens are a BACKEND-data problem the frontend
+            # cannot style away — the reference's design skeleton (feed cards, video
+            # chrome) only renders WITH rows, so the judge can never fairly score the
+            # screen (run-47/50: reels "No reels available" pinned 0.0-0.4 all window).
+            # Remind the BACKEND lane ONCE per milestone to seed the missing rows
+            # (workhub.create_task does NOT dedupe — the guard prevents a task per
+            # re-judge round; reset in reset_for_milestone).
+            try:
+                _empty = sorted({str(r.get("name")) for r in screens
+                                 if r.get("empty_state") and not r.get("passed")})
+                if _empty and not self._seed_reminder_sent:
+                    self._seed_reminder_sent = True
+                    _bt = orch.hubs.workhub.create_task(
+                        title="Visual gate: screen(s) render an EMPTY state — seed the missing rows",
+                        description=(
+                            "The visual-fidelity judge flagged these screens as EMPTY-state: "
+                            + ", ".join(_empty) + ". Their reference design only renders when "
+                            "the backing table has rows (e.g. a reels page needs video posts), "
+                            "so the screen can never match the reference no matter what the "
+                            "frontend does. Add realistic seed rows (>=3) for each screen's "
+                            "backing table(s) to app/backend/seed_data.json — keep FK "
+                            "references consistent with the existing seed users/posts."),
+                        assignee="backend",
+                        agent="orchestrator",
+                        priority="P1",
+                    )
+                    try:
+                        from tools.communication_tools import _create_message
+                        _bmsg = _create_message(
+                            source_agent_id="orchestrator",
+                            target_agent_id="backend",
+                            content=(
+                                "Seed-data task assigned "
+                                f"(task_id={(_bt or {}).get('id')}): the visual gate found "
+                                f"EMPTY-state screen(s) [{', '.join(_empty)}] whose design "
+                                "cannot render without data. Add seed rows for their backing "
+                                "tables to app/backend/seed_data.json NOW."),
+                            msg_type="task_ready",
+                            priority="urgent",
+                            persist=True,
+                            tags=["visual_fidelity", "seed_data"],
+                        )
+                        await orch.message_bus.send(_bmsg)
+                    except Exception:
+                        pass
+            except Exception as exc:
+                orch._logger.error("empty-state seed reminder failed (non-fatal): %s", exc)
         except Exception as exc:
             orch._logger.error("visual fidelity gate raised (non-fatal): %s", exc)

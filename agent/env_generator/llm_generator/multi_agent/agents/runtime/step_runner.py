@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, Dict, List, Optional, Set
 
 from utils.llm import Message
@@ -10,6 +11,31 @@ from .step_pipeline import AgentStepHelperMixin, AgentStepStageMixin, AgentStepT
 
 
 class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolingMixin):
+
+    def _stamp_step_activity(self) -> None:
+        """#147/#149 liveness stamp. Called from loop-OWNED paths only (loop
+        enter, step top, action-round top, after each stage-LLM return) — a
+        healthy long step keeps its stamp fresh so the wedge watchdog cannot
+        false-positive on it; a loop parked on a dead await stops stamping and
+        the resident poller still declares it wedged. Never call this from the
+        poller context (that would mask real wedges)."""
+        self._last_step_activity = time.time()
+
+    def _unwind_agentic_loop(self, entry_generation: int) -> None:
+        """#149 generation-guarded unwind. A #147 force-reset bumps
+        _loop_generation; a loop that entered under an OLDER generation was
+        declared dead and replaced — its finally must not stomp the
+        replacement loop's PROCESSING_TASK back to IDLE / zero its depth
+        (run-73: the stomp blinded the V30 re-entrancy guard and let a third
+        concurrent loop start)."""
+        if getattr(self, "_loop_generation", 0) != entry_generation:
+            self._logger.warning(
+                f"[{self.agent_id}] stale agentic loop unwound after a watchdog "
+                "reset (generation moved) — leaving state/depth to the "
+                "replacement loop")
+            return
+        self._processing_state = ProcessingState.IDLE
+        self._agentic_loop_depth = max(0, getattr(self, "_agentic_loop_depth", 1) - 1)
 
     async def run_one_step(
         self,
@@ -53,6 +79,10 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
         # and hung the frontend lane silently for 13min (V30). This monotonic depth counter
         # is reset-proof; decremented in the finally below.
         self._agentic_loop_depth = getattr(self, "_agentic_loop_depth", 0) + 1
+        # #149: capture the wedge-reset generation at entry — the finally only
+        # unwinds state/depth if no watchdog reset superseded this loop.
+        _entry_generation = getattr(self, "_loop_generation", 0)
+        self._stamp_step_activity()  # #147: loop-enter counts as activity
         # V30 liveness: log loop ENTER so a stall BEFORE the first step (the silent pre-step
         # hang the frontend hit) is observable, and depth>1 surfaces unexpected nesting.
         self._logger.info(
@@ -178,6 +208,10 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
         self._last_hub_pulse_prompt = None
         try:
             for step in range(max_steps):
+                # FIX #147: step-activity stamp — the busy-wedge watchdog
+                # (messaging.py) treats a lane with no stamp movement for
+                # ENVGEN_LANE_WEDGE_S as wedged, not busy.
+                self._stamp_step_activity()
                 if self._shutdown_requested:
                     return {"success": False, "error": "Shutdown requested", "files_created": files_created}
 
@@ -415,7 +449,7 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
 
                         # Drain urgent interrupts and emit any pending interrupt prompt
                         # so the agent still sees them at step start (formerly inbox_status job).
-                        while await self._check_and_handle_urgent():
+                        while await self._check_and_handle_urgent(from_loop=True):
                             pass
                         if self._interrupt_messages:
                             interrupt_prompt = self._build_interrupt_prompt()
@@ -724,8 +758,7 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
             }
         finally:
             self._active_stage = "action"
-            self._processing_state = ProcessingState.IDLE
-            self._agentic_loop_depth = max(0, getattr(self, "_agentic_loop_depth", 1) - 1)
+            self._unwind_agentic_loop(_entry_generation)  # #149 generation guard
             try:
                 self._auto_sync_hub_state(
                     step=max(0, len(step_traces) - 1),

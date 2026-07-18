@@ -30,7 +30,7 @@ from __future__ import annotations
 import ast
 import logging
 from pathlib import Path
-from typing import Any, Dict, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 
 from .route_projector import (
     _duplicate_routes, _existing_routes, _express_to_fastapi, _norm_path,
@@ -278,4 +278,208 @@ def sync_endpoint_statuses(project_dir: Any, registryhub: Any) -> Dict[str, Any]
     return out
 
 
-__all__ = ["served_routes", "sync_endpoint_statuses", "BackendAuditError"]
+# ── FIX #173: PLACEHOLDER-STUB backend handlers ───────────────────────────────
+# gmrun9 shipped a GET handler `def get_departures(...): return {"items": []}` (the lane's
+# comment literally said "This is a stub for departures") even though real seed data existed
+# (transit_stops.line_refs → transit_lines). The DeparturesPage then permanently rendered
+# "No departures found." — a placeholder page. The no_real_data browser gate was fooled by a
+# weak token on the walk. A GET route handler that never touches the DB and returns a
+# hardcoded EMPTY collection can NEVER serve real data → catch it by construction here (the
+# backend twin of frontend_audit's ui_page_delivery_blockers), so delivery HOLDS until the
+# handler queries the real table. Deterministic AST, best-effort, recomputed each gate tick.
+_COLLECTION_KEYS = frozenset({
+    "items", "results", "data", "rows", "list", "records", "departures", "entries",
+    "content", "docs", "objects", "elements", "collection",
+})
+# Attribute/name calls that indicate the handler actually reads the DB (so it's not a
+# constant stub even if one branch returns an empty guard).
+# NB: exclude the ambiguous ``get`` (dict.get / query_params.get) — it would mask a real
+# stub. The listed attrs are strong SQLAlchemy read signals.
+_DB_CALL_ATTRS = frozenset({
+    "query", "execute", "scalars", "scalar", "all", "first", "one", "one_or_none",
+    "filter", "filter_by", "count", "fetchall", "fetchone", "exec",
+})
+_DB_CALL_NAMES = frozenset({"select", "text"})
+
+
+def _handler_routes(fn: Any) -> Set[Tuple[str, str]]:
+    """The (METHOD, normalized-path) routes this function serves — parsed from its
+    ``@router.get("/x")`` / ``@app.post("/y")`` decorators. Empty ⇒ not a route handler.
+    A function can carry several route decorators (e.g. ``/api/x`` + ``/api/v1/x``)."""
+    routes: Set[Tuple[str, str]] = set()
+    for dec in getattr(fn, "decorator_list", []) or []:
+        if not isinstance(dec, ast.Call):
+            continue
+        target = dec.func
+        if not (isinstance(target, ast.Attribute) and target.attr.lower() in (
+                "get", "post", "put", "patch", "delete", "options", "head")):
+            continue
+        method = target.attr.upper()
+        path = None
+        if dec.args and isinstance(dec.args[0], ast.Constant) and isinstance(dec.args[0].value, str):
+            path = dec.args[0].value
+        else:  # @router.get(path="/x")
+            for kw in dec.keywords or []:
+                if kw.arg == "path" and isinstance(kw.value, ast.Constant) \
+                        and isinstance(kw.value.value, str):
+                    path = kw.value.value
+        if path:
+            # Skip framework-owned CONTROL-SURFACE routes (tenants / control plane / health /
+            # oauth …): a hardcoded default there (e.g. get_tenants → the "default" tenant) is
+            # intentional infra, not an app placeholder — the lane can't/shouldn't rewrite it,
+            # so flagging it would churn to a NO-CONVERGENCE abort. Mirrors the FIXED_KINDS
+            # skip every other backend audit already applies.
+            try:
+                if is_control_surface_path(path):
+                    continue
+            except Exception:
+                pass
+            routes.add(_norm_route(method, path))
+    return routes
+
+
+def _placeholder_collection_literal(node: Any) -> bool:
+    """True iff ``node`` is a HARDCODED collection with no real data behind it:
+      • an empty list ``[]`` (the classic stub), or
+      • a list whose elements include a dict/object literal (hardcoded MOCK rows —
+        ``[{"id": "dep_1", "line": "A"}]``), or
+      • a dict-envelope whose collection key(s) (``items`` / ``results`` / …) map to
+        either of the above (``{"items": []}`` / ``{"items": [{...}]}``).
+    A NON-empty list of scalars (static options ``["driving", "walking"]``) or a dynamic
+    value (a comprehension over query rows) is NOT a placeholder."""
+    if isinstance(node, ast.List):
+        if len(node.elts) == 0:
+            return True  # empty stub
+        return any(isinstance(e, ast.Dict) for e in node.elts)  # hardcoded mock rows
+    if isinstance(node, ast.Dict):
+        saw_collection = False
+        for k, v in zip(node.keys, node.values):
+            key = (k.value.lower() if isinstance(k, ast.Constant)
+                   and isinstance(k.value, str) else None)
+            if key in _COLLECTION_KEYS:
+                if _placeholder_collection_literal(v):
+                    saw_collection = True
+                else:
+                    return False  # collection key with real/dynamic/scalar value ⇒ not placeholder
+        return saw_collection
+    return False
+
+
+def _returns_only_placeholder_collections(fn: Any) -> bool:
+    """Every value-bearing ``return`` in the body is a placeholder-collection literal (empty
+    or hardcoded mock rows), and there is at least one — the handler emits only fake data."""
+    # Walk only the BODY (not decorator_list / arg defaults) so nothing outside the
+    # implementation is mistaken for a return.
+    returns = [n for stmt in fn.body for n in ast.walk(stmt)
+               if isinstance(n, ast.Return) and n.value is not None]
+    if not returns:
+        return False
+    return all(_placeholder_collection_literal(r.value) for r in returns)
+
+
+def _reads_db(fn: Any) -> bool:
+    """The handler body calls something that reads the DB (``db.query(...)``, ``.all()``,
+    ``select(...)`` …) — then an empty return is a legitimate empty result, not a stub.
+    Walks only ``fn.body`` — CRUCIALLY not the decorator_list, so the handler's own
+    ``@router.get`` (a ``.get`` Call) is not mistaken for a DB read."""
+    for stmt in fn.body:
+        for n in ast.walk(stmt):
+            if isinstance(n, ast.Call):
+                f = n.func
+                if isinstance(f, ast.Attribute) and f.attr.lower() in _DB_CALL_ATTRS:
+                    return True
+                if isinstance(f, ast.Name) and f.id.lower() in _DB_CALL_NAMES:
+                    return True
+    return False
+
+
+def stub_handler_blockers(backend_dir: Any) -> List[str]:
+    """Delivery blockers for PLACEHOLDER-STUB backend handlers: a GET route whose SERVED
+    handler does NO DB read and returns only a hardcoded EMPTY-or-MOCK collection.
+
+    Route-aware so a dead PROJECTED fallback (``_projected_*``, shadowed by a real custom
+    handler that is registered first / wins) is never flagged — only the handler that
+    actually serves the route. gmrun9 v1.3.0: the projected departures stub was shadowed by
+    a custom handler returning MOCK rows (``[{"line": "A", "time": "5 min"}]``) — the served
+    handler was the mock, so THAT is the placeholder, not the (shadowed) projected one.
+
+    Best-effort + pure; ``[]`` on any fault or a non-dir path.
+    ``ENVGEN_STUB_HANDLER_GATE=0`` disables."""
+    import os as _os
+    from collections import defaultdict
+    if _os.environ.get("ENVGEN_STUB_HANDLER_GATE", "1").strip().lower() in (
+            "0", "false", "no", "off"):
+        return []
+    root = Path(backend_dir)
+    if not root.is_dir():
+        return []
+    # 1) collect every GET route handler with its verdicts
+    handlers: List[Dict[str, Any]] = []
+    for py in sorted(root.rglob("*.py")):
+        if "__pycache__" in py.parts:
+            continue
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            get_routes = {r for r in _handler_routes(node) if r[0] == "GET"}
+            if not get_routes:
+                continue
+            handlers.append({
+                "name": node.name,
+                "file": py.name,
+                "projected": node.name.startswith("_projected_"),
+                "reads_db": _reads_db(node),
+                "placeholder": _returns_only_placeholder_collections(node),
+                "routes": get_routes,
+            })
+    # 2) group by route; the SERVED handler wins (a non-projected custom handler shadows the
+    #    projected fallback). Flag a route only when EVERY served handler is a no-DB placeholder.
+    by_route: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    for h in handlers:
+        for r in h["routes"]:
+            by_route[r].append(h)
+    flagged: Dict[str, Dict[str, Any]] = {}  # handler name → {file, projected, routes}
+    for _route, hs in by_route.items():
+        non_projected = [h for h in hs if not h["projected"]]
+        served = non_projected or hs
+        if served and all((not h["reads_db"] and h["placeholder"]) for h in served):
+            for h in served:
+                rec = flagged.setdefault(
+                    h["name"], {"file": h["file"], "projected": h["projected"],
+                                "routes": set()})
+                rec["routes"] |= {f"{m} {p}" for m, p in h["routes"]}
+
+    def _msg(name: str, rec: Dict[str, Any]) -> str:
+        _routes = ", ".join(sorted(rec["routes"])) or "a GET route"
+        if rec["projected"]:
+            # FIX #201 (r10 wall): a FRAMEWORK `_projected_*` stub is regenerated in
+            # main.py every cycle — the lane CANNOT edit it, so "replace the handler"
+            # is non-actionable and #173 walls forever. The projector stubs a GET only
+            # when the path maps to NO table (#200 resolves name/segment drift), so the
+            # lane-actionable remedy is a CONTRACT change it owns: declare the backing
+            # table, or drop the endpoint. NOT a HARD-vs-SOFT change — still blocks.
+            return (
+                f"endpoint {_routes} has a FRAMEWORK-projected PLACEHOLDER STUB "
+                f"(`{name}` in {rec['file']}) returning an empty/mock collection with NO "
+                "database query — because the path maps to NO backing table. You CANNOT "
+                "edit the projected handler; instead make the endpoint resolvable: declare "
+                "the backing table for this resource (kickoff_declare_table / "
+                "registryhub_register_table with the columns its page needs), or if the "
+                "endpoint is not real, REMOVE it from the contract. Once a table backs the "
+                "route the projector reads it automatically.")
+        return (
+            f"backend handler `{name}` ({rec['file']}) is a PLACEHOLDER STUB — the served "
+            f"handler for {_routes} returns a hardcoded empty/mock collection with NO "
+            "database query, so its page can never render real data (gmrun9 shipped exactly "
+            "this for transit departures). Query the real seeded table(s) and return the "
+            "rows. Do NOT return a hardcoded empty/mock collection.")
+
+    return [_msg(name, rec) for name, rec in sorted(flagged.items())]
+
+
+__all__ = ["served_routes", "sync_endpoint_statuses", "BackendAuditError",
+           "stub_handler_blockers"]

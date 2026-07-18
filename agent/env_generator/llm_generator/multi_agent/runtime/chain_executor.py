@@ -432,6 +432,58 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
             "save": {_INTRUDER: "access_token"},
             "expect": [200, 201, 409],
         })
+    # FIX #192a — framework-injected cross-user isolation probe. Empirical
+    # (2026-07-18): the last 5 SUCCESS archives carry ZERO denial steps — a pure
+    # 2xx sweep can't distinguish a tenancy-enforcing backend from one returning
+    # dummy 2xx (smoke_feed_77: a cross-user MUTATE returned 200, ungated). When
+    # the chain has no denial step but DOES register an authed user and create a
+    # row on a bare /api/<coll> (id saved), append the framework's own probe:
+    # intruder PUT on the standard item shape — served by the PROJECTED
+    # owner-safe write handler BY CONSTRUCTION (writes stay projected), so a
+    # legit app denies (403/404; 401 for token quirks) and a leaky one 2xxes and
+    # fails honestly. Bare-collection creates ONLY: action paths (/x/{id}/like)
+    # may hit custom handlers with body-validation-before-ownership (422 risk).
+    try:
+        _has_denial = any(
+            (lambda _e: any(str(c) in ("401", "403") for c in (
+                _e if isinstance(_e, (list, tuple, set)) else [_e])))(s.get("expect"))
+            for s in out) or any(
+            str(s.get("action", "")).startswith("framework_isolation_probe")
+            for s in out)
+        if not _has_denial:
+            _probe_target = None
+            for s in out:
+                _p = str(s.get("path", "")).split("?", 1)[0].rstrip("/")
+                _segs = [x for x in _p.strip("/").split("/") if x]
+                if (str(s.get("method", "")).upper() == "POST"
+                        and len(_segs) == 2 and _segs[0] == "api"
+                        and not _segs[1].startswith("{")
+                        and "$" not in _segs[1]
+                        and s.get("auth")
+                        and isinstance(s.get("save"), Mapping) and s["save"]):
+                    _idvar = next(iter(s["save"].keys()))
+                    _probe_target = (_p, str(_idvar))
+                    break
+            if _probe_target:
+                _coll_path, _idvar = _probe_target
+                if not any(_INTRUDER in (s.get("save") or {}) for s in out):
+                    out.insert(0, {
+                        "method": "POST", "path": "/auth/register",
+                        "body": {"email": "intruder_${rand}@example.com",
+                                 "password": "Chain123!x", "name": "Chain Intruder"},
+                        "save": {_INTRUDER: "access_token"},
+                        "expect": [200, 201, 409],
+                    })
+                out.append({
+                    "action": "framework_isolation_probe_"
+                              + _coll_path.rsplit("/", 1)[-1],
+                    "method": "PUT",
+                    "path": _coll_path + "/${" + _idvar + "}",
+                    "auth": _INTRUDER, "body": {},
+                    "expect": [401, 403, 404],
+                })
+    except Exception:
+        pass  # best-effort: a probe-injection fault must never break authoring
     return out, errors
 
 
@@ -536,6 +588,32 @@ def synthesize_default_chain(endpoints: List[Mapping[str, Any]]) -> List[Dict[st
         return []
     norm, _errs = normalize_steps(steps)
     return [{"name": "framework_default_crud", "steps": norm}] if norm else []
+
+
+def load_seed_ids(project_dir: Any) -> Dict[str, Any]:
+    """FIX #144: {table → first explicit non-None row id} from the authored
+    app/backend/seed_data.json. These ids are guaranteed present after every
+    clean boot (#130/#135), making them a deterministic recovery source for
+    literal-id 404s — immune to the collection-name mismatch that defeats
+    live-list recovery (posts listed via /api/feed, not /api/posts)."""
+    out: Dict[str, Any] = {}
+    try:
+        p = Path(project_dir) / "app" / "backend" / "seed_data.json"
+        if not p.exists():
+            return out
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(data, Mapping):
+            return out
+        for table, rows in data.items():
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if isinstance(row, Mapping) and row.get("id") is not None:
+                    out[str(table)] = row["id"]
+                    break
+    except Exception:
+        return {}
+    return out
 
 
 def load_verifier_chains(project_dir: Any) -> List[Dict[str, Any]]:
@@ -661,6 +739,18 @@ def _extract_resource_id(payload: Any) -> Any:
         if isinstance(items, list) and items and isinstance(items[0], Mapping) \
                 and items[0].get("id") is not None:
             return items[0]["id"]
+        # FIX #114 (run-30 STUCK, live-replayed): the platform register/login envelope
+        # is {"access_token":…, "user":{"id":N}} — no top-level id/item/items — so the
+        # chain's FIRST step captured nothing and the global-last-id rung starved; a
+        # later action path whose every other rung dead-ends (no bare collection, not
+        # a users resource) sent the LITERAL {id} → 422 → 7-cycle wedge → STUCK abort.
+        # Accept the id of a nested one-level dict when the payload has EXACTLY ONE
+        # such dict (unambiguous). Register precedes everything (authoring rule +
+        # normalize's ensure-user-before-login), so last_id is now always populated.
+        nested = [v["id"] for v in payload.values()
+                  if isinstance(v, Mapping) and v.get("id") is not None]
+        if len(nested) == 1:
+            return nested[0]
     return None
 
 
@@ -1018,9 +1108,12 @@ def _reverify_denial_via_fresh_intruder(base, method, path, body, expect) -> boo
         return True  # any failure → conservative → keep the leak verdict
 
 
-def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
+def execute_chain(base: str, chain: Mapping[str, Any],
+                  seed_ids: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """Run one chain; returns {name, steps: [...], broken: [...]}.
-    Deterministic wiring; never raises."""
+    Deterministic wiring; never raises. ``seed_ids`` (#144): {resource →
+    known-present id from seed_data.json}, a recovery rung for literal-id
+    404s (see the FIX #136 block)."""
     # ${rand} mints a UNIQUE value PER STEP (the prompt's contract: "${rand} mints a
     # unique value, ${var} reuses a saved one"). It used to be minted ONCE per execution
     # — so the canonical multi-user pattern (register user A → … → register user B), which
@@ -1038,6 +1131,10 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
     last_reg_creds: Dict[str, Any] = {}  # creds of the last successful /auth/register → reused if a later /auth/login 401s
     own_user_id: Any = None  # the chain user's own id (from /auth/register) — recovery must not target SELF (FIX #81)
     unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
+    # FIX #188: var → step-action whose OK response lacked the save path — the
+    # silent-capture-failure class behind the "GET x → 200 marked failed" triage
+    # confusion (225x across logs): the 200 step LOOKED fine, downstream broke.
+    save_failed_by_var: Dict[str, str] = {}
     # #59c: STORED chains (registered by an older framework, or hand-edited) can
     # carry the auth-save clobber in their persisted steps — normalize-time
     # guarding alone can't reach them, so guard the runtime copy too.
@@ -1151,6 +1248,17 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
         # _is_denial after it is always safe (short-circuit).
         if (_UNRESOLVED_PLACEHOLDER.search(path)
                 and method == "GET" and not _is_denial):
+            # #188: when the starving var traces to an upstream OK-step whose save
+            # captured nothing, SAY so — the capture bug (envelope/field-name
+            # drift) is the actionable root, not "no data".
+            _sf_hint = ""
+            for _uv in re.findall(r"\$\{(\w+)\}", str(path)):
+                if save_failed_by_var.get(_uv):
+                    _sf_hint = (" NOTE: ${" + _uv + "} save failed at step '"
+                                + save_failed_by_var[_uv]
+                                + "' (response lacked the save path) — fix that "
+                                "capture, not this read.")
+                    break
             recorded.append({
                 "action": str(step.get("action") or step.get("path") or ""),
                 "method": method, "path": str(step.get("path") or ""),
@@ -1158,7 +1266,7 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                 "note": ("skipped — unsatisfiable by data: the chain user owns no "
                          + str(_pres or "row") + " and the collection cannot create one "
                          "(no POST / empty list). Endpoint reachability is proven by "
-                         "api_smoke; this read has no data to target.")})
+                         "api_smoke; this read has no data to target." + _sf_hint)})
             continue
         body = _subst(step.get("body"), variables) if step.get("body") else None
         # BODY UNRESOLVED-VARIABLE FALLBACK — the body counterpart of the path fallback
@@ -1179,10 +1287,69 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
         elif not isinstance(_exp, (list, tuple, set)):
             _exp = [_exp]
         expect = [int(x) for x in _exp if str(x).isdigit()]
+        # FIX #188: record which authored variables are STILL unresolved in the
+        # outgoing request (path/body literal ${...}, or an auth ref no step
+        # captured) — a later failure on this step names them + their cause
+        # instead of surfacing a bare status the reader can't act on.
+        _unres_vars = set(re.findall(r"\$\{(\w+)\}", str(path)))
+        try:
+            if body is not None:
+                _unres_vars |= set(re.findall(r"\$\{(\w+)\}", json.dumps(body)))
+        except Exception:
+            pass
+        _auth_ref = str(step.get("auth") or "")
+        if _auth_ref and _auth_ref not in variables:
+            _unres_vars.add(_auth_ref)
         res = _http(method, base + path, token=token, body=body)
         status = res.get("status")
         ok = _status_ok(status, expect)
         autofilled: List[str] = []
+        # FIX #136 (instagram run-52/58/60 — 3rd occurrence of the class): a verifier-
+        # authored step with a LITERAL numeric id (POST /api/posts/4/repost) 404s when
+        # the seed doesn't reach that id — the ${placeholder} recovery ladder above
+        # never fires for literals, so the authored id went out verbatim and the chain
+        # wedged 7 post-cap cycles on a functionally-correct app (run-60: seed had
+        # posts 1-2, the chain hardcoded 4; the backend "fixed" the live DB but not
+        # seed_data.json, so every clean-boot regressed it). If a NON-denial step
+        # fails with 404 and its AUTHORED path (not a substituted one — a substituted
+        # id was really captured and must fail honestly) carries a literal numeric id
+        # segment, retry ONCE with a recovered REAL id (same-resource captured id ->
+        # live list recovery -> global last_id). Positive semantics preserved: the
+        # retry exercises the same happy path against an id that EXISTS; a genuinely
+        # broken endpoint fails the retry too and is recorded as before.
+        if (not ok and status == 404
+                and re.search(r"/\d+(?=/|$)", str(step.get("path") or ""))
+                and not _is_cross_user_denial(step)):
+            _lcoll = re.split(r"/\d+(?=/|$)", str(step.get("path") or "").split("?", 1)[0])[0]
+            _lres = _resource_from_path(_lcoll)
+            _lid = last_id_by_resource.get(_lres) if _lres else None
+            if _lid is None and _lcoll:
+                _lid = _recover_id_via_list(base, _lcoll, token, avoid=own_user_id)
+            if _lid is None and seed_ids:
+                # FIX #144 (run-66 M2, 4th occurrence of the literal-id class):
+                # live-list recovery is defeated when the resource's list lives
+                # at a different collection (posts listed via /api/feed) — but
+                # the authored seed ids are guaranteed present after every
+                # clean boot (#130/#135). Deterministic, no network. seed
+                # tables are PLURAL ('posts'); _resource_from_path singularizes
+                # ('post') — try both. The collection tail itself ('posts'
+                # from /api/posts/9/like) covers steps whose _lres is None.
+                _coll_tail = _lcoll.rstrip("/").rsplit("/", 1)[-1] if _lcoll else ""
+                for _k in (_lres, f"{_lres}s" if _lres else None,
+                           _coll_tail or None):
+                    if _k and seed_ids.get(_k) is not None:
+                        _lid = seed_ids[_k]
+                        break
+            if _lid is None:
+                _lid = last_id
+            if _lid is not None and str(_lid).strip():
+                _lpath = re.sub(r"/\d+(?=/|$)", "/" + str(_lid), path, count=1)
+                if _lpath != path:
+                    _res3 = _http(method, base + _lpath, token=token, body=body)
+                    if _status_ok(_res3.get("status"), expect):
+                        res, status, ok = _res3, _res3.get("status"), True
+                        path = _lpath
+                        autofilled.append(f"literal-id->{_lid}")
         # MISSING-FIELD AUTO-REPAIR (2026-06-24): a write step can 422 because the
         # LIVE handler requires a body field the chain didn't send — either the
         # verifier under-authored the body, OR (observed v19: POST
@@ -1278,6 +1445,25 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
         note = ""
         if not ok:
             note = (res.get("error") or res.get("body_text") or "")[:160]
+            # FIX #188 honesty: a pure-DENIAL probe (expect has no 2xx) that got a
+            # success must SAY so — the raw "→ 200 ({body})" read as nonsense in
+            # 225x of triage lines and hid the real meaning (the request was not
+            # rejected: an auth/isolation hole, or a mis-authored probe).
+            if (expect and isinstance(status, int) and 200 <= status < 300
+                    and not any(200 <= e < 300 for e in expect)):
+                note = ("DENIAL-PROBE got success — the request was NOT rejected "
+                        f"(expected denial {expect}). " + note)
+            # FIX #188 causality: the request went out with unresolved variables —
+            # name each one and (when known) the upstream step whose save failed,
+            # so the reader chases the CAPTURE bug, not this step's status.
+            if _unres_vars:
+                _hints = []
+                for _v in sorted(_unres_vars):
+                    _src = save_failed_by_var.get(_v)
+                    _hints.append(
+                        f"${{{_v}}} save failed at step '{_src}'" if _src
+                        else f"${{{_v}}} never captured by any prior step")
+                note = "unresolved " + "; ".join(_hints) + " — " + note
             if status in (404, 405):
                 # 404/405 is normally 'missing' (endpoint not built yet → soft, so the
                 # whole chain isn't failed on a not-yet-implemented endpoint). BUT a 404
@@ -1316,6 +1502,8 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
         entry = {"action": str(step.get("action") or path), "method": method,
                  "path": path, "status": status, "ok": ok, "kind": kind,
                  "note": note}
+        if expect:
+            entry["expect"] = list(expect)  # #188: the broken line shows intent
         if autofilled:
             entry["autofilled"] = autofilled
         recorded.append(entry)
@@ -1363,10 +1551,13 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                 payload = json.loads(res.get("body_text") or "{}")
             except Exception:
                 payload = {}
+            _save_failed: List[str] = []  # #188: silent-capture-failure surfacing
             for var, dotted in step["save"].items():
+                _captured = False
                 val = _dig(payload, dotted)
                 if val is not None:
                     variables[str(var)] = str(val)
+                    _captured = True
                 elif "." not in str(dotted) and str(dotted) not in variables:
                     # REVERSED-MAPPING TOLERANCE: the contract is
                     # save:{var_name: response_dotted_path}, but verifiers often
@@ -1382,6 +1573,21 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
                     rev = _dig(payload, str(var))
                     if rev is not None:
                         variables[str(dotted)] = str(rev)
+                        _captured = True
+                if not _captured and str(var) not in variables:
+                    # #188: the step SUCCEEDED but captured nothing for this var —
+                    # today this is silent, and the first visible symptom is a
+                    # baffling downstream failure (the "200 marked failed" triage
+                    # class). Record it on THIS entry + index it for the causal
+                    # hint on whichever later step starves. Diagnostic only.
+                    _save_failed.append(f"{var}<-{dotted}")
+                    save_failed_by_var[str(var)] = str(
+                        step.get("action") or step.get("path") or "")
+            if _save_failed:
+                entry["save_failed"] = [f.split("<-", 1)[0] for f in _save_failed]
+                entry["note"] = ((entry["note"] + " | ") if entry["note"] else "") + (
+                    "save FAILED (response lacks the path): "
+                    + ", ".join(_save_failed))
         if kind == "broken":
             # Don't abort — just mark the vars this step was supposed to provide as
             # unsatisfied, so ONLY its dependents are skipped; independent steps run on.
@@ -1392,8 +1598,13 @@ def execute_chain(base: str, chain: Mapping[str, Any]) -> Dict[str, Any]:
             if isinstance(step.get("save"), Mapping):
                 unsatisfied.update(str(k) for k in step["save"].keys()
                                    if str(k) not in variables)
-    broken = [f"{s['method']} {s['path']} → {s['status']} ({s['note']})"
-              for s in recorded if s["kind"] == "broken"]
+    # #188: broken lines carry the authored expectation — "GET x → 200 ({body})"
+    # with a hidden expect [401] read as nonsense in 225x of triage lines.
+    broken = [
+        (f"{s['method']} {s['path']} → {s['status']} "
+         + (f"(expected {s['expect']}; {s['note']})" if s.get("expect")
+            else f"({s['note']})"))
+        for s in recorded if s["kind"] == "broken"]
     return {"name": str(chain.get("name") or "chain"), "steps": recorded,
             "broken": broken}
 
@@ -1415,7 +1626,8 @@ def run_chains(base: str, project_dir: Any,
     if not chains:
         return {"source": "missing", "chains": [],
                 "broken": [AUTHORING_INSTRUCTIONS], "total_steps": 0}
-    results = [execute_chain(base, ch) for ch in chains]
+    _seed_ids = load_seed_ids(project_dir)  # #144: literal-id recovery rung
+    results = [execute_chain(base, ch, seed_ids=_seed_ids) for ch in chains]
     broken = [b for r in results for b in r["broken"]]
     total = sum(len(r["steps"]) for r in results)
     # Record pass/fail back onto the registry records (best-effort) — the

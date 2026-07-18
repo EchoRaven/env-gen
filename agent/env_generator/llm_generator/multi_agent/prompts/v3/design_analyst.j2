@@ -79,6 +79,8 @@
       "     \"material\": \"flat | wallpaper+translucent panels (describe)\" },\n"
       "  \"assets\": [{\"id\":..,\"file\":..,\"staged_path\":..,\"description\":..,\"use\":[..]}],\n"
       "  \"screens\": [{\"name\":..,\"reference\":..,\"layout\":\"one line\",\n"
+      "     \"kind\":\"page|overlay (overlay = modal/flyout/sheet rendered OVER a page)\",\n"
+      "     \"requires_auth\": true|false, \"route\":\"the SPA path this screen lives at ('/','/login','/explore'; for an overlay: the route of the page UNDER it)\",\n"
       "     \"components\": [{\"id\":..,\"crop\":\"design/crops/..png\",\"region\":[x0,y0,x1,y1],\n"
       "        \"colors\": {\"bg\":\"#..(MEASURED, opaque/translucent noted)\",\"accent\":\"#..\"},\n"
       "        \"typography\": {..}, \"radius\":.., \"shadow\":..,\n"

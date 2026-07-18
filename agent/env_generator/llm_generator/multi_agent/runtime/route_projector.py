@@ -334,8 +334,15 @@ def _param_column_type(param: str, path: str, models: Dict[str, Dict[str, Any]])
 
 def _match_model(seg: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tuple[str, Dict[str, Any]]]:
     cand = seg.lower()
+    # FIX #202 (r11 live): the y→ies irregular plural — a segment 'activity'
+    # must match table 'activities' (also category/categories, story/stories,
+    # company/companies). Only the regular +s/-s was handled, so an '-y' resource
+    # GET shipped an empty stub → #173 wall. Derive the -ies form of an -y segment.
+    _ies = (cand[:-1] + "ies") if cand.endswith("y") and len(cand) > 2 else None
     for table, meta in models.items():
-        if cand == table or cand + "s" == table or cand == table.rstrip("s") or cand.rstrip("s") == table.rstrip("s"):
+        if (cand == table or cand + "s" == table or cand == table.rstrip("s")
+                or cand.rstrip("s") == table.rstrip("s")
+                or (_ies is not None and _ies == table)):
             return (table, meta)
     return None
 
@@ -401,12 +408,78 @@ def _resource_model(path: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tu
     A feed/timeline path that names no table resolves to the app's primary content
     table — shape-derived (timestamp + owner FK + richness), domain-agnostic."""
     chosen: Optional[Tuple[str, Dict[str, Any]]] = None
-    for seg, is_p in _segments(path):
+    _segs = _segments(path)
+    for seg, is_p in _segs:
         if is_p:
             continue
         m = _match_model(seg, models)
         if m:
             chosen = m
+    # FIX #198 (r8 live): an ACTION path `/api/<parent>/{param}/<verb>` whose
+    # trailing verb names no model of its own (POST .../{id}/like) resolves to
+    # the PARENT here → FIX #124 then 404s it. But the lane commonly models the
+    # relation as a PARENT-PREFIXED join (`video_likes`), and #196 provisions a
+    # bare `likes` — neither of which _match_model('like') finds. When the verb
+    # tail is unmatched AND sits after a `<resource>/{param}`, try the join
+    # names `<parent_singular>_<verb>[s]` so a correctly-modeled interaction
+    # actually gets its insert handler instead of a 404.
+    _non_param = [(s, i) for i, (s, is_p) in enumerate(_segs) if not is_p and s != "api"]
+    if len(_segs) >= 3 and _non_param:
+        _last_s = _non_param[-1][0]
+        _last_i = _non_param[-1][1]
+        _verb_unmatched = _match_model(_last_s, models) is None
+        _prev_is_param = _last_i >= 1 and _segs[_last_i - 1][1]
+        if _verb_unmatched and _prev_is_param and len(_non_param) >= 2:
+            _parent_seg = _non_param[-2][0]
+            _parent_sing = _parent_seg.rstrip("s") or _parent_seg
+            for _cand in (f"{_parent_sing}_{_last_s}", f"{_parent_sing}_{_last_s}s"):
+                _jm = _match_model(_cand, models)
+                if _jm:
+                    return _jm
+    # FIX #200 (r10 live): a GET path whose segments don't LITERALLY equal a table
+    # name projected an empty-collection STUB → #173 HARD-blocked it, and — being a
+    # FRAMEWORK handler in main.py — the lane couldn't fix it → guaranteed wall.
+    # Two deterministic rungs, tried only when nothing matched exactly (so no
+    # existing resolution changes):
+    if chosen is None and _non_param:
+        _res_segs = [s for s, _ in _non_param]
+        # (1) MULTI-SEGMENT JOIN: adjacent non-param segments joined with '_' name a
+        #     table the path split across a hierarchy (/api/live/streams → live_streams).
+        for _i in range(len(_res_segs) - 1):
+            _joined = f"{_res_segs[_i]}_{_res_segs[_i + 1]}"
+            _jm = _match_model(_joined, models)
+            if _jm:
+                chosen = _jm
+                break
+        # (2) SUFFIX MATCH: the resource segment names the CORE of a qualified table
+        #     (/api/messages → direct_messages). Fallback-only, and length-guarded
+        #     (≥3 chars) so a tiny segment can't spuriously suffix-hit a big table.
+        if chosen is None:
+            for _seg in reversed(_res_segs):
+                _sl = _seg.lower()
+                if len(_sl.rstrip("s")) < 3:
+                    continue
+                _cands = [t for t in models
+                          if t.lower().endswith("_" + _sl)
+                          or t.lower().endswith("_" + _sl.rstrip("s"))
+                          or t.lower().endswith("_" + _sl.rstrip("s") + "s")]
+                if len(_cands) == 1:  # unambiguous only
+                    chosen = (_cands[0], models[_cands[0]])
+                    break
+        # (3) PREFIX MATCH (#205, r13 live): a shorthand segment names the CORE of
+        #     a `<segment>_<...>` compound table (/api/live → live_streams). The '_'
+        #     boundary + UNIQUENESS guard keep it from spuriously hitting a substring
+        #     (cat↛category) or an ambiguous pair (two live_* tables).
+        if chosen is None:
+            for _seg in reversed(_res_segs):
+                _sl = _seg.lower()
+                if len(_sl.rstrip("s")) < 3:
+                    continue
+                _pre = _sl.rstrip("s")
+                _cands = [t for t in models if t.lower().startswith(_pre + "_")]
+                if len(_cands) == 1:
+                    chosen = (_cands[0], models[_cands[0]])
+                    break
     if chosen is None:
         segs = {seg for seg, is_p in _segments(path) if not is_p}
         if segs & set(_FEED_SHAPED_TOKENS):
@@ -611,7 +684,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         if auth and owner_scoped_tables and parent_table in set(owner_scoped_tables):
             _p_ofk = _owner_fk(parent_meta)
             if _p_ofk:
-                _parent_owner_filter = f'.filter(getattr({parent_cls}, "{_p_ofk}") == _fw_uid(user))'
+                _parent_owner_filter = f'.filter(getattr({parent_cls}, "{_p_ofk}") == _fw_owner_val({parent_cls}, "{_p_ofk}", user))'
 
     body_lines: List[str] = []
     m = method.upper()
@@ -643,7 +716,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             # leak existence), exactly like the PUT/DELETE owner gate. Opt-in via
             # the resource's owner_scoped_reads contract signal; open by default.
             body_lines += [
-                f'    if getattr(obj, "{owner_fk}", None) != _fw_uid(user):',
+                f'    if getattr(obj, "{owner_fk}", None) != _fw_owner_val(type(obj), "{owner_fk}", user):',
                 '        raise HTTPException(status_code=404, detail="not found")',
             ]
         body_lines += [
@@ -671,7 +744,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         ]
         if owner_fk:
             body_lines.append(
-                f'    _q = _q.filter(getattr({cls}, "{owner_fk}") == _fw_uid(user))')
+                f'    _q = _q.filter(getattr({cls}, "{owner_fk}") == _fw_owner_val({cls}, "{owner_fk}", user))')
         body_lines += [
             "    obj = _q.first()",
             "    if obj is not None:",
@@ -690,7 +763,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             # can't even probe existence). Safe default for projected CRUD; broader
             # rules (admin/moderator) go in the lane's custom_routes.
             body_lines += [
-                f'    if getattr(obj, "{owner_fk}", None) != _fw_uid(user):',
+                f'    if getattr(obj, "{owner_fk}", None) != _fw_owner_val(type(obj), "{owner_fk}", user):',
                 '        raise HTTPException(status_code=404, detail="not found")',
             ]
         body_lines += [
@@ -743,7 +816,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         ]
         if owner_scoped_reads and owner_fk:
             body_lines.append(
-                f'    query = query.filter(getattr({cls}, "{owner_fk}") == _fw_uid(user))')
+                f'    query = query.filter(getattr({cls}, "{owner_fk}") == _fw_owner_val({cls}, "{owner_fk}", user))')
         body_lines += [
             "    if term:",
             f"        cols_to_search = [c for c in {_search_cols!r} if hasattr({cls}, c)]",
@@ -777,7 +850,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         if _me and _me[0]:
             _ucls, _ucols = _me
             body_lines = [
-                (f"    obj = db.get({_ucls}, _fw_uid(user)) if user is not None else None"
+                (f"    obj = db.get({_ucls}, _fw_owner_val({_ucls}, 'id', user)) if user is not None else None"
                  if auth else f"    obj = db.query({_ucls}).first()"),
                 "    if obj is None:",
                 '        raise HTTPException(status_code=404, detail="not found")',
@@ -790,7 +863,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         if owner_scoped_reads and owner_fk:
             # PRIVATE resource: the list is the caller's own rows only.
             body_lines = [
-                f'    rows = db.query({cls}).filter(getattr({cls}, "{owner_fk}") == _fw_uid(user)).limit(100).all()',
+                f'    rows = db.query({cls}).filter(getattr({cls}, "{owner_fk}") == _fw_owner_val({cls}, "{owner_fk}", user)).limit(100).all()',
                 f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": len(rows)}}",
             ]
         else:
@@ -824,7 +897,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             _ucls = (_me_u[0] if (_me_u and _me_u[0]) else None) or cls
             body_lines += [
                 "    try:",
-                f"        obj = db.get({_ucls}, _fw_uid(user))" if auth else f"        obj = db.query({_ucls}).first()",
+                f"        obj = db.get({_ucls}, _fw_owner_val({_ucls}, 'id', user))" if auth else f"        obj = db.query({_ucls}).first()",
                 "        if obj is None:",
                 '            raise HTTPException(status_code=404, detail="not found")',
                 "        for k, v in valid.items():",
@@ -843,7 +916,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             ]
             if owner_fk:
                 body_lines += [
-                    f'        if getattr(obj, "{owner_fk}", None) != _fw_uid(user):',
+                    f'        if getattr(obj, "{owner_fk}", None) != _fw_owner_val(type(obj), "{owner_fk}", user):',
                     '            raise HTTPException(status_code=404, detail="not found")',
                 ]
             body_lines += [
@@ -863,17 +936,45 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                         f'        valid["{tfk}"] = _parent.id',
                     ]
                     bound.append(tfk)
+            # FIX #124 (instagram run-43 M1, live): an ACTION-suffix POST whose action
+            # segment did NOT resolve to its own model falls back here with cls = the
+            # PARENT entity — the generic create then INSERTS A NEW PARENT on the action
+            # route (POST /api/users/{id}/unfollow → User(**{}) → NotNull → 400 on the
+            # HAPPY PATH; the chain wedged 35+ min while follow — whose 'follow' segment
+            # DID map to the Follow association — worked). A semantically-unmappable
+            # action must 404 ("not implemented") instead: every chain expect-family
+            # tolerates 404, and the lane's custom handler — registered BEFORE the
+            # projected routes — wins the match the moment it exists.
+            _segs_np = [g for g in str(path).strip("/").split("/")
+                        if g and not (g.startswith("{") or g.startswith(":"))]
+            _last_np = (_segs_np[-1].lower() if _segs_np else "")
+            _action_unmapped = (
+                m == "POST" and params and not str(path).rstrip("/").endswith("}")
+                and not bound
+                and _last_np not in (str(table).lower(),
+                                     str(table).lower().rstrip("s"))
+            )
+            if _action_unmapped:
+                body_lines = [
+                    "    raise HTTPException(status_code=404, detail="
+                    "\"action endpoint not implemented by the projection — "
+                    "the app's own handler serves this route\")",
+                ]
             if m == "POST" and auth:
                 ofk = _owner_fk(meta, exclude=tuple(bound))
                 if ofk:
-                    body_lines += [f'    valid.setdefault("{ofk}", _fw_uid(user))']
+                    body_lines += [f'    valid.setdefault("{ofk}", _fw_owner_val({cls}, "{ofk}", user))']
+            if not _action_unmapped:
+                body_lines += [
+                    "    try:",
+                    f"        obj = {cls}(**valid)",
+                    "        db.add(obj)",
+                ]
+        if body_lines and body_lines[0].lstrip().startswith("raise HTTPException(status_code=404"):
+            pass  # FIX #124 stub body is complete — no create/commit footer
+        else:
             body_lines += [
-                "    try:",
-                f"        obj = {cls}(**valid)",
-                "        db.add(obj)",
-            ]
-        body_lines += [
-            "        db.commit()",
+                "        db.commit()",
             "        db.refresh(obj)",
             f"        return {{\"item\": {_serialize_expr('obj', cols)}}}",
             "    except HTTPException:",
@@ -908,15 +1009,25 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             # the param name (generic — {username}→users.username works for
             # ANY app), else an honest 404 (the gate only checks 2xx shapes).
             _resolver = None
-            for _mn, _mm in (models or {}).items():
-                # the models dict shape is {table: {"cls": str, "cols": [name,...]}} —
-                # the prior _mm.get("columns")/"class_name" keys never existed, so this
-                # resolver was dead (always 404). Read the real keys.
-                _col_names = list(_mm.get("cols") or [])
-                if last_param in _col_names:
-                    _resolver = (_mm.get("cls") or _mn.capitalize(),
-                                 last_param, _col_names)
-                    break
+            # FIX #162 (gmrun7 transit 500): a GENERIC id param is a meaningless resolver
+            # signal — EVERY model has an ``id`` column, so ``last_param in _col_names``
+            # matched the FIRST model (the tenants spine, TEXT id) for an unmappable path
+            # like ``/api/transit/{id}/departures`` → ``db.query(Tenant).filter(Tenant.id ==
+            # id)`` with ``id: int`` → ``operator does not exist: text = integer`` → 500 on
+            # every call (M2 wedge). Resolve ONLY via a DISTINCTIVE (non-id) param that
+            # uniquely names a column (username/slug/handle); a generic-id unmappable path
+            # falls to the honest 404 stub below (a param-path 404 is exempted by the
+            # reachability gate; the lane implements the real handler in custom_routes.py).
+            if not _is_id_param(last_param):
+                for _mn, _mm in (models or {}).items():
+                    # the models dict shape is {table: {"cls": str, "cols": [name,...]}} —
+                    # the prior _mm.get("columns")/"class_name" keys never existed, so this
+                    # resolver was dead (always 404). Read the real keys.
+                    _col_names = list(_mm.get("cols") or [])
+                    if last_param in _col_names:
+                        _resolver = (_mm.get("cls") or _mn.capitalize(),
+                                     last_param, _col_names)
+                        break
             if _resolver:
                 _cls, _col, _col_names = _resolver
                 body_lines = [
@@ -1074,6 +1185,24 @@ def project_missing_routes(
             "        return int(_v)\n"
             "    except (TypeError, ValueError):\n"
             "        return _v\n"
+            # FIX #134 (instagram run-57, live): coerce to the OWNER COLUMN's type — a
+            # TEXT owner column (lane DDL: messages.sender_id) + the int-coerced sub
+            # binds `text = integer` -> psycopg UndefinedFunction -> every scoped read
+            # 500s, and a Python-level ownership check ("16" != 16) denies every owner.
+            "def _fw_owner_val(cls, col, user):  # noqa: F811\n"
+            "    _v = _fw_uid(user)\n"
+            "    try:\n"
+            "        _pt = getattr(cls, col).type.python_type\n"
+            "    except Exception:\n"
+            "        return _v\n"
+            "    try:\n"
+            "        if _pt is str and not isinstance(_v, str):\n"
+            "            return str(_v)\n"
+            "        if _pt is int and not isinstance(_v, int):\n"
+            "            return int(_v)\n"
+            "    except (TypeError, ValueError):\n"
+            "        pass\n"
+            "    return _v\n"
             "try:\n"
             "    from models import *  # noqa: F401,F403\n"
             "except Exception:\n"

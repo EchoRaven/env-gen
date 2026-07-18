@@ -162,8 +162,14 @@ def plan_test_user_goals(
             "modality": "browser", "kind": "page", "name": f"page_{slug}",
             "goal": (f"Open the '{pg['name']}' page ({pg['route']}) as the user and exercise every "
                      f"interactive control on it; assert each control's RESULT matches its intent "
-                     f"(navigation / API call + status / DOM change) and the page renders real "
-                     f"content (not blank/placeholder) with no console errors."),
+                     f"(navigation / API call + status / DOM change). Then VERIFY the objective "
+                     f"signals a real user would notice (#181): the page shows REAL seeded data "
+                     f"(specific realistic rows — NOT an empty state, placeholder/lorem/'Untitled' "
+                     f"filler, or one value repeated); if it shows a MAP it is a REAL interactive "
+                     f"map (draggable tiles + real markers), NOT a static image or a colored box; "
+                     f"and you actually reached this page logged-in, not bounced to a login wall. "
+                     f"FILE A P0 for any blank/placeholder content, fake map, or auth bounce you "
+                     f"find. No console errors."),
             "acceptance": acc or None,
         })
 
@@ -537,6 +543,29 @@ class FailureLedger:
         open_keys = set(self.open_failures())
         return sorted((dict(g) for g in planned_goals),
                       key=lambda g: (0 if self._key(g) in open_keys else 1, str(g.get("name"))))
+
+
+def squad_gate_enabled(env: Mapping[str, Any]) -> bool:
+    """#179: the test-user squad runs on delivery by DEFAULT (validated live on gmrun13, where it
+    spawned 9 agents, detected a broken frontend, and filed bugs). An operator disables it with
+    ENVGEN_TESTUSER_SQUAD in {0,false,no,off}. Default-ON is the fix for "test-user 功能都没测":
+    a build with dead controls / a blank detail page no longer slips past the test-user gate."""
+    return str(env.get("ENVGEN_TESTUSER_SQUAD", "1")).strip().lower() in ("1", "true", "yes", "on")
+
+
+def squad_gate_outcome(*, ran: bool, p0: int) -> str:
+    """#179: classify a squad result into the delivery-gate action.
+
+    - 'pass'   : squad ran and filed zero P0 → the milestone may release.
+    - 'defect' : squad ran and filed P0 defect(s) → defer AND burn an escape-budget attempt.
+    - 'retry'  : squad could not run (app ports not resolved yet / empty contract / crash →
+                 ran=False) → defer but do NOT burn an attempt, so flaky first-attempt port
+                 timing can't erode the defer/escape budget. squad_release_decision's wall-clock
+                 remains the escape backstop, so a genuinely-never-ready app still releases.
+    """
+    if not ran:
+        return "retry"
+    return "pass" if int(p0 or 0) == 0 else "defect"
 
 
 async def run_squad_for_delivery(orch: Any, version: str = "",

@@ -492,19 +492,45 @@ class KickoffDriver:
         fe_source_eps = _declared_eps or eps
         fe_source_tbls = _declared_tbls or tbls
         salvaged: List[str] = []
+        _mi = kickoff_handle.get("milestone_index")
+        _m2plus = isinstance(_mi, int) and not isinstance(_mi, bool) and _mi >= 2
         for lane in missing:
             if lane == "backend":
-                # GUARD: require BOTH endpoints AND tables — roadmap_validator
-                # hard-requires a non-empty contract.data_model.tables, so deriving
-                # a table-less backend section would just re-fail validation while
-                # misleadingly logging "authored" (reviewer-caught). Without both,
-                # fall through to the honest fallback.
+                # GUARD (milestone 1): require BOTH endpoints AND tables —
+                # roadmap_validator hard-requires non-empty data_model.tables on the
+                # FIRST milestone, so deriving a table-less backend section would
+                # just re-fail validation while misleadingly logging "authored"
+                # (reviewer-caught). Without both, honest fallback.
+                # FIX #115 (run-31, live): at MILESTONE 2+ this guard is STALE —
+                # #96/#108 made empty tables / missing data_model a WARNING there
+                # (cumulative contract). run-31 had M1+M2 DELIVERED; the M3 kickoff
+                # burned its window AND the #95 retry inside a 142-strong Gemini
+                # MALFORMED storm, the slice parsed neither endpoints nor tables →
+                # this guard `continue`d → salvage [] → abort at 15:29:45 (the
+                # lane's own terminal backup stub landed 15:29:50 — it triggers on
+                # the kickoff_request ENDING, i.e. the abort itself, so on this
+                # path it is ALWAYS too late). Author an honest DEFERRED section
+                # instead: the milestone proceeds degraded on the cumulative
+                # contract rather than killing a run with delivered releases.
                 if not eps or not tbls:
-                    continue
-                content: Dict[str, Any] = {
-                    "section": "backend", "endpoints": list(eps),
-                    "data_model": {"tables": list(tbls)},
-                }
+                    if not _m2plus:
+                        continue
+                    content: Dict[str, Any] = {
+                        "section": "backend",
+                        "endpoints": list(eps),
+                        "data_model": ({"tables": list(tbls)} if tbls else {}),
+                        "deferred": True,
+                        "source": "auto_backup_timeout_m2plus",
+                        "note": ("kickoff timed out with no backend section and an "
+                                 "unparseable slice at milestone 2+ — deferred; the "
+                                 "cumulative contract carries the prior milestones "
+                                 "(#96/#108 downgrade these shapes to warnings)"),
+                    }
+                else:
+                    content = {
+                        "section": "backend", "endpoints": list(eps),
+                        "data_model": {"tables": list(tbls)},
+                    }
             elif lane == "frontend":
                 if not fe_source_eps and not fe_source_tbls:
                     continue  # GUARD: no endpoints or tables → only a login page; skip

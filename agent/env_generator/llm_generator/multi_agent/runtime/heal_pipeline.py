@@ -187,9 +187,34 @@ class HealPipeline:
                 orch._logger.warning(
                     "custom_routes.py lane get_db (raw psycopg) rewritten to delegate to "
                     "the framework Session (FIX #86) — dual-style DB handle restored.")
+            # FIX #118 (run-33): a lane-written jwt.decode without audience= rejects
+            # every aud-carrying framework token (PyJWT InvalidAudienceError) → 401
+            # "Invalid token" on all authed endpoints → business_chain wedge.
+            try:
+                from .backend_scaffold import repair_jwt_decode_audience
+                _jda = repair_jwt_decode_audience(be_dir)
+                if _jda.get("repaired"):
+                    orch._logger.warning(
+                        "lane jwt.decode calls made aud-tolerant (verify_aud=False, "
+                        "FIX #118 — framework tokens carry aud; signature checks "
+                        "untouched): %s", _jda.get("repaired"))
+            except Exception as _jda_exc:
+                orch._logger.debug("jwt-decode audience repair skipped: %s", _jda_exc)
             # FIX #106 (run-23): a `param: str` annotation on an integer-PK by-id route
             # makes Postgres reject the comparison (int = varchar) → 500 on every read,
             # and the lane's by-id GET shadows the projected one by design.
+            # FIX #119 (run-35 M4): the PROJECTED signature is the contract truth for
+            # path-param types in BOTH directions (run-35: lane wrote username: int on
+            # a string-keyed route → every real username 422/500 → STUCK).
+            try:
+                from .backend_scaffold import repair_custom_routes_param_types_vs_projection
+                _pv = repair_custom_routes_param_types_vs_projection(be_dir)
+                if _pv.get("fixed"):
+                    orch._logger.warning(
+                        "custom_routes.py path-param annotations aligned to the PROJECTED "
+                        "signatures (FIX #119): %s param(s) corrected.", _pv.get("fixed"))
+            except Exception as _pv_exc:
+                orch._logger.debug("param-vs-projection repair skipped: %s", _pv_exc)
             pt = repair_custom_routes_param_types(be_dir)
             if pt.get("fixed"):
                 orch._logger.warning(
@@ -212,13 +237,24 @@ class HealPipeline:
             if not out_dir:
                 return
             from pathlib import Path as _P
-            from .backend_scaffold import repair_backend_packaging
+            from .backend_scaffold import (repair_backend_packaging,
+                                           sanitize_pyproject_local_deps)
             rep = repair_backend_packaging(_P(out_dir) / "app" / "backend")
             if rep.get("repaired"):
                 orch._logger.warning(
                     "Backend packaging made build-safe (hatchling flat-layout → "
                     "wheel bypass-selection so `pip install .` installs deps without "
                     "failing package detection): %s", rep.get("pyproject"))
+            # FIX #189 (tiktok-r5): a hallucinated LOCAL-module dep
+            # (custom_routes.py listed as pip dep "custom-routes") kills uv
+            # resolution → docker_up wedges to STUCK-ABORT. Deterministic strip.
+            rep2 = sanitize_pyproject_local_deps(_P(out_dir) / "app" / "backend")
+            if rep2.get("repaired"):
+                orch._logger.warning(
+                    "Backend pyproject sanitized: dropped local-module dep(s) %s — "
+                    "these are the app's OWN files, not pip packages (uv would fail "
+                    "the whole docker build on them): %s",
+                    rep2.get("dropped"), rep2.get("pyproject"))
         except Exception as exc:
             orch._logger.debug("backend packaging repair skipped: %s", exc)
 
@@ -455,9 +491,14 @@ class HealPipeline:
                     "delivery time (no false-negative report).", version)
                 return
             eps = business_endpoints(registryhub.get_endpoints())
+            try:
+                from .llm_overrides import get_component_llm
+                _tu_llm = get_component_llm(orch, "test_user_judge") or getattr(orch, "llm", None)
+            except Exception:
+                _tu_llm = getattr(orch, "llm", None)
             report = run_test_user_validation(
                 proj, eps, version=version, base_url=base, compose_file=compose,
-                llm=getattr(orch, "llm", None))
+                llm=_tu_llm)
             summ = report.get("summary", {})
             if summ.get("verdict") == "PASS":
                 orch._logger.warning(
@@ -494,7 +535,8 @@ class HealPipeline:
         from .visual_fidelity import _service_host_port
         from .validation_runner import _backend_host_port
         from .test_user_runner import (
-            run_browser_test_user, format_feedback, judge_against_references)
+            run_browser_test_user, format_feedback, judge_against_references,
+            extract_seed_display_values)
         cwd = compose.parent
         fe_port = (_service_host_port(compose, cwd, "frontend")
                    or _service_host_port(compose, cwd, "ui") or 8080)
@@ -546,9 +588,17 @@ class HealPipeline:
         # Log in as the SEEDED demo user (populated screens that match the references) rather
         # than a fresh user that, under tenant-scoping, sees empty lists on every page.
         from .visual_fidelity import _seed_demo_login
+        # B-direction: the salient real seeded values (place names, authors, addresses) the
+        # walk asserts render SOMEWHERE — catches a mock-twin / placeholder / no-token fetch
+        # frontend that logs in + renders but shows zero real backend data (run-3). Empty →
+        # the assertion self-skips (never false-flags a static app). Best-effort.
+        try:
+            _seed_vals = extract_seed_display_values(proj)
+        except Exception:
+            _seed_vals = []
         report = asyncio.run(run_browser_test_user(
             base, pages, out_dir, register=True, api_base_url=api_base,
-            demo_login=_seed_demo_login(proj)))
+            demo_login=_seed_demo_login(proj), seed_values=_seed_vals))
         if not report.get("ran"):
             orch._logger.warning("BROWSER test-user (v%s): could not run — %s",
                                  version, report.get("summary"))
@@ -579,7 +629,8 @@ class HealPipeline:
         # It MUST escalate to a P0 fix like any other UI defect.
         broken = ((not report.get("auth_ok")) or report.get("blank_pages")
                   or report.get("error_pages") or report.get("visual_mismatches")
-                  or report.get("hollow_frontend") or report.get("auth_redirect_pages"))
+                  or report.get("hollow_frontend") or report.get("auth_redirect_pages")
+                  or report.get("fake_map_pages"))  # #172: fake-div map surface
         if broken:
             try:
                 fb = format_feedback(report)
@@ -630,6 +681,54 @@ class HealPipeline:
                 orch._logger.warning(
                     "Frontend escaped-backtick template delimiters un-escaped (esbuild "
                     "parse fix, prevents docker_up build wedge): %s", _eb.get("repaired"))
+            # FIX #190 (§3-6, gmrun3/5/7/8/11 + tiktok-r1): a re-emitted import →
+            # "Identifier 'X' has already been declared" → build FAIL → docker_up
+            # wedge. Parse-level like the backtick fix, so it runs right after it.
+            try:
+                from .frontend_scaffold import repair_frontend_duplicate_imports
+                _di = repair_frontend_duplicate_imports(fe)
+                if _di.get("repaired"):
+                    orch._logger.warning(
+                        "Frontend duplicate import bindings deduped (identifier-"
+                        "already-declared build-wedge fix): %s", _di.get("repaired"))
+                if _di.get("conflicts"):
+                    orch._logger.warning(
+                        "Frontend import-binding CONFLICTS left for the lane (mixed "
+                        "clauses, not auto-fixable): %s",
+                        (_di.get("conflicts") or [])[:6])
+            except Exception as _die:
+                orch._logger.debug("duplicate-import dedup skipped: %s", _die)
+            # FIX #194 (§3-6 second half): a re-emitted WHOLE component/const →
+            # "X already declared" build FAIL. Byte-identical later copies are
+            # removed deterministically; different bodies are only reported.
+            try:
+                from .frontend_scaffold import repair_frontend_duplicate_declarations
+                _dd = repair_frontend_duplicate_declarations(fe)
+                if _dd.get("repaired"):
+                    orch._logger.warning(
+                        "Frontend byte-identical duplicate declarations removed "
+                        "(already-declared build-wedge fix): %s", _dd.get("repaired"))
+                if _dd.get("conflicts"):
+                    orch._logger.warning(
+                        "Frontend duplicate declarations with DIFFERENT bodies left "
+                        "for the lane: %s", (_dd.get("conflicts") or [])[:6])
+            except Exception as _dde:
+                orch._logger.debug("duplicate-declaration dedup skipped: %s", _dde)
+            # FIX #191 (tiktok-r3 NO-CONVERGENCE): deterministically rewrite the
+            # exact fabricated-fallback sites the #175 HARD gate flags
+            # (`x.rating || '4.5'` → `x.rating ?? '—'`) — r3's lane thrashed
+            # 75min on this edit and the run aborted. Shares the gate's regexes,
+            # so the heal clears precisely what the gate blocks.
+            try:
+                from .frontend_audit import repair_fabricated_fallbacks
+                _ff = repair_fabricated_fallbacks(fe / "src")
+                if _ff.get("repaired"):
+                    orch._logger.warning(
+                        "Fabricated member-field fallbacks rewritten to honest empty "
+                        "states (#175 gate sites, deterministic): %s",
+                        (_ff.get("sites") or [])[:8])
+            except Exception as _ffe:
+                orch._logger.debug("fabricated-fallback heal skipped: %s", _ffe)
             # USED-BUT-UNIMPORTED JSX identifiers (#40, run-33 M1): `<Mail/>` with no
             # import BUILDS fine but crashes the page at render (ReferenceError → blank +
             # console error → browser-gate deferral churn). Import them via lucide-react —

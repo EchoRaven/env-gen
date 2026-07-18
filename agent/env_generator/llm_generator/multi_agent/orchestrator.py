@@ -152,6 +152,14 @@ FWVAL_NO_DELIVER_ABORT_S = int(os.environ.get("ENVGEN_NO_DELIVER_ABORT_S", "4500
 # this cap so a verifier that oscillates FOREVER (never converging) still aborts (no
 # livelock). Env-gated. ~this-many re-authorings of room before giving up on the verifier.
 FWVAL_CHAIN_CHURN_CAP = max(2, int(os.environ.get("ENVGEN_CHAIN_CHURN_CAP") or "8"))
+# FIX #186 (tiktok-r2): the api_smoke stuck ladder keyed only on (failure_set,
+# chain_sig) — blind to APP-SOURCE edits, so it STUCK-ABORTed ~20s before the
+# backend lane landed its /auth/login fix. (The delivery-gate ladder already
+# counts source edits via _deliver_progress_sig; this closes the same gap here.)
+# A changed app-source signature grants a BOUNDED stuck-counter reset — capped by
+# this budget so an r3-style forever-thrash (edits every cycle, failure set never
+# clears) still aborts. ~this-many edit-graces of room before giving up.
+FWVAL_SOURCE_CHURN_CAP = max(2, int(os.environ.get("ENVGEN_SOURCE_CHURN_CAP") or "8"))
 FWVAL_STUCK_ABORT_AFTER = max(3, int(os.environ.get("ENVGEN_DELIVERY_STUCK_ABORT_AFTER") or "7"))  # env-gated (default 7); …then FAIL FAST: redispatch+terminal didn't help on an
 #   unchanged failure set with no lane progress → abort early with the root surfaced, instead
 #   of limping to the wall-clock cap (PROPOSAL #5). ~1 slow-retry interval past the cap (~11 min)
@@ -166,13 +174,26 @@ FWVAL_STUCK_ABORT_AFTER = max(3, int(os.environ.get("ENVGEN_DELIVERY_STUCK_ABORT
 FWVAL_ABORT_GRACE_MAX = max(0, int(os.environ.get("ENVGEN_DELIVERY_ABORT_GRACE_MAX") or "3"))
 # FIX #112 (runs 24+26 autopsy): remediation rounds take 3-10 min and scores DO rise
 # +0.1-0.4/round, but the old 900s window fit only 1-3 rounds — the gate released
-# below threshold mid-convergence. Size the window for 5-6 rounds (#110 gives the lane
-# eyes; this gives it time) and keep the judgment cap from becoming the new binding
-# constraint. Env-tunable; runs are time-unlimited by user directive.
+# below threshold mid-convergence (run-29 M4: dm_inbox 0.00→0.40→0.60 still climbing
+# at the escape). #110 gives the lane eyes; this gives it time. #112b: user directive
+# 2026-07-08 ("900s还是太短...可以长一点") → a full hour (~6-15 rounds); the judgment
+# cap scales with it so it can't become the new binding constraint. Env-tunable; the
+# per-source attempt cap (3) still releases early when the lane stops iterating.
 VISUAL_DEFERRAL_ESCAPE_S = float(os.environ.get(
-    "ENVGEN_VISUAL_ESCAPE_S") or "2400")   # max wall-clock a milestone may defer on visuals
+    "ENVGEN_VISUAL_ESCAPE_S") or "3600")   # max wall-clock a milestone may defer on visuals
 VISUAL_TOTAL_JUDGMENTS_CAP = int(os.environ.get(
-    "ENVGEN_VISUAL_JUDGMENTS_CAP") or "14")  # per-milestone hard cap on real visual judgments
+    "ENVGEN_VISUAL_JUDGMENTS_CAP") or "20")  # per-milestone hard cap on real visual judgments
+# FIX #138 (log-mining runs 50-62): the final visual window averaged 65m31s = ~40% of a
+# run's TOTAL wall-clock, and in 7/7 delivered runs it ended via the 3600s escape — never
+# a pass. When the judged scores show NO improvement for several consecutive real
+# judgments (no blocking screen beats its best-so-far), the remaining wait buys nothing:
+# escape early. Conservative: any real per-screen improvement re-arms the counter.
+VISUAL_PLATEAU_ROUNDS = int(os.environ.get(
+    "ENVGEN_VISUAL_PLATEAU_ROUNDS") or "4")   # consecutive no-improvement judgments
+VISUAL_PLATEAU_MIN_S = float(os.environ.get(
+    "ENVGEN_VISUAL_PLATEAU_MIN_S") or "1500")  # never plateau-escape before this deferral floor
+VISUAL_IDLE_S = float(os.environ.get(
+    "ENVGEN_VISUAL_IDLE_S") or "600")  # FIX #145: idle-source escape (0 disables)
 
 
 def _fwval_should_attempt(attempts: int, last_attempt_ts: float, now: float,
@@ -276,21 +297,68 @@ def _abort_grace_should_defer(is_deliver_stuck: bool, grace_used: int,
 def _visual_release_decision(deferred_since, attempts: int, total_judgments: int,
                              now: float, *, attempt_cap: int = 3,
                              escape_s: float = VISUAL_DEFERRAL_ESCAPE_S,
-                             total_cap: int = VISUAL_TOTAL_JUDGMENTS_CAP) -> str:
+                             total_cap: int = VISUAL_TOTAL_JUDGMENTS_CAP,
+                             plateau_rounds: int = 0,
+                             plateau_cap: int = VISUAL_PLATEAU_ROUNDS,
+                             plateau_min_s: float = VISUAL_PLATEAU_MIN_S,
+                             last_judgment_at=None,
+                             idle_s: float = VISUAL_IDLE_S) -> str:
     """Decide the visual-blocked delivery path. Returns:
       * ``"defer"``  — keep blocking the release; the lane should iterate.
       * ``"release"``— escape: deliver anyway (recorded below-threshold).
     Escapes (so the deferral ALWAYS terminates — PIPE-C3): the per-milestone
     wall-clock since the FIRST defer exceeds ``escape_s`` (anchored, NOT reset by
     lane churn), OR the per-source attempt budget is spent, OR the per-milestone
-    total real-judgment cap is hit (vision-cost backstop)."""
+    total real-judgment cap is hit (vision-cost backstop), OR — FIX #138 — the
+    judged scores have PLATEAUED (``plateau_rounds`` consecutive real judgments
+    with no blocking screen beating its best-so-far) after at least
+    ``plateau_min_s`` of deferral: further waiting buys nothing (log-mining runs
+    50-62: the window averaged ~65min = ~40% of total wall-clock and 7/7 ended
+    on the timer, never a pass)."""
     if deferred_since is not None and (now - deferred_since) > escape_s:
         return "release"
     if total_judgments >= total_cap:
         return "release"
     if attempts >= attempt_cap:
         return "release"
+    if (plateau_cap > 0 and plateau_rounds >= plateau_cap
+            and deferred_since is not None
+            and (now - deferred_since) >= plateau_min_s):
+        return "release"
+    # FIX #145 (run-68 M4): the gate judges on SOURCE CHANGE — when the
+    # frontend stops producing changes the plateau counter freezes below its
+    # cap and only the 3600s anchor releases (run-68: last judgment 13:59,
+    # anchor release 14:21 = 22min of zero new evidence). A frozen source is
+    # the strongest plateau evidence there is: no change → no new judgments →
+    # the scores are final. Same deferral floor as #138.
+    if (idle_s > 0 and last_judgment_at is not None
+            and deferred_since is not None
+            and (now - deferred_since) >= plateau_min_s
+            and (now - last_judgment_at) >= idle_s):
+        return "release"
     return "defer"
+
+
+# FIX #139: registry-state check classes a lane can flip during the delivery tail —
+# a FRESH milestone-gate verdict outranks a final-gate re-read that fails ONLY on
+# these (ig run-61: a chain re-registered status='registered' 1s before the final
+# evaluation; outlook run-28/31 were the live-probe flavor of the same drift).
+FINAL_GATE_DRIFT_CLASSES = frozenset({
+    "business_chain_failing", "verification_checklist_not_ready"})
+
+
+def _final_gate_drift_waiver(ms_cleared_at, failed_checks, now: float,
+                             *, window_s: float = 900.0) -> bool:
+    """True when a failed FINAL gate should be waived in favor of the milestone
+    verdict: the milestone gate evaluated fully clear within ``window_s`` and the
+    final failure set is non-empty and ONLY registry-state drift classes
+    (structural failures — docker/contract/build — are never waived)."""
+    if ms_cleared_at is None:
+        return False
+    if (now - ms_cleared_at) > window_s:
+        return False
+    failed = set(failed_checks or [])
+    return bool(failed) and failed <= FINAL_GATE_DRIFT_CLASSES
 
 
 class Orchestrator:
@@ -557,20 +625,24 @@ class Orchestrator:
             return []
 
     def _get_validation_results(self, limit: int = 200) -> list:
-        """Return validation records shaped for legacy orchestrator consumers."""
+        """Return validation records shaped for legacy orchestrator consumers.
+        #193: same canonical status vocabulary + nested-metadata flatten as
+        hub_registry.get_validation_results — the two readers must agree."""
+        from .runtime.hub_registry import (
+            _canon_validation_status, _flatten_validation_metadata)
         checks = self._get_validation_checks()
         records = []
         for c in checks:
             ev = c.get("evidence", {}) or {}
             records.append({
                 "task_id": c.get("name", "").removeprefix("validation:"),
-                "status": c.get("status", "error"),
+                "status": _canon_validation_status(c.get("status", "error")),
                 "summary": ev.get("summary", ""),
                 "execution_mode": ev.get("execution_mode", "auto"),
                 "duration_seconds": ev.get("duration_seconds"),
                 "artifacts": ev.get("artifacts", []),
                 "evidence": ev,
-                "metadata": ev,
+                "metadata": _flatten_validation_metadata(ev),
                 "recorded_by": c.get("agent", ""),
                 "recorded_at": c.get("updated_at", 0),
             })
@@ -914,8 +986,9 @@ class Orchestrator:
                 if not _milestones_explicit and not _force_single_ms:
                     try:
                         from .runtime.reference_materials import plan_milestones
+                        from .runtime.llm_overrides import get_component_llm as _gcl
                         _planned = await plan_milestones(
-                            self.llm, raw_req,
+                            _gcl(self, "milestone_plan") or self.llm, raw_req,
                             getattr(self, "_reference_spec", None) or {})
                     except Exception as exc:
                         self._logger.error("milestone planning raised: %s", exc)
@@ -986,13 +1059,8 @@ class Orchestrator:
                     # deliver_project tool can reject a premature FINAL delivery during an
                     # earlier milestone (deliver_project ends the run; earlier milestones
                     # cut a per-milestone release + advance — they must NOT final-deliver).
+                    self._stamp_milestone_flags_on_orch_agent(_m_idx, len(milestones))
                     _orch_agent_ms = self._agents.get("orchestrator")
-                    if _orch_agent_ms is not None:
-                        try:
-                            _orch_agent_ms._is_final_milestone = self._is_final_milestone
-                            _orch_agent_ms._milestone_progress = (_m_idx, len(milestones))
-                        except Exception:
-                            pass
                     # Per-milestone visual state: anchor the deferral clock and the
                     # total-judgment backstop to THIS milestone (PIPE-C3 — within a
                     # milestone neither is reset by lane churn).
@@ -1059,6 +1127,9 @@ class Orchestrator:
                             if _orch_agent_ms is not None:
                                 _orch_agent_ms._is_final_milestone = self._is_final_milestone
                                 _orch_agent_ms._milestone_progress = (_m_idx, len(milestones))
+                                # FIX #117: keep the deliver_project visual guard stamped
+                                # through milestone-plan revisions too.
+                                _orch_agent_ms._visual_defer_check = self._visual_delivery_defer_active
                         except Exception:
                             pass
                         # P1+P4: kickoff requirement = the detailed detail (phase TASK) +
@@ -1121,6 +1192,9 @@ class Orchestrator:
                                 _m_idx, _clear_err,
                             )
                         await self._respawn_core_lanes()
+                        # FIX #123: the respawn just created a FRESH orchestrator agent —
+                        # re-stamp the milestone flags + the #117 visual-defer check on it.
+                        self._stamp_milestone_flags_on_orch_agent(_m_idx, len(milestones))
 
                     # Charter §8: orchestrator wire is ONE call site — boot
                     # the kickoff coordinator. start_kickoff opens the
@@ -1703,6 +1777,30 @@ class Orchestrator:
                     wait_backend_ready(self.output_dir)
                     gate = self._validate_delivery_gate()
                 if not gate["ok"]:
+                    # FIX #139 (ig run-61 + outlook run-28/31 — final-gate/milestone-gate
+                    # state DRIFT): this gate re-reads MUTABLE hub state, and a lane that
+                    # touches the chain registry during the multi-minute delivery tail
+                    # (run-61: the verifier re-registered a chain — status='registered',
+                    # NEVER RUN — 1 second before this evaluation) flips
+                    # business_chain_failing on a run whose milestone gate evaluated
+                    # fully CLEAR minutes earlier and cut every release. When the
+                    # milestone verdict is FRESH and the failure set is ONLY the
+                    # registry-state class (not structural: docker/contract/build),
+                    # honor the milestone verdict — loudly.
+                    _ms_clear = getattr(self, "_milestone_gate_cleared_at", None)
+                    _failed = set(gate.get("failed_checks") or [])
+                    if _final_gate_drift_waiver(_ms_clear, _failed, time.time()):
+                        self._logger.warning(
+                            "FINAL-GATE DRIFT WAIVER (#139): the milestone gate evaluated "
+                            "fully CLEAR %ss ago and every release was cut; the final "
+                            "re-evaluation failed only on %s — registry state a lane "
+                            "mutated during the delivery tail (run-61 class), not a "
+                            "regression of the delivered artifact. Honoring the "
+                            "milestone verdict.",
+                            int(time.time() - _ms_clear), sorted(_failed))
+                        gate = dict(gate)
+                        gate["ok"] = True
+                if not gate["ok"]:
                     report = self._format_delivery_gate_report(gate)
                     raise RuntimeError(f"Delivery gate failed.\n{report}")
             
@@ -1892,6 +1990,61 @@ class Orchestrator:
         from .runtime.kickoff_driver import KickoffDriver
         return KickoffDriver(self)._kickoff_fallback_or_reconcile(*args, **kwargs)
 
+    def _stamp_milestone_flags_on_orch_agent(self, m_idx: int, total: int) -> None:
+        """FIX #123 (run-42, live): stamp the milestone flags + the #117 visual-defer
+        check onto the CURRENT orchestrator agent instance. The original stamp ran
+        only at the top of the milestone iteration — but _respawn_core_lanes()
+        (milestone 2+) creates FRESH agent instances, so every stamp was LOST for
+        the rest of the milestone: the new orchestrator agent defaulted to
+        _is_final_milestone=True with NO _visual_defer_check, and run-42's LLM
+        deliver_project sailed through mid-visual-window (1397s/3600s, the exact
+        bypass #117 was built to close). Call at the iteration top AND immediately
+        after every respawn. Idempotent; never raises."""
+        try:
+            a = self._agents.get("orchestrator")
+            if a is None:
+                return
+            a._is_final_milestone = bool(getattr(self, "_is_final_milestone", True))
+            a._milestone_progress = (m_idx, total)
+            a._visual_defer_check = self._visual_delivery_defer_active
+        except Exception:
+            pass
+
+    def _visual_delivery_defer_active(self) -> bool:
+        """FIX #117 (run-32 autopsy): True while the FINAL milestone's visual gate is
+        actively deferring — deliver_project consults this (stamped onto the
+        orchestrator agent as ``_visual_defer_check``) and rejects, keeping the
+        coordination loop (and the lanes it drives) alive so the remediation window
+        (#112/#112b) actually gets its time. run-32: the LLM called deliver_project at
+        1406s into a 3600s window (its objective gate report is all-green — visuals
+        are not one of its checks) → loop exited → lanes terminated → post-loop path
+        cut the release mid-convergence. Returns False the moment the gate passes OR
+        the bounded escape fires (nothing can deadlock); getattr-pure + never raises
+        (a broken check must never block delivery)."""
+        try:
+            if not getattr(self, "_reference_images", None):
+                return False
+            if not getattr(self, "_is_final_milestone", True):
+                return False
+            if os.environ.get("ENVGEN_VISUAL_BLOCKING", "1").lower() in (
+                    "0", "false", "no", "off"):
+                return False
+            gate = getattr(self, "_vf_gate", None)
+            if gate is None or getattr(gate, "passed", False):
+                return False
+            _since = getattr(gate, "deferred_since", None)
+            if _since is None:
+                # final milestone reached but the deliver-check hasn't anchored the
+                # deferral yet — the gate is still ahead, not cleared: defer.
+                return True
+            return _visual_release_decision(
+                _since, getattr(gate, "attempts", 0),
+                getattr(gate, "total_judgments", 0), time.time(),
+                plateau_rounds=getattr(gate, "plateau_rounds", 0),
+                last_judgment_at=getattr(gate, "last_judgment_at", None)) == "defer"
+        except Exception:
+            return False
+
     @staticmethod
     def _coordination_tick_due(*, event_set, now, last_tick_at, loop_start, stuck_sec):
         from .runtime.coordination import coordination_tick_due
@@ -2016,10 +2169,11 @@ class Orchestrator:
         reference image/doc/spec state only for what this run actually produced,
         so a best-effort failure leaves prior state untouched."""
         from .runtime.reference_materials import compile_reference_materials
+        from .runtime.llm_overrides import get_component_llm as _gcl_rc
         res = await compile_reference_materials(
             raw_req,
             output_dir=self.output_dir,
-            llm=self.llm,
+            llm=_gcl_rc(self, "reference_compile") or self.llm,
             logger=self._logger,
             reference_images=getattr(self, "_reference_images", None),
         )
@@ -2064,10 +2218,18 @@ class Orchestrator:
                     if agent_done:
                         self._logger.warning(
                             "design_analyst produced no valid design_system.json — single-shot fallback")
+                    # Per-component MODEL config: the enrichment analyst call may run
+                    # its own model (component_models.design_enrich /
+                    # ENVGEN_MODEL_DESIGN_ENRICH).
+                    try:
+                        from .runtime.llm_overrides import get_component_llm
+                        _enrich_llm = get_component_llm(self, "design_enrich") or self.llm
+                    except Exception:
+                        _enrich_llm = self.llm
                     await run_design_prep(
                         self._design_input, None,
                         getattr(self, "_reference_images", None),
-                        self.output_dir, self.llm)
+                        self.output_dir, _enrich_llm)
                     ds = load_valid_design_system(dsp)
                 if ds is not None:
                     # FIX #80: deterministic completion floor — an analyst that skipped the
@@ -2335,6 +2497,17 @@ class Orchestrator:
                         "Framework deliver declined: delivery gate has %d failed check(s): %s",
                         len(_failed), _failed,
                     )
+                # FIX #120 (run-38): a STALE build:* failure checklist (transient
+                # run_validation fail mid visual-churn, never re-recorded) must not
+                # ride the no-convergence watchdog to an abort — deterministically
+                # re-arm the framework's own api_smoke (bounded per milestone) so
+                # fresh build:* truth gets recorded without depending on the verifier.
+                try:
+                    from .runtime.framework_validation import (
+                        maybe_refresh_stale_build_checklist)
+                    maybe_refresh_stale_build_checklist(self, _failed)
+                except Exception:
+                    pass
                 # FORWARD-PROGRESS GUARANTEE for POST-api_smoke gate blockers (audit #2).
                 # The deterministic stuck-abort ladder lives in the api_smoke-FAILING branch
                 # of _maybe_run_framework_validation, so once api_smoke passes, a delivery-gate
@@ -2476,13 +2649,16 @@ class Orchestrator:
                     # Those must ship as the REAL page, not the fallback — block harder on them.
                     if _unbuilt and getattr(self, "_reference_images", None):
                         try:
-                            from .runtime.visual_fidelity import map_reference_screens
+                            from .runtime.visual_fidelity import (
+                                load_screen_classifications, map_reference_screens)
                             _known_routes = set()
                             for _pg in (_rh.list_ui_pages() or {}).values() if _rh else []:
                                 if isinstance(_pg, dict) and _pg.get("route"):
                                     _known_routes.add(str(_pg["route"]))
                             _ref_routes = {str(s.get("route")) for s in map_reference_screens(
-                                list(self._reference_images), _known_routes) if s.get("route")}
+                                list(self._reference_images), _known_routes,
+                                classifications=load_screen_classifications(self.output_dir),
+                            ) if s.get("route")}  # FIX #132: authoritative mapping wins
                             _ref_unbuilt = referenced_unbuilt_pages(_rh, _app_root, _ref_routes)
                         except Exception as _ru_exc:
                             self._logger.debug("referenced-unbuilt detect skipped: %s", _ru_exc)
@@ -2544,6 +2720,8 @@ class Orchestrator:
                     self._vf_gate.attempts,
                     self._vf_gate.total_judgments,
                     _now,
+                    plateau_rounds=getattr(self._vf_gate, "plateau_rounds", 0),
+                    last_judgment_at=getattr(self._vf_gate, "last_judgment_at", None),
                 )
                 if _vf_decision == "defer":
                     self._logger.warning(
@@ -2577,13 +2755,16 @@ class Orchestrator:
                         "(fresh capture of the delivered source).")
                 else:
                     # release: an escape fired — deliver anyway, loudly, below-threshold.
+                    _plat = getattr(self._vf_gate, "plateau_rounds", 0)
                     self._logger.warning(
                         "Visual fidelity deferral RELEASED (escape after %ss deferred / "
-                        "%s attempts / %s total judged) — delivering anyway "
+                        "%s attempts / %s total judged%s) — delivering anyway "
                         "(recorded as below-threshold).",
                         int(_now - self._vf_gate.deferred_since),
                         self._vf_gate.attempts,
-                        self._vf_gate.total_judgments)
+                        self._vf_gate.total_judgments,
+                        (" / PLATEAU %s no-improvement rounds — #138 early escape"
+                         % _plat) if _plat >= VISUAL_PLATEAU_ROUNDS else "")
             # TEST-USER SQUAD BLOCKING GATE (§3.5, 2026-06-22): the verify->fix loop the
             # user's flow diagram puts INSIDE each milestone. The app is up (api_smoke
             # booted it; the visual gate just shot it), so spawn the three modality
@@ -2591,10 +2772,13 @@ class Orchestrator:
             # defects via bug_create (-> debugger -> owning lane). While open P0s remain
             # and attempts/wall-clock are not exhausted, DEFER the release (return) so the
             # fixes land before this milestone ships; then escape (never deadlock), loudly.
-            # Env-gated (default-off) until validated on a live run.
-            if (os.environ.get("ENVGEN_TESTUSER_SQUAD", "0").lower() in ("1", "true", "yes", "on")
+            # #179: default-ON (validated live on gmrun13 — spawned 9 agents, filed real
+            # defects); disable with ENVGEN_TESTUSER_SQUAD=0.
+            from .runtime.test_user_squad import squad_gate_enabled
+            if (squad_gate_enabled(os.environ)
                     and not getattr(self, "_tu_squad_passed", False)):
-                from .runtime.test_user_squad import run_squad_for_delivery, squad_release_decision
+                from .runtime.test_user_squad import (
+                    run_squad_for_delivery, squad_release_decision, squad_gate_outcome)
                 _now = time.time()
                 if getattr(self, "_tu_squad_deferred_since", None) is None:
                     self._tu_squad_deferred_since = _now
@@ -2608,11 +2792,20 @@ class Orchestrator:
                     except Exception as _tu_exc:
                         self._logger.debug("test-user squad gate run failed: %s", _tu_exc)
                         _tu_result = {"ran": False}
-                    self._tu_squad_attempts = getattr(self, "_tu_squad_attempts", 0) + 1
                     _p0 = int((_tu_result.get("bugs") or {}).get("p0", 0))
-                    if _tu_result.get("ran") and _p0 == 0:
+                    _tu_outcome = squad_gate_outcome(ran=bool(_tu_result.get("ran")), p0=_p0)
+                    if _tu_outcome == "pass":
                         self._tu_squad_passed = True  # clean -> fall through to release
-                    else:
+                    elif _tu_outcome == "retry":
+                        # #179: the squad couldn't run yet (app ports not resolved / empty
+                        # contract) — defer WITHOUT burning an attempt so flaky first-attempt
+                        # port timing can't erode the escape budget; wall-clock is the backstop.
+                        self._logger.info(
+                            "test-user squad not ready (%s) — deferring without burning an "
+                            "attempt", _tu_result.get("reason"))
+                        return
+                    else:  # 'defect' — squad ran and filed P0s: burn an attempt and defer
+                        self._tu_squad_attempts = getattr(self, "_tu_squad_attempts", 0) + 1
                         self._logger.warning(
                             "DELIVERY DEFERRED: test-user squad found %d P0 defect(s) "
                             "(attempt %s, %ss deferred) — filed to the debugger/owning lane; "
@@ -2661,21 +2854,30 @@ class Orchestrator:
                     # attempt-cap + wall-clock decision, never deadlocks): keep deferring
                     # while the fix lands, then escape and ship loudly.
                     from .runtime.test_user_squad import squad_release_decision
+                    from .runtime.test_user_runner import browser_gate_decision
                     _bg_now = time.time()
                     if getattr(self, "_tu_browser_deferred_since", None) is None:
                         self._tu_browser_deferred_since = _bg_now
                     _bg_decision = squad_release_decision(
                         self._tu_browser_deferred_since,
                         getattr(self, "_tu_browser_attempts", 0), _bg_now)
+                    # FIX #152: a HARD-unusable app (login broken / login-wall hollow) NEVER
+                    # escape-releases — the bounded escape only applies to SOFT defects. A
+                    # release nobody can log into is worthless; hold to FAIL-FAST instead of
+                    # shipping a dead app (run-4: 401'd every core page yet escaped after
+                    # 7 attempts). ENVGEN_TESTUSER_HARD_GATE=0 disables.
+                    _bg_decision = browser_gate_decision(_bg_report, _bg_decision)
                     self._tu_browser_attempts = getattr(self, "_tu_browser_attempts", 0) + 1
                     if _bg_decision == "defer":
                         self._logger.warning(
                             "DELIVERY DEFERRED: browser test-user found the app UNUSABLE "
-                            "(auth_ok=%s blank=%s login_wall=%s hollow=%s) — P0 dispatched to "
-                            "the frontend; re-testing after the fix lands (attempt %s, %ss "
-                            "deferred). Set ENVGEN_TESTUSER_BROWSER_GATE=0 to disable.",
+                            "(auth_ok=%s blank=%s login_wall=%s hollow=%s no_real_data=%s "
+                            "fake_map=%s) — P0 dispatched to the frontend; re-testing after the "
+                            "fix lands (attempt %s, %ss deferred). Set "
+                            "ENVGEN_TESTUSER_BROWSER_GATE=0 to disable.",
                             _bg_report.get("auth_ok"), _bg_report.get("blank_pages"),
                             _bg_report.get("auth_redirect_pages"), _bg_report.get("hollow_frontend"),
+                            _bg_report.get("no_real_data"), _bg_report.get("fake_map_pages"),
                             self._tu_browser_attempts,
                             int(_bg_now - self._tu_browser_deferred_since))
                         return  # hold this milestone's release until the UI is usable
@@ -2688,6 +2890,54 @@ class Orchestrator:
                     # so a later milestone starts with a fresh attempt/wall-clock allowance.
                     self._tu_browser_deferred_since = None
                     self._tu_browser_attempts = 0
+            # SOFT CONTRACT ROUTE-CONSISTENCY GATE (#180, 2026-07-16): run-13 aborted (80min
+            # no-convergence) because the contract registered ONE endpoint at version-variant
+            # duplicate paths (GET /api/directions + GET /api/v1/directions); the lane
+            # implemented one and left the other a projected empty stub the frontend called,
+            # and #173's "query the table" remediation can't fix a path mismatch. Detect the
+            # duplication and route the CORRECT "consolidate to one path" remediation to the
+            # backend lane. SOFT: bounded defer→escape (mirrors the browser gate) so it NEVER
+            # hard-aborts — a residual duplicate escapes-with-warning, never deadlocks.
+            # ENVGEN_ROUTE_CONSISTENCY_GATE=0 disables.
+            if (os.environ.get("ENVGEN_ROUTE_CONSISTENCY_GATE", "1").strip().lower()
+                    not in ("0", "false", "no", "off")):
+                _rc_dups = []
+                try:
+                    from .runtime.contract_drift import version_variant_duplicate_routes
+                    _rh = getattr(self.hubs, "registryhub", None)
+                    if _rh is not None:
+                        _rc_dups = version_variant_duplicate_routes(_rh.get_endpoints())
+                except Exception as _rc_exc:
+                    self._logger.debug("route-consistency gate skipped: %s", _rc_exc)
+                if _rc_dups:
+                    try:
+                        from .runtime.remediation_dispatcher import RemediationDispatcher
+                        await RemediationDispatcher(self).dispatch_route_consolidation(_rc_dups)
+                    except Exception as _rc_dexc:
+                        self._logger.debug("route-consolidation dispatch skipped: %s", _rc_dexc)
+                    from .runtime.test_user_squad import squad_release_decision
+                    _rc_now = time.time()
+                    if getattr(self, "_rc_deferred_since", None) is None:
+                        self._rc_deferred_since = _rc_now
+                    _rc_decision = squad_release_decision(
+                        self._rc_deferred_since, getattr(self, "_rc_attempts", 0), _rc_now)
+                    self._rc_attempts = getattr(self, "_rc_attempts", 0) + 1
+                    if _rc_decision == "defer":
+                        self._logger.warning(
+                            "DELIVERY DEFERRED: contract has %d version-variant DUPLICATE "
+                            "route(s) %s — consolidate remediation dispatched to backend; "
+                            "re-checking after the fix lands (attempt %s, %ss deferred). SOFT: "
+                            "escapes after the cap. Set ENVGEN_ROUTE_CONSISTENCY_GATE=0 to "
+                            "disable.", len(_rc_dups), [d.get("paths") for d in _rc_dups],
+                            self._rc_attempts, int(_rc_now - self._rc_deferred_since))
+                        return  # hold this milestone's release until the routes consolidate
+                    self._logger.warning(
+                        "Route-consistency gate RELEASED (escape after %ss deferred / %s "
+                        "attempts) — delivering with version-variant duplicate route(s), loudly.",
+                        int(_rc_now - self._rc_deferred_since), self._rc_attempts)
+                else:
+                    self._rc_deferred_since = None
+                    self._rc_attempts = 0
             # Flush any committed-but-unmerged lane work into integration BEFORE
             # snapshotting the release. Observed (instagram MM, 2026-06-08): the
             # backend committed the final milestone's routes to agent/backend 11s
@@ -2729,6 +2979,20 @@ class Orchestrator:
             # COMMITTED head, so uncommitted skeleton/infra/projection writes would
             # otherwise be excluded from the snapshot the user boots.
             self._commit_framework_delivery()
+            # FIX #155 (§6-2, gmrun3 cold-start-crash class): the merge above imports
+            # any LATE lane commit into the release tree AFTER every gate check ran —
+            # gmrun3's broken custom_routes middleware landed 2min before the cut and
+            # shipped unvalidated (delivered archive 500s on every request). If the
+            # committed backend differs from what the last passing api_smoke
+            # validated, run ONE fresh smoke on the exact release tree and HOLD the
+            # cut on failure (the recorded failing run drives remediation; a lane fix
+            # re-arms). Best-effort inside the helper; ENVGEN_FRESH_SMOKE_GATE=0 off.
+            try:
+                from .runtime.framework_validation import ensure_fresh_smoke_before_cut
+                if not await ensure_fresh_smoke_before_cut(self):
+                    return  # held: post-smoke backend drift failed the fresh smoke
+            except Exception as _fs_exc:
+                self._logger.debug("fresh-smoke-before-cut skipped: %s", _fs_exc)
             # Gate fully clear → cut the release from the integration branch.
             # Multi-milestone: the release tag is the CURRENT milestone version
             # (1.0.0/1.1.0/1.2.0/…) so releases accumulate in
@@ -2763,6 +3027,13 @@ class Orchestrator:
             # milestone that produced them (the verify->fix loop). The deterministic
             # _run_test_user_validation above stays as the post-release safety net.
             self._project_delivered = True
+            # FIX #139: stamp the moment the milestone gate evaluated CLEAR — the
+            # post-loop FINAL gate re-reads MUTABLE hub state and a lane touching the
+            # chain registry during the delivery tail (run-61: a re-registered chain
+            # is status='registered', never-run -> business_chain_failing) can kill a
+            # fully-delivered run seconds after this verdict. The final gate honors
+            # this stamp for registry-state-class failures within a short window.
+            self._milestone_gate_cleared_at = time.time()
             ev = getattr(self, "_project_delivered_event", None)
             if ev is not None:
                 try:

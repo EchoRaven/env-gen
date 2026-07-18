@@ -185,6 +185,7 @@ class AgentActionStageMixin:
 
         round_plan_start = loop_time()
         try:
+            self._stamp_step_activity()  # #149: LLM progress = liveness
             round_plan_resp = await self._call_stage_llm(
                 messages,
                 "planning",
@@ -308,6 +309,7 @@ class AgentActionStageMixin:
 
         try:
             action_resp = await self._call_stage_llm(messages, action_stage_name, stage_prompt, action_tools)
+            self._stamp_step_activity()  # #149: LLM progress = liveness
         except Exception as e:
             self._logger.error(f"LLM {action_stage_name} call failed: {e}")
             return None, {"name": action_stage_name, "executed": False, "skip_reason": f"llm_error: {e}"}, False, False
@@ -422,6 +424,10 @@ class AgentActionStageMixin:
         )
 
         for action_round in range(max_action_rounds):
+            # #149: round-top liveness stamp — a healthy step spends 600-800s
+            # across its rounds; without per-round stamps the #147 watchdog
+            # false-declared 4 such lanes WEDGED in run-72/73.
+            self._stamp_step_activity()
             round_used_tools = False
             round_internal_stage_results: List[Dict[str, Any]] = []
             done, round_plan_result = await self._run_action_round_plan(
@@ -507,7 +513,7 @@ class AgentActionStageMixin:
             # publishes an agent_reply); ordinary work resumes on the next
             # round. Cheap when nothing's urgent.
             try:
-                while await self._check_and_handle_urgent():
+                while await self._check_and_handle_urgent(from_loop=True):
                     pass
             except Exception as _urgent_err:
                 self._logger.debug(

@@ -21,6 +21,86 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+# FIX #143 — content-based owner routing for docker_up build failures.
+# run-65 M4 (2nd occurrence of the run-52 class): a frontend syntax error
+# (Unterminated regex in HomeFeedPage.jsx) broke the build; the docker_up
+# check went to the VERIFIER (two-hop: diagnose → file a bug to the owner)
+# and under contention that hop took 47min — the 75-min no-convergence
+# FAIL-FAST killed the run one minute after the bug was finally filed. The
+# captured build tail (validation_runner: 3000-char up tail + container
+# logs) already names the offending file, so the owner is deterministically
+# classifiable — route the P0 straight to the lane that can edit the file.
+# Both-signals/no-signal tails keep the verifier route (a lane without
+# docker tools must not dead-end on an error it cannot see — smoke-notes
+# 2026-06-19).
+_FE_BUILD_RE = re.compile(
+    r"\.jsx\b|\.tsx\b|\bvite\b|\brollup\b|\besbuild\b|npm (?:ERR|error)|"
+    r"Unterminated regular expression|node_modules|\[frontend[ \]]",
+    re.IGNORECASE)
+_BE_BUILD_RE = re.compile(
+    r"\.py\b|\bpip\b|\bpoetry\b|\buvicorn\b|ModuleNotFoundError|"
+    r"\balembic\b|\[backend[ \]]",
+    re.IGNORECASE)
+
+
+def docker_up_owner(detail: str) -> str:
+    """'frontend'/'backend' when the build-failure tail names exactly one
+    side's toolchain; 'verifier' (the diagnose-first route) otherwise."""
+    d = str(detail or "")
+    fe = bool(_FE_BUILD_RE.search(d))
+    be = bool(_BE_BUILD_RE.search(d))
+    if fe and not be:
+        return "frontend"
+    if be and not fe:
+        return "backend"
+    return "verifier"
+
+
+# FIX #148 — content-based owner routing for business_chain_failing.
+# run-72 M4 (1st occurrence, recorded → pre-authorized): a contract-REGISTERED
+# action endpoint (POST /api/users/{id}/unfollow) was never implemented by the
+# lane, and the projection deliberately serves route_projector's FIX #124 stub
+# 404 for it ("action endpoint not implemented by the projection — the app's
+# own handler serves this route"). business_chain_failing routed to the
+# VERIFIER — which can only re-author chains, not add a backend route — so the
+# blocker spun 7 post-cap cycles to STUCK-abort. The chain executor already
+# records the 404 body into each broken-step string (execute_chain: note =
+# body_text[:160], and the #124 stub fits), so the owner is deterministically
+# classifiable from the registry's last_result — mirror #143 and P0 the
+# BACKEND with the exact endpoint list. Broken steps WITHOUT the stub
+# signature keep the verifier diagnose-first route unchanged.
+_ACTION_404_RE = re.compile(r"action endpoint not implemented", re.IGNORECASE)
+
+
+def action_unimplemented_broken(broken) -> List[str]:
+    """The broken-step strings whose 404 body carries the projection's
+    action-endpoint stub signature (route_projector FIX #124) — a registered
+    ACTION route only the backend lane can implement."""
+    return [str(b) for b in (broken or []) if _ACTION_404_RE.search(str(b))]
+
+
+def _chain_action_404s(orch) -> List[str]:
+    """Re-derive the #124-stub broken steps from the chain registry's
+    last_result (the gate-level failed_checks carry names only — same
+    re-derivation pattern as the business_chain_api_coverage branch).
+    Best-effort: no registryhub / malformed records → [] (verifier route)."""
+    try:
+        chains = orch.hubs.registryhub.get_verification_chains() or {}
+        broken: List[str] = []
+        for name, rec in (chains.items() if isinstance(chains, dict) else []):
+            if name == "_meta" or not isinstance(rec, dict):
+                continue
+            broken.extend((rec.get("last_result") or {}).get("broken") or [])
+        seen: set = set()
+        out: List[str] = []
+        for b in action_unimplemented_broken(broken):
+            if b not in seen:
+                seen.add(b)
+                out.append(b)
+        return out
+    except Exception:
+        return []
+
 
 class RemediationDispatcher:
     """Routes failed-gate remediation back to the owning lane. Stateless —
@@ -90,6 +170,60 @@ class RemediationDispatcher:
                 (task or {}).get("id"), detail[:200])
         except Exception as exc:
             orch._logger.error("unimplemented-route dispatch failed: %s", exc)
+
+    async def dispatch_route_consolidation(self, dups) -> None:
+        """#180: the contract registered ONE logical endpoint at VERSION-VARIANT duplicate
+        paths (e.g. GET /api/directions AND GET /api/v1/directions). The lane implements one
+        and leaves the other a projected empty stub that the frontend may actually call → the
+        page renders empty, and #173 flags that stub with a "query the table" remediation that
+        CANNOT fix a path mismatch (run-13: 80min no-convergence abort on exactly this). Route
+        the CORRECT fix — consolidate to ONE path — to the backend lane. ONE P0 task + urgent
+        wake per milestone (guard reset by _fwval_rearm_owner_dispatch). Best-effort: never
+        raises into the coordination loop."""
+        orch = self._orch
+        if not dups:
+            return
+        try:
+            milestone = getattr(orch, "_current_milestone_version", "")
+            if getattr(orch, "_route_consolidation_dispatched", None) == milestone:
+                return
+            lines = "\n".join(f"  - {d.get('method')} at {d.get('paths')}" for d in dups)
+            task = orch.hubs.workhub.create_task(
+                title="Version-variant DUPLICATE route(s) — consolidate to ONE path (blocks delivery)",
+                description=(
+                    "The contract registered the SAME logical endpoint under version-variant "
+                    "duplicate paths:\n" f"{lines}\n"
+                    "A frontend client calls only ONE of each pair; the other is left an "
+                    "unimplemented projected stub that returns an empty collection, so its page "
+                    "renders empty (it may ALSO be flagged separately as a placeholder-stub). Do "
+                    "NOT implement the stub path as a new handler — CONSOLIDATE: serve the real "
+                    "logic at the path the frontend api client actually calls, and DEPRECATE the "
+                    "duplicate via registryhub_deprecate_endpoint so it leaves the contract. That "
+                    "clears both the duplicate and any stub flag on it."),
+                assignee="backend",
+                agent="orchestrator",
+                priority="P0",
+            )
+            orch._route_consolidation_dispatched = milestone
+            from tools.communication_tools import _create_message
+            await orch.message_bus.send(_create_message(
+                source_agent_id="orchestrator",
+                target_agent_id="backend",
+                content=(
+                    "URGENT: the contract has version-variant DUPLICATE routes "
+                    f"{[d.get('paths') for d in dups]}. Claim task {(task or {}).get('id')} and "
+                    "CONSOLIDATE each to the single path the frontend calls (deprecate the "
+                    "duplicate) — do NOT implement the stub path separately."),
+                msg_type="task_ready",
+                priority="urgent",
+                persist=True,
+                tags=["route_consolidation", "remediation"],
+            ))
+            orch._logger.warning(
+                "ROUTE-CONSOLIDATION remediation dispatched to backend (task %s): %s",
+                (task or {}).get("id"), [d.get("paths") for d in dups])
+        except Exception as exc:
+            orch._logger.error("route-consolidation dispatch failed: %s", exc)
 
     async def dispatch_frontend_navigable(self, data) -> None:
         """frontend_navigable feedback loop: a blank-shell frontend (page
@@ -214,6 +348,30 @@ class RemediationDispatcher:
                 "placeholders), enough rows that list screens look like the references "
                 "(e.g. ~a dozen inbox messages). Write valid JSON: "
                 "{\"users\": [...], \"<table>\": [...], ...}."),
+            "deliverability_placeholder_stub_handler": (
+                # #173 (gmrun9): the lane "implemented" a GET route as
+                # `return {"items": []}` (no DB read) — a placeholder that renders an
+                # empty page forever, even though real seed data existed. The BACKEND
+                # lane owns the handler.
+                "backend", "Replace the placeholder-stub GET handler with a real query "
+                "(blocks delivery)",
+                "a GET route handler returns a HARDCODED empty collection (e.g. "
+                "`return {\"items\": []}`) with NO database query, so its page can never "
+                "show real data. Query the real seeded table(s) — join/scope as the "
+                "resource needs (e.g. a stop's departures from its lines) — and return the "
+                "actual rows. Do NOT return a hardcoded empty/placeholder collection."),
+            "deliverability_fabricated_field_fallback": (
+                # #175 (gmrun9): the frontend renders `place.rating || '4.5'` /
+                # `? place.name : 'HI Point Montara Lighthouse'` — invented data. The
+                # FRONTEND lane owns the fix.
+                "frontend", "Remove the fabricated member-field fallbacks (blocks delivery)",
+                "the frontend renders a member field with a HARDCODED realistic fallback "
+                "(`place.rating || '4.5'`, `? place.name : 'HI Point Montara Lighthouse'`) — "
+                "fake data whenever the field is absent (often ALWAYS, if the field name "
+                "drifted from the backend response). For EACH flagged site: render only the "
+                "real field, and if it can be missing show an honest empty state ('—'/'N/A') "
+                "— never a realistic fake value. Also fix any drifted field NAME to match the "
+                "API response (e.g. review_count, not reviews)."),
             "frontend_dead_controls": (
                 "frontend", "Bind the dead frontend controls (blocks delivery)",
                 "interactive markup (<form>/submit button) with NO bound handler — a "
@@ -270,6 +428,20 @@ class RemediationDispatcher:
                     continue  # one dispatch per milestone (storm control)
                 owner, title, how = spec
                 detail = str(c.get("detail") or "")
+                if name == "docker_up":
+                    # FIX #143: when the captured build tail names exactly one
+                    # side's toolchain, skip the verifier diagnose-hop and P0
+                    # the lane that owns the failing source — the tail already
+                    # carries file:line, no docker tools needed to act on it.
+                    _own = docker_up_owner(detail)
+                    if _own != "verifier":
+                        owner = _own
+                        title = (f"Docker build fails in YOUR ({_own}) build — "
+                                 "fix the named source file (blocks delivery)")
+                        how = ("the build-error tail below names the failing "
+                               "file (e.g. a parse/import error with file:line)."
+                               " Fix that source file directly — you do NOT "
+                               "need docker tools; the error is in your code.")
                 task = orch.hubs.workhub.create_task(
                     title=title,
                     description=(
@@ -342,7 +514,16 @@ class RemediationDispatcher:
                 # route vs a missing component. Match only the stub-body reasons.
                 is_stub = any(s in _b.lower() for s in (
                     "placeholder", "stub", "renders no real", "no real ui"))
-                if is_stub:
+                # FIX #171: a #166 MAP blocker shares the "declared but unusable" prefix, but
+                # the map page IS wired — the "add a Route" message is misleading and drops the
+                # actionable "build the real Leaflet map" instruction. Pass the blocker's own
+                # reason (everything after "declared but unusable: ") through verbatim.
+                is_map = ("map surface" in _b.lower() or "no map library" in _b.lower())
+                if is_map:
+                    _reason = _b.split("declared but unusable:", 1)[-1].strip() or _b
+                    n_stub += 1  # count as a build-real-content fix, not an unwired-route one
+                    lines.append(f"  - {comp} (route {route}): FAKE MAP — {_reason}")
+                elif is_stub:
                     n_stub += 1
                     lines.append(
                         f"  - {comp} (route {route}): STUB — the file "
@@ -561,6 +742,65 @@ class RemediationDispatcher:
                 "screens look like the references (~a dozen for the primary "
                 "table), believable names/subjects/bodies/timestamps, mixed "
                 "states (read/unread, flagged), FK-valid ids."),
+            "deliverability_bare_authed_fetch": (
+                # #154 (§6-1, gmrun4): the frontend calls authed /api/ endpoints with a
+                # bare fetch() that never attaches the Authorization token — every such
+                # request 401s at runtime, pages render empty / bounce to the login
+                # wall, while api_smoke (framework-minted token) stays green. The owner
+                # is unambiguous: only the frontend lane can wire the token.
+                "frontend", "Attach the auth token to every frontend /api/ call (blocks delivery)",
+                "frontend code calls authed /api/ endpoints with a BARE fetch() that "
+                "never attaches the Authorization token — at runtime every such request "
+                "answers 401, so pages render empty or bounce to the login wall (the "
+                "backend and api_smoke are fine; the framework token they use is not "
+                "available to your bare call). For EACH flagged call site: route the "
+                "call through the authed api client (src/services/api.js — its "
+                "request() attaches authHeaders()) or add an Authorization: Bearer "
+                "<token from localStorage> header at the call site. If services/api.js "
+                "itself is flagged, fix IT to attach authHeaders() on every request."),
+            "deliverability_placeholder_stub_handler": (
+                # #173 (gmrun9/gmrun10, live): a GET route whose SERVED handler does no DB
+                # read and returns a hardcoded empty/mock collection → a permanently
+                # empty/fake page. Minted by the delivery-gate canonicalization → owner MUST
+                # live in THIS gate-level map (the _CHECK_OWNER entry is dead code). BACKEND.
+                "backend", "Replace the placeholder-stub GET handler with a real query (blocks delivery)",
+                "a GET route handler returns a HARDCODED empty or mock collection (e.g. "
+                "`return {\"items\": []}` or `return {\"items\": [{\"line\": \"A\", \"time\": "
+                "\"5 min\"}]}`) with NO database query, so its page can never show real data. "
+                "Query the real seeded table(s) — join/scope as the resource needs (e.g. a "
+                "stop's departures from its lines) — and return the ACTUAL rows. Do NOT "
+                "return a hardcoded empty/mock collection. #201: if the flagged handler is a "
+                "FRAMEWORK `_projected_*` stub (in main.py, which you CANNOT edit), the path "
+                "maps to NO backing table — DECLARE the backing table for that resource, or "
+                "REMOVE the endpoint from the contract; the projector then reads it "
+                "automatically."),
+            "deliverability_fabricated_field_fallback": (
+                # #175 (gmrun9/gmrun10, live): the frontend renders `place.rating || '4.5'` /
+                # `? place.name : 'HI Point Montara Lighthouse'` — invented data whenever the
+                # field is absent (often ALWAYS, on a field-name drift). Gate-minted → owner
+                # MUST be in THIS map. FRONTEND.
+                "frontend", "Remove the fabricated member-field fallbacks (blocks delivery)",
+                "the frontend renders a member field with a HARDCODED realistic fallback "
+                "(`place.rating || '4.5'`, `? place.name : 'HI Point Montara Lighthouse'`) — "
+                "fake data shown whenever the field is absent (often ALWAYS, if the field name "
+                "drifted from the API response, e.g. `place.reviews` when the API returns "
+                "`review_count`). For EACH flagged site: render ONLY the real field, and if it "
+                "can be missing show an honest empty state ('—' / 'N/A') — never a realistic "
+                "fake value. Fix any drifted field NAME to match the API response."),
+            "deliverability_ui_flow_missing": (
+                # A critical UI flow (login/signup/search/…) lacks a validation:ui_flow record.
+                # Gate-minted but genuinely UNOWNED before (not in _GATE_OWNER / _COVERED_ELSEWHERE
+                # / any helper) → logged "NO remediation owner" and relied on incidental clearing
+                # (blocked gmrun12 M2). The VERIFIER runs+records the flow (non-destructive,
+                # mirrors verification_checklist_not_ready); a genuinely broken flow routes on to
+                # the frontend via bug_create. dead_artifacts is INTENTIONALLY left unowned — its
+                # "wire-or-remove" remediation is destructive and needs a bespoke design.
+                "verifier", "Record the missing critical UI flow validations (blocks delivery)",
+                "one or more CRITICAL UI flows lack a validation:ui_flow record. run_validation to "
+                "EXERCISE and RECORD each named flow (e.g. login / signup / search); if a flow just "
+                "isn't recorded yet, run_validation records it; if a flow FAILS, bug_create for the "
+                "owning lane (usually frontend) and re-run once fixed. Re-run until every critical "
+                "flow has a passing validation:ui_flow record."),
             "verification_checklist_not_ready": (
                 "verifier", "Record a green verification/build checklist (blocks delivery)",
                 "the build checklist is NOT all-green — it needs the CodeHub checks "
@@ -619,6 +859,28 @@ class RemediationDispatcher:
                     _persist[name] = 0
                 owner, title, how = spec
                 _extra = ""
+                if name == "business_chain_failing":
+                    # FIX #148: the failing steps answering the projection's #124
+                    # action-endpoint stub 404 need a BACKEND route, not a chain
+                    # re-author — route the P0 to the lane that can add it.
+                    _act = _chain_action_404s(orch)
+                    if _act:
+                        owner = "backend"
+                        title = ("Implement the registered ACTION endpoint(s) — "
+                                 "the projection serves a deliberate 404 stub "
+                                 "(blocks delivery)")
+                        how = (
+                            "a verification chain hits contract-REGISTERED action "
+                            "endpoint(s) answering the projection's 404 stub. The "
+                            "framework does NOT project a semantically-unmappable "
+                            "action route (a POST whose action segment maps to no "
+                            "model) — YOUR handler must serve it, and it is missing/"
+                            "unmounted. For EACH endpoint below, implement the real "
+                            "action semantics in app/backend (e.g. custom_routes.py: "
+                            "unfollow = delete the follows row) and register it "
+                            "status=implemented; if a registration is junk/obsolete, "
+                            "deprecate it via registryhub_deprecate_endpoint instead:"
+                            "\n- " + "\n- ".join(_act[:8]))
                 if name == "business_chain_api_coverage":
                     # Hand the verifier the EXACT uncovered endpoints. The generic "cover the
                     # uncovered endpoints" left it guessing — run v17 got business_chain green
@@ -638,6 +900,21 @@ class RemediationDispatcher:
                                 "dedicated coverage chain (auth round-trip first, then a step per "
                                 "endpoint) that hits EACH of them, register it, and re-run "
                                 "run_validation:\n- " + "\n- ".join(_unc))
+                    except Exception:
+                        pass
+                if name == "deliverability_bare_authed_fetch":
+                    # #154: hand the lane the EXACT call sites (file:line + URL).
+                    # Imprecise diagnosis is why gmrun4's lane missed 7 repair
+                    # attempts ("blank page" told it nothing about the token).
+                    try:
+                        from .frontend_audit import bare_authed_fetch_blockers
+                        _root = getattr(orch, "output_dir", None)
+                        if _root:
+                            _off = bare_authed_fetch_blockers(
+                                Path(_root) / "app" / "frontend" / "src")
+                            if _off:
+                                _extra = ("\n\nExact call sites:\n- "
+                                          + "\n- ".join(_off[:10]))
                     except Exception:
                         pass
                 task = orch.hubs.workhub.create_task(

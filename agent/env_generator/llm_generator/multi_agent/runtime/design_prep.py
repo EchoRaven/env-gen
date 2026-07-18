@@ -45,6 +45,7 @@ def resolve_design_input(design_input: Optional[str],
     references: List[str] = []
     docs: List[str] = []
     assets_dir: Optional[str] = None
+    dataset_dir: Optional[str] = None
 
     try:
         if design_input:
@@ -53,7 +54,12 @@ def resolve_design_input(design_input: Optional[str],
             docs = _list_files(root / "docs", _DOC_EXTS)
             adir = root / "assets"
             assets_dir = str(adir) if adir.is_dir() else None
-            return {"references": references, "docs": docs, "assets_dir": assets_dir}
+            # F1: the FOURTH channel — a dataset/ folder of REAL structured data
+            # (JSON/CSV) ingested recursively (a folder path, like assets/).
+            ddir = root / "dataset"
+            dataset_dir = str(ddir) if ddir.is_dir() else None
+            return {"references": references, "docs": docs,
+                    "assets_dir": assets_dir, "dataset_dir": dataset_dir}
 
         # back-compat: references-only
         references = list(reference_images or [])
@@ -61,7 +67,8 @@ def resolve_design_input(design_input: Optional[str],
             references.extend(_list_files(Path(reference_dir), _IMG_EXTS))
     except Exception:
         pass
-    return {"references": references, "docs": docs, "assets_dir": assets_dir}
+    return {"references": references, "docs": docs,
+            "assets_dir": assets_dir, "dataset_dir": dataset_dir}
 
 
 # ── deterministic skeleton design_system (measure, no LLM) ───────────────────
@@ -162,6 +169,17 @@ def build_skeleton_design_system(resolved: Dict, output_dir,
         except Exception:
             assets = []
 
+    # F1: the dataset/ channel — real structured data rows, staged into
+    # design/dataset/ (build-infra copies them to app/backend/dataset/).
+    dataset: List[Dict] = []
+    ddir = resolved.get("dataset_dir")
+    if ddir:
+        try:
+            from .material_prep import ingest_dataset
+            dataset = ingest_dataset(ddir, out / "design" / "dataset")
+        except Exception:
+            dataset = []
+
     palette = _measure_palette(references)
     theme = _theme_from_palette(palette)
 
@@ -186,6 +204,7 @@ def build_skeleton_design_system(resolved: Dict, output_dir,
             "iconography": {},
         },
         "assets": assets,
+        "dataset": dataset,
         "screens": screens,
     }
 
@@ -240,7 +259,17 @@ _SCREEN_PROMPT = (
     " - typography (role sizes/weights you can read), and assets (manifest ids this "
     "component should render).\n"
     "Also submit layout (one line) and, if readable, global type_scale/radius_scale/"
-    "iconography. Submit via the function — nothing else."
+    "iconography.\n"
+    "ALSO CLASSIFY the screen itself (FIX #132 — the visual gate navigates by URL, so it "
+    "must know which references are reachable pages and which are interaction states):\n"
+    " - kind: 'page' if the screenshot is a full standalone screen, 'overlay' if it shows "
+    "a modal/dialog/flyout/dropdown/sheet rendered OVER another page (dimmed or visible "
+    "background page = overlay).\n"
+    " - requires_auth: true if the screen shows logged-in user data (feed, profile, inbox), "
+    "false for public screens (login, signup, landing).\n"
+    " - route: the SPA path this screen would live at (e.g. '/', '/login', '/explore', "
+    "'/reels', '/messages'); for an overlay, the route of the page UNDER it.\n"
+    "Submit via the function — nothing else."
 )
 
 _SCREEN_TOOL = [{
@@ -253,6 +282,12 @@ _SCREEN_TOOL = [{
             "type": "object",
             "properties": {
                 "layout": {"type": "string"},
+                # FIX #132: screen-level classification — the visual gate reads these as
+                # the AUTHORITATIVE reference->route/overlay mapping (filename heuristics
+                # become the fallback).
+                "kind": {"type": "string", "enum": ["page", "overlay"]},
+                "requires_auth": {"type": "boolean"},
+                "route": {"type": "string"},
                 "components": {"type": "array", "items": {
                     "type": "object",
                     "properties": {
@@ -368,9 +403,19 @@ async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
                     comps = first.get("components")
                 if not layout:
                     layout = first.get("layout")
-        enriched_screens.append({"name": s.get("name"),
-                                 "layout": str(layout or ""),
-                                 "components": comps or []})
+        _entry = {"name": s.get("name"),
+                  "layout": str(layout or ""),
+                  "components": comps or []}
+        # FIX #132: harvest the screen-level classification (kind/requires_auth/route) —
+        # tolerate both the flat tool-call shape and a full-doc screens[0] shape.
+        _first = (doc.get("screens") or [{}])[0] if isinstance(doc.get("screens"), list) else {}
+        for _ck in ("kind", "requires_auth", "route"):
+            _cv = doc.get(_ck)
+            if _cv is None and isinstance(_first, dict):
+                _cv = _first.get(_ck)
+            if _cv is not None:
+                _entry[_ck] = _cv
+        enriched_screens.append(_entry)
         for k in ("type_scale", "radius_scale", "shadow_scale", "iconography", "palette"):
             v = doc.get(k) or dsx.get(k)
             if v and not scales.get(k):
@@ -429,6 +474,12 @@ def _merge_enrichment(skeleton: Dict, enriched: Dict) -> Dict:
             continue
         if es.get("layout"):
             s["layout"] = es["layout"]
+        # FIX #132: screen-level classification flows through the merge (else the analyst's
+        # kind/requires_auth/route would be silently discarded — only the skeleton copy is
+        # what gets written to design_system.json).
+        for _ck in ("kind", "requires_auth", "route"):
+            if es.get(_ck) is not None:
+                s[_ck] = es[_ck]
         e_comps = {c.get("id"): c for c in (es.get("components") or []) if isinstance(c, dict)}
         for c in s.get("components") or []:
             ec = e_comps.get(c.get("id"))
@@ -772,6 +823,32 @@ def design_system_summary_for_requirements(ds: Dict) -> str:
         lines.append(f"{s.get('name')}: " + " ".join(parts)[:600])
     lines.append("Full doc: design/design_system.json (+ .md); crops: design/crops/. "
                  "MEASURE, DON'T GUESS — the colors are sampled truth.")
+
+    # F2b: a real dataset AUTHORITATIVELY defines the schema of the tables it fills.
+    # Without this the backend lane builds its own guessed columns and the framework's
+    # real rows (seed_dataset.json) can't be inserted (column mismatch — googlemaps
+    # run-1: places had no `category` column, 0 rows loaded). State the EXACT tables +
+    # columns so the contract matches the data and the loader inserts cleanly.
+    from pathlib import Path as _P
+    dataset = [d for d in (ds.get("dataset") or [])
+               if isinstance(d, dict) and d.get("columns")]
+    if dataset:
+        lines.append(
+            "\n\n## REAL DATASET (BINDING — these tables are seeded from REAL data staged "
+            "at app/backend/seed_dataset.json, which the framework loads AUTOMATICALLY):")
+        for d in dataset[:20]:
+            table = _P(str(d.get("file") or "")).stem or str(d.get("id") or "")
+            cols = ", ".join(str(c) for c in (d.get("columns") or [])[:40])
+            n = d.get("records")
+            lines.append(f"- table `{table}` ({n} real rows) — build it with EXACTLY these "
+                         f"columns (match names + plausible types): {cols}")
+        lines.append(
+            "RULES: (1) the backend MUST create these tables with these EXACT column names "
+            "(add a primary key + any FK/owner columns you need, but do NOT rename or drop "
+            "the listed columns) so the real rows load. (2) do NOT author these tables' rows "
+            "in seed_data.json — the framework seeds them from seed_dataset.json; you only "
+            "author users + any association/child rows the app needs. (3) the frontend reads "
+            "these exact field names from the API responses.")
     return "\n".join(lines)
 
 

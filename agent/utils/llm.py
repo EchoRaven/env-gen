@@ -237,6 +237,102 @@ def _mask_old_observations(messages: list, model: str = None) -> list:
     return out
 
 
+def _llm_hard_timeout(config_timeout, env) -> float:
+    """FIX #187: the per-call watchdog timeout. config.timeout defaults to 1800s,
+    so one wedged SDK call could hold a lane 30min before the watchdog cancelled
+    it — indistinguishable from a dead run (handoff 2026-07-18 §3-3). Cap the
+    watchdog at 600s (observed real-call max: 237s) unless the config is already
+    tighter; ENVGEN_LLM_HARD_TIMEOUT_S overrides the cap in either direction.
+    The retry layer re-rolls after the cancel, so a cancelled slow call is
+    retried, not lost."""
+    try:
+        cap = float(env.get("ENVGEN_LLM_HARD_TIMEOUT_S") or 600)
+    except Exception:
+        cap = 600.0
+    try:
+        cfg = float(config_timeout or 240)
+    except Exception:
+        cfg = 240.0
+    return min(cfg, cap)
+
+
+def _prune_stale_images_for_reroll(contents, keep_last, make_text_part):
+    """FIX #187: MALFORMED_FUNCTION_CALL storms correlate with huge MULTIMODAL
+    contexts (gm_val_run14: 571 malformeds during the screenshot-heavy analyst
+    phase; tiktok-r4's analyst was at 3.98M chars). After repeated malformed
+    re-rolls the temperature perturbation alone keeps replaying the same doomed
+    payload — so ALSO drop all but the newest ``keep_last`` inline images,
+    replacing each with a text placeholder (the model keeps positional context).
+    Pure + duck-typed (parts need only .text/.inline_data); never mutates the
+    caller's contents (the un-pruned list is reused by later attempts).
+    Returns (pruned_contents, n_pruned) — n_pruned==0 means "use the original".
+    """
+    try:
+        total = 0
+        for c in (contents or []):
+            for p in (getattr(c, "parts", None) or []):
+                if getattr(p, "inline_data", None) is not None:
+                    total += 1
+        n_drop = total - max(0, int(keep_last))
+        if n_drop <= 0:
+            return contents, 0
+        seen = 0
+        pruned_contents = []
+        for c in (contents or []):
+            parts = getattr(c, "parts", None) or []
+            new_parts = []
+            changed = False
+            for p in parts:
+                if getattr(p, "inline_data", None) is not None:
+                    seen += 1
+                    if seen <= n_drop:
+                        new_parts.append(make_text_part(
+                            "[stale inline image elided after repeated "
+                            "MALFORMED_FUNCTION_CALL re-rolls]"))
+                        changed = True
+                        continue
+                new_parts.append(p)
+            if changed:
+                c = type(c)(role=getattr(c, "role", None), parts=new_parts)
+            pruned_contents.append(c)
+        return pruned_contents, n_drop
+    except Exception:
+        return contents, 0
+
+
+def _malformed_extra_retries() -> int:
+    """FIX #187: extra attempts granted ONLY to MALFORMED_FUNCTION_CALL streaks
+    (a cheap transient generation failure — the temperature ladder + image-prune
+    need more than 2 re-rolls during a storm). ENVGEN_MALFORMED_EXTRA_RETRIES=0
+    disables."""
+    try:
+        return max(0, int(os.environ.get("ENVGEN_MALFORMED_EXTRA_RETRIES") or 2))
+    except Exception:
+        return 2
+
+
+def _extend_retry_budget(is_malformed, is_rate_limit, attempt, total_attempts,
+                         max_retries, malformed_extra, rate_limit_extra) -> int:
+    """FIX #187: the pure retry-budget extension rule, evaluated on EVERY failure.
+    Extends only on the LAST remaining attempt; each cause is idempotent (its
+    target total is absolute, so re-applying never grows the budget again).
+    NOTE this also FIXES the old inline rate-limit extension, which was dead code:
+    its `attempt == max_retries-1` check sat inside `attempt < total_attempts-1`
+    — mutually exclusive on the final attempt, so rate limits never actually got
+    the extra attempts the log line promised."""
+    try:
+        if attempt != total_attempts - 1:
+            return total_attempts
+        target = total_attempts
+        if is_malformed and (malformed_extra or 0) > 0:
+            target = max(target, max_retries + malformed_extra)
+        if is_rate_limit and (rate_limit_extra or 0) > 0:
+            target = max(target, max_retries + rate_limit_extra)
+        return target
+    except Exception:
+        return total_attempts
+
+
 @dataclass
 class LLMResponse:
     """LLM response"""
@@ -428,22 +524,30 @@ class BaseLLMClient(ABC):
                 error_msg = str(e)[:200]  # Truncate long errors
                 
                 is_rate_limit = self._is_rate_limit_error(e)
-                
+                # FIX #187: budget extension is decided by the PURE rule (see
+                # _extend_retry_budget — it also fixes the old dead-code rate-limit
+                # extension). MALFORMED streaks get a small extra budget so the
+                # temperature ladder + stale-image prune have room to work.
+                is_malformed = "MALFORMED" in str(e).upper()
+                _new_total = _extend_retry_budget(
+                    is_malformed, is_rate_limit, attempt, total_attempts,
+                    max_retries, _malformed_extra_retries(), rate_limit_extra_retries)
+                if _new_total != total_attempts:
+                    total_attempts = _new_total
+                    self._logger.info(
+                        f"[LLM] {'MALFORMED streak' if is_malformed else 'Rate limit'} on the "
+                        f"final attempt — extending retries to {total_attempts}")
+
                 if attempt < total_attempts - 1:
                     if is_rate_limit:
-                        # For rate limits, use longer delays and add extra retries
+                        # For rate limits, use longer delays
                         retry_after = self._extract_retry_after(e)
                         if retry_after:
                             delay = retry_after + 5  # Add 5 seconds buffer
                         else:
                             # Exponential backoff starting from rate_limit_base_delay
                             delay = rate_limit_base_delay * (2 ** min(attempt, 3))  # Cap at 240s
-                        
-                        # Add extra retries for rate limits if we haven't already
-                        if attempt == max_retries - 1 and rate_limit_extra_retries > 0:
-                            total_attempts = max_retries + rate_limit_extra_retries
-                            self._logger.info(f"[LLM] Rate limit detected, extending retries to {total_attempts}")
-                        
+
                         self._logger.warning(
                             f"[LLM] Rate limit hit on attempt {attempt + 1}. "
                             f"Sleeping {delay:.0f}s before retry... [{error_type}] {error_msg}"
@@ -920,7 +1024,10 @@ class OpenAIClient(BaseLLMClient):
             # HARD total timeout: this loop used to warn forever and never cancel, so
             # one wedged HTTP call hung the whole run until an external kill. Past
             # config.timeout, cancel and raise — the retry layer takes over.
-            hard_timeout = float(getattr(self.config, "timeout", None) or 240)
+            # FIX #187: capped — config.timeout defaults to 1800s, which let one
+            # wedged SDK call hold a lane 30min (looked like a dead run, §3-3).
+            hard_timeout = _llm_hard_timeout(
+                getattr(self.config, "timeout", None), os.environ)
             while not task.done():
                 try:
                     # Wait for up to warn_interval seconds
@@ -1801,6 +1908,22 @@ class GoogleClient(BaseLLMClient):
                             mode=types.FunctionCallingConfigMode.VALIDATED))
                 except Exception:
                     pass  # older SDK without VALIDATED → skip silently
+            elif (not google_tools
+                    and os.environ.get("ENVGEN_GEMINI_FC_NONE", "1").lower()
+                        not in ("0", "false", "no", "off")):
+                # FIX #140 (log-mining runs 50-62): EVERY run's first ~90s hit a
+                # deterministic 9-18-retry MALFORMED_FUNCTION_CALL cluster on
+                # tools=0 requests (13/13 runs; kickoff roadmap/spec authoring,
+                # ~40k-char prompts) — the -customtools variant attempts tool-call
+                # codegen even with NO declared tools, and the re-roll retries the
+                # same doomed prompt. mode=NONE tells Gemini function calling is
+                # unavailable for this request → plain-text output, no codegen.
+                try:
+                    cfg.tool_config = types.ToolConfig(
+                        function_calling_config=types.FunctionCallingConfig(
+                            mode=types.FunctionCallingConfigMode.NONE))
+                except Exception:
+                    pass  # older SDK without NONE → skip silently
             # OBSERVABILITY: surface Gemini's thinking (it's a thinking model and
             # reasons regardless; include_thoughts just RETURNS the summary). Lets us
             # see WHY an agent did something (e.g. called run_validation early) instead
@@ -1830,11 +1953,31 @@ class GoogleClient(BaseLLMClient):
             warn_interval = 60
             call_start = datetime.now()
             
+            def _effective_contents():
+                # FIX #187: after 2 malformed re-rolls the temperature ladder alone
+                # is replaying the same doomed payload — MALFORMED storms correlate
+                # with huge multimodal contexts, so drop all but the newest inline
+                # image(s) from the RETRY payload (originals untouched).
+                if _retry_state["malformed"] >= 2:
+                    try:
+                        _keep = max(0, int(os.environ.get(
+                            "ENVGEN_MALFORMED_IMAGE_KEEP") or 1))
+                    except Exception:
+                        _keep = 1
+                    _pruned, _n = _prune_stale_images_for_reroll(
+                        contents, _keep, lambda t: types.Part.from_text(text=t))
+                    if _n:
+                        self._logger.warning(
+                            f"[LLM] MALFORMED re-roll {_retry_state['malformed']}: "
+                            f"pruned {_n} stale inline image(s) from the retry payload")
+                        return _pruned
+                return contents
+
             def _do_call():
                 try:
                     return client.models.generate_content(
                         model=self.config.model_name,
-                        contents=contents,
+                        contents=_effective_contents(),
                         config=_make_gen_config(),
                     )
                 except Exception as _e:
@@ -1851,7 +1994,7 @@ class GoogleClient(BaseLLMClient):
                             "disabling it for this client and retrying without it.", str(_e)[:120])
                         return client.models.generate_content(
                             model=self.config.model_name,
-                            contents=contents,
+                            contents=_effective_contents(),
                             config=_make_gen_config(),
                         )
                     raise
@@ -1865,7 +2008,10 @@ class GoogleClient(BaseLLMClient):
             # starting..." then silence). Past config.timeout, stop awaiting and raise
             # — the retry layer takes over. The executor thread itself can't be
             # cancelled, but it is abandoned and the run moves on.
-            hard_timeout = float(getattr(self.config, "timeout", None) or 240)
+            # FIX #187: capped — config.timeout defaults to 1800s, which let one
+            # wedged SDK call hold a lane 30min (looked like a dead run, §3-3).
+            hard_timeout = _llm_hard_timeout(
+                getattr(self.config, "timeout", None), os.environ)
             while True:
                 try:
                     return await asyncio.wait_for(asyncio.shield(task), timeout=warn_interval)

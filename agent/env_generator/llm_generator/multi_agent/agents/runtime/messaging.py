@@ -93,7 +93,7 @@ class AgentMessaging:
                 self._logger.info(f"[{self.agent_id}] Queued interrupt: {msg_type} from {inbox_msg['from']}")
 
         await self._priority_queue.put(message)
-        await self._message_queue.put(message)
+        await self._enqueue_for_dispatch(message)
         await self._maybe_schedule_resident_message_wakeup(message, inbox_msg)
 
     def get_inbox_messages(self, limit: int = 10, clear: bool = True) -> List[Dict]:
@@ -309,6 +309,35 @@ class AgentMessaging:
         except Exception as e:
             self._logger.warning(f"[{self.agent_id}] Failed to send delivery ACK: {e}")
 
+
+    async def _enqueue_for_dispatch(self, message) -> None:
+        """FIX #150 (run-71/run-77 REAL-wedge root, USR2-proven live): never
+        park the SENDER on the bounded dispatch queue. run-77 09:56: SEVEN
+        tasks sat parked at `await self._message_queue.put(...)` — the target
+        lane's _main_loop was itself stuck inside _dispatch_message, so its
+        Queue(100) never drained; the backend's post-FINISH notification flush
+        parked on it and the finishing loop never unwound (state stuck
+        PROCESSING_TASK 12min until the #147/#149 watchdog rescue). By this
+        point the message already reached _subscription_inbox, the priority
+        queue, and the interrupt channel for urgent types — the bounded queue
+        only feeds ordinary _main_loop dispatch, and a 100-deep backlog means
+        that dispatch is already dead. Drop THAT copy loudly instead of
+        cascading the stall into every sender."""
+        _put_nowait = getattr(self._message_queue, "put_nowait", None)
+        if _put_nowait is None:
+            # duck-typed queue without a non-blocking put (test doubles) —
+            # legacy path; the real asyncio.Queue always has put_nowait.
+            await self._message_queue.put(message)
+            return
+        try:
+            _put_nowait(message)
+        except asyncio.QueueFull:
+            self._logger.warning(
+                f"[{self.agent_id}] dispatch queue FULL "
+                f"({self._message_queue.maxsize} pending) — dropping the "
+                "ordinary-dispatch copy (inbox + priority-queue copies kept) "
+                "instead of parking the sender (FIX #150)")
+
     async def _pickup_undelivered_inbox_events(self) -> int:
         """Drain cross-process events from the on-disk inbox.
 
@@ -392,12 +421,21 @@ class AgentMessaging:
             self._logger.info(f"[{self.agent_id}] picked up {picked} undelivered cross-process event(s)")
         return picked
 
-    async def _check_and_handle_urgent(self) -> bool:
+    async def _check_and_handle_urgent(self, from_loop: bool = False) -> bool:
         """Check for urgent messages and handle them.
 
         Drain the on-disk inbox first so cross-process events (e.g. chat
         messages published by the monitor server) make it into the priority
         queue before we pull from it.
+
+        ``from_loop`` (#149): True when the caller IS the running agentic loop
+        (step boundary / between action rounds). A drain the loop itself
+        executes proves the loop is alive, so the #147 wedge branch must not
+        fire there — all four run-72/73 WEDGED declarations were healthy
+        mid-step lanes (the backend loop declared wedged at 00:32:29 completed
+        its task normally at 00:43:16), and the force-reset spawned CONCURRENT
+        loops in the same lane. The resident poller (base.run_loop) keeps the
+        default False and retains the run-71 real-wedge rescue.
         """
         try:
             await self._pickup_undelivered_inbox_events()
@@ -556,6 +594,44 @@ class AgentMessaging:
             # goes IDLE). Lower-priority urgent work correctly waits for the in-flight task.
             if (self._processing_state == ProcessingState.IDLE
                     and getattr(self, "_agentic_loop_depth", 0) == 0):
+                await self._handle_task_ready(urgent_msg)
+                return True
+
+            # FIX #147 (run-71 M2 STUCK, live): the verifier claimed BUSY for
+            # 13min with ZERO step activity (its last finish was 19:53:01, the
+            # in-flight loop never returned) — every gate-check remediation
+            # task_ready was deferred "for later" and the deferred queue never
+            # drained (drain only runs in a handler's finally) → 7-cycle
+            # no-convergence abort with all 3 milestones' work done. When the
+            # lane claims busy but its agentic loop has produced NO step for
+            # ENVGEN_LANE_WEDGE_S (default 600s; 0 disables), the loop is
+            # WEDGED, not busy: force-reset to IDLE (the wedged loop's finally,
+            # if it ever runs, is harmless — depth uses max(0, n-1)) and handle
+            # this task_ready NOW in the urgent-drain context (which
+            # demonstrably still runs while the loop is wedged).
+            # #149 guards on the branch below: (a) never fire from an IN-LOOP
+            # drain — the loop executing this code is by definition not wedged
+            # (all 4 run-72/73 declarations were healthy mid-step lanes, and
+            # the reset spawned concurrent double-authoring loops); (b) a real
+            # reset bumps _loop_generation so the undead loop's finally cannot
+            # stomp the replacement loop's state/depth (step_runner unwind
+            # checks its entry generation).
+            import os as _os
+            _last = getattr(self, "_last_step_activity", None)
+            try:
+                _wedge_s = float(_os.environ.get("ENVGEN_LANE_WEDGE_S", "600") or 600)
+            except Exception:
+                _wedge_s = 600.0
+            if (not from_loop and _last is not None and _wedge_s > 0
+                    and (time.time() - _last) >= _wedge_s):
+                self._logger.warning(
+                    f"[{self.agent_id}] lane claims busy (state={self._processing_state}, "
+                    f"depth={getattr(self, '_agentic_loop_depth', 0)}) but NO step activity "
+                    f"for {int(time.time() - _last)}s — declaring the in-flight loop WEDGED "
+                    "(FIX #147), force-resetting to IDLE and handling this task_ready now")
+                self._loop_generation = getattr(self, "_loop_generation", 0) + 1
+                self._processing_state = ProcessingState.IDLE
+                self._agentic_loop_depth = 0
                 await self._handle_task_ready(urgent_msg)
                 return True
 

@@ -573,6 +573,177 @@ def repair_custom_routes_db_handle(backend_dir) -> Dict[str, object]:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+# Framework-owned backend files a lane repair must never rewrite.
+_FRAMEWORK_OWNED_BACKEND = {
+    "auth_dependency.py", "jwt_manager.py", "main.py", "database.py",
+    "oauth_routes.py", "seed_loader.py"}
+
+
+def repair_jwt_decode_audience(backend_dir) -> Dict[str, object]:
+    """FIX #118 (instagram run-33, 2026-07-08, root PROVEN in-container): the framework
+    AS mints proper OAuth2 RS256 tokens WITH an ``aud`` claim, and PyJWT REJECTS any
+    aud-carrying token when the caller passes no ``audience=`` (InvalidAudienceError).
+    A lane that writes its OWN guard — ``jwt.decode(token, key, algorithms=[ALG])`` —
+    therefore 401s EVERY valid token ("Invalid token") and business_chain wedges on a
+    healthy app (GET /api/feed → 401; decode-with-audience returned the sub fine).
+    Same class as #109: the lane's belief about auth is foreseeably wrong, so the
+    framework owns the floor. Append ``options={"verify_aud": False}`` to lane
+    ``jwt.decode`` calls that verify a signature but pass neither ``audience=`` nor
+    ``options=`` — signature verification is untouched; audience enforcement stays the
+    framework guard's job (auth_dependency verifies aud correctly). AST-located,
+    surgical text insertion (no reformat), bottom-up (positions stay valid),
+    idempotent, best-effort, never raises; framework-owned files are never touched."""
+    import ast
+    result: Dict[str, object] = {"repaired": []}
+    try:
+        be = Path(backend_dir)
+        if not be.is_dir():
+            return result
+        touched: List[str] = []
+        for f in sorted(be.glob("*.py")):
+            if f.name in _FRAMEWORK_OWNED_BACKEND:
+                continue
+            try:
+                src = f.read_text(encoding="utf-8")
+                tree = ast.parse(src)
+            except Exception:
+                continue
+            sites = []
+            for node in ast.walk(tree):
+                if not (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and node.func.attr == "decode"
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id in ("jwt", "pyjwt")):
+                    continue
+                kwnames = {k.arg for k in node.keywords if k.arg}
+                if "audience" in kwnames or "options" in kwnames:
+                    continue  # already audience-aware / introspection decode
+                # only a VERIFYING decode (key present) is a guard worth repairing
+                if not ("algorithms" in kwnames or len(node.args) >= 2):
+                    continue
+                if node.end_lineno is None or node.end_col_offset is None:
+                    continue
+                sites.append((node.end_lineno, node.end_col_offset))
+            if not sites:
+                continue
+            lines = src.splitlines(keepends=True)
+            for (el, ec) in sorted(sites, reverse=True):
+                line = lines[el - 1]
+                # ec is just past the closing ')': insert before it
+                lines[el - 1] = (line[:ec - 1]
+                                 + ', options={"verify_aud": False}'
+                                 + line[ec - 1:])
+            new_src = "".join(lines)
+            try:
+                ast.parse(new_src)   # never write a syntax error
+            except Exception:
+                continue
+            f.write_text(new_src, encoding="utf-8")
+            touched.append(f.name)
+        result["repaired"] = touched
+    except Exception as exc:  # never break generation/validation
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+def _route_param_annotations(src: str) -> Dict[tuple, Dict[str, str]]:
+    """(method, path-template) → {param_name: 'int'|'str'} for every decorated route
+    whose decorator is ``@<obj>.<verb>('<path>')``. Best-effort; ignores routes whose
+    annotations aren't simple Names."""
+    import ast
+    out: Dict[tuple, Dict[str, str]] = {}
+    try:
+        tree = ast.parse(src)
+    except Exception:
+        return out
+    verbs = {"get", "post", "put", "patch", "delete"}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for dec in node.decorator_list:
+            if not (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute)
+                    and dec.func.attr in verbs and dec.args
+                    and isinstance(dec.args[0], ast.Constant)
+                    and isinstance(dec.args[0].value, str)):
+                continue
+            path = dec.args[0].value
+            params = {s[1:-1] for s in path.strip("/").split("/")
+                      if s.startswith("{") and s.endswith("}")}
+            if not params:
+                continue
+            anns: Dict[str, str] = {}
+            for arg in list(node.args.args) + list(node.args.kwonlyargs):
+                if (arg.arg in params and isinstance(arg.annotation, ast.Name)
+                        and arg.annotation.id in ("int", "str")):
+                    anns[arg.arg] = arg.annotation.id
+            if anns:
+                out[(dec.func.attr, path)] = anns
+    return out
+
+
+def repair_custom_routes_param_types_vs_projection(backend_dir) -> Dict[str, object]:
+    """FIX #119 (instagram run-35 M4 STUCK, 2026-07-09, live-diagnosed): the lane's
+    custom GET /api/users/{username} annotated the param ``int`` while the contract
+    (and the framework PROJECTION in main.py) is string-keyed — the custom router
+    overrides the projected route by design, so every real username 422/500'd and the
+    run aborted on business_endpoints_reachable. FIX #106's table-PK heuristic covers
+    only the ``str``-on-integer-PK direction; the PROJECTED signature is the
+    contract-derived source of truth for BOTH directions. For each custom route whose
+    (method, path-template) EXACTLY matches a projected route, rewrite any path-param
+    annotation that differs from the projection's. AST-anchored surgical edit
+    (bottom-up, no reformat), parse-guarded, idempotent, best-effort, never raises."""
+    import ast
+    try:
+        be = Path(backend_dir)
+        cr, mn = be / "custom_routes.py", be / "main.py"
+        if not cr.exists() or not mn.exists():
+            return {"fixed": 0, "reason": "missing files"}
+        projected = _route_param_annotations(mn.read_text(encoding="utf-8"))
+        if not projected:
+            return {"fixed": 0, "reason": "no projected routes"}
+        src = cr.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(src)
+        except Exception:
+            return {"fixed": 0, "reason": "custom_routes unparseable"}
+        verbs = {"get", "post", "put", "patch", "delete"}
+        edits = []  # (lineno, col0, col1, old, new)
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for dec in node.decorator_list:
+                if not (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute)
+                        and dec.func.attr in verbs and dec.args
+                        and isinstance(dec.args[0], ast.Constant)
+                        and isinstance(dec.args[0].value, str)):
+                    continue
+                want = projected.get((dec.func.attr, dec.args[0].value))
+                if not want:
+                    continue
+                for arg in list(node.args.args) + list(node.args.kwonlyargs):
+                    tgt = want.get(arg.arg)
+                    if (tgt and isinstance(arg.annotation, ast.Name)
+                            and arg.annotation.id in ("int", "str")
+                            and arg.annotation.id != tgt):
+                        edits.append((arg.annotation.lineno - 1,
+                                      arg.annotation.col_offset,
+                                      arg.annotation.end_col_offset,
+                                      arg.annotation.id, tgt))
+        if not edits:
+            return {"fixed": 0}
+        lines = src.splitlines(keepends=True)
+        for (ln, c0, c1, old, new) in sorted(edits, reverse=True):
+            if lines[ln][c0:c1] == old:
+                lines[ln] = lines[ln][:c0] + new + lines[ln][c1:]
+        new_src = "".join(lines)
+        ast.parse(new_src)   # never write a syntax error
+        cr.write_text(new_src, encoding="utf-8")
+        return {"fixed": len(edits)}
+    except Exception as exc:
+        return {"fixed": 0, "error": f"{type(exc).__name__}: {exc}"}
+
+
 def repair_custom_routes_param_types(backend_dir) -> Dict[str, object]:
     """FIX #106 (instagram run-23, live): the lane annotated a by-id path param as ``str``
     while the column is an INTEGER PK → SQLAlchemy compared ``posts.id = '20'::VARCHAR`` →
@@ -708,6 +879,93 @@ def repair_backend_packaging(backend_dir) -> Dict[str, object]:
         )
         pp.write_text(src.rstrip() + "\n" + addition, encoding="utf-8")
         return {"repaired": True, "pyproject": str(pp)}
+    except Exception as exc:
+        return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+# FIX #189: real distributions the backend scaffold/Dockerfile stack actually
+# uses — NEVER stripped even when a lane shadows one with a local file (removing
+# the real install would break transitive imports; the shadow is a different
+# bug that surfaces elsewhere).
+_KNOWN_REAL_DISTS = {
+    "fastapi", "uvicorn", "starlette", "pydantic", "psycopg", "psycopg2",
+    "psycopg2-binary", "sqlalchemy", "alembic", "python-jose", "passlib",
+    "python-multipart", "httpx", "requests", "bcrypt", "pyjwt", "jinja2",
+    "aiofiles", "email-validator", "python-dotenv", "orjson",
+}
+
+# FIX #189 (r5 actual root): module names the backend skeleton OWNS by
+# construction — incl. custom_routes, the one lane-override hook main.py
+# imports under an except-ImportError guard. When the file is ABSENT at
+# render time, _lane_third_party_imports used to see that import as
+# third-party and the FRAMEWORK ITSELF wrote "custom_routes" into pyproject
+# deps → uv resolution failed → docker_up wedged → STUCK-ABORT (tiktok-r5).
+# Reserved names never become pip deps, file present or not.
+_SKELETON_LOCAL_MODULES = {
+    "database", "models", "seed_data", "main", "schemas", "auth_dependency",
+    "custom_routes", "jwt_manager", "oauth_routes", "oauth_store",
+    "user_bootstrap",
+}
+
+
+def _pep503(name: str) -> str:
+    """PEP-503 normalization: case-insensitive, runs of -_. collapse to '-'."""
+    return re.sub(r"[-_.]+", "-", str(name).strip().lower())
+
+
+def sanitize_pyproject_local_deps(backend_dir) -> Dict[str, object]:
+    """FIX #189 (tiktok-r5 STUCK-ABORT, 2026-07-18): the lane hallucinated the
+    app's OWN ``custom_routes.py`` into a pip dependency (``custom-routes``) —
+    uv resolution failed ("was not found in the package registry") → the backend
+    image never built → docker_up wedged 7 post-cap cycles → abort, while the
+    lane never landed the one-line fix. A dependency whose PEP-503 name matches
+    a LOCAL module/package of the backend can never need installing (the local
+    file shadows site-packages at runtime) — strip it DETERMINISTICALLY at heal
+    time instead of waiting on a lane. Conservative: _KNOWN_REAL_DISTS are never
+    stripped. Idempotent; best-effort; never raises."""
+    try:
+        be = Path(backend_dir)
+        pp = be / "pyproject.toml"
+        if not pp.exists():
+            return {"repaired": False, "reason": "no pyproject.toml"}
+        # skeleton-reserved names count as local even when the FILE is absent
+        # (r5: the dep referenced a custom_routes.py that was never written).
+        local = {_pep503(n) for n in _SKELETON_LOCAL_MODULES}
+        for f in be.glob("*.py"):
+            local.add(_pep503(f.stem))
+        for d in be.iterdir():
+            if d.is_dir() and (d / "__init__.py").exists():
+                local.add(_pep503(d.name))
+        src_pkg_root = be / "src"
+        if src_pkg_root.is_dir():
+            for sub in src_pkg_root.iterdir():
+                if sub.is_dir() and (sub / "__init__.py").exists():
+                    local.add(_pep503(sub.name))
+        src = pp.read_text(encoding="utf-8", errors="ignore")
+        # closing ] anchored at line start — a mid-entry ']' (uvicorn[standard])
+        # must not close the list early. Single-line dep lists don't match → safe
+        # no-op (generated pyprojects are pretty-printed multi-line).
+        m = re.search(r"(?ms)^(\s*dependencies\s*=\s*\[)(.*?)(^\s*\])", src)
+        if not m:
+            return {"repaired": False, "reason": "no [project] dependencies list"}
+        head, body, tail = m.group(1), m.group(2), m.group(3)
+        kept_lines: List[str] = []
+        dropped: List[str] = []
+        for line in body.splitlines():
+            entry = line.strip().strip(",").strip("\"'")
+            if not entry or entry.startswith("#"):
+                kept_lines.append(line)
+                continue
+            dep_name = _pep503(re.split(r"[<>=!~\[; ]", entry, 1)[0])
+            if dep_name in local and dep_name not in _KNOWN_REAL_DISTS:
+                dropped.append(entry)
+                continue
+            kept_lines.append(line)
+        if not dropped:
+            return {"repaired": False, "reason": "no local-module deps"}
+        new_src = src[:m.start()] + head + "\n".join(kept_lines) + tail + src[m.end():]
+        pp.write_text(new_src, encoding="utf-8")
+        return {"repaired": True, "dropped": dropped, "pyproject": str(pp)}
     except Exception as exc:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 

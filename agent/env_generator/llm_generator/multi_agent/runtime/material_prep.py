@@ -17,6 +17,7 @@ truth, not the model's guess. Best-effort: returns {} / None rather than raising
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 from collections import Counter
@@ -672,6 +673,26 @@ def _ingest_one(path: Path, rel: Path) -> Optional[Dict]:
     }
 
 
+# #183/#184: NON-image design-input assets that ingest must stage anyway. A font/video/audio
+# never opens as an image, so _ingest_one returns None and it would be dropped — losing real
+# typography ("文字风格一致") and, far worse for a video-centric clone, the actual VIDEOS
+# (gmtiktok staged 35 jpg thumbnails but 0 mp4). Recognized non-image types are staged with a
+# minimal manifest entry so design_system assets[] carries them and lanes can reference them.
+_FONT_EXTS = {".woff2", ".woff", ".ttf", ".otf", ".eot"}
+_VIDEO_EXTS = {".mp4", ".webm", ".mov", ".m4v", ".ogv"}
+_AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".ogg", ".aac", ".flac"}
+
+
+def _nonimage_asset_type(suffix: str) -> Optional[str]:
+    if suffix in _FONT_EXTS:
+        return "font"
+    if suffix in _VIDEO_EXTS:
+        return "video"
+    if suffix in _AUDIO_EXTS:
+        return "audio"
+    return None
+
+
 def ingest_assets(assets_dir, stage_dir) -> List[Dict]:
     """Scan a user-provided ``assets/`` folder → a manifest (one entry per image) + physically
     stage each file into ``stage_dir`` (preserving any icons/ logos/ subfolder grouping so
@@ -693,7 +714,15 @@ def ingest_assets(assets_dir, stage_dir) -> List[Dict]:
         except Exception:
             entry = None
         if not entry:
-            continue
+            # #183/#184: a font/video/audio never opens as an image (_ingest_one → None); stage
+            # recognized non-image assets anyway with a minimal entry so real typography AND the
+            # actual video/audio reach the app. Other non-image files are still skipped.
+            _atype = _nonimage_asset_type(path.suffix.lower())
+            if not _atype:
+                continue
+            entry = {"id": path.stem, "file": rel.as_posix(), "type": _atype,
+                     "dims": None, "transparent": False, "dominant_colors": [],
+                     "staged_path": f"public/assets/{rel.as_posix()}"}
         base_id = entry["id"]
         seen_ids[base_id] = seen_ids.get(base_id, 0) + 1
         if seen_ids[base_id] > 1:
@@ -708,7 +737,136 @@ def ingest_assets(assets_dir, stage_dir) -> List[Dict]:
     return manifest
 
 
+_DATA_EXTS = {".json", ".csv", ".ndjson", ".jsonl"}
+
+
+def _dataset_columns(path: Path, kind: str) -> List[str]:
+    """F2b: the union of row keys (first-seen order) for a JSON-array data file — the
+    schema the real dataset defines, so the contract can build a matching table. []
+    for non-JSON or non-array data (never raises)."""
+    if kind not in ("json",):
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+    # FIX #158: sanitize each column name to a valid, non-keyword identifier (the SAME
+    # function the ORM render + seed-key assembly use) so the requirements-binding block
+    # tells the backend the FINAL safe name — a real dataset column like ``from`` never
+    # reaches the contract as a Python keyword that would break ``import models``.
+    from .backend_skeleton import safe_column_name
+    cols: List[str] = []
+    seen = set()
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        for k in row.keys():
+            sk = safe_column_name(k)
+            if sk not in seen:
+                seen.add(sk)
+                cols.append(sk)
+    return cols
+
+
+def _dataset_record_count(path: Path, kind: str) -> Optional[int]:
+    """Best-effort row count for a staged data file — a top-level JSON array's
+    length, or a dict's summed list lengths, or line count for ndjson/csv.
+    None when unknown (never raises)."""
+    try:
+        if kind in ("ndjson", "jsonl", "csv"):
+            n = sum(1 for ln in path.read_text(encoding="utf-8", errors="ignore").splitlines()
+                    if ln.strip())
+            return max(0, n - 1) if kind == "csv" else n
+        data = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
+        if isinstance(data, list):
+            return len(data)
+        if isinstance(data, dict):
+            return sum(len(v) for v in data.values() if isinstance(v, list))
+    except Exception:
+        return None
+    return None
+
+
+def ingest_dataset(dataset_dir, stage_dir) -> List[Dict]:
+    """F1 — the FOURTH design-input channel. Scan a user-provided ``dataset/`` folder of
+    REAL structured data (JSON/CSV/NDJSON) → a manifest + physically stage each file into
+    ``stage_dir`` (preserving subfolders). Mirrors ``ingest_assets`` but for data rows, not
+    images: the design-prep phase carries these into the app's seed so the DB ships REAL
+    domain data deterministically (not LLM-synthesized). ``staged_path`` points at the
+    app-relative runtime location ``backend/dataset/<relpath>`` (build-infra copies it next
+    to seed_data.json). Deterministic, best-effort: missing dir → [], unreadable files
+    skipped, never raises. Manifest entry: {id, file, type, records:int|None, staged_path}."""
+    src = Path(dataset_dir)
+    if not src.is_dir():
+        return []
+    stage = Path(stage_dir)
+    manifest: List[Dict] = []
+    seen_ids: Dict[str, int] = {}
+    for path in sorted(src.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in _DATA_EXTS:
+            continue
+        rel = path.relative_to(src)
+        kind = path.suffix.lower().lstrip(".")
+        base_id = _slug(path.stem)
+        seen_ids[base_id] = seen_ids.get(base_id, 0) + 1
+        entry_id = base_id if seen_ids[base_id] == 1 else f"{base_id}-{seen_ids[base_id]}"
+        try:
+            dest = stage / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, dest)
+        except Exception:
+            continue
+        manifest.append({
+            "id": entry_id,
+            "file": rel.as_posix(),
+            "type": kind,
+            "records": _dataset_record_count(path, kind),
+            "columns": _dataset_columns(path, kind),
+            "staged_path": f"backend/dataset/{rel.as_posix()}",
+        })
+    return manifest
+
+
+def assemble_seed_dataset(design_dataset_dir) -> Dict[str, List]:
+    """F2 — fold the staged real dataset (design/dataset/*.json) into a single
+    ``{table: [rows]}`` seed dict: each JSON file whose stem is a table name and whose
+    content is a row ARRAY contributes that table. Files that are not JSON arrays
+    (MANIFEST.md, a config object) are skipped. This is what the build-infra writes to
+    the framework-owned app/backend/seed_dataset.json (which the loader merges OVER the
+    lane's seed_data.json). Deterministic, best-effort: missing dir / bad file → skipped,
+    never raises."""
+    src = Path(design_dataset_dir)
+    out: Dict[str, List] = {}
+    if not src.is_dir():
+        return out
+    for path in sorted(src.rglob("*.json")):
+        if not path.is_file():
+            continue
+        try:
+            rows = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
+        except Exception:
+            continue
+        if isinstance(rows, list) and rows:
+            # the file stem IS the table name — keep it VERBATIM (no _slug: it would
+            # rewrite transit_stops → transit-stops and break the ORM table match).
+            # FIX #158: sanitize the ROW KEYS to the safe identifier so a seed key equals
+            # the ORM ATTRIBUTE the loader inserts through (a keyword column ``from`` is
+            # exposed as attribute ``from_``; a raw ``from`` key would be dropped by the
+            # loader's hasattr filter → that column silently NULL). Same function as render.
+            from .backend_skeleton import safe_column_name
+            fixed = []
+            for r in rows:
+                if isinstance(r, dict):
+                    fixed.append({safe_column_name(k): v for k, v in r.items()})
+                else:
+                    fixed.append(r)
+            out[path.stem] = fixed
+    return out
+
+
 __all__ = ["row_mode_color", "region_background", "find_accent", "extract_palette",
            "crop_region", "decompose_reference", "make_side_by_side",
            "color_distance", "spec_color_deviations", "theme_inversion",
-           "ingest_assets"]
+           "ingest_assets", "ingest_dataset", "assemble_seed_dataset"]

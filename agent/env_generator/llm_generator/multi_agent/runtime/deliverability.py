@@ -17,9 +17,19 @@ from pathlib import Path
 # real-backend / blank-UI app currently gets the coverage/seed/visual/ui_flow gates waived.
 # When ENVGEN_REQUIRE_UI_EVIDENCE is enabled, the UI-facing gates additionally require at
 # least ONE passing browser/UI validation record before they may be downgraded — closing the
-# "api_smoke green, blank screen shipped" class. Default-off (byte-identical) until validated
-# on a live run, then flip it on.
+# "api_smoke green, blank screen shipped" class.
+# FIX #193: default-ON. It was default-off because the evidence matcher was
+# double-dead (status 'success' vs 'passed' + check nested at
+# evidence.metadata.check — verified on run80's archive): enabling it would have
+# blocked EVERY delivery. get_validation_results now canonicalizes both, the
+# ui_flow records healthy runs already write (7 in run80) match, and the
+# blank-UI waiver is finally closed. ENVGEN_REQUIRE_UI_EVIDENCE=0 reverts.
 _UI_EVIDENCE_CHECKS = {"ui_flow", "ui_smoke", "ui_page_reachable", "test_user"}
+
+
+def _require_ui_evidence() -> bool:
+    return os.environ.get("ENVGEN_REQUIRE_UI_EVIDENCE", "1").lower() in (
+        "1", "true", "yes", "on")
 
 
 def _has_passing_ui_evidence(hub_registry) -> bool:
@@ -117,6 +127,55 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
         return []
     try:
         return ui_page_delivery_blockers(Path(app_root) / "frontend" / "src", workhub)
+    except Exception:
+        return []
+
+
+def _bare_fetch_blockers(app_root) -> List[str]:
+    """#154 (§6-1, gmrun4): bare unauthenticated ``fetch('/api/…')`` call sites →
+    delivery blockers. Purely static (frontend source only), recomputed each gate
+    tick, best-effort ``[]`` on any fault. ``ENVGEN_BARE_FETCH_GATE=0`` disables."""
+    if os.environ.get("ENVGEN_BARE_FETCH_GATE", "1").lower() in ("0", "false", "no", "off"):
+        return []
+    try:
+        from .frontend_audit import bare_authed_fetch_blockers
+    except Exception:
+        return []
+    try:
+        return bare_authed_fetch_blockers(Path(app_root) / "frontend" / "src")
+    except Exception:
+        return []
+
+
+def _stub_handler_blockers(app_root) -> List[str]:
+    """#173 (gmrun9): a GET route handler that does NO DB read and returns only a hardcoded
+    EMPTY collection is a PLACEHOLDER STUB (backend twin of a mock page) → delivery blocker.
+    The lane 'implemented' /api/transit/{id}/departures as ``return {"items": []}`` while real
+    seed data existed; the DeparturesPage then shipped 'No departures found.' forever. Static
+    AST, recomputed each gate tick, best-effort ``[]``. ``ENVGEN_STUB_HANDLER_GATE=0`` off."""
+    try:
+        from .backend_audit import stub_handler_blockers
+    except Exception:
+        return []
+    try:
+        return stub_handler_blockers(Path(app_root) / "backend")
+    except Exception:
+        return []
+
+
+def _invented_field_blockers(app_root) -> List[str]:
+    """#175 (gmrun9): frontend member-field fallbacks to FABRICATED display literals
+    (``place.rating || '4.5'`` / ``? place.name : 'HI Point Montara Lighthouse'``) render
+    invented data whenever the field is absent (often ALWAYS — gmrun9's `place.reviews`
+    drifted from the model's `review_count`). The user's no-placeholder/mock bar; #170's
+    prompt rule was ignored so this ENFORCES it. Static, best-effort ``[]``.
+    ``ENVGEN_INVENTED_FIELD_GATE=0`` disables."""
+    try:
+        from .frontend_audit import invented_field_fallback_blockers
+    except Exception:
+        return []
+    try:
+        return invented_field_fallback_blockers(Path(app_root) / "frontend" / "src")
     except Exception:
         return []
 
@@ -254,12 +313,10 @@ def compute_deliverability(hub_registry, app_root,
         and mcp_counts.get("failed", 0) == 0
     )
     # UI-facing gates (visual / ui_flow) may downgrade only when the app is functionally
-    # validated AND (when ENVGEN_REQUIRE_UI_EVIDENCE is on) at least one UI/browser/test-user
-    # record passed — so a backend-only-validated, blank-UI app no longer waives them.
-    # Default-off ⇒ ui_validated == functionally_validated (byte-identical).
-    _require_ui = os.environ.get("ENVGEN_REQUIRE_UI_EVIDENCE", "0").lower() in ("1", "true", "yes", "on")
+    # validated AND (#193, default-ON) at least one UI/browser/test-user record
+    # passed — so a backend-only-validated, blank-UI app no longer waives them.
     ui_validated = functionally_validated and (
-        _has_passing_ui_evidence(hub_registry) if _require_ui else True)
+        _has_passing_ui_evidence(hub_registry) if _require_ui_evidence() else True)
 
     coverage = _coverage_summary(hub_registry, app_root)
     if not coverage.get("is_clean", True) and not functionally_validated:
@@ -276,6 +333,27 @@ def compute_deliverability(hub_registry, app_root,
     # App.jsx? component file on disk?), low-false-positive, and self-clearing
     # once the lane wires the page — never a permanent block.
     blockers.extend(_ui_page_wiring_blockers(hub_registry, app_root))
+
+    # BARE-FETCH-NO-TOKEN gate (#154, gmrun4 root cause). Like the ui_page gate
+    # above, NOT relaxed on a functionally-validated app: api_smoke probes the
+    # backend with a FRAMEWORK-minted token, so a frontend that never attaches
+    # the user's token 401s at runtime while every functional check stays green
+    # (gmrun4: delivered 4 milestones, browser showed a login wall). Static,
+    # low-false-positive (literal '/api/' URLs only, public endpoints and any
+    # auth evidence excused), self-clearing once the lane wires the token.
+    blockers.extend(_bare_fetch_blockers(app_root))
+
+    # PLACEHOLDER-STUB backend handler gate (#173, gmrun9). A GET route that returns a
+    # hardcoded empty collection with no DB read renders a permanently-empty page — the
+    # backend twin of a mock frontend. Static AST on the served backend tree, self-clearing
+    # once the handler queries the real table.
+    blockers.extend(_stub_handler_blockers(app_root))
+
+    # FABRICATED member-field fallback gate (#175, gmrun9). The frontend renders
+    # `place.rating || '4.5'` / `? place.name : 'HI Point Montara Lighthouse'` — invented data
+    # shown whenever the real field is absent (often always, on a field-name drift). Static
+    # scan of the frontend JSX, self-clearing once the fake literal is removed.
+    blockers.extend(_invented_field_blockers(app_root))
 
     # Seed gate: the backend drifts on seed-data registration (the same
     # bookkeeping-the-LLM-never-does class as ui_flow/visual). On a functionally-
@@ -305,14 +383,29 @@ def compute_deliverability(hub_registry, app_root,
     try:
         import json as _json
         _seed_path = Path(app_root) / "backend" / "seed_data.json"
-        _authored = False
+        _data = {}
         if _seed_path.exists():
             try:
                 _data = _json.loads(_seed_path.read_text(encoding="utf-8"))
-                _authored = isinstance(_data, dict) and any(
-                    isinstance(v, list) and v for v in _data.values())
+                if not isinstance(_data, dict):
+                    _data = {}
             except Exception:
-                _authored = False
+                _data = {}
+        # F2: the framework-owned seed_dataset.json (design-prep REAL data the loader
+        # merges into the DB) counts toward BOTH the authored check and the quality
+        # row-floor — a run whose real rows live there must not trip the gate just
+        # because the lane's seed_data.json is thin. Merged view; dataset tables win.
+        _real = {}
+        try:
+            _ds_path = Path(app_root) / "backend" / "seed_dataset.json"
+            if _ds_path.exists():
+                _rd = _json.loads(_ds_path.read_text(encoding="utf-8"))
+                if isinstance(_rd, dict):
+                    _real = _rd
+        except Exception:
+            _real = {}
+        _data = {**_data, **{k: v for k, v in _real.items() if isinstance(v, list) and v}}
+        _authored = any(isinstance(v, list) and v for v in _data.values())
         if not _authored:
             blockers.append(
                 "authored seed missing: app/backend/seed_data.json is absent or empty — "

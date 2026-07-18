@@ -899,6 +899,82 @@ def validate_build_evidence(output_dir, get_validation_results) -> Dict[str, Any
     }
 
 
+def _deliverability_check_token(blocker: str) -> str:
+    """Map ONE deliverability blocker (human prose) onto its stable check token.
+
+    Extracted from the validate_delivery_gate fold loop (verbatim mapping) so the
+    canonicalization is unit-testable; each token names the failed dimension, the
+    full prose stays in ``deliverability_report`` for the operator-facing log."""
+    low = str(blocker).lower()
+    if "no successful runhub run" in low:
+        return "deliverability_no_successful_run"
+    if "failed endpoint probe" in low:
+        return "deliverability_failed_endpoint_probes"
+    if "failed mcp probe" in low:
+        return "deliverability_failed_mcp_probes"
+    if "dead artifact" in low:
+        return "deliverability_dead_artifacts"
+    if "authored seed missing" in low:
+        # #41: the lane never authored seed_data.json — the app would ship the
+        # bland framework fallback (run-33 shipped SUCCESS this way).
+        return "deliverability_missing_authored_seed"
+    if "authored seed quality" in low:
+        # #54: the lane authored seed_data.json but it is a token/placeholder
+        # seed (thin rows, marker words, sequential names) — the populated-
+        # screen bar needs realistic density. Anchored on the exact prefix
+        # deliverability emits; must precede the generic seed branches.
+        return "deliverability_authored_seed_quality"
+    if "missing seed" in low:
+        return "deliverability_missing_seed"
+    if "low row count" in low or "placeholder seed" in low:
+        return "deliverability_seed_quality"
+    if "critical visual review" in low and "pending" in low:
+        return "deliverability_critical_visuals_pending"
+    if "critical visual review" in low and "need revision" in low:
+        return "deliverability_critical_visuals_needs_revision"
+    if "critical_flows" in low and "unparseable" in low:
+        return "deliverability_critical_flows_invalid"
+    if "ui flow(s) failed" in low:
+        # Anchor on the FULL prefix emitted by ``_flow_coverage_summary``
+        # (``"N critical UI flow(s) failed:"``) so a flow whose NAME contains
+        # the substring "missing" (e.g. ``recover_missing_password``) doesn't
+        # collide with the missing-branch check. failed FIRST: ``ui flow(s)
+        # failed`` doesn't appear in the missing-branch prose; ``missing`` can
+        # appear in the failed-branch prose if a flow name has it.
+        return "deliverability_ui_flow_failed"
+    if "ui flow(s) missing" in low:
+        return "deliverability_ui_flow_missing"
+    if "declared but unusable" in low:
+        # B1: a declared ui_page whose route isn't wired in App.jsx
+        # or whose component file is absent (round 44 blank-screen
+        # class). Deterministic, NOT relaxed on functionally_validated.
+        return "deliverability_ui_page_unwired"
+    if "bare unauthenticated fetch" in low:
+        # #154 (§6-1, gmrun4): frontend calls an authed /api/ endpoint with a
+        # bare fetch() that never attaches the Authorization token → runtime
+        # 401 → empty pages/login wall while api_smoke (framework-minted
+        # token) stays green. Deterministic, NOT relaxed on
+        # functionally_validated — functional validation is exactly the
+        # blind spot.
+        return "deliverability_bare_authed_fetch"
+    if "placeholder stub" in low:
+        # #173 (gmrun9): a GET route handler that does NO DB read and returns a
+        # hardcoded empty collection → a permanently-empty page (the departures
+        # `return {"items": []}` the lane shipped). Deterministic AST; NOT relaxed
+        # on functionally_validated — api_smoke never asserts a non-empty body.
+        return "deliverability_placeholder_stub_handler"
+    if "fabricated fallback" in low:
+        # #175 (gmrun9): the frontend renders `place.rating || '4.5'` /
+        # `? place.name : 'HI Point Montara Lighthouse'` → invented data whenever
+        # the field is absent (often always, on a field-name drift). Static JSX
+        # scan; the no-placeholder/mock bar #170's prompt rule failed to hold.
+        return "deliverability_fabricated_field_fallback"
+    # Unmapped blocker — surface verbatim under a catch-all so the operator
+    # sees it instead of silently dropping; future canonicalization work can
+    # move it into a named token.
+    return f"deliverability_other:{str(blocker)[:80]}"
+
+
 def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                            scaffold_design_readme, get_validation_results,
                            get_validation_summary,
@@ -1117,66 +1193,9 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         for blocker in (deliverability_report.blockers or []):
             # Canonicalize: blocker strings are human prose; map
             # them onto stable check tokens the test surface
-            # can assert against. Each token names the failed
-            # dimension; the full prose remains in
-            # ``deliverability_report`` returned below for the
-            # operator-facing log.
-            low = blocker.lower()
-            if "no successful runhub run" in low:
-                deliverability_failed_checks.append("deliverability_no_successful_run")
-            elif "failed endpoint probe" in low:
-                deliverability_failed_checks.append("deliverability_failed_endpoint_probes")
-            elif "failed mcp probe" in low:
-                deliverability_failed_checks.append("deliverability_failed_mcp_probes")
-            elif "dead artifact" in low:
-                deliverability_failed_checks.append("deliverability_dead_artifacts")
-            elif "authored seed missing" in low:
-                # #41: the lane never authored seed_data.json — the app would ship the
-                # bland framework fallback (run-33 shipped SUCCESS this way).
-                deliverability_failed_checks.append("deliverability_missing_authored_seed")
-            elif "authored seed quality" in low:
-                # #54: the lane authored seed_data.json but it is a token/placeholder
-                # seed (thin rows, marker words, sequential names) — the populated-
-                # screen bar needs realistic density. Anchored on the exact prefix
-                # deliverability emits; must precede the generic seed branches.
-                deliverability_failed_checks.append("deliverability_authored_seed_quality")
-            elif "missing seed" in low:
-                deliverability_failed_checks.append("deliverability_missing_seed")
-            elif "low row count" in low or "placeholder seed" in low:
-                deliverability_failed_checks.append("deliverability_seed_quality")
-            elif "critical visual review" in low and "pending" in low:
-                deliverability_failed_checks.append("deliverability_critical_visuals_pending")
-            elif "critical visual review" in low and "need revision" in low:
-                deliverability_failed_checks.append("deliverability_critical_visuals_needs_revision")
-            elif "critical_flows" in low and "unparseable" in low:
-                deliverability_failed_checks.append("deliverability_critical_flows_invalid")
-            elif "ui flow(s) failed" in low:
-                # Anchor on the FULL prefix emitted by
-                # ``_flow_coverage_summary`` (``"N critical UI
-                # flow(s) failed:"``) so a flow whose NAME
-                # contains the substring "missing" (e.g.
-                # ``recover_missing_password``) doesn't collide
-                # with the missing-branch elif. Check failed
-                # FIRST: ``ui flow(s) failed`` doesn't appear in
-                # the missing-branch prose; ``missing`` can
-                # appear in the failed-branch prose if a flow
-                # name has it.
-                deliverability_failed_checks.append("deliverability_ui_flow_failed")
-            elif "ui flow(s) missing" in low:
-                deliverability_failed_checks.append("deliverability_ui_flow_missing")
-            elif "declared but unusable" in low:
-                # B1: a declared ui_page whose route isn't wired in App.jsx
-                # or whose component file is absent (round 44 blank-screen
-                # class). Deterministic, NOT relaxed on functionally_validated.
-                deliverability_failed_checks.append("deliverability_ui_page_unwired")
-            else:
-                # Unmapped blocker — surface verbatim under a
-                # catch-all so the operator sees it instead of
-                # silently dropping; future canonicalization
-                # work can move it into a named token.
-                deliverability_failed_checks.append(
-                    f"deliverability_other:{blocker[:80]}"
-                )
+            # can assert against (extracted to
+            # ``_deliverability_check_token`` — unit-testable).
+            deliverability_failed_checks.append(_deliverability_check_token(blocker))
     except Exception as deliv_err:
         # Defense in depth: a malformed aggregator call must
         # never crash the gate. Surface the exception as its
