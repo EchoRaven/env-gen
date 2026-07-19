@@ -1699,15 +1699,17 @@ _FUZZY_STOPWORDS_226 = frozenset({
 
 def _semantic_tokens_226(*texts) -> Set[str]:
     """Lowercase word tokens (+ crude singulars) of routes/names, minus generic
-    layout words — the fuzzy-match vocabulary for screen↔page reconciliation."""
+    layout words — the fuzzy-match vocabulary for screen↔page reconciliation.
+    camelCase is split first so 'ProfilePage' yields {profile} (#229)."""
     toks: Set[str] = set()
     for t in texts:
-        toks |= set(re.findall(r"[a-z]+", str(t or "").lower()))
+        s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(t or ""))
+        toks |= set(re.findall(r"[a-z]+", s.lower()))
     toks |= {t[:-1] for t in list(toks) if t.endswith("s") and len(t) > 3}
     return toks - _FUZZY_STOPWORDS_226
 
 
-def _design_screen_for_route(design, route) -> Optional[Dict[str, Any]]:
+def _design_screen_for_route(design, route, hints=()) -> Optional[Dict[str, Any]]:
     """The measured screen whose classified route (#132) matches ``route`` and
     that carries component regions. kind=='page' preferred over overlays.
 
@@ -1716,7 +1718,11 @@ def _design_screen_for_route(design, route) -> Optional[Dict[str, Any]]:
     notifications_activity) — an exact-route miss shipped the generic fallback
     while a twin page got the structured projection. Fall back to TOKEN-OVERLAP
     between the route and the screen's name/route; no shared token → no match
-    (a wrong graft is worse than the generic floor)."""
+    (a wrong graft is worse than the generic floor).
+
+    #229 (r21 live): a param route ('/@:username') tokenizes to just the param
+    name, so route-only fuzzy missed profile_own@/profile — ``hints`` (the
+    page's own name/id/component) join the fuzzy vocabulary."""
     want = _norm_route_221(route)
     if not want:
         return None
@@ -1731,7 +1737,7 @@ def _design_screen_for_route(design, route) -> Optional[Dict[str, Any]]:
         best = best or s
     if best is not None:
         return best
-    rt = _semantic_tokens_226(want)
+    rt = _semantic_tokens_226(want, *hints)
     if not rt:
         return None
     fuzzy, fuzzy_score = None, 0
@@ -2291,7 +2297,9 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
     # #221: a route covered by a MEASURED design screen projects the reference's
     # real region structure (populated, functional) — never the generic list.
     if get_ep:
-        _screen = _design_screen_for_route(design, page.get("route"))
+        _screen = _design_screen_for_route(
+            design, page.get("route"),
+            hints=(page.get("name"), page.get("id"), page.get("component"), name))
         if _screen is not None:
             try:
                 return _render_reference_page(name, page, _screen, design or {},
