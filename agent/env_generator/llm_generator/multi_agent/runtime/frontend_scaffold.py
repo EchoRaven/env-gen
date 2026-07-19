@@ -1690,9 +1690,33 @@ def _norm_route_221(r) -> str:
     return (r.rstrip("/") or "/")
 
 
+# #226: generic layout/UI words that must never carry a fuzzy match on their own
+_FUZZY_STOPWORDS_226 = frozenset({
+    "page", "screen", "view", "views", "main", "own", "my", "the", "of", "and",
+    "grid", "list", "menu", "modal", "empty", "logged", "out", "in", "panel",
+})
+
+
+def _semantic_tokens_226(*texts) -> Set[str]:
+    """Lowercase word tokens (+ crude singulars) of routes/names, minus generic
+    layout words — the fuzzy-match vocabulary for screen↔page reconciliation."""
+    toks: Set[str] = set()
+    for t in texts:
+        toks |= set(re.findall(r"[a-z]+", str(t or "").lower()))
+    toks |= {t[:-1] for t in list(toks) if t.endswith("s") and len(t) > 3}
+    return toks - _FUZZY_STOPWORDS_226
+
+
 def _design_screen_for_route(design, route) -> Optional[Dict[str, Any]]:
     """The measured screen whose classified route (#132) matches ``route`` and
-    that carries component regions. kind=='page' preferred over overlays."""
+    that carries component regions. kind=='page' preferred over overlays.
+
+    #226 (r20 live): the LLM route classification drifts (kickoff declares
+    /activity; the screen classified /notifications, name
+    notifications_activity) — an exact-route miss shipped the generic fallback
+    while a twin page got the structured projection. Fall back to TOKEN-OVERLAP
+    between the route and the screen's name/route; no shared token → no match
+    (a wrong graft is worse than the generic floor)."""
     want = _norm_route_221(route)
     if not want:
         return None
@@ -1705,7 +1729,21 @@ def _design_screen_for_route(design, route) -> Optional[Dict[str, Any]]:
         if str(s.get("kind") or "page").strip().lower() == "page":
             return s
         best = best or s
-    return best
+    if best is not None:
+        return best
+    rt = _semantic_tokens_226(want)
+    if not rt:
+        return None
+    fuzzy, fuzzy_score = None, 0
+    for s in ((design or {}).get("screens") or []):
+        if not (isinstance(s, dict) and (s.get("components") or [])):
+            continue
+        if str(s.get("kind") or "page").strip().lower() != "page":
+            continue
+        score = len(rt & _semantic_tokens_226(s.get("name"), s.get("route")))
+        if score > fuzzy_score:
+            fuzzy, fuzzy_score = s, score
+    return fuzzy
 
 
 def missing_design_screen_pages(design, ui_pages, endpoints) -> List[Dict[str, Any]]:
@@ -1718,6 +1756,12 @@ def missing_design_screen_pages(design, ui_pages, endpoints) -> List[Dict[str, A
     Pure + env-agnostic; the caller registers the returned specs."""
     covered = {_norm_route_221(p.get("route"))
                for p in (ui_pages or []) if isinstance(p, dict)}
+    # #226: a page also covers a screen it fuzzy-matches (kickoff /activity vs
+    # screen notifications_activity@/notifications) — else a TWIN page gets
+    # registered and one of the two ships as a generic fallback (r20 live).
+    page_token_sets = [
+        _semantic_tokens_226(p.get("route"), p.get("name"))
+        for p in (ui_pages or []) if isinstance(p, dict)]
     gets: List[str] = []
     for ep in (endpoints or []):
         if not isinstance(ep, dict):
@@ -1744,6 +1788,9 @@ def missing_design_screen_pages(design, ui_pages, endpoints) -> List[Dict[str, A
         norm = _norm_route_221(route)
         if not route.startswith("/") or norm in seen_routes:
             continue
+        _st = _semantic_tokens_226(s.get("name"), route)
+        if _st and any(_st & pt for pt in page_token_sets):
+            continue  # #226: fuzzy-covered by an existing page — no twin
         seen_routes.add(norm)
         stem = re.sub(r"[^a-z0-9]+", "_", str(s.get("name") or "page").lower()).strip("_")
         comp = "".join(w.title() for w in stem.split("_")) or "Screen"
