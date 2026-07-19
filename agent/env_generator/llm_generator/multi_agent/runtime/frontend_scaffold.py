@@ -2520,9 +2520,11 @@ def render_measured_tailwind_theme(design_system) -> str:
             colors[f"accent-{str(hue).lower()}"] = hexv
     if not colors:
         return "export default {}\n"
-    _lines = ",\n".join(f"      '{k}': '{v}'" for k, v in colors.items())
-    return ("export default {\n  theme: {\n    extend: {\n      colors: {\n"
-            f"{_lines}\n      }},\n    }},\n  }},\n}}\n")
+    # #219: the pinned tailwind.config.js consumes this as `theme: { extend:
+    # theme || {} }` — the export IS the extend object. Wrapping it in
+    # theme/extend again double-nests and the tokens never resolve.
+    _lines = ",\n".join(f"    '{k}': '{v}'" for k, v in colors.items())
+    return f"export default {{\n  colors: {{\n{_lines}\n  }},\n}}\n"
 
 
 def render_measured_base_css(design_system) -> str:
@@ -3388,10 +3390,23 @@ def _apply_measured_palette(frontend_dir) -> None:
         return
     if not _palette_of(ds):
         return
-    # tailwind.theme.js — framework-owned (measured tokens win over a lane guess).
+    # tailwind.theme.js — measured tokens win on conflicts (ground truth), but
+    # lane-authored tokens are PRESERVED (#219b): the lane may @apply its own
+    # custom classes, and dropping them breaks the build with no lane recourse.
     _theme = render_measured_tailwind_theme(ds)
     if _theme.strip() and _theme != "export default {}\n":
-        (Path(frontend_dir) / "tailwind.theme.js").write_text(_theme, encoding="utf-8")
+        _theme_p = Path(frontend_dir) / "tailwind.theme.js"
+        try:
+            _cur = _theme_p.read_text(encoding="utf-8") if _theme_p.exists() else ""
+        except Exception:
+            _cur = ""
+        _tok_re = re.compile(r"['\"]?([A-Za-z][\w-]*)['\"]?\s*:\s*['\"](#[0-9a-fA-F]{3,8})['\"]")
+        merged = {k: v for k, v in _tok_re.findall(_cur)}
+        merged.update(dict(_tok_re.findall(_theme)))  # measured wins
+        _lines = ",\n".join(f"    '{k}': '{v}'" for k, v in merged.items())
+        _theme_p.write_text(
+            f"export default {{\n  colors: {{\n{_lines}\n  }},\n}}\n",
+            encoding="utf-8")
     # index.css — inject the measured body layer ONCE (preserve lane styles).
     _css_p = Path(frontend_dir) / "src" / "index.css"
     _measured = render_measured_base_css(ds)
