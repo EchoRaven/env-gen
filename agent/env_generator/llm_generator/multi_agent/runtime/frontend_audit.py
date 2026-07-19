@@ -100,6 +100,35 @@ def _page_dead_controls(text: str) -> bool:
     return interactive and not bound
 
 
+def _is_generic_fallback_page(text: str) -> bool:
+    """#222 — content-based detection of the GENERIC framework fallback page.
+
+    r18 (log-verified) defeated marker-based detection: the lane stripped the
+    _PAGE_MARKER comment and the data-fallback attribute and tweaked API-call
+    formats until the audit credited the untouched generic shell as
+    'implemented'. Detect the CONTENT instead: the projection's helper
+    constellation (const _imgOf/_titleOf/_subOf/_metaOf — no lane authors
+    these) plus the generic list shell survives every cosmetic edit. A #221
+    reference-structured projection (data-projected/structured marker, or the
+    measured inline canvas paint) is a genuine floor — never flagged here."""
+    if not text:
+        return False
+    try:
+        from .frontend_page_projector import _PAGE_MARKER, _STRUCTURED_MARKER
+    except Exception:  # pragma: no cover — projector module always present
+        _PAGE_MARKER = "frontend_page_projector"
+        _STRUCTURED_MARKER = "reference-structured"
+    if 'data-projected="ref"' in text or _STRUCTURED_MARKER in text:
+        return False
+    if 'data-fallback="1"' in text or _PAGE_MARKER in text:
+        return True
+    helpers = sum(1 for h in ("const _imgOf", "const _titleOf",
+                              "const _subOf", "const _metaOf") if h in text)
+    shell = ("No data yet" in text) or ("divide-y" in text and "<aside" not in text)
+    # a marker-stripped STRUCTURED page still paints the measured canvas inline
+    return helpers >= 3 and shell and "style={{ backgroundColor:" not in text
+
+
 # Route-guard / layout wrappers that wrap the real PAGE in element={...} — the audit
 # resolves a route to its PAGE component, not the auth/layout shell around it.
 _ROUTE_WRAPPERS = frozenset({
@@ -379,6 +408,16 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
             missing.append(
                 f"component `{component}` is a placeholder stub — it renders no real "
                 "UI/behavior; build the page's declared content and wire its apis_used")
+        # #222: the GENERIC framework fallback is never 'implemented' — detected
+        # by CONTENT (helper constellation + list shell), so stripping the
+        # marker/attr or reformatting API calls (the r18 gaming moves) cannot
+        # flip the verdict. A #221 reference-structured projection passes.
+        if _is_generic_fallback_page(comp_file_text):
+            missing.append(
+                f"component `{component}` is a framework fallback page (generic list) — "
+                "author the REAL page for this route (reference layout, real fields, "
+                "real controls). Cosmetic edits (removing framework comments/attributes "
+                "or reformatting API calls) do not count as implementation")
     # MODEL RULE (user design): pages compose COMPONENTS; page→page is
     # NAVIGATION (a route/link), never composition. A page importing another
     # page means shared UI that belongs in src/components/.
@@ -547,7 +586,8 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
 # indirectly) → NOT promoted to hard blockers here.
 _HARD_MISS_MARKERS = ("not wired in App.jsx", "not found — expected",
                       "is a placeholder stub",  # #39 G2: a stub page = a shipped-blank page
-                      "STATIC MOCK")  # #151: a route wired to a mock twin ships mock data
+                      "STATIC MOCK",  # #151: a route wired to a mock twin ships mock data
+                      "framework fallback page")  # #222: generic fallback never ships
 
 
 def _is_hard_miss(missing_line: str) -> bool:
