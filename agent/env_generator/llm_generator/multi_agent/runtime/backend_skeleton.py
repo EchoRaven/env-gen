@@ -166,7 +166,7 @@ def _render_column(col: Dict[str, Any]) -> Optional[str]:
         # so the column is safe for inserts that omit it.
         if d.lower() in ("now()", "current_timestamp"):
             args.append("default=datetime.utcnow")
-            kw.append("server_default=text('now()')")
+            kw.append("server_default=_sa_text('now()')")
         elif not (col.get("primary_key") or col.get("pk")):
             # ORM-side literal. ``true``/``false`` must become Python ``True``/``False``
             # (a bare ``default=false`` is a NameError that breaks ``import models``).
@@ -183,7 +183,7 @@ def _render_column(col: Dict[str, Any]) -> Optional[str]:
                 _sd_sql = d
             else:
                 _sd_sql = "'" + d.replace("'", "''") + "'"
-            kw.append(f"server_default=text({_sd_sql!r})")
+            kw.append(f"server_default=_sa_text({_sd_sql!r})")
     # FIX #158: the ORM ATTRIBUTE must be a valid, non-keyword identifier. When the DB
     # column name is a keyword/non-identifier (a real dataset column like ``from``), use a
     # safe attribute AND pin the original DB column name as Column's first positional arg,
@@ -383,8 +383,12 @@ def render_models(tables: Dict[str, Any]) -> str:
         "import uuid as _uuid\n"
         "from datetime import datetime\n\n"
         "from sqlalchemy import (Column, Integer, BigInteger, String, Text, Boolean,\n"
-        "                        DateTime, Date, Time, Float, Numeric, JSON, ForeignKey,\n"
-        "                        text)\n"
+        "                        DateTime, Date, Time, Float, Numeric, JSON, ForeignKey)\n"
+        "# FIX #215: alias text() so a column named `text` (comments/messages/posts all\n"
+        "# have one) can't shadow the function inside the class body — a bare\n"
+        "# `server_default=text(...)` after `text = Column(Text)` calls the Column\n"
+        "# object → TypeError: 'Column' object is not callable → the backend won't boot.\n"
+        "from sqlalchemy import text as _sa_text\n"
         "from sqlalchemy.orm import synonym\n"
         "from database import Base\n\n\n"
     )
