@@ -891,6 +891,11 @@ class HealPipeline:
                     for _k, _v in (_rh.get_endpoints() or {}).items():
                         if _k == "_meta" or not isinstance(_v, dict):
                             continue
+                        # #231 (r21): a DEPRECATED path must not count as
+                        # registered — it made the reconciler early-exit on the
+                        # dead path the frontend was still calling (/api/feed 404).
+                        if str(_v.get("status") or "").lower() == "deprecated":
+                            continue
                         _p = _v.get("path") or ""
                         if _p:
                             _pa = param_agnostic(f"{_v.get('method') or 'GET'} {_p}")

@@ -1201,6 +1201,20 @@ def reconcile_frontend_api_paths(frontend_dir, registered_paths) -> Dict[str, ob
                     if len(cands) == 1:
                         local.append((called, cands[0], fpath.name))
                         return pre + cands[0] + post
+                    # #231 (r21 + run-13): VERSION-VARIANT drift — the called
+                    # path and exactly one registered path are identical once
+                    # version segments (v1/v2/…) are stripped ('/api/feed' ↔
+                    # '/api/v1/feed', either direction). The subsequence rule
+                    # above can't fix the called-has-FEWER-segments direction.
+                    _nv = [s for s in cs if not re.fullmatch(r"v\d+", s)]
+                    vcands = sorted({
+                        r for r in reg_static
+                        if [s for s in _segs(r)
+                            if not re.fullmatch(r"v\d+", s)] == _nv and r != called
+                    })
+                    if len(vcands) == 1:
+                        local.append((called, vcands[0], fpath.name))
+                        return pre + vcands[0] + post
                     return m.group(0)
                 new = _API_CALL_PATH_RE.sub(_sub, text)
                 if local:

@@ -530,6 +530,13 @@ def _registered_paths(registryhub: Any) -> Optional[set]:
         return None
     out = set()
     for ep in eps.values() if isinstance(eps, dict) else []:
+        if not isinstance(ep, dict):
+            continue
+        # #231 (r21): a DEPRECATED endpoint is not part of the live contract —
+        # counting it here made the contract-miss check blind while the served
+        # backend 404'd the path the frontend was still calling.
+        if str(ep.get("status") or "").lower() == "deprecated":
+            continue
         m = str(ep.get("method") or "GET").upper()
         p = re.sub(r"\{[^}]+\}|:[A-Za-z_]\w*", "*", str(ep.get("path") or "")).rstrip("/")
         out.add((m, p))

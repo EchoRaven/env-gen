@@ -838,6 +838,58 @@ class RegistryHub:
             lambda m: m.set(endpoint_id, updated, actor),
             change_info={"agent": actor},
         )
+        # #231 (r21 split-brain): consolidation must CASCADE, or stale
+        # declarations steer lanes back onto the dead path (the frontend
+        # 'corrected' its call to the deprecated /api/feed 29s after the
+        # backend dropped it → authed 404 in the delivered app).
+        if replacement_id:
+            try:
+                rep = self._endpoints.value().get(replacement_id)
+                if isinstance(rep, dict):
+                    # carry behavioral metadata the replacement lacks
+                    # (auth_required: false on the old public feed was lost →
+                    # the projected replacement got the default token wall)
+                    _old_meta = dict(endpoint.get("metadata") or {})
+                    _rep2 = dict(rep)
+                    _rep_meta = dict(_rep2.get("metadata") or {})
+                    _changed = False
+                    for _mk in ("auth_required", "response_key"):
+                        _ov = endpoint.get(_mk, _old_meta.get(_mk))
+                        if _ov is not None and _mk not in _rep_meta \
+                                and _rep2.get(_mk) is None:
+                            _rep_meta[_mk] = _ov
+                            _changed = True
+                    if _changed:
+                        _rep2["metadata"] = _rep_meta
+                        _rep2["_updated_by"] = actor
+                        _rep2["_updated_at"] = now
+                        self._endpoints.update(
+                            lambda m: m.set(replacement_id, _rep2, actor),
+                            change_info={"agent": actor})
+                    # rewrite ui_pages.apis_used off the dead path
+                    _old_call = (f"{str(endpoint.get('method') or 'GET').upper()} "
+                                 f"{endpoint.get('path') or ''}").strip()
+                    _new_call = (f"{str(rep.get('method') or 'GET').upper()} "
+                                 f"{rep.get('path') or ''}").strip()
+                    if _old_call and _new_call and _old_call != _new_call:
+                        for _pn, _pg in (self._ui_pages.value() or {}).items():
+                            if not isinstance(_pg, dict):
+                                continue
+                            _apis = list(_pg.get("apis_used") or [])
+                            _new_apis = [
+                                _new_call if str(a).strip() in
+                                (_old_call, endpoint.get("path")) else a
+                                for a in _apis]
+                            if _new_apis != _apis:
+                                _pg2 = dict(_pg)
+                                _pg2["apis_used"] = _new_apis
+                                _pg2["_updated_by"] = actor
+                                _pg2["_updated_at"] = now
+                                self._ui_pages.update(
+                                    lambda m, _n=_pn, _r=_pg2: m.set(_n, _r, actor),
+                                    change_info={"agent": actor})
+            except Exception:
+                pass  # cascade is best-effort; the deprecation itself landed
         consumers = [c.get("agent") for c in self._consumers.value().values()
                      if c.get("endpoint_id") == endpoint_id]
         self._emit(

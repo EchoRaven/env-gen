@@ -619,6 +619,13 @@ def _finalize_walkthrough(report: Dict[str, Any]) -> Dict[str, Any]:
         p["name"] for p in pages
         if p.get("route_seed_hit") is False and not p.get("blank")
         and not any(seg in str(p.get("route") or "") for seg in _AUTH_ROUTE_SEGS)]
+    # #231d (r21): the PRIMARY route ('/') rendering ZERO seed data is the
+    # delivered app's face showing an empty shell ('No videos found' while the
+    # API served 39 rows) — HARD, unlike the advisory dataless_pages above.
+    report["primary_dataless"] = any(
+        str(p.get("route") or "").rstrip("/") in ("", "/")
+        and p.get("route_seed_hit") is False and not p.get("blank")
+        for p in pages)
     # HOLLOW FRONTEND: the app builds + serves, the login form is present, but a logged-in
     # user cannot actually reach the app — at least half the PROTECTED pages bounce to the
     # login form. A milestone in this state must NOT ship (the gate reads this flag); it is
@@ -804,7 +811,8 @@ def browser_report_unusable(report: Optional[Mapping[str, Any]]) -> bool:
     return bool((not report.get("auth_ok")) or report.get("blank_pages")
                 or report.get("auth_redirect_pages") or report.get("hollow_frontend")
                 or report.get("no_real_data") or report.get("fake_map_pages")
-                or report.get("fallback_dom_pages"))  # #224: live generic fallback
+                or report.get("fallback_dom_pages")  # #224: live generic fallback
+                or report.get("primary_dataless"))  # #231d: empty primary route
 
 
 def browser_gate_decision(report: Mapping[str, Any], squad_decision: str) -> str:
@@ -826,7 +834,8 @@ def browser_gate_decision(report: Mapping[str, Any], squad_decision: str) -> str
             "0", "false", "no", "off"):
         return squad_decision
     if (not report.get("auth_ok") or report.get("hollow_frontend")
-            or report.get("fallback_dom_pages")):
+            or report.get("fallback_dom_pages")
+            or report.get("primary_dataless")):
         # hard-unusable: never escape a dead app — incl. #224 a route whose
         # live DOM is the generic framework fallback (zero-fallback delivery)
         return "defer"
