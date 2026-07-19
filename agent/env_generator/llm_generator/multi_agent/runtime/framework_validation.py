@@ -776,6 +776,27 @@ class FrameworkValidation:
                 )
                 await orch._maybe_run_visual_fidelity()
                 snapshot_passing_chains(orch)
+                # #232 (r20/r22 recurring killer): ui_flow recording was only
+                # dispatched when the DELIVERY GATE failed at the very end, so
+                # the verifier's endgame (chains + flows + browser walks) ran
+                # out of clock — r20 recorded the flows 36s AFTER the abort;
+                # r22 registered 13 flows and concluded 0. The app is UP and
+                # smoke-green RIGHT NOW: dispatch the flow-recording task
+                # immediately (idempotent — dispatch_gate_level_checks guards
+                # per milestone, so the later gate-fail path won't duplicate).
+                if not getattr(orch, "_early_ui_flow_dispatched", None):
+                    try:
+                        from .remediation_dispatcher import RemediationDispatcher
+                        await RemediationDispatcher(orch).dispatch_gate_level_checks(
+                            ["deliverability_ui_flow_missing"])
+                        orch._early_ui_flow_dispatched = True
+                        orch._logger.warning(
+                            "#232: early ui_flow recording dispatched to the "
+                            "verifier (api_smoke green — don't wait for the "
+                            "delivery gate to complain).")
+                    except Exception as _ef_exc:
+                        orch._logger.debug("#232 early ui_flow dispatch skipped: %s",
+                                           _ef_exc)
             else:
                 # FIX #36: log WHY the in-run validation failed (summary + failed
                 # check names). The bare "not yet passing" hid the real cause for
