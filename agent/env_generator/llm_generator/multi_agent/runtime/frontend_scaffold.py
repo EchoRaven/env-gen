@@ -1708,6 +1708,70 @@ def _design_screen_for_route(design, route) -> Optional[Dict[str, Any]]:
     return best
 
 
+def missing_design_screen_pages(design, ui_pages, endpoints) -> List[Dict[str, Any]]:
+    """#225 — synthesize ui_page specs for measured design screens whose route
+    no registered ui_page covers (r19: kickoff declared ONE page for the whole
+    surface). Screens kind=='page' with a classified route (#132) are ground
+    truth for the app's page set. apis_used is inferred by token overlap
+    between the screen's name/component prose and the registered GET
+    collection endpoints (no match → empty, the lane still must author).
+    Pure + env-agnostic; the caller registers the returned specs."""
+    covered = {_norm_route_221(p.get("route"))
+               for p in (ui_pages or []) if isinstance(p, dict)}
+    gets: List[str] = []
+    for ep in (endpoints or []):
+        if not isinstance(ep, dict):
+            continue
+        if str(ep.get("method") or "GET").upper() != "GET":
+            continue
+        path = str(ep.get("path") or "")
+        if not path.startswith("/api/") or "{" in path or ":" in path:
+            continue
+        gets.append(path)
+
+    def _tokens(s: str) -> Set[str]:
+        toks = set(re.findall(r"[a-z]+", str(s).lower()))
+        return toks | {t[:-1] for t in toks if t.endswith("s") and len(t) > 3}
+
+    out: List[Dict[str, Any]] = []
+    seen_routes: Set[str] = set(covered)
+    for s in ((design or {}).get("screens") or []):
+        if not isinstance(s, dict):
+            continue
+        if str(s.get("kind") or "page").strip().lower() != "page":
+            continue
+        route = str(s.get("route") or "").strip()
+        norm = _norm_route_221(route)
+        if not route.startswith("/") or norm in seen_routes:
+            continue
+        seen_routes.add(norm)
+        stem = re.sub(r"[^a-z0-9]+", "_", str(s.get("name") or "page").lower()).strip("_")
+        comp = "".join(w.title() for w in stem.split("_")) or "Screen"
+        if not comp.endswith("Page"):
+            comp += "Page"
+        screen_text = " ".join(
+            [stem.replace("_", " ")]
+            + [f"{c.get('id')} {c.get('role')}" for c in (s.get("components") or [])
+               if isinstance(c, dict)]).lower()
+        st = _tokens(screen_text)
+        best, best_score = None, 0
+        for path in gets:
+            seg = path.rstrip("/").split("/")[-1]
+            score = len(_tokens(seg) & st)
+            if score > best_score:
+                best, best_score = path, score
+        out.append({
+            "name": f"{stem}_page" if not stem.endswith("page") else stem,
+            "route": route,
+            "component": comp,
+            "apis_used": [f"GET {best}"] if best else [],
+            "kind": "page",
+            "metadata": {"reference_image": s.get("reference"),
+                         "seeded_from_design": True},
+        })
+    return out
+
+
 def _band_of_region(region) -> str:
     """Coarse layout band of a fractional [x0,y0,x1,y1] region."""
     try:
