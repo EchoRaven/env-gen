@@ -590,7 +590,16 @@ def _serialize_expr(var: str, cols: List[str]) -> str:
     parts = []
     for c in cols:
         if c.endswith("_at"):
-            parts.append(f'"{c}": ({var}.{c}.isoformat() if getattr({var}, "{c}", None) else None)')
+            # FIX #214 (r16: GET /api/messages 500): a ``*_at`` value is not always a
+            # datetime — a TEXT column or a pre-serialized string arrives as ``str``,
+            # and ``str.isoformat()`` raises AttributeError → the projected read 500s →
+            # business_chain/ui_flow can never pass → delivery churns. Only call
+            # ``.isoformat()`` when the value actually has it; otherwise pass it through
+            # (a string stays a string, ``None`` stays ``None``).
+            parts.append(
+                f'"{c}": ({var}.{c}.isoformat() '
+                f'if hasattr(getattr({var}, "{c}", None), "isoformat") '
+                f'else getattr({var}, "{c}", None))')
         elif c == "password_hash":
             continue  # never serialise secrets
         else:
