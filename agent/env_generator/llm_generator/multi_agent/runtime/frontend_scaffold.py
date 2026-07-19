@@ -1885,16 +1885,59 @@ const _countsOf = (r) => Object.keys(r || {}).filter((k) => /(count|likes|views|
 """
 
 
-def _ref_nav_jsx(nav_routes, accent: str, vertical: bool) -> str:
+def _asset_urls_227(design, asset_ids) -> Dict[str, str]:
+    """id → served URL for the given mapped asset ids: staged_path
+    'public/assets/x.svg' serves at '/assets/x.svg'. Images only (never fonts)."""
+    by_id = {str(a.get("id")): a for a in ((design or {}).get("assets") or [])
+             if isinstance(a, dict)}
+    out: Dict[str, str] = {}
+    for aid in (asset_ids or []):
+        a = by_id.get(str(aid))
+        if not a:
+            continue
+        if str(a.get("type") or "").lower() not in ("svg", "png", "jpg", "webp",
+                                                    "gif", "ico", "bmp"):
+            continue
+        sp = str(a.get("staged_path") or "")
+        if sp.startswith("public/"):
+            out[str(aid)] = "/" + sp[len("public/"):]
+    return out
+
+
+def _ref_nav_jsx(nav_routes, accent: str, vertical: bool,
+                 asset_urls: Optional[Dict[str, str]] = None) -> str:
     """Measured-theme nav: vertical (left rail) or horizontal (top bar). Active
-    route highlighted with the measured accent. Router-agnostic <a href>."""
+    route highlighted with the measured accent. Router-agnostic <a href>.
+
+    #227: the visual gate's #1 remediation is 'render the staged asset SVGs, do
+    not approximate' — when the nav component maps real assets, render them by
+    construction: a logo/wordmark asset heads the rail; each nav link gets the
+    icon whose id tokens match its label/route tokens."""
     routes = [(str(l).strip(), str(r).strip())
               for (l, r) in (nav_routes or []) if str(r).strip()]
     if not routes:
         return ""
+    asset_urls = asset_urls or {}
+    logo_url = next((u for aid, u in asset_urls.items()
+                     if re.search(r"\b(logo|wordmark|brand)\b",
+                                  str(aid).replace("-", " ").replace("_", " "))),
+                    None)
+
+    def _icon_for(label: str, route: str) -> str:
+        want = _semantic_tokens_226(label, route)
+        for aid, url in asset_urls.items():
+            if url == logo_url:
+                continue
+            if want & _semantic_tokens_226(str(aid)):
+                return (f'<img src="{url}" alt="" className="h-5 w-5 shrink-0" /> ')
+        return ""
+
     links = "\n".join(
-        f"""          <a href="{r}" className="rounded-md px-3 py-2 text-sm font-medium hover:opacity-100" style={{{{ color: window.location.pathname === '{r}' ? '{accent}' : 'inherit', opacity: window.location.pathname === '{r}' ? 1 : 0.85 }}}}>{l}</a>"""
+        f"""          <a href="{r}" className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium hover:opacity-100" style={{{{ color: window.location.pathname === '{r}' ? '{accent}' : 'inherit', opacity: window.location.pathname === '{r}' ? 1 : 0.85 }}}}>{_icon_for(l, r)}{l}</a>"""
         for (l, r) in routes)
+    if vertical and logo_url:
+        links = (f'          <a href="/" className="mb-4 px-3"><img src="{logo_url}" '
+                 'alt="" className="h-8 w-auto" /></a>\n') + links
     if vertical:
         return (
             '<nav className="flex flex-col gap-1">\n' + links + "\n"
@@ -1955,9 +1998,8 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
         except (TypeError, ValueError, IndexError):
             lw = 17.0
         lbg = ((lead.get("colors") or {}).get("bg")) or bg
-        inner = (_ref_nav_jsx(nav_routes, accent, vertical=True)
-                 if _comp_kind_221(lead) in ("nav", "panel")
-                 else _ref_nav_jsx(nav_routes, accent, vertical=True))
+        inner = _ref_nav_jsx(nav_routes, accent, vertical=True,
+                             asset_urls=_asset_urls_227(design, lead.get("assets")))
         left_jsx = (
             f'      <aside className="shrink-0 overflow-y-auto border-r px-3 py-6" '
             f"style={{{{ width: '{lw:.1f}%', minWidth: '160px', backgroundColor: '{lbg}', "
@@ -2010,7 +2052,10 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
     # ── top bar (only when there is no left nav carrying the navigation) ──
     top_jsx = ""
     if bands["top"] and not bands["left"]:
-        top_jsx = "        " + _ref_nav_jsx(nav_routes, accent, vertical=False) + "\n"
+        top_jsx = "        " + _ref_nav_jsx(
+            nav_routes, accent, vertical=False,
+            asset_urls=_asset_urls_227(design, (bands["top"][0].get("assets")
+                                                if bands["top"] else None))) + "\n"
 
     # ── repeated same-role cards tiled over the page (e.g. a Follow-card wall):
     # treat as ONE measured grid — columns = distinct card x-origins, and the
