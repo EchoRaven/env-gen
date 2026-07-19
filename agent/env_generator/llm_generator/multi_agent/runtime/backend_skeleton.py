@@ -44,13 +44,28 @@ def safe_column_name(name: str) -> str:
     if not s:
         return "col"
     if s.isidentifier():
-        return s + "_" if keyword.iskeyword(s) else s
+        return s + "_" if _needs_attr_suffix(s) else s
     s2 = re.sub(r"\W", "_", s)
     if s2 and s2[0].isdigit():
         s2 = "col_" + s2
     if not s2 or not s2.isidentifier():
         return "col"
-    return s2 + "_" if keyword.iskeyword(s2) else s2
+    return s2 + "_" if _needs_attr_suffix(s2) else s2
+
+
+# FIX #216: SQLAlchemy's Declarative API RESERVES a few instance-attribute names on a
+# mapped class (``metadata`` = the MetaData object, ``registry`` = the mapper registry).
+# A contract column named ``metadata`` renders ``metadata = Column(Text)`` and the mapper
+# raises ``InvalidRequestError: Attribute name 'metadata' is reserved`` at class-body time
+# → ``import models`` crashes → the backend never boots (found by a codegen stress-audit;
+# ``metadata`` is a common column on posts/files/events). Treat these like keywords: suffix
+# the ATTRIBUTE with ``_`` (the DB column keeps its real name, pinned positionally by
+# render — see the ``attr != name`` branch), so the model maps and data still lands.
+_SA_RESERVED_ATTRS = frozenset({"metadata", "registry"})
+
+
+def _needs_attr_suffix(s: str) -> bool:
+    return keyword.iskeyword(s) or s in _SA_RESERVED_ATTRS
 
 # ── SQL type → SQLAlchemy type ──────────────────────────────────────────────
 _SA_TYPE = {
