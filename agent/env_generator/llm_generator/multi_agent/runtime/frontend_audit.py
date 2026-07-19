@@ -861,6 +861,15 @@ def bare_authed_fetch_blockers(frontend_src: Any, limit: int = 12) -> List[str]:
                 arg2 = rest.lstrip().lstrip(",").strip()
                 if arg2 and re.match(r"^[A-Za-z_$][\w$.]*(\(\))?$", arg2):
                     continue  # opaque options identifier — may carry auth built elsewhere
+                # #233 (r23 FALSE-BLOCK, 83-min abort): `{ headers: getHeaders() }`
+                # / `{ ...buildOpts() }` — the headers come from a HELPER whose
+                # body attaches the token. A non-literal headers value (call or
+                # identifier) or a spread call inside the options is opaque: the
+                # gate only flags PROVABLY bare calls, so excuse it. The lane's
+                # api.js was fully correct and the run died on an unwinnable gate.
+                if re.search(r"headers\s*:\s*[A-Za-z_$][\w$.]*\s*(\(|[,}\)])", arg2) \
+                        or re.search(r"\.\.\.\s*[A-Za-z_$][\w$.]*\s*\(", arg2):
+                    continue
                 total += 1
                 if len(blockers) < limit:
                     rel = f.relative_to(src).as_posix()
