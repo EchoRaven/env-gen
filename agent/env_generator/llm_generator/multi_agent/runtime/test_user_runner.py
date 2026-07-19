@@ -46,8 +46,12 @@ _PROBE = """() => {
   // mapEls === 0 while the surface still renders content (not blank).
   const mapEls = document.querySelectorAll(
     '.leaflet-container, .mapboxgl-map, .maplibregl-map, .gm-style, .ol-viewport').length;
+  // #224: a live [data-fallback] root means the user is looking at the generic
+  // framework fallback page — runtime truth, independent of source cosmetics.
+  const fbEls = document.querySelectorAll('[data-fallback]').length;
   return { textLen: txt.length, sample: txt.slice(0, 120), text: txt.slice(0, 4000),
-           buttons: btns, inputs: inputs, pw: pw, signin: signin, mapEls: mapEls };
+           buttons: btns, inputs: inputs, pw: pw, signin: signin, mapEls: mapEls,
+           fbEls: fbEls };
 }"""
 
 
@@ -499,6 +503,13 @@ async def run_browser_test_user(
                                 if _mapn > 0:
                                     break
                         rec["map_rendered"] = _mapn > 0
+                        # #224: live [data-fallback] DOM + per-route seed rendering
+                        rec["fallback_dom"] = int(probe.get("fbEls", 0) or 0) > 0
+                        if seed_values:
+                            _rt_rd = real_data_verdict(
+                                [str(probe.get("text", ""))], seed_values)
+                            if _rt_rd.get("checked"):
+                                rec["route_seed_hit"] = bool(_rt_rd.get("rendered"))
                         # HOLLOW-PAGE detection: the test-user is logged in (token stored
                         # above), so a PROTECTED route that bounces to the auth URL OR
                         # renders the login form in place (password field + sign-in copy)
@@ -596,6 +607,18 @@ def _finalize_walkthrough(report: Dict[str, Any]) -> Dict[str, Any]:
     report["error_pages"] = errs
     report["auth_redirect_pages"] = redirected
     report["fake_map_pages"] = fake_maps
+    # #224: a route whose LIVE DOM is the generic framework fallback
+    # ([data-fallback] present). Runtime truth — source cosmetics can't clear
+    # it. Blank pages are already held by blank_pages; don't double-count.
+    report["fallback_dom_pages"] = [
+        p["name"] for p in pages if p.get("fallback_dom") and not p.get("blank")]
+    # #224 (SOFT): a non-auth data page whose OWN text rendered no salient seed
+    # value — advisory only (search-gated pages populate only under a query),
+    # feeds the lane's remediation prose, never a hold by itself.
+    report["dataless_pages"] = [
+        p["name"] for p in pages
+        if p.get("route_seed_hit") is False and not p.get("blank")
+        and not any(seg in str(p.get("route") or "") for seg in _AUTH_ROUTE_SEGS)]
     # HOLLOW FRONTEND: the app builds + serves, the login form is present, but a logged-in
     # user cannot actually reach the app — at least half the PROTECTED pages bounce to the
     # login form. A milestone in this state must NOT ship (the gate reads this flag); it is
@@ -713,6 +736,20 @@ def format_feedback(report: Mapping[str, Any]) -> str:
             "place at its real lat/lng — do NOT fake it with a background div, an image, or a "
             "single static pin. If a MapCanvas/Map component already exists in the source, "
             "IMPORT and render it on the map page (it may have been orphaned).")
+    if report.get("fallback_dom_pages"):
+        lines.append(
+            "  ‼ FALLBACK PAGE: the live DOM of "
+            f"{report.get('fallback_dom_pages')} is the GENERIC framework fallback "
+            "([data-fallback] present at runtime) — the user sees a top-nav row list, "
+            "not the app. Author the REAL page for each flagged route: the reference "
+            "screen's layout (open its crop under design/), real data fields, real "
+            "controls. This HOLDS the release until fixed.")
+    if report.get("dataless_pages"):
+        lines.append(
+            "  ⚠ NO SEED DATA on route(s) "
+            f"{report.get('dataless_pages')}: the page renders but shows none of the "
+            "app's real seeded values — likely an empty-state, a failing fetch, or a "
+            "page ignoring its endpoint. Make each route render its real rows.")
     if report.get("hollow_frontend"):
         lines.append(
             "  ‼ HOLLOW FRONTEND: logged in, but the PROTECTED pages "
@@ -766,7 +803,8 @@ def browser_report_unusable(report: Optional[Mapping[str, Any]]) -> bool:
         return False
     return bool((not report.get("auth_ok")) or report.get("blank_pages")
                 or report.get("auth_redirect_pages") or report.get("hollow_frontend")
-                or report.get("no_real_data") or report.get("fake_map_pages"))
+                or report.get("no_real_data") or report.get("fake_map_pages")
+                or report.get("fallback_dom_pages"))  # #224: live generic fallback
 
 
 def browser_gate_decision(report: Mapping[str, Any], squad_decision: str) -> str:
@@ -787,8 +825,11 @@ def browser_gate_decision(report: Mapping[str, Any], squad_decision: str) -> str
     if str(_os.environ.get("ENVGEN_TESTUSER_HARD_GATE", "1")).strip().lower() in (
             "0", "false", "no", "off"):
         return squad_decision
-    if not report.get("auth_ok") or report.get("hollow_frontend"):
-        return "defer"  # hard-unusable: never escape a dead app
+    if (not report.get("auth_ok") or report.get("hollow_frontend")
+            or report.get("fallback_dom_pages")):
+        # hard-unusable: never escape a dead app — incl. #224 a route whose
+        # live DOM is the generic framework fallback (zero-fallback delivery)
+        return "defer"
     return squad_decision  # soft-unusable: honor the bounded escape
 
 
