@@ -1178,6 +1178,12 @@ class Orchestrator:
                         self._fwdeliver_stuck_count = 0
                         self._fwdeliver_stuck_key = None
                         self._fwdeliver_first_decline_ts = 0.0
+                        # #230 (r21 M2): the #228 converging-grace bookkeeping is
+                        # per-milestone too — M1 consumed both graces, so M2's
+                        # converging stall aborted with zero grace available.
+                        self._fwdeliver_grace_count = 0
+                        self._fwdeliver_prev_failed = None
+                        self._fwdeliver_last_shrink_ts = 0.0
                         self._fwval_abort_grace_used = 0
                         self._fwval_abort_deliver_reason = None
                         self._fwval_abort_progress_sig = None
