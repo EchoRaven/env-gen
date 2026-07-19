@@ -2553,15 +2553,44 @@ class Orchestrator:
                 _now2 = time.time()
                 if not getattr(self, "_fwdeliver_first_decline_ts", 0.0):
                     self._fwdeliver_first_decline_ts = _now2
+                # #228: track when the failing set last SHRANK (a strict subset
+                # of the previous tick's) — visible convergence, not livelock.
+                _cur_failed_set = set(map(str, _failed or []))
+                _prev_failed_set = getattr(self, "_fwdeliver_prev_failed", None)
+                if (_prev_failed_set and _cur_failed_set
+                        and _cur_failed_set < _prev_failed_set):
+                    self._fwdeliver_last_shrink_ts = _now2
+                if _cur_failed_set:
+                    self._fwdeliver_prev_failed = _cur_failed_set
                 if ((_now2 - self._fwdeliver_first_decline_ts) > FWVAL_NO_DELIVER_ABORT_S
                         and not getattr(self, "_fwval_abort_reason", None)):
-                    self._fwval_abort_reason = (
-                        f"delivery gate has not gone green in "
-                        f"{int((_now2 - self._fwdeliver_first_decline_ts)/60)}min since the "
-                        f"contract built (now failing {_failed}) — the lanes are active but "
-                        "not converging on a clean gate; failing fast instead of livelocking "
-                        "to wall-clock.")
-                    self._logger.error("DELIVERY-GATE NO-CONVERGENCE ABORT: %s", self._fwval_abort_reason)
+                    # #228 (r20: the verifier cleared the LAST gate 36s after the
+                    # abort fired): a small, recently-shrinking failing set gets a
+                    # bounded grace extension instead of the axe.
+                    from .runtime.delivery_gate import convergence_grace
+                    _shrink_ts = getattr(self, "_fwdeliver_last_shrink_ts", 0.0)
+                    _grace = convergence_grace(
+                        failed_count=len(_cur_failed_set),
+                        last_shrink_age_s=(_now2 - _shrink_ts) if _shrink_ts else 1e9,
+                        grace_used=getattr(self, "_fwdeliver_grace_count", 0))
+                    if _grace > 0:
+                        self._fwdeliver_grace_count = getattr(
+                            self, "_fwdeliver_grace_count", 0) + 1
+                        self._fwdeliver_first_decline_ts += _grace
+                        self._logger.warning(
+                            "DELIVERY-GATE CONVERGING-GRACE #%d: failing set is small "
+                            "and recently shrank (%s) — extending the no-convergence "
+                            "deadline by %ds instead of aborting.",
+                            self._fwdeliver_grace_count, sorted(_cur_failed_set),
+                            int(_grace))
+                    else:
+                        self._fwval_abort_reason = (
+                            f"delivery gate has not gone green in "
+                            f"{int((_now2 - self._fwdeliver_first_decline_ts)/60)}min since the "
+                            f"contract built (now failing {_failed}) — the lanes are active but "
+                            "not converging on a clean gate; failing fast instead of livelocking "
+                            "to wall-clock.")
+                        self._logger.error("DELIVERY-GATE NO-CONVERGENCE ABORT: %s", self._fwval_abort_reason)
                 # PROPOSAL #49 (user): route each lane-owned gate-level failed_check back
                 # to its owner for repair (guarded per-milestone) — and log any uncovered
                 # one — so a gate blocker never silently dead-ends. Complements the bespoke
