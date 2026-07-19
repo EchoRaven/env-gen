@@ -949,6 +949,11 @@ def _deliverability_check_token(blocker: str) -> str:
         # or whose component file is absent (round 44 blank-screen
         # class). Deterministic, NOT relaxed on functionally_validated.
         return "deliverability_ui_page_unwired"
+    if "framework fallback page" in low:
+        # #223: a route-wired generic fallback the REGISTRY can't see (the
+        # code-truth sweep). The registered-page variant carries "declared
+        # but unusable" and keeps ui_page_unwired above.
+        return "deliverability_frontend_fallback_page"
     if "bare unauthenticated fetch" in low:
         # #154 (§6-1, gmrun4): frontend calls an authed /api/ endpoint with a
         # bare fetch() that never attaches the Authorization token → runtime

@@ -466,6 +466,47 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
     return (not missing), missing
 
 
+def routed_fallback_page_blockers(frontend_src: Any) -> List[str]:
+    """#223 — code-truth sweep for framework fallback pages the registry can't
+    see. ui_page_delivery_blockers iterates REGISTERED ui_pages, but the heal
+    projector also fills dangling route-wired imports the lane never registered
+    (r19: components mis-registered as pages, 300-byte stubs in src/pages/).
+    Scan every component route-wired in App.jsx; a generic-fallback body
+    (content fingerprint, marker-strip-proof — #222) blocks delivery. Purely
+    static, self-clearing once the page is authored. Best-effort → []."""
+    blockers: List[str] = []
+    try:
+        src = Path(frontend_src)
+        app_jsx = src / "App.jsx"
+        if not app_jsx.is_file():
+            return blockers
+        app_text = app_jsx.read_text(encoding="utf-8", errors="ignore")
+        wired = re.findall(
+            r'path\s*=\s*["\']([^"\']+)["\'][^>]*?element\s*=\s*\{\s*<\s*(\w+)', app_text)
+        seen: set = set()
+        for route, comp in wired:
+            if comp in seen or comp in _ROUTE_WRAPPERS:
+                continue
+            seen.add(comp)
+            text = None
+            for sub in ("pages", "components", "views", "screens"):
+                cand = src / sub / f"{comp}.jsx"
+                if cand.is_file():
+                    try:
+                        text = cand.read_text(encoding="utf-8", errors="ignore")
+                    except Exception:
+                        text = None
+                    break
+            if text and _is_generic_fallback_page(text):
+                blockers.append(
+                    f"route {route} renders a framework fallback page (`{comp}`) — "
+                    "author the REAL page (reference layout, real fields, real "
+                    "controls); cosmetic edits do not count")
+    except Exception:
+        return []
+    return blockers
+
+
 def audit_ui_component(frontend_src: Path, comp: Mapping[str, Any],
                        *, _src_cache: Optional[Dict[str, str]] = None,
                        ) -> Tuple[bool, List[str]]:
