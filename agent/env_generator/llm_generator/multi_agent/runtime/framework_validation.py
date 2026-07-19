@@ -783,8 +783,14 @@ class FrameworkValidation:
                 # hand, so the in-run failures are environmental (docker
                 # contention / build-under-load) and we need the detail to fix it.
                 _summ = (data or {}).get("summary", "?")
+                # #212: surface the ACTUAL failing line (postgres `ERROR: relation
+                # ... does not exist`, a build error at the tail, ...) via the
+                # salient extractor — NOT a blind 60-char prefix, which lands on the
+                # meaningless "Sending build context to Docker daemon" banner and
+                # hides the real cause (r15: docker_up DB-init crash mis-read for
+                # 20min as an api.js build error).
                 _failed = [
-                    f"{c.get('name')}:{(c.get('detail') or '')[:60]}"
+                    f"{c.get('name')}:{_salient_error(c.get('detail'), cap=200)}"
                     for c in ((data or {}).get("checks") or [])
                     if c.get("status") == "fail"
                 ]
