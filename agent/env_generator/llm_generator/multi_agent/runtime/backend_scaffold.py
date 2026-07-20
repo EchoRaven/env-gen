@@ -968,6 +968,16 @@ def sanitize_pyproject_local_deps(backend_dir) -> Dict[str, object]:
             if dep_name in local and dep_name not in _KNOWN_REAL_DISTS:
                 dropped.append(entry)
                 continue
+            # #242 (tiktok r32 STUCK-ABORT): a dep whose PEP-503-normalized name is
+            # not a valid distribution name (leading/trailing separator, e.g. the
+            # lane's hallucinated '_framework' → '-framework') can NEVER resolve on
+            # PyPI → `pip install .` fails → docker build fails → build:docker_build
+            # → verification_checklist_not_ready → no-convergence abort. #189 stripped
+            # only LOCAL-module deps; this strips the invalid-NAME hallucination class
+            # too. Deterministic + safe: a real PyPI dist cannot have an invalid name.
+            if dep_name and not re.match(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$", dep_name):
+                dropped.append(entry)
+                continue
             kept_lines.append(line)
         if not dropped:
             return {"repaired": False, "reason": "no local-module deps"}
