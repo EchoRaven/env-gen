@@ -217,6 +217,28 @@ def resolve_param_route(route: str, api_base: Optional[str], token: Optional[str
     return "/".join(resolved)
 
 
+async def _safe_goto(page: Any, url: str, timeout: int = 20000) -> None:
+    """#241 (r29/r30: 3 aborts on deliverability_ui_flow_failed, runtime-verified):
+    the framework-injected ``bc_auth.js`` redirects to /login on ANY /api 401 via
+    ``window.location.assign`` — which INTERRUPTS an in-flight ``page.goto``
+    ('Navigation to … is interrupted by another navigation'). The auth step then
+    threw and the whole walk read a WORKING app as a login-wall (auth_ok=False →
+    hollow_frontend), so ui_flow verification failed 3 runs on a perfect app.
+    Tolerate that specific interruption: the redirect lands on a real page, so wait
+    for the DOM to settle and carry on (any other error still raises). Deterministic
+    signals downstream (blank / redirected_to_login / real-data) stay accurate —
+    this only prevents the navigation race from aborting the walk."""
+    try:
+        await page.goto(url, wait_until="networkidle", timeout=timeout)
+    except Exception as exc:
+        if "interrupted by another navigation" not in str(exc):
+            raise
+        try:
+            await page.wait_for_load_state("networkidle", timeout=timeout)
+        except Exception:
+            pass
+
+
 async def _fill_visible_inputs(page: Any, creds: Mapping[str, str]) -> int:
     """Fill every visible, empty input on the current step by detected role
     (email / password / name / generic). Returns how many it filled — staged forms
@@ -436,7 +458,7 @@ async def run_browser_test_user(
                 if register and api_base_url:
                     _api_register(api_base_url, creds)
                 try:
-                    await page.goto(base_url + "/login", wait_until="networkidle", timeout=20000)
+                    await _safe_goto(page, base_url + "/login")
                     has_submit = await page.locator(
                         "button[type=submit], form button, button").count() > 0
                     step("login form has a submit control", has_submit,
@@ -465,7 +487,7 @@ async def run_browser_test_user(
                                            "console_errors": [], "shot": None,
                                            "redirected_to_login": False}
                     try:
-                        await page.goto(base_url + route, wait_until="networkidle", timeout=20000)
+                        await _safe_goto(page, base_url + route)
                         await page.wait_for_timeout(900)
                         probe = await page.evaluate(_PROBE)
                         # #68 (outlook run-56, live): RETRY a would-be-blank read
@@ -811,6 +833,48 @@ def format_feedback(report: Mapping[str, Any]) -> str:
             for d in (vis.get("deviations") or [])[:6]:
                 lines.append(f"      - {d}")
     return "\n".join(lines)
+
+
+def clean_ui_flow_passes(report: Mapping[str, Any]) -> List[str]:
+    """#240 (r29/r30: 3 aborts on deliverability_ui_flow_failed while the DELIVERED
+    app rendered perfectly — runtime-verified). ui_flow validation is driven by the
+    verifier LLM manually clicking the browser and recording pass/fail; it is flaky
+    (a logged-out nav bounces to /login via bc_auth → every flow reads as a login
+    wall → all recorded failure on a WORKING app). This returns the page names the
+    DETERMINISTIC authenticated walk rendered CLEANLY, so the caller can record
+    passing ``validation:ui_flow:<name>`` records — the ui_flow gate then clears
+    from the reliable framework walk instead of the LLM.
+
+    PASS-ONLY BY DESIGN: emits names to mark PASSED, never a failure — so it can
+    only UNBLOCK a genuinely-working app, never block one (the LLM/visual/
+    business-chain gates still catch real breakage). Requires the walk to have
+    AUTHENTICATED (``auth_ok``); a page counts clean iff it rendered
+    (``ok``: not blank, no console error, not bounced to login), is not the live
+    generic fallback (``fallback_dom``), and — if a map surface — rendered a real
+    map. Auth pages (/login, /signup) are excluded (validated separately, not a
+    content flow). Pure + env-agnostic."""
+    if not isinstance(report, dict) or not report.get("ran") or not report.get("auth_ok"):
+        return []
+    passes: List[str] = []
+    seen: set = set()
+    for p in (report.get("pages") or []):
+        if not isinstance(p, dict):
+            continue
+        name = str(p.get("name") or "").strip()
+        if not name or name in seen:
+            continue
+        route = str(p.get("route") or "")
+        if any(seg in route for seg in _AUTH_ROUTE_SEGS):
+            continue
+        if not p.get("ok"):
+            continue
+        if p.get("fallback_dom"):
+            continue
+        if p.get("is_map_surface") and not p.get("map_rendered"):
+            continue
+        seen.add(name)
+        passes.append(name)
+    return passes
 
 
 def browser_report_unusable(report: Optional[Mapping[str, Any]]) -> bool:

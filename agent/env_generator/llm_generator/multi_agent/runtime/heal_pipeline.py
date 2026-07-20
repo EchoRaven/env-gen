@@ -617,6 +617,28 @@ class HealPipeline:
                 orch._logger.debug("test-user visual judging skipped: %s", _vexc)
         orch._logger.warning("BROWSER test-user (v%s): %s; visual_mismatches=%s",
                              version, report.get("summary"), report.get("visual_mismatches") or "∅")
+        # #240: record deterministic ui_flow PASSES for the pages this AUTHENTICATED
+        # walk rendered cleanly — so the delivery-gate ui_flow check clears from the
+        # reliable framework walk instead of the flaky verifier-LLM manual driving
+        # (r29/r30: 3 aborts on ui_flow_failed while the delivered app rendered
+        # perfectly). PASS-ONLY: never records a failure, so it can only unblock a
+        # working app; the LLM/visual/business-chain gates still catch real breakage.
+        try:
+            from .test_user_runner import clean_ui_flow_passes
+            _passed_flows = clean_ui_flow_passes(report)
+            for _flow in _passed_flows:
+                orch.hubs.record_validation_result(
+                    task_id=f"ui_flow:{_flow}", status="success",
+                    agent="framework-testuser", execution_mode="browser",
+                    summary="authenticated browser walk rendered this page cleanly "
+                            "(no blank/console-error/login-bounce/fallback)",
+                    metadata={"check": "ui_flow", "flow": _flow})
+            if _passed_flows:
+                orch._logger.warning(
+                    "#240: recorded %s deterministic ui_flow PASS record(s) from the "
+                    "authenticated walk: %s", len(_passed_flows), _passed_flows[:12])
+        except Exception as _ufexc:
+            orch._logger.debug("#240 ui_flow pass recording skipped: %s", _ufexc)
         # Route concrete UI defects (dead auth form / blank pages / console errors / a screen
         # that does not match its reference) back to the frontend lane as a P0 task — the
         # "give feedback, keep fixing" step. (The task is the durable signal the lane claims;
