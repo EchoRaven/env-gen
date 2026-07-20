@@ -28,6 +28,22 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from .validation_runner import _service_host_port
 
+
+def _resolve_app_port(resolver, service_names):
+    """FIX #207: the app's OWN host port for the first resolvable service name, or
+    None. NEVER a magic fallback (:8080/:3001 host a persistent gmaps demo — a
+    fixed fallback made the visual gate screenshot the WRONG app and score it
+    against this env's references; r13 scored a Google-Maps login). None → the
+    caller must SKIP honestly, not capture a possibly-unrelated service."""
+    for _svc in service_names:
+        try:
+            _p = resolver(_svc)
+        except Exception:
+            _p = None
+        if _p:
+            return int(_p)
+    return None
+
 _LOG = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -486,7 +502,14 @@ async def capture_route_screenshots(
     out_dir.mkdir(parents=True, exist_ok=True)
     shots: Dict[str, str] = {}
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(args=["--no-sandbox"])
+        try:
+            browser = await pw.chromium.launch(args=["--no-sandbox"])
+        except Exception as _launch_exc:
+            # #234: heal a missing browser binary once in-process, then retry.
+            from ...tools.browser._bootstrap import heal_missing_browser
+            if not heal_missing_browser(_launch_exc):
+                raise
+            browser = await pw.chromium.launch(args=["--no-sandbox"])
         try:
             ctx = await browser.new_context(viewport=_VIEWPORT)
             if token:
@@ -772,10 +795,37 @@ async def run_visual_fidelity(
                     "screens": [], "skipped": skipped}
         compose_file = project_dir / "docker" / "docker-compose.yml"
         cwd = project_dir / "docker"
-        fe_port = (_service_host_port(compose_file, cwd, "frontend")
-                   or _service_host_port(compose_file, cwd, "ui") or 8080)
-        be_port = (_service_host_port(compose_file, cwd, "backend")
-                   or _service_host_port(compose_file, cwd, "api") or 3001)
+        # FIX #207: resolve THIS app's OWN host ports — retry within the readiness
+        # window (the container isn't `docker compose ps`-visible the instant
+        # _compose_up returns, so an immediate resolve returned None and the old
+        # `or 8080`/`or 3001` fallback screenshotted the persistent gmaps demo,
+        # scoring a Google-Maps login against this env's references — r13). Poll
+        # until the frontend port resolves AND serves, then SKIP honestly if it
+        # never does — never capture a possibly-unrelated service.
+        def _fe(svc):
+            return _service_host_port(compose_file, cwd, svc)
+        _deadline = time.time() + 240
+        fe_port = be_port = None
+        while time.time() < _deadline:
+            fe_port = fe_port or _resolve_app_port(_fe, ("frontend", "ui"))
+            be_port = be_port or _resolve_app_port(_fe, ("backend", "api"))
+            if fe_port:
+                try:
+                    with urllib.request.urlopen(
+                            urllib.request.Request(
+                                f"http://localhost:{fe_port}", method="GET"),
+                            timeout=4) as _r:
+                        if 200 <= _r.status < 500:
+                            break
+                except Exception:
+                    pass
+            time.sleep(3)
+        if not fe_port:
+            return {"passed": False, "port_unresolved": True,
+                    "summary": ("visual gate could not resolve the app's OWN frontend "
+                                "host port after 240s — refusing to screenshot a "
+                                "possibly-unrelated :8080 service; skipping judgment"),
+                    "screens": [], "skipped": skipped}
         auth_needed = any(s["auth"] for s in judged_screens)
         # Log in as the SEEDED demo user so authed screens render POPULATED (matching the
         # references), not the empty lists a fresh throwaway user sees under tenant-scoping.
@@ -788,23 +838,10 @@ async def run_visual_fidelity(
                                 f"port {be_port}) — auth screens would all render "
                                 "the login page; skipping judgment"),
                     "screens": [], "skipped": skipped}
+        # #207: fe_port is resolved AND confirmed-serving above (the readiness
+        # poll broke on a 2xx-4xx from THIS app's own port), so base_url points at
+        # the real generated app, never the :8080 gmaps demo.
         base_url = f"http://localhost:{fe_port}"
-        # The validation cycle tears the env down (down -v) and rebuilds —
-        # capture must wait for the frontend to actually serve, or every
-        # screenshot fails and the gate "judges" a dead app (round 29: all
-        # screens 0.00 "could not be captured", burning the attempt budget;
-        # round 32 M5: same at 60s — a legacy-builder rebuild takes minutes,
-        # so wait up to 240s).
-        _deadline = time.time() + 240
-        while time.time() < _deadline:
-            try:
-                req = urllib.request.Request(base_url, method="GET")
-                with urllib.request.urlopen(req, timeout=4) as r:
-                    if 200 <= r.status < 500:
-                        break
-            except Exception:
-                pass
-            time.sleep(3)
         shots_dir = out_dir or (project_dir / "design" / "visual_gate")
 
         _auth_bounced: List[str] = []

@@ -123,7 +123,35 @@ def _load_component_specs(output_dir: Path) -> Dict[str, Dict]:
     return specs
 
 
-def _skeleton_components(spec: Optional[Dict]) -> List[Dict]:
+def _measure_component_geometry(im, region) -> Dict:
+    """#220: deterministic per-component geometry (columns / rows / gaps) from
+    the reference pixels. The analyst schema always promised a ``geometry``
+    field but no LLM run fills it — measure it instead. Tiny regions (< 2% of
+    the screen) carry no measurable structure and are skipped. Best-effort."""
+    if im is None or not (isinstance(region, (list, tuple)) and len(region) == 4):
+        return {}
+    try:
+        x0, y0, x1, y1 = (float(v) for v in region)
+    except (TypeError, ValueError):
+        return {}
+    if (x1 - x0) * (y1 - y0) < 0.02:
+        return {}
+    try:
+        from .material_prep import grid_columns, row_bands
+        gc = grid_columns(im, (x0, y0, x1, y1))
+        rb = row_bands(im, (x0, y0, x1, y1))
+        geo = {
+            "columns": gc.get("columns"),
+            "pitch_px": gc.get("pitch_px"),
+            "rows": rb.get("items"),
+            "row_gap_px": rb.get("item_gap_px"),
+        }
+        return {k: v for k, v in geo.items() if v}
+    except Exception:
+        return {}
+
+
+def _skeleton_components(spec: Optional[Dict], im=None) -> List[Dict]:
     from .material_prep import _slug
     comps: List[Dict] = []
     for c in ((spec or {}).get("components") or []):
@@ -140,6 +168,7 @@ def _skeleton_components(spec: Optional[Dict]) -> List[Dict]:
             "id": _slug(str(c.get("name") or "component")),
             "region": c.get("region"),
             "colors": colors,          # MEASURED (never overwritten downstream)
+            "geometry": _measure_component_geometry(im, c.get("region")),  # #220 MEASURED
             "assets": [],              # analyst maps real assets here
             "role": c.get("role") or "",
             "state": c.get("state") or "",
@@ -187,11 +216,25 @@ def build_skeleton_design_system(resolved: Dict, output_dir,
     screens: List[Dict] = []
     for ref in references:
         stem = Path(ref).stem
+        im = None
+        try:
+            from PIL import Image
+            im = Image.open(ref).convert("RGB")
+        except Exception:
+            im = None
+        layout_metrics: Dict = {}
+        if im is not None:
+            try:
+                from .material_prep import content_bounds
+                layout_metrics = content_bounds(im) or {}
+            except Exception:
+                layout_metrics = {}
         screens.append({
             "name": stem,
             "reference": Path(ref).name,
             "layout": "",
-            "components": _skeleton_components(specs.get(stem)),
+            "layout_metrics": layout_metrics,   # #220 MEASURED screen content bounds
+            "components": _skeleton_components(specs.get(stem), im),
         })
 
     return {
@@ -258,8 +301,11 @@ _SCREEN_PROMPT = (
     "paddings/spacing, icon shapes, borders/dividers, states — what a dev needs to copy it)\n"
     " - typography (role sizes/weights you can read), and assets (manifest ids this "
     "component should render).\n"
-    "Also submit layout (one line) and, if readable, global type_scale/radius_scale/"
-    "iconography.\n"
+    "Also submit layout (one line) and the GLOBAL scales estimated from the screenshot: "
+    "type_scale (roles h1/h2/body/caption with size_px + weight), radius_scale (corner "
+    "radii by size, e.g. {\"sm\":4,\"md\":8,\"full\":9999}), shadow_scale (elevation "
+    "shadows you can see), iconography ({style, stroke_px}). Estimate rather than omit — "
+    "leave a scale out ONLY when the screen truly shows nothing to estimate from.\n"
     "ALSO CLASSIFY the screen itself (FIX #132 — the visual gate navigates by URL, so it "
     "must know which references are reachable pages and which are interaction states):\n"
     " - kind: 'page' if the screenshot is a full standalone screen, 'overlay' if it shows "
@@ -300,6 +346,8 @@ _SCREEN_TOOL = [{
                 }},
                 "type_scale": {"type": "array", "items": {"type": "object"}},
                 "radius_scale": {"type": "object"},
+                # #220b: was absent → structurally impossible to fill via tool call
+                "shadow_scale": {"type": "array", "items": {"type": "object"}},
                 "iconography": {"type": "object"},
             },
             "required": ["components"],

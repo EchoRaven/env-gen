@@ -15,6 +15,34 @@ from .stores import CodeHubStores
 log = logging.getLogger(__name__)
 
 
+def _stage_paths_robust(git_ops: "GitOps", paths: List[str]) -> List[str]:
+    """FIX #210: stage *paths* tolerating an individual non-matching pathspec.
+
+    ``git add -- a b c`` aborts the WHOLE batch (exit 128) the moment one
+    pathspec doesn't match a worktree path — so a single stale entry (e.g. a
+    directory ``git status`` collapsed and listed, ``design/``, that isn't on
+    disk in this agent's worktree) drops the lane's REAL edits with it and the
+    commit fails (r14: 58/88 frontend commits died this way → the fix is lost →
+    the lane re-does it → the delivery milestone budget burns on churn). Try the
+    batch first (fast path, ``-A`` so deletions stage too); on ANY failure fall
+    back to per-path staging so one bad pathspec can't take the rest down.
+    Returns the paths that staged cleanly. Best-effort; never raises."""
+    if not paths:
+        return []
+    batch = git_ops._run("add", "-A", "--", *paths, check=False)
+    if batch is not None and getattr(batch, "returncode", 1) == 0:
+        return list(paths)
+    staged: List[str] = []
+    for p in paths:
+        try:
+            r = git_ops._run("add", "-A", "--", p, check=False)
+        except Exception:
+            continue
+        if r is not None and getattr(r, "returncode", 1) == 0:
+            staged.append(p)
+    return staged
+
+
 class CodeHub:
     """GitHub/GitLab-like collaboration kernel for agent code work."""
 
@@ -1080,7 +1108,9 @@ class CodeHub:
         if files:
             kept = _filter_paths_for_staging(list(files), agent_id=agent_id)
             if kept:
-                wt_git.add(*kept)
+                # FIX #210: robust staging (see helper) — one bad pathspec in the
+                # caller-supplied list must not abort the batch and lose the rest.
+                _stage_paths_robust(wt_git, kept)
             dropped = [f for f in files if f not in kept]
             if dropped:
                 log.warning(
@@ -1127,7 +1157,10 @@ class CodeHub:
             if kept:
                 # ``-A`` so deletions get staged too; explicit paths
                 # mean we never accidentally stage outside ``kept``.
-                wt_git._run("add", "-A", "--", *kept)
+                # FIX #210: stage robustly — a stale porcelain entry (a collapsed
+                # dir like ``design/`` not on disk in this worktree) must not abort
+                # the whole batch and drop the lane's real edits.
+                _stage_paths_robust(wt_git, kept)
 
         # Nothing-to-commit is NOT an error (smoke #6, 2026-06-06): the frontend's
         # files were already auto-committed/merged, so its post-impl codehub_commit

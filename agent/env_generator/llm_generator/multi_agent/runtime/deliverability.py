@@ -334,6 +334,35 @@ def compute_deliverability(hub_registry, app_root,
     # once the lane wires the page — never a permanent block.
     blockers.extend(_ui_page_wiring_blockers(hub_registry, app_root))
 
+    # ROUTED-FALLBACK sweep (#223). The registry-driven gate above only sees
+    # REGISTERED ui_pages; the heal projector also fills dangling route-wired
+    # imports the lane never registered, and the lane strips markers (#222).
+    # Code-truth scan of App.jsx-wired components: a generic-fallback body
+    # (content fingerprint) blocks delivery regardless of registration. Like
+    # the gates above, NOT relaxed on functionally_validated (api_smoke never
+    # opens a page); self-clearing once the page is authored.
+    if os.environ.get("ENVGEN_FALLBACK_PAGE_GATE", "1") not in ("0", "false", "no"):
+        try:
+            from .frontend_audit import routed_fallback_page_blockers
+            blockers.extend(routed_fallback_page_blockers(
+                Path(app_root) / "frontend" / "src"))
+        except Exception:
+            pass
+
+    # DEAD-NAV-LINK gate (#238, tiktok r27 M1 runtime-verified): the app's own
+    # Profile+Upload nav <Link>s resolved to no App.jsx route → 404 on click.
+    # NOT relaxed on functionally_validated (api_smoke never clicks a nav link);
+    # deterministic code fact, conservative (literal absolute targets only),
+    # self-clearing once the lane wires the route or fixes the link. Env escape
+    # hatch for the opt-5 false-block lesson.
+    if os.environ.get("ENVGEN_DEAD_NAV_GATE", "1") not in ("0", "false", "no"):
+        try:
+            from .frontend_audit import dead_nav_link_blockers
+            blockers.extend(dead_nav_link_blockers(
+                Path(app_root) / "frontend" / "src"))
+        except Exception:
+            pass
+
     # BARE-FETCH-NO-TOKEN gate (#154, gmrun4 root cause). Like the ui_page gate
     # above, NOT relaxed on a functionally-validated app: api_smoke probes the
     # backend with a FRAMEWORK-minted token, so a frontend that never attaches

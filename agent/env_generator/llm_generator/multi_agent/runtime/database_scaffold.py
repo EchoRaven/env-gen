@@ -32,7 +32,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 # Known abstract → postgres type aliases. Anything not listed passes
@@ -850,6 +850,77 @@ SPINE_TABLE_RECORDS = [
 ]
 
 
+# FIX #211 (r15 docker_up killer): postgres runs 01_init.sql top-to-bottom and an
+# inline ``REFERENCES <t>`` needs ``<t>`` to already exist. The contract lists
+# tables in registration order, which need NOT match FK-dependency order — r15
+# declared ``videos`` (``sound_id REFERENCES sounds(id)``) BEFORE ``sounds`` → init
+# aborted with ``relation "sounds" does not exist`` → docker_up wedged every cycle,
+# and the lanes CAN'T fix an auto-generated file → 76-min no-convergence abort.
+# Emit business tables in topological FK order so every reference resolves.
+def _fk_referenced_tables(table: Dict[str, Any]) -> Set[str]:
+    """Lowercased names of the OTHER tables this table FK-references, from BOTH
+    the structured (``references``/``fk``) and inline (``type`` string) signals."""
+    refs: Set[str] = set()
+    for c in _columns_of(table):
+        if not isinstance(c, dict):
+            continue
+        sfk = _structured_fk_ref(c)
+        if sfk:
+            refs.add(str(sfk[0]).strip().strip('"').lower())
+        m = _INLINE_REFERENCES_RE.search(str(c.get("type") or ""))
+        if m:
+            refs.add(str(m.group(1)).strip().strip('"').lower())
+    return refs
+
+
+def _topological_table_order(tables: Dict[str, Any]) -> List[Tuple[Any, Any]]:
+    """Return ``tables.items()`` reordered so each business table is emitted AFTER
+    the business tables its FKs reference. The tenancy spine (tenants/users/
+    oauth_*) is created before ANY business table, so FKs to it never constrain
+    the order (its names seed the emitted set). Self-references, dangling refs,
+    and true cycles degrade to the original stable order — never dropping a
+    table (a genuine 2-table cycle needs a deferred FK, a separate concern)."""
+    items = list(tables.items())
+    known: Set[str] = set()
+    for tid, t in items:
+        nm = str((t.get("name") if isinstance(t, dict) else "") or tid or "").strip().lower()
+        if nm:
+            known.add(nm)
+    deps: Dict[int, Set[str]] = {}
+    name_by_key: Dict[int, str] = {}
+    for tid, t in items:
+        key = id(t)
+        nm = str((t.get("name") if isinstance(t, dict) else "") or tid or "").strip().lower()
+        name_by_key[key] = nm
+        d: Set[str] = set()
+        if isinstance(t, dict):
+            for r in _fk_referenced_tables(t):
+                if r in known and r != nm:  # only real business deps; ignore self-ref
+                    d.add(r)
+        deps[key] = d
+    # Kahn's algorithm, STABLE: emit any table whose business deps are already
+    # satisfied; spine tables count as pre-created.
+    emitted: Set[str] = {n.lower() for n in _SPINE_OWNED_TABLES}
+    ordered: List[Tuple[Any, Any]] = []
+    remaining = list(items)
+    progressed = True
+    while remaining and progressed:
+        progressed = False
+        still: List[Tuple[Any, Any]] = []
+        for tid, t in remaining:
+            if deps[id(t)] <= emitted:
+                ordered.append((tid, t))
+                nm = name_by_key[id(t)]
+                if nm:
+                    emitted.add(nm)
+                progressed = True
+            else:
+                still.append((tid, t))
+        remaining = still
+    ordered.extend(remaining)  # leftover cycle/unresolved → original order, no drop
+    return ordered
+
+
 def render_schema_sql(tables: Dict[str, Any]) -> str:
     """Render ``init/01_init.sql``: the deterministic tenancy/identity spine
     followed by the registered SchemaHub business tables (the spine owns
@@ -878,7 +949,9 @@ def render_schema_sql(tables: Dict[str, Any]) -> str:
     except Exception:
         pass  # best-effort: reconciliation must never break DDL emission
 
-    for table_id, table in tables.items():
+    # FIX #211: emit in topological FK order so an inline REFERENCES never hits a
+    # not-yet-created table (r15 `videos`→`sounds` init crash).
+    for table_id, table in _topological_table_order(tables):
         if not isinstance(table, dict):
             raise ValueError(f"database_scaffold: table {table_id!r} is not a mapping")
         name = str(table.get("name") or table_id or "").strip()

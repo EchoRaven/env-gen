@@ -25,6 +25,7 @@ error, never raising into the validation loop. Chromium is the Playwright-bundle
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -46,8 +47,12 @@ _PROBE = """() => {
   // mapEls === 0 while the surface still renders content (not blank).
   const mapEls = document.querySelectorAll(
     '.leaflet-container, .mapboxgl-map, .maplibregl-map, .gm-style, .ol-viewport').length;
+  // #224: a live [data-fallback] root means the user is looking at the generic
+  // framework fallback page — runtime truth, independent of source cosmetics.
+  const fbEls = document.querySelectorAll('[data-fallback]').length;
   return { textLen: txt.length, sample: txt.slice(0, 120), text: txt.slice(0, 4000),
-           buttons: btns, inputs: inputs, pw: pw, signin: signin, mapEls: mapEls };
+           buttons: btns, inputs: inputs, pw: pw, signin: signin, mapEls: mapEls,
+           fbEls: fbEls };
 }"""
 
 
@@ -210,6 +215,28 @@ def resolve_param_route(route: str, api_base: Optional[str], token: Optional[str
             return None
         resolved[i] = rid
     return "/".join(resolved)
+
+
+async def _safe_goto(page: Any, url: str, timeout: int = 20000) -> None:
+    """#241 (r29/r30: 3 aborts on deliverability_ui_flow_failed, runtime-verified):
+    the framework-injected ``bc_auth.js`` redirects to /login on ANY /api 401 via
+    ``window.location.assign`` — which INTERRUPTS an in-flight ``page.goto``
+    ('Navigation to … is interrupted by another navigation'). The auth step then
+    threw and the whole walk read a WORKING app as a login-wall (auth_ok=False →
+    hollow_frontend), so ui_flow verification failed 3 runs on a perfect app.
+    Tolerate that specific interruption: the redirect lands on a real page, so wait
+    for the DOM to settle and carry on (any other error still raises). Deterministic
+    signals downstream (blank / redirected_to_login / real-data) stay accurate —
+    this only prevents the navigation race from aborting the walk."""
+    try:
+        await page.goto(url, wait_until="networkidle", timeout=timeout)
+    except Exception as exc:
+        if "interrupted by another navigation" not in str(exc):
+            raise
+        try:
+            await page.wait_for_load_state("networkidle", timeout=timeout)
+        except Exception:
+            pass
 
 
 async def _fill_visible_inputs(page: Any, creds: Mapping[str, str]) -> int:
@@ -431,7 +458,7 @@ async def run_browser_test_user(
                 if register and api_base_url:
                     _api_register(api_base_url, creds)
                 try:
-                    await page.goto(base_url + "/login", wait_until="networkidle", timeout=20000)
+                    await _safe_goto(page, base_url + "/login")
                     has_submit = await page.locator(
                         "button[type=submit], form button, button").count() > 0
                     step("login form has a submit control", has_submit,
@@ -460,7 +487,7 @@ async def run_browser_test_user(
                                            "console_errors": [], "shot": None,
                                            "redirected_to_login": False}
                     try:
-                        await page.goto(base_url + route, wait_until="networkidle", timeout=20000)
+                        await _safe_goto(page, base_url + route)
                         await page.wait_for_timeout(900)
                         probe = await page.evaluate(_PROBE)
                         # #68 (outlook run-56, live): RETRY a would-be-blank read
@@ -499,6 +526,13 @@ async def run_browser_test_user(
                                 if _mapn > 0:
                                     break
                         rec["map_rendered"] = _mapn > 0
+                        # #224: live [data-fallback] DOM + per-route seed rendering
+                        rec["fallback_dom"] = int(probe.get("fbEls", 0) or 0) > 0
+                        if seed_values:
+                            _rt_rd = real_data_verdict(
+                                [str(probe.get("text", ""))], seed_values)
+                            if _rt_rd.get("checked"):
+                                rec["route_seed_hit"] = bool(_rt_rd.get("rendered"))
                         # HOLLOW-PAGE detection: the test-user is logged in (token stored
                         # above), so a PROTECTED route that bounces to the auth URL OR
                         # renders the login form in place (password field + sign-in copy)
@@ -565,6 +599,28 @@ async def run_browser_test_user(
                 await browser.close()
     except Exception as exc:
         report["summary"] = f"browser test-user error: {exc}"
+        # #234 (r25, live): a MISSING browser binary is not a transient flake — it
+        # never self-clears, so ran=False walks silently blinded the #224/#231d
+        # runtime DOM holds for an ENTIRE run (102 launch failures, zero-fallback
+        # verification reduced to nothing). Heal once in-process and retry the walk;
+        # if the heal can't land, mark the outage LOUDLY so it reads as an
+        # environmental error, not a quiet skip.
+        try:
+            from ...tools.browser._bootstrap import (
+                heal_missing_browser, is_missing_executable)
+            if is_missing_executable(exc):
+                if heal_missing_browser(exc):
+                    return await run_browser_test_user(
+                        base_url, pages, out_dir, register=register,
+                        demo_login=demo_login, chrome_path=chrome_path,
+                        api_base_url=api_base_url, seed_values=seed_values)
+                report["browser_infra_down"] = True
+                logging.getLogger("test_user_runner").error(
+                    "BROWSER INFRA DOWN: test-user walk cannot launch a browser "
+                    "(%s) — runtime UI gates (#224/#231d) are blind this cycle.",
+                    str(exc)[:200])
+        except Exception:  # pragma: no cover — heal path must never mask the walk error
+            pass
         return report
 
     return _finalize_walkthrough(report)
@@ -596,6 +652,25 @@ def _finalize_walkthrough(report: Dict[str, Any]) -> Dict[str, Any]:
     report["error_pages"] = errs
     report["auth_redirect_pages"] = redirected
     report["fake_map_pages"] = fake_maps
+    # #224: a route whose LIVE DOM is the generic framework fallback
+    # ([data-fallback] present). Runtime truth — source cosmetics can't clear
+    # it. Blank pages are already held by blank_pages; don't double-count.
+    report["fallback_dom_pages"] = [
+        p["name"] for p in pages if p.get("fallback_dom") and not p.get("blank")]
+    # #224 (SOFT): a non-auth data page whose OWN text rendered no salient seed
+    # value — advisory only (search-gated pages populate only under a query),
+    # feeds the lane's remediation prose, never a hold by itself.
+    report["dataless_pages"] = [
+        p["name"] for p in pages
+        if p.get("route_seed_hit") is False and not p.get("blank")
+        and not any(seg in str(p.get("route") or "") for seg in _AUTH_ROUTE_SEGS)]
+    # #231d (r21): the PRIMARY route ('/') rendering ZERO seed data is the
+    # delivered app's face showing an empty shell ('No videos found' while the
+    # API served 39 rows) — HARD, unlike the advisory dataless_pages above.
+    report["primary_dataless"] = any(
+        str(p.get("route") or "").rstrip("/") in ("", "/")
+        and p.get("route_seed_hit") is False and not p.get("blank")
+        for p in pages)
     # HOLLOW FRONTEND: the app builds + serves, the login form is present, but a logged-in
     # user cannot actually reach the app — at least half the PROTECTED pages bounce to the
     # login form. A milestone in this state must NOT ship (the gate reads this flag); it is
@@ -713,6 +788,20 @@ def format_feedback(report: Mapping[str, Any]) -> str:
             "place at its real lat/lng — do NOT fake it with a background div, an image, or a "
             "single static pin. If a MapCanvas/Map component already exists in the source, "
             "IMPORT and render it on the map page (it may have been orphaned).")
+    if report.get("fallback_dom_pages"):
+        lines.append(
+            "  ‼ FALLBACK PAGE: the live DOM of "
+            f"{report.get('fallback_dom_pages')} is the GENERIC framework fallback "
+            "([data-fallback] present at runtime) — the user sees a top-nav row list, "
+            "not the app. Author the REAL page for each flagged route: the reference "
+            "screen's layout (open its crop under design/), real data fields, real "
+            "controls. This HOLDS the release until fixed.")
+    if report.get("dataless_pages"):
+        lines.append(
+            "  ⚠ NO SEED DATA on route(s) "
+            f"{report.get('dataless_pages')}: the page renders but shows none of the "
+            "app's real seeded values — likely an empty-state, a failing fetch, or a "
+            "page ignoring its endpoint. Make each route render its real rows.")
     if report.get("hollow_frontend"):
         lines.append(
             "  ‼ HOLLOW FRONTEND: logged in, but the PROTECTED pages "
@@ -746,6 +835,48 @@ def format_feedback(report: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def clean_ui_flow_passes(report: Mapping[str, Any]) -> List[str]:
+    """#240 (r29/r30: 3 aborts on deliverability_ui_flow_failed while the DELIVERED
+    app rendered perfectly — runtime-verified). ui_flow validation is driven by the
+    verifier LLM manually clicking the browser and recording pass/fail; it is flaky
+    (a logged-out nav bounces to /login via bc_auth → every flow reads as a login
+    wall → all recorded failure on a WORKING app). This returns the page names the
+    DETERMINISTIC authenticated walk rendered CLEANLY, so the caller can record
+    passing ``validation:ui_flow:<name>`` records — the ui_flow gate then clears
+    from the reliable framework walk instead of the LLM.
+
+    PASS-ONLY BY DESIGN: emits names to mark PASSED, never a failure — so it can
+    only UNBLOCK a genuinely-working app, never block one (the LLM/visual/
+    business-chain gates still catch real breakage). Requires the walk to have
+    AUTHENTICATED (``auth_ok``); a page counts clean iff it rendered
+    (``ok``: not blank, no console error, not bounced to login), is not the live
+    generic fallback (``fallback_dom``), and — if a map surface — rendered a real
+    map. Auth pages (/login, /signup) are excluded (validated separately, not a
+    content flow). Pure + env-agnostic."""
+    if not isinstance(report, dict) or not report.get("ran") or not report.get("auth_ok"):
+        return []
+    passes: List[str] = []
+    seen: set = set()
+    for p in (report.get("pages") or []):
+        if not isinstance(p, dict):
+            continue
+        name = str(p.get("name") or "").strip()
+        if not name or name in seen:
+            continue
+        route = str(p.get("route") or "")
+        if any(seg in route for seg in _AUTH_ROUTE_SEGS):
+            continue
+        if not p.get("ok"):
+            continue
+        if p.get("fallback_dom"):
+            continue
+        if p.get("is_map_surface") and not p.get("map_rendered"):
+            continue
+        seen.add(name)
+        passes.append(name)
+    return passes
+
+
 def browser_report_unusable(report: Optional[Mapping[str, Any]]) -> bool:
     """PRE-RELEASE GATE predicate (2026-06-30): True iff the browser walk RAN and found an
     OBJECTIVE "a real user cannot use this app" signal — login broken (``auth_ok`` False),
@@ -766,7 +897,9 @@ def browser_report_unusable(report: Optional[Mapping[str, Any]]) -> bool:
         return False
     return bool((not report.get("auth_ok")) or report.get("blank_pages")
                 or report.get("auth_redirect_pages") or report.get("hollow_frontend")
-                or report.get("no_real_data") or report.get("fake_map_pages"))
+                or report.get("no_real_data") or report.get("fake_map_pages")
+                or report.get("fallback_dom_pages")  # #224: live generic fallback
+                or report.get("primary_dataless"))  # #231d: empty primary route
 
 
 def browser_gate_decision(report: Mapping[str, Any], squad_decision: str) -> str:
@@ -787,8 +920,12 @@ def browser_gate_decision(report: Mapping[str, Any], squad_decision: str) -> str
     if str(_os.environ.get("ENVGEN_TESTUSER_HARD_GATE", "1")).strip().lower() in (
             "0", "false", "no", "off"):
         return squad_decision
-    if not report.get("auth_ok") or report.get("hollow_frontend"):
-        return "defer"  # hard-unusable: never escape a dead app
+    if (not report.get("auth_ok") or report.get("hollow_frontend")
+            or report.get("fallback_dom_pages")
+            or report.get("primary_dataless")):
+        # hard-unusable: never escape a dead app — incl. #224 a route whose
+        # live DOM is the generic framework fallback (zero-fallback delivery)
+        return "defer"
     return squad_decision  # soft-unusable: honor the bounded escape
 
 

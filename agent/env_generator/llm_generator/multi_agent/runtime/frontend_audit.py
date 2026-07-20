@@ -100,6 +100,35 @@ def _page_dead_controls(text: str) -> bool:
     return interactive and not bound
 
 
+def _is_generic_fallback_page(text: str) -> bool:
+    """#222 — content-based detection of the GENERIC framework fallback page.
+
+    r18 (log-verified) defeated marker-based detection: the lane stripped the
+    _PAGE_MARKER comment and the data-fallback attribute and tweaked API-call
+    formats until the audit credited the untouched generic shell as
+    'implemented'. Detect the CONTENT instead: the projection's helper
+    constellation (const _imgOf/_titleOf/_subOf/_metaOf — no lane authors
+    these) plus the generic list shell survives every cosmetic edit. A #221
+    reference-structured projection (data-projected/structured marker, or the
+    measured inline canvas paint) is a genuine floor — never flagged here."""
+    if not text:
+        return False
+    try:
+        from .frontend_page_projector import _PAGE_MARKER, _STRUCTURED_MARKER
+    except Exception:  # pragma: no cover — projector module always present
+        _PAGE_MARKER = "frontend_page_projector"
+        _STRUCTURED_MARKER = "reference-structured"
+    if 'data-projected="ref"' in text or _STRUCTURED_MARKER in text:
+        return False
+    if 'data-fallback="1"' in text or _PAGE_MARKER in text:
+        return True
+    helpers = sum(1 for h in ("const _imgOf", "const _titleOf",
+                              "const _subOf", "const _metaOf") if h in text)
+    shell = ("No data yet" in text) or ("divide-y" in text and "<aside" not in text)
+    # a marker-stripped STRUCTURED page still paints the measured canvas inline
+    return helpers >= 3 and shell and "style={{ backgroundColor:" not in text
+
+
 # Route-guard / layout wrappers that wrap the real PAGE in element={...} — the audit
 # resolves a route to its PAGE component, not the auth/layout shell around it.
 _ROUTE_WRAPPERS = frozenset({
@@ -379,6 +408,16 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
             missing.append(
                 f"component `{component}` is a placeholder stub — it renders no real "
                 "UI/behavior; build the page's declared content and wire its apis_used")
+        # #222: the GENERIC framework fallback is never 'implemented' — detected
+        # by CONTENT (helper constellation + list shell), so stripping the
+        # marker/attr or reformatting API calls (the r18 gaming moves) cannot
+        # flip the verdict. A #221 reference-structured projection passes.
+        if _is_generic_fallback_page(comp_file_text):
+            missing.append(
+                f"component `{component}` is a framework fallback page (generic list) — "
+                "author the REAL page for this route (reference layout, real fields, "
+                "real controls). Cosmetic edits (removing framework comments/attributes "
+                "or reformatting API calls) do not count as implementation")
     # MODEL RULE (user design): pages compose COMPONENTS; page→page is
     # NAVIGATION (a route/link), never composition. A page importing another
     # page means shared UI that belongs in src/components/.
@@ -427,6 +466,127 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
     return (not missing), missing
 
 
+def _route_matchers(app_jsx: str) -> List:
+    """#238: compile each App.jsx route into a regex that a LITERAL nav target
+    must fully match. A wired ``/@:username`` (canon ``/@{}``) → ``/@[^/]+`` so
+    ``/@alice`` matches but ``/profile`` does not; a static ``/explore`` → exact.
+    The catch-all (``*`` / ``/*``) is EXCLUDED — it is the 404 sink, so a link
+    that only matches it is precisely a dead link."""
+    matchers = []
+    for m in re.finditer(r"""path\s*=\s*["']([^"']+)["']""", app_jsx):
+        raw = m.group(1).strip()
+        if raw in ("*", "/*"):
+            continue
+        canon = _canon_route(raw)
+        if not canon:
+            continue
+        # canon has params collapsed to literal "{}" segments-or-fragments.
+        pat = "^" + re.escape(canon).replace(r"\{\}", r"[^/]+") + "$"
+        try:
+            matchers.append(re.compile(pat))
+        except re.error:
+            continue
+    return matchers
+
+
+def dead_nav_link_blockers(frontend_src: Any, limit: int = 20) -> List[str]:
+    """#238 (tiktok r27 M1, runtime-verified): the delivered app's own Profile
+    nav (SidebarNavigation/TopRightActions ``<Link to="/profile">``) resolved to
+    NO route — App.jsx wired only ``/@:username`` — so clicking Profile hit the
+    ``*`` 404. A dead nav control is a plain functional break ("功能完备" gap) the
+    existing gates miss: ui_page_delivery checks DECLARED routes are wired, never
+    that the app's own LINKS resolve. Code-truth, conservative (LITERAL absolute
+    targets only; template literals / external / mailto / hash-only skipped;
+    catch-all excluded), self-clearing once the lane fixes the link or adds the
+    route. ``ENVGEN_DEAD_NAV_GATE=0`` disables (false-block escape hatch, opt-5
+    lesson). Best-effort → []."""
+    blockers: List[str] = []
+    try:
+        src = Path(frontend_src)
+        app_jsx = src / "App.jsx"
+        if not app_jsx.is_file():
+            return blockers
+        matchers = _route_matchers(app_jsx.read_text(encoding="utf-8", errors="ignore"))
+        if not matchers:
+            return blockers
+
+        def _resolves(target: str) -> bool:
+            t = target.split("?", 1)[0].split("#", 1)[0]
+            t = t[:-1] if len(t) > 1 and t.endswith("/") else t
+            return any(rx.match(t) for rx in matchers)
+
+        # to="/path" | to='/path' | navigate("/path") | navigate('/path')
+        pat = re.compile(
+            r"""(?:\bto\s*=\s*|\bnavigate\s*\(\s*)["'](/[^"'{}$]*)["']""")
+        seen: set = set()
+        for jsx in sorted(src.rglob("*.jsx")):
+            if jsx.name == "App.jsx":
+                continue
+            try:
+                text = jsx.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for m in pat.finditer(text):
+                target = m.group(1).strip()
+                # skip protocol-relative, root, and non-absolute-ish noise
+                if not target.startswith("/") or target.startswith("//"):
+                    continue
+                key = target.split("?", 1)[0].split("#", 1)[0].rstrip("/") or "/"
+                if key in seen or _resolves(target):
+                    continue
+                seen.add(key)
+                blockers.append(
+                    f"nav link `{target}` ({jsx.name}) resolves to NO App.jsx "
+                    f"route → dead control (404). Wire the route or point the "
+                    f"link at an existing one.")
+                if len(blockers) >= limit:
+                    return blockers
+    except Exception:
+        return []
+    return blockers
+
+
+def routed_fallback_page_blockers(frontend_src: Any) -> List[str]:
+    """#223 — code-truth sweep for framework fallback pages the registry can't
+    see. ui_page_delivery_blockers iterates REGISTERED ui_pages, but the heal
+    projector also fills dangling route-wired imports the lane never registered
+    (r19: components mis-registered as pages, 300-byte stubs in src/pages/).
+    Scan every component route-wired in App.jsx; a generic-fallback body
+    (content fingerprint, marker-strip-proof — #222) blocks delivery. Purely
+    static, self-clearing once the page is authored. Best-effort → []."""
+    blockers: List[str] = []
+    try:
+        src = Path(frontend_src)
+        app_jsx = src / "App.jsx"
+        if not app_jsx.is_file():
+            return blockers
+        app_text = app_jsx.read_text(encoding="utf-8", errors="ignore")
+        wired = re.findall(
+            r'path\s*=\s*["\']([^"\']+)["\'][^>]*?element\s*=\s*\{\s*<\s*(\w+)', app_text)
+        seen: set = set()
+        for route, comp in wired:
+            if comp in seen or comp in _ROUTE_WRAPPERS:
+                continue
+            seen.add(comp)
+            text = None
+            for sub in ("pages", "components", "views", "screens"):
+                cand = src / sub / f"{comp}.jsx"
+                if cand.is_file():
+                    try:
+                        text = cand.read_text(encoding="utf-8", errors="ignore")
+                    except Exception:
+                        text = None
+                    break
+            if text and _is_generic_fallback_page(text):
+                blockers.append(
+                    f"route {route} renders a framework fallback page (`{comp}`) — "
+                    "author the REAL page (reference layout, real fields, real "
+                    "controls); cosmetic edits do not count")
+    except Exception:
+        return []
+    return blockers
+
+
 def audit_ui_component(frontend_src: Path, comp: Mapping[str, Any],
                        *, _src_cache: Optional[Dict[str, str]] = None,
                        ) -> Tuple[bool, List[str]]:
@@ -450,6 +610,13 @@ def _registered_paths(registryhub: Any) -> Optional[set]:
         return None
     out = set()
     for ep in eps.values() if isinstance(eps, dict) else []:
+        if not isinstance(ep, dict):
+            continue
+        # #231 (r21): a DEPRECATED endpoint is not part of the live contract —
+        # counting it here made the contract-miss check blind while the served
+        # backend 404'd the path the frontend was still calling.
+        if str(ep.get("status") or "").lower() == "deprecated":
+            continue
         m = str(ep.get("method") or "GET").upper()
         p = re.sub(r"\{[^}]+\}|:[A-Za-z_]\w*", "*", str(ep.get("path") or "")).rstrip("/")
         out.add((m, p))
@@ -547,7 +714,8 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
 # indirectly) → NOT promoted to hard blockers here.
 _HARD_MISS_MARKERS = ("not wired in App.jsx", "not found — expected",
                       "is a placeholder stub",  # #39 G2: a stub page = a shipped-blank page
-                      "STATIC MOCK")  # #151: a route wired to a mock twin ships mock data
+                      "STATIC MOCK",  # #151: a route wired to a mock twin ships mock data
+                      "framework fallback page")  # #222: generic fallback never ships
 
 
 def _is_hard_miss(missing_line: str) -> bool:
@@ -773,6 +941,15 @@ def bare_authed_fetch_blockers(frontend_src: Any, limit: int = 12) -> List[str]:
                 arg2 = rest.lstrip().lstrip(",").strip()
                 if arg2 and re.match(r"^[A-Za-z_$][\w$.]*(\(\))?$", arg2):
                     continue  # opaque options identifier — may carry auth built elsewhere
+                # #233 (r23 FALSE-BLOCK, 83-min abort): `{ headers: getHeaders() }`
+                # / `{ ...buildOpts() }` — the headers come from a HELPER whose
+                # body attaches the token. A non-literal headers value (call or
+                # identifier) or a spread call inside the options is opaque: the
+                # gate only flags PROVABLY bare calls, so excuse it. The lane's
+                # api.js was fully correct and the run died on an unwinnable gate.
+                if re.search(r"headers\s*:\s*[A-Za-z_$][\w$.]*\s*(\(|[,}\)])", arg2) \
+                        or re.search(r"\.\.\.\s*[A-Za-z_$][\w$.]*\s*\(", arg2):
+                    continue
                 total += 1
                 if len(blockers) < limit:
                     rel = f.relative_to(src).as_posix()
@@ -1022,8 +1199,16 @@ def repair_fabricated_fallbacks(frontend_src: Any) -> Dict[str, Any]:
                 member, lit = m.group(1), m.group(3)
                 if not _is_fabricated_fallback_literal(lit):
                     return m.group(0)
-                sites.append(f"{f.name}:{i} `{member} || '{lit}'` → `{member} ?? '—'`")
-                return f"{member} ?? '—'"
+                # #239 (tiktok r29 build-break abort): ALWAYS parenthesize the
+                # ?? replacement. JS forbids mixing ?? with || / && without parens
+                # (`a || b ?? c` is a SyntaxError esbuild rejects). The lane's
+                # `cur.title || cur.description || 'lit'` → this regex rewrites only
+                # the LAST `|| 'lit'` → `cur.title || cur.description ?? '—'` which
+                # broke the vite build → verification_checklist → r29 NO-CONVERGENCE
+                # abort — the framework's own #175 repair introduced the syntax error.
+                # `(x ?? '—')` is always valid, standalone or inside a || / && chain.
+                sites.append(f"{f.name}:{i} `{member} || '{lit}'` → `({member} ?? '—')`")
+                return f"({member} ?? '—')"
 
             def _sub_ternary(m):
                 member, lit = m.group(1), m.group(3)

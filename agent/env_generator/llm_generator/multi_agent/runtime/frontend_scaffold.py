@@ -1201,6 +1201,20 @@ def reconcile_frontend_api_paths(frontend_dir, registered_paths) -> Dict[str, ob
                     if len(cands) == 1:
                         local.append((called, cands[0], fpath.name))
                         return pre + cands[0] + post
+                    # #231 (r21 + run-13): VERSION-VARIANT drift — the called
+                    # path and exactly one registered path are identical once
+                    # version segments (v1/v2/…) are stripped ('/api/feed' ↔
+                    # '/api/v1/feed', either direction). The subsequence rule
+                    # above can't fix the called-has-FEWER-segments direction.
+                    _nv = [s for s in cs if not re.fullmatch(r"v\d+", s)]
+                    vcands = sorted({
+                        r for r in reg_static
+                        if [s for s in _segs(r)
+                            if not re.fullmatch(r"v\d+", s)] == _nv and r != called
+                    })
+                    if len(vcands) == 1:
+                        local.append((called, vcands[0], fpath.name))
+                        return pre + vcands[0] + post
                     return m.group(0)
                 new = _API_CALL_PATH_RE.sub(_sub, text)
                 if local:
@@ -1661,7 +1675,602 @@ def _nav_links_jsx(nav_routes) -> str:
         "      </nav>")
 
 
-def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None) -> str:
+# ── FIX #221: by-construction REFERENCE-STRUCTURED page projection ───────────
+# The generic list fallback was the delivery+visual frontier (r18/r19): 11/14
+# pages shipped as top-nav row lists that match no reference. When the measured
+# design (design_system.json screens[] — #132 routes + component regions/roles/
+# colors + #220 geometry) covers a route, project the reference's REAL region
+# structure (e.g. left nav rail + center media surface + right action rail),
+# painted with the measured palette and fetching the route's declared endpoint.
+# Env-agnostic: everything is derived from THIS env's measured screens+contract.
+
+def _load_design_for_projection(frontend_dir) -> Dict[str, Any]:
+    """<output>/design/design_system.json relative to app/frontend (same
+    convention as #208 _apply_measured_palette). Best-effort → {}."""
+    import json as _json
+    try:
+        p = Path(frontend_dir).parent.parent / "design" / "design_system.json"
+        if p.exists():
+            d = _json.loads(p.read_text(encoding="utf-8"))
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        pass
+    return {}
+
+
+def _norm_route_221(r) -> str:
+    r = str(r or "").strip().lower()
+    r = re.sub(r"[?#].*$", "", r)
+    return (r.rstrip("/") or "/")
+
+
+# #226: generic layout/UI words that must never carry a fuzzy match on their own
+_FUZZY_STOPWORDS_226 = frozenset({
+    "page", "screen", "view", "views", "main", "own", "my", "the", "of", "and",
+    "grid", "list", "menu", "modal", "empty", "logged", "out", "in", "panel",
+})
+
+
+def _semantic_tokens_226(*texts) -> Set[str]:
+    """Lowercase word tokens (+ crude singulars) of routes/names, minus generic
+    layout words — the fuzzy-match vocabulary for screen↔page reconciliation.
+    camelCase is split first so 'ProfilePage' yields {profile} (#229)."""
+    toks: Set[str] = set()
+    for t in texts:
+        s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(t or ""))
+        toks |= set(re.findall(r"[a-z]+", s.lower()))
+    toks |= {t[:-1] for t in list(toks) if t.endswith("s") and len(t) > 3}
+    return toks - _FUZZY_STOPWORDS_226
+
+
+def _design_screen_for_route(design, route, hints=()) -> Optional[Dict[str, Any]]:
+    """The measured screen whose classified route (#132) matches ``route`` and
+    that carries component regions. kind=='page' preferred over overlays.
+
+    #226 (r20 live): the LLM route classification drifts (kickoff declares
+    /activity; the screen classified /notifications, name
+    notifications_activity) — an exact-route miss shipped the generic fallback
+    while a twin page got the structured projection. Fall back to TOKEN-OVERLAP
+    between the route and the screen's name/route; no shared token → no match
+    (a wrong graft is worse than the generic floor).
+
+    #229 (r21 live): a param route ('/@:username') tokenizes to just the param
+    name, so route-only fuzzy missed profile_own@/profile — ``hints`` (the
+    page's own name/id/component) join the fuzzy vocabulary."""
+    want = _norm_route_221(route)
+    if not want:
+        return None
+    best = None
+    for s in ((design or {}).get("screens") or []):
+        if not (isinstance(s, dict) and (s.get("components") or [])):
+            continue
+        if _norm_route_221(s.get("route")) != want:
+            continue
+        if str(s.get("kind") or "page").strip().lower() == "page":
+            return s
+        best = best or s
+    if best is not None:
+        return best
+    rt = _semantic_tokens_226(want, *hints)
+    if not rt:
+        return None
+    fuzzy, fuzzy_score = None, 0
+    for s in ((design or {}).get("screens") or []):
+        if not (isinstance(s, dict) and (s.get("components") or [])):
+            continue
+        if str(s.get("kind") or "page").strip().lower() != "page":
+            continue
+        score = len(rt & _semantic_tokens_226(s.get("name"), s.get("route")))
+        if score > fuzzy_score:
+            fuzzy, fuzzy_score = s, score
+    return fuzzy
+
+
+def missing_design_screen_pages(design, ui_pages, endpoints) -> List[Dict[str, Any]]:
+    """#225 — synthesize ui_page specs for measured design screens whose route
+    no registered ui_page covers (r19: kickoff declared ONE page for the whole
+    surface). Screens kind=='page' with a classified route (#132) are ground
+    truth for the app's page set. apis_used is inferred by token overlap
+    between the screen's name/component prose and the registered GET
+    collection endpoints (no match → empty, the lane still must author).
+    Pure + env-agnostic; the caller registers the returned specs."""
+    covered = {_norm_route_221(p.get("route"))
+               for p in (ui_pages or []) if isinstance(p, dict)}
+    # #226: a page also covers a screen it fuzzy-matches (kickoff /activity vs
+    # screen notifications_activity@/notifications) — else a TWIN page gets
+    # registered and one of the two ships as a generic fallback (r20 live).
+    page_token_sets = [
+        _semantic_tokens_226(p.get("route"), p.get("name"))
+        for p in (ui_pages or []) if isinstance(p, dict)]
+    gets: List[str] = []
+    for ep in (endpoints or []):
+        if not isinstance(ep, dict):
+            continue
+        if str(ep.get("method") or "GET").upper() != "GET":
+            continue
+        path = str(ep.get("path") or "")
+        if not path.startswith("/api/") or "{" in path or ":" in path:
+            continue
+        gets.append(path)
+
+    def _tokens(s: str) -> Set[str]:
+        toks = set(re.findall(r"[a-z]+", str(s).lower()))
+        return toks | {t[:-1] for t in toks if t.endswith("s") and len(t) > 3}
+
+    out: List[Dict[str, Any]] = []
+    seen_routes: Set[str] = set(covered)
+    for s in ((design or {}).get("screens") or []):
+        if not isinstance(s, dict):
+            continue
+        if str(s.get("kind") or "page").strip().lower() != "page":
+            continue
+        route = str(s.get("route") or "").strip()
+        norm = _norm_route_221(route)
+        if not route.startswith("/") or norm in seen_routes:
+            continue
+        _st = _semantic_tokens_226(s.get("name"), route)
+        if _st and any(_st & pt for pt in page_token_sets):
+            continue  # #226: fuzzy-covered by an existing page — no twin
+        seen_routes.add(norm)
+        stem = re.sub(r"[^a-z0-9]+", "_", str(s.get("name") or "page").lower()).strip("_")
+        comp = "".join(w.title() for w in stem.split("_")) or "Screen"
+        if not comp.endswith("Page"):
+            comp += "Page"
+        screen_text = " ".join(
+            [stem.replace("_", " ")]
+            + [f"{c.get('id')} {c.get('role')}" for c in (s.get("components") or [])
+               if isinstance(c, dict)]).lower()
+        st = _tokens(screen_text)
+        best, best_score = None, 0
+        for path in gets:
+            seg = path.rstrip("/").split("/")[-1]
+            score = len(_tokens(seg) & st)
+            if score > best_score:
+                best, best_score = path, score
+        out.append({
+            "name": f"{stem}_page" if not stem.endswith("page") else stem,
+            "route": route,
+            "component": comp,
+            "apis_used": [f"GET {best}"] if best else [],
+            "kind": "page",
+            "metadata": {"reference_image": s.get("reference"),
+                         "seeded_from_design": True},
+        })
+    return out
+
+
+def _band_of_region(region) -> str:
+    """Coarse layout band of a fractional [x0,y0,x1,y1] region."""
+    try:
+        x0, y0, x1, y1 = (float(v) for v in region)
+    except (TypeError, ValueError):
+        return "main"
+    w, h = x1 - x0, y1 - y0
+    if x1 <= 0.34 and h >= 0.4:
+        return "left"
+    if x0 >= 0.60 and w <= 0.4 and h >= 0.25:
+        return "right"
+    if y1 <= 0.22 and w >= 0.5:
+        return "top"
+    if y0 >= 0.85 and w >= 0.5:
+        return "bottom"
+    return "main"
+
+
+_KIND_TERMS_221 = {
+    "nav": ("nav", "menu", "sidebar", "tab bar", "tabs"),
+    "media": ("player", "playing", "displaying a video", "story", "reel",
+              "video display", "main content area"),
+    "actions": ("action", "interaction", "button", "rail", "toolbar"),
+    "list": ("grid", "masonry", "thumbnail", "tile", "card", "list",
+             "conversation", "feed", "suggested", "results", "notification",
+             "chat"),
+    "input": ("search", "composer", "input", "form"),
+    "header": ("profile", "header", "stats", "banner", "hero"),
+}
+# ambiguity-prone words counted at half weight ('video' names the DOMAIN object
+# in grid roles — "grid of video thumbnails" — not the surface kind)
+_KIND_WEAK_TERMS_221 = {"media": ("video", "media"), "list": ("message",)}
+
+
+def _term_hit_221(term: str, text: str) -> bool:
+    """Word-boundary term match — plain substring made 'displaying' hit the
+    media term 'playing' (r18 friends: every Follow-card classified media)."""
+    return re.search(r"\b" + re.escape(term) + r"\b", text) is not None
+
+
+def _comp_kind_221(comp) -> str:
+    """Semantic kind of a measured component. Scored by keyword HIT COUNT over
+    id/role/state prose (first-match ordering misclassified r18's
+    'Grid layout of video thumbnails' as media because it contains 'video')."""
+    t = " ".join(str((comp or {}).get(k) or "")
+                 for k in ("id", "role", "state", "build_notes")).lower()
+    scores: Dict[str, float] = {}
+    for kind, terms in _KIND_TERMS_221.items():
+        scores[kind] = float(sum(1 for w in terms if _term_hit_221(w, t)))
+        for w in _KIND_WEAK_TERMS_221.get(kind, ()):
+            if _term_hit_221(w, t):
+                scores[kind] += 0.5
+    best = max(scores, key=lambda k: scores[k])
+    return best if scores[best] > 0 else "panel"
+
+
+_REF_HELPERS_JS = """
+const _imgOf = (r) => { for (const k of ['thumbnail_url','image_url','avatar_url','banner_url','photo_url','cover_url','poster_url','image','thumbnail','avatar']) { if (r && r[k]) return r[k]; } const u = r && r.url; if (typeof u === 'string' && /\\.(png|jpe?g|webp|gif|svg)(\\?|$)/i.test(u)) return u; return null; };
+const _titleOf = (r) => { for (const k of ['title','subject','name','display_name','full_name','username','label','handle','caption','email']) { if (r && r[k]) return String(r[k]); } return (r && r.id != null) ? ('#' + r.id) : ''; };
+const _subOf = (r) => { for (const k of ['snippet','preview','summary','description','from_name','sender','body','caption','content','message','text']) { if (r && r[k]) return String(r[k]); } return ''; };
+const _metaOf = (r) => Object.keys(r || {}).filter((k) => !['id','password','password_hash'].includes(k) && !/_url$|^url$|^image$|^thumbnail$|^avatar$|title|subject|name|description|body|snippet|caption/.test(k) && (typeof r[k] !== 'object')).slice(0, 3);
+const _videoOf = (r) => { for (const k of ['video_url','media_url','playback_url','stream_url','video','src']) { const v = r && r[k]; if (typeof v === 'string' && v) return v; } const u = r && r.url; if (typeof u === 'string' && /\\.(mp4|webm|mov|m3u8)(\\?|$)/i.test(u)) return u; return null; };
+const _countsOf = (r) => Object.keys(r || {}).filter((k) => /(count|likes|views|shares|saves|comments|followers|plays)$/i.test(k) && typeof r[k] === 'number').slice(0, 5);
+"""
+
+
+def _asset_urls_227(design, asset_ids) -> Dict[str, str]:
+    """id → served URL for the given mapped asset ids: staged_path
+    'public/assets/x.svg' serves at '/assets/x.svg'. Images only (never fonts)."""
+    by_id = {str(a.get("id")): a for a in ((design or {}).get("assets") or [])
+             if isinstance(a, dict)}
+    out: Dict[str, str] = {}
+    for aid in (asset_ids or []):
+        a = by_id.get(str(aid))
+        if not a:
+            continue
+        if str(a.get("type") or "").lower() not in ("svg", "png", "jpg", "webp",
+                                                    "gif", "ico", "bmp"):
+            continue
+        sp = str(a.get("staged_path") or "")
+        if sp.startswith("public/"):
+            out[str(aid)] = "/" + sp[len("public/"):]
+    return out
+
+
+def _ref_nav_jsx(nav_routes, accent: str, vertical: bool,
+                 asset_urls: Optional[Dict[str, str]] = None) -> str:
+    """Measured-theme nav: vertical (left rail) or horizontal (top bar). Active
+    route highlighted with the measured accent. Router-agnostic <a href>.
+
+    #227: the visual gate's #1 remediation is 'render the staged asset SVGs, do
+    not approximate' — when the nav component maps real assets, render them by
+    construction: a logo/wordmark asset heads the rail; each nav link gets the
+    icon whose id tokens match its label/route tokens."""
+    routes = [(str(l).strip(), str(r).strip())
+              for (l, r) in (nav_routes or []) if str(r).strip()]
+    if not routes:
+        return ""
+    asset_urls = asset_urls or {}
+    logo_url = next((u for aid, u in asset_urls.items()
+                     if re.search(r"\b(logo|wordmark|brand)\b",
+                                  str(aid).replace("-", " ").replace("_", " "))),
+                    None)
+
+    def _icon_for(label: str, route: str) -> str:
+        want = _semantic_tokens_226(label, route)
+        for aid, url in asset_urls.items():
+            if url == logo_url:
+                continue
+            if want & _semantic_tokens_226(str(aid)):
+                return (f'<img src="{url}" alt="" className="h-5 w-5 shrink-0" /> ')
+        return ""
+
+    links = "\n".join(
+        f"""          <a href="{r}" className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium hover:opacity-100" style={{{{ color: window.location.pathname === '{r}' ? '{accent}' : 'inherit', opacity: window.location.pathname === '{r}' ? 1 : 0.85 }}}}>{_icon_for(l, r)}{l}</a>"""
+        for (l, r) in routes)
+    if vertical and logo_url:
+        links = (f'          <a href="/" className="mb-4 px-3"><img src="{logo_url}" '
+                 'alt="" className="h-8 w-auto" /></a>\n') + links
+    if vertical:
+        return (
+            '<nav className="flex flex-col gap-1">\n' + links + "\n"
+            "          <button onClick={() => { localStorage.clear(); window.location.href = '/login'; }} "
+            'className="mt-4 rounded-md px-3 py-2 text-left text-sm opacity-60 hover:opacity-100">Log out</button>\n'
+            "        </nav>")
+    return (
+        '<nav className="flex flex-wrap items-center gap-1 border-b px-6 py-2" '
+        'style={{ borderColor: \'rgba(128,128,128,0.25)\' }}>\n' + links + "\n"
+        "          <button onClick={() => { localStorage.clear(); window.location.href = '/login'; }} "
+        'className="ml-auto rounded-md px-3 py-1.5 text-sm opacity-60 hover:opacity-100">Log out</button>\n'
+        "        </nav>")
+
+
+def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str, Any],
+                           design: Dict[str, Any], nav_routes, get_ep: str) -> str:
+    """Emit a reference-structured, data-populated page: one layout band per
+    measured component region (left/right asides, top bar, main surface), the
+    region ROLE deciding its content (nav links / media player / action rail /
+    row list / grid), measured colors throughout, fetching the route's own
+    declared GET endpoint. Real floor, not a fallback — no data-fallback attr."""
+    ds = (design or {}).get("design_system") or {}
+    pal = ds.get("palette") or {}
+    bg = pal.get("bg") if isinstance(pal.get("bg"), str) else "#ffffff"
+    accent = pal.get("accent") if isinstance(pal.get("accent"), str) else "#2563eb"
+    theme = str(((ds.get("theme") or {}).get("default")) or "").lower()
+    if theme not in ("dark", "light"):
+        try:
+            h = bg.lstrip("#")
+            h = "".join(c * 2 for c in h) if len(h) == 3 else h
+            lum = (int(h[0:2], 16) * 0.299 + int(h[2:4], 16) * 0.587
+                   + int(h[4:6], 16) * 0.114)
+            theme = "dark" if lum < 128 else "light"
+        except Exception:
+            theme = "light"
+    text = "#f5f5f5" if theme == "dark" else "#18181b"
+    label = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").strip() or name
+
+    bands: Dict[str, List[Dict]] = {"left": [], "right": [], "top": [],
+                                    "bottom": [], "main": []}
+    for c in (screen.get("components") or []):
+        if isinstance(c, dict):
+            bands[_band_of_region(c.get("region"))].append(c)
+
+    def _region_frac(comp, idx: int) -> float:
+        try:
+            x0, _y0, x1, _y1 = (float(v) for v in (comp.get("region") or []))
+            return max(x1 - x0, 0.0) if idx == 0 else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
+    # ── left aside: nav rail (or a stacked panel) sized from the region ──
+    left_jsx = ""
+    if bands["left"]:
+        lead = bands["left"][0]
+        try:
+            lw = max(float((lead.get("region") or [0, 0, 0.17, 1])[2]) * 100.0, 8.0)
+        except (TypeError, ValueError, IndexError):
+            lw = 17.0
+        lbg = ((lead.get("colors") or {}).get("bg")) or bg
+        inner = _ref_nav_jsx(nav_routes, accent, vertical=True,
+                             asset_urls=_asset_urls_227(design, lead.get("assets")))
+        left_jsx = (
+            f'      <aside className="shrink-0 overflow-y-auto border-r px-3 py-6" '
+            f"style={{{{ width: '{lw:.1f}%', minWidth: '160px', backgroundColor: '{lbg}', "
+            f"borderColor: 'rgba(128,128,128,0.25)' }}}}>\n"
+            f"        {inner}\n"
+            f"      </aside>\n")
+
+    # ── right aside: action rail (counts as live buttons) or a list panel ──
+    right_jsx = ""
+    if bands["right"]:
+        lead = bands["right"][0]
+        kind = _comp_kind_221(lead)
+        try:
+            rw = max((float((lead.get("region") or [0.7, 0, 1, 1])[2])
+                      - float((lead.get("region") or [0.7, 0, 1, 1])[0])) * 100.0, 5.0)
+        except (TypeError, ValueError, IndexError):
+            rw = 8.0
+        if kind == "list":
+            right_jsx = (
+                f'      <aside className="shrink-0 overflow-y-auto border-l px-4 py-6" '
+                f"style={{{{ width: '{max(rw, 22.0):.1f}%', borderColor: 'rgba(128,128,128,0.25)' }}}}>\n"
+                "        <h3 className=\"mb-3 text-sm font-semibold opacity-80\">" + label + "</h3>\n"
+                "        {rows.map((row, i) => (\n"
+                "          <div key={(row && row.id) || i} className=\"flex items-start gap-2 py-2 text-sm\">\n"
+                "            {_imgOf(row) ? <img src={_imgOf(row)} alt=\"\" className=\"h-8 w-8 rounded-full object-cover shrink-0\" /> : null}\n"
+                "            <div className=\"min-w-0\"><div className=\"font-medium truncate\">{_titleOf(row)}</div>\n"
+                "            <div className=\"opacity-60 truncate\">{_subOf(row)}</div></div>\n"
+                "          </div>\n"
+                "        ))}\n"
+                "      </aside>\n")
+        else:
+            right_jsx = (
+                '      <aside className="shrink-0 flex flex-col items-center justify-center gap-4 px-2" '
+                f"style={{{{ width: '{rw:.1f}%', minWidth: '72px' }}}}>\n"
+                "        {cur ? _countsOf(cur).map((k) => (\n"
+                "          <button key={k} className=\"flex flex-col items-center gap-1 text-xs opacity-90 hover:opacity-100\">\n"
+                "            <span className=\"flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold\" "
+                "style={{ backgroundColor: 'rgba(128,128,128,0.25)' }}>{k.replace(/_?(count|s)$/i, '').charAt(0).toUpperCase()}</span>\n"
+                "            <span>{String(cur[k])}</span>\n"
+                "          </button>\n"
+                "        )) : null}\n"
+                "        <button aria-label=\"Previous\" onClick={() => setIdx((v) => Math.max(0, v - 1))} "
+                "className=\"mt-6 flex h-10 w-10 items-center justify-center rounded-full\" "
+                "style={{ backgroundColor: 'rgba(128,128,128,0.25)' }}>{'\\u25B2'}</button>\n"
+                "        <button aria-label=\"Next\" onClick={() => setIdx((v) => Math.min(rows.length - 1, v + 1))} "
+                "className=\"flex h-10 w-10 items-center justify-center rounded-full\" "
+                "style={{ backgroundColor: 'rgba(128,128,128,0.25)' }}>{'\\u25BC'}</button>\n"
+                "      </aside>\n")
+
+    # ── top bar (only when there is no left nav carrying the navigation) ──
+    top_jsx = ""
+    if bands["top"] and not bands["left"]:
+        top_jsx = "        " + _ref_nav_jsx(
+            nav_routes, accent, vertical=False,
+            asset_urls=_asset_urls_227(design, (bands["top"][0].get("assets")
+                                                if bands["top"] else None))) + "\n"
+
+    # ── repeated same-role cards tiled over the page (e.g. a Follow-card wall):
+    # treat as ONE measured grid — columns = distinct card x-origins, and the
+    # card's quoted action ('Follow' button) becomes a real button.
+    rep_cards: List[Dict] = []
+    _role_groups: Dict[str, List[Dict]] = {}
+    for c in bands["main"] + bands["right"]:
+        _rk = str(c.get("role") or "").strip()[:80]
+        if _rk:
+            _role_groups.setdefault(_rk, []).append(c)
+    if _role_groups:
+        _biggest = max(_role_groups.values(), key=len)
+        if len(_biggest) >= 3:
+            rep_cards = _biggest
+            # repeated cards absorb the right band (they tiled into it spatially)
+            bands["right"] = [c for c in bands["right"] if c not in rep_cards]
+            bands["main"] = [c for c in bands["main"] if c not in rep_cards]
+
+    # ── main surface: media player, else grid/list, else detail panel ──
+    media_comp = next((c for c in bands["main"] if _comp_kind_221(c) == "media"), None)
+    list_comp = next((c for c in bands["main"] if _comp_kind_221(c) == "list"), None)
+    if rep_cards:
+        _xs = set()
+        for c in rep_cards:
+            try:
+                _xs.add(round(float((c.get("region") or [0])[0]), 2))
+            except (TypeError, ValueError, IndexError):
+                pass
+        cols = max(2, len(_xs)) if _xs else 3
+        _action = None
+        _m = re.search(r"['‘’“”\"]([A-Za-z][A-Za-z ]{1,14})['‘’“”\"]\s+button",
+                       str(rep_cards[0].get("role") or ""))
+        if _m:
+            _action = _m.group(1).strip()
+        _btn = ""
+        if _action:
+            _btn = ("                <button className=\"mt-2 w-full rounded-md px-3 py-1.5 "
+                    "text-sm font-semibold\" "
+                    f"style={{{{ backgroundColor: '{accent}', color: '#ffffff' }}}}>{_action}</button>\n")
+        main_jsx = (
+            '        <section className="flex-1 overflow-y-auto px-6 py-6">\n'
+            f"          <h2 className=\"mb-4 text-xl font-semibold\">{label}</h2>\n"
+            "          {error ? <p className=\"mb-4 text-sm opacity-70\">{error}</p> : null}\n"
+            f"          <div className=\"grid gap-4\" style={{{{ gridTemplateColumns: 'repeat({cols}, minmax(0, 1fr))' }}}}>\n"
+            "            {rows.map((row, i) => (\n"
+            "              <div key={(row && row.id) || i} className=\"overflow-hidden rounded-lg text-center\" "
+            "style={{ backgroundColor: 'rgba(128,128,128,0.12)' }}>\n"
+            "                {_imgOf(row) ? <img src={_imgOf(row)} alt=\"\" className=\"aspect-[4/5] w-full object-cover\" /> : null}\n"
+            "                <div className=\"px-3 py-2\">\n"
+            "                  <div className=\"truncate text-sm font-semibold\">{_titleOf(row)}</div>\n"
+            "                  {_subOf(row) ? <div className=\"truncate text-xs opacity-60\">{_subOf(row)}</div> : null}\n"
+            + _btn +
+            "                </div>\n"
+            "              </div>\n"
+            "            ))}\n"
+            "          </div>\n"
+            "          {rows.length === 0 && !error ? <p className=\"mt-6 text-sm opacity-50\">Loading\\u2026</p> : null}\n"
+            "        </section>\n")
+    elif media_comp is not None:
+        try:
+            _r = media_comp.get("region") or [0.35, 0, 0.65, 1]
+            _w, _h = float(_r[2]) - float(_r[0]), float(_r[3]) - float(_r[1])
+            aspect = "9 / 16" if _h > _w else "16 / 9"
+        except (TypeError, ValueError, IndexError):
+            aspect = "9 / 16"
+        mbg = ((media_comp.get("colors") or {}).get("bg")) or bg
+        main_jsx = (
+            '        <section className="relative flex flex-1 items-center justify-center overflow-hidden" '
+            f"style={{{{ backgroundColor: '{mbg}' }}}}>\n"
+            "          {cur ? (_videoOf(cur)\n"
+            "            ? <video key={_videoOf(cur)} src={_videoOf(cur)} controls autoPlay muted loop playsInline "
+            f"className=\"max-h-full\" style={{{{ aspectRatio: '{aspect}', maxHeight: '94vh' }}}} />\n"
+            "            : (_imgOf(cur)\n"
+            "              ? <img src={_imgOf(cur)} alt={_titleOf(cur)} className=\"max-h-full object-contain\" "
+            f"style={{{{ aspectRatio: '{aspect}', maxHeight: '94vh' }}}} />\n"
+            "              : <div className=\"px-8 text-center text-lg font-medium opacity-80\">{_titleOf(cur)}</div>))\n"
+            "            : (error ? <p className=\"text-sm opacity-70\">{error}</p> : <p className=\"text-sm opacity-50\">Loading\\u2026</p>)}\n"
+            "          {cur ? (\n"
+            "            <div className=\"absolute bottom-6 left-6 right-6 max-w-lg\">\n"
+            "              <div className=\"text-sm font-semibold\">{_titleOf(cur)}</div>\n"
+            "              {_subOf(cur) ? <div className=\"mt-1 text-sm opacity-80\">{_subOf(cur)}</div> : null}\n"
+            "            </div>\n"
+            "          ) : null}\n"
+            "        </section>\n")
+        if list_comp is not None:
+            # the reference shows a thumbnail row/grid UNDER the featured media
+            # (e.g. live: featured stream + stream thumbnails) — render both
+            main_jsx += (
+                '        <section className="h-44 shrink-0 overflow-x-auto px-4 py-3">\n'
+                "          <div className=\"flex h-full gap-3\">\n"
+                "            {rows.map((row, i) => (\n"
+                "              <button key={(row && row.id) || i} onClick={() => setIdx(i)} "
+                "className=\"h-full w-40 shrink-0 overflow-hidden rounded-lg text-left\" "
+                "style={{ backgroundColor: 'rgba(128,128,128,0.12)' }}>\n"
+                "                {_imgOf(row) ? <img src={_imgOf(row)} alt=\"\" className=\"h-2/3 w-full object-cover\" /> : null}\n"
+                "                <div className=\"truncate px-2 py-1 text-xs\">{_titleOf(row)}</div>\n"
+                "              </button>\n"
+                "            ))}\n"
+                "          </div>\n"
+                "        </section>\n")
+    else:
+        cols = 1
+        if list_comp is not None:
+            try:
+                cols = int(((list_comp.get("geometry") or {}).get("columns")) or 1)
+            except (TypeError, ValueError):
+                cols = 1
+            if cols <= 1:
+                # no measured geometry (pre-#220 doc): a grid-role region must
+                # still render multi-column — derive from the region width
+                _lt = " ".join(str(list_comp.get(k) or "")
+                               for k in ("id", "role")).lower()
+                if any(w in _lt for w in ("grid", "masonry", "tile", "thumbnail")):
+                    try:
+                        _r = list_comp.get("region") or [0, 0, 1, 1]
+                        cols = max(2, min(6, round((float(_r[2]) - float(_r[0])) / 0.2)))
+                    except (TypeError, ValueError, IndexError):
+                        cols = 3
+        if cols >= 2:
+            body = (
+                f"          <div className=\"grid gap-4\" style={{{{ gridTemplateColumns: 'repeat({cols}, minmax(0, 1fr))' }}}}>\n"
+                "            {rows.map((row, i) => (\n"
+                "              <div key={(row && row.id) || i} className=\"overflow-hidden rounded-lg\" "
+                "style={{ backgroundColor: 'rgba(128,128,128,0.12)' }}>\n"
+                "                {_imgOf(row) ? <img src={_imgOf(row)} alt=\"\" className=\"aspect-[3/4] w-full object-cover\" /> : null}\n"
+                "                <div className=\"px-3 py-2\">\n"
+                "                  <div className=\"truncate text-sm font-medium\">{_titleOf(row)}</div>\n"
+                "                  {_subOf(row) ? <div className=\"truncate text-xs opacity-60\">{_subOf(row)}</div> : null}\n"
+                "                </div>\n"
+                "              </div>\n"
+                "            ))}\n"
+                "          </div>\n")
+        else:
+            body = (
+                "          <div className=\"divide-y rounded-lg\" style={{ borderColor: 'rgba(128,128,128,0.25)' }}>\n"
+                "            {rows.map((row, i) => (\n"
+                "              <div key={(row && row.id) || i} className=\"flex items-start gap-3 px-4 py-3\" "
+                "style={{ borderColor: 'rgba(128,128,128,0.25)' }}>\n"
+                "                {_imgOf(row)\n"
+                "                  ? <img src={_imgOf(row)} alt=\"\" className=\"h-10 w-10 rounded-full object-cover shrink-0\" />\n"
+                "                  : <div className=\"flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold\" "
+                f"style={{{{ backgroundColor: '{accent}', color: '#ffffff' }}}}>{{(_titleOf(row).charAt(0) || '?').toUpperCase()}}</div>}}\n"
+                "                <div className=\"min-w-0 flex-1\">\n"
+                "                  <div className=\"truncate text-sm font-medium\">{_titleOf(row)}</div>\n"
+                "                  {_subOf(row) ? <div className=\"truncate text-sm opacity-60\">{_subOf(row)}</div> : null}\n"
+                "                  {_metaOf(row).length ? <div className=\"mt-0.5 truncate text-xs opacity-40\">{_metaOf(row).map((k) => String(row[k])).join(' \\u00b7 ')}</div> : null}\n"
+                "                </div>\n"
+                "              </div>\n"
+                "            ))}\n"
+                "          </div>\n")
+        main_jsx = (
+            '        <section className="flex-1 overflow-y-auto px-6 py-6">\n'
+            f"          <h2 className=\"mb-4 text-xl font-semibold\">{label}</h2>\n"
+            "          {error ? <p className=\"mb-4 text-sm opacity-70\">{error}</p> : null}\n"
+            + body +
+            "          {rows.length === 0 && !error ? <p className=\"mt-6 text-sm opacity-50\">Loading\\u2026</p> : null}\n"
+            "        </section>\n")
+
+    from .frontend_page_projector import _STRUCTURED_MARKER
+    return (
+        _STRUCTURED_MARKER + "\n"
+        "import { useState, useEffect } from 'react';\n"
+        "import { useParams } from 'react-router-dom';\n"
+        + _REF_HELPERS_JS + "\n"
+        f"export default function {name}() {{\n"
+        "  const params = useParams();\n"
+        "  const [data, setData] = useState(null);\n"
+        "  const [error, setError] = useState('');\n"
+        "  const [idx, setIdx] = useState(0);\n"
+        "  useEffect(() => {\n"
+        "    const token = (localStorage.getItem('access_token') || localStorage.getItem('token'));\n"
+        f"    fetch({_api_path_to_js(get_ep)}, token ? {{ headers: {{ Authorization: 'Bearer ' + token }} }} : {{}})\n"
+        "      .then((r) => r.json())\n"
+        "      .then(setData)\n"
+        "      .catch((e) => setError(String(e)));\n"
+        "  }, []);\n"
+        "  const rows = Array.isArray(data && data.items)\n"
+        "    ? data.items\n"
+        "    : (data && data.item ? [data.item] : (Array.isArray(data) ? data : []));\n"
+        "  const cur = rows.length ? rows[Math.min(idx, rows.length - 1)] : null;\n"
+        "  return (\n"
+        f"    <div data-projected=\"ref\" className=\"flex min-h-screen\" "
+        f"style={{{{ backgroundColor: '{bg}', color: '{text}' }}}}>\n"
+        + left_jsx +
+        "      <main className=\"flex min-w-0 flex-1 flex-col\">\n"
+        + top_jsx + main_jsx +
+        "      </main>\n"
+        + right_jsx +
+        "    </div>\n"
+        "  );\n"
+        "}\n")
+
+
+def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
+                            design=None) -> str:
     """Project a MINIMALLY-FUNCTIONAL, data-driven page from the contract instead
     of an inert stub. Generic for ANY app: a page with a declared GET fetches it
     and renders the rows; a POST-only page renders a submit form; an api-less page
@@ -1698,6 +2307,19 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None)
     # the inert no-api stub. POST is preferred (a create form), else the first write verb.
     write_ep = next(((m, p) for (m, p) in parsed if m == "POST"), None) \
         or next(((m, p) for (m, p) in parsed if m in ("PUT", "PATCH", "DELETE")), None)
+
+    # #221: a route covered by a MEASURED design screen projects the reference's
+    # real region structure (populated, functional) — never the generic list.
+    if get_ep:
+        _screen = _design_screen_for_route(
+            design, page.get("route"),
+            hints=(page.get("name"), page.get("id"), page.get("component"), name))
+        if _screen is not None:
+            try:
+                return _render_reference_page(name, page, _screen, design or {},
+                                              nav_routes, get_ep)
+            except Exception:
+                pass  # fall through to the generic floor — never break the build
 
     if get_ep:
         # LIST render (not a raw key:value dump, NOT a 16:9 video-card grid): a light,
@@ -1852,6 +2474,7 @@ def scaffold_missing_local_pages(frontend_dir, ui_pages=None) -> Dict[str, objec
         if not src_root.exists():
             return {"scaffolded": []}
         route_apis = _route_apis_map(ui_pages)
+        design = _load_design_for_projection(frontend_dir)  # #221
         scaffolded: List[str] = []
         for f in src_root.glob("**/*"):
             if f.suffix.lower() not in _FRONT_EXTS or not f.is_file():
@@ -1907,7 +2530,8 @@ def scaffold_missing_local_pages(frontend_dir, ui_pages=None) -> Dict[str, objec
                     page_spec = {"route": route, "id": name.lower(),
                                  "apis_used": apis or []}
                 if page_spec is not None:
-                    body = _project_page_component(name, page_spec, nav_routes=nav_routes)
+                    body = _project_page_component(name, page_spec, nav_routes=nav_routes,
+                                                   design=design)
                 else:
                     body = _stub_page_component(name)
                 target.write_text(body, encoding="utf-8")
@@ -2201,6 +2825,7 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                     "skipped": "no src/ (baseline not scaffolded yet)"}
         pages_dir = src / "pages"
         pages_dir.mkdir(parents=True, exist_ok=True)
+        design = _load_design_for_projection(frontend_dir)  # #221
 
         # Framework OWNS the auth UI: force a functional /login + /signup (the lane
         # ships dead/unwired login pages or omits /signup → unusable app). Only when
@@ -2262,7 +2887,8 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                 # Project a minimally-FUNCTIONAL page from the contract (fetches the
                 # declared endpoint + renders it), not an inert stub the audit then
                 # blocks. The lane may still overwrite it with richer UI.
-                target.write_text(_project_page_component(comp, page, nav_routes=nav_routes),
+                target.write_text(_project_page_component(comp, page, nav_routes=nav_routes,
+                                                          design=design),
                                   encoding="utf-8")
                 scaffolded.append(str(target.relative_to(frontend_dir)))
 
@@ -2477,6 +3103,174 @@ export default {
 # 'ig-text': '#f5f5f5', 'ig-blue': '#0095F6' } }` — and tailwind.config.js imports it,
 # so `@apply bg-ig-bg` resolves. Projected empty once; the lane fills it; preserved.
 _BASELINE_TAILWIND_THEME = "export default {}\n"
+
+
+# FIX #208 — hard-wire the MEASURED palette into the build by construction. The
+# design-prep palette (design_system.json) otherwise reaches the frontend only as
+# prose + a voluntary file read (visual GAP 2), so the app paints guessed colors
+# while the ground-truth ones sit unused. Projecting them into tailwind.theme.js +
+# a base CSS layer makes the app's overall color impression (dark TikTok canvas,
+# brand accent) match the reference regardless of what the lane hand-writes.
+_HEX_RE_208 = re.compile(r"^#[0-9a-fA-F]{3,8}$")
+
+
+def _palette_of(design_system) -> Dict[str, Any]:
+    ds = design_system or {}
+    inner = ds.get("design_system") if isinstance(ds.get("design_system"), dict) else ds
+    pal = inner.get("palette") or inner.get("colors") or {}
+    return pal if isinstance(pal, dict) else {}
+
+
+def _theme_default(design_system) -> str:
+    ds = design_system or {}
+    inner = ds.get("design_system") if isinstance(ds.get("design_system"), dict) else ds
+    th = inner.get("theme") or {}
+    d = str((th or {}).get("default") or "").strip().lower()
+    return d if d in ("dark", "light") else ""
+
+
+def render_measured_tailwind_theme(design_system) -> str:
+    """#208: tailwind.theme.js exporting the MEASURED colors as named tokens
+    (bg / accent / accent-<hue>), so `bg-bg`, `text-accent`, `bg-accent-red`
+    resolve to the reference's real hex. Empty palette → the empty baseline."""
+    pal = _palette_of(design_system)
+    colors: Dict[str, str] = {}
+    _bg = pal.get("bg") or pal.get("background")
+    if isinstance(_bg, str) and _HEX_RE_208.match(_bg):
+        colors["bg"] = _bg
+    _acc = pal.get("accent")
+    if isinstance(_acc, str) and _HEX_RE_208.match(_acc):
+        colors["accent"] = _acc
+    for hue, hexv in (pal.get("accents") or {}).items():
+        if isinstance(hexv, str) and _HEX_RE_208.match(hexv):
+            colors[f"accent-{str(hue).lower()}"] = hexv
+    if not colors:
+        return "export default {}\n"
+    # #219: the pinned tailwind.config.js consumes this as `theme: { extend:
+    # theme || {} }` — the export IS the extend object. Wrapping it in
+    # theme/extend again double-nests and the tokens never resolve.
+    _lines = ",\n".join(f"    '{k}': '{v}'" for k, v in colors.items())
+    return f"export default {{\n  colors: {{\n{_lines}\n  }},\n}}\n"
+
+
+def render_measured_base_css(design_system) -> str:
+    """#208: index.css + a base layer painting `body` with the MEASURED background
+    and a theme-derived default text color, so the canvas matches the reference by
+    construction. No measured palette → the plain baseline (no injected layer)."""
+    base = "@tailwind base;\n@tailwind components;\n@tailwind utilities;\n"
+    pal = _palette_of(design_system)
+    _bg = pal.get("bg") or pal.get("background")
+    if not (isinstance(_bg, str) and _HEX_RE_208.match(_bg)):
+        return base
+    # derive default text from theme (dark canvas → light text, and vice-versa);
+    # if the theme is unstated, infer from the background luminance.
+    theme = _theme_default(design_system)
+    if not theme:
+        try:
+            _h = _bg.lstrip("#")
+            if len(_h) == 3:
+                _h = "".join(c * 2 for c in _h)
+            _lum = (int(_h[0:2], 16) * 0.299 + int(_h[2:4], 16) * 0.587
+                    + int(_h[4:6], 16) * 0.114)
+            theme = "dark" if _lum < 128 else "light"
+        except Exception:
+            theme = "dark"
+    text = "#f5f5f5" if theme == "dark" else "#18181b"
+    return (base + "\n@layer base {\n"
+            "  /* #208: measured canvas — reference ground-truth, by construction */\n"
+            f"  body {{\n    background-color: {_bg};\n    color: {text};\n  }}\n}}\n")
+
+
+# FIX #209 — when the MEASURED theme is dark, remap the lane's light-neutral
+# Tailwind utilities to dark equivalents in the generated JSX. r14 showed the lane
+# renders a LIGHT page for a DARK reference (`min-h-screen bg-zinc-50 text-zinc-900`,
+# nav `bg-white`), so a page-level `bg-zinc-50` paints over the measured black body
+# (#208) → ~0.5 fidelity. The measured palette reaches the theme tokens but the lane
+# doesn't USE them (visual GAP 3, soft consumption). A source-level shade inversion
+# of the common light neutrals (white/50/100/200/300 → dark; dark text → light) makes
+# the page render dark like the reference — deterministic, reversible, no !important.
+# Brand/accent utilities (bg-accent, bg-red-500, text-white, already-dark surfaces)
+# are left untouched; the caller gates this on theme==dark so light apps are inert.
+_NEUTRAL_FAMS = frozenset({"zinc", "gray", "slate", "neutral", "stone"})
+# light background shade → dark surface shade (lightest → near-black canvas).
+_BG_LIGHT_TO_DARK = {"50": "950", "100": "900", "200": "800", "300": "800"}
+# dark text shade → a single light token (readable on the dark canvas).
+_TEXT_DARK_SHADES = frozenset({"600", "700", "800", "900", "950"})
+_DARKIFY_RE = re.compile(
+    r"(?<![\w-])((?:[a-z][a-z0-9]*:)*)(bg|text|border|divide|ring)-"
+    r"(white|black|zinc|gray|slate|neutral|stone)(?:-(\d{2,3}))?(?![\w-])"
+)
+
+
+def darkify_light_utilities(src: str) -> Tuple[str, int]:
+    """#209: return (rewritten source, replacements) with the common light-neutral
+    Tailwind utilities inverted to dark equivalents. Pure/deterministic; the caller
+    applies it only when the measured theme is dark."""
+    count = 0
+
+    def _repl(m: "re.Match") -> str:
+        nonlocal count
+        pre, prop, fam, shade = m.group(1), m.group(2), m.group(3), m.group(4)
+        orig = m.group(0)
+        if fam not in _NEUTRAL_FAMS and fam not in ("white", "black"):
+            return orig  # brand/accent family — never touch
+        new = orig
+        if prop == "bg":
+            if fam == "white":
+                new = f"{pre}bg-zinc-950"
+            elif fam in _NEUTRAL_FAMS and shade in _BG_LIGHT_TO_DARK:
+                new = f"{pre}bg-zinc-{_BG_LIGHT_TO_DARK[shade]}"
+        elif prop == "text":
+            if fam == "black" or (fam in _NEUTRAL_FAMS and shade in _TEXT_DARK_SHADES):
+                new = f"{pre}text-zinc-100"
+        elif prop in ("border", "divide", "ring"):
+            if fam == "white" or (fam in _NEUTRAL_FAMS and shade in _BG_LIGHT_TO_DARK):
+                new = f"{pre}{prop}-zinc-800"
+        if new != orig:
+            count += 1
+        return new
+
+    return _DARKIFY_RE.sub(_repl, src), count
+
+
+def enforce_measured_dark_theme(frontend_dir) -> Dict[str, Any]:
+    """#209 wiring: when the MEASURED theme (design_system.json) is dark, rewrite the
+    lane's light-neutral Tailwind utilities to dark equivalents across every source
+    file under src/. Gated strictly on theme==dark — a light (or unstated) measured
+    theme is a no-op, so light apps keep exactly what the lane wrote. Best-effort."""
+    fe = Path(frontend_dir)
+    out_dir = fe.parent.parent
+    ds_path = out_dir / "design" / "design_system.json"
+    if not ds_path.exists():
+        return {"skipped": True, "reason": "no design_system.json"}
+    try:
+        ds = json.loads(ds_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"skipped": True, "reason": "unreadable design_system.json"}
+    if _theme_default(ds) != "dark":
+        return {"skipped": True, "reason": "measured theme is not dark"}
+    src_dir = fe / "src"
+    if not src_dir.exists():
+        return {"skipped": True, "reason": "no src/"}
+    changed: List[str] = []
+    total = 0
+    for p in sorted(src_dir.rglob("*")):
+        if p.suffix.lower() not in (".jsx", ".tsx", ".js", ".ts"):
+            continue
+        try:
+            cur = p.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        new, n = darkify_light_utilities(cur)
+        if n and new != cur:
+            try:
+                p.write_text(new, encoding="utf-8")
+            except Exception:
+                continue
+            changed.append(str(p.relative_to(fe)))
+            total += n
+    return {"darkened": changed, "replacements": total}
+
 
 _BASELINE_POSTCSS = """export default { plugins: { tailwindcss: {}, autoprefixer: {} } }
 """
@@ -3193,9 +3987,70 @@ def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content, encoding="utf-8")
             written.append(rel)
+        # FIX #208: hard-wire the MEASURED palette by construction. tailwind.theme.js
+        # becomes FRAMEWORK-OWNED (like the pinned tailwind.config.js) carrying the
+        # measured colors as tokens; index.css gets a base layer painting `body`
+        # with the measured background (idempotent — appended once, lane content
+        # preserved). No design_system.json / no palette → both untouched.
+        try:
+            _apply_measured_palette(frontend_dir)
+        except Exception:
+            pass
         return {"scaffolded": bool(written), "written": written}
     except Exception as exc:
         return {"scaffolded": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _apply_measured_palette(frontend_dir) -> None:
+    """#208 wiring: read <output>/design/design_system.json and, when it carries a
+    measured palette, overwrite tailwind.theme.js with the measured tokens and
+    inject the measured `body` background into index.css (idempotent). Best-effort."""
+    import json as _json
+    out_dir = Path(frontend_dir).parent.parent
+    ds_path = out_dir / "design" / "design_system.json"
+    if not ds_path.exists():
+        return
+    try:
+        ds = _json.loads(ds_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    if not _palette_of(ds):
+        return
+    # tailwind.theme.js — measured tokens win on conflicts (ground truth), but
+    # lane-authored tokens are PRESERVED (#219b): the lane may @apply its own
+    # custom classes, and dropping them breaks the build with no lane recourse.
+    _theme = render_measured_tailwind_theme(ds)
+    if _theme.strip() and _theme != "export default {}\n":
+        _theme_p = Path(frontend_dir) / "tailwind.theme.js"
+        try:
+            _cur = _theme_p.read_text(encoding="utf-8") if _theme_p.exists() else ""
+        except Exception:
+            _cur = ""
+        _tok_re = re.compile(r"['\"]?([A-Za-z][\w-]*)['\"]?\s*:\s*['\"](#[0-9a-fA-F]{3,8})['\"]")
+        merged = {k: v for k, v in _tok_re.findall(_cur)}
+        merged.update(dict(_tok_re.findall(_theme)))  # measured wins
+        _lines = ",\n".join(f"    '{k}': '{v}'" for k, v in merged.items())
+        _theme_p.write_text(
+            f"export default {{\n  colors: {{\n{_lines}\n  }},\n}}\n",
+            encoding="utf-8")
+    # index.css — inject the measured body layer ONCE (preserve lane styles).
+    _css_p = Path(frontend_dir) / "src" / "index.css"
+    _measured = render_measured_base_css(ds)
+    if "@layer base" not in _measured:
+        return
+    _layer = _measured.split("@layer base", 1)[1]
+    _block = "@layer base" + _layer
+    try:
+        cur = _css_p.read_text(encoding="utf-8") if _css_p.exists() else ""
+    except Exception:
+        cur = ""
+    if "#208: measured canvas" in cur:
+        return  # already injected
+    if not cur.strip():
+        _css_p.parent.mkdir(parents=True, exist_ok=True)
+        _css_p.write_text(_measured, encoding="utf-8")
+    else:
+        _css_p.write_text(cur.rstrip() + "\n\n" + _block, encoding="utf-8")
 
 
 __all__ = [

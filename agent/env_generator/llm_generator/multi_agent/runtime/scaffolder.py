@@ -683,6 +683,37 @@ volumes:
             registryhub = getattr(orch.hubs, "registryhub", None)
             if registryhub is not None and hasattr(registryhub, "list_ui_pages"):
                 ui_pages = list((registryhub.list_ui_pages() or {}).values())
+            # #225: the measured design screens are ground truth for the page
+            # set — register a ui_page for every classified page route the
+            # kickoff under-declared (r19: ONE page declared for the whole
+            # surface). Idempotent (route-covered screens skip).
+            if registryhub is not None and hasattr(registryhub, "register_ui_page"):
+                try:
+                    import json as _json
+                    from pathlib import Path as _DP
+                    from .frontend_scaffold import missing_design_screen_pages
+                    _ds_p = _DP(out_dir) / "design" / "design_system.json"
+                    if _ds_p.exists():
+                        _design = _json.loads(_ds_p.read_text(encoding="utf-8"))
+                        _eps = []
+                        if hasattr(registryhub, "get_endpoints"):
+                            _eps = list((registryhub.get_endpoints() or {}).values())
+                        for _spec in missing_design_screen_pages(_design, ui_pages, _eps):
+                            try:
+                                registryhub.register_ui_page(
+                                    _spec["name"], route=_spec["route"],
+                                    component=_spec["component"],
+                                    apis_used=_spec["apis_used"],
+                                    agent="orchestrator",
+                                    **(_spec.get("metadata") or {}))
+                                orch._logger.info(
+                                    "#225 registered design-screen ui_page %s (%s)",
+                                    _spec["name"], _spec["route"])
+                            except Exception:
+                                continue
+                        ui_pages = list((registryhub.list_ui_pages() or {}).values())
+                except Exception as _exc:
+                    orch._logger.debug("#225 design-screen page seeding skipped: %s", _exc)
             if not ui_pages:
                 return
             from .frontend_scaffold import scaffold_pages_from_contract

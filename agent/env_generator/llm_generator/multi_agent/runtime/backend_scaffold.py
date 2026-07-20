@@ -392,7 +392,15 @@ async def _framework_auth_guard(request, call_next):
         # page even though the API /auth/login 200s. The unauthenticated auth
         # entry points must be public under BOTH prefixes; /api/auth/me stays
         # guarded by its own Depends(get_current_user).
-        or p in ("/api/auth/login", "/api/auth/register")
+        # #235 (tiktok r25, live): the contract's bootstrap may use any SYNONYM of
+        # login/register — r25 declared POST /api/auth/signup, which the literal
+        # whitelist walled → 401 on the token-minting step of every chain, and the
+        # lane's fix was overwritten each tick by this framework-owned skeleton
+        # (108-min livelock). An auth ENTRY point (mints/refreshes credentials,
+        # terminal segment below) is public by construction under /api/auth/;
+        # /api/auth/me and anything else stays guarded.
+        or (p.startswith("/api/auth/") and p.rstrip("/").rsplit("/", 1)[-1] in (
+            "login", "register", "signup", "signin", "token", "refresh", "logout"))
     )
     if p.startswith("/api/") and not public and request.method != "OPTIONS":
         ok = False
@@ -958,6 +966,16 @@ def sanitize_pyproject_local_deps(backend_dir) -> Dict[str, object]:
                 continue
             dep_name = _pep503(re.split(r"[<>=!~\[; ]", entry, 1)[0])
             if dep_name in local and dep_name not in _KNOWN_REAL_DISTS:
+                dropped.append(entry)
+                continue
+            # #242 (tiktok r32 STUCK-ABORT): a dep whose PEP-503-normalized name is
+            # not a valid distribution name (leading/trailing separator, e.g. the
+            # lane's hallucinated '_framework' → '-framework') can NEVER resolve on
+            # PyPI → `pip install .` fails → docker build fails → build:docker_build
+            # → verification_checklist_not_ready → no-convergence abort. #189 stripped
+            # only LOCAL-module deps; this strips the invalid-NAME hallucination class
+            # too. Deterministic + safe: a real PyPI dist cannot have an invalid name.
+            if dep_name and not re.match(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$", dep_name):
                 dropped.append(entry)
                 continue
             kept_lines.append(line)

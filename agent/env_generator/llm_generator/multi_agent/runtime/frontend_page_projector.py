@@ -29,6 +29,13 @@ from pathlib import Path
 
 _PAGE_MARKER = "// framework-generated page (frontend_page_projector) — edits are overwritten"
 
+# #221: a REFERENCE-STRUCTURED projection (measured regions + real data) is a
+# genuine floor page, not a fallback — page gates treat it as BUILT; the lane
+# refines it (visual-fidelity remediation drives polish), never reverts it to
+# a generic list. Distinct from _PAGE_MARKER so the two are never conflated.
+_STRUCTURED_MARKER = ("// framework-projected page (reference-structured) — "
+                      "refine visuals in place; keep the data wiring")
+
 
 def _ensure_api_helpers(api_js: Path) -> bool:
     """Guarantee ``apiGet``/``apiPost`` exports exist — the projected pages import

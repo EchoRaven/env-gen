@@ -44,13 +44,28 @@ def safe_column_name(name: str) -> str:
     if not s:
         return "col"
     if s.isidentifier():
-        return s + "_" if keyword.iskeyword(s) else s
+        return s + "_" if _needs_attr_suffix(s) else s
     s2 = re.sub(r"\W", "_", s)
     if s2 and s2[0].isdigit():
         s2 = "col_" + s2
     if not s2 or not s2.isidentifier():
         return "col"
-    return s2 + "_" if keyword.iskeyword(s2) else s2
+    return s2 + "_" if _needs_attr_suffix(s2) else s2
+
+
+# FIX #216: SQLAlchemy's Declarative API RESERVES a few instance-attribute names on a
+# mapped class (``metadata`` = the MetaData object, ``registry`` = the mapper registry).
+# A contract column named ``metadata`` renders ``metadata = Column(Text)`` and the mapper
+# raises ``InvalidRequestError: Attribute name 'metadata' is reserved`` at class-body time
+# → ``import models`` crashes → the backend never boots (found by a codegen stress-audit;
+# ``metadata`` is a common column on posts/files/events). Treat these like keywords: suffix
+# the ATTRIBUTE with ``_`` (the DB column keeps its real name, pinned positionally by
+# render — see the ``attr != name`` branch), so the model maps and data still lands.
+_SA_RESERVED_ATTRS = frozenset({"metadata", "registry"})
+
+
+def _needs_attr_suffix(s: str) -> bool:
+    return keyword.iskeyword(s) or s in _SA_RESERVED_ATTRS
 
 # ── SQL type → SQLAlchemy type ──────────────────────────────────────────────
 _SA_TYPE = {
@@ -166,7 +181,7 @@ def _render_column(col: Dict[str, Any]) -> Optional[str]:
         # so the column is safe for inserts that omit it.
         if d.lower() in ("now()", "current_timestamp"):
             args.append("default=datetime.utcnow")
-            kw.append("server_default=text('now()')")
+            kw.append("server_default=_sa_text('now()')")
         elif not (col.get("primary_key") or col.get("pk")):
             # ORM-side literal. ``true``/``false`` must become Python ``True``/``False``
             # (a bare ``default=false`` is a NameError that breaks ``import models``).
@@ -183,7 +198,7 @@ def _render_column(col: Dict[str, Any]) -> Optional[str]:
                 _sd_sql = d
             else:
                 _sd_sql = "'" + d.replace("'", "''") + "'"
-            kw.append(f"server_default=text({_sd_sql!r})")
+            kw.append(f"server_default=_sa_text({_sd_sql!r})")
     # FIX #158: the ORM ATTRIBUTE must be a valid, non-keyword identifier. When the DB
     # column name is a keyword/non-identifier (a real dataset column like ``from``), use a
     # safe attribute AND pin the original DB column name as Column's first positional arg,
@@ -383,8 +398,12 @@ def render_models(tables: Dict[str, Any]) -> str:
         "import uuid as _uuid\n"
         "from datetime import datetime\n\n"
         "from sqlalchemy import (Column, Integer, BigInteger, String, Text, Boolean,\n"
-        "                        DateTime, Date, Time, Float, Numeric, JSON, ForeignKey,\n"
-        "                        text)\n"
+        "                        DateTime, Date, Time, Float, Numeric, JSON, ForeignKey)\n"
+        "# FIX #215: alias text() so a column named `text` (comments/messages/posts all\n"
+        "# have one) can't shadow the function inside the class body — a bare\n"
+        "# `server_default=text(...)` after `text = Column(Text)` calls the Column\n"
+        "# object → TypeError: 'Column' object is not callable → the backend won't boot.\n"
+        "from sqlalchemy import text as _sa_text\n"
         "from sqlalchemy.orm import synonym\n"
         "from database import Base\n\n\n"
     )
@@ -881,6 +900,28 @@ try:
     # include_router(prefix="/api") — the canonical, robust mechanism; a route-
     # object-reuse fill-in here silently failed to register in the full app,
     # run-49.)
+    # #235 BOOTSTRAP-SYNONYM FILL-IN (tiktok r25, live): the contract names its auth
+    # entry points freely — r25 declared POST /api/auth/signup while the AS router
+    # serves register/login, so NOTHING ever served signup (the lane's hand-written
+    # copy was overwritten every tick by this framework-owned file) → the
+    # token-minting first step of every business chain 401'd → 108-min livelock.
+    # Alias each absent synonym path onto the SAME canonical handler FUNCTION via
+    # add_api_route (decorator-equivalent — NOT route-object reuse, see run-49
+    # note above). Fill-in only: a lane-authored synonym route wins.
+    _fw_alias_of = {"signup": "register", "signin": "login"}
+    _fw_by_path = {}
+    for _r in app.routes:
+        _fw_by_path.setdefault(getattr(_r, "path", ""), _r)
+    for _syn, _canon in _fw_alias_of.items():
+        for _pref in ("/api/auth/", "/auth/"):
+            _canon_r = _fw_by_path.get(_pref + _canon)
+            if (_pref + _syn) in _fw_by_path or _canon_r is None:
+                continue
+            _fn = getattr(_canon_r, "endpoint", None)
+            if _fn is not None:
+                _methods = [m for m in (getattr(_canon_r, "methods", None) or ("POST",))
+                            if m != "HEAD"]
+                app.add_api_route(_pref + _syn, _fn, methods=_methods or ["POST"])
     # TENANTS-LIST FILL-IN (outlook run-37, live): the login template's TenantPicker calls
     # GET /api/v1/tenants on MOUNT (pre-auth; /api/v1/* is public infra in the middleware) —
     # but the projector excludes the control surface and the lane rarely writes it → 404 on
@@ -1705,19 +1746,50 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "    # commit, and the rollback drops EVERY row of that table. JSON-serialize a\n"
         "    # nested value ONLY when the target column is String/Text; a native JSON/ARRAY\n"
         "    # column keeps the structured value (Text subclasses String; JSON does not).\n"
+        "    # FIX #213 (r16: 0 videos, empty feed): the SCALAR inverse — a mis-typed\n"
+        "    # scalar (a caption STRING in an INTEGER count column) likewise dies at the\n"
+        "    # per-table commit on postgres and rolls back the whole table. Coerce a\n"
+        "    # numeric string to the column's number; neutralize a non-numeric string in\n"
+        "    # a numeric column to 0 so the ROW survives (a NULL is left NULL; bools and\n"
+        "    # already-correct values are untouched).\n"
         "    try:\n"
-        "        from sqlalchemy import String as _SAStr\n"
+        "        from sqlalchemy import (String as _SAStr, Integer as _SAInt,\n"
+        "                                Numeric as _SANum, Float as _SAFloat)\n"
         "        cols = cls.__table__.columns\n"
         "    except Exception:\n"
         "        return vals\n"
         "    out = dict(vals)\n"
         "    for k, v in vals.items():\n"
-        "        if isinstance(v, (list, dict)) and k in cols:\n"
+        "        if k not in cols:\n"
+        "            continue\n"
+        "        try:\n"
+        "            ctype = cols[k].type\n"
+        "        except Exception:\n"
+        "            continue\n"
+        "        if isinstance(v, (list, dict)):\n"
         "            try:\n"
-        "                if isinstance(cols[k].type, _SAStr):\n"
+        "                if isinstance(ctype, _SAStr):\n"
         "                    out[k] = json.dumps(v, ensure_ascii=False, default=str)\n"
         "            except Exception:\n"
         "                pass\n"
+        "            continue\n"
+        "        if v is None or isinstance(v, bool):\n"
+        "            continue\n"
+        "        try:\n"
+        "            _is_int = isinstance(ctype, _SAInt)\n"
+        "            _is_num = isinstance(ctype, (_SANum, _SAFloat))\n"
+        "        except Exception:\n"
+        "            _is_int = _is_num = False\n"
+        "        if _is_int and not isinstance(v, int):\n"
+        "            try:\n"
+        "                out[k] = int(float(str(v).strip()))\n"
+        "            except (ValueError, TypeError):\n"
+        "                out[k] = 0\n"
+        "        elif _is_num and not isinstance(v, (int, float)):\n"
+        "            try:\n"
+        "                out[k] = float(str(v).strip())\n"
+        "            except (ValueError, TypeError):\n"
+        "                out[k] = 0.0\n"
         "    return out\n\n\n"
         "def _ensure_canonical_rows():\n"
         "    # FIX #72: every user (seeded OR freshly-registered) must have the canonical\n"
@@ -2099,14 +2171,40 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "                    row['password_hash'] = hashlib.sha256(\n"
         "                        (pw + _PASSWORD_SALT).encode('utf-8')).hexdigest()\n"
         "                    row.setdefault('tenant_id', 'default')\n"
+        "                    # FIX #217: the spine `users` table is email + name NOT NULL, but a\n"
+        "                    # REAL dataset / agent seed frequently omits them (carries only\n"
+        "                    # username/display_name). A missing value fails the NOT NULL check\n"
+        "                    # and — because the commit is per-TABLE — rolls back EVERY user →\n"
+        "                    # 0 users → every FK child (videos.author_id → users) then fails in\n"
+        "                    # postgres → the whole app reads empty ('No data yet') AND login is\n"
+        "                    # impossible. Backfill both, deterministic + unique (id fallback).\n"
+        "                    if not row.get('email'):\n"
+        "                        _un = str(row.get('username') or '').strip().lstrip('@')\n"
+        "                        _uid = row.get('id') or (i + 1)\n"
+        "                        row['email'] = (_un + '@example.com') if _un else ('user' + str(_uid) + '@seed.local')\n"
+        "                    if not row.get('name'):\n"
+        "                        row['name'] = (row.get('display_name') or str(row.get('username') or '').lstrip('@')\n"
+        "                                       or ('User ' + str(row.get('id') or (i + 1))))\n"
         "                elif owner and not row.get(owner):\n"
         "                    row[owner] = (i % nu) + 1\n"
         "                for _ic in _IMAGE_COL.get(t, []):\n"
         "                    if not row.get(_ic):\n"
         "                        row[_ic] = 'https://picsum.photos/seed/' + t + str(i) + '/400/400'\n"
+        "                _obj = cls(**_coerce_nested_for_string_cols(\n"
+        "                    cls, {k: v for k, v in row.items() if hasattr(cls, k)}))\n"
         "                try:\n"
-        "                    db.add(cls(**_coerce_nested_for_string_cols(\n"
-        "                        cls, {k: v for k, v in row.items() if hasattr(cls, k)})))\n"
+        "                    # FIX #218: isolate each insert in a SAVEPOINT so ONE bad row\n"
+        "                    # (a FK to a missing parent, a duplicate PK, an uncovered NOT\n"
+        "                    # NULL) rolls back only ITSELF — not the whole-table commit,\n"
+        "                    # which would empty the surface forever ('No data yet').\n"
+        "                    # Degrade to a plain add when the session has no savepoint API.\n"
+        "                    _bn = getattr(db, 'begin_nested', None)\n"
+        "                    if callable(_bn):\n"
+        "                        with _bn():\n"
+        "                            db.add(_obj)\n"
+        "                            db.flush()\n"
+        "                    else:\n"
+        "                        db.add(_obj)\n"
         "                except Exception:\n"
         "                    pass\n"
         "            try:\n"

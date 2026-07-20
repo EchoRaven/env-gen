@@ -379,6 +379,18 @@ class HubRegistry:
                 "recorded_at": check.get("updated_at", 0),
                 "pr_id": check.get("pr_id", "main"),
             }
+            # #236 (tiktok r26, live): the check NAME already fully determines the
+            # kind and target (validation:ui_flow:<flow>) but readers only trusted
+            # metadata.check/.flow — the verifier recorded 35 SUCCESS ui_flow checks
+            # with bare evidence and every one was INVISIBLE to flow_coverage, so
+            # deliverability_ui_flow_missing held a fully-green run to the 122-min
+            # no-convergence abort. Derive the missing fields from the name — the
+            # other half of the #193 writer/reader normalization.
+            _parts = str(check.get("name", "")).split(":", 2)
+            if len(_parts) >= 2 and _parts[0] == "validation" and _parts[1]:
+                record["metadata"].setdefault("check", _parts[1])
+                if len(_parts) == 3 and _parts[2]:
+                    record["metadata"].setdefault("flow", _parts[2])
             if status and record["status"] != status:
                 continue
             if agent and record["recorded_by"] != agent:

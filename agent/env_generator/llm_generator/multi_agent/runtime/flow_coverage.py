@@ -229,13 +229,31 @@ def _extract_required_flows(spec: dict) -> Tuple[List[str], str]:
         if not name:
             continue
         name = str(name).strip()
-        if name and name not in seen_all:
-            seen_all.add(name)
+        # #237 (tiktok r26, live): the page set carries suffix TWINS of the same
+        # surface (kickoff `explore` + #225-synthesized `explore_page`) → the
+        # derived required set doubled to 31 flows, inflating the verifier's
+        # endgame serial burden for zero extra coverage. Dedupe on the
+        # suffix-normalized key; the first-seen spelling stays the required name.
+        if name and _flow_key(name) not in seen_all:
+            seen_all.add(_flow_key(name))
             all_names.append(name)
     if all_names:
         return all_names, "pages"
 
     return [], "none"
+
+
+def _flow_key(name: str) -> str:
+    """#237: suffix-normalized flow identity — ``explore`` / ``explore_page`` /
+    ``explore_screen`` are the SAME user journey. Used to dedupe the derived
+    required set and to match records to requirements, so a verifier record
+    under either spelling satisfies the flow."""
+    n = str(name or "").strip().lower()
+    for suf in ("_page", "_screen"):
+        if n.endswith(suf) and len(n) > len(suf):
+            n = n[: -len(suf)]
+            break
+    return n
 
 
 def _index_ui_flow_records(hub_registry) -> Dict[str, str]:
@@ -297,11 +315,27 @@ def compute_flow_coverage(hub_registry, workspace=None) -> FlowCoverageReport:
         return FlowCoverageReport(source=source)
 
     by_flow = _index_ui_flow_records(hub_registry)
+    # #237: also index by suffix-normalized key so a record under `explore_page`
+    # satisfies a required `explore` (and vice versa). A passing record under
+    # EITHER spelling wins over a failing one under the other — same collapse
+    # rule as _index_ui_flow_records.
+    by_key: Dict[str, str] = {}
+    for rec_name, rec_status in by_flow.items():
+        key = _flow_key(rec_name)
+        prev = by_key.get(key)
+        if prev == "passed":
+            continue
+        if rec_status == "passed" or prev is None:
+            by_key[key] = rec_status
     passed: List[str] = []
     failed: List[str] = []
     missing: List[str] = []
     for name in required:
-        status = by_flow.get(name)
+        # by_key is the sole lookup (it contains every exact spelling too):
+        # a PASSED record under either spelling must win over a failed twin
+        # (r26: `for_you_feed` failed at 00:41 post-abort while its
+        # `for_you_feed_page` twin passed at 00:32 — same journey, green).
+        status = by_key.get(_flow_key(name))
         if status == "passed":
             passed.append(name)
         elif status in {"failed", "error"}:

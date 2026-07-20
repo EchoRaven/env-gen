@@ -899,6 +899,31 @@ def validate_build_evidence(output_dir, get_validation_results) -> Dict[str, Any
     }
 
 
+def convergence_grace(*, failed_count: int, last_shrink_age_s: float,
+                      grace_used: int,
+                      max_failed: int = 2,
+                      recent_s: float = 1800.0,
+                      grace_s: float = 900.0,
+                      max_grace: int = 2) -> float:
+    """#228 — seconds of extra time the no-convergence fail-fast should grant.
+
+    r20 (live): the run converged to ONE failing gate
+    (deliverability_ui_flow_missing) and the verifier recorded the flows 36s
+    AFTER the 75-min fail-fast fired — a substantively complete app (api_smoke
+    green, business_chain green, 15/15 flows green) was aborted on wall-clock.
+    When the failing set is SMALL and recently SHRANK (the lanes are visibly
+    converging, not livelocking), grant a bounded extension: up to
+    ``max_grace`` × ``grace_s``. Returns 0 when not converging — the fail-fast
+    keeps its teeth for genuine livelocks (many gates, or no recent shrink)."""
+    if grace_used >= max_grace:
+        return 0.0
+    if failed_count <= 0 or failed_count > max_failed:
+        return 0.0
+    if last_shrink_age_s > recent_s:
+        return 0.0
+    return float(grace_s)
+
+
 def _deliverability_check_token(blocker: str) -> str:
     """Map ONE deliverability blocker (human prose) onto its stable check token.
 
@@ -949,6 +974,11 @@ def _deliverability_check_token(blocker: str) -> str:
         # or whose component file is absent (round 44 blank-screen
         # class). Deterministic, NOT relaxed on functionally_validated.
         return "deliverability_ui_page_unwired"
+    if "framework fallback page" in low:
+        # #223: a route-wired generic fallback the REGISTRY can't see (the
+        # code-truth sweep). The registered-page variant carries "declared
+        # but unusable" and keeps ui_page_unwired above.
+        return "deliverability_frontend_fallback_page"
     if "bare unauthenticated fetch" in low:
         # #154 (§6-1, gmrun4): frontend calls an authed /api/ endpoint with a
         # bare fetch() that never attaches the Authorization token → runtime
@@ -969,6 +999,11 @@ def _deliverability_check_token(blocker: str) -> str:
         # the field is absent (often always, on a field-name drift). Static JSX
         # scan; the no-placeholder/mock bar #170's prompt rule failed to hold.
         return "deliverability_fabricated_field_fallback"
+    if "dead control" in low or "resolves to no app.jsx route" in low:
+        # #238 (tiktok r27 M1): a nav <Link>/navigate target resolves to no
+        # App.jsx route → 404 on click. Owner = frontend (routes + nav both
+        # lane-owned). Anchored on the exact prose dead_nav_link_blockers emits.
+        return "deliverability_dead_nav_link"
     # Unmapped blocker — surface verbatim under a catch-all so the operator
     # sees it instead of silently dropping; future canonicalization work can
     # move it into a named token.
