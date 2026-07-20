@@ -349,6 +349,20 @@ def compute_deliverability(hub_registry, app_root,
         except Exception:
             pass
 
+    # DEAD-NAV-LINK gate (#238, tiktok r27 M1 runtime-verified): the app's own
+    # Profile+Upload nav <Link>s resolved to no App.jsx route → 404 on click.
+    # NOT relaxed on functionally_validated (api_smoke never clicks a nav link);
+    # deterministic code fact, conservative (literal absolute targets only),
+    # self-clearing once the lane wires the route or fixes the link. Env escape
+    # hatch for the opt-5 false-block lesson.
+    if os.environ.get("ENVGEN_DEAD_NAV_GATE", "1") not in ("0", "false", "no"):
+        try:
+            from .frontend_audit import dead_nav_link_blockers
+            blockers.extend(dead_nav_link_blockers(
+                Path(app_root) / "frontend" / "src"))
+        except Exception:
+            pass
+
     # BARE-FETCH-NO-TOKEN gate (#154, gmrun4 root cause). Like the ui_page gate
     # above, NOT relaxed on a functionally-validated app: api_smoke probes the
     # backend with a FRAMEWORK-minted token, so a frontend that never attaches

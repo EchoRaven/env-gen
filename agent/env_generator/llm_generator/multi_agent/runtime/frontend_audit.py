@@ -466,6 +466,86 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
     return (not missing), missing
 
 
+def _route_matchers(app_jsx: str) -> List:
+    """#238: compile each App.jsx route into a regex that a LITERAL nav target
+    must fully match. A wired ``/@:username`` (canon ``/@{}``) → ``/@[^/]+`` so
+    ``/@alice`` matches but ``/profile`` does not; a static ``/explore`` → exact.
+    The catch-all (``*`` / ``/*``) is EXCLUDED — it is the 404 sink, so a link
+    that only matches it is precisely a dead link."""
+    matchers = []
+    for m in re.finditer(r"""path\s*=\s*["']([^"']+)["']""", app_jsx):
+        raw = m.group(1).strip()
+        if raw in ("*", "/*"):
+            continue
+        canon = _canon_route(raw)
+        if not canon:
+            continue
+        # canon has params collapsed to literal "{}" segments-or-fragments.
+        pat = "^" + re.escape(canon).replace(r"\{\}", r"[^/]+") + "$"
+        try:
+            matchers.append(re.compile(pat))
+        except re.error:
+            continue
+    return matchers
+
+
+def dead_nav_link_blockers(frontend_src: Any, limit: int = 20) -> List[str]:
+    """#238 (tiktok r27 M1, runtime-verified): the delivered app's own Profile
+    nav (SidebarNavigation/TopRightActions ``<Link to="/profile">``) resolved to
+    NO route — App.jsx wired only ``/@:username`` — so clicking Profile hit the
+    ``*`` 404. A dead nav control is a plain functional break ("功能完备" gap) the
+    existing gates miss: ui_page_delivery checks DECLARED routes are wired, never
+    that the app's own LINKS resolve. Code-truth, conservative (LITERAL absolute
+    targets only; template literals / external / mailto / hash-only skipped;
+    catch-all excluded), self-clearing once the lane fixes the link or adds the
+    route. ``ENVGEN_DEAD_NAV_GATE=0`` disables (false-block escape hatch, opt-5
+    lesson). Best-effort → []."""
+    blockers: List[str] = []
+    try:
+        src = Path(frontend_src)
+        app_jsx = src / "App.jsx"
+        if not app_jsx.is_file():
+            return blockers
+        matchers = _route_matchers(app_jsx.read_text(encoding="utf-8", errors="ignore"))
+        if not matchers:
+            return blockers
+
+        def _resolves(target: str) -> bool:
+            t = target.split("?", 1)[0].split("#", 1)[0]
+            t = t[:-1] if len(t) > 1 and t.endswith("/") else t
+            return any(rx.match(t) for rx in matchers)
+
+        # to="/path" | to='/path' | navigate("/path") | navigate('/path')
+        pat = re.compile(
+            r"""(?:\bto\s*=\s*|\bnavigate\s*\(\s*)["'](/[^"'{}$]*)["']""")
+        seen: set = set()
+        for jsx in sorted(src.rglob("*.jsx")):
+            if jsx.name == "App.jsx":
+                continue
+            try:
+                text = jsx.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for m in pat.finditer(text):
+                target = m.group(1).strip()
+                # skip protocol-relative, root, and non-absolute-ish noise
+                if not target.startswith("/") or target.startswith("//"):
+                    continue
+                key = target.split("?", 1)[0].split("#", 1)[0].rstrip("/") or "/"
+                if key in seen or _resolves(target):
+                    continue
+                seen.add(key)
+                blockers.append(
+                    f"nav link `{target}` ({jsx.name}) resolves to NO App.jsx "
+                    f"route → dead control (404). Wire the route or point the "
+                    f"link at an existing one.")
+                if len(blockers) >= limit:
+                    return blockers
+    except Exception:
+        return []
+    return blockers
+
+
 def routed_fallback_page_blockers(frontend_src: Any) -> List[str]:
     """#223 — code-truth sweep for framework fallback pages the registry can't
     see. ui_page_delivery_blockers iterates REGISTERED ui_pages, but the heal

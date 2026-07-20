@@ -787,6 +787,19 @@ class RemediationDispatcher:
                 "route's real data fields, real working controls. Removing framework "
                 "comments/attributes or reformatting API calls does NOT count — the "
                 "gate fingerprints the page CONTENT, not markers."),
+            "deliverability_dead_nav_link": (
+                # #238 (tiktok r27 M1, runtime-verified): the app's own Profile+
+                # Upload <Link>s pointed at routes App.jsx never wired → 404 on
+                # click. Only the frontend lane owns both App.jsx routing and the
+                # nav components. Gate-minted → owner MUST be in THIS map. FRONTEND.
+                "frontend", "Fix the dead nav link (blocks delivery)",
+                "a nav <Link to=...> / navigate(...) target resolves to NO route "
+                "in App.jsx, so clicking that control hits the catch-all 404. For "
+                "EACH flagged target: either add the missing <Route path=...> in "
+                "App.jsx wired to the real page, or point the link at the correct "
+                "existing route (e.g. a `/profile` link should go to the wired "
+                "`/@:username` for the current user). The app's own navigation "
+                "must not 404."),
             "deliverability_fabricated_field_fallback": (
                 # #175 (gmrun9/gmrun10, live): the frontend renders `place.rating || '4.5'` /
                 # `? place.name : 'HI Point Montara Lighthouse'` — invented data whenever the

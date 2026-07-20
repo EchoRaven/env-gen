@@ -999,6 +999,11 @@ def _deliverability_check_token(blocker: str) -> str:
         # the field is absent (often always, on a field-name drift). Static JSX
         # scan; the no-placeholder/mock bar #170's prompt rule failed to hold.
         return "deliverability_fabricated_field_fallback"
+    if "dead control" in low or "resolves to no app.jsx route" in low:
+        # #238 (tiktok r27 M1): a nav <Link>/navigate target resolves to no
+        # App.jsx route → 404 on click. Owner = frontend (routes + nav both
+        # lane-owned). Anchored on the exact prose dead_nav_link_blockers emits.
+        return "deliverability_dead_nav_link"
     # Unmapped blocker — surface verbatim under a catch-all so the operator
     # sees it instead of silently dropping; future canonicalization work can
     # move it into a named token.
