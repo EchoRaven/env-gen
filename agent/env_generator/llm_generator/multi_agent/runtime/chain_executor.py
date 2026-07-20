@@ -238,6 +238,18 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
                 and st["body"].get("email") and st["body"].get("password"):
             st["path"] = "/auth/register"
             pth = "/auth/register"
+        # #235 BOOTSTRAP-SYNONYM COLLAPSE (tiktok r25, live): the contract may name its
+        # auth entry points signup/signin — r25's chains authored POST /api/auth/signup,
+        # which bypassed EVERY auth invariant below (canonical save, expect-union,
+        # body-default, auth-first reorder) exactly like the #79 /api-prefix bypass →
+        # the token-minting step 401'd → business_chain failed for 108min →
+        # NO-CONVERGENCE ABORT. Collapse the synonym to the canonical AS path (the
+        # skeleton serves the synonym as an alias of the SAME handler, so this is a
+        # pure spelling change) so all invariants apply.
+        _bs_syn = re.match(r"^(?:/api)?/auth/(signup|signin)$", pth)
+        if _bs_syn:
+            pth = "/auth/" + {"signup": "register", "signin": "login"}[_bs_syn.group(1)]
+            st["path"] = pth
         # CANONICAL AUTH PATH (#79, instagram-core opt6 abort): the OAuth AS is mounted at BOTH
         # "/" and "/api", so a verifier can author the auth round-trip at /api/auth/register|login
         # — a valid, equivalent endpoint. But EVERY auth invariant below (canonical save,
@@ -261,6 +273,10 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
         # too makes the default/explicit token-auth resolve regardless of naming
         # (the custom var stays saved, so steps using it keep working).
         if pth in ("/auth/register", "/auth/login"):
+            # #235: the bootstrap step MINTS the token — a verifier-authored
+            # auth="token" on it is self-dependent (r25: unresolvable ${token}
+            # sent as a garbage bearer on the chain's FIRST step). Always tokenless.
+            st.pop("auth", None)
             _save = dict(st.get("save") or {})
             # TOKEN RESPONSE-PATH NORMALIZATION (run v21): verifiers author the token
             # save with a WRONG response path — save:{"tokenA": "token"} expecting a

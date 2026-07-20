@@ -392,7 +392,15 @@ async def _framework_auth_guard(request, call_next):
         # page even though the API /auth/login 200s. The unauthenticated auth
         # entry points must be public under BOTH prefixes; /api/auth/me stays
         # guarded by its own Depends(get_current_user).
-        or p in ("/api/auth/login", "/api/auth/register")
+        # #235 (tiktok r25, live): the contract's bootstrap may use any SYNONYM of
+        # login/register — r25 declared POST /api/auth/signup, which the literal
+        # whitelist walled → 401 on the token-minting step of every chain, and the
+        # lane's fix was overwritten each tick by this framework-owned skeleton
+        # (108-min livelock). An auth ENTRY point (mints/refreshes credentials,
+        # terminal segment below) is public by construction under /api/auth/;
+        # /api/auth/me and anything else stays guarded.
+        or (p.startswith("/api/auth/") and p.rstrip("/").rsplit("/", 1)[-1] in (
+            "login", "register", "signup", "signin", "token", "refresh", "logout"))
     )
     if p.startswith("/api/") and not public and request.method != "OPTIONS":
         ok = False

@@ -900,6 +900,28 @@ try:
     # include_router(prefix="/api") — the canonical, robust mechanism; a route-
     # object-reuse fill-in here silently failed to register in the full app,
     # run-49.)
+    # #235 BOOTSTRAP-SYNONYM FILL-IN (tiktok r25, live): the contract names its auth
+    # entry points freely — r25 declared POST /api/auth/signup while the AS router
+    # serves register/login, so NOTHING ever served signup (the lane's hand-written
+    # copy was overwritten every tick by this framework-owned file) → the
+    # token-minting first step of every business chain 401'd → 108-min livelock.
+    # Alias each absent synonym path onto the SAME canonical handler FUNCTION via
+    # add_api_route (decorator-equivalent — NOT route-object reuse, see run-49
+    # note above). Fill-in only: a lane-authored synonym route wins.
+    _fw_alias_of = {"signup": "register", "signin": "login"}
+    _fw_by_path = {}
+    for _r in app.routes:
+        _fw_by_path.setdefault(getattr(_r, "path", ""), _r)
+    for _syn, _canon in _fw_alias_of.items():
+        for _pref in ("/api/auth/", "/auth/"):
+            _canon_r = _fw_by_path.get(_pref + _canon)
+            if (_pref + _syn) in _fw_by_path or _canon_r is None:
+                continue
+            _fn = getattr(_canon_r, "endpoint", None)
+            if _fn is not None:
+                _methods = [m for m in (getattr(_canon_r, "methods", None) or ("POST",))
+                            if m != "HEAD"]
+                app.add_api_route(_pref + _syn, _fn, methods=_methods or ["POST"])
     # TENANTS-LIST FILL-IN (outlook run-37, live): the login template's TenantPicker calls
     # GET /api/v1/tenants on MOUNT (pre-auth; /api/v1/* is public infra in the middleware) —
     # but the projector excludes the control surface and the lane rarely writes it → 404 on
