@@ -1199,8 +1199,16 @@ def repair_fabricated_fallbacks(frontend_src: Any) -> Dict[str, Any]:
                 member, lit = m.group(1), m.group(3)
                 if not _is_fabricated_fallback_literal(lit):
                     return m.group(0)
-                sites.append(f"{f.name}:{i} `{member} || '{lit}'` → `{member} ?? '—'`")
-                return f"{member} ?? '—'"
+                # #239 (tiktok r29 build-break abort): ALWAYS parenthesize the
+                # ?? replacement. JS forbids mixing ?? with || / && without parens
+                # (`a || b ?? c` is a SyntaxError esbuild rejects). The lane's
+                # `cur.title || cur.description || 'lit'` → this regex rewrites only
+                # the LAST `|| 'lit'` → `cur.title || cur.description ?? '—'` which
+                # broke the vite build → verification_checklist → r29 NO-CONVERGENCE
+                # abort — the framework's own #175 repair introduced the syntax error.
+                # `(x ?? '—')` is always valid, standalone or inside a || / && chain.
+                sites.append(f"{f.name}:{i} `{member} || '{lit}'` → `({member} ?? '—')`")
+                return f"({member} ?? '—')"
 
             def _sub_ternary(m):
                 member, lit = m.group(1), m.group(3)
