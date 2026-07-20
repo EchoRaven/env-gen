@@ -87,10 +87,22 @@ class BrowserManager:
         if self.state.browser is None:
             try:
                 self._playwright = await async_playwright().start()
-                self.state.browser = await self._playwright.chromium.launch(
-                    headless=True,
-                    args=['--no-sandbox', '--disable-setuid-sandbox']
-                )
+                try:
+                    self.state.browser = await self._playwright.chromium.launch(
+                        headless=True,
+                        args=['--no-sandbox', '--disable-setuid-sandbox']
+                    )
+                except Exception as _launch_exc:
+                    # #234: a MISSING browser binary never self-clears (r25: 102
+                    # silent failures, runtime gates blind all run) — heal once
+                    # in-process and retry; any other failure re-raises as before.
+                    from ._bootstrap import heal_missing_browser
+                    if not heal_missing_browser(_launch_exc):
+                        raise
+                    self.state.browser = await self._playwright.chromium.launch(
+                        headless=True,
+                        args=['--no-sandbox', '--disable-setuid-sandbox']
+                    )
                 self.state.context = await self.state.browser.new_context(
                     viewport={'width': 1280, 'height': 720}
                 )

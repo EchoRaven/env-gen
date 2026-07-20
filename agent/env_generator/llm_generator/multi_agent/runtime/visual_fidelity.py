@@ -502,7 +502,14 @@ async def capture_route_screenshots(
     out_dir.mkdir(parents=True, exist_ok=True)
     shots: Dict[str, str] = {}
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(args=["--no-sandbox"])
+        try:
+            browser = await pw.chromium.launch(args=["--no-sandbox"])
+        except Exception as _launch_exc:
+            # #234: heal a missing browser binary once in-process, then retry.
+            from ...tools.browser._bootstrap import heal_missing_browser
+            if not heal_missing_browser(_launch_exc):
+                raise
+            browser = await pw.chromium.launch(args=["--no-sandbox"])
         try:
             ctx = await browser.new_context(viewport=_VIEWPORT)
             if token:

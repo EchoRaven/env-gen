@@ -299,7 +299,14 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
     out: Dict[str, Any] = {"ran": True, "flows": []}
     try:
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch(args=["--no-sandbox"])
+            try:
+                browser = await pw.chromium.launch(args=["--no-sandbox"])
+            except Exception as _launch_exc:
+                # #234: heal a missing browser binary once in-process, then retry.
+                from ...tools.browser._bootstrap import heal_missing_browser
+                if not heal_missing_browser(_launch_exc):
+                    raise
+                browser = await pw.chromium.launch(args=["--no-sandbox"])
             page = await (await browser.new_context(
                 viewport={"width": 1380, "height": 900})).new_page()
             for route, label in (("/signup", "signup"), ("/login", "login")):

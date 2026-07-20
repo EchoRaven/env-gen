@@ -25,6 +25,7 @@ error, never raising into the validation loop. Chromium is the Playwright-bundle
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -576,6 +577,28 @@ async def run_browser_test_user(
                 await browser.close()
     except Exception as exc:
         report["summary"] = f"browser test-user error: {exc}"
+        # #234 (r25, live): a MISSING browser binary is not a transient flake — it
+        # never self-clears, so ran=False walks silently blinded the #224/#231d
+        # runtime DOM holds for an ENTIRE run (102 launch failures, zero-fallback
+        # verification reduced to nothing). Heal once in-process and retry the walk;
+        # if the heal can't land, mark the outage LOUDLY so it reads as an
+        # environmental error, not a quiet skip.
+        try:
+            from ...tools.browser._bootstrap import (
+                heal_missing_browser, is_missing_executable)
+            if is_missing_executable(exc):
+                if heal_missing_browser(exc):
+                    return await run_browser_test_user(
+                        base_url, pages, out_dir, register=register,
+                        demo_login=demo_login, chrome_path=chrome_path,
+                        api_base_url=api_base_url, seed_values=seed_values)
+                report["browser_infra_down"] = True
+                logging.getLogger("test_user_runner").error(
+                    "BROWSER INFRA DOWN: test-user walk cannot launch a browser "
+                    "(%s) — runtime UI gates (#224/#231d) are blind this cycle.",
+                    str(exc)[:200])
+        except Exception:  # pragma: no cover — heal path must never mask the walk error
+            pass
         return report
 
     return _finalize_walkthrough(report)
