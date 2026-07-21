@@ -97,6 +97,8 @@ SAFE_DEFAULT_CONTEXT_WINDOW = 128000
 _CONTEXT_WINDOW_TABLE: list[tuple[str, int]] = [
     # --- Anthropic: 1M GA for Opus/Sonnet 4.6+ (claude.com/blog/1m-context-ga,
     #     Mar 2026, no price multiplier); earlier 4.x + Claude 3 are 200k.
+    ("claude-5-fable", 200_000),    # Claude 5 Fable (MetaGen Vertex) — >=200k; conservative floor
+    ("claude-5", 200_000),
     ("claude-opus-4-8", 1_000_000),
     ("claude-opus-4-7", 1_000_000),
     ("claude-opus-4-6", 1_000_000),

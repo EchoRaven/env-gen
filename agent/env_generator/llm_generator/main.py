@@ -305,7 +305,7 @@ async def main():
     parser.add_argument("--output", default="./generated", help="Output directory")
     parser.add_argument("--model", default="gpt-4", help="LLM model")
     parser.add_argument("--provider", default="openai",
-                       choices=["openai", "openrouter", "google", "anthropic", "azure", "local"])
+                       choices=["openai", "openrouter", "google", "anthropic", "azure", "metagen", "local"])
     parser.add_argument("--api-base", dest="api_base", default=None,
                        help="Override the API base URL (e.g. an OpenAI-compatible "
                             "gateway or self-hosted endpoint). Defaults per provider.")
@@ -364,6 +364,7 @@ async def main():
         "google": (LLMProvider.GOOGLE, "GOOGLE_API_KEY"),
         "anthropic": (LLMProvider.ANTHROPIC, "ANTHROPIC_API_KEY"),
         "azure": (LLMProvider.AZURE, "AZURE_OPENAI_API_KEY"),
+        "metagen": (LLMProvider.METAGEN, "METAGEN_API_KEY"),
         "local": (LLMProvider.LOCAL, None),
     }
     

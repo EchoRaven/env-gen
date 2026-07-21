@@ -33,6 +33,7 @@ class LLMProvider(Enum):
     ANTHROPIC = "anthropic"
     GOOGLE = "google"  # Gemini models
     AZURE = "azure"
+    METAGEN = "metagen"  # Meta's MetaGen platform (llama/GPT/Claude/Gemini via the metagen SDK)
     LOCAL = "local"
     CUSTOM = "custom"
 
