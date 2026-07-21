@@ -2175,13 +2175,330 @@ class GoogleClient(BaseLLMClient):
                         yield part.text
 
 
+def _split_data_uri(url: str) -> Tuple[Optional[str], Optional[str]]:
+    """Return (mime, base64_data) from a ``data:<mime>;base64,<data>`` URL, else (None, None)."""
+    if not isinstance(url, str):
+        return None, None
+    m = re.match(r"data:([^;]+);base64,(.*)", url, re.DOTALL)
+    if m:
+        return m.group(1), m.group(2)
+    return None, None
+
+
+class MetagenClient(BaseLLMClient):
+    """Meta MetaGen provider — wraps the ``metagen`` SDK's ``dialog_completion`` behind the
+    engine's OpenAI-style ``chat`` contract (text + tools + vision + usage).
+
+    The engine's ``tools`` are already OpenAI/Azure function schema, which is exactly what
+    MetaGen's ``tools`` string expects for a 3P model (GPT/Claude/Gemini) — so use GPT-5.6
+    (native structured tool calling). Llama/2P/OSS models silently drop ``tools``.
+
+    ``metagen`` is a Meta-internal package imported LAZILY so this module still loads on hosts
+    without it. SDK symbol names that vary across versions are resolved defensively; if the real
+    SDK differs, the failure is localized here. Verify against
+    ``fbcode/gen_ai/metagen/pymetagen/lib/metagen_platform.py``.
+    """
+
+    def __init__(self, config: LLMConfig):
+        super().__init__(config)
+        self._platform = None
+        self._sdk_ns = None
+
+    # --- SDK bootstrap ---------------------------------------------------
+    def _sdk(self):
+        """Resolve metagen SDK symbols. ``metagen`` is a lazy package: the dialog classes
+        are bound only via ``from metagen import X`` (plain ``metagen.X`` attribute access
+        raises), so import them explicitly (matching the SDK's documented usage) and cache
+        them on a namespace. Optional/version-varying classes are resolved best-effort."""
+        if self._sdk_ns is None:
+            import types as _types
+            import metagen.bento as _bento  # side effect: full package init (SDK's import order)
+            ns = _types.SimpleNamespace(bento=_bento)
+            from metagen import (Dialog, DialogMessage, DialogSource,
+                                 DialogTextContent, MetaGenKey)
+            ns.Dialog = Dialog
+            ns.DialogMessage = DialogMessage
+            ns.DialogSource = DialogSource
+            ns.DialogTextContent = DialogTextContent
+            ns.MetaGenKey = MetaGenKey
+            for name in ("DialogAttachmentContent", "MessageAttachmentType",
+                         "DialogToolResponseContent",
+                         "DialogGenericToolCallRequestContentV2",
+                         "DialogGenericToolCallRequestContent",
+                         "DialogToolCallRequestContent"):
+                try:  # `from metagen import <name>` semantics (bare getattr won't bind it)
+                    setattr(ns, name, getattr(__import__("metagen", fromlist=[name]), name))
+                except Exception:
+                    setattr(ns, name, None)
+            self._sdk_ns = ns
+        return self._sdk_ns
+
+    def _get_platform(self):
+        if self._platform is None:
+            sdk = self._sdk()
+            key = self.config.api_key or os.environ.get("METAGEN_API_KEY")
+            factory = os.environ.get("ENVGEN_METAGEN_FACTORY", "bento").lower()
+            if factory == "devserver":
+                tpf = getattr(__import__("metagen", fromlist=["thrift_platform_factory"]),
+                              "thrift_platform_factory", None)
+                if tpf is not None:
+                    self._platform = tpf.create_for_current_unix_user_for_devserver_only(
+                        metagen_auth_credential=sdk.MetaGenKey(key=key), auto_rate_limit=True)
+                    return self._platform
+            self._platform = sdk.bento.create_metagen_platform(sdk.MetaGenKey(key=key))
+        return self._platform
+
+    # --- request conversion ---------------------------------------------
+    def _source(self, mg, role: str):
+        DS = mg.DialogSource
+        mapping = {"system": "SYSTEM", "user": "USER", "assistant": "ASSISTANT",
+                   "developer": "DEVELOPER", "tool": "IPYTHON", "function": "IPYTHON"}
+        return getattr(DS, mapping.get(role, "USER"), getattr(DS, "USER"))
+
+    def _attachment(self, mg, url: str):
+        mime, b64 = _split_data_uri(url)
+        if not b64:
+            return None
+        Att = getattr(mg, "DialogAttachmentContent", None)
+        MAT = getattr(mg, "MessageAttachmentType", None)
+        if Att is None or MAT is None:
+            return None
+        atype = getattr(MAT, "BASE64", None) or getattr(MAT, "BASE64_IMAGE", None)
+        for kw in ({"data": b64, "type": atype, "mime": mime or "image/png"},
+                   {"data": b64, "type": atype, "mime_type": mime or "image/png"}):
+            try:
+                return Att(**kw)
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _tc_name_args(tc) -> Tuple[str, str]:
+        if isinstance(tc, dict):
+            fn = tc.get("function") or {}
+            args = fn.get("arguments")
+            return (fn.get("name") or tc.get("name") or "",
+                    args if isinstance(args, str) else json.dumps(args or {}))
+        fn = getattr(tc, "function", None)
+        name = getattr(fn, "name", "") if fn else getattr(tc, "name", "")
+        args = getattr(fn, "arguments", "{}") if fn else "{}"
+        return name, args if isinstance(args, str) else json.dumps(args or {})
+
+    def _tool_call_content(self, mg, name: str, args_string: str):
+        for cls in ("DialogGenericToolCallRequestContentV2",
+                    "DialogGenericToolCallRequestContent", "DialogToolCallRequestContent"):
+            C = getattr(mg, cls, None)
+            if C is None:
+                continue
+            for kw in ({"name": name, "parameters_string": args_string},
+                       {"name": name, "parameters": args_string}):
+                try:
+                    return C(**kw)
+                except Exception:
+                    continue
+        return None
+
+    def _tool_response_content(self, mg, message: "Message") -> list:
+        body = (message.content if isinstance(message.content, str)
+                else json.dumps(message.content) if message.content is not None else "")
+        name = message.name or message.tool_call_id or "tool"
+        C = getattr(mg, "DialogToolResponseContent", None)
+        if C is not None:
+            for kw in ({"toolName": name, "toolData": body},
+                       {"tool_name": name, "tool_data": body}, {"name": name, "body": body}):
+                try:
+                    return [C(**kw)]
+                except Exception:
+                    continue
+        return [mg.DialogTextContent(text=f"[tool result {name}] {body}")]
+
+    def _contents_for(self, mg, message: "Message") -> list:
+        contents = []
+        c = message.content
+        if isinstance(c, str):
+            if c:
+                contents.append(mg.DialogTextContent(text=c))
+        elif isinstance(c, list):
+            for part in c:
+                if not isinstance(part, dict):
+                    contents.append(mg.DialogTextContent(text=str(part)))
+                    continue
+                if part.get("type") == "text":
+                    contents.append(mg.DialogTextContent(text=part.get("text", "")))
+                elif part.get("type") == "image_url":
+                    url = (part.get("image_url") or {}).get("url", "")
+                    att = self._attachment(mg, url)
+                    contents.append(att if att is not None else
+                                    mg.DialogTextContent(text="[image omitted: metagen attachment unsupported]"))
+        if message.tool_calls:
+            for tc in message.tool_calls:
+                name, args = self._tc_name_args(tc)
+                rc = self._tool_call_content(mg, name, args)
+                contents.append(rc if rc is not None else
+                                mg.DialogTextContent(text=f"[assistant tool_call] {name}({args})"))
+        if not contents:
+            contents.append(mg.DialogTextContent(text=""))
+        return contents
+
+    def _convert_messages(self, mg, messages: list) -> list:
+        dmsgs = []
+        for m in messages:
+            role = getattr(m, "role", "user")
+            if role == "tool":
+                dmsgs.append(mg.DialogMessage(source=self._source(mg, "tool"),
+                                              contents=self._tool_response_content(mg, m)))
+            else:
+                dmsgs.append(mg.DialogMessage(source=self._source(mg, role),
+                                              contents=self._contents_for(mg, m)))
+        return dmsgs
+
+    @staticmethod
+    def _tool_config(tool_choice):
+        if not tool_choice:
+            return None
+        if tool_choice in ("required", "any"):
+            return {"tool_choice": "required"}
+        if tool_choice == "auto":
+            return {"tool_choice": "auto"}
+        if isinstance(tool_choice, dict):
+            return {"tool_choice": "required", "tool_choice_name": tool_choice}
+        return None
+
+    @staticmethod
+    def _guided_schema(kwargs) -> Optional[str]:
+        if kwargs.get("response_mime_type") == "application/json":
+            sch = kwargs.get("response_schema")
+            if sch:
+                return sch if isinstance(sch, str) else json.dumps(sch)
+        return None
+
+    # --- response parsing ------------------------------------------------
+    @staticmethod
+    def _norm_finish(finish) -> str:
+        s = str(finish or "").upper()
+        if "MAX_OUTPUT" in s or "LENGTH" in s:
+            return "length"
+        return "stop"
+
+    def _parse_response(self, resp) -> Tuple[str, list, str, dict, Optional[str]]:
+        text_parts, reasoning_parts, tool_calls = [], [], []
+        choices = getattr(resp, "choices", None) or []
+        finish = None
+        if choices:
+            ch = choices[0]
+            finish = getattr(ch, "finish_reason", None)
+            dialog = getattr(ch, "dialog", None)
+            for msg in (getattr(dialog, "messages", None) or []):
+                for c in (getattr(msg, "contents", None) or []):
+                    nm = getattr(c, "name", None)
+                    ps = getattr(c, "parameters_string", None)
+                    if ps is None and hasattr(c, "getParametersString"):
+                        try:
+                            ps = c.getParametersString()
+                        except Exception:
+                            ps = None
+                    if nm is None and hasattr(c, "getName"):
+                        try:
+                            nm = c.getName()
+                        except Exception:
+                            nm = None
+                    if nm is not None and ps is not None:
+                        tool_calls.append({"id": f"call_{len(tool_calls)}", "type": "function",
+                                           "function": {"name": nm,
+                                                        "arguments": ps if isinstance(ps, str) else json.dumps(ps)}})
+                        continue
+                    txt = getattr(c, "text", None)
+                    if isinstance(txt, str):
+                        (reasoning_parts if "Reasoning" in type(c).__name__ else text_parts).append(txt)
+        u = getattr(resp, "usage", None)
+        usage = {}
+        if u is not None:
+            pt = getattr(u, "num_prompt_tokens", None) or 0
+            ctk = getattr(u, "num_completion_tokens", None) or 0
+            tt = getattr(u, "num_total_tokens", None)
+            usage = {"prompt_tokens": pt, "completion_tokens": ctk,
+                     "total_tokens": tt if tt is not None else pt + ctk}
+        fr = "tool_calls" if tool_calls else self._norm_finish(finish)
+        return "".join(text_parts), tool_calls, fr, usage, ("\n".join(reasoning_parts) or None)
+
+    # --- the chat contract ----------------------------------------------
+    async def _complete_once(self, dialog, params, tools_requested):
+        def _sync():
+            return self._get_platform().dialog_completion(dialog=dialog, **params)
+        timeout = _llm_hard_timeout(self.config.timeout, os.environ)
+        resp = await asyncio.wait_for(asyncio.to_thread(_sync), timeout=timeout)
+        parsed = self._parse_response(resp)
+        content, tool_calls, _fr, _u, _r = parsed
+        if tools_requested and not tool_calls and not (content or "").strip():
+            # empty text AND no parseable tool call — treat like MALFORMED so the
+            # retry/backoff ladder re-rolls (mirrors GoogleClient's MALFORMED path).
+            raise RuntimeError("metagen returned MALFORMED tool call: empty content and no tool_calls")
+        return resp, parsed
+
+    async def chat(
+        self,
+        messages: list,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        stop: Optional[list] = None,
+        functions: Optional[list] = None,
+        tools: Optional[list] = None,
+        **kwargs,
+    ) -> LLMResponse:
+        start = datetime.now()
+        safe = [Message(role=m.role, content=_sanitize_message_content(m.content),
+                        name=m.name, function_call=m.function_call,
+                        tool_calls=m.tool_calls, tool_call_id=m.tool_call_id)
+                for m in _mask_old_observations(messages, self.config.model_name)]
+        mg = self._sdk()
+        dialog = mg.Dialog(messages=self._convert_messages(mg, safe))
+        params = {
+            "model": self.config.model_name,
+            "temperature": self.config.temperature if temperature is None else temperature,
+            "max_tokens": self.config.max_tokens if max_tokens is None else max_tokens,
+        }
+        if self.config.top_p is not None:
+            params["top_p"] = self.config.top_p
+        tool_list = tools or functions
+        if tool_list:
+            params["tools"] = json.dumps(tool_list)  # OpenAI/Azure schema string (3P models)
+            tcfg = self._tool_config(kwargs.get("tool_choice"))
+            if tcfg:
+                params["tool_config"] = tcfg
+        gds = self._guided_schema(kwargs)
+        if gds:
+            params["guided_decode_json_schema"] = gds
+        resp, parsed = await self._retry_with_backoff(
+            self._complete_once, dialog, params, bool(tool_list))
+        content, tool_calls, fr, usage, reasoning = parsed
+        return LLMResponse(
+            content=content or "", model=self.config.model_name, finish_reason=fr,
+            usage=usage, tool_calls=tool_calls or None, raw_response=resp,
+            latency=(datetime.now() - start).total_seconds(), reasoning=reasoning)
+
+    async def chat_stream(
+        self,
+        messages: list,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        stop: Optional[list] = None,
+        **kwargs,
+    ) -> AsyncIterator[str]:
+        # MetaGen has a streaming API, but the multi-agent engine never streams; a
+        # single-chunk fallback satisfies the abstract method.
+        resp = await self.chat(messages, temperature=temperature,
+                               max_tokens=max_tokens, stop=stop, **kwargs)
+        if resp.content:
+            yield resp.content
+
+
 def create_llm_client(config: LLMConfig) -> BaseLLMClient:
     """
     Factory function to create LLM client based on config
-    
+
     Args:
         config: LLM configuration
-        
+
     Returns:
         Appropriate LLM client instance
     """
@@ -2191,6 +2508,7 @@ def create_llm_client(config: LLMConfig) -> BaseLLMClient:
         LLMProvider.ANTHROPIC: AnthropicClient,
         LLMProvider.GOOGLE: GoogleClient,  # Gemini via OpenAI-compatible API
         LLMProvider.AZURE: OpenAIClient,  # Azure uses OpenAI-compatible API
+        LLMProvider.METAGEN: MetagenClient,  # Meta MetaGen SDK (dialog_completion)
         LLMProvider.LOCAL: LocalLLMClient,
         LLMProvider.CUSTOM: LocalLLMClient,  # Custom endpoints use OpenAI-compatible API
     }
