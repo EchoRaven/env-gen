@@ -28,7 +28,7 @@ import sys
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-_VERSION = "v9-toolid"
+_VERSION = "v12-mimesniff"
 
 
 # ── metagen SDK resolution (real names confirmed via --introspect) ───────────
@@ -164,17 +164,45 @@ def _source(sdk, role):
     return getattr(DS, name, getattr(DS, "USER"))
 
 
+_SUPPORTED_IMG = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
+
+def _sniff_mime(raw):
+    """Detect the true image type from magic bytes (the engine sometimes mislabels jpeg as png,
+    which Claude rejects). Returns a supported mime or None."""
+    if raw[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if raw[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 def _fit_image(b64, mime, limit=4_500_000):
-    """Providers cap images (Claude Vertex = 5 MB). If a base64 image exceeds `limit`, try to
-    shrink it (PIL, if available in the PAR); if we can't get under the cap (or PIL is absent),
+    """Claude Vertex accepts only jpeg/png/gif/webp and caps images at 5 MB. Pass through a
+    supported image under the cap; otherwise transcode/shrink to JPEG via PIL (handles oversized
+    rasters AND unsupported types like bmp/tiff). If we can't (e.g. SVG, or PIL absent in the PAR)
     return (None, None) so the caller DROPS it rather than 500-ing the whole request."""
     import base64
     try:
         raw = base64.b64decode(b64)
     except Exception:
+        return None, None
+    real = _sniff_mime(raw)
+    if real:
+        mime = real  # trust the actual bytes over the engine's declared media type
+    m = (mime or "").lower()
+    if m in _SUPPORTED_IMG and len(raw) <= limit:
         return b64, mime
-    if len(raw) <= limit:
-        return b64, mime
+    if "svg" in m:  # rasterize SVG so the model can SEE it (the app still ships the real .svg)
+        try:
+            import cairosvg
+            raw = cairosvg.svg2png(bytestring=raw, output_width=1024)
+        except Exception:
+            return None, None  # no SVG rasterizer in the PAR → drop (logo/icons still appear in screenshots)
     try:
         import io
         from PIL import Image
@@ -253,14 +281,14 @@ def _contents(sdk, msg):
                 att = _attachment(sdk, (part.get("image_url") or {}).get("url", ""))
                 out.append(att if att is not None else
                            sdk.DialogTextContent(text="[image omitted]"))
-    for i, tc in enumerate(msg.get("tool_calls") or []):
+    # Render PRIOR tool calls as plain text — providers (Claude Vertex) strictly validate
+    # structured tool_use/tool_result id linkage on replayed history, which metagen's Dialog
+    # doesn't let us control. Text keeps the model's context without the fragile correlation.
+    for tc in (msg.get("tool_calls") or []):
         fn = tc.get("function") or {}
         args = fn.get("arguments")
-        tid = _valid_tool_id(tc.get("id"), i)
-        rc = _tool_call_content(sdk, fn.get("name", ""),
-                                args if isinstance(args, str) else json.dumps(args or {}), tid)
-        out.append(rc if rc is not None else
-                   sdk.DialogTextContent(text=f"[assistant tool_call] {fn.get('name')}({args})"))
+        args = args if isinstance(args, str) else json.dumps(args or {})
+        out.append(sdk.DialogTextContent(text=f"[called tool `{fn.get('name', '')}` with arguments {args}]"))
     if not out:
         out.append(sdk.DialogTextContent(text=""))
     return out
@@ -286,8 +314,16 @@ def build_dialog(sdk, messages):
     dmsgs = []
     for m in messages:
         role = m.get("role", "user")
-        contents = _tool_response(sdk, m) if role == "tool" else _contents(sdk, m)
-        dmsgs.append(sdk.DialogMessage(source=_source(sdk, role), contents=contents))
+        if role == "tool":
+            # Render the tool result as a plain USER text message (see _contents note) — avoids
+            # structured tool_result.tool_use_id validation we can't satisfy through Dialog.
+            body = m.get("content")
+            body = body if isinstance(body, str) else json.dumps(body) if body is not None else ""
+            name = m.get("name") or m.get("tool_call_id") or "tool"
+            dmsgs.append(sdk.DialogMessage(source=_source(sdk, "user"),
+                         contents=[sdk.DialogTextContent(text=f"[tool result — {name}]\n{body}")]))
+        else:
+            dmsgs.append(sdk.DialogMessage(source=_source(sdk, role), contents=_contents(sdk, m)))
     return sdk.Dialog(messages=dmsgs)
 
 
