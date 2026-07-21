@@ -15,6 +15,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, AsyncIterator, Optional, Union, Tuple, Set
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -101,6 +102,47 @@ def _sanitize_message_content(content: Optional[Union[str, list]]) -> Optional[U
     return _redact_secrets(str(content))
 
 
+# #248: per-image size ceiling. Claude on GCP Vertex rejects anything over 5 MB
+# ("image exceeds 5 MB maximum: 7876848 b") — the design-prep phase sends full-size
+# reference screenshots, so EVERY vision call failed on that provider while Gemini had
+# accepted the same bytes. Downscale/re-encode until it fits; never raise.
+_IMG_BYTE_LIMIT = int(os.environ.get("ENVGEN_IMAGE_BYTE_LIMIT", "4500000"))
+
+
+def _fit_image_b64(image_base64: str, mime_type: str = "image/png"):
+    """Return (base64, mime) shrunk to fit ``_IMG_BYTE_LIMIT``. No-op when it already
+    fits or when Pillow is unavailable — a provider with no limit is unaffected."""
+    try:
+        raw = base64.b64decode(image_base64)
+    except Exception:
+        return image_base64, mime_type
+    if len(raw) <= _IMG_BYTE_LIMIT:
+        return image_base64, mime_type
+    try:
+        import io
+        from PIL import Image
+        im = Image.open(io.BytesIO(raw))
+        if im.mode not in ("RGB", "L"):
+            im = im.convert("RGB")
+        data = None
+        for scale, quality in ((1.0, 82), (0.75, 80), (0.6, 75), (0.45, 70), (0.33, 65), (0.25, 60)):
+            buf = io.BytesIO()
+            if scale == 1.0:
+                shrunk = im
+            else:
+                w, h = im.size
+                shrunk = im.resize((max(1, int(w * scale)), max(1, int(h * scale))))
+            shrunk.save(buf, format="JPEG", quality=quality, optimize=True)
+            data = buf.getvalue()
+            if len(data) <= _IMG_BYTE_LIMIT:
+                break
+        if data:
+            return base64.b64encode(data).decode("ascii"), "image/jpeg"
+    except Exception:
+        pass
+    return image_base64, mime_type
+
+
 @dataclass
 class Message:
     """Chat message - supports both text and multimodal content"""
@@ -140,6 +182,7 @@ class Message:
     @classmethod
     def user_with_image(cls, text: str, image_base64: str, mime_type: str = "image/png") -> "Message":
         """Create user message with text and image (multimodal)"""
+        image_base64, mime_type = _fit_image_b64(image_base64, mime_type)
         return cls(
             role="user",
             content=[
@@ -979,17 +1022,37 @@ class OpenAIClient(BaseLLMClient):
         model_name = self.config.model_name
         use_completion_tokens = model_name.startswith(("gpt-5", "o1", "o3"))
         token_param = "max_completion_tokens" if use_completion_tokens else "max_tokens"
+        # #247: some providers reject the classic sampling params outright. Claude on GCP
+        # Vertex answers 400 "`temperature` is deprecated for this model", and the Llama
+        # API's OpenAI-compat gateway answers 400 "frequency_penalty is not supported in
+        # OpenAI compatibility mode" — every call fails, so a run on such a provider cannot
+        # start at all. Drop them for the known-hostile families (and via an env override
+        # for any provider we meet next); max_tokens is still sent, which Vertex REQUIRES.
+        _ml = (model_name or "").lower()
+        _drops_sampling = (
+            use_completion_tokens
+            or any(k in _ml for k in ("claude", "vertex", "anthropic", "fable"))
+            or str(os.environ.get("ENVGEN_NO_SAMPLING_PARAMS", "")).strip().lower()
+            in ("1", "true", "yes", "on"))
 
         request_params = {
             "model": model_name,
             "messages": [m.to_dict() for m in safe_messages],
             token_param: max_tokens or self.config.max_tokens,
         }
-        if not use_completion_tokens:
+        if not _drops_sampling:
             request_params["temperature"] = temperature if temperature is not None else self.config.temperature
             request_params["top_p"] = self.config.top_p
-            request_params["frequency_penalty"] = self.config.frequency_penalty
-            request_params["presence_penalty"] = self.config.presence_penalty
+            # #247: only send the penalties when they are actually SET. They default to
+            # 0.0 (a semantic no-op), yet third-party OpenAI-compatible endpoints reject
+            # them outright — the Llama API compat gateway answers every call with
+            # 400 "frequency_penalty is not supported in OpenAI compatibility mode",
+            # so a run on such a provider cannot make a single LLM call. Omitting a
+            # zero penalty changes nothing for providers that do accept it.
+            if self.config.frequency_penalty:
+                request_params["frequency_penalty"] = self.config.frequency_penalty
+            if self.config.presence_penalty:
+                request_params["presence_penalty"] = self.config.presence_penalty
         
         if stop:
             request_params["stop"] = stop
