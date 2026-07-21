@@ -1644,9 +1644,10 @@ profiles:
       action:
         - extract_palette
         - decompose_reference
-        - crop_region
-        - grid_columns
-        - row_bands
+        - crop_reference
+        - measure_layout
+        - sample_color
+        - zoom_compare
         - list_reference_images
         - copy_reference_image
         - view_image
