@@ -1026,6 +1026,13 @@ def _recover_id_via_list(base: str, coll_path: str, token: Any, avoid: Any = Non
 
 # id-shaped param names: id, user_id, videoId (camelCase), pk, uuid — these stay
 # with the #136 numeric-id ladder; everything else (username/handle/slug) is #245.
+# #246: a CREATE step that violates a UNIQUE constraint is not a broken endpoint — the
+# row already exists (chains RE-RUN every validation cycle, so a create with a fixed
+# unique field goes green once and then red FOREVER). Detect from the server's own error.
+_UNIQUE_ERR_RE = re.compile(r"unique|duplicate|already exist|integrity constraint", re.I)
+_UNIQUE_FIELDS = ("username", "email", "slug", "handle", "code", "key", "name")
+
+
 _ID_PARAM_RE = re.compile(r"(?:^|_|(?<=[a-z]))(?:id|pk|uuid)$", re.I)
 
 
@@ -1487,6 +1494,34 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         # mirrors the auth-body-default / unresolved-var fallbacks. A wrong-typed or
         # genuinely-broken field still surfaces: the retry either resolves it or the
         # original failure is recorded (the type-mismatch retry just 422s again).
+        # #246 UNIQUE-CONSTRAINT RETRY (r35 M2): the verifier authored
+        # POST /api/users {"username": "${u3_name}"} where NO step saves u3_name, so the
+        # value is constant across cycles — the create succeeded once and then returned
+        # 400 "integrity constraint violated" on every later cycle, wedging business_chain
+        # permanently. Chains re-run each validation cycle, so ANY create whose unique key
+        # does not vary is red forever. Uniquify the unique-ish fields and retry ONCE
+        # (domain-agnostic: reads the server's own error, mirrors the 422 field repair).
+        if (not ok and status in (400, 409) and method == "POST"
+                and isinstance(body, Mapping) and body
+                and _UNIQUE_ERR_RE.search(str(res.get("body_text") or ""))):
+            import uuid as _uuid
+            _sfx = _uuid.uuid4().hex[:6]
+            _ubody, _uchanged = dict(body), False
+            for _uf in _UNIQUE_FIELDS:
+                _uv = _ubody.get(_uf)
+                if isinstance(_uv, str) and _uv.strip():
+                    if "@" in _uv:
+                        _lp, _, _dom = _uv.partition("@")
+                        _ubody[_uf] = f"{_lp}_{_sfx}@{_dom}"
+                    else:
+                        _ubody[_uf] = f"{_uv}_{_sfx}"
+                    _uchanged = True
+            if _uchanged:
+                _res5 = _http(method, base + path, token=token, body=_ubody)
+                if _status_ok(_res5.get("status"), expect):
+                    res, status, ok = _res5, _res5.get("status"), True
+                    body = _ubody
+                    autofilled.append(f"unique-suffix:{_sfx}")
         if not ok and status in (400, 422):
             # #70 (outlook run-58, live): the step sent NO body but the handler
             # requires one (e.g. POST /api/events/{id}/rsvp needs {"response":...})
