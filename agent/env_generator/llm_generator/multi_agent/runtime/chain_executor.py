@@ -1024,6 +1024,88 @@ def _recover_id_via_list(base: str, coll_path: str, token: Any, avoid: Any = Non
         return None
 
 
+# id-shaped param names: id, user_id, videoId (camelCase), pk, uuid — these stay
+# with the #136 numeric-id ladder; everything else (username/handle/slug) is #245.
+_ID_PARAM_RE = re.compile(r"(?:^|_|(?<=[a-z]))(?:id|pk|uuid)$", re.I)
+
+
+def _registered_param_for_path(path: Any, endpoints: Any):
+    """#245 — match a LITERAL request path against the REGISTERED contract templates and
+    return ``(collection_path, param_name)`` when the template's last segment is a
+    ``{param}``.
+
+    Chains author a literal value (``/api/users/13``, ``/api/users/ProfileUser``) while the
+    contract declares ``/api/users/{username}``. Knowing the param NAME is what lets
+    recovery fetch a real value of the RIGHT KIND — the #136 ladder only ever recovers a
+    numeric id, which is exactly wrong for a ``{username}`` param (r29: the id 500'd the
+    handler; r33: 404). Returns (None, None) when nothing matches. Pure."""
+    if not path or not endpoints:
+        return None, None
+    lit = [s for s in str(path).split("?", 1)[0].split("/") if s]
+    if not lit:
+        return None, None
+    # STATIC WINS: a literal that IS a registered static endpoint (/api/users/suggested)
+    # must never be treated as a {param} value — rewriting it would mask a real failure
+    # of that endpoint.
+    _litp = "/" + "/".join(lit)
+    for ep in endpoints or []:
+        tplp = str((ep or {}).get("path") or "") if isinstance(ep, Mapping) else ""
+        if tplp and "{" not in tplp and tplp.rstrip("/") == _litp.rstrip("/"):
+            return None, None
+    for ep in endpoints or []:
+        tpl = str((ep or {}).get("path") or "") if isinstance(ep, Mapping) else ""
+        segs = [s for s in tpl.split("/") if s]
+        if not segs or len(segs) != len(lit):
+            continue
+        last = segs[-1]
+        if not (last.startswith("{") and last.endswith("}")):
+            continue
+        if any(a != b for a, b in zip(segs[:-1], lit[:-1])):
+            continue  # a static segment differs (or an earlier param) — not this template
+        return "/" + "/".join(segs[:-1]), last[1:-1]
+    return None, None
+
+
+def _rows_of_payload(payload: Any) -> list:
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, Mapping):
+        items = payload.get("items")
+        if isinstance(items, list):
+            return items
+        for k, v in payload.items():
+            if str(k).lower() in ("errors", "error", "detail", "warnings"):
+                continue
+            if isinstance(v, list):
+                return v
+    return []
+
+
+def _recover_field_via_list(base: str, coll_path: str, field: str, token: Any,
+                            avoid: Any = None) -> Any:
+    """#245 — GET the collection and return a real row's ``field`` (the value the registered
+    path param NAMES: username / handle / slug), not an id. ``avoid`` skips the chain user's
+    own value so a follow/unfollow step never targets self. Best-effort → None."""
+    if not coll_path or not field or "{" in coll_path or "${" in coll_path:
+        return None
+    try:
+        r = _http("GET", base + coll_path, token=token, body=None)
+        if not _status_ok(r.get("status"), [200]):
+            return None
+        for row in _rows_of_payload(json.loads(r.get("body_text") or "{}")):
+            if not isinstance(row, Mapping):
+                continue
+            v = row.get(field)
+            if v is None or not str(v).strip():
+                continue
+            if avoid is not None and str(v) == str(avoid):
+                continue
+            return v
+    except Exception:
+        return None
+    return None
+
+
 def _recover_id_via_create(base: str, coll_path: str, token: Any) -> Any:
     """LAST-RESORT recovery when even the list is EMPTY: create a row and use ITS id.
 
@@ -1125,7 +1207,8 @@ def _reverify_denial_via_fresh_intruder(base, method, path, body, expect) -> boo
 
 
 def execute_chain(base: str, chain: Mapping[str, Any],
-                  seed_ids: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+                  seed_ids: Optional[Mapping[str, Any]] = None,
+                  endpoints: Optional[List[Mapping[str, Any]]] = None) -> Dict[str, Any]:
     """Run one chain; returns {name, steps: [...], broken: [...]}.
     Deterministic wiring; never raises. ``seed_ids`` (#144): {resource →
     known-present id from seed_data.json}, a recovery rung for literal-id
@@ -1366,6 +1449,29 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                         res, status, ok = _res3, _res3.get("status"), True
                         path = _lpath
                         autofilled.append(f"literal-id->{_lid}")
+        # #245 PARAM-AWARE RECOVERY (r27/r29/r33 — the top recurring business_chain
+        # killer). The contract declares GET /api/users/{username}; chains author a
+        # literal id (/api/users/13 → 500 when the handler types the param as a string,
+        # or 404) or an invented name (/api/users/ProfileUser → 404). The #136 ladder
+        # only recovers NUMERIC ids and only on 404, so NONE of these were reachable —
+        # 15 broken steps across three runs, every one of them this shape. Match the
+        # authored literal against the REGISTERED template; when the param is not
+        # id-shaped, recover a real value of THAT FIELD from the collection and retry
+        # once. A genuinely broken endpoint fails the retry too and is recorded as before.
+        if not ok and status in (404, 500) and not _is_cross_user_denial(step):
+            _pcoll, _pname = _registered_param_for_path(step.get("path"), endpoints)
+            if _pname and not _ID_PARAM_RE.search(_pname):
+                _pval = _recover_field_via_list(base, _pcoll, _pname, token,
+                                                avoid=own_user_id)
+                if _pval is not None:
+                    _base_path = str(path).split("?", 1)[0].rstrip("/")
+                    _ppath = "/".join(_base_path.split("/")[:-1] + [str(_pval)])
+                    if _ppath and _ppath != path:
+                        _res4 = _http(method, base + _ppath, token=token, body=body)
+                        if _status_ok(_res4.get("status"), expect):
+                            res, status, ok = _res4, _res4.get("status"), True
+                            path = _ppath
+                            autofilled.append(f"param:{_pname}->{_pval}")
         # MISSING-FIELD AUTO-REPAIR (2026-06-24): a write step can 422 because the
         # LIVE handler requires a body field the chain didn't send — either the
         # verifier under-authored the body, OR (observed v19: POST
@@ -1643,7 +1749,9 @@ def run_chains(base: str, project_dir: Any,
         return {"source": "missing", "chains": [],
                 "broken": [AUTHORING_INSTRUCTIONS], "total_steps": 0}
     _seed_ids = load_seed_ids(project_dir)  # #144: literal-id recovery rung
-    results = [execute_chain(base, ch, seed_ids=_seed_ids) for ch in chains]
+    results = [execute_chain(base, ch, seed_ids=_seed_ids,
+                          endpoints=list(business_endpoints or []))
+               for ch in chains]
     broken = [b for r in results for b in r["broken"]]
     total = sum(len(r["steps"]) for r in results)
     # Record pass/fail back onto the registry records (best-effort) — the
