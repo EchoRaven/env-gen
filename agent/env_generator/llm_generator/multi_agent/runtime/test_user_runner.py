@@ -217,7 +217,8 @@ def resolve_param_route(route: str, api_base: Optional[str], token: Optional[str
     return "/".join(resolved)
 
 
-async def _safe_goto(page: Any, url: str, timeout: int = 20000) -> None:
+async def _safe_goto(page: Any, url: str, timeout: int = 20000,
+                     settle_ms: int = 15000) -> None:
     """#241 (r29/r30: 3 aborts on deliverability_ui_flow_failed, runtime-verified):
     the framework-injected ``bc_auth.js`` redirects to /login on ANY /api 401 via
     ``window.location.assign`` — which INTERRUPTS an in-flight ``page.goto``
@@ -228,15 +229,40 @@ async def _safe_goto(page: Any, url: str, timeout: int = 20000) -> None:
     for the DOM to settle and carry on (any other error still raises). Deterministic
     signals downstream (blank / redirected_to_login / real-data) stay accurate —
     this only prevents the navigation race from aborting the walk."""
+    # #244 (r34 abort, runtime-verified): ``networkidle`` NEVER settles on a
+    # media-heavy app — a TikTok clone autoplays <video>, so the network is never
+    # quiet for 500ms. The goto then raises TimeoutError, the per-page record keeps
+    # its initialised ``{ok: False, blank: True}``, and ALL 7 pages were recorded
+    # BLANK while the DOM actually held 2307 chars + the full nav (verified by
+    # probing the same app with domcontentloaded). That false-blank failed every
+    # ui_flow, held the browser gate and aborted a WORKING app. Rule: the wait
+    # STRATEGY must never pre-judge the page — fall back to a loaded DOM and let
+    # the downstream _PROBE decide blank/real-data from the actual DOM (a genuinely
+    # dead page still probes empty and is still recorded blank).
     try:
-        await page.goto(url, wait_until="networkidle", timeout=timeout)
+        # ``commit`` only needs the server to answer — it cannot be defeated by a
+        # slow bundle or a never-idle network, so the navigation step itself never
+        # decides the page's fate.
+        await page.goto(url, wait_until="commit", timeout=timeout)
     except Exception as exc:
         if "interrupted by another navigation" not in str(exc):
             raise
-        try:
-            await page.wait_for_load_state("networkidle", timeout=timeout)
-        except Exception:
-            pass
+        # #241: bc_auth's location.assign raced our navigation — it landed on a real
+        # page, so fall through to the content wait instead of failing the step.
+    # Bounded wait for the app to actually RENDER something. Returns as soon as
+    # content appears (fast apps cost nothing); a genuinely dead page just times
+    # out here and is then correctly recorded blank by the DOM probe.
+    try:
+        await page.wait_for_function(
+            "() => !!document.body && document.body.innerText.trim().length > 0",
+            timeout=settle_ms)
+    except Exception:
+        pass
+    # Short idle settle so data-driven content lands; media apps never idle — fine.
+    try:
+        await page.wait_for_load_state("networkidle", timeout=2000)
+    except Exception:
+        pass
 
 
 async def _fill_visible_inputs(page: Any, creds: Mapping[str, str]) -> int:
