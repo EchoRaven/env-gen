@@ -21,7 +21,7 @@ never looser.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 
 @dataclass
@@ -110,6 +110,25 @@ def _derive_ui_spec_from_hub(hub_registry) -> Optional[dict]:
     return {"critical_flows": critical_flows, "pages": pages}
 
 
+def _is_navigable_page(page: Any) -> bool:
+    """#243 — is this ui_page entry something a browser can actually NAVIGATE to?
+
+    A registered ``ui_page`` whose ``route`` is EMPTY is a component that got
+    mis-registered as a page (r33 M2: video_grid, explore_grid, explore_card,
+    suggested_creator_card, top_action_bar, content_tabs, more_menu_panel — all
+    ``route=''``). The deterministic walk only visits routed pages, so no
+    ``validation:ui_flow`` record can ever exist for them and the coverage gate
+    is unwinnable. Conservative: only reject when a route/path key is PRESENT
+    and is not a ``/``-rooted path — an entry with NO route key at all is an
+    older spec shape and stays required (we can't prove it is a component)."""
+    if not isinstance(page, Mapping):
+        return True
+    for key in ("route", "path"):
+        if key in page:
+            return str(page.get(key) or "").strip().startswith("/")
+    return True
+
+
 _TRUTHY_STRS = {"true", "yes", "1", "y", "t"}
 _FALSY_STRS = {"false", "no", "0", "n", "f", "", "null", "none"}
 
@@ -194,6 +213,14 @@ def _extract_required_flows(spec: dict) -> Tuple[List[str], str]:
         for k, v in raw_pages.items():
             if isinstance(v, dict):
                 page_entries.append((str(k), v))
+    # #243 (tiktok r33 M2, live): a ui_page with NO navigable route is a
+    # COMPONENT mis-registered as a page (M2 registered video_grid /
+    # explore_card / top_action_bar / … all with route=''). The browser walk
+    # only visits routed pages, so a ui_flow record for a routeless entry can
+    # NEVER be produced — requiring one is an UNWINNABLE gate (the opt-5
+    # false-block class): r33 M2 sat on 8 permanently-missing flows. Drop them
+    # from the REQUIRED set (they are still audited as components elsewhere).
+    page_entries = [(fb, p) for fb, p in page_entries if _is_navigable_page(p)]
 
     critical_names: List[str] = []
     seen = set()
