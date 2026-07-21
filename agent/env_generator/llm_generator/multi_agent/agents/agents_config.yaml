@@ -1636,6 +1636,34 @@ profiles:
       - knowledge_read_tools
       - reference_images
       - vision_tools
+    # Without an allowlist the ranker capped the offered set at ~10 tools and dropped the
+    # file-emission + crop/view tools, so the analyst could measure but not write
+    # design_system.json (→ "cannot complete file emission" → orchestrator single-shot fallback,
+    # unenriched doc). Pin the measurement AND file/crop/view tools (+ finish) so all are offered.
+    stage_tool_allowlist:
+      action:
+        - extract_palette
+        - decompose_reference
+        - crop_region
+        - grid_columns
+        - row_bands
+        - list_reference_images
+        - copy_reference_image
+        - view_image
+        - read
+        - write
+        - edit
+        - apply_patch
+        - update_json_path
+        - update_yaml_path
+        - glob
+        - grep
+        - report_progress
+        - report_completion
+        - report_issue
+        - send_message
+        - check_inbox
+        - finish
 
 resident_lanes:
   # roster aligned to the 6-lane
