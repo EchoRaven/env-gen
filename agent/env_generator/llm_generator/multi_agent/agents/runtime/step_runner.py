@@ -245,7 +245,15 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                             from utils.model_limits import resolve_ctx_working_chars
                             _budget = resolve_ctx_working_chars(_model)
                             if _budget:
-                                _chars = sum(len(str(m.get("content") or "")) for m in messages)
+                                # Count only STRING content, accessed via getattr — messages are
+                                # Message OBJECTS here (mirrors _mask_old_observations so both layers
+                                # agree on the gate). Skipping non-str content also avoids inflating
+                                # the estimate with base64 image blocks in list content.
+                                _chars = 0
+                                for _m in messages:
+                                    _c = getattr(_m, "content", None)
+                                    if isinstance(_c, str):
+                                        _chars += len(_c)
                                 _pressured = _chars > _budget * 0.9
                         except Exception:
                             _pressured = True
