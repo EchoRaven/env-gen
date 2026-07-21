@@ -737,6 +737,16 @@ def run_smoke_validation(
         try:
             _src_dir = Path(project_dir) / "app" / "frontend" / "src"
             _dead: list = []
+            # F6 (2026-07-21): use the SAME handler-token set as the delivery-time audit
+            # (frontend_audit._HANDLER_TOKENS) so a page wired via the default `api` client
+            # (`api.get(...)` / `await api`) is not flagged dead here while frontend_audit —
+            # which DOES recognize those tokens — clears it. The two gates were giving opposite
+            # verdicts on the exact React shape the prompts tell pages to use.
+            try:
+                from .frontend_audit import _HANDLER_TOKENS as _HANDLER_TOK
+            except Exception:
+                _HANDLER_TOK = ("onSubmit", "onClick", "fetch(", "apiGet", "apiPost",
+                                "apiPut", "apiDelete", "axios", "api.", "await api")
             if _src_dir.is_dir():
                 for _pf in sorted(_src_dir.rglob("*.jsx")):
                     try:
@@ -744,9 +754,7 @@ def run_smoke_validation(
                     except Exception:
                         continue
                     _interactive = ("<form" in _txt) or ('type="submit"' in _txt)
-                    _bound = any(tok in _txt for tok in (
-                        "onSubmit", "onClick", "fetch(", "apiGet", "apiPost",
-                        "apiPut", "apiDelete", "axios"))
+                    _bound = any(tok in _txt for tok in _HANDLER_TOK)
                     if _interactive and not _bound:
                         _dead.append(_pf.name)
             _add("frontend_dead_controls", not _dead,
