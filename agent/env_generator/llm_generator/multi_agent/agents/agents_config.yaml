@@ -1621,6 +1621,14 @@ profiles:
     tool_categories: ["file", "reasoning", "vision", "reference", "communication", "memory", "project", "analysis", "knowledge_read", "runtime", "progress"]
     include_vision: true
     timeout: 3600
+    execution_pipeline:
+      # F1 (design convergence, 2026-07-21): the analyst historically burned all 15 action
+      # rounds/step on vision calls without ever writing design_system.json (r3: ~880 vision
+      # calls, 0 writes, still on "Step 1/2000"). Capping rounds/step makes each step finish
+      # sooner so the loop advances toward the write+finish moves instead of grinding. The
+      # deterministic completion floor + single-shot enrich remain the authoritative backstop,
+      # and ENVGEN_DESIGN_ANALYST_TIMEOUT (now 600s) bounds the block regardless.
+      max_action_rounds_per_step: 4
     prompts:
       template: "v3/design_analyst.j2"
       system_macro: "design_analyst_system_prompt"

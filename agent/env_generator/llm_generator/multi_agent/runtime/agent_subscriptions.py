@@ -31,14 +31,17 @@ DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
         ("workhub", "task_stale", "high"),
         ("runhub", "run_completed", "normal"),
         ("runhub", "run_failed", "high"),
-        ("registryhub", "endpoint_implemented", "normal"),
+        # NOTE: endpoint_implemented moved to INBOX_ONLY (F2 wake-storm fix, 2026-07-21):
+        # it fired on every contract-surface registration during design/kickoff and woke the
+        # orchestrator into idle "ineligible during kickoff" LLM steps. Still surfaced at the
+        # next pulse; no resident wakeup.
         # Generic comment/mention surfacing so the orchestrator sees
         # cross-agent escalation comments.
         ("workhub", "comment_created", "normal"),
-        # Kickoff loop — when an attendee records a decision the
-        # orchestrator wakes, runs try_synthesize, and either finalizes
-        # or sends a single round of revision asks.
-        ("workhub", "meeting_decision_added", "normal"),
+        # Kickoff loop — attendee decisions are surfaced INBOX-ONLY (see below, F2 fix).
+        # Synthesis is driven deterministically by _drive_kickoff_to_completion; the
+        # orchestrator is actively chaired via kickoff_facilitate_request / kickoff_detail_request
+        # (live, below), so the live meeting_decision_added wake was vestigial churn.
         # Round-8f.1 facilitator: the kickoff driver
         # (``runtime/kickoff/facilitate.py:request_facilitation``)
         # fires this event after ``try_synthesize`` returns
@@ -167,6 +170,17 @@ DEFAULT_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
 # lanes (#24) live HERE and ONLY here. ``framework_decision`` must never appear in
 # DEFAULT_SUBSCRIPTIONS (a live sub would reintroduce the wakeup it exists to avoid).
 INBOX_ONLY_SUBSCRIPTIONS: Dict[str, List[Tuple[str, str, str]]] = {
+    # F2 (wake-storm fix, 2026-07-21): these fire heavily during the design/kickoff window
+    # (contract-surface registration + attendee decisions). As LIVE subs they woke the
+    # orchestrator into full LLM steps that only concluded "ineligible during kickoff",
+    # burning model quota (r3: 146 idle stop-cycles). Delivered inbox_only they are still
+    # surfaced at the next hub_pulse / coordination tick, but never trigger a resident wakeup.
+    # The live kickoff_facilitate_request / kickoff_detail_request subs (DEFAULT_SUBSCRIPTIONS)
+    # keep the orchestrator chairing kickoff.
+    "orchestrator": [
+        ("registryhub", "endpoint_implemented", "normal"),
+        ("workhub", "meeting_decision_added", "normal"),
+    ],
     "backend": [
         ("registryhub", "framework_decision", "normal"),
         # PRE-LAUNCH AUDIT R2: table_registered fires on every (idempotent)
