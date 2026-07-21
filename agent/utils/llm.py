@@ -143,6 +143,37 @@ def _fit_image_b64(image_base64: str, mime_type: str = "image/png"):
     return image_base64, mime_type
 
 
+
+def _fit_message_images(msg: dict) -> dict:
+    """#248 (universal): shrink every ``image_url`` data-URI in a serialized message so it
+    fits the provider's per-image cap. ``user_with_image`` is only ONE of the paths that
+    build vision content — design_prep builds ``image_url`` parts directly and hands them
+    to ``user_multimodal``, so the fit must live where EVERY message is serialized for the
+    request. Pure/best-effort: a message with no images is returned unchanged."""
+    try:
+        content = msg.get("content")
+        if not isinstance(content, list):
+            return msg
+        changed = False
+        parts = []
+        for part in content:
+            if (isinstance(part, dict) and part.get("type") == "image_url"
+                    and isinstance(part.get("image_url"), dict)):
+                url = str(part["image_url"].get("url") or "")
+                if url.startswith("data:") and ";base64," in url:
+                    head, b64 = url.split(";base64,", 1)
+                    mime = head[len("data:"):] or "image/png"
+                    nb64, nmime = _fit_image_b64(b64, mime)
+                    if nb64 is not b64:
+                        part = {**part, "image_url": {**part["image_url"],
+                                                      "url": f"data:{nmime};base64,{nb64}"}}
+                        changed = True
+            parts.append(part)
+        return {**msg, "content": parts} if changed else msg
+    except Exception:
+        return msg
+
+
 @dataclass
 class Message:
     """Chat message - supports both text and multimodal content"""
@@ -1037,7 +1068,7 @@ class OpenAIClient(BaseLLMClient):
 
         request_params = {
             "model": model_name,
-            "messages": [m.to_dict() for m in safe_messages],
+            "messages": [_fit_message_images(m.to_dict()) for m in safe_messages],
             token_param: max_tokens or self.config.max_tokens,
         }
         if not _drops_sampling:
