@@ -328,9 +328,9 @@ def _parse_tool_call_text(raw):
     try:
         o = json.loads(raw)
     except Exception:
-        return "", "{}"
+        return "", "{}", ""
     if not isinstance(o, dict):
-        return "", "{}"
+        return "", "{}", ""
     name = o.get("name") or o.get("tool_name") or o.get("function") or ""
     args = o.get("arguments")
     if args is None:
