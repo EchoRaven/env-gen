@@ -213,6 +213,16 @@ def _drop_orphan_tool_results(messages):
         return messages
 
 
+
+def _prepare_messages_for_request(messages):
+    """Single serialization contract for EVERY request path: prune orphan tool_results
+    (#249) then fit oversized images (#248). Four call sites built the wire payload
+    independently, so a fix applied to one left the others failing — this is the one place
+    provider-protocol repairs belong."""
+    return [_fit_message_images(m.to_dict())
+            for m in _drop_orphan_tool_results(messages)]
+
+
 @dataclass
 class Message:
     """Chat message - supports both text and multimodal content"""
@@ -1235,7 +1245,7 @@ class OpenAIClient(BaseLLMClient):
         
         request_params = {
             "model": self.config.model_name,
-            "messages": [_fit_message_images(m.to_dict()) for m in messages],
+            "messages": _prepare_messages_for_request(messages),
             "temperature": temperature or self.config.temperature,
             "max_tokens": max_tokens or self.config.max_tokens,
             "stream": True,
@@ -1644,7 +1654,7 @@ class LocalLLMClient(BaseLLMClient):
         # Ollama format
         request_data = {
             "model": self.config.model_name,
-            "messages": [_fit_message_images(m.to_dict()) for m in messages],
+            "messages": _prepare_messages_for_request(messages),
             "stream": False,
             "options": {
                 "temperature": temperature or self.config.temperature,
@@ -1688,7 +1698,7 @@ class LocalLLMClient(BaseLLMClient):
         
         request_data = {
             "model": self.config.model_name,
-            "messages": [_fit_message_images(m.to_dict()) for m in messages],
+            "messages": _prepare_messages_for_request(messages),
             "stream": True,
             "options": {
                 "temperature": temperature or self.config.temperature,
