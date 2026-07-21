@@ -239,13 +239,74 @@ def _drop_orphan_tool_results(messages):
         return messages
 
 
-def _prepare_messages_for_request(messages):
+
+_ANTHROPIC_FAMILIES = ("claude", "vertex", "anthropic", "fable", "opus", "sonnet", "haiku")
+
+
+def _needs_anthropic_shape(model: str) -> bool:
+    m = (model or "").lower()
+    return any(k in m for k in _ANTHROPIC_FAMILIES)
+
+
+def _normalize_for_anthropic(msgs: list) -> list:
+    """#250 — reshape an OpenAI-style message list into what Anthropic actually accepts.
+
+    Evidence (r46/r48 WIRE-SHAPE dumps): the assistant→tool pairing was ALREADY adjacent and
+    correct, yet the gateway still answered 'unexpected tool_use_id'. What the dumps show is
+    a shape Anthropic does not allow: system messages in the MIDDLE of the conversation
+    (indices 2 and 7) and runs of consecutive user turns (3,4,5 / 12,13 / 15,16,17). The
+    gateway must fold those into Anthropic's one-top-level-system + strictly alternating
+    user/assistant form, and its folding shifts the tool_result away from its tool_use.
+
+    So do the folding ourselves, deterministically:
+      * hoist every system message into ONE leading system message,
+      * merge consecutive same-role turns (text joined) — but NEVER merge across a
+        tool boundary, so an assistant's tool_calls stay immediately followed by results,
+      * leave role=tool messages alone (the gateway maps them to tool_result blocks).
+    Pure; only applied for Anthropic-backed models."""
+    if not msgs:
+        return msgs
+    sys_parts, rest = [], []
+    for m in msgs:
+        role = m.get("role")
+        if role == "system":
+            c = m.get("content")
+            if isinstance(c, str) and c.strip():
+                sys_parts.append(c)
+            continue
+        rest.append(m)
+
+    out = []
+    for m in rest:
+        role = m.get("role")
+        prev = out[-1] if out else None
+        mergeable = (
+            prev is not None
+            and prev.get("role") == role
+            and role in ("user", "assistant")
+            and not prev.get("tool_calls") and not m.get("tool_calls")
+            and isinstance(prev.get("content"), str) and isinstance(m.get("content"), str)
+        )
+        if mergeable:
+            prev["content"] = (prev["content"] or "") + "\n\n" + (m.get("content") or "")
+            continue
+        out.append(dict(m))
+
+    if sys_parts:
+        out.insert(0, {"role": "system", "content": "\n\n".join(sys_parts)})
+    return out
+
+
+def _prepare_messages_for_request(messages, model: str = None):
     """Single serialization contract for EVERY request path: prune orphan tool_results
     (#249) then fit oversized images (#248). Four call sites built the wire payload
     independently, so a fix applied to one left the others failing — this is the one place
     provider-protocol repairs belong."""
-    return [_fit_message_images(m if isinstance(m, dict) else m.to_dict())
+    wire = [_fit_message_images(m if isinstance(m, dict) else m.to_dict())
             for m in _drop_orphan_tool_results(messages)]
+    if _needs_anthropic_shape(model):
+        wire = _normalize_for_anthropic(wire)
+    return wire
 
 
 @dataclass
@@ -1148,7 +1209,7 @@ class OpenAIClient(BaseLLMClient):
 
         request_params = {
             "model": model_name,
-            "messages": [_fit_message_images(m.to_dict()) for m in safe_messages],
+            "messages": _prepare_messages_for_request(safe_messages, model_name),
             token_param: max_tokens or self.config.max_tokens,
         }
         if not _drops_sampling:
@@ -1286,7 +1347,7 @@ class OpenAIClient(BaseLLMClient):
         
         request_params = {
             "model": self.config.model_name,
-            "messages": _prepare_messages_for_request(messages),
+            "messages": _prepare_messages_for_request(messages, self.config.model_name),
             "temperature": temperature or self.config.temperature,
             "max_tokens": max_tokens or self.config.max_tokens,
             "stream": True,
@@ -1695,7 +1756,7 @@ class LocalLLMClient(BaseLLMClient):
         # Ollama format
         request_data = {
             "model": self.config.model_name,
-            "messages": _prepare_messages_for_request(messages),
+            "messages": _prepare_messages_for_request(messages, self.config.model_name),
             "stream": False,
             "options": {
                 "temperature": temperature or self.config.temperature,
@@ -1739,7 +1800,7 @@ class LocalLLMClient(BaseLLMClient):
         
         request_data = {
             "model": self.config.model_name,
-            "messages": _prepare_messages_for_request(messages),
+            "messages": _prepare_messages_for_request(messages, self.config.model_name),
             "stream": True,
             "options": {
                 "temperature": temperature or self.config.temperature,
