@@ -185,33 +185,38 @@ def _drop_orphan_tool_results(messages):
 
     Anthropic-backed providers reject the whole request with "unexpected `tool_use_id`
     found in `tool_result` blocks … must have a corresponding `tool_use` block in the
-    PREVIOUS message". Adjacency matters, not mere presence somewhere earlier — and the
-    orphans are created by observation masking/truncation, so this must run AFTER masking.
-    OpenAI tolerates orphans; Anthropic does not. Pure; returns the input untouched when
-    nothing is orphaned."""
+    PREVIOUS message". Adjacency matters, not mere presence somewhere earlier, and the
+    orphans are produced by observation masking/truncation — so this runs AFTER masking.
+    Handles BOTH Message objects and already-serialized dicts: some call sites pass dicts,
+    and an attribute-only implementation silently passed those straight through (#249c
+    shipped with that hole). OpenAI tolerates orphans; Anthropic does not. Pure."""
+    def _get(m, key):
+        if isinstance(m, dict):
+            return m.get(key)
+        return getattr(m, key, None)
+
     try:
         pending = set()          # ids announced by the most recent assistant turn
         keep, dropped = [], 0
         for m in messages:
-            role = getattr(m, "role", None)
+            role = _get(m, "role")
             if role == "assistant":
                 pending = set()
-                for tc in (getattr(m, "tool_calls", None) or []):
+                for tc in (_get(m, "tool_calls") or []):
                     tid = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
                     if tid:
                         pending.add(str(tid))
             elif role == "tool":
-                tid = getattr(m, "tool_call_id", None)
+                tid = _get(m, "tool_call_id")
                 if not tid or str(tid) not in pending:
                     dropped += 1
                     continue
             else:
-                pending = set()  # any other turn ends the tool_result window
+                pending = set()  # any other turn closes the tool_result window
             keep.append(m)
         return keep if dropped else messages
     except Exception:
         return messages
-
 
 
 def _prepare_messages_for_request(messages):
@@ -219,7 +224,7 @@ def _prepare_messages_for_request(messages):
     (#249) then fit oversized images (#248). Four call sites built the wire payload
     independently, so a fix applied to one left the others failing — this is the one place
     provider-protocol repairs belong."""
-    return [_fit_message_images(m.to_dict())
+    return [_fit_message_images(m if isinstance(m, dict) else m.to_dict())
             for m in _drop_orphan_tool_results(messages)]
 
 
