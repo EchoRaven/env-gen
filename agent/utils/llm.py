@@ -1226,6 +1226,22 @@ class OpenAIClient(BaseLLMClient):
             response = await self._retry_with_backoff(_call)
         except Exception as e:
             msg = str(e).lower()
+            if "tool_use_id" in msg or "integrity check" in msg:
+                # #249e DIAGNOSTIC: dump the ACTUAL wire message shape so the orphan can be
+                # identified instead of guessed at (three blind patches cost three runs).
+                try:
+                    shape = []
+                    for i, mm in enumerate(request_params.get("messages") or []):
+                        r = mm.get("role")
+                        ids = [tc.get("id") for tc in (mm.get("tool_calls") or [])
+                               if isinstance(tc, dict)]
+                        shape.append(f"{i}:{r}"
+                                     + (f" calls={ids}" if ids else "")
+                                     + (f" result_for={mm.get('tool_call_id')}"
+                                        if mm.get("tool_call_id") else ""))
+                    self._logger.error("[LLM] WIRE-SHAPE on tool-protocol 400: " + " | ".join(shape))
+                except Exception:
+                    pass
             if ("invalid_prompt" in msg) or ("flagged as potentially violating" in msg) or ("usage policy" in msg):
                 raise RuntimeError(
                     "OpenAI rejected the prompt as invalid_prompt (policy filter). "
