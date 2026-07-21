@@ -28,7 +28,7 @@ import sys
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-_VERSION = "v12-mimesniff"
+_VERSION = "v13-parsefix"
 
 
 # ── metagen SDK resolution (real names confirmed via --introspect) ───────────
@@ -364,9 +364,9 @@ def _parse_tool_call_text(raw):
     try:
         o = json.loads(raw)
     except Exception:
-        return "", "{}"
+        return "", "{}", ""
     if not isinstance(o, dict):
-        return "", "{}"
+        return "", "{}", ""
     name = o.get("name") or o.get("tool_name") or o.get("function") or ""
     args = o.get("arguments")
     if args is None:
