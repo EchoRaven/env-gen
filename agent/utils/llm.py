@@ -109,17 +109,37 @@ def _sanitize_message_content(content: Optional[Union[str, list]]) -> Optional[U
 _IMG_BYTE_LIMIT = int(os.environ.get("ENVGEN_IMAGE_BYTE_LIMIT", "4500000"))
 
 
+
+def _sniff_image_mime(raw: bytes):
+    """#248e — true image type from magic bytes. Claude accepts only jpeg/png/gif/webp and
+    rejects a payload whose declared media type disagrees with its bytes."""
+    if raw[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if raw[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 def _fit_image_b64(image_base64: str, mime_type: str = "image/png"):
     """Return (base64, mime) shrunk to fit ``_IMG_BYTE_LIMIT``. No-op when it already
     fits or when Pillow is unavailable — a provider with no limit is unaffected."""
+    # #248e: trust the BYTES over the declared media type — the engine sometimes labels a
+    # JPEG as image/png and Claude rejects the mismatch (found by the sidecar work).
     # NOTE: providers measure the BASE64 STRING, not the decoded bytes — Vertex reported
     # "exceeds 5 MB maximum: 5763156 b" for an image whose decoded size was only ~4.3 MB,
     # so a decoded-size test skipped exactly the images that get rejected. Gate on len(b64).
-    if len(image_base64) <= _IMG_BYTE_LIMIT:
-        return image_base64, mime_type
     try:
         raw = base64.b64decode(image_base64)
     except Exception:
+        return image_base64, mime_type
+    sniffed = _sniff_image_mime(raw)
+    if sniffed and sniffed != mime_type:
+        mime_type = sniffed
+    if len(image_base64) <= _IMG_BYTE_LIMIT:
         return image_base64, mime_type
     try:
         import io
