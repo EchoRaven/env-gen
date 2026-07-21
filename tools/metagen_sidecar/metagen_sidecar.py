@@ -28,7 +28,7 @@ import sys
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-_VERSION = "v13-parsefix"
+_VERSION = "v16-ratelimit"
 
 
 # ── metagen SDK resolution (real names confirmed via --introspect) ───────────
@@ -145,10 +145,14 @@ def make_platform(sdk):
         raise SystemExit("Could not resolve thrift_platform_factory / MetaGenKey — run --introspect")
     cred = sdk.MetaGenKey(key=key)
     factory = os.environ.get("ENVGEN_METAGEN_FACTORY", "devserver").lower()
-    if factory == "prod":
-        return sdk.thrift_platform_factory.create(metagen_auth_credential=cred)
-    return sdk.thrift_platform_factory.create_for_current_unix_user_for_devserver_only(
-        metagen_auth_credential=cred)
+    fn = (sdk.thrift_platform_factory.create if factory == "prod"
+          else sdk.thrift_platform_factory.create_for_current_unix_user_for_devserver_only)
+    # auto_rate_limit lets the SDK back off/retry on 429s (a full run bursts many concurrent
+    # calls; GPT-5.6-sol's self-service quota is tight). Fall back if the factory lacks the kwarg.
+    try:
+        return fn(metagen_auth_credential=cred, auto_rate_limit=True)
+    except TypeError:
+        return fn(metagen_auth_credential=cred)
 
 
 # ── OpenAI request -> metagen Dialog ─────────────────────────────────────────
@@ -345,7 +349,13 @@ def _tools_string_for_model(tools, model):
             {"name": f.get("name"), "description": f.get("description", ""),
              "parameters": f.get("parameters") or {"type": "object", "properties": {}}}
             for f in fns]}])
-    # OpenAI / Azure / GPT (default): pass the OpenAI schema through unchanged.
+    # OpenAI Responses API (gpt-*-genai-responses): FLAT tool schema (name at top level).
+    if "responses" in m:
+        return json.dumps([{"type": "function", "name": f.get("name"),
+                            "description": f.get("description", ""),
+                            "parameters": f.get("parameters") or {"type": "object", "properties": {}}}
+                           for f in fns])
+    # OpenAI / Azure / GPT Chat Completions (default): nested {type:function, function:{...}}.
     return json.dumps(tools)
 
 
@@ -367,11 +377,20 @@ def _parse_tool_call_text(raw):
         return "", "{}", ""
     if not isinstance(o, dict):
         return "", "{}", ""
-    name = o.get("name") or o.get("tool_name") or o.get("function") or ""
-    args = o.get("arguments")
-    if args is None:
-        args = o.get("input") or o.get("parameters") or o.get("args") or {}
     tid = o.get("id") or o.get("call_id") or ""
+    fn = o.get("function")
+    if isinstance(fn, dict):
+        # OpenAI chat-completions shape wrapped in tool_call_text (GPT): {"function":{name,arguments}}
+        name = fn.get("name") or ""
+        args = fn.get("arguments")
+    else:
+        # Anthropic tool_use {name,input} / flat {name,arguments}
+        name = o.get("name") or o.get("tool_name") or ""
+        args = o.get("arguments")
+        if args is None:
+            args = o.get("input") or o.get("parameters") or o.get("args")
+    if args is None:
+        args = {}
     return name, (args if isinstance(args, str) else json.dumps(args)), tid
 
 
