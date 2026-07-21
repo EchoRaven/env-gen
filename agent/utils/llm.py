@@ -174,6 +174,31 @@ def _fit_message_images(msg: dict) -> dict:
         return msg
 
 
+
+def _drop_orphan_tool_results(messages):
+    """#249 — remove ``role=tool`` messages whose ``tool_call_id`` was never announced by a
+    preceding assistant ``tool_calls`` entry. Pure; returns the input list when nothing is
+    orphaned so the common path allocates nothing."""
+    try:
+        announced = set()
+        keep, dropped = [], 0
+        for m in messages:
+            tcs = getattr(m, "tool_calls", None) or []
+            for tc in tcs:
+                tid = (tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None))
+                if tid:
+                    announced.add(str(tid))
+            if getattr(m, "role", None) == "tool":
+                tid = getattr(m, "tool_call_id", None)
+                if tid and str(tid) not in announced:
+                    dropped += 1
+                    continue
+            keep.append(m)
+        return keep if dropped else messages
+    except Exception:
+        return messages
+
+
 @dataclass
 class Message:
     """Chat message - supports both text and multimodal content"""
@@ -1040,6 +1065,12 @@ class OpenAIClient(BaseLLMClient):
         client = self._get_client()
 
         # Always sanitize outgoing content (redact keys/tokens/password-like lines).
+        # #249: Anthropic-backed providers reject the WHOLE request with
+        # "unexpected `tool_use_id` found in `tool_result` blocks" when a role=tool
+        # message has no matching tool_call in a preceding assistant message. Observation
+        # masking/truncation can drop the assistant turn while keeping its results, so
+        # prune orphans before serializing. OpenAI tolerates them; Anthropic does not.
+        messages = _drop_orphan_tool_results(messages)
         safe_messages: list[Message] = [
             Message(role=m.role, content=_sanitize_message_content(m.content), name=m.name, function_call=m.function_call, tool_calls=m.tool_calls, tool_call_id=m.tool_call_id)
             for m in _mask_old_observations(messages, self.config.model_name)
@@ -1190,7 +1221,7 @@ class OpenAIClient(BaseLLMClient):
         
         request_params = {
             "model": self.config.model_name,
-            "messages": [m.to_dict() for m in messages],
+            "messages": [_fit_message_images(m.to_dict()) for m in messages],
             "temperature": temperature or self.config.temperature,
             "max_tokens": max_tokens or self.config.max_tokens,
             "stream": True,
@@ -1599,7 +1630,7 @@ class LocalLLMClient(BaseLLMClient):
         # Ollama format
         request_data = {
             "model": self.config.model_name,
-            "messages": [m.to_dict() for m in messages],
+            "messages": [_fit_message_images(m.to_dict()) for m in messages],
             "stream": False,
             "options": {
                 "temperature": temperature or self.config.temperature,
@@ -1643,7 +1674,7 @@ class LocalLLMClient(BaseLLMClient):
         
         request_data = {
             "model": self.config.model_name,
-            "messages": [m.to_dict() for m in messages],
+            "messages": [_fit_message_images(m.to_dict()) for m in messages],
             "stream": True,
             "options": {
                 "temperature": temperature or self.config.temperature,
