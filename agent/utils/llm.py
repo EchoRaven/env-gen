@@ -180,23 +180,33 @@ def _fit_message_images(msg: dict) -> dict:
 
 
 def _drop_orphan_tool_results(messages):
-    """#249 — remove ``role=tool`` messages whose ``tool_call_id`` was never announced by a
-    preceding assistant ``tool_calls`` entry. Pure; returns the input list when nothing is
-    orphaned so the common path allocates nothing."""
+    """#249 — keep a ``role=tool`` message only when the tool_call it answers was announced
+    by the MOST RECENT assistant turn.
+
+    Anthropic-backed providers reject the whole request with "unexpected `tool_use_id`
+    found in `tool_result` blocks … must have a corresponding `tool_use` block in the
+    PREVIOUS message". Adjacency matters, not mere presence somewhere earlier — and the
+    orphans are created by observation masking/truncation, so this must run AFTER masking.
+    OpenAI tolerates orphans; Anthropic does not. Pure; returns the input untouched when
+    nothing is orphaned."""
     try:
-        announced = set()
+        pending = set()          # ids announced by the most recent assistant turn
         keep, dropped = [], 0
         for m in messages:
-            tcs = getattr(m, "tool_calls", None) or []
-            for tc in tcs:
-                tid = (tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None))
-                if tid:
-                    announced.add(str(tid))
-            if getattr(m, "role", None) == "tool":
+            role = getattr(m, "role", None)
+            if role == "assistant":
+                pending = set()
+                for tc in (getattr(m, "tool_calls", None) or []):
+                    tid = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                    if tid:
+                        pending.add(str(tid))
+            elif role == "tool":
                 tid = getattr(m, "tool_call_id", None)
-                if tid and str(tid) not in announced:
+                if not tid or str(tid) not in pending:
                     dropped += 1
                     continue
+            else:
+                pending = set()  # any other turn ends the tool_result window
             keep.append(m)
         return keep if dropped else messages
     except Exception:
@@ -1074,10 +1084,10 @@ class OpenAIClient(BaseLLMClient):
         # message has no matching tool_call in a preceding assistant message. Observation
         # masking/truncation can drop the assistant turn while keeping its results, so
         # prune orphans before serializing. OpenAI tolerates them; Anthropic does not.
-        messages = _drop_orphan_tool_results(messages)
         safe_messages: list[Message] = [
             Message(role=m.role, content=_sanitize_message_content(m.content), name=m.name, function_call=m.function_call, tool_calls=m.tool_calls, tool_call_id=m.tool_call_id)
-            for m in _mask_old_observations(messages, self.config.model_name)
+            for m in _drop_orphan_tool_results(
+                _mask_old_observations(messages, self.config.model_name))
         ]
         
         # Determine token parameter name based on model. Reasoning-class models
@@ -1966,7 +1976,8 @@ class GoogleClient(BaseLLMClient):
         # Always sanitize outgoing content
         safe_messages: list[Message] = [
             Message(role=m.role, content=_sanitize_message_content(m.content), name=m.name, function_call=m.function_call, tool_calls=m.tool_calls, tool_call_id=m.tool_call_id)
-            for m in _mask_old_observations(messages, self.config.model_name)
+            for m in _drop_orphan_tool_results(
+                _mask_old_observations(messages, self.config.model_name))
         ]
         
         # Convert messages to Google format
@@ -2578,7 +2589,8 @@ class MetagenClient(BaseLLMClient):
         safe = [Message(role=m.role, content=_sanitize_message_content(m.content),
                         name=m.name, function_call=m.function_call,
                         tool_calls=m.tool_calls, tool_call_id=m.tool_call_id)
-                for m in _mask_old_observations(messages, self.config.model_name)]
+                for m in _drop_orphan_tool_results(
+                _mask_old_observations(messages, self.config.model_name))]
         mg = self._sdk()
         dialog = mg.Dialog(messages=self._convert_messages(mg, safe))
         params = {
