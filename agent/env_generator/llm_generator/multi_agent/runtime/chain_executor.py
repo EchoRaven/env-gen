@@ -936,6 +936,75 @@ def _harvest_resource_ids(payload: Any, into: Dict[str, Any]) -> None:
             into.setdefault(_singular(k), v["id"])
 
 
+_ID_KEYS = ("id", "uuid", "pk")
+
+
+def _ids_from_list_payload(payload: Any) -> list:
+    """#263 — ids of the objects in a LIST-shaped response, under any key.
+
+    A singular object (the /auth/register response) deliberately yields nothing: it is the
+    exact payload whose id kept landing on by-id paths for other resources.
+    """
+    def _id_of(o):
+        if not isinstance(o, Mapping):
+            return None
+        for k in _ID_KEYS:
+            if o.get(k) is not None:
+                return o[k]
+        for k, v in o.items():
+            if str(k).lower().endswith("_id") and v is not None:
+                return v
+        return None
+
+    def _from_seq(seq):
+        out = []
+        for o in seq:
+            i = _id_of(o)
+            if i is not None:
+                out.append(i)
+        return out
+
+    if isinstance(payload, list):
+        return _from_seq(payload)
+    if isinstance(payload, Mapping):
+        for v in payload.values():
+            if isinstance(v, list) and v and isinstance(v[0], Mapping):
+                got = _from_seq(v)
+                if got:
+                    return got
+    return []
+
+
+def _pick_id_for_resource(resource: Any, seen_responses: list, last_id: Any) -> Any:
+    """#263 — the id to use for a by-id path when no step saved the variable.
+
+    Order: (1) a list from a response whose PATH names this resource, (2) the MOST RECENT
+    list-shaped response — the collection a human would have read the id from ("GET the
+    feed, then GET the first video") — and only then (3) the global last_id.
+
+    r55 lost its whole 88-minute convergence budget because step (3) was reached directly:
+    ``GET /api/v1/videos/${first_video_id}`` was filled with the USER id from
+    /auth/register and answered 404 "video not found" on a WORKING app, 20 chains over.
+    Rung (1) missed because the feed response is keyed ``items`` (not ``videos``) and rung
+    (2) of the old ladder — a live LIST on ``/api/v1/videos`` — missed because this app has
+    no bare collection, only ``/feed/foryou``.
+    """
+    res = str(resource or "").lower().rstrip("s")
+    named, recent = None, None
+    for path, payload in seen_responses:
+        ids = _ids_from_list_payload(payload)
+        if not ids:
+            continue
+        recent = ids[0]
+        if res and res in str(path or "").lower():
+            named = ids[0]
+    if named is not None:
+        return named
+    if recent is not None:
+        return recent
+    return last_id
+
+
 def _resolve_unresolved_dollar_vars(value: Any, last_id: Any,
                                     by_resource: Optional[Mapping[str, Any]] = None) -> Any:
     """BODY counterpart of execute_chain's path UNRESOLVED-VARIABLE FALLBACK. A
@@ -1234,6 +1303,7 @@ def execute_chain(base: str, chain: Mapping[str, Any],
     recorded: List[Dict[str, Any]] = []
     last_id: Any = None
     last_id_by_resource: Dict[str, Any] = {}  # resource -> its last-created id (FK resolution, fix #10)
+    seen_responses: List[Any] = []           # #263: (path, payload) of each step, for list-id recovery
     last_reg_creds: Dict[str, Any] = {}  # creds of the last successful /auth/register → reused if a later /auth/login 401s
     own_user_id: Any = None  # the chain user's own id (from /auth/register) — recovery must not target SELF (FIX #81)
     unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
@@ -1335,7 +1405,15 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             #     id → reading it → 200 false leak; leave the literal (404s,
             #     tolerated by the denial expectation).
             if _rid is None and not _is_denial:
-                _rid = last_id
+                # #263: before the blind global last_id, try an id from a LIST a prior
+                # step actually returned. r55 lost its entire convergence budget here:
+                # GET /api/v1/videos/${first_video_id} was filled with the USER id from
+                # /auth/register (last_id) and answered 404 "video not found" on a WORKING
+                # app, across 20 chains. Rung (1) missed because the feed response is keyed
+                # `items`, and list-recovery missed because this app has no bare
+                # /api/v1/videos collection — only /feed/foryou. A foreign id on a by-id
+                # path is a guaranteed 404 that reads exactly like an application bug.
+                _rid = _pick_id_for_resource(_pres, seen_responses, last_id)
             if _rid is not None:
                 path = _UNRESOLVED_PLACEHOLDER.sub(str(_rid), path)
         # #67 (outlook run-53, live): UNSATISFIABLE-BY-DATA read. A positive GET
@@ -1675,6 +1753,15 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 # resolve later ${x_id} refs when no bare collection endpoint exists.
                 # setdefault-only — never clobbers an explicitly created/captured id.
                 _harvest_resource_ids(_payload, last_id_by_resource)
+                # #263: remember the RESPONSE ITSELF (path + payload) so a later
+                # by-id path can draw an id from a LIST a prior step returned —
+                # the feed a human would have read the id from. Bounded to the
+                # last 40 responses so a long chain cannot grow this without end.
+                try:
+                    seen_responses.append((str(step.get("path") or ""), _payload))
+                    del seen_responses[:-40]
+                except Exception:
+                    pass
                 _cid = _extract_resource_id(_payload)
                 if _cid is not None:
                     last_id = _cid
