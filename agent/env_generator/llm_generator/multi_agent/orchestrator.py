@@ -2259,6 +2259,18 @@ class Orchestrator:
         """Spawn the one-shot design_analyst agent to MEASURE each component and enrich
         design/design_system.json. Returns True iff it finished. Best-effort: no spawn_service, a
         spawn error, or a timeout → False (the caller uses the single-shot fallback)."""
+        # NR1 (2026-07-21): the subagent has failed to converge in every observed run (r3, r4:
+        # ~370-880 vision calls, ZERO writes → 600s timeout → fallback), and post-timeout it keeps
+        # running its in-flight batch (~40s, terminate wait=False) stealing rate-limited GPT-5.6
+        # quota from kickoff. The deterministic single-shot enrich + complete_design_system floor
+        # already produce the authoritative doc with PIXEL-ACCURATE measured colors, so the subagent
+        # adds ~10 min + quota for no delivered benefit. Default OFF; opt back in (e.g. once a real
+        # write-forcing directive lands — the "Option B" experiment) with ENVGEN_DESIGN_ANALYST=1.
+        if os.environ.get("ENVGEN_DESIGN_ANALYST", "0").strip().lower() not in ("1", "true", "yes", "on"):
+            self._logger.info(
+                "design_analyst subagent disabled (set ENVGEN_DESIGN_ANALYST=1 to enable) — using "
+                "deterministic single-shot design prep (skeleton + enrich + completion floor)")
+            return False
         spawn_service = getattr(self, "spawn_service", None)
         if spawn_service is None:
             return False
