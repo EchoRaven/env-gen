@@ -48,6 +48,21 @@ def _canon_validation_status(status: Any) -> str:
     return _VALIDATION_STATUS_CANON.get(s, s or "error")
 
 
+# #254: provenance marker for a MEASURED runtime result (the framework's own browser walk /
+# smoke probe) as opposed to an LLM agent's reported opinion. Writers set it inside
+# ``metadata``; it lands flattened into the persisted evidence.
+DETERMINISTIC_EVIDENCE_KEY = "deterministic_runtime_evidence"
+
+
+def _is_deterministic_evidence(ev: Any) -> bool:
+    if not isinstance(ev, dict):
+        return False
+    if ev.get(DETERMINISTIC_EVIDENCE_KEY):
+        return True
+    nested = ev.get("metadata")
+    return isinstance(nested, dict) and bool(nested.get(DETERMINISTIC_EVIDENCE_KEY))
+
+
 def _flatten_validation_metadata(ev: dict) -> dict:
     """Reader-side metadata shape: evidence minus the reserved envelope keys,
     with a NESTED evidence['metadata'] dict merged in (setdefault — explicit
@@ -327,11 +342,43 @@ class HubRegistry:
         evidence: dict = None,
         metadata: dict = None,
     ) -> dict:
-        """Record a validation result via CodeHub.checks."""
+        """Record a validation result via CodeHub.checks.
+
+        FIX #254 (r51, live): the store is last-write-wins, so an LLM agent's
+        evidence-free ``failure`` silently ERASED the framework's measured PASS.
+        r51's authenticated walk rendered 8/8 pages cleanly and recorded 8 deterministic
+        rows; within 33s the verifier overwrote 7 with rows whose whole evidence was
+        ``{"flow": "<name>"}``, and the run aborted 117 min later on ui_flow_failed with
+        a WORKING app. Provenance decides, not recency: a deterministic runtime record
+        may be superseded only by another deterministic runtime record. The heal pipeline
+        re-emits those every cycle, so genuine breakage still lands and recovery is never
+        blocked; two non-deterministic writes stay last-write-wins."""
+        _name = f"validation:{task_id}"
+        _canon = _canon_validation_status(status)
+        _incoming_det = _is_deterministic_evidence(evidence) or _is_deterministic_evidence(metadata)
+        if _canon != "passed" and not _incoming_det:
+            try:
+                for _c in self.codehub.list_checks():
+                    if _c.get("name") != _name:
+                        continue
+                    if (_canon_validation_status(_c.get("status")) == "passed"
+                            and _is_deterministic_evidence(_c.get("evidence"))):
+                        _log = getattr(self, "_logger", None)
+                        if _log is not None:
+                            _log.warning(
+                                "#254: refused to downgrade %s to '%s' from %s — the standing "
+                                "record is DETERMINISTIC runtime evidence and the incoming one "
+                                "is not; only another measured result may supersede it.",
+                                _name, _canon, agent)
+                        return {"task_id": task_id, "status": "passed",
+                                "summary": summary, "downgrade_rejected": True}
+                    break
+            except Exception:
+                pass  # fail-open: never block a write because the store could not be read
         self.codehub.record_check(
             pr_id="main",
-            name=f"validation:{task_id}",
-            status=_canon_validation_status(status),
+            name=_name,
+            status=_canon,
             evidence={
                 "summary": summary,
                 "execution_mode": execution_mode,

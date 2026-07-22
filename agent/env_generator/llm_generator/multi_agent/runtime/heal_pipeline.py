@@ -625,6 +625,7 @@ class HealPipeline:
         # working app; the LLM/visual/business-chain gates still catch real breakage.
         try:
             from .test_user_runner import clean_ui_flow_passes
+            from .hub_registry import DETERMINISTIC_EVIDENCE_KEY
             _passed_flows = clean_ui_flow_passes(report)
             for _flow in _passed_flows:
                 orch.hubs.record_validation_result(
@@ -632,7 +633,13 @@ class HealPipeline:
                     agent="framework-testuser", execution_mode="browser",
                     summary="authenticated browser walk rendered this page cleanly "
                             "(no blank/console-error/login-bounce/fallback)",
-                    metadata={"check": "ui_flow", "flow": _flow})
+                    metadata={"check": "ui_flow", "flow": _flow,
+                              # #254: this is a MEASURED result (DOM probe on a real
+                              # authenticated page), so it outranks an LLM's report of
+                              # the same flow — r51 had 7 of these erased by
+                              # evidence-free verifier 'failure' rows and aborted on a
+                              # working app.
+                              DETERMINISTIC_EVIDENCE_KEY: True})
             if _passed_flows:
                 orch._logger.warning(
                     "#240: recorded %s deterministic ui_flow PASS record(s) from the "

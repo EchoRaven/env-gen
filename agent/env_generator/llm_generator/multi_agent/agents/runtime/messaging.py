@@ -132,7 +132,13 @@ class AgentMessaging:
         # throughput — r6: 44 idle orchestrator wakes during kickoff, kickoff crawled >21min. Mirrors
         # the 'info' exclusion above, but SCOPED to pre-finalize so post-kickoff update/answer
         # handling (the youtube#12 answer/question drain) is unchanged.
-        if msg_type in {"update", "answer"}:
+        # AMENDED #253: the justification above is ORCHESTRATOR-specific ("it can take no kickoff
+        # action then" — true only of the coordinator), but the code had no agent restriction, so a
+        # WORKING LANE also stopped waking on 'answer' pre-finalize. That is exactly the youtube#12
+        # Defect-C shape the block below exists to prevent: a lane that finish()ed while waiting on
+        # an answer goes idle and nothing re-wakes it. Scope the suppression to the coordinator, as
+        # its own comment states.
+        if msg_type in {"update", "answer"} and str(getattr(self, "agent_id", "")).startswith("orchestrator"):
             try:
                 from .preconditions import kickoff_finalized_signal
                 _pre_finalize = not kickoff_finalized_signal(getattr(self, "_hubs", None), self)

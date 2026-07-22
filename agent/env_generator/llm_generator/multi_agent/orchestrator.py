@@ -2259,16 +2259,18 @@ class Orchestrator:
         """Spawn the one-shot design_analyst agent to MEASURE each component and enrich
         design/design_system.json. Returns True iff it finished. Best-effort: no spawn_service, a
         spawn error, or a timeout → False (the caller uses the single-shot fallback)."""
-        # NR1 (2026-07-21): the subagent has failed to converge in every observed run (r3, r4:
-        # ~370-880 vision calls, ZERO writes → 600s timeout → fallback), and post-timeout it keeps
-        # running its in-flight batch (~40s, terminate wait=False) stealing rate-limited GPT-5.6
-        # quota from kickoff. The deterministic single-shot enrich + complete_design_system floor
-        # already produce the authoritative doc with PIXEL-ACCURATE measured colors, so the subagent
-        # adds ~10 min + quota for no delivered benefit. Default OFF; opt back in (e.g. once a real
-        # write-forcing directive lands — the "Option B" experiment) with ENVGEN_DESIGN_ANALYST=1.
-        if os.environ.get("ENVGEN_DESIGN_ANALYST", "0").strip().lower() not in ("1", "true", "yes", "on"):
+        # NR1 (2026-07-21, AMENDED #252): the analyst is the ONLY producer of per-component
+        # MEASURED design facts — the whole design-prep phase exists for it, and every lane's
+        # visual fidelity depends on it. NR1 proposed default-OFF from runs on one model
+        # (GPT-5.6 via the compat gateway, whose tool-call translation is independently known
+        # broken — see utils/llm.py #249). On the validated Gemini path it converges in EVERY
+        # observed run (r35 420s, r50 354s, r51 1419s — 3/3 "design_analyst finished", 0 timeouts).
+        # A model-specific non-convergence must NOT become the global default: that silently
+        # downgrades visual fidelity for every env. Default ON; turn OFF per-model/per-run with
+        # ENVGEN_DESIGN_ANALYST=0 (which is the right knob for the GPT-5.6 path).
+        if os.environ.get("ENVGEN_DESIGN_ANALYST", "1").strip().lower() in ("0", "false", "no", "off"):
             self._logger.info(
-                "design_analyst subagent disabled (set ENVGEN_DESIGN_ANALYST=1 to enable) — using "
+                "design_analyst subagent disabled via ENVGEN_DESIGN_ANALYST — using "
                 "deterministic single-shot design prep (skeleton + enrich + completion floor)")
             return False
         spawn_service = getattr(self, "spawn_service", None)
@@ -2289,13 +2291,14 @@ class Orchestrator:
             ev = getattr(res, "task_done_event", None)
             if ev is None:
                 return False
-            # F1 (2026-07-21): 600s backstop (was 1800). The analyst can grind vision calls
-            # without ever writing design_system.json (r3: ~880 calls, 0 writes); its measured
-            # output is NOT on the correctness path — write_skeleton_design_system + the
-            # complete_design_system deterministic completion floor + the single-shot
-            # run_design_prep enrich already produce the authoritative doc (measured colors win).
-            # So a non-converging analyst should cost minutes, not a 30-min serialized block.
-            timeout = float(os.environ.get("ENVGEN_DESIGN_ANALYST_TIMEOUT", "600"))
+            # F1 (2026-07-21, AMENDED #252): F1 tightened this to 600s to bound a NON-converging
+            # analyst. Correct intent, unsafe number: on the validated Gemini path the analyst
+            # CONVERGES at 354s / 420s / 1419s (r50 / r35 / r51) — 600s would have killed r51's
+            # analyst at 42% of its real work and silently fallen back, degrading every lane's
+            # visual input with no error anywhere. A backstop must sit above the observed
+            # converging maximum, not inside it. Keep 1800s (validated); the GPT-5.6 path can
+            # set ENVGEN_DESIGN_ANALYST_TIMEOUT=600 (or ENVGEN_DESIGN_ANALYST=0) for its model.
+            timeout = float(os.environ.get("ENVGEN_DESIGN_ANALYST_TIMEOUT", "1800"))
             await asyncio.wait_for(ev.wait(), timeout=timeout)
             self._logger.info("design_analyst finished — design_system.json enriched")
             return True
