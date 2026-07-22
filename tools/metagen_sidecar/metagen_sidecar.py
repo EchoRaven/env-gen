@@ -28,7 +28,15 @@ import sys
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-_VERSION = "v16-ratelimit"
+_VERSION = "v17-stickycache"
+
+# Prompt/KV-cache reuse: one sidecar process serves ONE generation run, and all of that run's
+# calls share a large stable prefix (system prompt + contract + reference materials + tool defs).
+# A single stable seed routes them to the SAME shard so its persistent KV cache serves that prefix
+# instead of re-processing ~140k chars every call (r5: 90-97s/call on 140k-355k-char contexts).
+# Applied ONLY when MG_STICKY_ROUTING is enabled (metagen warns sticky routing can perform worse /
+# cause SEVs, and it only helps if the model has persistent KV cache enabled). Override via MG_STICKY_SEED.
+_STICKY_SEED = os.environ.get("MG_STICKY_SEED") or os.urandom(8).hex()
 
 
 # ── metagen SDK resolution (real names confirmed via --introspect) ───────────
@@ -479,6 +487,10 @@ def complete(sdk, platform, body):
         params["tools"] = _tools_string_for_model(tools, model)
     if body.get("reasoning_effort"):
         params["reasoning_effort"] = body["reasoning_effort"]
+    # Route all of a run's calls to one shard for persistent-KV-cache reuse of the common prefix.
+    # Opt-in (MG_STICKY_ROUTING=1) — see the _STICKY_SEED note above for the metagen caveats.
+    if os.environ.get("MG_STICKY_ROUTING", "").strip().lower() in ("1", "true", "yes", "on"):
+        params["sticky_routing_seed"] = _STICKY_SEED
     try:
         resp = platform.dialog_completion(**params)
     except Exception as e:  # safety net: strip sampling params if the model rejects them
