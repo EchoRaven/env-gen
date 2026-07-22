@@ -292,6 +292,12 @@ def _normalize_for_anthropic(msgs: list) -> list:
             continue
         out.append(dict(m))
 
+    # #265b: Claude rejects a conversation that ends on an assistant turn ("does not
+    # support assistant message prefill"). Normally the framework's prompt IS the last
+    # user turn, but after #265 flattens an unanswered trailing tool call the assistant
+    # becomes last — trading one 400 for another. Close the turn explicitly.
+    if out and out[-1].get("role") == "assistant":
+        out.append({"role": "user", "content": "Continue."})
     if sys_parts:
         out.insert(0, {"role": "system", "content": "\n\n".join(sys_parts)})
     return out
@@ -366,14 +372,15 @@ def _sanitize_tool_ids(msgs: list) -> list:
     out = []
     for i, m in enumerate(msgs):
         calls = m.get("tool_calls")
-        tcid = m.get("tool_call_id")
-        if not calls and not tcid:
+        has_tcid = "tool_call_id" in m          # '' is a REAL id here, and it is falsy —
+        tcid = m.get("tool_call_id")            # testing truthiness skipped exactly the
+        if not calls and not has_tcid:          # empty ids this function exists to repair
             out.append(m)
             continue
         n = dict(m)
         if calls:
             n["tool_calls"] = [{**c, "id": _fix(c.get("id"), i)} for c in calls]
-        if tcid is not None:
+        if has_tcid:
             n["tool_call_id"] = _fix(tcid, i)
         out.append(n)
     return out
@@ -413,16 +420,71 @@ def _drop_empty_text_turns(msgs: list) -> list:
     return out
 
 
+def _flatten_dangling_tool_calls(msgs: list) -> list:
+    """#265 — the MIRROR of #249: a tool_call with no result is as fatal as the reverse.
+
+    r56 (live): ``400 messages.142: `tool_use` ids were found without `tool_result` blocks
+    immediately after: call_148`` — and the browser_test_user lane then wedged, every one of
+    its calls failing on the same message. #249 prunes orphan RESULTS; nothing pruned the
+    other direction, so an assistant turn whose calls were never answered (a step that ended
+    at its round budget, or a result lost to condensation) goes out with dangling tool_use
+    blocks and is rejected outright.
+
+    Repaired the same way as #259: keep the attempt as TEXT so the model still sees what it
+    tried to invoke, and drop only the protocol structure that cannot be satisfied.
+    """
+    out = []
+    for i, m in enumerate(msgs):
+        calls = m.get("tool_calls")
+        if not calls:
+            out.append(m)
+            continue
+        nxt = msgs[i + 1] if i + 1 < len(msgs) else None
+        answered = set()
+        if nxt is not None and (nxt.get("role") == "tool" or nxt.get("tool_call_id")):
+            j = i + 1
+            while j < len(msgs) and (msgs[j].get("role") == "tool"
+                                     or msgs[j].get("tool_call_id")):
+                answered.add(msgs[j].get("tool_call_id"))
+                j += 1
+        kept = [c for c in calls if c.get("id") in answered]
+        if len(kept) == len(calls):
+            out.append(m)
+            continue
+        lines = []
+        for c in calls:
+            if c.get("id") in answered:
+                continue
+            fn = (c or {}).get("function") or {}
+            lines.append(f"[tool call, no result recorded] {fn.get('name')}({fn.get('arguments')})")
+        base = m.get("content")
+        base = base if isinstance(base, str) and base.strip() else ""
+        n = dict(m)
+        n["content"] = (base + ("\n" if base else "") + "\n".join(lines)) or "[tool call]"
+        if kept:
+            n["tool_calls"] = kept
+        else:
+            n.pop("tool_calls", None)
+            n.pop("function_call", None)
+        out.append(n)
+    return out
+
+
 def _prepare_messages_for_request(messages, model: str = None, tools=None):
     """Single serialization contract for EVERY request path: prune orphan tool_results
     (#249), fit oversized images (#248), and — when the request declares no tools — flatten
     the tool protocol to text (#259). Four call sites built the wire payload independently,
     so a fix applied to one left the others failing; this is the one place provider-protocol
     repairs belong."""
-    wire = [_fit_message_images(m if isinstance(m, dict) else m.to_dict())
-            for m in _drop_orphan_tool_results(messages)]
-    wire = _sanitize_tool_ids(wire)          # #261 — before any pairing logic reads ids
-    wire = _drop_empty_text_turns(wire)      # #260
+    # ORDER IS LOAD-BEARING. #261 must run FIRST: every pairing decision below compares
+    # ids, and a raw EMPTY id made #249 treat a perfectly good result as an orphan, drop
+    # it, and leave #265 to strip the now-dangling call — losing the whole exchange.
+    wire = _sanitize_tool_ids([m if isinstance(m, dict) else m.to_dict()
+                               for m in messages])          # #261
+    wire = _drop_orphan_tool_results(wire)                   # #249 result -> call
+    wire = _flatten_dangling_tool_calls(wire)                # #265 call -> result
+    wire = [_fit_message_images(m) for m in wire]            # #248
+    wire = _drop_empty_text_turns(wire)                      # #260
     if not tools:
         wire = _flatten_tool_protocol(wire)
     if _needs_anthropic_shape(model):
