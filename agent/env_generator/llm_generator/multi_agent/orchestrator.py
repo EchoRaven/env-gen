@@ -1857,6 +1857,17 @@ class Orchestrator:
             self.checkpoint.fail_generation(error=str(e), phase="agent_workflow")
             success = False
         finally:
+            # #257: where the prompt tokens actually came from. r51 measured 456.7M
+            # prompt vs 0.9M completion, with the uncached share ~0.8x the per-step
+            # GROWTH — i.e. the cache is already near-optimal and the cost IS the new
+            # text each step appends (35-51k tokens/step/lane), which is tool OUTPUT.
+            # Print the per-tool rollup once at exit so the next reduction is aimed at
+            # measured offenders instead of guesses.
+            try:
+                from .agents.runtime.tooling import tool_io_rollup
+                self._logger.info("%s", tool_io_rollup())
+            except Exception:
+                pass
             # FINAL FLUSH: merge every lane's committed work into integration on
             # disk before the run exits. Deterministic delivery can fire (and cut
             # the release) while a core lane is STILL committing its final

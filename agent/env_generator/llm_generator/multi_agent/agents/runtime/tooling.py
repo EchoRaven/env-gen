@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -45,6 +46,49 @@ def suggest_tools(tool_name: str, available) -> list:
     fuzzy = difflib.get_close_matches(tool_name, sorted(available), n=3, cutoff=0.6)
     out = intent_hits + [h for h in fuzzy if h not in intent_hits]
     return out[:3]
+
+
+_TOOL_IO_LOG_THRESHOLD = int(os.environ.get('ENVGEN_TOOL_IO_LOG_CHARS', '20000') or 20000)
+
+
+# #257: per-tool RESULT-SIZE accounting. r51 measured 456.7M prompt vs 0.9M completion
+# tokens — the run's whole cost is prompt — and the uncached share was ~0.8x the per-step
+# GROWTH, i.e. the prompt cache is already near-optimal and the spend is simply how much
+# NEW text each step appends: 35-51k tokens per step per lane. That is tool OUTPUT, and
+# nothing recorded which tool produced it, so there was no way to aim. One line per call
+# plus a per-run rollup makes the next run answer it directly. Cheap (a len()), off the
+# hot path, and never raises.
+_TOOL_IO_TOTALS: Dict[str, list] = {}
+
+
+def _record_tool_io(agent, tool_name: str, result) -> None:
+    try:
+        payload = getattr(result, "output", None)
+        if payload is None:
+            payload = getattr(result, "data", None)
+        if payload is None:
+            payload = getattr(result, "error_message", "") or ""
+        size = len(payload) if isinstance(payload, str) else len(str(payload))
+        row = _TOOL_IO_TOTALS.setdefault(tool_name, [0, 0, 0])
+        row[0] += 1
+        row[1] += size
+        row[2] = max(row[2], size)
+        if size >= _TOOL_IO_LOG_THRESHOLD:
+            logger = getattr(agent, "_logger", None)
+            if logger is not None:
+                logger.info("[tool-io] %s returned %s chars (~%sk tokens)",
+                            tool_name, f"{size:,}", size // 4000)
+    except Exception:
+        pass
+
+
+def tool_io_rollup(top: int = 25) -> str:
+    """Human-readable 'where did the prompt tokens come from' table."""
+    rows = sorted(_TOOL_IO_TOTALS.items(), key=lambda kv: -kv[1][1])[:top]
+    out = ["[tool-io] TOTAL chars returned per tool (calls / total / mean / max):"]
+    for name, (n, tot, mx) in rows:
+        out.append(f"  {name:34} {n:6}  {tot:12,}  {tot // max(n, 1):9,}  {mx:10,}")
+    return "\n".join(out)
 
 
 class AgentTooling:
@@ -717,6 +761,7 @@ class AgentTooling:
                         self._exit_team_mode(reason=f"tool={tool_name}")
 
                 self.log_tool_call(tool_name, tool_args, result)
+                _record_tool_io(self, tool_name, result)
                 from .skill_consult import record_skill_consult
                 record_skill_consult(self, tool_name, tool_args, result)
                 return result
