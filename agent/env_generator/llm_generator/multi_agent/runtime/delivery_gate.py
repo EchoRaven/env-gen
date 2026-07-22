@@ -723,6 +723,18 @@ def noncanonical_business_response_keys(hubs) -> List[Dict[str, Any]]:
         md = v.get("metadata") or {}
         if str(md.get("kind") or "").strip().lower() in _EXEMPT_KINDS:
             continue  # not projector-owned (orchestrator/spine/custom handlers)
+        # #251 (r50, live): exemption must not depend on a metadata field the LANE has to
+        # remember. r50 was green except for this check, burned both graces and aborted on
+        # POST /auth/signup (response_key='signup') and POST /auth/logout — framework-owned
+        # AS-router endpoints the projector never touches, which the docstring already says
+        # are exempt. Their kind was simply unset, so the metadata-only test flagged them
+        # and NO lane could fix it (the handlers are ours). Exempt the control surface BY
+        # PATH too — an unwinnable hard gate is the opt-5 lesson we keep re-learning.
+        _p = str(v.get("path") or (k.split(" ", 1)[-1] if " " in k else k)).lower()
+        if (_p.startswith("/auth/") or _p.startswith("/api/auth/")
+                or _p.startswith("/oauth") or _p.startswith("/api/oauth")
+                or _p.startswith("/.well-known")):
+            continue
         if md.get("custom") or md.get("custom_route"):
             continue  # custom_routes are hand-authored, not projected
         rk = md.get("response_key") or (v.get("schema") or {}).get("response_key")
