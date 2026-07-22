@@ -68,6 +68,13 @@ def _record_tool_io(agent, tool_name: str, result) -> None:
             payload = getattr(result, "data", None)
         if payload is None:
             payload = getattr(result, "error_message", "") or ""
+        # #262: measure what actually lands in the CONVERSATION. The step pipeline pops
+        # ``multimodal_content`` out of the result and injects it as a real image part
+        # (where #248 then bounds it), so counting it here credited view_image with 4.6M
+        # chars in r54 and pointed the whole reduction effort at a non-problem. An
+        # instrument that measures the wrong thing is worse than none: it aims confidently.
+        if isinstance(payload, dict) and "multimodal_content" in payload:
+            payload = {k: v for k, v in payload.items() if k != "multimodal_content"}
         size = len(payload) if isinstance(payload, str) else len(str(payload))
         row = _TOOL_IO_TOTALS.setdefault(tool_name, [0, 0, 0])
         row[0] += 1

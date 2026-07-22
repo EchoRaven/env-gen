@@ -337,6 +337,82 @@ def _flatten_tool_protocol(msgs: list) -> list:
     return out
 
 
+_LEGAL_TOOL_ID_RE = re.compile(r"[^a-zA-Z0-9_-]")
+
+
+def _sanitize_tool_ids(msgs: list) -> list:
+    """#261 — tool ids must match ``^[a-zA-Z0-9_-]+$``.
+
+    r54 logged 220 x ``messages.N.content.0.tool_use.id: String should match
+    '^[a-zA-Z0-9_-]+$'``. Probed live: "", "a.b", "a:b", "a b" are all rejected; "call_1"
+    and a plain uuid pass. The rewrite is applied through ONE shared map so an assistant's
+    tool_calls and the matching tool message keep the same id — diverge and #249 sees an
+    orphan and silently drops the result.
+    """
+    mapping: dict = {}
+
+    def _fix(raw, i):
+        key = raw if isinstance(raw, str) else ""
+        if key in mapping:
+            return mapping[key]
+        clean = _LEGAL_TOOL_ID_RE.sub("_", key)
+        if not clean:
+            clean = f"call_{i}"
+        while clean in mapping.values() and mapping.get(key) != clean:
+            clean = f"{clean}_{i}"
+        mapping[key] = clean
+        return clean
+
+    out = []
+    for i, m in enumerate(msgs):
+        calls = m.get("tool_calls")
+        tcid = m.get("tool_call_id")
+        if not calls and not tcid:
+            out.append(m)
+            continue
+        n = dict(m)
+        if calls:
+            n["tool_calls"] = [{**c, "id": _fix(c.get("id"), i)} for c in calls]
+        if tcid is not None:
+            n["tool_call_id"] = _fix(tcid, i)
+        out.append(n)
+    return out
+
+
+def _drop_empty_text_turns(msgs: list) -> list:
+    """#260 — an empty / whitespace-only / None TEXT block is rejected outright.
+
+    r54 logged 800 x "text content blocks must contain non-whitespace text". Probed live:
+    content="" -> "must be non-empty", content="   " -> "must contain non-whitespace
+    text", content=None -> "Unsupported message content type".
+
+    Scope matters. content=None is LEGAL on a message that carries tool_calls (its content
+    array holds the tool_use block), so those are kept as-is — dropping one would orphan
+    its result. A tool result with an empty body is kept too, with a placeholder: "the tool
+    ran and returned nothing" is information, and removing it would orphan the call. Only a
+    turn with no text, no tool_calls and no tool_call_id is dropped, and that carries
+    nothing at all.
+    """
+    out = []
+    for m in msgs:
+        c = m.get("content")
+        has_text = isinstance(c, str) and c.strip()
+        if not isinstance(c, str):          # multimodal / already-structured content
+            out.append(m)
+            continue
+        if has_text:
+            out.append(m)
+            continue
+        if m.get("tool_calls"):
+            out.append({**m, "content": None})
+            continue
+        if m.get("role") == "tool" or m.get("tool_call_id"):
+            out.append({**m, "content": "(empty result)"})
+            continue
+        # nothing to say and nothing to carry
+    return out
+
+
 def _prepare_messages_for_request(messages, model: str = None, tools=None):
     """Single serialization contract for EVERY request path: prune orphan tool_results
     (#249), fit oversized images (#248), and — when the request declares no tools — flatten
@@ -345,6 +421,8 @@ def _prepare_messages_for_request(messages, model: str = None, tools=None):
     repairs belong."""
     wire = [_fit_message_images(m if isinstance(m, dict) else m.to_dict())
             for m in _drop_orphan_tool_results(messages)]
+    wire = _sanitize_tool_ids(wire)          # #261 — before any pairing logic reads ids
+    wire = _drop_empty_text_turns(wire)      # #260
     if not tools:
         wire = _flatten_tool_protocol(wire)
     if _needs_anthropic_shape(model):
