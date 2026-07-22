@@ -153,11 +153,13 @@ _DECOMPOSE_PROMPT = (
     "line of what it is + its layout, \"state\": notable state the data shows (e.g. 'mostly UNREAD "
     "→ blue-dominant', 'one row selected/highlighted', 'empty reading pane with wallpaper')}.\n"
     "Do NOT report colors — the framework MEASURES those from your regions (your color guesses are "
-    "unreliable). Cover the WHOLE screen; 6-14 components. Output ONLY a JSON array, nothing else."
+    "unreliable). Cover the WHOLE screen; 6-24 components — use MORE for dense screens (a browse "
+    "page with many rails, each rail a distinct component; individual hero/nav/card regions). "
+    "Output ONLY a JSON array, nothing else."
 )
 
 
-async def decompose_reference(image_path, llm, *, max_components: int = 14):
+async def decompose_reference(image_path, llm, *, max_components: int = 24):
     """Decompose a reference screenshot into named UI components with MEASURED colors per
     component (PIPELINE.md §2-4 stage output — the per-component build spec the frontend lane
     consumes). Gemini-vision identifies each component + its region + role + state; this then

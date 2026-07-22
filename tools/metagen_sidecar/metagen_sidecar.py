@@ -28,7 +28,34 @@ import sys
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-_VERSION = "v9-toolid"
+_VERSION = "v18-imgstrip"
+
+# CONTEXT BLOAT FIX (2026-07-22): agents call view_image() to look at references while building;
+# each result carries a ~300KB base64 screenshot that the engine's observation-masking never trims
+# (it only handles str content, not multimodal image parts), so the 20 Netflix references pile up to
+# ~6.3M chars and are re-sent EVERY call (r5: content_chars=6.46M, 90-97s/call). The image
+# INFORMATION is already fully captured as TEXT in reference_spec.json / design_system.json /
+# component_specs, and any agent can re-view on demand — so stripping STALE images from history
+# loses no information (the opposite of truncating text/debug). Keep images only in the most recent
+# MG_IMAGE_KEEP_LAST messages; TEXT (incl. debug tool output) is NEVER touched here.
+_IMAGE_KEEP_LAST = int(os.environ.get("MG_IMAGE_KEEP_LAST", "4") or 4)
+# NB: no \s in the base64 class — data-URIs are contiguous, and \s would greedily consume the
+# newline + any alphanumeric TEXT following the image (which must be preserved).
+_DATA_URI_RE = re.compile(r"data:image/[A-Za-z0-9.+\-]+;base64,[A-Za-z0-9+/=]+")
+_IMG_PLACEHOLDER = "[image viewed earlier — omitted to bound context; re-view with view_image if needed]"
+
+
+def _strip_data_uris(text: str) -> str:
+    """Replace inline base64 image data-URIs with a short placeholder; leaves all other text intact."""
+    return _DATA_URI_RE.sub(_IMG_PLACEHOLDER, text)
+
+# Prompt/KV-cache reuse: one sidecar process serves ONE generation run, and all of that run's
+# calls share a large stable prefix (system prompt + contract + reference materials + tool defs).
+# A single stable seed routes them to the SAME shard so its persistent KV cache serves that prefix
+# instead of re-processing ~140k chars every call (r5: 90-97s/call on 140k-355k-char contexts).
+# Applied ONLY when MG_STICKY_ROUTING is enabled (metagen warns sticky routing can perform worse /
+# cause SEVs, and it only helps if the model has persistent KV cache enabled). Override via MG_STICKY_SEED.
+_STICKY_SEED = os.environ.get("MG_STICKY_SEED") or os.urandom(8).hex()
 
 
 # ── metagen SDK resolution (real names confirmed via --introspect) ───────────
@@ -145,10 +172,14 @@ def make_platform(sdk):
         raise SystemExit("Could not resolve thrift_platform_factory / MetaGenKey — run --introspect")
     cred = sdk.MetaGenKey(key=key)
     factory = os.environ.get("ENVGEN_METAGEN_FACTORY", "devserver").lower()
-    if factory == "prod":
-        return sdk.thrift_platform_factory.create(metagen_auth_credential=cred)
-    return sdk.thrift_platform_factory.create_for_current_unix_user_for_devserver_only(
-        metagen_auth_credential=cred)
+    fn = (sdk.thrift_platform_factory.create if factory == "prod"
+          else sdk.thrift_platform_factory.create_for_current_unix_user_for_devserver_only)
+    # auto_rate_limit lets the SDK back off/retry on 429s (a full run bursts many concurrent
+    # calls; GPT-5.6-sol's self-service quota is tight). Fall back if the factory lacks the kwarg.
+    try:
+        return fn(metagen_auth_credential=cred, auto_rate_limit=True)
+    except TypeError:
+        return fn(metagen_auth_credential=cred)
 
 
 # ── OpenAI request -> metagen Dialog ─────────────────────────────────────────
@@ -164,17 +195,45 @@ def _source(sdk, role):
     return getattr(DS, name, getattr(DS, "USER"))
 
 
+_SUPPORTED_IMG = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
+
+def _sniff_mime(raw):
+    """Detect the true image type from magic bytes (the engine sometimes mislabels jpeg as png,
+    which Claude rejects). Returns a supported mime or None."""
+    if raw[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if raw[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 def _fit_image(b64, mime, limit=4_500_000):
-    """Providers cap images (Claude Vertex = 5 MB). If a base64 image exceeds `limit`, try to
-    shrink it (PIL, if available in the PAR); if we can't get under the cap (or PIL is absent),
+    """Claude Vertex accepts only jpeg/png/gif/webp and caps images at 5 MB. Pass through a
+    supported image under the cap; otherwise transcode/shrink to JPEG via PIL (handles oversized
+    rasters AND unsupported types like bmp/tiff). If we can't (e.g. SVG, or PIL absent in the PAR)
     return (None, None) so the caller DROPS it rather than 500-ing the whole request."""
     import base64
     try:
         raw = base64.b64decode(b64)
     except Exception:
+        return None, None
+    real = _sniff_mime(raw)
+    if real:
+        mime = real  # trust the actual bytes over the engine's declared media type
+    m = (mime or "").lower()
+    if m in _SUPPORTED_IMG and len(raw) <= limit:
         return b64, mime
-    if len(raw) <= limit:
-        return b64, mime
+    if "svg" in m:  # rasterize SVG so the model can SEE it (the app still ships the real .svg)
+        try:
+            import cairosvg
+            raw = cairosvg.svg2png(bytestring=raw, output_width=1024)
+        except Exception:
+            return None, None  # no SVG rasterizer in the PAR → drop (logo/icons still appear in screenshots)
     try:
         import io
         from PIL import Image
@@ -237,12 +296,12 @@ def _tool_call_content(sdk, name, args_str, tool_id):
     return None
 
 
-def _contents(sdk, msg):
+def _contents(sdk, msg, strip_images: bool = False):
     out = []
     c = msg.get("content")
     if isinstance(c, str):
         if c:
-            out.append(sdk.DialogTextContent(text=c))
+            out.append(sdk.DialogTextContent(text=_strip_data_uris(c) if strip_images else c))
     elif isinstance(c, list):
         for part in c:
             if not isinstance(part, dict):
@@ -250,17 +309,20 @@ def _contents(sdk, msg):
             elif part.get("type") == "text":
                 out.append(sdk.DialogTextContent(text=part.get("text", "")))
             elif part.get("type") == "image_url":
+                if strip_images:  # stale image: drop the base64, keep a text breadcrumb
+                    out.append(sdk.DialogTextContent(text=_IMG_PLACEHOLDER))
+                    continue
                 att = _attachment(sdk, (part.get("image_url") or {}).get("url", ""))
                 out.append(att if att is not None else
                            sdk.DialogTextContent(text="[image omitted]"))
-    for i, tc in enumerate(msg.get("tool_calls") or []):
+    # Render PRIOR tool calls as plain text — providers (Claude Vertex) strictly validate
+    # structured tool_use/tool_result id linkage on replayed history, which metagen's Dialog
+    # doesn't let us control. Text keeps the model's context without the fragile correlation.
+    for tc in (msg.get("tool_calls") or []):
         fn = tc.get("function") or {}
         args = fn.get("arguments")
-        tid = _valid_tool_id(tc.get("id"), i)
-        rc = _tool_call_content(sdk, fn.get("name", ""),
-                                args if isinstance(args, str) else json.dumps(args or {}), tid)
-        out.append(rc if rc is not None else
-                   sdk.DialogTextContent(text=f"[assistant tool_call] {fn.get('name')}({args})"))
+        args = args if isinstance(args, str) else json.dumps(args or {})
+        out.append(sdk.DialogTextContent(text=f"[called tool `{fn.get('name', '')}` with arguments {args}]"))
     if not out:
         out.append(sdk.DialogTextContent(text=""))
     return out
@@ -284,10 +346,26 @@ def _tool_response(sdk, msg):
 
 def build_dialog(sdk, messages):
     dmsgs = []
-    for m in messages:
+    n = len(messages)
+    # Keep base64 images only in the most recent MG_IMAGE_KEEP_LAST messages; strip stale ones
+    # (see _IMAGE_KEEP_LAST note). TEXT is never stripped — only image data-URIs.
+    keep_img_from = max(0, n - _IMAGE_KEEP_LAST)
+    for i, m in enumerate(messages):
+        strip = i < keep_img_from
         role = m.get("role", "user")
-        contents = _tool_response(sdk, m) if role == "tool" else _contents(sdk, m)
-        dmsgs.append(sdk.DialogMessage(source=_source(sdk, role), contents=contents))
+        if role == "tool":
+            # Render the tool result as a plain USER text message (see _contents note) — avoids
+            # structured tool_result.tool_use_id validation we can't satisfy through Dialog.
+            body = m.get("content")
+            body = body if isinstance(body, str) else json.dumps(body) if body is not None else ""
+            if strip and "data:image" in body:  # a view_image-style result that carried a base64 blob
+                body = _strip_data_uris(body)
+            name = m.get("name") or m.get("tool_call_id") or "tool"
+            dmsgs.append(sdk.DialogMessage(source=_source(sdk, "user"),
+                         contents=[sdk.DialogTextContent(text=f"[tool result — {name}]\n{body}")]))
+        else:
+            dmsgs.append(sdk.DialogMessage(source=_source(sdk, role),
+                         contents=_contents(sdk, m, strip_images=strip)))
     return sdk.Dialog(messages=dmsgs)
 
 
@@ -309,7 +387,13 @@ def _tools_string_for_model(tools, model):
             {"name": f.get("name"), "description": f.get("description", ""),
              "parameters": f.get("parameters") or {"type": "object", "properties": {}}}
             for f in fns]}])
-    # OpenAI / Azure / GPT (default): pass the OpenAI schema through unchanged.
+    # OpenAI Responses API (gpt-*-genai-responses): FLAT tool schema (name at top level).
+    if "responses" in m:
+        return json.dumps([{"type": "function", "name": f.get("name"),
+                            "description": f.get("description", ""),
+                            "parameters": f.get("parameters") or {"type": "object", "properties": {}}}
+                           for f in fns])
+    # OpenAI / Azure / GPT Chat Completions (default): nested {type:function, function:{...}}.
     return json.dumps(tools)
 
 
@@ -331,11 +415,20 @@ def _parse_tool_call_text(raw):
         return "", "{}", ""
     if not isinstance(o, dict):
         return "", "{}", ""
-    name = o.get("name") or o.get("tool_name") or o.get("function") or ""
-    args = o.get("arguments")
-    if args is None:
-        args = o.get("input") or o.get("parameters") or o.get("args") or {}
     tid = o.get("id") or o.get("call_id") or ""
+    fn = o.get("function")
+    if isinstance(fn, dict):
+        # OpenAI chat-completions shape wrapped in tool_call_text (GPT): {"function":{name,arguments}}
+        name = fn.get("name") or ""
+        args = fn.get("arguments")
+    else:
+        # Anthropic tool_use {name,input} / flat {name,arguments}
+        name = o.get("name") or o.get("tool_name") or ""
+        args = o.get("arguments")
+        if args is None:
+            args = o.get("input") or o.get("parameters") or o.get("args")
+    if args is None:
+        args = {}
     return name, (args if isinstance(args, str) else json.dumps(args)), tid
 
 
@@ -424,6 +517,10 @@ def complete(sdk, platform, body):
         params["tools"] = _tools_string_for_model(tools, model)
     if body.get("reasoning_effort"):
         params["reasoning_effort"] = body["reasoning_effort"]
+    # Route all of a run's calls to one shard for persistent-KV-cache reuse of the common prefix.
+    # Opt-in (MG_STICKY_ROUTING=1) — see the _STICKY_SEED note above for the metagen caveats.
+    if os.environ.get("MG_STICKY_ROUTING", "").strip().lower() in ("1", "true", "yes", "on"):
+        params["sticky_routing_seed"] = _STICKY_SEED
     try:
         resp = platform.dialog_completion(**params)
     except Exception as e:  # safety net: strip sampling params if the model rejects them
