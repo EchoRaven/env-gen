@@ -297,7 +297,8 @@ _OVERLAY_NAME_RE = re.compile(
 # App boot + auth (the smoke validation tears the env down with ``down -v``,
 # so the gate boots the already-built images itself).
 # ---------------------------------------------------------------------------
-def _compose_up(project_dir: Path, timeout: int = 180) -> Optional[str]:
+def _compose_up(project_dir: Path,
+                timeout: int = int(os.environ.get("ENVGEN_VISUAL_COMPOSE_TIMEOUT", "900") or 900)) -> Optional[str]:
     compose_file = project_dir / "docker" / "docker-compose.yml"
     cwd = project_dir / "docker"
     if not compose_file.exists():

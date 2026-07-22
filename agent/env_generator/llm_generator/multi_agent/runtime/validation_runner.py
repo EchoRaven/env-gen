@@ -28,6 +28,7 @@ generator runs. Returns a report; never raises (failures are recorded, not throw
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import time
@@ -35,6 +36,12 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
+
+# A cold docker build for a heavy app (React npm-install+build + backend + postgres + staged assets)
+# can exceed the old 300s cut-off mid-`up --build` (r6: 6/6 api_smoke attempts timed out at 300s →
+# validation never ran → the visual gate never ran → no delivery). Reliability > speed: let the
+# build finish. Override with ENVGEN_DOCKER_UP_TIMEOUT.
+_DOCKER_UP_TIMEOUT = int(os.environ.get("ENVGEN_DOCKER_UP_TIMEOUT", "1200") or 1200)
 
 
 def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> subprocess.CompletedProcess:
@@ -373,7 +380,7 @@ def run_smoke_validation(
     project_dir: Any,
     business_endpoints: List[Mapping[str, Any]],
     *,
-    up_timeout: int = 300,
+    up_timeout: int = _DOCKER_UP_TIMEOUT,
     health_timeout: int = 90,
     teardown: bool = True,
 ) -> Dict[str, Any]:
