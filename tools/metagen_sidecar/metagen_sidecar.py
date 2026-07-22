@@ -28,7 +28,26 @@ import sys
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-_VERSION = "v17-stickycache"
+_VERSION = "v18-imgstrip"
+
+# CONTEXT BLOAT FIX (2026-07-22): agents call view_image() to look at references while building;
+# each result carries a ~300KB base64 screenshot that the engine's observation-masking never trims
+# (it only handles str content, not multimodal image parts), so the 20 Netflix references pile up to
+# ~6.3M chars and are re-sent EVERY call (r5: content_chars=6.46M, 90-97s/call). The image
+# INFORMATION is already fully captured as TEXT in reference_spec.json / design_system.json /
+# component_specs, and any agent can re-view on demand — so stripping STALE images from history
+# loses no information (the opposite of truncating text/debug). Keep images only in the most recent
+# MG_IMAGE_KEEP_LAST messages; TEXT (incl. debug tool output) is NEVER touched here.
+_IMAGE_KEEP_LAST = int(os.environ.get("MG_IMAGE_KEEP_LAST", "4") or 4)
+# NB: no \s in the base64 class — data-URIs are contiguous, and \s would greedily consume the
+# newline + any alphanumeric TEXT following the image (which must be preserved).
+_DATA_URI_RE = re.compile(r"data:image/[A-Za-z0-9.+\-]+;base64,[A-Za-z0-9+/=]+")
+_IMG_PLACEHOLDER = "[image viewed earlier — omitted to bound context; re-view with view_image if needed]"
+
+
+def _strip_data_uris(text: str) -> str:
+    """Replace inline base64 image data-URIs with a short placeholder; leaves all other text intact."""
+    return _DATA_URI_RE.sub(_IMG_PLACEHOLDER, text)
 
 # Prompt/KV-cache reuse: one sidecar process serves ONE generation run, and all of that run's
 # calls share a large stable prefix (system prompt + contract + reference materials + tool defs).
@@ -277,12 +296,12 @@ def _tool_call_content(sdk, name, args_str, tool_id):
     return None
 
 
-def _contents(sdk, msg):
+def _contents(sdk, msg, strip_images: bool = False):
     out = []
     c = msg.get("content")
     if isinstance(c, str):
         if c:
-            out.append(sdk.DialogTextContent(text=c))
+            out.append(sdk.DialogTextContent(text=_strip_data_uris(c) if strip_images else c))
     elif isinstance(c, list):
         for part in c:
             if not isinstance(part, dict):
@@ -290,6 +309,9 @@ def _contents(sdk, msg):
             elif part.get("type") == "text":
                 out.append(sdk.DialogTextContent(text=part.get("text", "")))
             elif part.get("type") == "image_url":
+                if strip_images:  # stale image: drop the base64, keep a text breadcrumb
+                    out.append(sdk.DialogTextContent(text=_IMG_PLACEHOLDER))
+                    continue
                 att = _attachment(sdk, (part.get("image_url") or {}).get("url", ""))
                 out.append(att if att is not None else
                            sdk.DialogTextContent(text="[image omitted]"))
@@ -324,18 +346,26 @@ def _tool_response(sdk, msg):
 
 def build_dialog(sdk, messages):
     dmsgs = []
-    for m in messages:
+    n = len(messages)
+    # Keep base64 images only in the most recent MG_IMAGE_KEEP_LAST messages; strip stale ones
+    # (see _IMAGE_KEEP_LAST note). TEXT is never stripped — only image data-URIs.
+    keep_img_from = max(0, n - _IMAGE_KEEP_LAST)
+    for i, m in enumerate(messages):
+        strip = i < keep_img_from
         role = m.get("role", "user")
         if role == "tool":
             # Render the tool result as a plain USER text message (see _contents note) — avoids
             # structured tool_result.tool_use_id validation we can't satisfy through Dialog.
             body = m.get("content")
             body = body if isinstance(body, str) else json.dumps(body) if body is not None else ""
+            if strip and "data:image" in body:  # a view_image-style result that carried a base64 blob
+                body = _strip_data_uris(body)
             name = m.get("name") or m.get("tool_call_id") or "tool"
             dmsgs.append(sdk.DialogMessage(source=_source(sdk, "user"),
                          contents=[sdk.DialogTextContent(text=f"[tool result — {name}]\n{body}")]))
         else:
-            dmsgs.append(sdk.DialogMessage(source=_source(sdk, role), contents=_contents(sdk, m)))
+            dmsgs.append(sdk.DialogMessage(source=_source(sdk, role),
+                         contents=_contents(sdk, m, strip_images=strip)))
     return sdk.Dialog(messages=dmsgs)
 
 
