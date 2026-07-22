@@ -325,6 +325,7 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
             if pth == "/auth/register":
                 _ab["name"] = "Chain Tester"
             st["body"] = _ab
+        _authored_auth = st.get("auth")          # #266: remember who asked for it
         if pth.startswith("/api/") and not st.get("auth"):
             st["auth"] = "token"
         # FIX #91 (instagram run-11, live): a step expecting EXACTLY {401} is an
@@ -337,7 +338,22 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
         _exp401 = st.get("expect")
         _exp401 = _exp401 if isinstance(_exp401, (list, tuple, set)) else (
             [_exp401] if _exp401 is not None else [])
-        if {int(x) for x in _exp401 if str(x).isdigit()} == {401}:
+        _codes401 = {int(x) for x in _exp401 if str(x).isdigit()}
+        if _codes401 == {401}:
+            st.pop("auth", None)
+        elif (401 in _codes401
+              and not (_codes401 & _SUCCESS_CODES)
+              and str(_authored_auth or st.get("auth")) == "token"):
+            # #266 (r57, live): the SAME contradiction, written the natural way. A probe
+            # meaning "must be rejected" is usually authored expect=[401, 403] because an
+            # app may answer either — which #91's exact-{401} test misses, so the
+            # auto-bearer above stayed and the "anonymous" probe went out AUTHENTICATED.
+            # r57: POST /api/videos/<id>/like -> 201 against expect=[401, 403], on an app
+            # whose get_current_user correctly 401s without a token. 11 of 12 chains were
+            # green and this one could not pass no matter what any lane did.
+            # A CROSS-USER probe carries a different actor's token (auth="tokenB") and is
+            # left alone: stripping it would still satisfy the assertion via 401 while
+            # silently ending the isolation check that is its entire purpose.
             st.pop("auth", None)
         out.append(st)
     # CANONICAL TOKEN-AUTH: a verifier can reference auth="<var>" that no step
