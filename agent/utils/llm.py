@@ -297,13 +297,56 @@ def _normalize_for_anthropic(msgs: list) -> list:
     return out
 
 
-def _prepare_messages_for_request(messages, model: str = None):
+def _flatten_tool_protocol(msgs: list) -> list:
+    """#259 — render a tool exchange as TEXT for a request that declares no tools.
+
+    Bisected live against the gateway: the SAME 8-message list returns 200 with a ``tools``
+    key and 400 ``unexpected tool_use_id ... must have a corresponding tool_use block in
+    the previous message`` without one. With no tool declarations there is nothing for the
+    assistant's ``tool_use`` block to refer to, so it is dropped in translation and the
+    following ``tool_result`` is orphaned. Every WIRE-SHAPE dump that made this look like a
+    pairing bug (r46/r48/r53) showed the pairing adjacent and correct — the payload was
+    simply unrepresentable, and the framework issues plenty of tool-less calls (planning,
+    summarisation, condensation) over histories that contain tool exchanges.
+
+    Information-preserving on purpose: the call and its result stay visible as text, so a
+    planning/summarising turn still knows what was invoked and what came back.
+    """
+    out = []
+    for m in msgs:
+        role = m.get("role")
+        if role == "tool" or m.get("tool_call_id"):
+            body = m.get("content")
+            out.append({"role": "user",
+                        "content": f"[tool result] {body if isinstance(body, str) else body}"})
+            continue
+        calls = m.get("tool_calls")
+        if calls:
+            lines = []
+            for c in calls:
+                fn = (c or {}).get("function") or {}
+                lines.append(f"[tool call] {fn.get('name')}({fn.get('arguments')})")
+            base = m.get("content")
+            base = base if isinstance(base, str) and base.strip() else ""
+            merged = (base + ("\n" if base else "") + "\n".join(lines)) or "[tool call]"
+            trimmed = {k: v for k, v in m.items() if k not in ("tool_calls", "function_call")}
+            trimmed["content"] = merged
+            out.append(trimmed)
+            continue
+        out.append(m)
+    return out
+
+
+def _prepare_messages_for_request(messages, model: str = None, tools=None):
     """Single serialization contract for EVERY request path: prune orphan tool_results
-    (#249) then fit oversized images (#248). Four call sites built the wire payload
-    independently, so a fix applied to one left the others failing — this is the one place
-    provider-protocol repairs belong."""
+    (#249), fit oversized images (#248), and — when the request declares no tools — flatten
+    the tool protocol to text (#259). Four call sites built the wire payload independently,
+    so a fix applied to one left the others failing; this is the one place provider-protocol
+    repairs belong."""
     wire = [_fit_message_images(m if isinstance(m, dict) else m.to_dict())
             for m in _drop_orphan_tool_results(messages)]
+    if not tools:
+        wire = _flatten_tool_protocol(wire)
     if _needs_anthropic_shape(model):
         wire = _normalize_for_anthropic(wire)
     return wire
@@ -1265,7 +1308,10 @@ class OpenAIClient(BaseLLMClient):
 
         request_params = {
             "model": model_name,
-            "messages": _prepare_messages_for_request(safe_messages, model_name),
+            # #259: pass the OUTGOING tool declarations — a history containing a tool
+            # exchange is only representable when the request also declares tools.
+            "messages": _prepare_messages_for_request(safe_messages, model_name,
+                                                     tools=(tools or functions)),
             token_param: max_tokens or self.config.max_tokens,
         }
         if not _drops_sampling:
