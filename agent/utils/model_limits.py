@@ -81,7 +81,10 @@ def resolve_max_output_tokens(model: str,
             if candidate.startswith(prefix):
                 return limit
 
-    return default
+    # #256: same gateway-reordering fallback as the context table. Claude on Vertex
+    # REQUIRES max_tokens, so falling back to the generic default here caps a 1M-context
+    # model's replies at the safe floor for every call.
+    return _token_subset_match(candidates, _MAX_OUTPUT_TABLE, default)
 
 
 # --- Context WINDOW (input) per model family -------------------------------
@@ -126,9 +129,39 @@ _CONTEXT_WINDOW_TABLE: list[tuple[str, int]] = [
 ]
 
 
+def _id_tokens(name: str) -> set:
+    import re as _re
+    return {t for t in _re.split(r"[^a-z0-9]+", name.lower()) if t}
+
+
+def _token_subset_match(candidates, table, default):
+    """#256 fallback for ids the PREFIX path cannot resolve.
+
+    A gateway may reorder the components of a model id — the Llama compat gateway calls
+    Opus 4.7 ``claude-4-7-opus-vertex-genai``, same tokens as ``claude-opus-4-7`` in a
+    different order — and prefix matching then silently returns the DEFAULT window. For
+    Opus that is 128k against a real 1M: an 8x under-estimate on the number that decides
+    how much history survives, so masking and condensation start destroying context that
+    would have fit many times over, with nothing logged.
+
+    An entry matches when ALL of its tokens appear in the id, and the entry with the MOST
+    tokens wins — otherwise the shorter ``claude-opus-4`` would shadow ``claude-opus-4-7``.
+    Runs only after the prefix path misses, so ordinary ids behave exactly as before.
+    """
+    best_len, best_val = 0, None
+    for candidate in candidates:
+        have = _id_tokens(candidate)
+        for prefix, val in table:
+            want = _id_tokens(prefix)
+            if want and want <= have and len(want) > best_len:
+                best_len, best_val = len(want), val
+    return best_val if best_val is not None else default
+
+
 def resolve_context_window(model: str,
                            default: int = SAFE_DEFAULT_CONTEXT_WINDOW) -> int:
-    """Return the INPUT context window (tokens) for ``model`` (prefix match)."""
+    """Return the INPUT context window (tokens) for ``model`` (prefix match, then #256
+    token-subset match for gateway-reordered ids)."""
     if not model:
         return default
     name = model.strip().lower()
@@ -139,7 +172,7 @@ def resolve_context_window(model: str,
         for prefix, win in _CONTEXT_WINDOW_TABLE:
             if candidate.startswith(prefix):
                 return win
-    return default
+    return _token_subset_match(candidates, _CONTEXT_WINDOW_TABLE, default)
 
 
 def resolve_ctx_working_chars(model: str,

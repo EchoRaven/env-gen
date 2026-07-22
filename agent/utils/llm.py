@@ -399,6 +399,40 @@ def _ctx_cfg():
     return max(keep, 1), max(cap, 500)
 
 
+def _mask_block() -> int:
+    """#255: how many steps the masking cutoff holds still. 1 disables quantisation."""
+    try:
+        return max(1, int(os.environ.get("ENVGEN_MASK_BLOCK", "16") or 16))
+    except (TypeError, ValueError):
+        return 16
+
+
+def _total_str_chars(messages: list) -> int:
+    total = 0
+    for m in messages:
+        c = getattr(m, "content", None)
+        if isinstance(c, str):
+            total += len(c)
+    return total
+
+
+def _apply_observation_mask(messages: list, cutoff: int, max_old: int,
+                            first_task: int) -> list:
+    stub = "\n…[older output truncated to save context]…\n"
+    out = []
+    for i, m in enumerate(messages):
+        c = getattr(m, "content", None)
+        if (i >= cutoff or i == first_task or getattr(m, "role", "") == "system"
+                or not isinstance(c, str) or len(c) <= max_old):
+            out.append(m)
+            continue
+        out.append(Message(role=m.role,
+                           content=c[: max_old * 3 // 4] + stub + c[-max_old // 4:],
+                           name=m.name, function_call=m.function_call,
+                           tool_calls=m.tool_calls, tool_call_id=m.tool_call_id))
+    return out
+
+
 def _mask_old_observations(messages: list, model: str = None) -> list:
     """Truncate the bulky text content of stale messages to bound per-call input —
     but ONLY when the full history would exceed the model's RECOMMENDED WORKING
@@ -427,22 +461,44 @@ def _mask_old_observations(messages: list, model: str = None) -> list:
     n = len(messages)
     if n <= keep_recent:
         return messages
-    cutoff = n - keep_recent
     # protect the system prompt(s) and the first non-system message (the task)
     first_task = next((i for i, m in enumerate(messages)
                        if getattr(m, "role", "") != "system"), -1)
-    stub = "\n…[older output truncated to save context]…\n"
-    out = []
-    for i, m in enumerate(messages):
-        c = getattr(m, "content", None)
-        if (i >= cutoff or i == first_task or getattr(m, "role", "") == "system"
-                or not isinstance(c, str) or len(c) <= max_old):
-            out.append(m)
-            continue
-        out.append(Message(role=m.role,
-                           content=c[: max_old * 3 // 4] + stub + c[-max_old // 4:],
-                           name=m.name, function_call=m.function_call,
-                           tool_calls=m.tool_calls, tool_call_id=m.tool_call_id))
+    exact_cutoff = n - keep_recent
+
+    # #255 PREFIX STABILITY. A prompt cache is keyed on the longest common PREFIX, and
+    # ``exact_cutoff`` advances on EVERY step — so on every step the messages that just
+    # crossed it flip from full text to truncated text, invalidating the cache from that
+    # position onward. Forever. r51 measured 456.7M prompt vs 0.9M completion tokens, i.e.
+    # this run's entire cost IS the prompt, and 40% of it was re-sent uncached. Quantising
+    # the cutoff DOWN to a block boundary keeps the masked set byte-identical for BLOCK
+    # consecutive steps. It is also strictly information-preserving: a quantised cutoff is
+    # <= the exact one, so it never truncates a message the old code would have kept.
+    # (Latent on Gemini — 2.45M working window, masking never fired; constant on
+    # Claude/opus-4.7 at 313.6k, where r51's ~318k-char mean prompt is over the line on
+    # essentially every call.)
+    block = _mask_block()
+    cutoff = (exact_cutoff // block) * block if block > 1 else exact_cutoff
+    if cutoff <= 0:
+        cutoff = exact_cutoff
+    out = _apply_observation_mask(messages, cutoff, max_old, first_task)
+    if not budget or _total_str_chars(out) <= budget:
+        return out
+
+    # #255 BUDGET FLOOR. Under real pressure, fitting the window outranks cache reuse —
+    # and the old code did NOT actually fit it: masking was a fixed-shape truncation, so a
+    # long history stayed far over budget (400 messages capped at 6000 chars each is still
+    # 2.4M) and the provider answered 400. Give up stability first, then tighten the per-
+    # message cap, then the recent window — each step only as far as the budget demands.
+    out = _apply_observation_mask(messages, exact_cutoff, max_old, first_task)
+    cap = max_old
+    while _total_str_chars(out) > budget and cap > 400:
+        cap //= 2
+        out = _apply_observation_mask(messages, exact_cutoff, cap, first_task)
+    keep = keep_recent
+    while _total_str_chars(out) > budget and keep > 2:
+        keep = max(2, keep // 2)
+        out = _apply_observation_mask(messages, n - keep, cap, first_task)
     return out
 
 
