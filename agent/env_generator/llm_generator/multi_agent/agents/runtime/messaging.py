@@ -124,6 +124,25 @@ class AgentMessaging:
         # shutdown were already excluded; info joins them.)
         if msg_type in {"ack", "status", "shutdown", "info"}:
             return
+        # F2b (2026-07-22): during coordinator-owned KICKOFF, an attendee's progress 'update' /
+        # 'answer' must NOT wake the orchestrator — it can take no kickoff action then (the
+        # pure-Python coordinator drives declaration→synthesis; chairing arrives as the separate
+        # kickoff_facilitate_request / kickoff_detail_request msg_types, which still wake). Each such
+        # wake is a wasted large-context LLM call (~88s) that also starves the attendees of GPT-5.6
+        # throughput — r6: 44 idle orchestrator wakes during kickoff, kickoff crawled >21min. Mirrors
+        # the 'info' exclusion above, but SCOPED to pre-finalize so post-kickoff update/answer
+        # handling (the youtube#12 answer/question drain) is unchanged.
+        if msg_type in {"update", "answer"}:
+            try:
+                from .preconditions import kickoff_finalized_signal
+                _pre_finalize = not kickoff_finalized_signal(getattr(self, "_hubs", None), self)
+            except Exception:
+                _pre_finalize = False
+            if _pre_finalize:
+                self._logger.debug(
+                    f"[{self.agent_id}] retained {msg_type} from {inbox_msg.get('from')} without "
+                    "wakeup; coordinator-owned kickoff not finalized (F2b)")
+                return
         # task_ready / issue / question / answer are DIRECT work-for-this-lane
         # signals. They used to be UNCONDITIONALLY excluded here and delegated
         # SOLELY to the priority-queue urgent-drain (run_loop). youtube run #12
