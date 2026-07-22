@@ -502,6 +502,44 @@ def _is_id_param(param: str) -> bool:
 _NAMED_LOOKUP_COLS = ("username", "handle", "slug", "name", "title", "code", "key", "email")
 
 
+
+# #271: resolve whether a projected endpoint needs auth, treating an UNSTATED contract
+# (missing OR None) as "decide by shape", never as "public".
+_WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+# Path fragments that make a GET personal to the caller — a read of these is per-user and
+# cannot be anonymous. Kept generic (no app vocabulary): "me", the personalised feeds, and
+# the notification/inbox family.
+_SELF_READ_MARKERS = ("/me", "/me/", "feed/following", "feed/friends", "feed/for-you",
+                      "feed/foryou", "notification", "inbox", "/mine")
+# The auth CONTROL surface mints tokens, so it must stay anonymous even for writes.
+_AUTH_CONTROL_PREFIXES = ("/auth/", "/api/auth/", "/oauth", "/api/oauth", "/.well-known")
+
+
+def resolve_endpoint_auth(method, path, ep, meta=None):
+    """True if this endpoint must project with Depends(get_current_user).
+
+    r58 (live): every unauthored endpoint carried auth_required=None, and
+    ``bool(ep.get("auth_required", True))`` returned False for a PRESENT-but-None key
+    (the default only applies when the key is ABSENT), so /api/me, /api/feed/following and
+    the video write routes all projected WIDE OPEN and 200'd anonymously. Fixed two ways:
+    None means "unstated" (explicit is-None check, not .get-with-default), and an unstated
+    endpoint defaults to auth ONLY when its shape needs it — a write, or a self/personalised
+    read — so public reads (a feed, an explore grid) stay open. An explicit True/False in
+    the contract or metadata always wins.
+    """
+    stated = ep.get("auth_required")
+    if stated is None and isinstance(meta, Mapping):
+        stated = meta.get("auth_required")
+    if stated is not None:
+        return bool(stated)
+    p = str(path or "").lower()
+    if any(p.startswith(pre) for pre in _AUTH_CONTROL_PREFIXES):
+        return False                              # token-minting surface stays anonymous
+    if str(method or "").upper() in _WRITE_METHODS:
+        return True                               # a mutation needs an actor
+    return any(mark in p for mark in _SELF_READ_MARKERS)   # personalised read needs one
+
+
 def _lookup_field(param: str, parent_meta: Dict[str, Any]) -> str:
     """Which parent column a path param matches: id for ``*id``, else a NAMED column.
 
@@ -1185,7 +1223,7 @@ def project_missing_routes(
         if (method, _norm_path(path)) in existing:
             continue
         meta = ep.get("metadata") if isinstance(ep.get("metadata"), Mapping) else {}
-        auth = bool(ep.get("auth_required", meta.get("auth_required", True)))
+        auth = resolve_endpoint_auth(method, path, ep, meta)   # #271
         _schema = ep.get("schema") if isinstance(ep.get("schema"), Mapping) else {}
         response_key = str(
             ep.get("response_key")
