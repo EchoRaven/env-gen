@@ -1553,8 +1553,37 @@ class EnvGenAgent(
     
     # ==================== JINJA2 HELPERS ====================
     
+    @staticmethod
+    def resolve_prompt_version(template_path: str) -> str:
+        """#269: pick the prompt-version directory, falling back per FILE.
+
+        The audit (notes/prompt_audit_2026-07-22.md) measured 98-99% of every v3 template
+        rendering unconditionally into every request — roughly 160M system-prompt tokens in
+        a single run — and found the three biggest sections are prose restatements of rules
+        a HARD gate already enforces: 22.8% of frontend_agent.j2 is about response_key and
+        contract_alignment_failed still fired in 43% of 72 runs; 16.2% is about placeholders
+        and placeholder_stub_handler still fired in 46%. The topics with the SMALLEST prompt
+        footprint (dead nav link 1.3%, real map 1.3%) failed in 3% and 0%.
+
+        v4 rewrites only those sections. Falling back per file means v4 can be introduced
+        one lane at a time and any file can be reverted by deleting it — the comparison the
+        audit's own risk clause needs: if a compressed section makes its gate fail MORE
+        often, that section was doing real preventive work and goes back.
+        """
+        want = str(os.environ.get("ENVGEN_PROMPT_VERSION", "") or "").strip()
+        if not want or "/" not in template_path:
+            return template_path
+        head, _, tail = template_path.partition("/")
+        if not head.startswith("v") or head == want:
+            return template_path
+        candidate = f"{want}/{tail}"
+        if (PROMPTS_DIR / candidate).exists():
+            return candidate
+        return template_path
+
     def render_template(self, template_path: str, **kwargs) -> str:
         """Render a Jinja2 template."""
+        template_path = self.resolve_prompt_version(template_path)
         try:
             template = self._jinja_env.get_template(template_path)
             return template.render(**kwargs)
@@ -1564,6 +1593,7 @@ class EnvGenAgent(
     
     def render_macro(self, template_path: str, macro_name: str, **kwargs) -> str:
         """Render a specific macro from a template."""
+        template_path = self.resolve_prompt_version(template_path)   # #269
         try:
             template = self._jinja_env.get_template(template_path)
             macro = getattr(template.module, macro_name, None)
