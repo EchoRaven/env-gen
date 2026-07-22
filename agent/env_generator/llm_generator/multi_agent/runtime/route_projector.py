@@ -498,8 +498,27 @@ def _is_id_param(param: str) -> bool:
     return p == "id" or p.endswith("id") or p.endswith("_id")
 
 
+# #270: text-ish columns a by-NAME path param may legitimately match, most specific first.
+_NAMED_LOOKUP_COLS = ("username", "handle", "slug", "name", "title", "code", "key", "email")
+
+
 def _lookup_field(param: str, parent_meta: Dict[str, Any]) -> str:
-    """Which parent column a path param matches: id for ``*id``, else username/slug."""
+    """Which parent column a path param matches: id for ``*id``, else a NAMED column.
+
+    #270 (r58, live): ``/api/users/{username}/follow`` projected to
+    ``db.query(User).filter(getattr(User, "id") == username)``. That run's ``User`` has no
+    ``username`` column — it is id / email / name / password_hash / tenant_id / created_at,
+    the username lives on another model — so every rung of the old ladder missed and the
+    final ``return "id"`` compared an Integer primary key to "avachen". That is an
+    unconditional Postgres type error: three routes 500 on every request, no lane can fix
+    it, and it reads as a backend bug rather than a projection bug.
+
+    The fallback was the defect. For an id-LIKE param the PK is right. For a param named
+    after something else, the PK is a guaranteed 500, so prefer any TEXT-ish identifying
+    column the parent actually has: a text-to-text comparison cannot raise, and a miss
+    becomes an honest 404. Only an id-like param (or a model with nothing else) still
+    reaches ``id``.
+    """
     cols = parent_meta.get("cols", [])
     if _is_id_param(param):
         return "id"
@@ -509,6 +528,14 @@ def _lookup_field(param: str, parent_meta: Dict[str, Any]) -> str:
         return "username"
     if "slug" in cols:
         return "slug"
+    # #270: a name-shaped param must not claim the PK. Prefer a column whose name relates
+    # to the param, then any text-ish identifier the model carries.
+    for col in _NAMED_LOOKUP_COLS:
+        if col in cols and (col in param or param in col):
+            return col
+    for col in _NAMED_LOOKUP_COLS:
+        if col in cols:
+            return col
     return "id"
 
 
