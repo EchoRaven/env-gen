@@ -67,6 +67,38 @@ except (ImportError, ValueError):
     from multi_agent.dockerfile_lint import enforce_dockerfile_classic_compat  # type: ignore
 
 MAX_READ_LINES = 2000
+# #274: read() caps LINES (MAX_READ_LINES) but not CHARACTERS, so a 2000-line file of very
+# long lines (a minified bundle, a one-line JSON, one of our own giant projected handlers)
+# still returns megabytes into the step context — read was ~1.1M chars over r59. Bound the
+# character size too. Env override ENVGEN_MAX_READ_CHARS. Information-preserving: the tail is
+# deferred to a second read at an offset, not lost.
+import os as _os
+
+
+def _max_read_chars() -> int:
+    try:
+        return max(4000, int(_os.environ.get("ENVGEN_MAX_READ_CHARS", "60000") or 60000))
+    except (TypeError, ValueError):
+        return 60000
+
+
+MAX_READ_CHARS = _max_read_chars()
+
+
+def cap_read_content(content):
+    """Return (possibly-trimmed content, was_truncated). Cuts on a line boundary when a
+    newline sits within the last 10% before the cap, so a line is not sliced mid-token."""
+    if not isinstance(content, str) or len(content) <= MAX_READ_CHARS:
+        return content, False
+    head = content[:MAX_READ_CHARS]
+    nl = head.rfind("\n")
+    if nl >= MAX_READ_CHARS * 9 // 10:      # a clean boundary is close — use it
+        head = head[:nl]
+    kept_lines = head.count("\n") + 1
+    total_lines = content.count("\n") + 1
+    return (head + f"\n… [read truncated at {len(head):,} chars / line ~{kept_lines} of "
+            f"{total_lines}; continue with read(offset={kept_lines + 1})] …"), True
+
 
 HIGH_CONTENTION_PREFIXES = (
     "design/",

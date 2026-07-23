@@ -640,6 +640,8 @@ Returns:
 # Check Inbox Tool
 # ============================================================================
 
+
+
 class CheckInboxTool(BaseTool):
     """
     Check inbox for received messages with smart filtering.
@@ -768,7 +770,7 @@ Returns:
                     "id": event.get("id"),
                     "from": payload.get("from") or event.get("source_hub"),
                     "type": event.get("event_type"),
-                    "content": payload.get("content") or payload.get("body") or str(payload),
+                    "content": summarize_inbox_message_body(payload.get("content") or payload.get("body") or str(payload)),
                     "tags": payload.get("tags", []),
                     "priority": event.get("priority", "normal"),
                     "persist": True,
@@ -818,7 +820,15 @@ Returns:
         
         # Apply limit
         filtered = filtered[:limit]
-        
+
+        # #274 NOTE: inbox bodies are deliberately NOT truncated. A 2026-06-01 directive
+        # ("不要截断，这个肯定要完整信息的") removed a [:500] cap that broke Facebook-scale
+        # task_ready: the orchestrator sends a multi-thousand-char CONTRACT through the
+        # inbox, and a trimmed body left the receiver unable to see it and unable to ask for
+        # the rest (the re-ask reply truncated too), wedging the pipeline. test_inbox_no_
+        # content_truncation locks this in. Context savings for oversized bodies must come
+        # from the SENDER (send a summary + a hub pointer), not from clipping on read.
+
         # Mark as read
         for msg in filtered:
             msg["read"] = True
