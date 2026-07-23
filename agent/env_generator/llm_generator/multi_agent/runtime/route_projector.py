@@ -997,6 +997,26 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 "        for k, v in valid.items():",
                 "            setattr(obj, k, v)",
             ]
+        elif m in ("PUT", "PATCH") and owner_fk and not last_param:
+            # #277 (r61, live): PATCH /api/settings 500'd. An owner-scoped SINGLETON with no
+            # id param and not ending in /me (settings / preferences / profile / config — one
+            # row per user) fell through to the CREATE path below, so PATCH did
+            # ``cls(**valid); db.add`` — a second INSERT that hit the owner/unique constraint
+            # (or a NOT-NULL owner it never set). It is a one-row-per-user resource, so load
+            # the caller's existing row (like /me) and setattr onto it; create it if absent so
+            # a first PATCH still works.
+            body_lines += [
+                "    try:",
+                f'        obj = db.query({cls}).filter('
+                f'getattr({cls}, "{owner_fk}") == _fw_owner_val({cls}, "{owner_fk}", user)).first()',
+                "        if obj is None:",
+                f'            obj = {cls}(**valid)',
+                f'            setattr(obj, "{owner_fk}", _fw_owner_val({cls}, "{owner_fk}", user))',
+                "            db.add(obj)",
+                "        else:",
+                "            for k, v in valid.items():",
+                "                setattr(obj, k, v)",
+            ]
         else:
             bound: List[str] = []
             # Bind a path-param parent into the relation's TARGET FK, and inject the
