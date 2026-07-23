@@ -848,6 +848,29 @@ _REQUIRED_FIELD_RE = re.compile(
     re.IGNORECASE)
 
 
+# #272: framework-projected-defect classifier (Hatch design principle #5 — separate "my
+# framework code is broken" from "the app the lane wrote is broken"). A projected handler is
+# named ``_projected_*`` by route_projector, so a 5xx whose traceback names one is, by
+# definition, a bug in framework-emitted code the lane cannot touch. #263/#270/#271 were all
+# this shape and were recorded as ``broken`` app endpoints, sending lanes to fix handlers
+# they never wrote. Narrow on purpose: only a 5xx + a ``_projected_`` traceback qualifies; a
+# 4xx (a contract/data outcome) or a lane-authored traceback stays a normal app failure.
+_PROJECTED_TRACEBACK_RE = re.compile(r"backend traceback:[^\n]*\b_projected_[a-z0-9_]+", re.I)
+
+
+def classify_endpoint_failure(status, body_text):
+    """``"ok"`` | ``"framework_defect"`` | ``"broken"`` for one endpoint probe result."""
+    try:
+        code = int(status)
+    except (TypeError, ValueError):
+        code = 0
+    if 200 <= code < 300:
+        return "ok"
+    if code >= 500 and isinstance(body_text, str) and _PROJECTED_TRACEBACK_RE.search(body_text):
+        return "framework_defect"
+    return "broken"
+
+
 def _missing_required_fields(body_text: Optional[str],
                              method: str) -> "tuple[List[str], List[str]]":
     """``(body_fields, query_fields)`` the LIVE handler reports MISSING from a 4xx,
@@ -1737,6 +1760,14 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 kind = "broken" if _built_404 else "missing"
             else:
                 kind = "broken"
+                # #272: a 5xx whose traceback names a framework-projected handler is a
+                # FRAMEWORK defect (route_projector emitted it, the lane cannot fix it) — do
+                # not record it as a broken APP endpoint that dispatches a lane to chase code
+                # it never wrote. It still fails the step (the chain did not pass), but under
+                # a distinct kind the gate/dispatcher can route to the framework, not a lane.
+                _fdef = classify_endpoint_failure(status, res.get("body_text"))
+                if _fdef == "framework_defect":
+                    kind = "framework_defect"
                 # #78: a cross-user DENIAL step got a 2xx (apparent leak). Re-verify with a
                 # GUARANTEED-fresh intruder before failing the gate — the recurring
                 # false-positive (run-64, smoke-feed) is the probe running as the OWNER via a
@@ -1860,13 +1891,17 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                                    if str(k) not in variables)
     # #188: broken lines carry the authored expectation — "GET x → 200 ({body})"
     # with a hidden expect [401] read as nonsense in 225x of triage lines.
-    broken = [
-        (f"{s['method']} {s['path']} → {s['status']} "
-         + (f"(expected {s['expect']}; {s['note']})" if s.get("expect")
-            else f"({s['note']})"))
-        for s in recorded if s["kind"] == "broken"]
+    def _fmt(s):
+        return (f"{s['method']} {s['path']} → {s['status']} "
+                + (f"(expected {s['expect']}; {s['note']})" if s.get("expect")
+                   else f"({s['note']})"))
+    broken = [_fmt(s) for s in recorded if s["kind"] == "broken"]
+    # #272: framework-projected defects are reported SEPARATELY so the gate can surface them
+    # as framework work, not fold them into `broken` where a lane would be dispatched to fix
+    # code it never wrote.
+    framework_defects = [_fmt(s) for s in recorded if s["kind"] == "framework_defect"]
     return {"name": str(chain.get("name") or "chain"), "steps": recorded,
-            "broken": broken}
+            "broken": broken, "framework_defects": framework_defects}
 
 
 AUTHORING_INSTRUCTIONS = (
@@ -1891,6 +1926,7 @@ def run_chains(base: str, project_dir: Any,
                           endpoints=list(business_endpoints or []))
                for ch in chains]
     broken = [b for r in results for b in r["broken"]]
+    framework_defects = [b for r in results for b in r.get("framework_defects", [])]
     total = sum(len(r["steps"]) for r in results)
     # Record pass/fail back onto the registry records (best-effort) — the
     # registry is the single place to see chain health (monitor renders it).
@@ -1900,13 +1936,21 @@ def run_chains(base: str, project_dir: Any,
         for r in results:
             rec = (store.value() or {}).get(r["name"])
             if isinstance(rec, dict):
+                _fd = r.get("framework_defects") or []
+                # #272: a chain whose ONLY failures are framework-projected defects is not the
+                # lane's to fix — mark it framework_blocked, not failing (which would dispatch a
+                # lane) and not passing (which would hide a real framework bug).
+                _status = ("passing" if not r["broken"] and not _fd
+                           else "failing" if r["broken"]
+                           else "framework_blocked")
                 rec = {**rec,
-                       "status": "passing" if not r["broken"] else "failing",
-                       "last_result": {"broken": r["broken"], "steps": r["steps"]},
+                       "status": _status,
+                       "last_result": {"broken": r["broken"], "framework_defects": _fd,
+                                       "steps": r["steps"]},
                        "last_run_at": time.time()}
                 store.update(lambda m, _rec=rec, _n=r["name"]: m.set(_n, _rec, "chain_executor"),
                              change_info={"agent": "chain_executor"})
     except Exception:
         pass
     return {"source": "verifier", "chains": results, "broken": broken,
-            "total_steps": total}
+            "framework_defects": framework_defects, "total_steps": total}

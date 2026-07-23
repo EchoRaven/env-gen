@@ -608,12 +608,37 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
                        "must register business-flow chains via "
                        "registryhub_register_verification_chain."),
         }
+    # #272: a chain blocked ONLY by a framework-projected defect (a _projected_ handler
+    # 5xx — route_projector's bug, not the lane's) is separated out. It still blocks
+    # delivery (a broken endpoint must not ship), but under its OWN reason so remediation
+    # routes to the FRAMEWORK, not to a lane dispatched to fix code it never wrote — the
+    # exact trap #263/#270/#271 sprang (Hatch design principle #5: infra-vs-app failures
+    # must be structurally distinct).
     not_passing = [
         str(rec.get("name") or rec.get("id"))
         for rec in authored
-        if rec.get("status") != "passing"
+        if (rec.get("status") not in ("passing", "framework_blocked"))
         or (rec.get("last_result") or {}).get("broken")
     ]
+    framework_blocked = [
+        str(rec.get("name") or rec.get("id"))
+        for rec in authored
+        if rec.get("status") == "framework_blocked"
+        and not (rec.get("last_result") or {}).get("broken")
+    ]
+    if framework_blocked and not not_passing:
+        _defs = [d for rec in authored
+                 for d in ((rec.get("last_result") or {}).get("framework_defects") or [])]
+        return {
+            "reason": "business_chain_framework_defect", "authored": len(authored),
+            "chains": framework_blocked, "defects": _defs[:8],
+            "detail": (f"{len(framework_blocked)} chain(s) are blocked ONLY by a "
+                       "framework-PROJECTED handler crashing (5xx from a _projected_ "
+                       "function — emitted by route_projector, which the lane cannot edit): "
+                       + "; ".join(_defs[:4])
+                       + ". This is a FRAMEWORK defect, not an app bug — do not dispatch a "
+                       "lane. Fix the projector/skeleton generator."),
+        }
     if not_passing:
         return {
             "reason": "business_chain_failing", "authored": len(authored),
