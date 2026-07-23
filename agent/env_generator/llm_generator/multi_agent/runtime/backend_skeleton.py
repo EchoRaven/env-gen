@@ -419,7 +419,21 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
 _URL = os.getenv("DATABASE_URL", "postgresql+psycopg://sandbox:sandbox@database:5432/app")
-engine = create_engine(_URL, pool_pre_ping=True, future=True)
+# #276: the connection pool MUST cover the request thread pool. FastAPI runs SYNC handlers
+# (all projected/custom handlers are `def`) on a thread pool of 40 by default, and each holds
+# a DB connection for its request. SQLAlchemy's DEFAULT pool is only pool_size=5 +
+# max_overflow=10 = 15, with pool_timeout=30 — so under load ~25 of 40 concurrent handlers
+# block up to 30s waiting for a connection and then raise TimeoutError, the health check
+# among them (r60, live: the container flipped `unhealthy`, /health stopped answering, and
+# api_smoke reported TimeoutError across the whole surface while the process sat idle at ~0%
+# CPU — an intermittent wedge that recovered when load dropped, then recurred). Size the pool
+# to 40 + a little headroom so a connection is always available and no handler starves.
+# QueuePool sizing applies to Postgres (the real target); SQLite uses SingletonThreadPool
+# and rejects max_overflow/pool_timeout, so gate the pool kwargs on the driver.
+_pool_kwargs = ({} if _URL.startswith("sqlite")
+                else {"pool_size": 20, "max_overflow": 30,
+                      "pool_timeout": 30, "pool_recycle": 1800})
+engine = create_engine(_URL, pool_pre_ping=True, future=True, **_pool_kwargs)
 
 
 class _Session(Session):
