@@ -39,7 +39,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
-from .validation_runner import _http
+from .validation_runner import _http, _form_retry_warranted
 
 # Chains live in the REGISTRY (user design 2026-06-12) — registered via the
 # registryhub_register_verification_chain tool with boundary validation, not
@@ -1538,6 +1538,21 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             _unres_vars.add(_auth_ref)
         res = _http(method, base + path, token=token, body=body)
         status = res.get("status")
+        # FIX #281 (tiktok r66, live): the step sent JSON but the endpoint declares FORM
+        # fields — the framework's own scaffolded oauth_routes.py does exactly that for
+        # POST /oauth/authorize (email/password/client_id = Form(...)), the correct OAuth2
+        # shape. FastAPI calls every form field "missing from body", so the step 400s
+        # forever and the chain-step schema has NO way to say "urlencode this": the verifier
+        # was dispatched to fix a defect it had no power to fix, wedging business_chain
+        # through all 6 validation attempts → no successful run → NO-CONVERGENCE ABORT at
+        # 76min on an app whose endpoint was FINE. Retry ONCE form-encoded when the response
+        # bears that exact signature (it names as missing-from-body a field we DID send);
+        # a genuinely absent field keeps its teeth (see _form_retry_warranted).
+        if not _status_ok(status, expect) and _form_retry_warranted(
+                body, status, res.get("body_text") or ""):
+            _fres = _http(method, base + path, token=token, body=body, form=True)
+            if _status_ok(_fres.get("status"), expect):
+                res, status = _fres, _fres.get("status")
         ok = _status_ok(status, expect)
         autofilled: List[str] = []
         # FIX #136 (instagram run-52/58/60 — 3rd occurrence of the class): a verifier-

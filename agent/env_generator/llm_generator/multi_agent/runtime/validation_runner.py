@@ -199,12 +199,70 @@ def _safe_url(url: str) -> str:
     return quote(url, safe=":/?&=%+,@;$!*'()[]~._-#")
 
 
+def _form_retry_warranted(body: Optional[dict], status: Optional[int],
+                          body_text: str) -> bool:
+    """FIX #281 (tiktok r66, live): does this 4xx bear the JSON-vs-FORM signature?
+
+    ``_http`` always sends JSON, but an endpoint may legitimately declare FORM fields —
+    the framework's OWN scaffolded ``oauth_routes.py`` does exactly that for
+    ``POST /oauth/authorize`` (``email: str = Form(...)``), which is the correct OAuth2
+    shape. FastAPI then reports every form field as missing FROM THE BODY, so the step
+    400/422s no matter what the verifier authors: the chain-step schema cannot express
+    encoding, so the lane is dispatched to fix a defect it has no power to fix. In r66
+    that wedged business_chain through all 6 validation attempts → no successful run →
+    DELIVERY-GATE NO-CONVERGENCE ABORT at 76min, on an app whose endpoint was FINE
+    (re-sent form-encoded by hand: 401 + the real consent page).
+
+    True only when the response names as MISSING FROM THE BODY a field we demonstrably
+    DID send — a field we never sent is a genuine validation error and must keep its
+    teeth, and a ``loc: ["query", ...]`` miss cannot be cured by re-encoding the body."""
+    if not isinstance(body, Mapping) or not body:
+        return False
+    if not status or not (400 <= status < 500):
+        return False
+    try:
+        payload = json.loads(body_text or "{}")
+    except Exception:
+        return False
+    if not isinstance(payload, Mapping):
+        return False
+    errs = payload.get("errors")
+    if not isinstance(errs, list):
+        errs = payload.get("detail")
+    if not isinstance(errs, list):
+        return False
+    sent = {str(k) for k in body}
+    for e in errs:
+        if not isinstance(e, Mapping):
+            continue
+        loc = e.get("loc")
+        if not isinstance(loc, (list, tuple)) or len(loc) < 2:
+            continue
+        if str(loc[0]).lower() != "body":
+            continue
+        if str(e.get("type") or "").lower() != "missing":
+            continue
+        if str(loc[1]) in sent:
+            return True
+    return False
+
+
 def _http(method: str, url: str, *, token: Optional[str] = None,
-          body: Optional[dict] = None, timeout: int = 10) -> Dict[str, Any]:
-    """One HTTP call → {status, body_text, error}. Never raises."""
-    data = json.dumps(body).encode() if body is not None else None
+          body: Optional[dict] = None, timeout: int = 10,
+          form: bool = False) -> Dict[str, Any]:
+    """One HTTP call → {status, body_text, error}. Never raises.
+
+    ``form=True`` (FIX #281) urlencodes the body instead of JSON, for endpoints that
+    declare FORM fields (OAuth2 authorize/token being the standard case). Default is
+    unchanged JSON for every existing caller."""
+    if form and body is not None:
+        from urllib.parse import urlencode
+        data = urlencode({k: ("" if v is None else v) for k, v in body.items()}).encode()
+    else:
+        data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(_safe_url(url), data=data, method=method.upper())
-    req.add_header("Content-Type", "application/json")
+    req.add_header("Content-Type",
+                   "application/x-www-form-urlencoded" if form else "application/json")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     # FIX #98 (instagram run-16, live): 2048 bytes TRUNCATED any list response past 2KB
