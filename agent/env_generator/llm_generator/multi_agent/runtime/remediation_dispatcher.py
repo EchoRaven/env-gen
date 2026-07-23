@@ -827,6 +827,21 @@ class RemediationDispatcher:
                 "isn't recorded yet, run_validation records it; if a flow FAILS, bug_create for the "
                 "owning lane (usually frontend) and re-run once fixed. Re-run until every critical "
                 "flow has a passing validation:ui_flow record."),
+            "deliverability_ui_flow_failed": (
+                # #280 (r63, live): the delivered app's FYP feed ui_flow FAILED — the SPA
+                # crashed post-login with "(void 0) is not a function" — and the gate logged
+                # "NO remediation owner" and dead-ended delivery. _GATE_OWNER had ui_flow_
+                # MISSING but not ui_flow_FAILED, so a merely-unrecorded flow was owned while a
+                # genuinely BROKEN one was not — backwards. The verifier owns the walk; on a
+                # failure it reads the recorded console/step evidence, locates the crash, and
+                # bug_creates for the owning lane (usually frontend), mirroring ui_flow_missing.
+                "verifier", "Fix the failing critical UI flow (blocks delivery)",
+                "a CRITICAL UI flow has a FAILING validation:ui_flow record — the delivered app "
+                "broke when the walk exercised it (e.g. a post-login SPA crash, a blank render, a "
+                "dead control). Read the recorded reason + console_errors for the failing flow, "
+                "bug_create for the owning lane (a JS/render crash or dead control is FRONTEND; a "
+                "500/data gap is BACKEND) with the exact error, then re-run run_validation until "
+                "the flow's validation:ui_flow record passes."),
             "verification_checklist_not_ready": (
                 "verifier", "Record a green verification/build checklist (blocks delivery)",
                 "the build checklist is NOT all-green — it needs the CodeHub checks "
