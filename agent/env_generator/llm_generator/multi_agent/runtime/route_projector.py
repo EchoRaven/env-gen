@@ -509,8 +509,13 @@ _WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 # Path fragments that make a GET personal to the caller — a read of these is per-user and
 # cannot be anonymous. Kept generic (no app vocabulary): "me", the personalised feeds, and
 # the notification/inbox family.
-_SELF_READ_MARKERS = ("/me", "/me/", "feed/following", "feed/friends", "feed/for-you",
-                      "feed/foryou", "notification", "inbox", "/mine")
+# #279: following/friends are personalised (a specific user's graph → auth). The FOR-YOU /
+# FYP feed is NOT — it is the app's public recommended stream, served logged-out in real
+# apps (TikTok's FYP is browsable anonymously; the login wall is only on interaction).
+# Marking it self-read (#271) required auth on it, which failed the anonymous ui_flow walk
+# on a working app (r62). An explicit auth_required in the contract still wins.
+_SELF_READ_MARKERS = ("/me", "/me/", "feed/following", "feed/friends",
+                      "notification", "inbox", "/mine")
 # The auth CONTROL surface mints tokens, so it must stay anonymous even for writes.
 _AUTH_CONTROL_PREFIXES = ("/auth/", "/api/auth/", "/oauth", "/api/oauth", "/.well-known")
 
