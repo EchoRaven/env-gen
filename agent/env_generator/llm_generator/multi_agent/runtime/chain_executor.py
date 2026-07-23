@@ -355,6 +355,19 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
             # left alone: stripping it would still satisfy the assertion via 401 while
             # silently ending the isolation check that is its entire purpose.
             st.pop("auth", None)
+        # #275 (r60, live): an anonymous LOGOUT is a legitimate no-op. The unauth_guard chain
+        # asserted POST /api/auth/logout anon expect=[401, 403]; the app answered 200 and the
+        # chain failed — but logout is an idempotent auth-control action ("end whatever session
+        # you have"), and a correct app answers it 200/204 as readily as 401. resolve_endpoint_
+        # auth (#271) already treats /auth/logout as anonymous-accessible, so app + framework
+        # agree; only the probe is too strict and no lane can fix a correct logout. Widen a
+        # denial probe on an idempotent control-surface endpoint to ALSO accept 2xx, so it
+        # passes whether the app rejects OR no-ops. Real protected endpoints are untouched.
+        _p275 = str(st.get("path") or "").lower().rstrip("/")
+        _is_logout = _p275.endswith(("/logout", "/signout", "/sign-out", "/log-out"))
+        if _is_logout and 401 in _codes401 and not (_codes401 & _SUCCESS_CODES):
+            _widened = sorted(_codes401 | {200, 204})
+            st["expect"] = _widened
         out.append(st)
     # CANONICAL TOKEN-AUTH: a verifier can reference auth="<var>" that no step
     # actually saves (it saved under a different name, or a bare "token" while the
