@@ -274,12 +274,26 @@ def _flow_key(name: str) -> str:
     """#237: suffix-normalized flow identity — ``explore`` / ``explore_page`` /
     ``explore_screen`` are the SAME user journey. Used to dedupe the derived
     required set and to match records to requirements, so a verifier record
-    under either spelling satisfies the flow."""
+    under either spelling satisfies the flow.
+
+    #285 (tiktok r70, live): the verifier ALSO writes ``_ui`` and COMPOUND
+    ``_page_ui`` variants. Folding only ONE trailing ``_page``/``_screen`` left
+    ``following_suggested_creators_page`` (required, key ``..._creators``) and its
+    passing record ``following_suggested_creators_page_ui`` (key unchanged — trailing
+    ``_ui``) under DIFFERENT keys, so the passing record could never clear the failing
+    ``_page`` twin → 6 flows falsely FAILED though every one passed, and the run
+    idled through both converging-grace windows. Fold ``_ui`` too, and loop until
+    stable so compound suffixes (``_page_ui``, ``_screen_ui``, ``_ui_page``) all
+    collapse to the same bare journey key."""
     n = str(name or "").strip().lower()
-    for suf in ("_page", "_screen"):
-        if n.endswith(suf) and len(n) > len(suf):
-            n = n[: -len(suf)]
-            break
+    changed = True
+    while changed:
+        changed = False
+        for suf in ("_page", "_screen", "_ui"):
+            if n.endswith(suf) and len(n) > len(suf):
+                n = n[: -len(suf)]
+                changed = True
+                break
     return n
 
 
