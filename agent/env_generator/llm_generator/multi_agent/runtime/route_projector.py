@@ -760,7 +760,21 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         parent_cls = parent_meta["cls"]
         parent_singular = parent_table.rstrip("s")
         parent_field = _lookup_field(parent_param, parent_meta)
-        if auth and owner_scoped_tables and parent_table in set(owner_scoped_tables):
+        # FIX #288 (tiktok r73, live): owner-scoping the parent lookup is correct for a PRIVATE
+        # container (/api/projects/{id}/tasks — you may only reach your own project), but WRONG
+        # for the app's primary PUBLIC content. TikTok's videos are public (#279 already serves
+        # the FYP feed logged-out); commenting/liking authenticates the ACTOR but targets ANY
+        # video. Scoping the parent turned "must log in to comment" into "can only comment on
+        # your OWN videos" → a non-author's POST/GET /api/videos/{id}/comments resolved
+        # parent=None → 404 → fyp_comments ui_flow failed (r73's sole remaining blocker). So skip
+        # the parent filter when the parent IS the primary content model (the public feed source,
+        # shape-derived) — mirroring #279 (the login wall is on interaction, not on the content).
+        # A genuinely private container (not the feed's content model) still scopes its parent,
+        # preserving the cross-user leak protection the filter was added for.
+        _pc = _primary_content_model(models)
+        _pc_table = _pc[0] if _pc else None
+        if (auth and owner_scoped_tables and parent_table in set(owner_scoped_tables)
+                and parent_table != _pc_table):
             _p_ofk = _owner_fk(parent_meta)
             if _p_ofk:
                 _parent_owner_filter = f'.filter(getattr({parent_cls}, "{_p_ofk}") == _fw_owner_val({parent_cls}, "{_p_ofk}", user))'
