@@ -494,6 +494,27 @@ if _FWIntegrityError is not None:
             status, detail = 409, "duplicate resource"
         else:
             status, detail = 400, "integrity constraint violated"
+        # FIX #282 (tiktok r67, live): the mapping above is right, but returning ONLY the
+        # fixed prose destroyed WHICH constraint failed. r67: POST /api/videos/1/like →
+        # 404 "referenced resource not found" while GET /api/videos/1 → 200 — the video
+        # EXISTED; the FK that actually failed was the OTHER column. Nothing said so: not
+        # the response, not the container log (verified by hand — grep for foreign key /
+        # IntegrityError / 23503 came back EMPTY). So the lane read "referenced resource
+        # not found" as "the video is missing", chased a video that was right there, and
+        # the run burned 7 post-cap cycles → FAIL-FAST abort. The driver's own message
+        # names the constraint/table/column: log it. The RESPONSE stays byte-identical —
+        # no contract change, no DB internals leaked to API clients — diagnosis goes to
+        # the server log the lane can actually read. Best-effort: never let a logging
+        # failure turn a correctly-mapped 404 into a 500.
+        try:
+            import logging as _fw_logging
+            _fw_logging.getLogger("app.integrity").error(
+                "IntegrityError on %s %s -> %s: code=%s orig=%s",
+                getattr(request, "method", "?"),
+                getattr(getattr(request, "url", None), "path", "?"),
+                status, code or "?", _orig or exc)
+        except Exception:
+            pass
         return _FWIntegrityJSON(status_code=status, content={"detail": detail})
 # === end integrity mapping ===
 '''
