@@ -19,6 +19,29 @@ import re
 from typing import Any, Dict, List, Optional
 
 
+# FIX #287 (tiktok r70/r71, live): the check set that satisfies the ui_smoke gate. A passing
+# ui_flow is STRICTLY STRONGER UI evidence than ui_smoke — walking a page's interaction flow
+# proves the page rendered (a blank/fallback page has no controls to drive) — and
+# deliverability._has_passing_ui_evidence already counts ui_flow as UI evidence. The gate used
+# to accept only {ui_smoke, ui_page_reachable}: the verifier drove the browser and wrote 11
+# PASSING ui_flow records but no ui_smoke record, so _has_passing_ui_evidence was True while
+# ui_smoke_pass was False → validation_ui_smoke_missing blocked delivery on an app whose UI was
+# demonstrably exercised, and r68/r70/r71 fail-fast aborted there. Accept ui_flow too, matching
+# _has_passing_ui_evidence. (The ui_flow DIMENSION keeps its own ui_flow_missing/_failed gate,
+# so a real flow defect is not let through.)
+_UI_SMOKE_EVIDENCE_CHECKS = {"ui_smoke", "ui_page_reachable", "ui_flow"}
+
+
+def _ui_smoke_pass(validation_results: Any) -> bool:
+    """True iff any validation record is a passed UI-evidence check (see #287)."""
+    return any(
+        isinstance(r, dict)
+        and r.get("status") == "passed"
+        and (r.get("metadata", {}) or {}).get("check") in _UI_SMOKE_EVIDENCE_CHECKS
+        for r in (validation_results or [])
+    )
+
+
 def _norm_gate_path(p: Any) -> str:
     """Param-agnostic path key for milestone-scope matching: '/api/notes/{id}' ≡ '/api/notes/{}'."""
     s = str(p or "").split("?", 1)[0]
@@ -1204,12 +1227,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         and r.get("metadata", {}).get("check") in {"api_smoke", "api_health"}
         for r in validation_results
     )
-    ui_smoke_pass = any(
-        isinstance(r, dict)
-        and r.get("status") == "passed"
-        and r.get("metadata", {}).get("check") in {"ui_smoke", "ui_page_reachable"}
-        for r in validation_results
-    )
+    ui_smoke_pass = _ui_smoke_pass(validation_results)
     failed_validation_top = [
         {
             "task_id": r.get("task_id"),
