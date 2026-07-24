@@ -652,10 +652,35 @@ def load_seed_ids(project_dir: Any) -> Dict[str, Any]:
         for table, rows in data.items():
             if not isinstance(rows, list):
                 continue
-            for row in rows:
-                if isinstance(row, Mapping) and row.get("id") is not None:
+            # FIX #283 (tiktok r68, live): #144 assumed the authored seed DECLARES ids —
+            # nothing ever enforced that. r68's seed carried 23 videos / 10 sounds / 5 users
+            # with NOT ONE `id`, while the same file's FKs already assumed positional
+            # autoincrement (videos[0].author_id=1 → users[0]; likes[0].video_id=2 →
+            # videos[1]). load_seed_ids returned {} and the literal-id recovery ladder lost
+            # its deterministic rung. So: an explicit id still WINS wherever one exists
+            # (real data beats a guess, even if it appears in a later row); only when the
+            # table declares none do we fall back to the id the DB is about to assign on a
+            # clean boot — the row's 1-based position, exactly what the seed's own FKs point
+            # at. Type-safe by construction: these ids are consumed ONLY to replace a NUMERIC
+            # literal in a path, so a text/uuid-PK table is never reached this way.
+            # A pure ASSOCIATION row (every column an FK: {follower_id, followee_id},
+            # {user_id, video_id}) has a COMPOSITE pk and no `id` column at all — inventing
+            # one would be fabricating a column that does not exist, so those tables stay
+            # absent exactly as before. A row carrying real data columns (users: email/name,
+            # videos: video_url/caption) is an id-bearing table whose seed merely omitted it.
+            positional: Any = None
+            for idx, row in enumerate(rows, start=1):
+                if not isinstance(row, Mapping):
+                    continue
+                if row.get("id") is not None:
                     out[str(table)] = row["id"]
+                    positional = None
                     break
+                if positional is None and any(
+                        not str(k).endswith("_id") for k in row):
+                    positional = idx
+            if positional is not None and str(table) not in out:
+                out[str(table)] = positional
     except Exception:
         return {}
     return out
