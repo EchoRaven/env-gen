@@ -770,7 +770,13 @@ Returns:
                     "id": event.get("id"),
                     "from": payload.get("from") or event.get("source_hub"),
                     "type": event.get("event_type"),
-                    "content": summarize_inbox_message_body(payload.get("content") or payload.get("body") or str(payload)),
+                    # #291: raw, untruncated payload — same as the non-durable
+                    # formatting path below. #274 wrapped this in an undefined
+                    # summarize_inbox_message_body(...) (NameError crashed the
+                    # whole check_inbox on any durable event) AND a summarizer
+                    # would violate the no-truncation invariant (see the #274
+                    # NOTE below + test_inbox_no_content_truncation).
+                    "content": payload.get("content") or payload.get("body") or str(payload),
                     "tags": payload.get("tags", []),
                     "priority": event.get("priority", "normal"),
                     "persist": True,
