@@ -88,6 +88,14 @@ _TOKEN_RESP_SYNONYMS = frozenset({
 
 
 _SUCCESS_CODES = frozenset({200, 201, 202, 203, 204, 205, 206})
+# #289: public, idempotent social interaction verbs — anyone may perform these on any public
+# item, so a cross-user "isolation" denial probe on them is a category error (they return 2xx).
+# A WHITELIST so sensitive actions (transfer/promote/approve/delete/ban) keep their isolation.
+_SOCIAL_ACTION_VERBS = frozenset({
+    "like", "unlike", "save", "unsave", "favorite", "unfavorite", "fav", "unfav",
+    "follow", "unfollow", "subscribe", "unsubscribe", "share", "repost", "unrepost",
+    "bookmark", "unbookmark", "pin", "unpin", "watch", "unwatch",
+})
 _CROSS_USER_DENIAL_CODES = frozenset({403, 404})
 
 
@@ -368,6 +376,19 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
         if _is_logout and 401 in _codes401 and not (_codes401 & _SUCCESS_CODES):
             _widened = sorted(_codes401 | {200, 204})
             st["expect"] = _widened
+        # FIX #289 (tiktok r74, live): the same principle for the SOCIAL-ACTION surface. A
+        # like/save/follow/share is PUBLIC (#288 made those parents public) and idempotent —
+        # there is NO per-user isolation to assert, so a cross-user denial probe on one
+        # (POST /api/videos/{id}/like auth=tokenA expect=[404]) can never pass on a correct app
+        # (it returns 201). r74's tenant_isolation_like wedged business_chain exactly this way,
+        # with the whole frontend already green -> NO-CONVERGENCE ABORT. Widen a denial probe
+        # (403/404, no 2xx) whose path TAIL is a WHITELISTED public social verb to also accept
+        # 2xx. A whitelist -- NOT "any action suffix" -- so sensitive verbs (/transfer,/promote,
+        # /approve,/delete,/ban) keep cross-user isolation and a real leak still fails.
+        _tail289 = _p275.rsplit("/", 1)[-1] if "/" in _p275 else _p275
+        if (_tail289 in _SOCIAL_ACTION_VERBS
+                and (_codes401 & {403, 404}) and not (_codes401 & _SUCCESS_CODES)):
+            st["expect"] = sorted(_codes401 | {200, 201, 204})
         out.append(st)
     # CANONICAL TOKEN-AUTH: a verifier can reference auth="<var>" that no step
     # actually saves (it saved under a different name, or a bare "token" while the
