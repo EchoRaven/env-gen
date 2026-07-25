@@ -50,11 +50,20 @@ class RunStartTool(HubTool):
                    base_url: str = "http://localhost:8000") -> ToolResult:
         try:
             # generated_dir is framework CONTEXT (the env root holding
-            # docker-compose.yml), not something the model can know — auto-derive
-            # from the shared hub registry's base_dir when omitted (the model
-            # called run_start with branch+base_url only → missing-arg crash).
-            if not generated_dir:
-                generated_dir = str(getattr(self._hubs, "base_dir", "") or "")
+            # docker-compose.yml), NOT something the model can know — the schema
+            # marks it auto-derived. The orchestrator LLM has called run_start
+            # both with the arg OMITTED and with a bad GUESS (r75 live: a
+            # relative 'app'/'docker' → ComposeLifecycle(cwd=...) →
+            # subprocess FileNotFoundError → the run crashes, so the milestone
+            # never gets a clean RunHub validation run and delivery falls back
+            # to the force_deliver bypass). base_dir is the single authoritative
+            # env root for this process, so prefer it whenever the framework has
+            # one — never let a model guess (which on a shared box could even
+            # name a *different* env's dir) override it. Only honor an explicit
+            # value when there is no base_dir to derive from.
+            base_dir = str(getattr(self._hubs, "base_dir", "") or "")
+            if base_dir:
+                generated_dir = base_dir
             run = self._hubs.runhub.start_run(
                 branch=branch,
                 generated_dir=generated_dir,
