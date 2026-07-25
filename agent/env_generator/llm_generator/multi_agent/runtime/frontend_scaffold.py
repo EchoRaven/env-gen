@@ -2282,6 +2282,53 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
         "}\n")
 
 
+def _measured_floor_colors(design):
+    """#296 — a normalized measured color set for the no-reference GET floor,
+    or None when no usable palette exists (caller then keeps the data-fallback
+    page). Reads THIS env's measured palette at design['design_system']['palette']
+    (same path _render_reference_page uses); missing sub-roles derive from bg +
+    measured neutrals — never a hardcoded product color."""
+    ds = (design or {}).get("design_system") or {}
+    if not isinstance(ds, dict):
+        return None
+    pal = ds.get("palette") or {}
+    if not isinstance(pal, dict):
+        return None
+    bg = pal.get("bg")
+    if not isinstance(bg, str) or not bg.strip():
+        return None
+
+    def _pick(keys, default):
+        for k in keys:
+            v = pal.get(k)
+            if isinstance(v, str) and v.strip():
+                return v
+        return default
+
+    theme = str(((ds.get("theme") or {}).get("default")) or "").lower()
+    if theme not in ("dark", "light"):
+        try:
+            h = bg.lstrip("#")
+            h = "".join(c * 2 for c in h) if len(h) == 3 else h
+            lum = (int(h[0:2], 16) * 0.299 + int(h[2:4], 16) * 0.587
+                   + int(h[4:6], 16) * 0.114)
+            theme = "dark" if lum < 128 else "light"
+        except Exception:
+            theme = "light"
+    text_default = "#f5f5f5" if theme == "dark" else "#18181b"
+    muted_default = ("rgba(255,255,255,0.55)" if theme == "dark"
+                     else "rgba(0,0,0,0.55)")
+    return {
+        "bg": bg,
+        "surface": _pick(["surface", "surface_2", "elevated", "card"], bg),
+        "text": _pick(["text"], text_default),
+        "muted": _pick(["text_2", "text_3", "text_muted", "muted"], muted_default),
+        "accent": _pick(["accent", "accent_red", "brand", "primary",
+                         "accent_blue"], "#2563eb"),
+        "border": _pick(["border", "divider"], "rgba(128,128,128,0.25)"),
+    }
+
+
 def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
                             design=None) -> str:
     """Project a MINIMALLY-FUNCTIONAL, data-driven page from the contract instead
