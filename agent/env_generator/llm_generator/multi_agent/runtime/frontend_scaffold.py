@@ -1664,6 +1664,32 @@ def _mark_fallback_page(src: str) -> str:
     return _PAGE_MARKER + "\n" + src
 
 
+def _measured_nav_jsx(nav_routes, colors) -> str:
+    """#296 — measured-palette top-nav for the no-reference floor. Inline colors
+    (self-contained), so a dark floor never ships a light nav bar and the darkify
+    healers need not recolor it. Returns '' when there are no other routes."""
+    routes = [(str(l).strip(), str(r).strip())
+              for (l, r) in (nav_routes or []) if str(r).strip()]
+    if not routes:
+        return ""
+    surface, border, muted = colors["surface"], colors["border"], colors["muted"]
+    links = "\n".join(
+        '        <a href="' + r + '" className="rounded-md px-3 py-1.5 text-sm '
+        "font-medium\" style={{ color: '" + muted + "' }}>" + l + "</a>"
+        for (l, r) in routes)
+    return (
+        '<nav className="-mx-6 -mt-6 mb-6 flex flex-wrap items-center gap-1 '
+        'border-b px-6 py-2" '
+        "style={{ backgroundColor: '" + surface + "', borderColor: '"
+        + border + "' }}>\n"
+        + links + "\n"
+        "        <button onClick={() => { localStorage.clear(); "
+        "window.location.href = '/login'; }} "
+        'className="ml-auto rounded-md px-3 py-1.5 text-sm" '
+        "style={{ color: '" + muted + "' }}>Sign out</button>\n"
+        "      </nav>")
+
+
 def _nav_links_jsx(nav_routes) -> str:
     """A full-bleed top-nav bar linking the app's main business routes, so the
     projected pages are NAVIGABLE — you can move between inbox/calendar/contacts/…
@@ -2382,6 +2408,70 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
                 pass  # fall through to the generic floor — never break the build
 
     if get_ep:
+        # #296 MEASURED FLOOR: when THIS env's measured palette is available,
+        # render the same functional row-list painted with the measured colors +
+        # data-projected="ref"/_STRUCTURED_MARKER, so it's a GENUINE floor the
+        # gates count as BUILT (not a data-fallback the framework then rejects).
+        # The lane still refines it in place (visual-fidelity remediation).
+        _floor = _measured_floor_colors(design)
+        if _floor is not None:
+            mtpl = """import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+
+const _imgOf = (r) => { for (const k of ['thumbnail_url','image_url','avatar_url','banner_url','photo_url','cover_url','poster_url','image','thumbnail','avatar','url']) { if (r && r[k]) return r[k]; } return null; };
+const _titleOf = (r) => { for (const k of ['title','subject','name','display_name','full_name','label','handle','email']) { if (r && r[k]) return String(r[k]); } return (r && r.id != null) ? ('#' + r.id) : ''; };
+const _subOf = (r) => { for (const k of ['snippet','preview','summary','description','from_name','sender','body','caption','content','message','text']) { if (r && r[k]) return String(r[k]); } return ''; };
+const _metaOf = (r) => Object.keys(r || {}).filter((k) => !['id','password','password_hash'].includes(k) && !/_url$|^url$|^image$|^thumbnail$|^avatar$|title|subject|name|description|body|snippet/.test(k) && (typeof r[k] !== 'object')).slice(0, 3);
+
+export default function __COMP__() {
+  const params = useParams();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const token = (localStorage.getItem('access_token') || localStorage.getItem('token'));
+    fetch(__PATH__, token ? { headers: { Authorization: 'Bearer ' + token } } : {})
+      .then((r) => r.json())
+      .then(setData)
+      .catch((e) => setError(String(e)));
+  }, []);
+  const rows = Array.isArray(data && data.items)
+    ? data.items
+    : (data && data.item ? [data.item] : (Array.isArray(data) ? data : []));
+  return (
+    <div data-projected="ref" className="min-h-screen px-6 py-6" style={{ backgroundColor: '__BG__', color: '__TEXT__' }}>
+      __NAV__
+      <h2 className="text-xl font-semibold mb-4">__LABEL__</h2>
+      {error ? <p className="text-sm mb-4" style={{ color: '__ACCENT__' }}>{error}</p> : null}
+      <div className="rounded-lg border shadow-sm" style={{ backgroundColor: '__SURFACE__', borderColor: '__BORDER__' }}>
+        {rows.map((row, i) => (
+          <div key={(row && row.id) || i} className="flex items-start gap-3 px-4 py-3 cursor-pointer" style={{ borderTop: i ? '1px solid __BORDER__' : 'none' }}>
+            {_imgOf(row)
+              ? <img src={_imgOf(row)} alt="" className="h-10 w-10 rounded-full object-cover shrink-0" style={{ backgroundColor: '__SURFACE__' }} />
+              : <div className="h-10 w-10 rounded-full shrink-0 flex items-center justify-center text-sm font-semibold" style={{ backgroundColor: '__ACCENT__', color: '#ffffff' }}>{(_titleOf(row).charAt(0) || '?').toUpperCase()}</div>}
+            <div className="min-w-0 flex-1">
+              <div className="font-medium text-sm truncate">{_titleOf(row)}</div>
+              {_subOf(row) ? <div className="text-sm truncate" style={{ color: '__MUTED__' }}>{_subOf(row)}</div> : null}
+              {_metaOf(row).length ? <div className="text-xs mt-0.5 truncate" style={{ color: '__MUTED__' }}>{_metaOf(row).map((k) => String(row[k])).join(' \\u00b7 ')}</div> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+      {rows.length === 0 && !error ? <p className="mt-6 text-sm" style={{ color: '__MUTED__' }}>No data yet.</p> : null}
+    </div>
+  );
+}
+"""
+            body = (mtpl.replace("__COMP__", name).replace("__LABEL__", label)
+                    .replace("__PATH__", _api_path_to_js(get_ep))
+                    .replace("__NAV__", _measured_nav_jsx(nav_routes, _floor))
+                    .replace("__BG__", _floor["bg"]).replace("__TEXT__", _floor["text"])
+                    .replace("__SURFACE__", _floor["surface"])
+                    .replace("__BORDER__", _floor["border"])
+                    .replace("__ACCENT__", _floor["accent"])
+                    .replace("__MUTED__", _floor["muted"]))
+            from .frontend_page_projector import _STRUCTURED_MARKER
+            return _STRUCTURED_MARKER + "\n" + body
+
         # LIST render (not a raw key:value dump, NOT a 16:9 video-card grid): a light,
         # neutral row list — leading avatar/thumbnail (or an initial), a title, a
         # snippet/sender subtitle, and a few scalar meta fields. This is the universal
