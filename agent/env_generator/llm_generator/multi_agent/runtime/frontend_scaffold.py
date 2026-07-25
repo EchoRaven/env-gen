@@ -520,8 +520,21 @@ _LOCAL_DEF_RE = re.compile(r"(?:^|\n)\s*(?:export\s+)?(?:default\s+)?"
 _REACT_BUILTINS = {"Fragment", "StrictMode", "Suspense", "Profiler", "ErrorBoundary"}
 
 
+def _strip_comments_for_scan(src: str) -> str:
+    """#295 — blank out comments so a JSX tag that appears ONLY in a comment
+    isn't mistaken for real usage. r78: `<Route>` inside
+    ``// … a wired <Route>`` was scanned as a used icon → an invalid
+    ``import { Route } from 'lucide-react'`` injected → vite build failed every
+    cycle → STUCK. Removes ``/* … */`` block comments (covers JSX ``{/* … */}``)
+    and ``// …`` line comments — but NOT the ``//`` of a ``://`` URL scheme, so a
+    real tag later on a URL-bearing line is still seen."""
+    src = re.sub(r"/\*.*?\*/", " ", src, flags=re.S)
+    src = re.sub(r"(?<!:)//[^\n]*", " ", src)
+    return src
+
+
 def _unimported_jsx_tags(src: str) -> List[str]:
-    used = set(_JSX_TAG_RE.findall(src))
+    used = set(_JSX_TAG_RE.findall(_strip_comments_for_scan(src)))
     if not used:
         return []
     known: Set[str] = set(_REACT_BUILTINS)
