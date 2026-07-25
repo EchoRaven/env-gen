@@ -752,7 +752,17 @@ Returns:
     ) -> ToolResult:
         if not self.agent:
             return ToolResult(success=False, error_message="Agent not configured")
-        
+
+        # #292: the schema declares limit as integer, but the model reasonably
+        # passes numeric args as strings ("10"). `filtered[:limit]` below then
+        # raises "slice indices must be integers" and the whole inbox read
+        # fails (r76 live, 10×). Coerce a coercible value; fall back to the
+        # default for an uncoercible one — never crash on a plausible arg.
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            limit = 10
+
         durable_events = []
         try:
             hubs = getattr(self.agent, "_hubs", None)
