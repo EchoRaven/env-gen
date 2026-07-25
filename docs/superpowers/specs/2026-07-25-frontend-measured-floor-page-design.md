@@ -70,9 +70,13 @@ odd layouts, larger behavioral change).
 In `_project_page_component` (`frontend_scaffold.py`), the `if get_ep:`
 no-reference branch (currently 2337–2396):
 
-- Read `pal = (design or {}).get("palette") or {}` and derive a measured set:
-  canvas/background, surface, text, muted-text, accent/brand. Use the same
-  palette convention `_render_reference_page` uses (`ds.get("palette")`).
+- Read the measured palette from `design["design_system"]["palette"]` (the same
+  path `_render_reference_page` uses: `ds = design.get("design_system"); pal =
+  ds.get("palette")`) and derive a measured set: canvas/background (`bg`),
+  surface (`surface`/`surface_2`), text (`text`), muted-text
+  (`text_2`/`text_3`/`text_muted`), accent/brand (`accent`/`accent_red`/`brand`),
+  border (`border`/`divider`). Theme from `design["design_system"]["theme"]["default"]`
+  (else luminance-derived from `bg`).
   **"Usable" criterion:** at minimum an extractable canvas/background color;
   any missing sub-role (surface/muted/accent) is derived from the canvas +
   measured neutrals (never a hardcoded product color). The exact palette keys
