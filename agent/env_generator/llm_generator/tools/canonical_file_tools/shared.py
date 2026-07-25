@@ -523,3 +523,9 @@ def _find_subsequence(haystack: List[str], needle: List[str], start_index: int =
     for idx in range(max(0, start_index), max_start + 1):
         if haystack[idx:idx + len(needle)] == needle:
             return idx
+    # #294: no match — return the sentinel -1 the caller checks (`if
+    # match_index < 0`). Falling off the end returned None implicitly, so
+    # `None < 0` in _apply_update crashed apply_patch with an opaque
+    # TypeError instead of the actionable "failed to match patch hunk" error
+    # (r77 live).
+    return -1
