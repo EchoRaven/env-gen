@@ -124,6 +124,35 @@ def _is_cross_user_denial(st: Mapping[str, Any]) -> bool:
     return any(c in _CROSS_USER_DENIAL_CODES for c in codes)
 
 
+_SELF_ACTION_PATH_RE = re.compile(r"^(?P<coll>.*/users)/(?P<id>[^/]+)/(?P<verb>[a-z_]+)$")
+
+
+def _self_targeted_social_user_action(expect, path, own_user_id):
+    """#299 — recognise a SUCCESS-expecting social action (follow/subscribe/…) on
+    ``/…/users/<own_user_id>/<verb>``. Such a step can NEVER pass — the app
+    correctly returns 400 "cannot follow yourself" — so business_chain wedges
+    (r80 M2 live: POST /api/users/81/follow, 81=the registered chain user, 6/6
+    attempts → NO-CONVERGENCE ABORT). The #81 avoid-self ladder only guards an
+    UNRESOLVED placeholder; a target that RESOLVED to own_user_id (a saved var, or
+    a literal that collides with the minted chain-user id) slips through.
+
+    Returns ``(users_collection_path, current_id_str)`` so the caller can
+    re-target a DIFFERENT user, or None. A deliberate self-deny test
+    (``expect==[400]``, no 2xx) returns None — it SHOULD self-target."""
+    if own_user_id is None:
+        return None
+    if not any(c in _SUCCESS_CODES for c in (expect or [])):
+        return None
+    m = _SELF_ACTION_PATH_RE.match(str(path or "").split("?", 1)[0].rstrip("/"))
+    if not m:
+        return None
+    if m.group("verb") not in _SOCIAL_ACTION_VERBS:
+        return None
+    if str(m.group("id")) != str(own_user_id):
+        return None
+    return (m.group("coll"), m.group("id"))
+
+
 def _trailing_resource_var(path: Any) -> Optional[str]:
     """The path-param NAME of a by-id step's LAST segment — ``${note_id}`` / ``{id}`` /
     ``:id`` → the var. None for a collection or static path. Used to (a) recognise a
@@ -1647,6 +1676,31 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                         res, status, ok = _res3, _res3.get("status"), True
                         path = _lpath
                         autofilled.append(f"literal-id->{_lid}")
+        # FIX #299 (tiktok r80 M2, live): a SUCCESS-expecting social action whose
+        # target is the chain user's OWN id can never pass — the app CORRECTLY
+        # 400s "cannot follow yourself" — so business_chain wedges (r80: POST
+        # /api/users/81/follow, 81=the registered chain user, 6/6 attempts →
+        # NO-CONVERGENCE ABORT on a functionally-correct app). The #81 avoid-self
+        # ladder only guards an UNRESOLVED placeholder; a target that RESOLVED to
+        # own_user_id slips through. Mirror #136: on a self-action 400, retry ONCE
+        # against a recovered DIFFERENT user (a deliberate self-deny test expects
+        # [400] and is NOT matched — see _self_targeted_social_user_action).
+        if not ok and status == 400:
+            _self = _self_targeted_social_user_action(expect, path, own_user_id)
+            if _self is not None:
+                _ucoll, _cur = _self
+                _other = _recover_id_via_list(base, _ucoll, token, avoid=own_user_id)
+                if _other is None:
+                    _other = _register_aux_user_id(base)
+                if _other is not None and str(_other) != str(own_user_id):
+                    _spath = re.sub(r"/users/[^/]+/", "/users/" + str(_other) + "/",
+                                    path, count=1)
+                    if _spath != path:
+                        _res5 = _http(method, base + _spath, token=token, body=body)
+                        if _status_ok(_res5.get("status"), expect):
+                            res, status, ok = _res5, _res5.get("status"), True
+                            path = _spath
+                            autofilled.append(f"self-social->{_other}")
         # #245 PARAM-AWARE RECOVERY (r27/r29/r33 — the top recurring business_chain
         # killer). The contract declares GET /api/users/{username}; chains author a
         # literal id (/api/users/13 → 500 when the handler types the param as a string,
