@@ -2355,6 +2355,40 @@ def _measured_floor_colors(design):
     }
 
 
+_FLOOR_GRID_KEYWORDS = frozenset({
+    "explore", "gallery", "grid", "discover", "browse", "photos", "media",
+    "thumbnails", "search"})
+_FLOOR_DETAIL_KEYWORDS = frozenset({"detail", "single"})
+
+
+def _floor_tokens(*texts) -> Set[str]:
+    """#298 — raw lowercase word tokens for floor-shape detection. Unlike
+    _semantic_tokens_226 this does NOT strip layout stopwords (grid/list/view),
+    since those ARE the shape signal here."""
+    toks: Set[str] = set()
+    for t in texts:
+        s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(t or ""))
+        toks |= set(re.findall(r"[a-z]+", s.lower()))
+    return toks
+
+
+def _floor_shape(page, get_ep, name) -> str:
+    """#298 — layout shape for the measured floor: 'detail' | 'grid' | 'list',
+    inferred from THIS page's endpoint + name semantics (env-agnostic). A
+    single-resource GET (path param) is a detail page; a gallery/explore surface
+    is a grid; everything else is a row list (the #297 default)."""
+    ep = str(get_ep or "")
+    if "{" in ep or ":" in ep:
+        return "detail"
+    toks = _floor_tokens((page or {}).get("route"), (page or {}).get("name"),
+                         (page or {}).get("component"), name)
+    if toks & _FLOOR_DETAIL_KEYWORDS:
+        return "detail"
+    if toks & _FLOOR_GRID_KEYWORDS:
+        return "grid"
+    return "list"
+
+
 def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
                             design=None) -> str:
     """Project a MINIMALLY-FUNCTIONAL, data-driven page from the contract instead
@@ -2415,7 +2449,10 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
         # The lane still refines it in place (visual-fidelity remediation).
         _floor = _measured_floor_colors(design)
         if _floor is not None:
-            mtpl = """import { useState, useEffect } from 'react';
+            # #298 shape-aware floor: grid (gallery/explore) / detail (single
+            # resource) / list (default) — all measured + structured + built.
+            _shape = _floor_shape(page, get_ep, name)
+            _prelude = """import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 
 const _imgOf = (r) => { for (const k of ['thumbnail_url','image_url','avatar_url','banner_url','photo_url','cover_url','poster_url','image','thumbnail','avatar','url']) { if (r && r[k]) return r[k]; } return null; };
@@ -2434,7 +2471,8 @@ export default function __COMP__() {
       .then(setData)
       .catch((e) => setError(String(e)));
   }, []);
-  const rows = Array.isArray(data && data.items)
+"""
+            _list_core = """  const rows = Array.isArray(data && data.items)
     ? data.items
     : (data && data.item ? [data.item] : (Array.isArray(data) ? data : []));
   return (
@@ -2461,6 +2499,64 @@ export default function __COMP__() {
   );
 }
 """
+            _grid_core = """  const rows = Array.isArray(data && data.items)
+    ? data.items
+    : (data && data.item ? [data.item] : (Array.isArray(data) ? data : []));
+  return (
+    <div data-projected="ref" className="min-h-screen px-6 py-6" style={{ backgroundColor: '__BG__', color: '__TEXT__' }}>
+      __NAV__
+      <h2 className="text-xl font-semibold mb-4">__LABEL__</h2>
+      {error ? <p className="text-sm mb-4" style={{ color: '__ACCENT__' }}>{error}</p> : null}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        {rows.map((row, i) => (
+          <div key={(row && row.id) || i} className="rounded-lg overflow-hidden border cursor-pointer" style={{ backgroundColor: '__SURFACE__', borderColor: '__BORDER__' }}>
+            {_imgOf(row)
+              ? <img src={_imgOf(row)} alt="" className="aspect-[3/4] w-full object-cover" style={{ backgroundColor: '__SURFACE__' }} />
+              : <div className="aspect-[3/4] w-full flex items-center justify-center text-lg font-semibold" style={{ backgroundColor: '__ACCENT__', color: '#ffffff' }}>{(_titleOf(row).charAt(0) || '?').toUpperCase()}</div>}
+            <div className="px-2 py-2">
+              <div className="text-sm font-medium truncate">{_titleOf(row)}</div>
+              {_subOf(row) ? <div className="text-xs truncate" style={{ color: '__MUTED__' }}>{_subOf(row)}</div> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+      {rows.length === 0 && !error ? <p className="mt-6 text-sm" style={{ color: '__MUTED__' }}>No data yet.</p> : null}
+    </div>
+  );
+}
+"""
+            _detail_core = """  const item = (data && data.item) ? data.item
+    : (Array.isArray(data && data.items) ? (data.items[0] || null)
+    : (Array.isArray(data) ? (data[0] || null) : (data || null)));
+  return (
+    <div data-projected="ref" className="min-h-screen px-6 py-6" style={{ backgroundColor: '__BG__', color: '__TEXT__' }}>
+      __NAV__
+      <h2 className="text-xl font-semibold mb-4">__LABEL__</h2>
+      {error ? <p className="text-sm mb-4" style={{ color: '__ACCENT__' }}>{error}</p> : null}
+      {item ? (
+        <div className="max-w-2xl mx-auto rounded-lg border overflow-hidden" style={{ backgroundColor: '__SURFACE__', borderColor: '__BORDER__' }}>
+          {_imgOf(item) ? <img src={_imgOf(item)} alt="" className="w-full max-h-[60vh] object-cover" style={{ backgroundColor: '__SURFACE__' }} /> : null}
+          <div className="px-5 py-4">
+            <h3 className="text-lg font-semibold mb-2">{_titleOf(item)}</h3>
+            {_subOf(item) ? <p className="text-sm mb-3" style={{ color: '__MUTED__' }}>{_subOf(item)}</p> : null}
+            <dl className="text-sm">
+              {_metaOf(item).map((k) => (
+                <div key={k} className="flex gap-3 py-1" style={{ borderTop: '1px solid __BORDER__' }}>
+                  <dt className="shrink-0" style={{ color: '__MUTED__' }}>{k}</dt>
+                  <dd className="min-w-0 truncate">{String(item[k])}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </div>
+      ) : (!error ? <p className="mt-6 text-sm" style={{ color: '__MUTED__' }}>No data yet.</p> : null)}
+    </div>
+  );
+}
+"""
+            _core = (_grid_core if _shape == "grid"
+                     else _detail_core if _shape == "detail" else _list_core)
+            mtpl = _prelude + _core
             body = (mtpl.replace("__COMP__", name).replace("__LABEL__", label)
                     .replace("__PATH__", _api_path_to_js(get_ep))
                     .replace("__NAV__", _measured_nav_jsx(nav_routes, _floor))
