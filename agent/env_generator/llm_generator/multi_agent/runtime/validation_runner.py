@@ -152,6 +152,33 @@ def compose_unreachable_detail(unreachable: List[str], salient: str) -> str:
     return f"{joined[:220]} | backend traceback: {salient}"[:800]
 
 
+_CHAIN_5XX_RE = re.compile(r"→\s*5\d\d\b")
+
+
+def _chain_broken_has_5xx(broken) -> bool:
+    """#300 — True when any broken business_chain step returned a 5xx (server
+    error). Only then is a backend traceback worth fetching: a 4xx (404 parent
+    not found, 400 validation) is self-describing, but a 5xx hides the real
+    cause behind FastAPI's opaque 'Internal Server Error'."""
+    for s in (broken or []):
+        t = str(s)
+        if _CHAIN_5XX_RE.search(t) or "Internal Server Error" in t:
+            return True
+    return False
+
+
+def _business_chain_detail(broken, salient: str) -> str:
+    """#300 — the ``business_chain`` failure detail. r81 M2 STUCK (95min): a chain
+    step's POST /replies → 500 showed the lane only 'Internal Server Error' while
+    business_endpoints_reachable surfaced the file:line traceback for its 500s and
+    those got fixed. Attach the salient backend traceback to a chain 5xx too, so
+    the lane sees the real root cause (mirrors compose_unreachable_detail)."""
+    joined = "; ".join(broken or [])
+    if not salient:
+        return joined[:800]
+    return f"{joined[:520]} | backend traceback: {salient}"[:800]
+
+
 def _backend_logs_tail(compose_file: Path, cwd: Path, tail: int = 200) -> str:
     """Last ``tail`` lines of the backend service's logs; '' on any fault."""
     try:
@@ -785,10 +812,23 @@ def run_smoke_validation(
             # inside a lane WORKTREE, is NOT the registry the gate audits (run v20:
             # chains pass live but the gate sees stale 'registered' → deadlock).
             chain_results = _chain.get("chains") or []
-            _add("business_chain", not _chain["broken"],
-                 ("; ".join(_chain["broken"]))[:800] if _chain["broken"]
-                 else f"{_chain['total_steps']} step(s) across "
-                      f"{len(_chain['chains'])} verifier-authored chain(s) pass")
+            if _chain["broken"]:
+                # #300: on a chain 5xx, attach the backend traceback (file:line
+                # root cause) — else the lane fixes blind (r81 M2 STUCK 95min on
+                # POST /replies → 500 shown only as 'Internal Server Error').
+                _chain_salient = ""
+                if _chain_broken_has_5xx(_chain["broken"]):
+                    try:
+                        _chain_salient = extract_salient_traceback(
+                            _backend_logs_tail(compose_file, cwd))
+                    except Exception:
+                        _chain_salient = ""
+                _add("business_chain", False,
+                     _business_chain_detail(_chain["broken"], _chain_salient))
+            else:
+                _add("business_chain", True,
+                     f"{_chain['total_steps']} step(s) across "
+                     f"{len(_chain['chains'])} verifier-authored chain(s) pass")
         except Exception as _chain_exc:
             _add("business_chain", False, f"chain runner crashed: {_chain_exc}")
 
