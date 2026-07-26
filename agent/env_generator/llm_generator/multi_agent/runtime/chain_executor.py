@@ -153,6 +153,28 @@ def _self_targeted_social_user_action(expect, path, own_user_id):
     return (m.group("coll"), m.group("id"))
 
 
+_OAUTH_AUTHORIZE_RE = re.compile(r"/oauth/authorize\b")
+_OAUTH_FLOW_PARAM_RE = re.compile(r"client_id|response_type|code_challenge", re.I)
+
+
+def _is_bare_oauth_authorize(path, body) -> bool:
+    """#301 — a /oauth/authorize step carrying NO OAuth flow params (client_id /
+    response_type / code_challenge) correctly 400/422s on a working AS (PKCE
+    required) and can never pass. The verifier authors BOTH a bare probe and a
+    params-bearing PKCE flow (r82 M2 STUCK 75min on the bare one) — tolerate the
+    bare step's 4xx; the params-bearing chain still tests the real flow. Same
+    family as #281 (oauth Form) / #289 (denial probe) / #299 (self-follow)."""
+    if not _OAUTH_AUTHORIZE_RE.search(str(path or "")):
+        return False
+    hay = str(path or "")
+    try:
+        if body:
+            hay += " " + json.dumps(body)
+    except Exception:
+        pass
+    return not _OAUTH_FLOW_PARAM_RE.search(hay)
+
+
 def _trailing_resource_var(path: Any) -> Optional[str]:
     """The path-param NAME of a by-id step's LAST segment — ``${note_id}`` / ``{id}`` /
     ``:id`` → the var. None for a collection or static path. Used to (a) recognise a
@@ -1630,6 +1652,12 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 res, status = _fres, _fres.get("status")
         ok = _status_ok(status, expect)
         autofilled: List[str] = []
+        # #301: a bare /oauth/authorize step (no OAuth flow params) correctly
+        # 400/422s on a working AS and can never pass — tolerate it so one
+        # verifier-authored bad probe doesn't wedge business_chain (r82 M2 STUCK).
+        if not ok and status in (400, 422) and _is_bare_oauth_authorize(path, body):
+            ok = True
+            autofilled.append("oauth-authorize-incomplete-tolerated")
         # FIX #136 (instagram run-52/58/60 — 3rd occurrence of the class): a verifier-
         # authored step with a LITERAL numeric id (POST /api/posts/4/repost) 404s when
         # the seed doesn't reach that id — the ${placeholder} recovery ladder above
