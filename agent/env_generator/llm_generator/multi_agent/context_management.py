@@ -670,44 +670,62 @@ class ToolResultCompressor:
         
         # Apply compression strategy
         if strategy == "head_tail":
-            return self._head_tail(result, max_chars)
+            return self._head_tail(result, max_chars, tool_name)
         elif strategy == "head":
-            return self._head(result, max_chars)
+            return self._head(result, max_chars, tool_name)
         elif strategy == "summary":
             return self._summary(result, tool_name)
         else:
-            return self._truncate(result, max_chars)
-    
-    def _head_tail(self, text: str, max_chars: int) -> str:
+            return self._truncate(result, max_chars, tool_name)
+
+    def _recovery_hint(self, tool_name: str) -> str:
+        """#304 — a generic, honest pointer telling the agent the result was
+        truncated AND how to recover the omitted content, so a truncated result
+        never silently drops information (the #274 hazard at the compressor
+        layer). Tool-aware where a precise path exists; generic otherwise."""
+        t = str(tool_name or "")
+        if t == "read":
+            return "read(path, offset=<next line>) to continue"
+        if "list" in t:
+            return ("call the matching get-by-id tool for full detail, or re-run "
+                    "with a narrower filter")
+        return ("re-run this tool with narrower args / pagination, or use a "
+                "get-by-id / read(offset=) call, to see the omitted content")
+
+    def _head_tail(self, text: str, max_chars: int, tool_name: str = "") -> str:
         """Keep head and tail of text."""
         head_size = max_chars * 2 // 3
         tail_size = max_chars // 3
-        
+
         head = text[:head_size]
         tail = text[-tail_size:]
-        
-        return f"{head}\n\n... [{len(text) - max_chars} chars omitted] ...\n\n{tail}"
-    
-    def _head(self, text: str, max_chars: int) -> str:
+
+        return (f"{head}\n\n... [{len(text) - max_chars} of {len(text)} chars "
+                f"omitted — {self._recovery_hint(tool_name)}] ...\n\n{tail}")
+
+    def _head(self, text: str, max_chars: int, tool_name: str = "") -> str:
         """Keep only head of text."""
-        return text[:max_chars] + f"\n\n... [{len(text) - max_chars} more chars]"
-    
-    def _truncate(self, text: str, max_chars: int) -> str:
-        """Simple truncation."""
-        return text[:max_chars] + "..."
-    
+        return (text[:max_chars] + f"\n\n... [{len(text) - max_chars} more of "
+                f"{len(text)} chars omitted — {self._recovery_hint(tool_name)}]")
+
+    def _truncate(self, text: str, max_chars: int, tool_name: str = "") -> str:
+        """Simple truncation — with a recovery pointer (never a bare '...')."""
+        return (text[:max_chars] + f"\n… [truncated: {len(text) - max_chars} of "
+                f"{len(text)} chars omitted — {self._recovery_hint(tool_name)}]")
+
     def _summary(self, text: str, tool_name: str) -> str:
         """Generate brief summary."""
         lines = text.split('\n')
-        
+
         # For write/edit/apply_patch, extract path-ish summary
         if tool_name in {"write", "edit", "apply_patch"}:
             for line in lines[:5]:
                 if 'path' in line.lower() or 'file' in line.lower():
                     return f"[{tool_name}] {line[:200]}"
-        
+
         # Generic summary
-        return f"[{tool_name} result] {len(lines)} lines, {len(text)} chars"
+        return (f"[{tool_name} result] {len(lines)} lines, {len(text)} chars — "
+                f"summarized; {self._recovery_hint(tool_name)}")
 
 
 # =============================================================================
