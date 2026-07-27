@@ -270,6 +270,17 @@ class DecomposeReferenceTool(BaseTool):
         import json as _json
         out_rel = save_as or f"design/component_specs/{Path(image).stem}.json"
         dest = self.workspace.resolve(out_rel)
+        # Route the write through the per-agent role write-gate. ``save_as`` is
+        # agent-controllable, so without this a caller could drop a JSON spec into
+        # another role's tree (e.g. ``app/backend/main.py``) — a cross-role write
+        # that bypasses ROUTING_TABLE. At runtime ``self.workspace`` is the
+        # ``PathRoutedWorkspace`` (which enforces the gate) and ``_agent_id`` is
+        # injected by ``AgentTooling.attach``; a plain ``Workspace`` (early-init /
+        # tests, pre-worktree) returns True by design. Gate on ``dest`` (the same
+        # path we write) so the write-gate invariant is satisfied by construction.
+        if hasattr(self.workspace, "is_write_allowed") and not self.workspace.is_write_allowed(
+                dest, getattr(self, "_agent_id", None)):
+            return ToolResult.fail(f"write denied by role gate: {out_rel}")
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(_json.dumps(res, indent=2, ensure_ascii=False), encoding="utf-8")

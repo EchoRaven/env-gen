@@ -435,3 +435,53 @@ Live proof (r85): 1 req content_chars=203705 but prompt_tokens=6 (cache handles
   re-sent history; 200K<2.45M => no masking; full outputs kept). Confirms cost = NEW
   tool-output delta, not re-sent history. Fix = compact tool returns (#302/#303/#305).
 r85: M1 feed-and-auth 13/13 GREEN, orchestrator DELIVER_PROJECT, 0 LLM errors.
+
+## #310-#313 (pushed 4c876fc) — dead-code deletion + tool-config guarantee + stale-test sweep
+User asks this session: (1) delete dead code, (2) ensure per-stage tool config tools usable.
+- #310: DELETED context_management.py (1083 lines, all 8 classes DEAD — AdvancedContextManager
+  instantiated but never fed/read; compressor never live) + 5 orphan compressor tests. #309
+  first marked it UNWIRED, then user said delete. Zero-regress (import chain + 58 fix-family green).
+- #311: REAL gap — frontend+debugger lacked 'progress' category → report_progress (in their
+  allowlist+prompt) unusable. Added 'progress' to both (mirrors backend). + fixed 2 FALSE-POSITIVE
+  guards: (a) both assembled include_vision=False → decompose_reference falsely flagged; model
+  vision via stub client. (b) test_prompt_tool_policy read whole shared test_user_agent.j2 →
+  unioned 3 variants' tool_policy; scope to <pid>_system_prompt macro. + dropped 4 knowledge
+  KNOWN_PRE_EXISTING_GAPS now granted.
+- #312: user_flows RETIRED from frontend kickoff (2026-06-22 directive in section_substance.py)
+  was half-applied — FINAL PROTOCOL correct but schema/line306/348/433/464 + comment block still
+  told frontend to author them (self-contradiction → null-array wedge risk). Cleaned all; dropped
+  kickoff_declare_user_flow from test_stage_tool_allowlist_gaps. USER DECISION: orchestrator derives.
+- #313: 4 pre-existing stale/brittle tests (code correct): milestone_kickoff_phase x2 (mock lacked
+  get_meeting_decisions read-path → AttributeError swallowed → VALIDATION); kickoff synthesis macro
+  RENAMED synthesis→facilitation; FIX #107 window narrowly excluded marker (re-anchored forward).
+★ DISCOVERY: wide sweep found ~16 MORE pre-existing local-test failures (test rot — local gitignored
+  tests drifted from code, never run wholesale): test_eventhub_new_tools(7), test_workhub_tools,
+  test_write_gate_invariant (flags DecomposeReferenceTool mkdir/write_text — maybe real gate bypass),
+  test_mcp_prompts, test_deliverability_tools, test_debugger_prompt/gates, test_agents_config_stages,
+  test_backend_merge_ownership_resolve, test_non_canonical_file_tools. ALL fail at baseline 76c328b too
+  (NOT my regressions). Mixed stale-test vs maybe-real. Needs its own focused sweep — pending user go.
+
+## #314 — test-rot sweep of the 16 (4 parallel investigators): 15 STALE + 1 REAL BUG
+Result: 15/16 were stale local tests (production CORRECT, expectations drifted); 1 REAL production bug.
+★ REAL BUG (shipped fix, material_prep_tools.py:273): DecomposeReferenceTool (wired to frontend+
+  design_analyst vision bundle) wrote its JSON spec to an agent-controllable save_as path with NO
+  role write-gate → a frontend agent could drop JSON into another role's tree (e.g. app/backend/main.py),
+  bypassing ROUTING_TABLE. Fix: gate the write through workspace.is_write_allowed(dest,_agent_id) before
+  mkdir/write_text. Verified safe: design/ is writable by backend+frontend+design_analyst (ROUTING_TABLE
+  :144) so the legit write to design/component_specs/ is allowed; only cross-role writes are denied.
+Stale (production correct, local-test-only fixes, NOT shipped since tests/ is gitignored):
+  - eventhub x7: ONE cause — _run() reused process-wide event loop closed by an earlier async test in
+    full-suite runs (only the 1 sync test survived). Fresh loop per call.
+  - agents_config_stages: design_analyst inherits stages from execution_pipeline_defaults (test read raw block).
+  - phase_hygiene debugger gates: bug_triage gate deliberately removed (FIX #2); bug_create still gated.
+  - debugger_prompt: prompt uses ROOT_CAUSE/ROOT-CAUSE not literal 'ROOT CAUSE'.
+  - workhub_tools export: workhub_archive_page renamed → workhub_archive_document (84f658e).
+  - mcp_prompts: MCP server now runtime-projected; backend doesn't author transport.
+  - deliverability: passing run correctly 'blocked' by AUTHORED-SEED gate (added 2026-07-02, post-test); fixture lacked seed.
+  - backend_merge frontend conflict: PROPOSAL #23 extended ownership-resolve to frontend (App.jsx resolves, not abort).
+  - list_reference_images: tool now ignores `project` (more restrictive); test asserted removed feature.
+Verified: all 16 pass together (77 passed). ZERO regressions from any of my work (confirmed at baseline 76c328b).
+★ FOUND 2 MORE pre-existing (beyond the 16, via collateral filter; NOT my regressions, confirmed):
+  test_method_layer_write_gate_invariant (flags WorkHubStores.create @ hubs/workhub/stores.py:23 — hub method,
+  needs real-vs-allowlist judgment) + test_workspace_routing (orchestrator broad-write under app/backend/ —
+  likely stale, routing comment says 'coordinators DISPATCH never patch'). Suite has broader rot; pending user go.
