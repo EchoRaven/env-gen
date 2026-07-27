@@ -498,7 +498,7 @@ profiles:
     name: "Frontend Engineer Agent"
     reasoning_effort: "high"  # frontend owns design specs + UI implementation + flow coverage; reasoning-heavy.
     description: "Frontend team lead (v3): task_ready triggered, two-phase (static UI when Design ready, API integration when Backend ready). No polling, no wait."
-    tool_categories: ["file", "reasoning", "runtime", "vision", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "visual_review", "mcp_registry", "team_spawn", "api_contract", "dependency", "reference", "image_search", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "design"]
+    tool_categories: ["file", "reasoning", "runtime", "vision", "communication", "progress", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "visual_review", "mcp_registry", "team_spawn", "api_contract", "dependency", "reference", "image_search", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "design"]
     include_vision: true
     timeout: 3600
     prompts:
@@ -1024,7 +1024,7 @@ profiles:
     # boundary, same tool surface, but the runtime / live_monitor /
     # agent_subscriptions DEFAULT_SUBSCRIPTIONS all reference
     # ``debugger``. The old name is dead code.
-    tool_categories: ["reasoning", "communication", "memory", "knowledge_read", "knowledge_write", "analysis", "workhub", "registryhub", "codehub", "eventhub", "hub", "bug"]
+    tool_categories: ["reasoning", "communication", "progress", "memory", "knowledge_read", "knowledge_write", "analysis", "workhub", "registryhub", "codehub", "eventhub", "hub", "bug"]
     include_vision: false
     timeout: 3600
     prompts:
