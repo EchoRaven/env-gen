@@ -750,6 +750,35 @@ class ToolResultCompressor:
                 f"summarized; {self._recovery_hint(tool_name)}")
 
 
+# #308 — hub READ tools must NOT be silently truncated to the default 1000.
+# Two correctness hazards (both observed >1000 raw in r82):
+#   (a) get-by-id DETAIL tools are the 'fetch full by id' RECOVERY path for the
+#       compact lists (#302/#303/#305) — truncating them makes recovery a lie
+#       (workhub_get_document was seen at 82912 raw → clipped to 1000).
+#   (b) source-of-truth LIST tools (ui_pages/ui_components/documents) hide
+#       entries past the cut → an agent re-creates a page/component that already
+#       exists (the frontend twin of the duplicate-API bug #307 fixed).
+# Register high-cap `head` rules (setdefault: never override an explicit rule like
+# #307's). A pathological size still keeps whole leading rows + the #304 pointer.
+_HUB_DETAIL_RECOVERY_TOOLS = (
+    "workhub_get_task", "workhub_get_document", "registryhub_get_endpoint",
+    "registryhub_get_breaking_changes", "registryhub_get_dependencies_for_file",
+    "registryhub_get_table_breaking_changes", "eventhub_get_agent_status",
+)
+_HUB_LIST_AND_DETAIL_TOOLS = (
+    "registryhub_list_ui_pages", "registryhub_list_ui_components",
+    "workhub_list_documents", "workhub_list_ready", "workhub_list_blocked",
+    "workhub_available_tasks", "milestone_list", "milestone_set_detail",
+    "deliverability_check", "run_validation", "hub_snapshot",
+)
+for _t in _HUB_DETAIL_RECOVERY_TOOLS:
+    ToolResultCompressor.COMPRESSION_RULES.setdefault(
+        _t, {"max_chars": 100000, "strategy": "head", "keep_structure": True})
+for _t in _HUB_LIST_AND_DETAIL_TOOLS:
+    ToolResultCompressor.COMPRESSION_RULES.setdefault(
+        _t, {"max_chars": 60000, "strategy": "head", "keep_structure": True})
+
+
 # =============================================================================
 # 4. CONTEXT BUDGET ALLOCATION
 # =============================================================================
