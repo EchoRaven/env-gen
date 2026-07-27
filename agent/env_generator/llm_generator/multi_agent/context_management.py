@@ -633,6 +633,28 @@ class ToolResultCompressor:
             "strategy": "truncate",
             "keep_structure": True,
         },
+        # #307: list tools are the SOURCE OF TRUTH for "what already exists".
+        # Truncating them to the 1000-char default hid endpoints/tables/tasks
+        # beyond the cut → an agent that couldn't see an endpoint already existed
+        # RE-IMPLEMENTED it (duplicate/conflicting APIs). #303/#305 made the rows
+        # COMPACT (~60 bytes), so the FULL list now fits cheaply — give it a high
+        # cap so it is shown COMPLETE. A pathologically huge list still uses `head`
+        # (whole leading rows) + the #304 recovery pointer, never silent loss.
+        "registryhub_list_endpoints": {
+            "max_chars": 60000,
+            "strategy": "head",
+            "keep_structure": True,
+        },
+        "registryhub_list_tables": {
+            "max_chars": 60000,
+            "strategy": "head",
+            "keep_structure": True,
+        },
+        "workhub_list_tasks": {
+            "max_chars": 60000,
+            "strategy": "head",
+            "keep_structure": True,
+        },
     }
     
     def __init__(self):
