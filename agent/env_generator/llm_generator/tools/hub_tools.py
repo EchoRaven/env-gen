@@ -898,8 +898,30 @@ class WorkHubListTasksTool(HubTool):
     DESCRIPTION = "List WorkHub tasks, optionally filtered by assignee, status, domain, or plan_id."
     PARAMETERS = {"type": "object", "properties": {"assignee": {"type": "string"}, "status": {"type": "string"}, "domain": {"type": "string"}, "plan_id": {"type": "string"}}}
 
+    # #305 CONTEXT: fields worth keeping in a LIST scan; the heavy content
+    # (description/evidence/metadata/result) is dropped and recoverable via
+    # workhub_get_task(id).
+    _KEEP = ("id", "title", "status", "assignee", "plan_id", "depends_on",
+             "priority", "domain", "created_at", "claimed_by")
+
+    @classmethod
+    def _compact(cls, t):
+        if not isinstance(t, dict):
+            return t
+        row = {k: t[k] for k in cls._KEEP if k in t}
+        md = t.get("metadata")
+        if isinstance(md, dict) and md.get("priority") and "priority" not in row:
+            row["priority"] = md["priority"]
+        return row
+
     async def _run(self, assignee: str = None, status: str = None, domain: str = None, plan_id: str = None) -> ToolResult:
-        return ToolResult(data={"tasks": self._hubs.workhub.list_tasks(assignee=assignee, status=status, domain=domain, plan_id=plan_id)})
+        tasks = self._hubs.workhub.list_tasks(assignee=assignee, status=status, domain=domain, plan_id=plan_id)
+        compact = [self._compact(t) for t in tasks] if isinstance(tasks, list) else tasks
+        return ToolResult(data={
+            "tasks": compact,
+            "_detail": "compact list — call workhub_get_task(id) for "
+                       "description/evidence/result",
+        })
 
 
 class WorkHubAvailableTasksTool(HubTool):
