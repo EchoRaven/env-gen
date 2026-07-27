@@ -583,20 +583,11 @@ class EnvGenAgent(
         )
         self.memory_bank: Optional[MemoryBank] = None
         
-        # Advanced Context Management (combats Context Snowball)
-        # Inspired by Croto (Cross-Team Orchestration) and MemGPT
-        # ⚠ INERT (verified 2026-07-27): instantiated but never fed — no call to
-        # context_manager.add_tool_result / build_context exists in the live loop
-        # (the step pipeline feeds the raw messages[] list to the LLM, tooling.py).
-        # Kept only to preserve the storage_path side effect / API. Live context
-        # reduction is tool-level (#302/#303/#305) + _mask_old_observations.
-        from ..context_management import AdvancedContextManager
-        self.context_manager = AdvancedContextManager(
-            max_tokens=8000,
-            storage_path=workspace_manager.base_dir / f".context_{self.agent_id}.json"
-            if hasattr(workspace_manager, 'base_dir') else None
-        )
-        
+        # (Context-Snowball manager removed 2026-07-27 — it was instantiated but
+        # never fed or read; the step pipeline sends the raw messages[] list to the
+        # LLM. Live context reduction is tool-level compaction (#302/#303/#305) plus
+        # _mask_old_observations in step_runner.py.)
+
         # Skills consulted via get_skill this run (read by SkillConsultGate;
         # populated at the tool chokepoint — skill_consult.py).
         self._consulted_skills: Set[str] = set()

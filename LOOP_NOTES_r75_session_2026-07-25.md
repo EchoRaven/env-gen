@@ -415,3 +415,23 @@ Both: TDD red→green + stash zero-regression + pushed vaibackup (HEAD=3c4fc39).
   dropped — lists already small; no value.
 
 ## SESSION TOTAL: 17 — 9 framework + 3 frontend + 5 context (#302/#303/#304/#305/#307). HEAD=ad85ac8.
+
+## #309 (e80d0d1) — TRUNCATION AUDIT (answer to "还有什么truncated的内容")
+CRITICAL CORRECTION: ToolResultCompressor is DEAD in the live pipeline.
+- 2026-06-24 tooling.py removed compressor + 16000 cap ("NO compression/NO cap;
+  truncated tool output is a correctness hazard"). Full result -> messages[] -> LLM.
+- add_tool_result (sole .compress() caller) NEVER invoked live. Verified by grep.
+- => #304/#307/#308 (COMPRESSION_RULES edits) = DORMANT no-ops. Correct-if-reenabled
+  but change nothing at runtime. They do NOT fix duplicate-API (live never truncated
+  lists). Marked UNWIRED in code (context_management.py class + base.py:589).
+Real live truncation = _mask_old_observations (step_runner.py:811): old (non-last-8)
+  tool bodies -> 300-char head + "re-run the tool" pointer. BUDGET-GATED: skipped when
+  history < resolve_ctx_working_chars(model). opus-4.7 = 1M window -> ~2.45M chars =>
+  normal runs NEVER masked. Recoverable-by-design. OK.
+Real context reduction = TOOL LEVEL: #302 check_inbox, #303/#305 hub lists (compact
+  list + get-by-id). These change the tool's return -> flow through fully. CORRECT.
+No live truncation exists WITHOUT a recovery pointer. Audit clean.
+Live proof (r85): 1 req content_chars=203705 but prompt_tokens=6 (cache handles
+  re-sent history; 200K<2.45M => no masking; full outputs kept). Confirms cost = NEW
+  tool-output delta, not re-sent history. Fix = compact tool returns (#302/#303/#305).
+r85: M1 feed-and-auth 13/13 GREEN, orchestrator DELIVER_PROJECT, 0 LLM errors.

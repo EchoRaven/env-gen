@@ -310,7 +310,7 @@ the agent already has its most recent code example verbatim below."""
 # When condensing, the single most-recent such pair is pinned into the kept set
 # VERBATIM so a coding agent always has a fresh handler to copy from instead of a
 # collapsed "wrote X to path" line. Mirrors the file-write set used elsewhere in
-# the runtime (context_management / tooling).
+# the runtime (step_pipeline/tooling).
 CODE_WRITE_TOOL_NAMES = frozenset({"write", "edit", "apply_patch"})
 
 

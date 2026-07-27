@@ -550,10 +550,12 @@ class AgentStepToolingMixin:
             # NO compression / NO cap (user decision 2026-06-24): the FULL tool result
             # reaches the agent — truncated tool output is a correctness hazard (the
             # agent acts on a partial view). This was the DOMINANT truncation: the live
-            # step pipeline ran ToolResultCompressor (COMPRESSION_RULES — ~1000 chars per
-            # tool, head/summary) on any result >1000 chars, THEN capped at 16000, so
-            # large file reads / hub dumps / chain results were silently shrunk to a
-            # digest before the model ever saw them. Removed both.
+            # step pipeline used to run a ToolResultCompressor (~1000 chars/tool,
+            # head/summary) on any result >1000 chars, THEN cap at 16000, so large file
+            # reads / hub dumps / chain results were silently shrunk to a digest before
+            # the model ever saw them. Both were removed here in 2026-06-24, and the
+            # now-orphaned compressor module itself was deleted 2026-07-27. Live context
+            # reduction is tool-level (compact list + get-by-id) + _mask_old_observations.
             # PATH FIREWALL: relativize absolute env/worktree roots before the
             # result reaches the model, so it perceives its workspace as root and
             # never learns the host path to script against (run #13 leak).
