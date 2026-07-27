@@ -527,9 +527,19 @@ class ToolResultCompressor:
     - run_command: Variable, keep errors fully, truncate success
     """
     
-    # Downstream hard clip (step_pipeline/tooling.py: max_result_len) is the REAL
-    # per-tool-result budget the rest of the pipeline absorbs. The compressor must
-    # not destructively pre-empt it for reads.
+    # ⚠ CURRENTLY UNWIRED IN THE LIVE PIPELINE (verified 2026-07-27). The step
+    # pipeline removed BOTH this compressor and its old 16000-char cap on
+    # 2026-06-24 (step_pipeline/tooling.py:550-556 — "NO compression / NO cap …
+    # truncated tool output is a correctness hazard"); the FULL tool result now
+    # reaches the model, and AdvancedContextManager.add_tool_result (the only
+    # caller of .compress()) is never invoked in the live loop. So COMPRESSION_RULES
+    # below are DORMANT defense-in-depth — correct IF the compressor is ever
+    # re-enabled, but they change NOTHING at runtime today. Live context reduction
+    # happens at the TOOL level (compact list + get-by-id: check_inbox #302,
+    # hub lists #303/#305) and via _mask_old_observations (step_runner.py — masks
+    # OLD tool bodies to a head + "re-run the tool" pointer, budget-gated so a 1M
+    # model with history under ~2.45M chars is never masked). Do NOT re-wire this
+    # without revisiting the 2026-06-24 decision.
     DOWNSTREAM_CLIP_CHARS = 16000
 
     # Tool-specific compression rules
