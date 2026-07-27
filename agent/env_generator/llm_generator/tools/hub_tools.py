@@ -1616,7 +1616,21 @@ class RegistryHubListEndpointsTool(HubTool):
             endpoints = {k: v for k, v in endpoints.items() if v.get("status") == status}
         if provider:
             endpoints = {k: v for k, v in endpoints.items() if v.get("provider") == provider}
-        return ToolResult(data={"endpoints": endpoints})
+        # #303 CONTEXT: return COMPACT rows (id/method/path/status/provider) — the
+        # per-endpoint schema+metadata are ~85% of each row, rarely needed in a
+        # LIST, and this tool is re-fetched dozens of times per run. Full detail
+        # (schema/request/response) stays recoverable via registryhub_get_endpoint(id).
+        compact = {
+            k: {"id": v.get("id", k), "method": v.get("method"),
+                "path": v.get("path"), "status": v.get("status"),
+                "provider": v.get("provider")}
+            for k, v in endpoints.items() if isinstance(v, dict)
+        }
+        return ToolResult(data={
+            "endpoints": compact,
+            "_detail": "compact list — call registryhub_get_endpoint(id) for "
+                       "schema/request/response",
+        })
 
 
 class RegistryHubGetEndpointTool(HubTool):
@@ -1772,6 +1786,27 @@ class RegistryHubListTablesTool(HubTool):
         if status and isinstance(tables, dict):
             tables = {k: v for k, v in tables.items()
                       if isinstance(v, dict) and v.get("status") == status}
+        # #303 CONTEXT: compact rows — keep scalar identity fields + a column
+        # COUNT; the full columns/schema (the big nested fields) are recoverable
+        # via registryhub_get_table / get_table_breaking_changes. This list is
+        # re-fetched many times per run.
+        if isinstance(tables, dict):
+            compact = {}
+            for k, v in tables.items():
+                if not isinstance(v, dict):
+                    compact[k] = v
+                    continue
+                row = {f: val for f, val in v.items()
+                       if not isinstance(val, (dict, list))}
+                cols = v.get("columns")
+                if isinstance(cols, (list, dict)):
+                    row["columns_count"] = len(cols)
+                compact[k] = row
+            return ToolResult(data={
+                "tables": compact,
+                "_detail": "compact list — call registryhub_get_table(id) for "
+                           "full columns/schema",
+            })
         return ToolResult(data={"tables": tables})
 
 
