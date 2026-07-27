@@ -1209,7 +1209,7 @@ class Orchestrator:
                     # ('orchestrator','kickoff_request','high') subscription
                     # and runs its kickoff_response prompt. The orchestrator
                     # lane wakes on workhub.meeting_decision_added events
-                    # and runs its kickoff_synthesis_prompt — which finalizes
+                    # and runs its kickoff_facilitation_prompt — which finalizes
                     # the meeting (and emits kickoff_complete) once every
                     # gate passes, OR queues a single revision round on
                     # conflict, OR no-ops while awaiting decisions.
