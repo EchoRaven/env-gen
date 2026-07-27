@@ -244,8 +244,9 @@
 {# Kickoff response prompt — fires ONCE when the frontend agent wakes on a
    ``kickoff_request`` event for milestone M(milestone_index). Single-pass:
    author the `"frontend"` section of the kickoff meeting (ui_pages +
-   user_flows + auth + reference_image_manifest + feature_inventory +
-   done_def + screens), record it as a meeting decision, then finish().
+   ui_components + auth + reference_image_manifest + feature_inventory +
+   done_def + screens; user_flows RETIRED 2026-06-22 — orchestrator derives
+   them), record it as a meeting decision, then finish().
    The orchestrator (NOT this agent) drives synthesis + RegistryHub
    registration — see runtime/kickoff/run_kickoff.py.
 
@@ -253,14 +254,15 @@
    (KickoffEndpoint / KickoffDataModel / KickoffAuth) and the per-section
    shape comment in run_kickoff.py:
      - backend  → api_endpoints (KickoffEndpoint with response_key) + data_model
-     - frontend → ui_pages + user_flows + feature_inventory + done_def +
+     - frontend → ui_pages + ui_components + feature_inventory + done_def +
                   auth + screens + reference_image_manifest
      - verifier → predicates
 
    This agent owns the FRONTEND section — its `content` carries BOTH the
-   former design fields (ui_pages, user_flows, auth, etc.) AND the native
-   frontend fields (screens). Each screen.user_flow MUST be a flow id you
-   author in user_flows; api_calls reference backend endpoints by their
+   former design fields (ui_pages, auth, etc.) AND the native frontend
+   fields (screens). screen.user_flow is an OPTIONAL informational label
+   (user_flows RETIRED 2026-06-22 — the orchestrator derives critical flows
+   from ui_pages + endpoints); api_calls reference backend endpoints by their
    canonical id `"<METHOD> <path>"` (matches `contract.endpoint_id`). #}
 {% macro kickoff_response_prompt(meeting_id, milestone_index, requirements, expected_section) %}
 READ THIS FIRST — the binding protocol is the FINAL PROTOCOL block at the END of this prompt (typed declare tools, one call per item; it overrides every inline example in between).
@@ -303,7 +305,7 @@ responsibility (inspect via ``view_image()`` per the Phase A mandate).
 
 **Cross-section vocabulary you depend on** (don't redefine — sibling sections own these):
 - ``backend.api_endpoints[i]`` — each carries ``{method, path, response_key, auth_required, request, response}``. The ``response_key`` is the FIXED projector envelope key: ``"items"`` for a list, ``"item"`` for a single resource (those are the only two values for a business endpoint). The frontend service layer reads ``data.items`` / ``data.item`` accordingly during Phase B. You declare which endpoints you need by canonical ``endpoint_id`` (``"<METHOD> <path>"``); backend authors the full record.
-- ``verifier.predicates[].flow`` — every CRITICAL ``user_flow`` you author MUST have at least one verifier predicate. Your screens reference flows, verifier covers them — same flow ids.
+- ``verifier.predicates[].flow`` — critical user-flows are DERIVED by the orchestrator from your ``ui_pages`` + the backend endpoints at the verify/fix stage (you do NOT author ``user_flows`` — see Design ownership above), and the verifier covers each with a predicate. You need not declare flows in this section.
 
 The structured content shape for the `frontend` section is:
 
@@ -318,15 +320,9 @@ The structured content shape for the `frontend` section is:
         },
         ...
     ],
-    "user_flows": [
-        {
-            "id":         str,        # flow id, e.g. "auth_login"
-            "critical":   bool,       # True ⇒ verifier MUST cover with a predicate
-            "pages":      [str, ...], # ui_pages[].id entries this flow traverses
-            "predicates": [str, ...], # placeholder for verifier predicate ids; usually []
-        },
-        ...
-    ],
+    # NOTE: user_flows are NOT authored here (retired from the frontend section,
+    # user directive 2026-06-22). The orchestrator DERIVES critical flows from
+    # ui_pages + endpoints at the verify/fix stage; do not emit a user_flows key.
     "auth": {
         "model":   str,    # e.g. "jwt_bearer", "session_cookie", "none"
         "details": dict,   # free-form; e.g. {"token_storage": "localStorage", "header": "Authorization: Bearer"}
@@ -351,7 +347,7 @@ The structured content shape for the `frontend` section is:
             "id":         str,    # stable identifier, kebab-case — MUST also appear in ui_pages[].id
             "title":      str,    # human-readable
             "route":      str,    # URL path, e.g. "/login" — MUST match the matching ui_pages[].path
-            "user_flow":  str,    # MUST match a user_flows[].id you author above
+            "user_flow":  str,    # OPTIONAL informational flow label; may be omitted (flows are orchestrator-derived, not authored here)
             "api_calls":  [       # BUSINESS endpoints this screen consumes (see note below)
                 {
                     "endpoint_id": str,  # canonical "<METHOD> <path>" — matches
@@ -436,7 +432,7 @@ workhub_add_meeting_decision(
                     "id": "login",
                     "title": "Login",
                     "route": "/login",
-                    "user_flow": "auth_login",          # matches user_flows[].id authored above
+                    "user_flow": "auth_login",          # OPTIONAL informational label (no user_flows list is authored)
                     "api_calls": [
                         {"endpoint_id": "POST /api/login", "purpose": "exchange creds for token"},
                     ],
@@ -467,7 +463,7 @@ workhub_add_meeting_decision(
 polling are NOT in the surface, so you can't accidentally register
 endpoints or write code during this kickoff):
 
-- Reference only `user_flow` ids in `screens[i].user_flow` that you ALSO declare in your own `user_flows` list. Both halves live in YOUR section — keep them in lockstep within a single decision.
+- `screens[i].user_flow` is an OPTIONAL informational label and may be omitted — you do NOT author a `user_flows` list (RETIRED 2026-06-22; critical flows are DERIVED by the orchestrator from your ui_pages + registered endpoints at verify time).
 - Frontend's role at kickoff is to DECLARE the screen's api needs by `endpoint_id`; the orchestrator synthesizes the merged draft and registers endpoints itself once cross-check + arbitration pass.
 
 **Stop rule** — call `finish()` immediately after `workhub_add_meeting_decision` returns (file-first form included). Do NOT cancel or fail any workhub tasks during kickoff — impl.* tasks are the orchestrator's dispatch plan for the next phase. Without `finish()`, the runtime will keep stepping you and you may double-record. ONE decision per (section, agent) per meeting round; the synthesizer uses the LAST recorded decision per pair if arbitration causes a revision.
