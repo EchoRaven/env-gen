@@ -1264,6 +1264,21 @@ def project_missing_routes(
         meta = ep.get("metadata") if isinstance(ep.get("metadata"), Mapping) else {}
         _rm_cur = _resource_model(path, models)
         _owner_scoped = bool(_rm_cur and _rm_cur[0] in scoped_read_tables)
+        # #320 (r88/r89 public-feed wedge): a table can hold OWNED-but-PUBLIC content
+        # (TikTok videos, IG posts, YT videos) — rows have a creator yet the feed is
+        # public (the design inputs literally include fyp_feed_logged_out.png). Its
+        # per-table owner_scoped_reads flag (set for the "my videos" profile view / write
+        # ownership) otherwise owner-scopes + #315-force-auths EVERY read, so the public
+        # feed 401s and the ui_flow gate wedges. An EXPLICIT auth_required=False is the
+        # lane's DELIBERATE "this read is public" declaration — honor it: serve public
+        # (no owner row-filter, no force-auth) for THIS endpoint. UNSTATED reads on an
+        # owner-scoped table still force-auth + owner-scope (r58/#315 leak protection: a
+        # private table's unstated read must NOT default open — a strong model marks a
+        # genuinely-private list private and only sets =False on a real public feed).
+        _explicit_public = (ep.get("auth_required") is False) or (
+            isinstance(meta, Mapping) and meta.get("auth_required") is False)
+        if _explicit_public and _owner_scoped:
+            _owner_scoped = False   # deliberate public read → all rows, no owner filter
         # An owner-scoped resource is per-user PRIVATE (notes/email/drafts): its reads
         # can only be scoped to ``owner_fk == the caller``, which REQUIRES an actor. #271
         # made an unstated read default to PUBLIC — so a private resource whose contract

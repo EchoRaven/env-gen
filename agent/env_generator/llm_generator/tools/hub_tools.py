@@ -2408,7 +2408,11 @@ class KickoffDeclareTableTool(_KickoffDeclareBase):
         "ONE authenticated GET /api/me/<x> that filters by owner in custom_routes.py — "
         "do NOT flip the whole table private (that force-auths its public feed → the "
         "logged-out feed 401s → the ui_flow gate wedges). Set true only when the table "
-        "has NO public view at all.")
+        "has NO public view at all. If you DO set it true but the table still has a "
+        "PUBLIC read (a feed/explore/public by-id), you MUST declare those specific read "
+        "endpoints auth_required=false — that serves them public (all rows, no login) "
+        "even on an owner-scoped table; only the authenticated 'my X' endpoint stays "
+        "owner-scoped.")
     PARAMETERS = {"type": "object", "properties": {
         "meeting_id": {"type": "string"},
         "name": {"type": "string", "description": "snake_case table name"},
