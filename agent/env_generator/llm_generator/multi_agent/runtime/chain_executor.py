@@ -154,16 +154,24 @@ def _self_targeted_social_user_action(expect, path, own_user_id):
 
 
 _OAUTH_AUTHORIZE_RE = re.compile(r"/oauth/authorize\b")
-_OAUTH_FLOW_PARAM_RE = re.compile(r"client_id|response_type|code_challenge", re.I)
+_OAUTH_CODE_CHALLENGE_RE = re.compile(r"code_challenge", re.I)
 
 
-def _is_bare_oauth_authorize(path, body) -> bool:
-    """#301 — a /oauth/authorize step carrying NO OAuth flow params (client_id /
-    response_type / code_challenge) correctly 400/422s on a working AS (PKCE
-    required) and can never pass. The verifier authors BOTH a bare probe and a
-    params-bearing PKCE flow (r82 M2 STUCK 75min on the bare one) — tolerate the
-    bare step's 4xx; the params-bearing chain still tests the real flow. Same
-    family as #281 (oauth Form) / #289 (denial probe) / #299 (self-follow)."""
+def _oauth_authorize_lacks_pkce(path, body) -> bool:
+    """#301+#316 — a /oauth/authorize step that carries NO ``code_challenge`` cannot
+    complete on a PKCE-enforced AS: it correctly 400/422s ("code_challenge with S256
+    is required") and can NEVER pass — whether it is a fully BARE probe (#301, no flow
+    params at all) OR a PARAMS-BEARING step that merely omits the PKCE challenge (#316,
+    r86 final NO-CONVERGENCE ABORT: a framework-synthesized chain hit
+    ``/oauth/authorize?response_type=code&client_id=..&redirect_uri=..&state=xyz`` → 400
+    and, having client_id/response_type, was treated as NOT-bare → not tolerated → the
+    business_chain gate never went green → 75min abort even though every real PKCE flow
+    passed). Tolerate its 4xx so a synthesized probe can't wedge business_chain.
+
+    The discriminator is the PKCE ``code_challenge``, NOT the presence of any flow
+    param (that was #301's bug this fixes): a step that DOES carry ``code_challenge`` is
+    the REAL PKCE flow and MUST pass — a 4xx there is a genuine bug, never tolerated.
+    Same family as #281 (oauth Form) / #289 (denial probe) / #299 (self-follow)."""
     if not _OAUTH_AUTHORIZE_RE.search(str(path or "")):
         return False
     hay = str(path or "")
@@ -172,7 +180,7 @@ def _is_bare_oauth_authorize(path, body) -> bool:
             hay += " " + json.dumps(body)
     except Exception:
         pass
-    return not _OAUTH_FLOW_PARAM_RE.search(hay)
+    return not _OAUTH_CODE_CHALLENGE_RE.search(hay)
 
 
 def _trailing_resource_var(path: Any) -> Optional[str]:
@@ -1652,10 +1660,13 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 res, status = _fres, _fres.get("status")
         ok = _status_ok(status, expect)
         autofilled: List[str] = []
-        # #301: a bare /oauth/authorize step (no OAuth flow params) correctly
-        # 400/422s on a working AS and can never pass — tolerate it so one
-        # verifier-authored bad probe doesn't wedge business_chain (r82 M2 STUCK).
-        if not ok and status in (400, 422) and _is_bare_oauth_authorize(path, body):
+        # #301+#316: a /oauth/authorize step lacking the PKCE code_challenge (bare OR
+        # params-bearing) correctly 400/422s on a working AS and can never pass —
+        # tolerate it so a synthesized probe doesn't wedge business_chain (r82 M2 +
+        # r86 final both STUCK 75min on this; #316 widened #301 from "no flow params"
+        # to "no code_challenge"). A code_challenge-bearing step is the real flow and
+        # must pass on its own merits.
+        if not ok and status in (400, 422) and _oauth_authorize_lacks_pkce(path, body):
             ok = True
             autofilled.append("oauth-authorize-incomplete-tolerated")
         # FIX #136 (instagram run-52/58/60 — 3rd occurrence of the class): a verifier-

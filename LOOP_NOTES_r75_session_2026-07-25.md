@@ -526,3 +526,27 @@ path at heal_pipeline.py:1082) when it auto-darkens a page, so the lane stops re
 NEXT: r86 with this session's shipped fixes (#302-#315) in — see if context/tool-config fixes help the lane
 converge, or if the dark-theme thrash recurs (→ then it's an LLM/prompt-quality pattern, address via frontend
 prompt dark-theme discipline, not framework).
+
+## r86 outcome + #316 (REAL framework bug fixed): business_chain 永不可过 on PKCE OAuth authorize
+r86 (opus-4.7) got MUCH further than r85 (M1 delivered, full v1 built, 13/14 gate checks PASS,
+frontend rendered real pages — NO fatal dark-theme thrash) but STILL hit NO-CONVERGENCE ABORT at
+75min on TWO gates: business_chain_failing + deliverability_ui_flow_failed. 10 force-deliver attempts
+never made the gate green → abort → main-exit 1.
+★ ROOT (business_chain) = REAL FRAMEWORK BUG, fixed #316: a framework-SYNTHESIZED default chain hit
+  GET /oauth/authorize?response_type=code&client_id=mcp_..&redirect_uri=..&state=xyz → correct 400
+  {"detail":"code_challenge with S256 is required"} (app is PKCE-enforced by spec). #301's
+  _is_bare_oauth_authorize only tolerated a FULLY BARE authorize (no flow params); this step HAS
+  client_id/response_type so it was treated NOT-bare → not tolerated → business_chain never green →
+  unpassable by construction → 75min abort (identical every pass; verifier can't fix a framework probe
+  testing a PKCE endpoint with a non-PKCE request). #301 comment already cited "r82 M2 STUCK 75min" —
+  same class, incompletely fixed. FIX: renamed _is_bare_oauth_authorize→_oauth_authorize_lacks_pkce,
+  discriminator changed from "no flow params" to "no code_challenge" — tolerate ANY authorize 4xx that
+  lacks code_challenge (bare OR params-bearing); a code_challenge-BEARING step is the real flow and must
+  pass (4xx there = genuine bug, never tolerated). chain_executor.py:156-181 + call site :1660. TDD:
+  test_316 (r86 exact URL) + test_301 rewritten to new semantics; 9 pass; 289 chain/oauth regression green.
+STILL OPEN (r86 2nd gate): deliverability_ui_flow_failed — verifier browser-walk recorded all 4 ui_flows
+  (fyp_feed/signup/login_modal/comments_panel) as FAILURE; orchestrator force-delivered believing
+  functionally-complete. UNRESOLVED: real UI bug (LLM) vs verifier false-failure (framework). Needs
+  browser test of delivered app (generated/tiktok-web-r86, port from compose) — do next / next run.
+NEXT: r87 with #316 in — business_chain should stop wedging on the PKCE authorize; watch if ui_flow
+  gate still blocks (then browser-verify to classify).
