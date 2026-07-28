@@ -574,6 +574,18 @@ class DeliverProjectTool(BaseTool):
 
 CRITICAL: This tool triggers the END of the entire generation process!
 
+MILESTONE SEMANTICS — read this first; it prevents the most common misfire:
+- deliver_project is FINAL-MILESTONE-ONLY. On a multi-milestone run (M1→M2→M3) it is
+  REJECTED during every milestone before the last, because it ENDS the whole run.
+- You do NOT call any tool to advance between milestones. Advancement is AUTOMATIC:
+  the framework watches THIS milestone's delivery gate and, the moment it goes fully
+  green (api_smoke + business_chain + ui_flow + deliverability all pass), it cuts this
+  milestone's release and advances to the next on its own — no deliver_project needed.
+- So each milestone your ONLY job is to make the gate GREEN (dispatch implement + fix
+  until every check passes). Calling deliver_project early just wastes a turn on a
+  rejection. Reserve it for the FINAL milestone (and even then, if the gate is already
+  clean the framework may auto-deliver before you call it).
+
 Only call this when ALL of these are true:
 1. NO outstanding bugs or issues
 2. ALL project requirements are satisfied
