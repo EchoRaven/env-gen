@@ -485,3 +485,24 @@ Verified: all 16 pass together (77 passed). ZERO regressions from any of my work
   test_method_layer_write_gate_invariant (flags WorkHubStores.create @ hubs/workhub/stores.py:23 — hub method,
   needs real-vs-allowlist judgment) + test_workspace_routing (orchestrator broad-write under app/backend/ —
   likely stale, routing comment says 'coordinators DISPATCH never patch'). Suite has broader rot; pending user go.
+
+## #315 — full test-suite green-up (4 parallel investigators over ~24 files / ~50 failures)
+ALL ~50 pre-existing (confirmed identical fail-counts at baseline 76c328b → ZERO regressions from #309-#314).
+Result: 2 REAL production bugs (shipped) + ~45 stale local tests (production correct; fixes local-only since
+tests/ is gitignored) + ~3 pollution-only files (pass in isolation, fail under full-suite loop/singleton ordering).
+★ REAL BUG 1 (SECURITY, route_projector.py:1275): resources the contract marks owner_scoped_reads
+  (per-user-private: notes/email/drafts) whose GET didn't explicitly set auth_required projected auth=False
+  (#271 defaults unstated reads PUBLIC) → owner_fk=None → owner filter dropped AND route served anonymously →
+  cross-user data leak (every caller reads every row). Fix: auth = resolve_endpoint_auth(...) or _owner_scoped
+  — force auth for owner-scoped so by-construction read isolation applies (deliberately overrides explicit
+  auth_required=False, since private+public is contradictory). Verified: 89 projection-cluster tests green.
+★ REAL BUG 2 (base.py:453): _REFERENCE_VIEW (view_image/list_reference_images) was OR'd into the run_checks
+  ACTION_STAGE_ALWAYS_INCLUDE, contradicting its doc ("force-offer in edit_code") → 2 reference-read tools
+  leaked onto the verification stage's ~10-slot ranker surface. Fix: removed | _REFERENCE_VIEW from run_checks.
+Stale-test root causes (all documented prod refactors the local tests lagged): #134 user.id→_fw_owner_val
+  type-coercing owner cmp; #77 __OWNER_SCOPED_RESOURCES__ template placeholder; #127 custom_routes multi-router
+  import rename; #192a isolation-probe injection; 2026-06-22 contract-derived flows; #193 REQUIRE_UI_EVIDENCE;
+  #207 visual-fidelity port poll (also fixed a 240s suite hang); 2026-06-24 endpoint_implemented pulse-only +
+  no-coordinator-patch routing; page→document renames; 2026-06-10 dep-blocked finish; authored-seed gate.
+Also fixed (test-side): WorkHubStores.create METHOD_ALLOWLIST entry (safe fixed-path hub migration);
+  workspace_routing orchestrator-not-a-code-lane-writer. Full projection+base blast-radius: 89+56+91 green.

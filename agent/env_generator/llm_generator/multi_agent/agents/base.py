@@ -450,7 +450,7 @@ class EnvGenAgent(
         "communicate": {"check_inbox", "send_message", "ask_agent", "broadcast", "report_progress", "finish"}
                         | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _MILESTONE_FLOW | _KNOWLEDGE_DOC_FLOW,
         "edit_code": {"read", "edit", "apply_patch", "write", "finish"} | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _CONTRACT_READ | _REFERENCE_VIEW | _VISUAL_VERIFY_FLOW,
-        "run_checks": {"lint", "test_api", "finish"} | _CLAIM_FLOW | _VALIDATION_FLOW | _CONTRACT_READ | _REFERENCE_VIEW | _VISUAL_VERIFY_FLOW,
+        "run_checks": {"lint", "test_api", "finish"} | _CLAIM_FLOW | _VALIDATION_FLOW | _CONTRACT_READ | _VISUAL_VERIFY_FLOW,
         "delegate_team": {"finish"},
         # ``submit_retro`` + ``deliverability_check`` are the pre-delivery gate
         # tools — without them force-offered the ranker crowds them out and the

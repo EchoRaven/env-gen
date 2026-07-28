@@ -1262,7 +1262,20 @@ def project_missing_routes(
         if (method, _norm_path(path)) in existing:
             continue
         meta = ep.get("metadata") if isinstance(ep.get("metadata"), Mapping) else {}
-        auth = resolve_endpoint_auth(method, path, ep, meta)   # #271
+        _rm_cur = _resource_model(path, models)
+        _owner_scoped = bool(_rm_cur and _rm_cur[0] in scoped_read_tables)
+        # An owner-scoped resource is per-user PRIVATE (notes/email/drafts): its reads
+        # can only be scoped to ``owner_fk == the caller``, which REQUIRES an actor. #271
+        # made an unstated read default to PUBLIC — so a private resource whose contract
+        # marked owner_scoped_reads but not auth_required projected anonymous + UNSCOPED
+        # (owner_fk is None when auth is False → the owner filter is silently dropped →
+        # every caller, even anonymous, reads every row: a cross-user leak). Force auth
+        # for an owner-scoped resource so the by-construction read isolation actually
+        # takes effect. This DELIBERATELY overrides even an explicit auth_required=False:
+        # "per-user-private reads" and "public" are contradictory, and a private read is
+        # unscopable without an actor — so owner_scoped wins here. Non-owner-scoped
+        # endpoints keep resolve_endpoint_auth's decision unchanged (incl. explicit False).
+        auth = resolve_endpoint_auth(method, path, ep, meta) or _owner_scoped   # #271
         _schema = ep.get("schema") if isinstance(ep.get("schema"), Mapping) else {}
         response_key = str(
             ep.get("response_key")
@@ -1270,8 +1283,6 @@ def project_missing_routes(
             or meta.get("response_key")
             or ""
         ).strip()
-        _rm_cur = _resource_model(path, models)
-        _owner_scoped = bool(_rm_cur and _rm_cur[0] in scoped_read_tables)
         block_info.append((path, _generate_handler(method, path, auth, models, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables)))
         projected.append(f"{method} {path}")
         existing.add((method, _norm_path(path)))  # dedupe within this batch
