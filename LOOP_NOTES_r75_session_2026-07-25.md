@@ -550,3 +550,26 @@ STILL OPEN (r86 2nd gate): deliverability_ui_flow_failed — verifier browser-wa
   browser test of delivered app (generated/tiktok-web-r86, port from compose) — do next / next run.
 NEXT: r87 with #316 in — business_chain should stop wedging on the PKCE authorize; watch if ui_flow
   gate still blocks (then browser-verify to classify).
+
+## ★ USER REFRAME (2026-07-28): strong model → default hypothesis is FRAMEWORK, not "LLM quality"
+User: "这种强模型，除了UI不够相似，大部分应该都是framework的问题了". With opus-4.7/4.8 lanes, mechanical
+failures (auth wiring, business_chain, convergence, key consistency) are FRAMEWORK contract gaps /
+gate false-positives / unenforced conventions — NOT model weakness. Reserve "LLM quality" essentially
+for UI VISUAL FIDELITY (subjective matching). I was too quick to file r85/r86 auth+dark as "LLM quality";
+correcting the default. Re-examine r85 dark-thrash through this lens too (darkify tug-of-war = framework).
+
+## #317 (framework fix, proves the reframe): canonical auth-token localStorage key
+ROOT of r86 (and r85) deliverability_ui_flow wedge = FRAMEWORK contract conflict, NOT model weakness:
+- prompt (frontend_agent.j2:748): "localStorage keys are FIXED: access_token"
+- scaffold (frontend_scaffold.py:1625): DUAL-WROTE access_token+token (a hedge that signals key isn't fixed)
+- r86 generated: api.js read 'tt_token' (lane brand key) while SignupPage/LoginPage wrote 'token'+'access_token'
+  → after login token stored under keys api.js never read → authHeaders() sent no Bearer → every authed call
+  unauthenticated → app looked logged-out → signup/feed ui_flow FAILED → lane thrash-rewrote pages, never converged.
+The framework SAID the key was fixed but never ENFORCED it. A strong model shouldn't keep 3+ files agreeing on a
+bare string by hand — the framework must own it. FIX: normalize_frontend_token_key(fe) heal (mirrors
+normalize_frontend_api_base) rewrites every auth-token localStorage key (token/tt_token/jwt/accessToken/authToken/
+<brand>_token) → canonical 'access_token' across src/*; leaves refresh_token/user/tenant alone; idempotent. Wired
+into per-tick frontend heal pipeline (heal_pipeline.py:786). Also simplified the scaffold dual-write hack → single
+access_token write. TDD test_317 (4 cases incl r86 exact mismatch) green; 713 frontend/heal/chain regression green.
+r87 (running, launched pre-#317) still validates #316 business_chain; #317 lands in r88 — if r87 ui_flow still wedges
+on the token mismatch that CONFIRMS #317 was the right fix.

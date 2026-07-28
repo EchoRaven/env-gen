@@ -694,6 +694,7 @@ class HealPipeline:
                 repair_frontend_api_exports, scaffold_missing_local_pages,
                 repair_frontend_named_default_imports, reroute_inline_stub_routes,
                 repair_frontend_missing_local_exports, normalize_frontend_api_base,
+                normalize_frontend_token_key,
                 repair_frontend_escaped_backticks, repair_frontend_unimported_icons,
                 repair_frontend_default_export_wrapper,
                 neutralize_frontend_external_backgrounds,
@@ -787,6 +788,15 @@ class HealPipeline:
                 orch._logger.warning(
                     "Frontend absolute localhost API origins normalized to same-origin "
                     "relative URLs (lane bypassed the nginx proxy): %s", _nb.get("normalized"))
+            # #317: canonicalize the auth-token localStorage key so api.js/AuthProvider/
+            # pages can't mismatch (r85/r86 ui_flow wedge: api.js read 'tt_token' while
+            # pages wrote 'token'/'access_token' → token unreadable → app looked logged
+            # out → signup/feed flow failed). Framework enforces one key; lane can't drift.
+            _tk = normalize_frontend_token_key(fe)
+            if _tk.get("normalized"):
+                orch._logger.warning(
+                    "Frontend auth-token localStorage key canonicalized to 'access_token' "
+                    "(lane used a divergent key api.js/pages disagreed on): %s", _tk.get("normalized"))
             # VISUAL/self-contained (#75b, outlook run-62): a lane paints a CONTENT surface
             # (inbox reading-pane / feed / dashboard) with a full-bleed EXTERNAL stock photo
             # (a mountain unsplash bg) — it doesn't match the clean reference AND is an

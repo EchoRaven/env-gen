@@ -1293,6 +1293,79 @@ def normalize_frontend_api_base(frontend_dir) -> Dict[str, object]:
     return result
 
 
+# #317 — canonical auth-token localStorage KEY. A strong model shouldn't have to keep
+# api.js / AuthProvider / pages agreeing on a bare string by hand; the FRAMEWORK
+# enforces one key so they can't drift. The prompt's stated fixed key is access_token.
+_CANONICAL_TOKEN_KEY = "access_token"
+_LS_KEY_RE = re.compile(r"(localStorage\.(?:get|set|remove)Item\(\s*)(['\"])([^'\"]+)(['\"])")
+_TOKEN_ALIAS_EXACT = frozenset({
+    "token", "tt_token", "jwt", "jwttoken", "jwt_token", "accesstoken",
+    "authtoken", "auth_token", "access-token", "bearer", "bearertoken",
+    "bearer_token", "id_token", "idtoken", "apitoken", "api_token", "authorization",
+})
+
+
+def _is_auth_token_key(key: str) -> bool:
+    """True iff ``key`` is an access-token localStorage key that should collapse to the
+    canonical one. Excludes refresh_token (a DISTINCT token), and any user/tenant/csrf
+    key. Recognises the common aliases plus brand-prefixed ``<prefix>_token``."""
+    k = key.strip().lower()
+    if k == _CANONICAL_TOKEN_KEY:
+        return False  # already canonical
+    if "refresh" in k or "user" in k or "csrf" in k or "tenant" in k:
+        return False
+    if k in _TOKEN_ALIAS_EXACT:
+        return True
+    return bool(re.fullmatch(r"[a-z0-9]+_?token", k))  # e.g. tt_token, yt_token
+
+
+def normalize_frontend_token_key(frontend_dir) -> Dict[str, object]:
+    """#317 — canonicalize the auth-token localStorage KEY across the frontend so a
+    lane can't mismatch what api.js WRITES vs what a page / AuthProvider READS.
+
+    r85 + r86 both wedged deliverability_ui_flow this exact way: the lane's api.js read
+    ``tt_token`` while its SignupPage/LoginPage wrote ``token``/``access_token`` → after
+    login the token was stored under a key api.js never read → authHeaders() sent no
+    Bearer → every authed call was unauthenticated → the app looked logged-out → the
+    signup/feed ui_flow failed, and the lane thrash-rewrote the pages without ever
+    converging. The framework prompt SAYS the key is fixed (``access_token``) but never
+    ENFORCED it, and the scaffold even dual-wrote access_token+token — a hedge that
+    invites divergence. This heal makes the contract real: every localStorage token key
+    (token / tt_token / jwt / accessToken / authToken / <brand>_token …) is rewritten to
+    ``access_token``; refresh_token / user / tenant keys are left untouched. GENERAL,
+    idempotent (the canonical key is not an alias), best-effort. Mirrors
+    normalize_frontend_api_base; runs in the per-tick frontend heal pipeline."""
+    result: Dict[str, object] = {"normalized": []}
+    try:
+        fe = Path(frontend_dir)
+        src = fe / "src"
+        if not src.is_dir():
+            return result
+        changed: List[str] = []
+
+        def _sub(m):
+            if _is_auth_token_key(m.group(3)):
+                return f"{m.group(1)}{m.group(2)}{_CANONICAL_TOKEN_KEY}{m.group(4)}"
+            return m.group(0)
+
+        for f in src.rglob("*"):
+            if (f.suffix.lower() not in _FRONT_EXTS or not f.is_file()
+                    or "node_modules" in str(f)):
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            new = _LS_KEY_RE.sub(_sub, text)
+            if new != text:
+                f.write_text(new, encoding="utf-8")
+                changed.append(str(f.relative_to(fe)))
+        result["normalized"] = sorted(changed)
+    except Exception as exc:  # never break generation/validation
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
 _REL_NAMED_IMPORT_RE = re.compile(
     r"import\s+(?:[A-Za-z0-9_$]+\s*,\s*)?\{([^}]*)\}\s*from\s*['\"](\.\.?/[^'\"]+)['\"]")
 
@@ -1622,7 +1695,7 @@ export default function __COMP__() {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setError((d && (d.detail || d.error)) || ('Error ' + r.status)); return; }
       const token = d.access_token || d.token || (d.item && (d.item.access_token || d.item.token));
-      if (token) { localStorage.setItem('access_token', token); localStorage.setItem('token', token); }
+      if (token) { localStorage.setItem('access_token', token); }
       window.location.href = '/';
     } catch (err) { setError(String(err)); }
   };
