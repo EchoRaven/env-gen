@@ -506,3 +506,23 @@ Stale-test root causes (all documented prod refactors the local tests lagged): #
   no-coordinator-patch routing; page→document renames; 2026-06-10 dep-blocked finish; authored-seed gate.
 Also fixed (test-side): WorkHubStores.create METHOD_ALLOWLIST entry (safe fixed-path hub migration);
   workspace_routing orchestrator-not-a-code-lane-writer. Full projection+base blast-radius: 89+56+91 green.
+
+## r85 STUCK diagnosis (deliverability_ui_flow_failed, 77min NO-CONVERGENCE) = LLM QUALITY (record, not framework fix)
+Timeline: 17:44:46 frontend "SignupPage fixed" (commit ab9f8169), 17:44:50 verifier ui_flow 3/3 GREEN.
+Then the frontend lane THRASHED continuously to the abort: 17:48:04 EDIT CaptionOverlay, 17:48:14 WRITE
+LoginPage.jsx (9515 chars, FULL rewrite), 17:48:50 EDIT ActionRail, 17:49:31 EDIT LoginPage, 17:49:34
+codehub_commit, 17:49:37 merge agent/frontend→integration (a0d340a), 17:49:41 EDIT LoginPage AGAIN.
+By 17:48:34 verifier: "ui_flow ALL 3 = failure due to frontend regression" (the lane re-broke it).
+ROOT = the frontend lane never converges: it keeps rewriting LoginPage/SignupPage (re-introducing a LIGHT
+theme for the DARK tiktok reference + re-breaking the signup flow), never reaching a stable correct state
+in 77min. The gate CORRECTLY refused to ship a churning/regressed app; abort fired correctly. NOT a framework
+artifact / false-positive gate / impossible gate → LLM quality → RECORD.
+Verified NOT a framework bug: darkify_light_utilities is IDEMPOTENT (pass2=0 swaps); commit_framework_delivery
+DOES stage all app/ every tick (#41); merge no-ops when the lane is idle. The "7 swaps every tick" is the lane
+re-committing light each tick (tug-of-war), a SYMPTOM of the lane thrash, not a framework churn bug.
+SECONDARY framework observation (candidate future mitigation, NOT a clean bug): the #209 enforce_measured_dark_theme
+heal fights the lane over theme each tick — could notify the lane (emit_framework_decision, like the conflict_resolved
+path at heal_pipeline.py:1082) when it auto-darkens a page, so the lane stops reverting to light. Deferred.
+NEXT: r86 with this session's shipped fixes (#302-#315) in — see if context/tool-config fixes help the lane
+converge, or if the dark-theme thrash recurs (→ then it's an LLM/prompt-quality pattern, address via frontend
+prompt dark-theme discipline, not framework).
