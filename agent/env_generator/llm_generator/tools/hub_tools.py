@@ -2398,9 +2398,17 @@ class KickoffDeclareTableTool(_KickoffDeclareBase):
         "Declare ONE data_model table of your kickoff backend section (call "
         "once per table — declarations merge). columns: 'name:type' strings, "
         "optionally 'name:type:pk' or 'name:type:fk=users.id'. Set "
-        "owner_scoped_reads=true for a PER-USER-PRIVATE table (each user sees "
-        "only their OWN rows — notes/email/todos/drafts): the framework scopes "
-        "every read to the owner by construction, exactly like writes.")
+        "owner_scoped_reads=true ONLY for a table where EVERY read is PER-USER-"
+        "PRIVATE (notes/email/todos/drafts/DMs): the framework scopes every read to "
+        "the owner by construction, exactly like writes. ⚠ CRITICAL — do NOT set it "
+        "for PUBLIC content that merely HAS an owner (videos/posts/tweets/comments in "
+        "a social app): those rows are OWNED but PUBLICLY readable — anyone watches "
+        "anyone's feed. Owning a row (you created it) is NOT the same as a private "
+        "read. If you ALSO need a 'my X' profile view, keep this table false and add "
+        "ONE authenticated GET /api/me/<x> that filters by owner in custom_routes.py — "
+        "do NOT flip the whole table private (that force-auths its public feed → the "
+        "logged-out feed 401s → the ui_flow gate wedges). Set true only when the table "
+        "has NO public view at all.")
     PARAMETERS = {"type": "object", "properties": {
         "meeting_id": {"type": "string"},
         "name": {"type": "string", "description": "snake_case table name"},
