@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Set
 from utils.llm import Message
 
 from ....tool_surface import rank_tool_names
+from ..action_stage_policy import stage_category_hints_for
 
 
 def _auto_stage(agent, file_path: str, *, action: str) -> None:
@@ -111,7 +112,10 @@ class AgentStepToolingMixin:
     ) -> Set[str]:
         if not candidate_names:
             return set()
-        preferred_categories = set(self.ACTION_STAGE_CATEGORY_HINTS.get(stage_name, set()))
+        # Orch-F1: override-aware. A profile that disables a stage
+        # re-homes that stage's categories onto one it still runs, so
+        # the ranker's category bonus follows the tools.
+        preferred_categories = stage_category_hints_for(self, stage_name)
         if stage_name == "delegate_team":
             candidate_names = candidate_names & (set(self.TEAM_TOOL_NAMES) | set(self.TEAM_MODE_SUPPORT_TOOLS))
         # Per-stage allowlist from agent config (PR3.1). Restricts the

@@ -208,6 +208,29 @@ profiles:
         retrieve_context: 3
         hub_commit_gate: 0
         knowledge_sync: 2
+      # Orch-F1 — the coordinator does not implement. Each action-internal
+      # stage is its OWN LLM call per round, and in r93 the orchestrator
+      # answered `edit_code` with "no code to edit" / "not an edit_code task"
+      # in 166 of its 1164 responses (14.3% of calls, ~14.9M response-context
+      # tokens). Its job is communicate / inspect / deliver, so edit_code is
+      # dropped from the walk and never costs a call.
+      # `delegate_team` stays: the profile is granted team_* categories, and
+      # the engine already skips that stage unless _execution_mode == "team".
+      action_stages: [communicate, run_checks, delegate_team, deliver]
+      # Re-home what edit_code used to host. The hints drive the ranker's
+      # category bonus, so without this the orchestrator's `read` (11 calls in
+      # r93), `codehub_get_file_content` (2) and `update_memory_bank` (10)
+      # would keep their grant but lose every menu — the orphan class.
+      # `memory` goes to `communicate` (uncrowded: 4 categories, limit 8) so
+      # the Memory-Bank write the step_reminders mandate is actually offered —
+      # r93 shows the orchestrator reporting "memory bank tools aren't
+      # exposed". File/state reads go to `run_checks`, the stage where it
+      # already inspects deliverability and seed state.
+      # `reference` / `image_search` are deliberately NOT re-homed: the
+      # profile is granted no tool in those categories.
+      action_stage_categories:
+        communicate: [memory]
+        run_checks: [file, project, analysis]
 
   # ``design`` and ``database`` profiles retired — design merged into
   # ``frontend``, database merged into ``backend``.

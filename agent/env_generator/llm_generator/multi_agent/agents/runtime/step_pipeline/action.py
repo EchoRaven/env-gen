@@ -6,6 +6,8 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from utils.llm import Message
 
 from ....hub_tool_surface import ALL_HUB_WRITES, hub_of_write_tool
+from ..action_stage_policy import (
+    resolve_enabled_action_stages as _enabled_action_stages)
 
 # Hub-focus gating is OFF by default (2026-06-09): requiring focus_hub(<hub>) before
 # each hub's WRITE tools made the agents thrash focus switches instead of working
@@ -445,7 +447,14 @@ class AgentActionStageMixin:
             if done:
                 return done, no_action_tool_steps
 
-            for action_stage_name in self.ACTION_INTERNAL_STAGES:
+            # Orch-F1: a role that never acts in a stage must not pay an LLM
+            # call to say so. `_enabled_action_stages` narrows the walk to the
+            # profile's `execution_pipeline.action_stages` (all stages when
+            # unset), so a disabled stage costs zero tokens rather than the
+            # "no code to edit" filler that was 14.3% of the r93 orchestrator's
+            # calls. Category re-homing is validated at construction, so a
+            # skipped stage never strands a granted tool.
+            for action_stage_name in _enabled_action_stages(self):
                 if action_stage_name == "delegate_team" and self._execution_mode != "team":
                     continue
                 if action_stage_name == "deliver" and "deliver_project" not in all_names and "finish" not in all_names:

@@ -4,6 +4,8 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
 from utils.llm import Message
 
+from ..action_stage_policy import (
+    resolve_enabled_action_stages as _enabled_action_stages)
 from .action import AgentActionStageMixin
 
 
@@ -321,7 +323,9 @@ class AgentStepStageMixin(AgentActionStageMixin):
             if part
         )
         all_names = set(tool_schema_map.keys())
-        for internal_stage_name in self.ACTION_INTERNAL_STAGES:
+        # Orch-F1: only pre-select tools for the stages this role will
+        # actually run — a disabled stage's ranker pass is dead work.
+        for internal_stage_name in _enabled_action_stages(self):
             if internal_stage_name == "delegate_team":
                 candidate_names = (set(self.TEAM_TOOL_NAMES) | set(self.TEAM_MODE_SUPPORT_TOOLS)) & all_names
             elif self._execution_mode == "team":

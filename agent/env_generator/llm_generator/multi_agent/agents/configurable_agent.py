@@ -307,6 +307,23 @@ class ConfigurableAgent(EnvGenAgent):
             include_vision=include_vision,
         )
         self._execution_pipeline_config = self._execution_pipeline_cfg
+        # Orch-F1 — per-role action-stage allowlist. Each internal action
+        # stage costs one LLM call per round; a coordinator that never edits
+        # code should not pay for an edit_code call to say so (14.3% of the
+        # r93 orchestrator's calls). Parsed AFTER super().__init__ so the
+        # class-level stage/hint defaults are bound. Fails closed on a typo or
+        # on a config that would strand a granted tool category.
+        from .runtime.action_stage_policy import parse_action_stage_config
+        (
+            self._action_stages_allowlist,
+            self._action_stage_category_overrides,
+        ) = parse_action_stage_config(
+            agent_id=agent_id,
+            exec_cfg=self._execution_pipeline_cfg,
+            all_stages=self.ACTION_INTERNAL_STAGES,
+            base_hints=self.ACTION_STAGE_CATEGORY_HINTS,
+            granted_categories=set(agent_cfg.get("tool_categories") or []),
+        )
         self.set_step_reminders(self._execution_pipeline_cfg.get("step_reminders") or [])
         
         # Observer mode flag
