@@ -1159,7 +1159,13 @@ def repair_frontend_default_api_import(frontend_dir) -> Dict[str, object]:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
-_API_CALL_PATH_RE = re.compile(r"(\b(?:request|fetch)\(\s*[`'\"])(/[A-Za-z0-9_\-/]+)([`'\"])")
+# #325: the closing quote MUST be followed by a call-argument terminator (``)`` or ``,``).
+# Without this, a registered-path PREFIX being concatenated with an id —
+# ``request('/api/videos/' + id)`` — matched (the regex stops at the quote, ignoring the
+# ``+ id``), and the trailing slash got stripped to "match" ``/api/videos`` → the shipped app
+# requested ``/api/videos<ID>`` → 404 (r92 delivered a broken api.js this way; reconcile fired
+# 18x while the lane re-authored api.js 50+ times). A concatenation prefix is now skipped.
+_API_CALL_PATH_RE = re.compile(r"(\b(?:request|fetch)\(\s*[`'\"])(/[A-Za-z0-9_\-/]+)([`'\"])(?=\s*[),])")
 
 
 def reconcile_frontend_api_paths(frontend_dir, registered_paths) -> Dict[str, object]:
@@ -1205,6 +1211,12 @@ def reconcile_frontend_api_paths(frontend_dir, registered_paths) -> Dict[str, ob
                         return m.group(0)
                     cs = _segs(called)
                     if not cs:
+                        return m.group(0)
+                    # #325: a pure trailing-slash difference is NOT contract drift — the slash
+                    # is a legitimate separator (a prefix before an interpolated id, or a
+                    # harmless trailing slash on a full endpoint). Stripping it to "match" the
+                    # registered path is exactly the r92 corruption. Leave it untouched.
+                    if called.rstrip("/") in reg_set:
                         return m.group(0)
                     cands = sorted({
                         r for r in reg_static
