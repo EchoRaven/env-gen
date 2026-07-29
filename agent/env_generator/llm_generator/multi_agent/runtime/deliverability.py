@@ -411,6 +411,20 @@ def compute_deliverability(hub_registry, app_root,
     # CAN author it). Clears the moment a non-empty valid JSON lands.
     try:
         import json as _json
+        # #324 (r92/r93 M1 wedge — dominant per-run sink, found independently by the backend
+        # AND orchestrator trajectory reviewers): the authored-seed check reads the INTEGRATION
+        # tree, but the backend commits its populated seed_data.json to its OWN lane worktree.
+        # #322's reconcile_integration_seed ran only at the two terminal MERGE sites, never
+        # before THIS read — so every deliverability poll re-read the {} placeholder and reported
+        # "authored seed missing" while a valid seed sat in the worktree; the gate could clear
+        # ONLY by force-delivering (which triggered the merge). Reconcile the lane-authored seed
+        # onto integration BEFORE reading, so the first poll reflects committed lane work.
+        # Idempotent + best-effort: #322 never clobbers a populated integration seed, never raises.
+        try:
+            from .heal_pipeline import reconcile_integration_seed
+            reconcile_integration_seed(Path(app_root).parent)
+        except Exception:
+            pass
         _seed_path = Path(app_root) / "backend" / "seed_data.json"
         _data = {}
         if _seed_path.exists():
