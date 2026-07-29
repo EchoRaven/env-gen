@@ -385,11 +385,21 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
         # token from /auth/* with {email,password}, true regardless of domain), so
         # supply a framework-authored default body — mirrors the default-save above
         # so a body-less auth step can't permanently 422-block the chain.
-        if pth in ("/auth/register", "/auth/login") and not (
-                isinstance(st.get("body"), Mapping) and st.get("body")):
-            _ab: Dict[str, Any] = {"email": "chain_${rand}@example.com",
-                                   "password": "Chain123!x"}
-            if pth == "/auth/register":
+        # #321 (r90 M-final): the guard was `not body` — it filled only a MISSING/empty
+        # body, so a step with a PARTIAL body that omits email/password (verifier modelled
+        # a username/phone signup, or authored `{username: ...}`) still 422'd "email and
+        # password are required" and wedged business_chain 6/6 attempts. setdefault the
+        # required creds onto whatever body is there instead — fills the missing keys,
+        # never clobbers authored ones; ${rand} keeps emails unique for isolation chains.
+        if pth in ("/auth/register", "/auth/login"):
+            _had_body = bool(isinstance(st.get("body"), Mapping) and st.get("body"))
+            _ab: Dict[str, Any] = dict(st["body"]) if isinstance(st.get("body"), Mapping) else {}
+            _ab.setdefault("email", "chain_${rand}@example.com")
+            _ab.setdefault("password", "Chain123!x")
+            # name is OPTIONAL — add it only when filling a fully-empty body (old bodyless
+            # behavior); never enrich an AUTHORED body beyond the required creds, or an
+            # authored {email,password} step would no longer round-trip byte-for-byte.
+            if pth == "/auth/register" and not _had_body:
                 _ab["name"] = "Chain Tester"
             st["body"] = _ab
         _authored_auth = st.get("auth")          # #266: remember who asked for it
