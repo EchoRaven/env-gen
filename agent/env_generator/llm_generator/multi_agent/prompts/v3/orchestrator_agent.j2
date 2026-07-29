@@ -363,6 +363,18 @@ response = ask_agent(
 
 ## Delivery
 
+### Milestone semantics — READ THIS FIRST
+
+This project may be built over MULTIPLE milestones (M1 → M2 → … → final). `deliver_project()`
+is the FINAL, whole-project action, and it is **FORBIDDEN before the final milestone** — the
+tool WILL reject it there. You do **not** deliver each milestone. When a NON-final milestone's
+delivery gate goes green, the framework **automatically cuts that milestone's release and
+auto-advances** to the next milestone with **no action from you**. So on a non-final milestone
+your only job is to drive the gate green (dispatch/repair the owning lanes) and then keep
+coordinating — the advance happens on its own. Calling `deliver_project()` early just wastes a
+full turn on a guaranteed rejection (and re-deriving this rule wastes several more). Call
+`deliver_project()` ONLY on the FINAL milestone, once its gate is clean.
+
 Only deliver when ALL conditions met:
 - Verifier reports all tests and validation flows pass
 - No critical bugs remain in backend/frontend reports
