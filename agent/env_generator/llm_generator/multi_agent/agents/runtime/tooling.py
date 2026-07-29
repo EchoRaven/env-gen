@@ -98,6 +98,31 @@ def tool_io_rollup(top: int = 25) -> str:
     return "\n".join(out)
 
 
+def _effective_write_identity(agent: Any) -> Optional[str]:
+    """The identity a role-write gate must be evaluated against.
+
+    A spawned lane carries an INSTANCE id (``design_analyst_1``,
+    ``api_test_user_1_api_smoke``) while ``PathRoutedWorkspace.ROUTING_TABLE``
+    grants routes to the PROFILE name (``design_analyst``) by exact string
+    match. Gating on the raw instance id therefore fails closed against a route
+    the lane genuinely owns — r91/r92 denied 12/12 and 11/11 of the Design
+    Analyst's ``decompose_reference`` writes to ``design/component_specs/``,
+    so the measure-per-component phase that feeds UI fidelity produced nothing
+    (and r93 stopped calling the tool at all).
+
+    A spawned worker may also inherit the permission identity of its spawner,
+    which takes precedence over the profile.
+    """
+    effective = getattr(agent, "agent_id", None)
+    permission_parent_id = getattr(agent, "_permission_parent_id", None)
+    config_key = getattr(agent, "_config_key", None)
+    if permission_parent_id:
+        return permission_parent_id
+    if config_key:
+        return config_key
+    return effective
+
+
 class AgentTooling:
     def _register_env_gen_tools(self):
         """Register environment generation tools based on allowed_tool_categories."""
@@ -370,7 +395,10 @@ class AgentTooling:
                 if hasattr(tool, "set_agent"):
                     tool.set_agent(self)
                 else:
-                    setattr(tool, "_agent_id", self.agent_id)
+                    # Self-gating tools (they call is_write_allowed with their
+                    # own _agent_id) must receive the WRITE identity, not the
+                    # instance id — otherwise they fail closed on their own route.
+                    setattr(tool, "_agent_id", _effective_write_identity(self))
                 if hasattr(tool, "_hubs"):
                     setattr(tool, "_hubs", hubs)
                 # Tools that hold the registry as `hub_registry` (coverage, seed,
@@ -455,13 +483,7 @@ class AgentTooling:
         # Effective agent id: a spawned worker may inherit the
         # permission identity of the agent that spawned it (e.g. backend
         # ↔ a backend-flavoured worker). Match the old resolution path.
-        effective_agent_id = self.agent_id
-        permission_parent_id = getattr(self, "_permission_parent_id", None)
-        config_key = getattr(self, "_config_key", None)
-        if permission_parent_id:
-            effective_agent_id = permission_parent_id
-        elif config_key:
-            effective_agent_id = config_key
+        effective_agent_id = _effective_write_identity(self)
 
         write_targets: List[str] = []
         # ``update_json_path`` / ``update_yaml_path`` belong in the
