@@ -7,7 +7,8 @@ from utils.llm import Message
 
 from ....hub_tool_surface import ALL_HUB_WRITES, hub_of_write_tool
 from ..action_stage_policy import (
-    resolve_enabled_action_stages as _enabled_action_stages)
+    resolve_enabled_action_stages as _enabled_action_stages,
+    round_plan_fires_every_round as _round_plan_every_round)
 
 # Hub-focus gating is OFF by default (2026-06-09): requiring focus_hub(<hub>) before
 # each hub's WRITE tools made the agents thrash focus switches instead of working
@@ -432,20 +433,31 @@ class AgentActionStageMixin:
             self._stamp_step_activity()
             round_used_tools = False
             round_internal_stage_results: List[Dict[str, Any]] = []
-            done, round_plan_result = await self._run_action_round_plan(
-                tool_schema_map=tool_schema_map,
-                messages=messages,
-                files_created=files_created,
-                files_modified=files_modified,
-                step=step,
-                action_round=action_round,
-                max_action_rounds=max_action_rounds,
-                step_trace=step_trace,
-                step_traces=step_traces,
-                loop_time=loop_time,
-            )
-            if done:
-                return done, no_action_tool_steps
+            # Cost: the round-plan call passes tools=[] (it cannot act) and
+            # appends its own text to `messages`, so every round after the
+            # first re-derives a plan already in the model's context. Plan on
+            # round 0; later rounds inherit. `action_round_plan: all` restores
+            # the per-round plan for a profile that wants it.
+            if action_round == 0 or _round_plan_every_round(self):
+                done, round_plan_result = await self._run_action_round_plan(
+                    tool_schema_map=tool_schema_map,
+                    messages=messages,
+                    files_created=files_created,
+                    files_modified=files_modified,
+                    step=step,
+                    action_round=action_round,
+                    max_action_rounds=max_action_rounds,
+                    step_trace=step_trace,
+                    step_traces=step_traces,
+                    loop_time=loop_time,
+                )
+                if done:
+                    return done, no_action_tool_steps
+            else:
+                round_plan_result = {
+                    "executed": False,
+                    "skip_reason": "round_plan_first_round_only",
+                }
 
             # Orch-F1: a role that never acts in a stage must not pay an LLM
             # call to say so. `_enabled_action_stages` narrows the walk to the

@@ -34,6 +34,7 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, Optional, Set, Tuple
 
 __all__ = [
+    "round_plan_fires_every_round",
     "resolve_enabled_action_stages",
     "resolve_stage_category_hints",
     "stage_category_hints_for",
@@ -163,3 +164,25 @@ def parse_action_stage_config(
             f"{stranded}}}, or drop the categories from tool_categories."
         )
     return allowlist, overrides
+
+
+def round_plan_fires_every_round(agent: Any) -> bool:
+    """Whether the per-round planning call runs on EVERY action round.
+
+    Default False: round 0 plans, later rounds inherit it. The round-plan call
+    passes ``tools=[]`` (it cannot act) and appends its own text to
+    ``messages``, so from round 1 on it re-derives a plan already sitting in
+    the model's context. With ``max_action_rounds_per_step`` at 15 that is up
+    to 14 full-context calls per step for no new information -- part of the
+    ~30% of all r91/r92/r93 LLM calls that carried an empty tool list.
+
+    A profile may set ``execution_pipeline.action_round_plan: all`` to restore
+    the per-round plan. Any other value (including a typo) keeps the cheap
+    default rather than silently re-enabling the expensive path.
+    """
+    cfg = getattr(agent, "_execution_pipeline_cfg", None) or {}
+    try:
+        value = str(cfg.get("action_round_plan", "") or "").strip().lower()
+    except Exception:
+        return False
+    return value == "all"
