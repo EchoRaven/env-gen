@@ -1271,22 +1271,55 @@ _UNIQUE_FIELDS = ("username", "email", "slug", "handle", "code", "key", "name")
 
 _ID_PARAM_RE = re.compile(r"(?:^|_|(?<=[a-z]))(?:id|pk|uuid)$", re.I)
 
+# #323 — literals a verifier authors to MEAN "the current/authenticated user" instead of
+# a real value: GET /api/users/Owner/favorites, /api/users/me/liked. On an OWNER-SCOPED
+# resource (403 for any non-owner) the ONLY value that satisfies expect [200] is the chain
+# user's OWN identity — recovering a DIFFERENT user (the #245 default) 403s forever.
+_SELF_ALIAS = {
+    "owner", "me", "self", "myself", "mine", "my", "current", "currentuser",
+    "current_user", "current-user", "loggedin", "logged_in", "you",
+}
+
+
+def _extract_own_username(payload: Any) -> Any:
+    """The chain user's own username/handle from an /auth/register (or /login) response —
+    top-level or nested under ``user``. Owner-scoped self-view recovery targets THIS value."""
+    if not isinstance(payload, Mapping):
+        return None
+    containers = [payload]
+    _u = payload.get("user")
+    if isinstance(_u, Mapping):
+        containers.append(_u)
+    for c in containers:
+        for k in ("username", "handle", "slug", "user_name", "userName"):
+            v = c.get(k)
+            if v is not None and str(v).strip():
+                return str(v)
+    return None
+
 
 def _registered_param_for_path(path: Any, endpoints: Any):
-    """#245 — match a LITERAL request path against the REGISTERED contract templates and
-    return ``(collection_path, param_name)`` when the template's last segment is a
-    ``{param}``.
+    """#245 (+#323) — match a LITERAL request path against the REGISTERED contract templates
+    and return ``(collection_path, param_name, seg_index)`` for a ``{param}`` segment whose
+    STATIC siblings all match, so recovery can fetch a real value of the RIGHT KIND and
+    replace the RIGHT segment.
 
     Chains author a literal value (``/api/users/13``, ``/api/users/ProfileUser``) while the
-    contract declares ``/api/users/{username}``. Knowing the param NAME is what lets
-    recovery fetch a real value of the RIGHT KIND — the #136 ladder only ever recovers a
-    numeric id, which is exactly wrong for a ``{username}`` param (r29: the id 500'd the
-    handler; r33: 404). Returns (None, None) when nothing matches. Pure."""
+    contract declares ``/api/users/{username}``. Knowing the param NAME is what lets recovery
+    fetch a real value of the RIGHT KIND — the #136 ladder only recovers a numeric id, which
+    is exactly wrong for a ``{username}`` param (r29: the id 500'd the handler; r33: 404).
+
+    #323 (r92 M3 NO-CONVERGENCE, 75min): #245 only matched a TRAILING ``{param}`` — but a
+    chain authored ``GET /api/users/Owner/favorites`` against ``/api/users/{username}/favorites``
+    where the param is a MIDDLE segment, so #245 returned nothing and the invented "Owner"
+    404'd forever. Now the ``{param}`` may be in ANY position: ``collection_path`` is the path
+    UP TO it (for list recovery) and ``seg_index`` is its 0-based index (over non-empty
+    segments) so the caller replaces THAT segment. Returns (None, None, -1) on no match. Pure."""
     if not path or not endpoints:
-        return None, None
+        return None, None, -1
     lit = [s for s in str(path).split("?", 1)[0].split("/") if s]
     if not lit:
-        return None, None
+        return None, None, -1
     # STATIC WINS: a literal that IS a registered static endpoint (/api/users/suggested)
     # must never be treated as a {param} value — rewriting it would mask a real failure
     # of that endpoint.
@@ -1294,19 +1327,21 @@ def _registered_param_for_path(path: Any, endpoints: Any):
     for ep in endpoints or []:
         tplp = str((ep or {}).get("path") or "") if isinstance(ep, Mapping) else ""
         if tplp and "{" not in tplp and tplp.rstrip("/") == _litp.rstrip("/"):
-            return None, None
+            return None, None, -1
     for ep in endpoints or []:
         tpl = str((ep or {}).get("path") or "") if isinstance(ep, Mapping) else ""
         segs = [s for s in tpl.split("/") if s]
         if not segs or len(segs) != len(lit):
             continue
-        last = segs[-1]
-        if not (last.startswith("{") and last.endswith("}")):
-            continue
-        if any(a != b for a, b in zip(segs[:-1], lit[:-1])):
-            continue  # a static segment differs (or an earlier param) — not this template
-        return "/" + "/".join(segs[:-1]), last[1:-1]
-    return None, None
+        for i, seg in enumerate(segs):
+            if not (seg.startswith("{") and seg.endswith("}")):
+                continue
+            # every STATIC sibling must equal the literal (other {params} resolve on their
+            # own); the matched param may sit in any position (trailing OR middle).
+            if all(segs[j] == lit[j] for j in range(len(segs))
+                   if j != i and not (segs[j].startswith("{") and segs[j].endswith("}"))):
+                return "/" + "/".join(segs[:i]), seg[1:-1], i
+    return None, None, -1
 
 
 def _rows_of_payload(payload: Any) -> list:
@@ -1473,6 +1508,7 @@ def execute_chain(base: str, chain: Mapping[str, Any],
     seen_responses: List[Any] = []           # #263: (path, payload) of each step, for list-id recovery
     last_reg_creds: Dict[str, Any] = {}  # creds of the last successful /auth/register → reused if a later /auth/login 401s
     own_user_id: Any = None  # the chain user's own id (from /auth/register) — recovery must not target SELF (FIX #81)
+    own_username: Any = None  # #323: the chain user's OWN username — owner-scoped self-view recovery targets THIS
     unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
     # FIX #188: var → step-action whose OK response lacked the save path — the
     # silent-capture-failure class behind the "GET x → 200 marked failed" triage
@@ -1760,19 +1796,51 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         # id-shaped, recover a real value of THAT FIELD from the collection and retry
         # once. A genuinely broken endpoint fails the retry too and is recorded as before.
         if not ok and status in (404, 500) and not _is_cross_user_denial(step):
-            _pcoll, _pname = _registered_param_for_path(step.get("path"), endpoints)
-            if _pname and not _ID_PARAM_RE.search(_pname):
-                _pval = _recover_field_via_list(base, _pcoll, _pname, token,
-                                                avoid=own_user_id)
-                if _pval is not None:
-                    _base_path = str(path).split("?", 1)[0].rstrip("/")
-                    _ppath = "/".join(_base_path.split("/")[:-1] + [str(_pval)])
-                    if _ppath and _ppath != path:
+            _pcoll, _pname, _pidx = _registered_param_for_path(step.get("path"), endpoints)
+            if _pname and _pidx >= 0 and not _ID_PARAM_RE.search(_pname):
+                # #323: replace the segment at the {param} POSITION (not always the last),
+                # preserving the query string — fixes MIDDLE-param recovery
+                # (/api/users/Owner/favorites → /api/users/<real>/favorites).
+                _bare = str(path).split("?", 1)[0]
+                _query = str(path)[len(_bare):]
+                _psegs = [s for s in _bare.split("/") if s]
+                if 0 <= _pidx < len(_psegs):
+                    _lit_seg = str(_psegs[_pidx]).strip().lower()
+                    _self_val = own_username if own_username is not None else own_user_id
+                    # A literal that MEANS the current user ("Owner", "me", our own
+                    # username/id) → recover to SELF; on an OWNER-SCOPED resource
+                    # (favorites/liked) any OTHER user 403s, so SELF is the only 200.
+                    _is_self_alias = (
+                        _lit_seg in _SELF_ALIAS
+                        or (own_username is not None and _lit_seg == str(own_username).lower())
+                        or (own_user_id is not None and _lit_seg == str(own_user_id).lower())
+                    )
+                    # candidate identities, best-first; deduped, non-None only.
+                    _cands: list = []
+                    if _is_self_alias and _self_val is not None:
+                        _cands.append(_self_val)
+                    _other = _recover_field_via_list(base, _pcoll, _pname, token,
+                                                     avoid=own_user_id)
+                    if _other is not None:
+                        _cands.append(_other)
+                    # Owner-scoped resources 403 for a non-owner even when the literal
+                    # wasn't an obvious self-alias → always keep SELF as a fallback.
+                    if _self_val is not None and _self_val not in _cands:
+                        _cands.append(_self_val)
+                    for _pval in _cands:
+                        if str(_psegs[_pidx]) == str(_pval):
+                            continue
+                        _try = list(_psegs)
+                        _try[_pidx] = str(_pval)
+                        _ppath = "/" + "/".join(_try) + _query
+                        if _ppath == path:
+                            continue
                         _res4 = _http(method, base + _ppath, token=token, body=body)
                         if _status_ok(_res4.get("status"), expect):
                             res, status, ok = _res4, _res4.get("status"), True
                             path = _ppath
                             autofilled.append(f"param:{_pname}->{_pval}")
+                            break
         # MISSING-FIELD AUTO-REPAIR (2026-06-24): a write step can 422 because the
         # LIVE handler requires a body field the chain didn't send — either the
         # verifier under-authored the body, OR (observed v19: POST
@@ -2000,6 +2068,17 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                     # (follow/unfollow) must prefer a DIFFERENT row (FIX #81).
                     if str(step.get("path", "")).rstrip("/").endswith("/auth/register"):
                         own_user_id = _cid
+                        # #323: remember our OWN username so an owner-scoped self-view
+                        # step (/api/users/Owner/favorites) can recover to SELF, not a
+                        # different user (which the app 403s). Prefer the response's
+                        # username; fall back to the register body's username.
+                        _own = _extract_own_username(_payload)
+                        if not _own and isinstance(body, Mapping):
+                            for _k in ("username", "handle", "slug", "user_name"):
+                                if body.get(_k) and str(body.get(_k)).strip():
+                                    _own = str(body.get(_k)); break
+                        if _own:
+                            own_username = _own
             except Exception:
                 pass
             # Capture the SUBSTITUTED creds of a successful /auth/register so a later
