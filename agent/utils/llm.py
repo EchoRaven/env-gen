@@ -781,6 +781,42 @@ def _extend_retry_budget(is_malformed, is_rate_limit, attempt, total_attempts,
         return total_attempts
 
 
+# #326 — a TERMINAL provider error is UNRECOVERABLE: retrying wastes wall-clock and never
+# succeeds. The metagen key hitting its spend cap returned HTTP 400 "Spend exceeded. Budget
+# for mg key ..." on EVERY call; with no terminal classification, all four lanes spun ~4500
+# rejected attempts for hours until the wall-clock cap. Classify billing/quota exhaustion and
+# hard-auth rejection as terminal → fail the call immediately AND latch a reason the run loop
+# can poll (terminal_llm_error()) to abort the whole run cleanly.
+_TERMINAL_LLM_ERROR = {"reason": None}
+
+# Specific billing/quota phrases — deliberately NOT the generic "quota"/"exceeded" (those
+# appear in transient 429 rate-limit messages, e.g. Gemini ResourceExhausted).
+_TERMINAL_ERROR_PHRASES = (
+    "spend exceeded", "budget for", "insufficient_quota", "insufficient quota",
+    "payment required", "billing hard limit", "entitlement",
+)
+
+
+def _is_terminal_llm_error(error: Exception) -> bool:
+    """True for an UNRECOVERABLE provider error — spend/budget/quota exhaustion or a hard auth
+    rejection (401/403). A 429 rate limit is transient and explicitly NOT terminal."""
+    status = getattr(error, "status_code", None)
+    if isinstance(status, int) and status == 429:
+        return False
+    s = str(error).lower()
+    if any(p in s for p in _TERMINAL_ERROR_PHRASES):
+        return True
+    if isinstance(status, int) and status in (401, 403, 402):
+        return True
+    return False
+
+
+def terminal_llm_error() -> Optional[str]:
+    """The latched reason if any LLM call hit a terminal provider error (budget/quota exhausted,
+    hard auth), else None. A run loop should poll this and abort instead of spinning."""
+    return _TERMINAL_LLM_ERROR["reason"]
+
+
 @dataclass
 class LLMResponse:
     """LLM response"""
@@ -970,7 +1006,17 @@ class BaseLLMClient(ABC):
                 last_error = e
                 error_type = type(e).__name__
                 error_msg = str(e)[:200]  # Truncate long errors
-                
+
+                # #326: a TERMINAL provider error (spend/budget/quota exhausted, hard auth) is
+                # unrecoverable — do NOT burn retries, and latch a reason the run loop can poll
+                # to abort. Latch BEFORE re-raising so a caught exception still surfaces it.
+                if _is_terminal_llm_error(e):
+                    _TERMINAL_LLM_ERROR["reason"] = f"[{error_type}] {error_msg}"
+                    self._logger.error(
+                        f"[LLM] TERMINAL provider error — not retrying, run should abort: "
+                        f"[{error_type}] {error_msg}")
+                    raise
+
                 is_rate_limit = self._is_rate_limit_error(e)
                 # FIX #187: budget extension is decided by the PURE rule (see
                 # _extend_retry_budget — it also fixes the old dead-code rate-limit

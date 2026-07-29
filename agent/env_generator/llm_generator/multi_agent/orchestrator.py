@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 from utils.communication import MessageBus
 from utils.config import LLMConfig
 from utils.llm import LLM
+from utils.llm import terminal_llm_error as _terminal_llm_error  # #326
 
 from .workspace_manager import WorkspaceManager
 from . import delivery as _contract
@@ -1534,6 +1535,17 @@ class Orchestrator:
                                 budget_exceeded = f"wall-clock {elapsed:.0f}s exceeded cap {caps['max_wall_sec']:.0f}s"
                             elif tick_count >= caps["max_ticks"]:
                                 budget_exceeded = f"coordination ticks {tick_count} reached cap {caps['max_ticks']}"
+                        # #326: a TERMINAL LLM-provider error (spend/budget/quota exhausted, hard
+                        # auth) latched by the client is unrecoverable — abort within one tick
+                        # (~60s) instead of letting every lane spin thousands of rejected calls
+                        # to the wall-clock cap (r93: ~4500 rejected attempts over ~2h). This is
+                        # NOT a run-budget/tick overrun, so its message points at the real fix.
+                        if not budget_exceeded:
+                            _term = _terminal_llm_error()
+                            if _term:
+                                budget_exceeded = (
+                                    "LLM provider budget/auth exhausted — get a budget increase "
+                                    f"or a fresh key (raising ENVGEN_MAX_* will NOT help): {_term}")
                         if budget_exceeded:
                             self._logger.error(
                                 "Run budget exceeded (%s) before delivery; aborting generation.",
