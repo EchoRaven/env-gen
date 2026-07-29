@@ -927,8 +927,12 @@ class RemediationDispatcher:
             _GATECHECK_REFIRE = 3
             from tools.communication_tools import _create_message
             uncovered: List[str] = []
-            for raw in failed_checks:
-                name = str(raw)
+            # #328 (r93 dead-nav storm): a single gate decline surfaces one entry PER dead
+            # link (7× 'deliverability_dead_nav_link'), and the persist-counter below treated
+            # each in-list duplicate as a separate re-decline — firing 3 duplicate P0 tasks
+            # (dup #1/#4/#7) and waking the lane 10× for one trivial fix. Collapse duplicates
+            # so each DISTINCT check is handled once per gate-tick (order-preserving).
+            for name in dict.fromkeys(str(r) for r in failed_checks):
                 spec = _GATE_OWNER.get(name)
                 if not spec:
                     if name not in _COVERED_ELSEWHERE:
