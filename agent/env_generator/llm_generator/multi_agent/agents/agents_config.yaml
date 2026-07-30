@@ -420,6 +420,11 @@ profiles:
       # editing / diagnosis / registry toolset as implementation (a fix is implementation-like
       # work), NOT the full coordination surface — so fix-mode keeps the anti-drift scoping
       # rather than falling through to every tool.
+        # #349: same commit_gate instruction as the verifier.
+        - workhub_comment
+        # #349: the remediation dispatcher wakes this lane with 'Claim task {id} and
+        # fix it NOW' while this stage hid the tool that reads it (12 turns).
+        - workhub_get_task
       "test_fix:action":
         - read
         - write
@@ -687,6 +692,8 @@ profiles:
       # editing/diagnosis/registry toolset as implementation (a fix is
       # implementation-like work), NOT the full coordination surface — mirrors the
       # backend's test_fix:action.
+        # #349: same commit_gate instruction as the verifier.
+        - workhub_comment
       "test_fix:action":
         - read
         - write
@@ -984,6 +991,13 @@ profiles:
         - glob
         - grep
         - list_generated_files
+        # #349: flow_coverage derives the REQUIRED ui_flow set from list_ui_pages(),
+        # and deliverability_ui_flow_missing (verifier-owned, dispatched 18x) cannot
+        # be cleared without those names. 19 turns were spent reporting it missing.
+        - registryhub_list_ui_pages
+        # #349: commit_gate tells EVERY agent this is the progress channel; 18 turns
+        # were lost across lanes discovering it was hidden in this stage.
+        - workhub_comment
     workflow_policies:
       - kind: verifier_validation_trigger
         allowed_sender: orchestrator
