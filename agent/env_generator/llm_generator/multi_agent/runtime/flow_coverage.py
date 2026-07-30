@@ -297,6 +297,9 @@ def _flow_key(name: str) -> str:
     return n
 
 
+_UI_FLOW_NAME_PREFIX = "validation:ui_flow:"
+
+
 def _index_ui_flow_records(hub_registry) -> Dict[str, str]:
     """Return ``{flow_name: best_status}`` over validation:ui_flow records.
 
@@ -315,9 +318,23 @@ def _index_ui_flow_records(hub_registry) -> Dict[str, str]:
         if not isinstance(r, dict):
             continue
         meta = r.get("metadata") or {}
-        if meta.get("check") != "ui_flow":
-            continue
-        flow = meta.get("flow")
+        flow = None
+        if meta.get("check") == "ui_flow":
+            flow = meta.get("flow")
+        else:
+            # #340: accept the record an agent can actually WRITE. This indexer
+            # was shaped for `record_validation_result(..., metadata=...)`, a
+            # HubRegistry method that is not a registered tool; the agent-facing
+            # recorder `codehub_record_check` has no metadata parameter at all
+            # (its schema is {pr_id, name, status, evidence}). So the ui_flow
+            # blocker was unsatisfiable by construction -- 18 dispatches across
+            # r91/r92/r93, all to the verifier, none clearable. The colon-
+            # prefixed NAME is the form codehub_record_check documents and can
+            # produce; treat it as equivalent. The metadata form above is
+            # untouched, so every framework-written record still indexes.
+            _n = str(r.get("name") or "")
+            if _n.startswith(_UI_FLOW_NAME_PREFIX):
+                flow = _n[len(_UI_FLOW_NAME_PREFIX):]
         if not flow:
             continue
         flow = str(flow).strip()

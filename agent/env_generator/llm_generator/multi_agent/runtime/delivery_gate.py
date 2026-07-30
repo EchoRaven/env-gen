@@ -91,15 +91,15 @@ def delivery_gate_suggestions(gate: Dict[str, Any]) -> List[str]:
         suggestions.append("Create database SQL artifacts under `app/database` (e.g., schema/seed SQL).")
 
     if "no_endpoints_in_hub" in failed_checks:
-        suggestions.append("Register API endpoints in hub using `update_endpoint(...)`.")
+        suggestions.append("Register API endpoints in hub using `registryhub_register_endpoint(...)`.")
     if "no_tables_in_hub" in failed_checks:
-        suggestions.append("Register DB tables in hub using `update_table(...)`.")
+        suggestions.append("Register DB tables in hub using `registryhub_register_table(...)`.")
     if "no_pages_in_hub" in failed_checks:
-        suggestions.append("Register UI pages via `workhub.update_ui_page(...)`.")
+        suggestions.append("Register UI pages via `registryhub_register_ui_page(...)`.")
     if "no_implemented_endpoints" in failed_checks:
-        suggestions.append("Mark at least one endpoint as implemented via `update_endpoint(key=..., status='implemented')`.")
+        suggestions.append("Mark at least one endpoint as implemented via `registryhub_register_endpoint(..., status='implemented')`.")
     if "no_implemented_tables" in failed_checks:
-        suggestions.append("Mark at least one table as implemented via `update_table(name=..., status='implemented')`.")
+        suggestions.append("Mark at least one table as implemented via `registryhub_register_table(name=..., status='implemented')`.")
     if "verification_checklist_not_ready" in failed_checks:
         suggestions.append("Run and record verification/build checks until checklist is ready for delivery.")
     if "business_chain_missing" in failed_checks:
@@ -127,11 +127,13 @@ def delivery_gate_suggestions(gate: Dict[str, Any]) -> List[str]:
         )
     if "validation_api_smoke_missing" in failed_checks:
         suggestions.append(
-            "Record at least one passed API smoke check via `record_validation_result(..., metadata={'check': 'api_smoke'})`."
+            "Record at least one passed API smoke check via `codehub_record_check(pr_id='main', "
+            "name='validation:api_smoke', status='success', evidence={...})`."
         )
     if "validation_ui_smoke_missing" in failed_checks:
         suggestions.append(
-            "Record at least one passed UI smoke check via `record_validation_result(..., metadata={'check': 'ui_smoke'})`."
+            "Record at least one passed UI smoke check via `codehub_record_check(pr_id='main', "
+            "name='validation:ui_smoke', status='success', evidence={...})`."
         )
     if "contract_alignment_failed" in failed_checks:
         suggestions.append(
@@ -152,8 +154,8 @@ def delivery_gate_suggestions(gate: Dict[str, Any]) -> List[str]:
             "record. Spawn a UI-flow tester worker (config_profile='verifier'); have "
             "it drive `browser_navigate` + at least one mutating step "
             "(`browser_click`/`browser_fill`) + `browser_screenshot`, then call "
-            "`record_validation_result(task_id='ui_flow_<name>', status='passed', "
-            "metadata={'check': 'ui_flow', 'flow': '<name>'})`."
+            "`codehub_record_check(pr_id='main', name='validation:ui_flow:<name>', "
+            "status='success', evidence={...})`."
         )
     if "deliverability_ui_flow_failed" in failed_checks:
         suggestions.append(
