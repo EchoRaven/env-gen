@@ -505,6 +505,16 @@ class AgentActionStageMixin:
                     mark_stage=mark_stage,
                 )
                 if done:
+                    # #358: a step that ends in finish() used to return HERE,
+                    # skipping the idle counter below entirely — so it neither
+                    # incremented nor reset and simply froze. That is the
+                    # dominant idle shape: r91's orchestrator made 550 finish()
+                    # calls, 74% of them no-ops ('No change.' x102, 'Idle.'
+                    # x97), and not one advanced the counter while each still
+                    # paid for its full-context LLM calls. A step that produced
+                    # no productive tool call is idle whether or not it finished.
+                    if not any_action_calls and not stage_used_tools:
+                        no_action_tool_steps += 1
                     return done, no_action_tool_steps
                 if stage_result:
                     round_internal_stage_results.append(stage_result)
@@ -546,7 +556,12 @@ class AgentActionStageMixin:
 
         if not any_action_calls:
             no_action_tool_steps += 1
-            if not background_mode and no_action_tool_steps >= 12:
+            # #358: the `not background_mode` gate meant background lanes
+            # could never reach the threshold, so the backstop was inert for
+            # them too. The threshold VALUE (12) and the resident-lane
+            # graceful-idle path below are deliberately unchanged — resident
+            # lanes are supposed to poll, and lowering 12 is a separate call.
+            if no_action_tool_steps >= 12:
                 step_trace["mode_after"] = self._execution_mode
                 step_traces.append(step_trace)
                 if getattr(self, "_is_resident_lane", False):
