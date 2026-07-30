@@ -1072,6 +1072,13 @@ def _resource_from_path(path: Any) -> Optional[str]:
     return last[:-1] if last.endswith("s") and len(last) > 1 else last
 
 
+# N-P0-3 (Netflix): string business keys a path param can be keyed by — captured
+# alongside the numeric id so a ``${title_slug}``/``${username}`` placeholder resolves
+# the way ``${title_id}`` already does. Netflix detail routes are ``/title/{slug}``,
+# ``/watch/{slug}``, not ``/title/{id}``.
+_STRING_KEY_FIELDS = ("slug", "username", "handle")
+
+
 def _harvest_resource_ids(payload: Any, into: Dict[str, Any]) -> None:
     """FIX #83 (instagram run-3, live): harvest resource ids from a step's RESPONSE BODY.
 
@@ -1083,7 +1090,12 @@ def _harvest_resource_ids(payload: Any, into: Dict[str, Any]) -> None:
     dicts with an ``id`` → ``into[singular(key)] = first id``; plus ONE level of nested
     dicts inside the first row ({"posts":[{"user":{"id":42}}]} → user=42) since nested
     actors (post author) are often the only source of a second resource's id. setdefault
-    ONLY — an id captured from the chain's own create stays authoritative."""
+    ONLY — an id captured from the chain's own create stays authoritative.
+
+    N-P0-3: ALSO harvest a row's string business keys under ``<resource>_<field>``
+    ({"titles":[{"id":7,"slug":"st"}]} → title=7, title_slug="st") so a chain that
+    references ``${title_slug}`` — the natural placeholder for a ``/title/{slug}`` route —
+    resolves it from the feed row, exactly as ``${title_id}`` already does."""
     if not isinstance(payload, Mapping):
         return
 
@@ -1091,16 +1103,25 @@ def _harvest_resource_ids(payload: Any, into: Dict[str, Any]) -> None:
         k = str(k).lower()
         return k[:-1] if k.endswith("s") and len(k) > 1 else k
 
+    def _harvest_string_keys(prefix: str, row: Mapping) -> None:
+        for f in _STRING_KEY_FIELDS:
+            val = row.get(f)
+            if val is not None and str(val).strip():
+                into.setdefault(f"{prefix}_{f}", str(val))
+
     for k, v in payload.items():
         if isinstance(v, list) and v and isinstance(v[0], Mapping):
             row = v[0]
             if row.get("id") is not None:
                 into.setdefault(_singular(k), row["id"])
+            _harvest_string_keys(_singular(k), row)
             for k2, v2 in row.items():
                 if isinstance(v2, Mapping) and v2.get("id") is not None:
                     into.setdefault(_singular(k2), v2["id"])
+                    _harvest_string_keys(_singular(k2), v2)
         elif isinstance(v, Mapping) and v.get("id") is not None:
             into.setdefault(_singular(k), v["id"])
+            _harvest_string_keys(_singular(k), v)
 
 
 _ID_KEYS = ("id", "uuid", "pk")
@@ -1197,6 +1218,14 @@ def _resolve_unresolved_dollar_vars(value: Any, last_id: Any,
              or re.fullmatch(r"\{([A-Za-z_]\w*_id)\}", value.strip()))
         if m:
             var = m.group(1).strip()
+            # N-P0-3: a string business-key placeholder (${title_slug}/${user_username}/
+            # ${x_handle}) resolves DIRECTLY — _harvest_resource_ids keys these under their
+            # full "<resource>_<field>" name. Restricted to the known string-key suffixes so
+            # a bare ${title} (ambiguous) and the numeric ${x_id} rule below are untouched.
+            if (by_resource and any(var.endswith("_" + f) for f in _STRING_KEY_FIELDS)):
+                direct = by_resource.get(var)
+                if direct is not None and str(direct).strip():
+                    return direct
             if by_resource and var.endswith("_id"):
                 res = var[:-3]
                 rid = by_resource.get(res)
