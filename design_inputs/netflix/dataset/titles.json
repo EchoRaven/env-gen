@@ -1,0 +1,1044 @@
+[
+  {
+    "id": 1,
+    "kind": "movie",
+    "name": "Disclosure Day",
+    "year": "2026",
+    "genre": "Science Fiction",
+    "genres": [
+      "Science Fiction",
+      "Thriller"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.7,
+    "synopsis": "A cybersecurity expert becomes a whistleblower after uncovering secrets about aliens, putting him on the run from a corporation. Meanwhile, a meteorologist experiencing strange phenomena joins forces with him to prove there's life beyond our understanding.",
+    "poster": "assets/posters/movie_1275779.jpg",
+    "backdrop": "assets/backdrops/movie_1275779.jpg",
+    "language": "en"
+  },
+  {
+    "id": 2,
+    "kind": "movie",
+    "name": "The Odyssey",
+    "year": "2026",
+    "genre": "Adventure",
+    "genres": [
+      "Adventure",
+      "Action",
+      "Fantasy"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.9,
+    "synopsis": "Odysseus, the legendary King of Ithaca, embarks on a long and perilous journey home following the Trojan War. Throughout his voyage, he is forced to confront the whims of gods, mythological monsters, and trials that stretch both his cunning and his humanity to the breaking point.",
+    "poster": "assets/posters/movie_1368337.jpg",
+    "backdrop": "assets/backdrops/movie_1368337.jpg",
+    "language": "en"
+  },
+  {
+    "id": 3,
+    "kind": "movie",
+    "name": "Backrooms",
+    "year": "2026",
+    "genre": "Horror",
+    "genres": [
+      "Horror",
+      "Mystery",
+      "Science Fiction"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.1,
+    "synopsis": "A strange doorway appears in the basement of a furniture showroom.",
+    "poster": "assets/posters/movie_1083381.jpg",
+    "backdrop": "assets/backdrops/movie_1083381.jpg",
+    "language": "en"
+  },
+  {
+    "id": 4,
+    "kind": "movie",
+    "name": "Scary Movie",
+    "year": "2026",
+    "genre": "Comedy",
+    "genres": [
+      "Comedy",
+      "Horror"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.3,
+    "synopsis": "Twenty-six years after outrunning a suspiciously familiar masked killer, the Core Four are back in the killer's crosshairs and no horror movie IP is safe.",
+    "poster": "assets/posters/movie_1273221.jpg",
+    "backdrop": "assets/backdrops/movie_1273221.jpg",
+    "language": "en"
+  },
+  {
+    "id": 5,
+    "kind": "movie",
+    "name": "The Mandalorian and Grogu",
+    "year": "2026",
+    "genre": "Fantasy",
+    "genres": [
+      "Fantasy",
+      "Action",
+      "Adventure"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.7,
+    "synopsis": "The evil Empire has fallen, and Imperial warlords remain scattered throughout the galaxy. As the fledgling New Republic works to protect everything the Rebellion fought for, they have enlisted the help of legendary Mandalorian bounty hunter Din Djarin and his young apprentice Grogu.",
+    "poster": "assets/posters/movie_1228710.jpg",
+    "backdrop": "assets/backdrops/movie_1228710.jpg",
+    "language": "en"
+  },
+  {
+    "id": 6,
+    "kind": "movie",
+    "name": "Obsession",
+    "year": "2026",
+    "genre": "Horror",
+    "genres": [
+      "Horror",
+      "Thriller"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.2,
+    "synopsis": "After breaking the mysterious \"One Wish Willow\" to win his crush's heart, a hopeless romantic finds himself getting exactly what he asked for but soon discovers that some desires come at a dark, sinister price.",
+    "poster": "assets/posters/movie_1339713.jpg",
+    "backdrop": "assets/backdrops/movie_1339713.jpg",
+    "language": "en"
+  },
+  {
+    "id": 7,
+    "kind": "movie",
+    "name": "Spider-Man: Brand New Day",
+    "year": "2026",
+    "genre": "Science Fiction",
+    "genres": [
+      "Science Fiction",
+      "Action",
+      "Adventure"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 0.0,
+    "synopsis": "Fighting crime full-time as Spider-Man in a world that doesn't remember him—and the pressure of seeing his old friends move on without him—sparks a change in Peter Parker he may not have the power to control. But that transformation might also be the only thing that can stop a shocking new threat to the city and those he loves - a powerful villain no one can even see.",
+    "poster": "assets/posters/movie_969681.jpg",
+    "backdrop": "assets/backdrops/movie_969681.jpg",
+    "language": "en"
+  },
+  {
+    "id": 8,
+    "kind": "movie",
+    "name": "Descendants: Wicked Wonderland",
+    "year": "2026",
+    "genre": "Fantasy",
+    "genres": [
+      "Fantasy",
+      "Family",
+      "TV Movie"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.8,
+    "synopsis": "Now that the Queen of Hearts is nice and Cinderella is safe, things seem perfect for Red and Chloe… But little do they know that changing the past created a new villain — Maddox Hatter. When Maddox captures the Queen of Hearts, Red and Chloe must work alongside Red’s new sister Pink, Luisa Madrigal’s son Luis, and Maddox’s son Max to save her and Wonderland.",
+    "poster": "assets/posters/movie_1318621.jpg",
+    "backdrop": "assets/backdrops/movie_1318621.jpg",
+    "language": "en"
+  },
+  {
+    "id": 9,
+    "kind": "movie",
+    "name": "The Death of Robin Hood",
+    "year": "2026",
+    "genre": "Adventure",
+    "genres": [
+      "Adventure",
+      "Drama",
+      "Thriller",
+      "Action"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.7,
+    "synopsis": "Grappling with his past after a life of crime and murder, Robin Hood finds himself gravely injured after a battle he thought would be his last. In the hands of a mysterious woman, he is offered a chance at salvation.",
+    "poster": "assets/posters/movie_1284465.jpg",
+    "backdrop": "assets/backdrops/movie_1284465.jpg",
+    "language": "en"
+  },
+  {
+    "id": 10,
+    "kind": "movie",
+    "name": "Moana",
+    "year": "2026",
+    "genre": "Family",
+    "genres": [
+      "Family",
+      "Fantasy",
+      "Comedy",
+      "Adventure"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 5.8,
+    "synopsis": "Teenage Moana answers the Ocean's call and, for the first time, voyages beyond the reef of her island of Motunui with infamous demigod Maui on an unforgettable journey to restore prosperity to her people.",
+    "poster": "assets/posters/movie_1108427.jpg",
+    "backdrop": "assets/backdrops/movie_1108427.jpg",
+    "language": "en"
+  },
+  {
+    "id": 11,
+    "kind": "movie",
+    "name": "Avengers: Doomsday",
+    "year": "2026",
+    "genre": "Science Fiction",
+    "genres": [
+      "Science Fiction",
+      "Action",
+      "Adventure"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 0.0,
+    "synopsis": "Beloved heroes from three distinct universes are set on a deadly collision course and face an existential threat unlike anything they've ever encountered.",
+    "poster": "assets/posters/movie_1003596.jpg",
+    "backdrop": "assets/backdrops/movie_1003596.jpg",
+    "language": "en"
+  },
+  {
+    "id": 12,
+    "kind": "movie",
+    "name": "The Furious",
+    "year": "2026",
+    "genre": "Action",
+    "genres": [
+      "Action",
+      "Crime",
+      "Thriller"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.4,
+    "synopsis": "After a criminal network kidnaps Wang Wei's daughter and the corrupt police refuse to assist him, Wei sets out on his own to locate her. Navin, a tenacious journalist whose wife has mysteriously vanished, is his only ally. In this explosive martial arts showdown, the unlikely duo fights the kidnappers ruthlessly driven by a furious vengeance.",
+    "poster": "assets/posters/movie_1280738.jpg",
+    "backdrop": "assets/backdrops/movie_1280738.jpg",
+    "language": "zh"
+  },
+  {
+    "id": 13,
+    "kind": "movie",
+    "name": "Other Mommy",
+    "year": "2026",
+    "genre": "Horror",
+    "genres": [
+      "Horror"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 0.0,
+    "synopsis": "A young girl, her family and their home are haunted by a sinister entity that is determined to take up residence inside her. But first, it needs to persuade her to let it in…",
+    "poster": "assets/posters/movie_1400837.jpg",
+    "backdrop": "assets/backdrops/movie_1400837.jpg",
+    "language": "en"
+  },
+  {
+    "id": 14,
+    "kind": "movie",
+    "name": "Heartstopper Forever",
+    "year": "2026",
+    "genre": "Romance",
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.9,
+    "synopsis": "It's a new school year for the Truham-Higgs gang. As Nick and Charlie's relationship deepens, their thoughts turn to life after the last bell rings.",
+    "poster": "assets/posters/movie_1468683.jpg",
+    "backdrop": "assets/backdrops/movie_1468683.jpg",
+    "language": "en"
+  },
+  {
+    "id": 15,
+    "kind": "movie",
+    "name": "Toy Story 5",
+    "year": "2026",
+    "genre": "Animation",
+    "genres": [
+      "Animation",
+      "Family",
+      "Comedy",
+      "Adventure"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.4,
+    "synopsis": "When Bonnie receives a Lilypad tablet as a gift and becomes obsessed, Buzz, Woody, Jessie and the rest of the gang's jobs become exponentially harder when they have to go head to head with the all-new threat to playtime.",
+    "poster": "assets/posters/movie_1084244.jpg",
+    "backdrop": "assets/backdrops/movie_1084244.jpg",
+    "language": "en"
+  },
+  {
+    "id": 16,
+    "kind": "movie",
+    "name": "Evil Dead Burn",
+    "year": "2026",
+    "genre": "Horror",
+    "genres": [
+      "Horror",
+      "Thriller"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.7,
+    "synopsis": "After her husband's abrupt death, Alice seeks solace with his remaining family — descendants of a leading researcher on demonic possession. As her in-laws transform one by one into creatures that feed on fear, she comes to discover that the vows she took in life survive even in death.",
+    "poster": "assets/posters/movie_1212763.jpg",
+    "backdrop": "assets/backdrops/movie_1212763.jpg",
+    "language": "en"
+  },
+  {
+    "id": 17,
+    "kind": "movie",
+    "name": "The Breadwinner",
+    "year": "2026",
+    "genre": "Comedy",
+    "genres": [
+      "Comedy",
+      "Family"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.9,
+    "synopsis": "After his wife Katie lands a once-in-a-lifetime deal on Shark Tank that takes her on a prolonged business trip - lifelong breadwinner Nate Wilcox now has to fend for his family as a first-time stay-at-home dad.",
+    "poster": "assets/posters/movie_1440050.jpg",
+    "backdrop": "assets/backdrops/movie_1440050.jpg",
+    "language": "en"
+  },
+  {
+    "id": 18,
+    "kind": "movie",
+    "name": "Mortal Kombat II",
+    "year": "2026",
+    "genre": "Action",
+    "genres": [
+      "Action",
+      "Fantasy",
+      "Adventure"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.0,
+    "synopsis": "The fan favorite champions—now joined by Johnny Cage himself—are pitted against one another in the ultimate, no-holds barred, gory battle to defeat the dark rule of Shao Kahn that threatens the very existence of the Earthrealm and its defenders.",
+    "poster": "assets/posters/movie_931285.jpg",
+    "backdrop": "assets/backdrops/movie_931285.jpg",
+    "language": "en"
+  },
+  {
+    "id": 19,
+    "kind": "movie",
+    "name": "Minions & Monsters",
+    "year": "2026",
+    "genre": "Adventure",
+    "genres": [
+      "Adventure",
+      "Animation",
+      "Comedy",
+      "Family",
+      "Fantasy"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.4,
+    "synopsis": "This is the rambunctious, ridiculous and totally true story of how the Minions conquered Hollywood, became movie stars, lost everything, unleashed monsters onto the world and then banded together to try and save the planet from the mayhem they had just created.",
+    "poster": "assets/posters/movie_1315772.jpg",
+    "backdrop": "assets/backdrops/movie_1315772.jpg",
+    "language": "en"
+  },
+  {
+    "id": 20,
+    "kind": "movie",
+    "name": "The Devil Wears Prada 2",
+    "year": "2026",
+    "genre": "Comedy",
+    "genres": [
+      "Comedy",
+      "Drama"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.1,
+    "synopsis": "Andy Sachs returns to Runway as Miranda Priestly navigates a new media landscape and Runway's position within. The duo reconnect with former assistant Emily Charlton, now the head of a luxury brand that possesses funding which could ensure Runway's survival.",
+    "poster": "assets/posters/movie_1314481.jpg",
+    "backdrop": "assets/backdrops/movie_1314481.jpg",
+    "language": "en"
+  },
+  {
+    "id": 21,
+    "kind": "series",
+    "name": "The East Palace",
+    "year": "2026",
+    "genre": "Mystery",
+    "genres": [
+      "Mystery",
+      "Action & Adventure",
+      "Sci-Fi & Fantasy",
+      "Drama"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.0,
+    "synopsis": "A man who walks the spirit world and a court lady who hears the dead enter the East Palace by the king's orders — can they unravel its dark secrets?",
+    "poster": "assets/posters/tv_279323.jpg",
+    "backdrop": "assets/backdrops/tv_279323.jpg",
+    "language": "ko"
+  },
+  {
+    "id": 22,
+    "kind": "series",
+    "name": "House of the Dragon",
+    "year": "2022",
+    "genre": "Sci-Fi & Fantasy",
+    "genres": [
+      "Sci-Fi & Fantasy",
+      "Drama",
+      "Action & Adventure"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.4,
+    "synopsis": "The Targaryen dynasty is at the absolute apex of its power, with more than 15 dragons under their yoke. Most empires crumble from such heights. In the case of the Targaryens, their slow fall begins when King Viserys breaks with a century of tradition by naming his daughter Rhaenyra heir to the Iron Throne. But when Viserys later fathers a son, the court is shocked when Rhaenyra retains her status as his heir, and seeds of division sow friction across the realm.",
+    "poster": "assets/posters/tv_94997.jpg",
+    "backdrop": "assets/backdrops/tv_94997.jpg",
+    "language": "en"
+  },
+  {
+    "id": 23,
+    "kind": "series",
+    "name": "Lucky",
+    "year": "2026",
+    "genre": "Drama",
+    "genres": [
+      "Drama",
+      "Crime"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.8,
+    "synopsis": "When a multi-million-dollar heist goes sideways, con artist Lucky is forced to go on the run. Pursued by both the FBI and a ruthless crime boss, Lucky must fight for her life—and a way out.",
+    "poster": "assets/posters/tv_278624.jpg",
+    "backdrop": "assets/backdrops/tv_278624.jpg",
+    "language": "en"
+  },
+  {
+    "id": 24,
+    "kind": "series",
+    "name": "Silo",
+    "year": "2023",
+    "genre": "Sci-Fi & Fantasy",
+    "genres": [
+      "Sci-Fi & Fantasy",
+      "Drama"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.2,
+    "synopsis": "In a ruined and toxic future, thousands live in a giant silo deep underground. After its sheriff breaks a cardinal rule and residents die mysteriously, engineer Juliette starts to uncover shocking secrets and the truth about the silo.",
+    "poster": "assets/posters/tv_125988.jpg",
+    "backdrop": "assets/backdrops/tv_125988.jpg",
+    "language": "en"
+  },
+  {
+    "id": 25,
+    "kind": "series",
+    "name": "Rick and Morty",
+    "year": "2013",
+    "genre": "Animation",
+    "genres": [
+      "Animation",
+      "Comedy",
+      "Sci-Fi & Fantasy",
+      "Action & Adventure"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.7,
+    "synopsis": "Follows a sociopathic genius scientist who drags his inherently timid grandson on adventures across the universe.",
+    "poster": "assets/posters/tv_60625.jpg",
+    "backdrop": "assets/backdrops/tv_60625.jpg",
+    "language": "en"
+  },
+  {
+    "id": 26,
+    "kind": "series",
+    "name": "One Piece",
+    "year": "1999",
+    "genre": "Action & Adventure",
+    "genres": [
+      "Action & Adventure",
+      "Comedy",
+      "Animation"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.7,
+    "synopsis": "Years ago, the fearsome Pirate King, Gol D. Roger was executed leaving a huge pile of treasure and the famous \"One Piece\" behind. Whoever claims the \"One Piece\" will be named the new King of the Pirates.\n\nMonkey D. Luffy, a boy who consumed a \"Devil Fruit,\" decides to follow in the footsteps of his idol, the pirate Shanks, and find the One Piece. It helps, of course, that his body has the properties of rubber and that he's surrounded by a bevy of skilled fighters and thieves to help him along the way.\n\nLuffy will do anything to get the One Piece and become King of the Pirates!",
+    "poster": "assets/posters/tv_37854.jpg",
+    "backdrop": "assets/backdrops/tv_37854.jpg",
+    "language": "ja"
+  },
+  {
+    "id": 27,
+    "kind": "series",
+    "name": "Agent Kim Reactivated",
+    "year": "2026",
+    "genre": "Action & Adventure",
+    "genres": [
+      "Action & Adventure",
+      "Crime",
+      "Drama"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.2,
+    "synopsis": "When an unassuming dad's daughter goes missing, he dusts off his old black-ops skills to track her down — only to attract the wrong kind of attention.",
+    "poster": "assets/posters/tv_296206.jpg",
+    "backdrop": "assets/backdrops/tv_296206.jpg",
+    "language": "ko"
+  },
+  {
+    "id": 28,
+    "kind": "series",
+    "name": "The Hawk",
+    "year": "2026",
+    "genre": "Comedy",
+    "genres": [
+      "Comedy"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 5.0,
+    "synopsis": "On the back nine of his career, golf legend Lonnie \"The Hawk\" Hawkins chases one final major — and drags everyone he loves into the chaos.",
+    "poster": "assets/posters/tv_254528.jpg",
+    "backdrop": "assets/backdrops/tv_254528.jpg",
+    "language": "en"
+  },
+  {
+    "id": 29,
+    "kind": "series",
+    "name": "Spooky in Love",
+    "year": "2026",
+    "genre": "Comedy",
+    "genres": [
+      "Comedy",
+      "Sci-Fi & Fantasy",
+      "Drama"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 9.2,
+    "synopsis": "When a ghost-seeing heir and an ace prosecutor learn that a single touch makes them a strangely effective duo, they team up to crack unsolved murders.",
+    "poster": "assets/posters/tv_298610.jpg",
+    "backdrop": "assets/backdrops/tv_298610.jpg",
+    "language": "ko"
+  },
+  {
+    "id": 30,
+    "kind": "series",
+    "name": "Ride or Die",
+    "year": "2026",
+    "genre": "Action & Adventure",
+    "genres": [
+      "Action & Adventure"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 5.0,
+    "synopsis": "Best friends Debbie and Judith are forced on the run when Debbie discovers Judith isn't a forensic accountant, she's an international assassin! With a mysterious figure chasing them, and Debbie's husband involved in something deeply corrupt, it's a race against time and a road trip across Europe to untangle the truth and stay alive.",
+    "poster": "assets/posters/tv_241882.jpg",
+    "backdrop": "assets/backdrops/tv_241882.jpg",
+    "language": "en"
+  },
+  {
+    "id": 31,
+    "kind": "series",
+    "name": "Cape Fear",
+    "year": "2026",
+    "genre": "Drama",
+    "genres": [
+      "Drama",
+      "Crime"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.1,
+    "synopsis": "When convicted murderer Max Cady is released from prison, he begins infiltrating the family of the married attorneys who helped put him behind bars.",
+    "poster": "assets/posters/tv_277439.jpg",
+    "backdrop": "assets/backdrops/tv_277439.jpg",
+    "language": "en"
+  },
+  {
+    "id": 32,
+    "kind": "series",
+    "name": "Star Wars: The Mandalorian and Grogu | A Special Look",
+    "year": "2026",
+    "genre": "Documentary",
+    "genres": [
+      "Documentary"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.3,
+    "synopsis": "Get ready for \"Star Wars: The Mandalorian and Grogu | A Special Look,\" only in theaters.",
+    "poster": "assets/posters/tv_321564.jpg",
+    "backdrop": "assets/backdrops/tv_321564.jpg",
+    "language": "en"
+  },
+  {
+    "id": 33,
+    "kind": "series",
+    "name": "Mushoku Tensei: Jobless Reincarnation",
+    "year": "2021",
+    "genre": "Action & Adventure",
+    "genres": [
+      "Action & Adventure",
+      "Animation",
+      "Sci-Fi & Fantasy"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.5,
+    "synopsis": "When a 34-year-old underachiever gets run over by a truck, his story doesn't end there. Reincarnated in a new world as an infant, Rudy will seize every opportunity to live the life he's always wanted. Armed with new friends, some freshly acquired magical abilities, and the courage to do the things he's always dreamed of, he's embarking on an epic adventure—with all of his past experience intact!",
+    "poster": "assets/posters/tv_94664.jpg",
+    "backdrop": "assets/backdrops/tv_94664.jpg",
+    "language": "ja"
+  },
+  {
+    "id": 34,
+    "kind": "series",
+    "name": "FROM",
+    "year": "2022",
+    "genre": "Mystery",
+    "genres": [
+      "Mystery",
+      "Drama",
+      "Sci-Fi & Fantasy"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.5,
+    "synopsis": "Unravel the mystery of a nightmarish town in middle America that traps all those who enter. As the unwilling residents fight to keep a sense of normalcy and search for a way out, they must also survive the threats of the surrounding forest – including the terrifying creatures that come out when the sun goes down.",
+    "poster": "assets/posters/tv_124364.jpg",
+    "backdrop": "assets/backdrops/tv_124364.jpg",
+    "language": "en"
+  },
+  {
+    "id": 35,
+    "kind": "series",
+    "name": "King of the Hill",
+    "year": "1997",
+    "genre": "Animation",
+    "genres": [
+      "Animation",
+      "Comedy",
+      "Family"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.4,
+    "synopsis": "Set in Texas, this animated series follows the life of propane salesman Hank Hill, who lives with his overly confident substitute Spanish teacher wife Peggy, wannabe comedian son Bobby, and naive niece Luanne. Hank has conservative views about God, family, and country, but his values and ethics are often challenged by the situations he, his family, and his beer-drinking neighbors/buddies find themselves in.",
+    "poster": "assets/posters/tv_2122.jpg",
+    "backdrop": "assets/backdrops/tv_2122.jpg",
+    "language": "en"
+  },
+  {
+    "id": 36,
+    "kind": "series",
+    "name": "Stranger Things",
+    "year": "2016",
+    "genre": "Action & Adventure",
+    "genres": [
+      "Action & Adventure",
+      "Mystery",
+      "Sci-Fi & Fantasy"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.6,
+    "synopsis": "When a young boy vanishes, a small town uncovers a mystery involving secret experiments, terrifying supernatural forces, and one strange little girl.",
+    "poster": "assets/posters/tv_66732.jpg",
+    "backdrop": "assets/backdrops/tv_66732.jpg",
+    "language": "en"
+  },
+  {
+    "id": 37,
+    "kind": "series",
+    "name": "Overdo",
+    "year": "2026",
+    "genre": "Drama",
+    "genres": [
+      "Drama"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 9.0,
+    "synopsis": "In Republican Shanghai, Murong Qingyi, a warlord’s son swapped at birth, endures years of torment. His life changes when Ren Susu saves him, but tragedy strikes her family because of it. Years later, love sparks between them, but Ren Susu fakes her death to save another, leaving Qingyi heartbroken. Three years on, she returns as his future sister-in-law. Love, hate, betrayal, and old wounds resurface. As war looms, the two must defy fate together, but can love survive a nation’s fall?",
+    "poster": "assets/posters/tv_289139.jpg",
+    "backdrop": "assets/backdrops/tv_289139.jpg",
+    "language": "zh"
+  },
+  {
+    "id": 38,
+    "kind": "series",
+    "name": "X-Men '97",
+    "year": "2024",
+    "genre": "Animation",
+    "genres": [
+      "Animation",
+      "Action & Adventure",
+      "Sci-Fi & Fantasy"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.6,
+    "synopsis": "The X-Men, a band of mutants who use their uncanny gifts to protect a world that hates and fears them, are challenged like never before, forced to face a dangerous and unexpected new future.",
+    "poster": "assets/posters/tv_138502.jpg",
+    "backdrop": "assets/backdrops/tv_138502.jpg",
+    "language": "en"
+  },
+  {
+    "id": 39,
+    "kind": "series",
+    "name": "The Westies",
+    "year": "2026",
+    "genre": "Drama",
+    "genres": [
+      "Drama",
+      "Crime"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.1,
+    "synopsis": "As the Javits Center construction project ignites a battle for profit in early 1980s Hell's Kitchen, a generational rift threatens the uneasy peace between violent Irish gang the Westies and the Mafia, and draws FBI heat.",
+    "poster": "assets/posters/tv_286709.jpg",
+    "backdrop": "assets/backdrops/tv_286709.jpg",
+    "language": "en"
+  },
+  {
+    "id": 40,
+    "kind": "series",
+    "name": "THE GHOST IN THE SHELL",
+    "year": "2026",
+    "genre": "Animation",
+    "genres": [
+      "Animation",
+      "Action & Adventure",
+      "Sci-Fi & Fantasy"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.3,
+    "synopsis": "2029, a near-future Japan. The full cyborg Motoko Kusanagi envisions a task force that preemptively strikes emerging threats. She and her team are scouted by Daisuke Aramaki as Public Security Section 9, AKA the \"Shell Squad.\" An international conspiracy hints at a hacker known as The \"Puppet Master.\" What fate awaits Kusanagi? What is the hacker's endgame? A new era of cyberpunk action begins!",
+    "poster": "assets/posters/tv_255358.jpg",
+    "backdrop": "assets/backdrops/tv_255358.jpg",
+    "language": "ja"
+  },
+  {
+    "id": 41,
+    "kind": "movie",
+    "name": "Supergirl",
+    "year": "2026",
+    "genre": "Action",
+    "genres": [
+      "Action",
+      "Adventure",
+      "Science Fiction"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.1,
+    "synopsis": "When an unexpected and ruthless adversary strikes too close to home, Kara Zor-El, aka Supergirl, reluctantly joins forces with an unlikely companion on an epic, interstellar journey of vengeance and justice.",
+    "poster": "assets/posters/movie_1081003.jpg",
+    "backdrop": "assets/backdrops/movie_1081003.jpg",
+    "language": "en"
+  },
+  {
+    "id": 42,
+    "kind": "movie",
+    "name": "Project Hail Mary",
+    "year": "2026",
+    "genre": "Science Fiction",
+    "genres": [
+      "Science Fiction",
+      "Adventure"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.7,
+    "synopsis": "Science teacher Ryland Grace wakes up on a spaceship light years from home with no recollection of who he is or how he got there. As his memory returns, he begins to uncover his mission: solve the riddle of the mysterious substance causing the sun to die out. He must call on his scientific knowledge and unorthodox ideas to save everything on Earth from extinction.",
+    "poster": "assets/posters/movie_687163.jpg",
+    "backdrop": "assets/backdrops/movie_687163.jpg",
+    "language": "en"
+  },
+  {
+    "id": 43,
+    "kind": "movie",
+    "name": "Desire",
+    "year": "2026",
+    "genre": "Mystery",
+    "genres": [
+      "Mystery",
+      "Drama"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.8,
+    "synopsis": "Lucero’s life appears immaculate: a wealthy household, a devoted husband, and two children who embody the promise of a perfect family. Yet beneath this surface simmers a quiet dissatisfaction. When Matías, a young swimming coach hired by her husband, enters their lives, Lucero finds herself pulled into a risky and consuming relationship. As secrecy, desire, and jealousy tighten their grip, the boundaries within the family begin to collapse, placing mother and daughter in a dangerous emotional triangle that threatens to shatter everything Lucero has built.",
+    "poster": "assets/posters/movie_1668364.jpg",
+    "backdrop": "assets/backdrops/movie_1668364.jpg",
+    "language": "es"
+  },
+  {
+    "id": 44,
+    "kind": "movie",
+    "name": "Passenger",
+    "year": "2026",
+    "genre": "Horror",
+    "genres": [
+      "Horror",
+      "Thriller"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.3,
+    "synopsis": "After a young couple witnesses a gruesome highway accident, they soon realize they did not leave the crash scene alone, as a demonic presence called the Passenger that won't stop until it claims them both turns their van life adventure into a nightmare.",
+    "poster": "assets/posters/movie_1368314.jpg",
+    "backdrop": "assets/backdrops/movie_1368314.jpg",
+    "language": "en"
+  },
+  {
+    "id": 45,
+    "kind": "movie",
+    "name": "Affair at the Nuns' Temple: Paradise Sex",
+    "year": "1998",
+    "genre": null,
+    "genres": [],
+    "maturity_rating": "TV-14",
+    "rating": 1.7,
+    "synopsis": "Japanese nunsplitation movie from 1998",
+    "poster": "assets/posters/movie_261639.jpg",
+    "backdrop": null,
+    "language": "ja"
+  },
+  {
+    "id": 46,
+    "kind": "movie",
+    "name": "Your Heart Will Be Broken",
+    "year": "2026",
+    "genre": "Romance",
+    "genres": [
+      "Romance"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.1,
+    "synopsis": "High school student Polina is saved from bullying at her new school and makes a deal with the main bully Bars: he must pretend to be her boyfriend and protect her, and she must do everything he says. During this game, the couple develops real feelings, but her family and classmates have reasons to separate the lovers.",
+    "poster": "assets/posters/movie_1523145.jpg",
+    "backdrop": "assets/backdrops/movie_1523145.jpg",
+    "language": "ru"
+  },
+  {
+    "id": 47,
+    "kind": "movie",
+    "name": "Deep Water",
+    "year": "2026",
+    "genre": "Horror",
+    "genres": [
+      "Horror",
+      "Thriller"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.5,
+    "synopsis": "A group of international passengers on a flight from Los Angeles to Shanghai is forced to make an emergency landing in shark-infested waters. The terrified group is forced to work together and overcome their differences if they hope to escape their sinking plane and the frenzy of sharks drawn to the wreckage.",
+    "poster": "assets/posters/movie_1127384.jpg",
+    "backdrop": "assets/backdrops/movie_1127384.jpg",
+    "language": "en"
+  },
+  {
+    "id": 48,
+    "kind": "movie",
+    "name": "Michael",
+    "year": "2026",
+    "genre": "Music",
+    "genres": [
+      "Music",
+      "Drama"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.7,
+    "synopsis": "The story of Michael Jackson, one of the most influential artists the world has ever known, and his life beyond the music. His journey from the discovery of his extraordinary talent as the lead of the Jackson Five, to the visionary artist whose creative ambition fueled a relentless pursuit to become the biggest entertainer in the world, highlighting both his life off-stage and some of the most iconic performances from his early solo career.",
+    "poster": "assets/posters/movie_936075.jpg",
+    "backdrop": "assets/backdrops/movie_936075.jpg",
+    "language": "en"
+  },
+  {
+    "id": 49,
+    "kind": "series",
+    "name": "Lecture Room",
+    "year": "2001",
+    "genre": "Talk",
+    "genres": [
+      "Talk",
+      "Documentary"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.0,
+    "synopsis": "",
+    "poster": "assets/posters/tv_237020.jpg",
+    "backdrop": "assets/backdrops/tv_237020.jpg",
+    "language": "zh"
+  },
+  {
+    "id": 50,
+    "kind": "series",
+    "name": "Binnelanders",
+    "year": "2005",
+    "genre": "Soap",
+    "genres": [
+      "Soap"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 5.5,
+    "synopsis": "A South African Afrikaans soap opera. It is set in and around the fictional private hospital, Binneland Kliniek, in Pretoria, and the storyline follows the trials, trauma and tribulations of the staff and patients of the hospital.",
+    "poster": "assets/posters/tv_206559.jpg",
+    "backdrop": "assets/backdrops/tv_206559.jpg",
+    "language": "af"
+  },
+  {
+    "id": 51,
+    "kind": "series",
+    "name": "7de Laan",
+    "year": "2000",
+    "genre": "Soap",
+    "genres": [
+      "Soap"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.3,
+    "synopsis": "7de Laan is an extraordinary microcosm where good and bad, evil and wholesome characters find themselves forming part of a wholesome community where no matter what – everyone counts and everyone cares…",
+    "poster": "assets/posters/tv_17887.jpg",
+    "backdrop": "assets/backdrops/tv_17887.jpg",
+    "language": "af"
+  },
+  {
+    "id": 52,
+    "kind": "series",
+    "name": "C.I.D.",
+    "year": "1998",
+    "genre": "Action & Adventure",
+    "genres": [
+      "Action & Adventure",
+      "Crime",
+      "Drama",
+      "Mystery"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 5.7,
+    "synopsis": "A team of dedicated men and women in the Crime Investigation Department will risk everything to solve Mumbai's toughest, most complicated crimes.",
+    "poster": "assets/posters/tv_15226.jpg",
+    "backdrop": "assets/backdrops/tv_15226.jpg",
+    "language": "hi"
+  },
+  {
+    "id": 53,
+    "kind": "series",
+    "name": "Late Show with David Letterman",
+    "year": "1993",
+    "genre": "Talk",
+    "genres": [
+      "Talk",
+      "Comedy"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.4,
+    "synopsis": "David Letterman uses mature humor to appeal to his audience in this weeknight series, which gets its music from a house band led by Paul Shaffer. Among the show's most-famous segments are the Top Ten List and Stupid Pet Tricks, the latter of which subsequently led to an additional recurring segment called Stupid Human Tricks.",
+    "poster": "assets/posters/tv_498.jpg",
+    "backdrop": "assets/backdrops/tv_498.jpg",
+    "language": "en"
+  },
+  {
+    "id": 54,
+    "kind": "series",
+    "name": "The Tonight Show Starring Johnny Carson",
+    "year": "1962",
+    "genre": "Talk",
+    "genres": [
+      "Talk"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.5,
+    "synopsis": "The Tonight Show Starring Johnny Carson is a talk show hosted by Johnny Carson under The Tonight Show franchise from 1962 to 1992. It originally aired during late-night. For its first ten years, Carson's Tonight Show was based in New York City with occasional trips to Burbank, California; in May 1972, the show moved permanently to Burbank, California. In 2002, The Tonight Show Starring Johnny Carson was ranked #12 on TV Guide's 50 Greatest TV Shows of All Time.",
+    "poster": "assets/posters/tv_2261.jpg",
+    "backdrop": "assets/backdrops/tv_2261.jpg",
+    "language": "en"
+  },
+  {
+    "id": 55,
+    "kind": "series",
+    "name": "Egoli: Place of Gold",
+    "year": "1992",
+    "genre": "Soap",
+    "genres": [
+      "Soap"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 7.2,
+    "synopsis": "A South African television soap opera created by Franz Marx which revolves around the daily ups, downs, trials and tribulations of a handful of families in and around Johannesburg (which is often referred to as eGoli - the City of Gold)",
+    "poster": "assets/posters/tv_12415.jpg",
+    "backdrop": "assets/backdrops/tv_12415.jpg",
+    "language": "af"
+  },
+  {
+    "id": 56,
+    "kind": "series",
+    "name": "Jeopardy!",
+    "year": "1984",
+    "genre": "Reality",
+    "genres": [
+      "Reality",
+      "Family"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.9,
+    "synopsis": "America's favorite quiz show where contestants are presented with general knowledge clues in the form of answers, and must phrase their responses in question form.",
+    "poster": "assets/posters/tv_2912.jpg",
+    "backdrop": "assets/backdrops/tv_2912.jpg",
+    "language": "en"
+  },
+  {
+    "id": 57,
+    "kind": "series",
+    "name": "The Daily Show",
+    "year": "1996",
+    "genre": "News",
+    "genres": [
+      "News",
+      "Comedy"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.4,
+    "synopsis": "The World's Fakest News Team tackle the biggest stories in news, politics and pop culture.",
+    "poster": "assets/posters/tv_2224.jpg",
+    "backdrop": "assets/backdrops/tv_2224.jpg",
+    "language": "en"
+  },
+  {
+    "id": 58,
+    "kind": "series",
+    "name": "Law & Order: Special Victims Unit",
+    "year": "1999",
+    "genre": "Crime",
+    "genres": [
+      "Crime",
+      "Drama",
+      "Mystery"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 8.0,
+    "synopsis": "In the criminal justice system, sexually-based offenses are considered especially heinous. In New York City, the dedicated detectives who investigate these vicious felonies are members of an elite squad known as the Special Victims Unit. These are their stories.",
+    "poster": "assets/posters/tv_2734.jpg",
+    "backdrop": "assets/backdrops/tv_2734.jpg",
+    "language": "en"
+  },
+  {
+    "id": 59,
+    "kind": "series",
+    "name": "The Late Show with Stephen Colbert",
+    "year": "2015",
+    "genre": "Comedy",
+    "genres": [
+      "Comedy",
+      "Talk"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 6.1,
+    "synopsis": "Stephen Colbert brings his signature satire and comedy to The Late Show with Stephen Colbert, the #1 show in late night, where he talks with an eclectic mix of guests about what is new and relevant in the worlds of politics, entertainment, business, music, technology, and more. Featuring bandleader Jon Batiste with his band Stay Human, the Emmy Award-nominated show is broadcast from the historic Ed Sullivan Theater.",
+    "poster": "assets/posters/tv_63770.jpg",
+    "backdrop": "assets/backdrops/tv_63770.jpg",
+    "language": "en"
+  },
+  {
+    "id": 60,
+    "kind": "series",
+    "name": "Rote Rosen",
+    "year": "2006",
+    "genre": "Soap",
+    "genres": [
+      "Soap",
+      "Drama"
+    ],
+    "maturity_rating": "TV-14",
+    "rating": 3.0,
+    "synopsis": "Rote Rosen is a German telenovela produced by Studio Hamburg Serienwerft Lüneburg and broadcast by Das Erste since November 6, 2006. The show is a complex telenovela, who tells one love story every season about women in their forties.",
+    "poster": "assets/posters/tv_27181.jpg",
+    "backdrop": "assets/backdrops/tv_27181.jpg",
+    "language": "de"
+  }
+]

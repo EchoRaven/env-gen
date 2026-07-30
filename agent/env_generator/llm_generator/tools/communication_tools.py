@@ -640,6 +640,14 @@ Returns:
 # Check Inbox Tool
 # ============================================================================
 
+
+
+# #302 — how many chars of an ALREADY-READ inbox body to keep as a preview.
+# Enough to identify the message + a real snippet; the full body is fetchable by
+# id. UNREAD bodies are never previewed (kept whole — #274).
+_INBOX_PREVIEW_LEN = 240
+
+
 class CheckInboxTool(BaseTool):
     """
     Check inbox for received messages with smart filtering.
@@ -750,7 +758,17 @@ Returns:
     ) -> ToolResult:
         if not self.agent:
             return ToolResult(success=False, error_message="Agent not configured")
-        
+
+        # #292: the schema declares limit as integer, but the model reasonably
+        # passes numeric args as strings ("10"). `filtered[:limit]` below then
+        # raises "slice indices must be integers" and the whole inbox read
+        # fails (r76 live, 10×). Coerce a coercible value; fall back to the
+        # default for an uncoercible one — never crash on a plausible arg.
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            limit = 10
+
         durable_events = []
         try:
             hubs = getattr(self.agent, "_hubs", None)
@@ -768,12 +786,21 @@ Returns:
                     "id": event.get("id"),
                     "from": payload.get("from") or event.get("source_hub"),
                     "type": event.get("event_type"),
+                    # #291: raw, untruncated payload — same as the non-durable
+                    # formatting path below. #274 wrapped this in an undefined
+                    # summarize_inbox_message_body(...) (NameError crashed the
+                    # whole check_inbox on any durable event) AND a summarizer
+                    # would violate the no-truncation invariant (see the #274
+                    # NOTE below + test_inbox_no_content_truncation).
                     "content": payload.get("content") or payload.get("body") or str(payload),
                     "tags": payload.get("tags", []),
                     "priority": event.get("priority", "normal"),
                     "persist": True,
                     "timestamp": event.get("created_at"),
                     "eventhub": True,
+                    # #302: carry the PRE-call read status (from the eventhub
+                    # pointer) so the formatter can preview an already-read body.
+                    "read": bool(event.get("read")),
                 })
         
         if not all_messages:
@@ -818,7 +845,21 @@ Returns:
         
         # Apply limit
         filtered = filtered[:limit]
-        
+
+        # #274 NOTE: inbox bodies are deliberately NOT truncated. A 2026-06-01 directive
+        # ("不要截断，这个肯定要完整信息的") removed a [:500] cap that broke Facebook-scale
+        # task_ready: the orchestrator sends a multi-thousand-char CONTRACT through the
+        # inbox, and a trimmed body left the receiver unable to see it and unable to ask for
+        # the rest (the re-ask reply truncated too), wedging the pipeline. test_inbox_no_
+        # content_truncation locks this in. Context savings for oversized bodies must come
+        # from the SENDER (send a summary + a hub pointer), not from clipping on read.
+
+        # #302: capture the PRE-call read status BEFORE marking, so the
+        # formatter can preview an already-read body (full content was already
+        # delivered when it was unread) while unread bodies stay full (#274).
+        for msg in filtered:
+            msg["_was_read"] = bool(msg.get("read"))
+
         # Mark as read
         for msg in filtered:
             msg["read"] = True
@@ -862,20 +903,32 @@ Returns:
                 pass
         
         # Format output
+        # #302 — CONTEXT REDUCTION. An UNREAD message returns its FULL body (a
+        # task_ready contract must never be clipped — #274/#291; the receiver
+        # acts on it now). An ALREADY-READ message returns a bounded PREVIEW +
+        # its id: the full body was delivered when it was unread, so re-dumping
+        # it on every subsequent check_inbox is pure context waste (r82: ~350KB
+        # of read bodies per inbox per call — the #1 token sink). The full body
+        # of a read message stays fetchable on demand via search_messages /
+        # eventhub_get_thread(id). Small read bodies are left whole (nothing to
+        # save). unread_only=True callers never hit the preview branch.
         formatted = []
         for msg in filtered:
+            body = msg.get("content", "") or ""
+            is_preview = bool(msg.get("_was_read")) and len(body) > _INBOX_PREVIEW_LEN
+            if is_preview:
+                content = (body[:_INBOX_PREVIEW_LEN].rstrip()
+                           + f"… [preview — {len(body)} chars total; already read. "
+                             f"Full body: search_messages or eventhub_get_thread(id="
+                             f"{msg.get('id', '')})]")
+            else:
+                content = body
             formatted.append({
                 "id": msg.get("id", ""),
                 "from": msg.get("from", "unknown"),
                 "type": msg.get("type", "message"),
-                # NO TRUNCATION: agents must see the full inbound
-                # payload. The PRIOR `[:500]` silently sliced every
-                # message body to 500 chars, breaking Facebook-scale
-                # tasks at v3 re-pilot 2026-06-01 (~3500-char task_ready
-                # payloads → Design saw 14%, couldn't see the contract,
-                # asked orchestrator to re-send everything). Per user
-                # 2026-06-01 directive: "不要截断，这个肯定要完整信息的".
-                "content": msg.get("content", ""),
+                "content": content,
+                "preview": is_preview,
                 "tags": msg.get("tags", []),
                 "priority": msg.get("priority", "normal"),
                 "persist": msg.get("persist", False),

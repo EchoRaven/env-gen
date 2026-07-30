@@ -21,7 +21,7 @@ never looser.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 
 @dataclass
@@ -110,6 +110,25 @@ def _derive_ui_spec_from_hub(hub_registry) -> Optional[dict]:
     return {"critical_flows": critical_flows, "pages": pages}
 
 
+def _is_navigable_page(page: Any) -> bool:
+    """#243 — is this ui_page entry something a browser can actually NAVIGATE to?
+
+    A registered ``ui_page`` whose ``route`` is EMPTY is a component that got
+    mis-registered as a page (r33 M2: video_grid, explore_grid, explore_card,
+    suggested_creator_card, top_action_bar, content_tabs, more_menu_panel — all
+    ``route=''``). The deterministic walk only visits routed pages, so no
+    ``validation:ui_flow`` record can ever exist for them and the coverage gate
+    is unwinnable. Conservative: only reject when a route/path key is PRESENT
+    and is not a ``/``-rooted path — an entry with NO route key at all is an
+    older spec shape and stays required (we can't prove it is a component)."""
+    if not isinstance(page, Mapping):
+        return True
+    for key in ("route", "path"):
+        if key in page:
+            return str(page.get(key) or "").strip().startswith("/")
+    return True
+
+
 _TRUTHY_STRS = {"true", "yes", "1", "y", "t"}
 _FALSY_STRS = {"false", "no", "0", "n", "f", "", "null", "none"}
 
@@ -194,6 +213,14 @@ def _extract_required_flows(spec: dict) -> Tuple[List[str], str]:
         for k, v in raw_pages.items():
             if isinstance(v, dict):
                 page_entries.append((str(k), v))
+    # #243 (tiktok r33 M2, live): a ui_page with NO navigable route is a
+    # COMPONENT mis-registered as a page (M2 registered video_grid /
+    # explore_card / top_action_bar / … all with route=''). The browser walk
+    # only visits routed pages, so a ui_flow record for a routeless entry can
+    # NEVER be produced — requiring one is an UNWINNABLE gate (the opt-5
+    # false-block class): r33 M2 sat on 8 permanently-missing flows. Drop them
+    # from the REQUIRED set (they are still audited as components elsewhere).
+    page_entries = [(fb, p) for fb, p in page_entries if _is_navigable_page(p)]
 
     critical_names: List[str] = []
     seen = set()
@@ -247,22 +274,51 @@ def _flow_key(name: str) -> str:
     """#237: suffix-normalized flow identity — ``explore`` / ``explore_page`` /
     ``explore_screen`` are the SAME user journey. Used to dedupe the derived
     required set and to match records to requirements, so a verifier record
-    under either spelling satisfies the flow."""
+    under either spelling satisfies the flow.
+
+    #285 (tiktok r70, live): the verifier ALSO writes ``_ui`` and COMPOUND
+    ``_page_ui`` variants. Folding only ONE trailing ``_page``/``_screen`` left
+    ``following_suggested_creators_page`` (required, key ``..._creators``) and its
+    passing record ``following_suggested_creators_page_ui`` (key unchanged — trailing
+    ``_ui``) under DIFFERENT keys, so the passing record could never clear the failing
+    ``_page`` twin → 6 flows falsely FAILED though every one passed, and the run
+    idled through both converging-grace windows. Fold ``_ui`` too, and loop until
+    stable so compound suffixes (``_page_ui``, ``_screen_ui``, ``_ui_page``) all
+    collapse to the same bare journey key."""
     n = str(name or "").strip().lower()
-    for suf in ("_page", "_screen"):
-        if n.endswith(suf) and len(n) > len(suf):
-            n = n[: -len(suf)]
-            break
+    changed = True
+    while changed:
+        changed = False
+        for suf in ("_page", "_screen", "_ui"):
+            if n.endswith(suf) and len(n) > len(suf):
+                n = n[: -len(suf)]
+                changed = True
+                break
     return n
+
+
+_UI_FLOW_NAME_PREFIX = "validation:ui_flow:"
 
 
 def _index_ui_flow_records(hub_registry) -> Dict[str, str]:
     """Return ``{flow_name: best_status}`` over validation:ui_flow records.
 
-    ``best_status`` is ``"passed"`` if any record for that flow passed,
-    else ``"failed"`` if any failed, else the latest status. We collapse
-    duplicates by name so a later passing run can clear an earlier
-    failure (matches how the auto-retry loop works for smoke checks).
+    LATEST-WINS by ``recorded_at`` (#357).
+
+    This used to be "passed if ANY record passed", which is right in one
+    direction -- a later passing run should clear an earlier failure, matching
+    the auto-retry loop -- and blind in the other: a later FAILING record could
+    never clear an earlier pass. Once a flow had been green once the gate could
+    never see it regress, which is the entire purpose of a regression gate.
+    r91's store holds 18 records for 4 flows including success -> failure ->
+    success -> failure sequences, all of which read green forever after the
+    first success.
+
+    `get_validation_results` already maps `updated_at` onto `recorded_at` for
+    every row, so ordering is available. Records with NO usable timestamp keep
+    the old passed-wins collapse, so an old store cannot start reporting
+    differently just because it lacks the field; a timestamped record always
+    outranks an untimed one.
     """
     try:
         results = hub_registry.get_validation_results(limit=1000) or []
@@ -270,13 +326,28 @@ def _index_ui_flow_records(hub_registry) -> Dict[str, str]:
         results = []
 
     by_flow: Dict[str, str] = {}
+    seen_at: Dict[str, float] = {}   # #357: newest recorded_at seen per flow
     for r in results:
         if not isinstance(r, dict):
             continue
         meta = r.get("metadata") or {}
-        if meta.get("check") != "ui_flow":
-            continue
-        flow = meta.get("flow")
+        flow = None
+        if meta.get("check") == "ui_flow":
+            flow = meta.get("flow")
+        else:
+            # #340: accept the record an agent can actually WRITE. This indexer
+            # was shaped for `record_validation_result(..., metadata=...)`, a
+            # HubRegistry method that is not a registered tool; the agent-facing
+            # recorder `codehub_record_check` has no metadata parameter at all
+            # (its schema is {pr_id, name, status, evidence}). So the ui_flow
+            # blocker was unsatisfiable by construction -- 18 dispatches across
+            # r91/r92/r93, all to the verifier, none clearable. The colon-
+            # prefixed NAME is the form codehub_record_check documents and can
+            # produce; treat it as equivalent. The metadata form above is
+            # untouched, so every framework-written record still indexes.
+            _n = str(r.get("name") or "")
+            if _n.startswith(_UI_FLOW_NAME_PREFIX):
+                flow = _n[len(_UI_FLOW_NAME_PREFIX):]
         if not flow:
             continue
         flow = str(flow).strip()
@@ -284,14 +355,28 @@ def _index_ui_flow_records(hub_registry) -> Dict[str, str]:
             continue
         status = r.get("status", "error")
         prev = by_flow.get(flow)
-        if prev == "passed":
-            continue
-        if status == "passed":
-            by_flow[flow] = "passed"
-        elif status in {"failed", "error"} and prev != "failed":
-            by_flow[flow] = "failed"
-        elif prev is None:
-            by_flow[flow] = status
+        # #357: the ratchet ITSELF lived here — `if prev == "passed": continue`
+        # short-circuited every record after the first success, so no later
+        # failure could ever be seen. Ordering is decided below instead.
+        _at = r.get("recorded_at")
+        try:
+            _at = float(_at) if _at not in (None, "") else None
+        except Exception:
+            _at = None
+        _prev_at = seen_at.get(flow)
+        if _at is not None:
+            # A timestamped record outranks any untimed one, and later wins.
+            if _prev_at is None or _at >= _prev_at:
+                by_flow[flow] = status
+                seen_at[flow] = _at
+        elif _prev_at is None and prev != "passed":
+            # Untimed: preserve the historical passed-wins collapse exactly.
+            if status == "passed":
+                by_flow[flow] = "passed"
+            elif status in {"failed", "error"} and prev != "failed":
+                by_flow[flow] = "failed"
+            elif prev is None:
+                by_flow[flow] = status
     return by_flow
 
 

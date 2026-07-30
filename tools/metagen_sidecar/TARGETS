@@ -1,0 +1,17 @@
+# Copy this file + metagen_sidecar.py into your fbcode checkout, e.g.
+#   fbcode/scripts/<you>/metagen_sidecar/
+# then `buck2 run` the target below. Adjust the load path / macro if your area differs.
+
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+
+python_binary(
+    name = "metagen_sidecar",
+    srcs = ["metagen_sidecar.py"],
+    base_module = "",                       # so the module imports as `metagen_sidecar`
+    main_function = "metagen_sidecar.main",
+    deps = [
+        "//gen_ai/metagen/pymetagen/lib:metagen",   # the REAL MetaGen SDK (Buck-only)
+        # If you switch ENVGEN_METAGEN_FACTORY=prod and need service-user CAT tokens, also add:
+        # "//crypto/cat/py:crypto_auth_token_util",
+    ],
+)

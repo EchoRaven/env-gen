@@ -225,16 +225,43 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                 # on memory reads instead of finishing the code. That guard is removed;
                 # this every-step boundary condensation is the sole bound, and it
                 # keeps context ~28-100, far under the ~770 saturation.)
+                _model = getattr(getattr(self, "config", None), "model_name", None)
                 if step > 0:
-                    messages = _mask_old_observations(
-                        messages,
-                        model=getattr(getattr(self, "config", None), "model_name", None),
-                    )
+                    messages = _mask_old_observations(messages, model=_model)
                 if step > 0 and hasattr(self, "memory"):
                     if self.memory.should_condense_messages(messages):
-                        self._logger.info(f"[{self.agent_id}] Condensing messages (len={len(messages)})")
-                        messages = await self.memory.condense_messages(messages)
-                        self._logger.info(f"[{self.agent_id}] After condensation: len={len(messages)}")
+                        # F3/F4 (2026-07-21): should_condense_messages triggers on raw message
+                        # COUNT (>50), re-firing every 2-4 steps — each an LLM summarization call —
+                        # even on large-context models nowhere near their real budget, and each
+                        # condense injects a "RESUME NOW: write code" directive that is wrong for a
+                        # coordinating lane mid-kickoff. Gate the (expensive) condense on:
+                        #   F4: NOT in the kickoff phase (coordinating lanes must not be told to code);
+                        #   F3: the model's actual char budget being pressured AFTER masking; and
+                        #   F3: a min-steps cooldown since the last condense (kills the thrash loop).
+                        _phase_ok = getattr(self, "_active_phase", None) != "kickoff"
+                        _cooldown_ok = (step - getattr(self, "_last_condense_step", -999)) >= 6
+                        _pressured = True  # fail-safe: condense if we cannot size the budget
+                        try:
+                            from utils.model_limits import resolve_ctx_working_chars
+                            _budget = resolve_ctx_working_chars(_model)
+                            if _budget:
+                                # Count only STRING content, accessed via getattr — messages are
+                                # Message OBJECTS here (mirrors _mask_old_observations so both layers
+                                # agree on the gate). Skipping non-str content also avoids inflating
+                                # the estimate with base64 image blocks in list content.
+                                _chars = 0
+                                for _m in messages:
+                                    _c = getattr(_m, "content", None)
+                                    if isinstance(_c, str):
+                                        _chars += len(_c)
+                                _pressured = _chars > _budget * 0.9
+                        except Exception:
+                            _pressured = True
+                        if _phase_ok and _cooldown_ok and _pressured:
+                            self._logger.info(f"[{self.agent_id}] Condensing messages (len={len(messages)})")
+                            messages = await self.memory.condense_messages(messages)
+                            self._last_condense_step = step
+                            self._logger.info(f"[{self.agent_id}] After condensation: len={len(messages)}")
 
                 hub_pulse_prompt = None
                 runtime_team_status_prompt = None
@@ -529,22 +556,6 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                         )
                 else:
                     _mark_stage("runtime_team_status", executed=False, skip_reason="disabled_by_config")
-
-                done = await self._run_planning_stage(
-                    enabled=_stage_enabled("planning"),
-                    tool_schema_map=tool_schema_map,
-                    messages=messages,
-                    files_created=files_created,
-                    files_modified=files_modified,
-                    step=step,
-                    max_calls_cfg=max_calls_cfg,
-                    step_trace=step_trace,
-                    step_traces=step_traces,
-                    loop_time=loop_time,
-                    mark_stage=_mark_stage,
-                )
-                if done:
-                    return done
 
                 done = await self._run_retrieve_context_stage(
                     enabled=_stage_enabled("retrieve_context"),

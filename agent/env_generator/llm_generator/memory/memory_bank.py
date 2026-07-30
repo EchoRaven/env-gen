@@ -43,6 +43,41 @@ _DIGEST_BUDGET_FRACTION = 0.06
 _NOTEBOOK_BUDGET_FRACTION = 0.025
 
 
+# #268 PROVENANCE CLASSIFICATION (borrowed from Hatch's promotion bridge, which refuses to
+# promote any claim lacking a ``path:line`` citation — it can only ever be a Hypothesis).
+#
+# Measured on r57's real bank (8 lanes x 6 files, ~47 KB): ZERO lines carry provenance of
+# any kind, yet every later lane reads all of it as established fact. That is the same
+# defect class that cost this session roughly six runs — an unsourced verdict erasing a
+# measured PASS (#254/#258), an unsourced chain variable resolving to a foreign id (#263),
+# an unwinnable denial probe (#266).
+#
+# Classification is READ-time only. Rejecting on write would drop a lane's content mid-run
+# with no way for it to learn why; labelling lets the reader weigh it, which is exactly
+# Hatch's Promote / Hypothesis split. Our provenance is broader than Hatch's: a hub record
+# name (``validation:ui_flow:explore``, ``build:docker``) or a registered route is as
+# verifiable here as a file:line.
+_SOURCED_PATTERNS = (
+    re.compile(r"[\w./-]+\.(?:py|ts|tsx|js|jsx|sql|json|yaml|yml|md|sh):\d+"),
+    re.compile(r"\b(?:validation|build|check|deliverability):[\w:.\-]+"),
+    re.compile(r"\b(?:GET|POST|PUT|PATCH|DELETE)\s+/[\w/{}.-]*"),
+)
+
+
+def classify_memory_line(line: str) -> str:
+    """``"sourced"`` | ``"hypothesis"`` | ``"structure"`` for one memory-bank line."""
+    text = (line or "").strip()
+    if not text or text.startswith(("#", "---", "```", "|", "<!--")):
+        return "structure"
+    body = text.lstrip("-*0123456789. \t")
+    if not body:
+        return "structure"
+    for pat in _SOURCED_PATTERNS:
+        if pat.search(text):
+            return "sourced"
+    return "hypothesis"
+
+
 @dataclass
 class MemoryFile:
     """Represents a single memory file."""
@@ -59,9 +94,24 @@ class MemoryFile:
         return self.content
     
     def save(self, content: str) -> None:
-        """Save content to file."""
+        """Save content to file.
+
+        #267 STABLE RENDER (borrowed from Hatch's bank renderer, which only rewrites a
+        bank when its content actually changed). These files are injected into every
+        lane's prompt, so an identical rewrite moves bytes in the prompt PREFIX for no
+        reason — the same prompt-cache waste #255 fixed in the message history — and it
+        churns mtimes that other machinery reads as "this changed". The in-memory
+        bookkeeping still runs: callers rely on ``content`` being current.
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(content, encoding="utf-8")
+        unchanged = False
+        try:
+            unchanged = self.path.exists() and self.path.read_text(
+                encoding="utf-8") == content
+        except OSError:
+            unchanged = False          # unreadable -> fall through and write
+        if not unchanged:
+            self.path.write_text(content, encoding="utf-8")
         self.content = content
         self.last_updated = datetime.now()
 

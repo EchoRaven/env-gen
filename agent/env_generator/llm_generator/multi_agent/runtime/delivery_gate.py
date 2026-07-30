@@ -19,6 +19,29 @@ import re
 from typing import Any, Dict, List, Optional
 
 
+# FIX #287 (tiktok r70/r71, live): the check set that satisfies the ui_smoke gate. A passing
+# ui_flow is STRICTLY STRONGER UI evidence than ui_smoke — walking a page's interaction flow
+# proves the page rendered (a blank/fallback page has no controls to drive) — and
+# deliverability._has_passing_ui_evidence already counts ui_flow as UI evidence. The gate used
+# to accept only {ui_smoke, ui_page_reachable}: the verifier drove the browser and wrote 11
+# PASSING ui_flow records but no ui_smoke record, so _has_passing_ui_evidence was True while
+# ui_smoke_pass was False → validation_ui_smoke_missing blocked delivery on an app whose UI was
+# demonstrably exercised, and r68/r70/r71 fail-fast aborted there. Accept ui_flow too, matching
+# _has_passing_ui_evidence. (The ui_flow DIMENSION keeps its own ui_flow_missing/_failed gate,
+# so a real flow defect is not let through.)
+_UI_SMOKE_EVIDENCE_CHECKS = {"ui_smoke", "ui_page_reachable", "ui_flow"}
+
+
+def _ui_smoke_pass(validation_results: Any) -> bool:
+    """True iff any validation record is a passed UI-evidence check (see #287)."""
+    return any(
+        isinstance(r, dict)
+        and r.get("status") == "passed"
+        and (r.get("metadata", {}) or {}).get("check") in _UI_SMOKE_EVIDENCE_CHECKS
+        for r in (validation_results or [])
+    )
+
+
 def _norm_gate_path(p: Any) -> str:
     """Param-agnostic path key for milestone-scope matching: '/api/notes/{id}' ≡ '/api/notes/{}'."""
     s = str(p or "").split("?", 1)[0]
@@ -68,15 +91,15 @@ def delivery_gate_suggestions(gate: Dict[str, Any]) -> List[str]:
         suggestions.append("Create database SQL artifacts under `app/database` (e.g., schema/seed SQL).")
 
     if "no_endpoints_in_hub" in failed_checks:
-        suggestions.append("Register API endpoints in hub using `update_endpoint(...)`.")
+        suggestions.append("Register API endpoints in hub using `registryhub_register_endpoint(...)`.")
     if "no_tables_in_hub" in failed_checks:
-        suggestions.append("Register DB tables in hub using `update_table(...)`.")
+        suggestions.append("Register DB tables in hub using `registryhub_register_table(...)`.")
     if "no_pages_in_hub" in failed_checks:
-        suggestions.append("Register UI pages via `workhub.update_ui_page(...)`.")
+        suggestions.append("Register UI pages via `registryhub_register_ui_page(...)`.")
     if "no_implemented_endpoints" in failed_checks:
-        suggestions.append("Mark at least one endpoint as implemented via `update_endpoint(key=..., status='implemented')`.")
+        suggestions.append("Mark at least one endpoint as implemented via `registryhub_register_endpoint(..., status='implemented')`.")
     if "no_implemented_tables" in failed_checks:
-        suggestions.append("Mark at least one table as implemented via `update_table(name=..., status='implemented')`.")
+        suggestions.append("Mark at least one table as implemented via `registryhub_register_table(name=..., status='implemented')`.")
     if "verification_checklist_not_ready" in failed_checks:
         suggestions.append("Run and record verification/build checks until checklist is ready for delivery.")
     if "business_chain_missing" in failed_checks:
@@ -104,11 +127,13 @@ def delivery_gate_suggestions(gate: Dict[str, Any]) -> List[str]:
         )
     if "validation_api_smoke_missing" in failed_checks:
         suggestions.append(
-            "Record at least one passed API smoke check via `record_validation_result(..., metadata={'check': 'api_smoke'})`."
+            "Record at least one passed API smoke check via `codehub_record_check(pr_id='main', "
+            "name='validation:api_smoke', status='success', evidence={...})`."
         )
     if "validation_ui_smoke_missing" in failed_checks:
         suggestions.append(
-            "Record at least one passed UI smoke check via `record_validation_result(..., metadata={'check': 'ui_smoke'})`."
+            "Record at least one passed UI smoke check via `codehub_record_check(pr_id='main', "
+            "name='validation:ui_smoke', status='success', evidence={...})`."
         )
     if "contract_alignment_failed" in failed_checks:
         suggestions.append(
@@ -129,8 +154,8 @@ def delivery_gate_suggestions(gate: Dict[str, Any]) -> List[str]:
             "record. Spawn a UI-flow tester worker (config_profile='verifier'); have "
             "it drive `browser_navigate` + at least one mutating step "
             "(`browser_click`/`browser_fill`) + `browser_screenshot`, then call "
-            "`record_validation_result(task_id='ui_flow_<name>', status='passed', "
-            "metadata={'check': 'ui_flow', 'flow': '<name>'})`."
+            "`codehub_record_check(pr_id='main', name='validation:ui_flow:<name>', "
+            "status='success', evidence={...})`."
         )
     if "deliverability_ui_flow_failed" in failed_checks:
         suggestions.append(
@@ -608,12 +633,37 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
                        "must register business-flow chains via "
                        "registryhub_register_verification_chain."),
         }
+    # #272: a chain blocked ONLY by a framework-projected defect (a _projected_ handler
+    # 5xx — route_projector's bug, not the lane's) is separated out. It still blocks
+    # delivery (a broken endpoint must not ship), but under its OWN reason so remediation
+    # routes to the FRAMEWORK, not to a lane dispatched to fix code it never wrote — the
+    # exact trap #263/#270/#271 sprang (Hatch design principle #5: infra-vs-app failures
+    # must be structurally distinct).
     not_passing = [
         str(rec.get("name") or rec.get("id"))
         for rec in authored
-        if rec.get("status") != "passing"
+        if (rec.get("status") not in ("passing", "framework_blocked"))
         or (rec.get("last_result") or {}).get("broken")
     ]
+    framework_blocked = [
+        str(rec.get("name") or rec.get("id"))
+        for rec in authored
+        if rec.get("status") == "framework_blocked"
+        and not (rec.get("last_result") or {}).get("broken")
+    ]
+    if framework_blocked and not not_passing:
+        _defs = [d for rec in authored
+                 for d in ((rec.get("last_result") or {}).get("framework_defects") or [])]
+        return {
+            "reason": "business_chain_framework_defect", "authored": len(authored),
+            "chains": framework_blocked, "defects": _defs[:8],
+            "detail": (f"{len(framework_blocked)} chain(s) are blocked ONLY by a "
+                       "framework-PROJECTED handler crashing (5xx from a _projected_ "
+                       "function — emitted by route_projector, which the lane cannot edit): "
+                       + "; ".join(_defs[:4])
+                       + ". This is a FRAMEWORK defect, not an app bug — do not dispatch a "
+                       "lane. Fix the projector/skeleton generator."),
+        }
     if not_passing:
         return {
             "reason": "business_chain_failing", "authored": len(authored),
@@ -723,6 +773,18 @@ def noncanonical_business_response_keys(hubs) -> List[Dict[str, Any]]:
         md = v.get("metadata") or {}
         if str(md.get("kind") or "").strip().lower() in _EXEMPT_KINDS:
             continue  # not projector-owned (orchestrator/spine/custom handlers)
+        # #251 (r50, live): exemption must not depend on a metadata field the LANE has to
+        # remember. r50 was green except for this check, burned both graces and aborted on
+        # POST /auth/signup (response_key='signup') and POST /auth/logout — framework-owned
+        # AS-router endpoints the projector never touches, which the docstring already says
+        # are exempt. Their kind was simply unset, so the metadata-only test flagged them
+        # and NO lane could fix it (the handlers are ours). Exempt the control surface BY
+        # PATH too — an unwinnable hard gate is the opt-5 lesson we keep re-learning.
+        _p = str(v.get("path") or (k.split(" ", 1)[-1] if " " in k else k)).lower()
+        if (_p.startswith("/auth/") or _p.startswith("/api/auth/")
+                or _p.startswith("/oauth") or _p.startswith("/api/oauth")
+                or _p.startswith("/.well-known")):
+            continue
         if md.get("custom") or md.get("custom_route"):
             continue  # custom_routes are hand-authored, not projected
         rk = md.get("response_key") or (v.get("schema") or {}).get("response_key")
@@ -1167,12 +1229,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         and r.get("metadata", {}).get("check") in {"api_smoke", "api_health"}
         for r in validation_results
     )
-    ui_smoke_pass = any(
-        isinstance(r, dict)
-        and r.get("status") == "passed"
-        and r.get("metadata", {}).get("check") in {"ui_smoke", "ui_page_reachable"}
-        for r in validation_results
-    )
+    ui_smoke_pass = _ui_smoke_pass(validation_results)
     failed_validation_top = [
         {
             "task_id": r.get("task_id"),

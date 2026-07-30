@@ -69,6 +69,32 @@ def _ssrf_check(url: str) -> Optional[str]:
 # 1. ICON SEARCH - Iconify API for icons and SVGs
 # =============================================================================
 
+_CAPTURE_DIR = "design/captures"
+
+
+def _redirect_readonly_capture_path(path: str) -> str:
+    """Move a `screenshots/...` capture target into the writable capture dir.
+
+    `screenshots/` is READ-ONLY in ROUTING_TABLE on purpose: it holds the
+    ground-truth references the visual gate diffs against, so opening it would
+    let a lane overwrite its own exam. But this tool used to advertise
+    `screenshots/<domain>.png`, which taught agents to aim there -- denied
+    across 23 distinct runs, always the frontend lane, defeating FIX #110 (the
+    frontend must SEE its own render before self-certifying fidelity).
+
+    Redirect rather than refuse: the agent is doing the right thing with the
+    directory the schema told it to use, and a hard failure costs a turn to
+    rediscover. The caller reports the redirect, so nothing is silent.
+    """
+    if not path:
+        return path
+    raw = str(path).lstrip("/")
+    if raw == "screenshots" or raw.startswith("screenshots/"):
+        from pathlib import Path as _P
+        return f"{_CAPTURE_DIR}/{_P(raw).name}"
+    return path
+
+
 class IconSearchTool(BaseTool):
     """Search for icons and SVGs using Iconify API (100+ icon sets)."""
     
@@ -673,7 +699,7 @@ Captures the current state of any webpage using Playwright.
 
 Examples:
     capture_webpage "https://doordash.com"
-    capture_webpage "https://github.com" "screenshots/github.png"
+    capture_webpage "https://github.com" "design/captures/github.png"
     capture_webpage "https://stripe.com" "design/stripe_ref.png" full_page=true
 
 Best for:
@@ -708,7 +734,7 @@ Requires Playwright: pip install playwright && playwright install
                     },
                     "path": {
                         "type": "string",
-                        "description": "Where to save (default: screenshots/<domain>.png)"
+                        "description": "Where to save (default: design/captures/<domain>.png). NOTE: screenshots/ is the read-only reference dir the visual gate diffs against; a path there is redirected to design/captures/."
                     },
                     "full_page": {
                         "type": "boolean",
@@ -745,13 +771,18 @@ Requires Playwright: pip install playwright && playwright install
                 error_message="Playwright not installed. Run: pip install playwright && playwright install"
             )
         
-        # Determine save path
+        # Determine save path. `screenshots/` is the visual gate READ-ONLY
+        # reference dir; captures go to the writable capture dir instead (#341).
+        _redirected = None
         if path:
-            dest = self.workspace.resolve(path)
+            _fixed = _redirect_readonly_capture_path(path)
+            if _fixed != path:
+                _redirected = _fixed
+            dest = self.workspace.resolve(_fixed)
         else:
             from urllib.parse import urlparse
             domain = urlparse(url).netloc.replace("www.", "").replace(".", "_")
-            dest = self.workspace.resolve("screenshots") / f"{domain}.png"
+            dest = self.workspace.resolve(_CAPTURE_DIR) / f"{domain}.png"
         
         dest.parent.mkdir(parents=True, exist_ok=True)
         
@@ -772,6 +803,7 @@ Requires Playwright: pip install playwright && playwright install
                     success=True,
                     data={
                         "saved_to": str(self.workspace.relative(dest)),
+                        "redirected_from": _redirected,
                         "url": url,
                         "size": size_str,
                         "dimensions": f"{width}x{height}" if not full_page else "full page"

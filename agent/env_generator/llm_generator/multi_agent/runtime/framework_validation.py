@@ -47,6 +47,30 @@ from progress import EventType
 # failing-check remediation rails drive the lane; a lane fix changes the sig and
 # re-arms the fresh smoke. Same-sig failures are cached — never a docker churn.
 
+def contract_ddl_render_needed(*, orm_introspectable: bool, ddl_exists: bool) -> bool:
+    """Whether the CONTRACT-derived DDL render still has to run this tick.
+
+    #347: app/database/init/01_init.sql has two framework writers per tick --
+    the contract render (_generate_database) and the ORM render (#43
+    _repair_ddl_from_orm), which runs last and always wins. r91 logged 122 vs
+    121, r92 102 vs 100, r93 34 vs 33, so ~100 contract renders per run are
+    overwritten immediately.
+
+    They are NOT equivalent: the contract version emits a bogus `_meta` table
+    and strips every DEFAULT (`"verified" BOOLEAN` vs `boolean default false`).
+    The 1-tick gap in those counts is exactly the window where that variant is
+    what sits on disk.
+
+    #43 already states the ORM is the runtime truth. So the contract render
+    becomes a FALLBACK -- but it cannot be deleted: it is the only DDL author
+    before the skeleton has emitted models.py, and the delivery gate globs
+    app/database/*.sql, so the file must exist even on the first tick.
+    """
+    if not ddl_exists:
+        return True            # nothing on disk yet — the gate needs a file
+    return not orm_introspectable   # a broken/absent models.py means #43 no-ops
+
+
 def backend_source_signature(app_root: Any) -> Optional[str]:
     """Stable content hash of ``app/backend/**/*.py`` — the code that EXECUTES at
     backend boot (the lane-owned custom_routes.py included). Deliberately excludes
@@ -185,6 +209,16 @@ def _salient_error(detail: Any, cap: int = 400) -> str:
     return text[-cap:].strip()
 
 
+def _max_chain_restores() -> int:
+    """#327: how many times the regression guard may restore the SAME last-passing snapshot
+    before treating it as NON-IDEMPOTENT (poisoned) and letting the verifier fix the step
+    instead. 2 tolerates a genuine transient re-author; 3+ is the r92 livelock (38 restores)."""
+    try:
+        return max(1, int(os.environ.get("ENVGEN_MAX_CHAIN_RESTORES", "2")))
+    except (TypeError, ValueError):
+        return 2
+
+
 def snapshot_passing_chains(orch: Any) -> None:
     """REGRESSION GUARD (snapshot-on-green): called when api_smoke fully passes
     (business_chain green). Snapshot the verification chains + the contract
@@ -202,6 +236,9 @@ def snapshot_passing_chains(orch: Any) -> None:
         orch._fwval_green_high_water = (
             getattr(orch, "_fwval_green_high_water", None) or set()
         ) | {"business_chain"}
+        # #327: a genuine green resets the restore counter — this snapshot is proven-good
+        # right now, so its restore budget starts fresh.
+        orch._chains_restore_count = 0
         # FREEZE-ON-GREEN (2026-07-01): business_chain is green → record the contract it's
         # green FOR on the RegistryHub, so register_verification_chain refuses to RE-AUTHOR an
         # existing (passing) chain into a broken one while the contract is unchanged. This
@@ -353,6 +390,38 @@ def restore_regressed_chains(orch: Any, fset):
         cur_eps = set((rh.get_endpoints() or {}).keys())
         snap_eps = getattr(orch, "_chains_snapshot_endpoints", cur_eps)
         if cur_eps == snap_eps and dict(rh._verification_chains.value() or {}) != snap:
+            # #327: POISONED-SNAPSHOT ESCAPE. The old guard assumed the last-passing snapshot
+            # is idempotently green ("restore it and it passes again"). But a chain that went
+            # green ONCE via a transient/non-deterministic recovery (or a seed that has since
+            # drifted) is NOT idempotent — the restored chains fail again, business_chain
+            # re-enters the failure set, the verifier is re-dispatched, re-authors, the guard
+            # restores… forever. r92: 38 restore↔re-author cycles = 68% of the run, ending in
+            # NO-CONVERGENCE ABORT. Count restores of the SAME snapshot; once it has been
+            # restored more than the budget WITHOUT sticking, treat it as poisoned: stop
+            # restoring, drop it, clear the green-high-water + the freeze, and route the
+            # failing step back to the verifier to actually FIX (keep business_chain in fset).
+            n = int(getattr(orch, "_chains_restore_count", 0) or 0) + 1
+            orch._chains_restore_count = n
+            if n > _max_chain_restores():
+                orch._chains_snapshot = None
+                try:
+                    hw = getattr(orch, "_fwval_green_high_water", None)
+                    if hw:
+                        hw.discard("business_chain")
+                except Exception:
+                    pass
+                try:
+                    if hasattr(rh, "_chains_frozen_eps"):
+                        rh._chains_frozen_eps = set()
+                except Exception:
+                    pass
+                orch._chains_restore_count = 0
+                orch._logger.warning(
+                    "REGRESSION GUARD: last-passing snapshot proven NON-IDEMPOTENT — restored "
+                    "%d× but business_chain keeps regressing with the contract unchanged. "
+                    "Poisoning the snapshot, lifting the freeze, and routing the failing step "
+                    "back to the verifier to fix (instead of looping to no-convergence).", n)
+                return fset  # keep business_chain so the owner is dispatched to fix it
             restore = dict(snap)
             rh._verification_chains.update(
                 lambda _v: restore, change_info={"agent": "regression-guard"})
@@ -360,7 +429,7 @@ def restore_regressed_chains(orch: Any, fset):
             orch._logger.warning(
                 "REGRESSION GUARD: business_chain was green then regressed with the "
                 "contract unchanged — restored the last-passing verification chains "
-                "(agent re-authoring reverted).")
+                "(agent re-authoring reverted; restore %d/%d).", n, _max_chain_restores())
             return fset - {"business_chain"}
     except Exception:
         pass
@@ -502,8 +571,25 @@ class FrameworkValidation:
                 # delivery FOREVER (instagram_v2/v3: api_smoke green, never delivered).
                 # Writing it HERE (on integration, pre-docker) means _commit_framework_
                 # delivery below ships it AND docker mounts a populated haibo-owned dir.
+                # #347: the ORM render below (#43) is authoritative and runs
+                # last, so re-rendering the contract DDL every tick is
+                # overwritten work — and its output differs (bogus `_meta`
+                # table, DEFAULTs stripped). Keep it as the FALLBACK that
+                # guarantees the delivery gate finds app/database/*.sql.
                 try:
-                    await orch._generate_database()
+                    from pathlib import Path as _DP
+                    _be = _DP(orch.output_dir) / "app" / "backend"
+                    _ddl = (_DP(orch.output_dir) / "app" / "database"
+                            / "init" / "01_init.sql")
+                    _orm_ok = False
+                    try:
+                        from .database_scaffold import introspect_orm_schema
+                        _orm_ok = bool(introspect_orm_schema(_be))
+                    except Exception:
+                        _orm_ok = False
+                    if contract_ddl_render_needed(
+                            orm_introspectable=_orm_ok, ddl_exists=_ddl.exists()):
+                        await orch._generate_database()
                 except Exception as _db_exc:
                     orch._logger.warning("per-tick database scaffold failed: %s", _db_exc)
                 orch._scaffold_frontend_baseline()

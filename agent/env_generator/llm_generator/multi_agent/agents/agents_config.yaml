@@ -41,7 +41,6 @@ execution_pipeline_defaults:
   stages:
     - hub_pulse
     - runtime_team_status
-    - planning
     - retrieve_context
     - action
     - hub_commit_gate
@@ -54,7 +53,6 @@ execution_pipeline_defaults:
   # hub_pulse + hub_commit_gate collect data via hub method calls (not LLM tools).
   max_tool_calls_per_stage:
     hub_pulse: 0
-    planning: 1
     retrieve_context: 2
     hub_commit_gate: 0
     knowledge_sync: 1
@@ -202,12 +200,34 @@ profiles:
       # since the run ends right when the LLM might have called them.
       - kind: retro_before_deliver
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 3
         hub_commit_gate: 0
         knowledge_sync: 2
+      # Orch-F1 — the coordinator does not implement. Each action-internal
+      # stage is its OWN LLM call per round, and in r93 the orchestrator
+      # answered `edit_code` with "no code to edit" / "not an edit_code task"
+      # in 166 of its 1164 responses (14.3% of calls, ~14.9M response-context
+      # tokens). Its job is communicate / inspect / deliver, so edit_code is
+      # dropped from the walk and never costs a call.
+      # `delegate_team` stays: the profile is granted team_* categories, and
+      # the engine already skips that stage unless _execution_mode == "team".
+      action_stages: [communicate, run_checks, delegate_team, deliver]
+      # Re-home what edit_code used to host. The hints drive the ranker's
+      # category bonus, so without this the orchestrator's `read` (11 calls in
+      # r93), `codehub_get_file_content` (2) and `update_memory_bank` (10)
+      # would keep their grant but lose every menu — the orphan class.
+      # `memory` goes to `communicate` (uncrowded: 4 categories, limit 8) so
+      # the Memory-Bank write the step_reminders mandate is actually offered —
+      # r93 shows the orchestrator reporting "memory bank tools aren't
+      # exposed". File/state reads go to `run_checks`, the stage where it
+      # already inspects deliverability and seed state.
+      # `reference` / `image_search` are deliberately NOT re-homed: the
+      # profile is granted no tool in those categories.
+      action_stage_categories:
+        communicate: [memory]
+        run_checks: [file, project, analysis]
 
   # ``design`` and ``database`` profiles retired — design merged into
   # ``frontend``, database merged into ``backend``.
@@ -400,6 +420,17 @@ profiles:
       # editing / diagnosis / registry toolset as implementation (a fix is implementation-like
       # work), NOT the full coordination surface — so fix-mode keeps the anti-drift scoping
       # rather than falling through to every tool.
+        # #349: same commit_gate instruction as the verifier.
+        - workhub_comment
+        # #349: the remediation dispatcher wakes this lane with 'Claim task {id} and
+        # fix it NOW' while this stage hid the tool that reads it (12 turns).
+        - workhub_get_task
+        # #350: stages.py deliberately keeps the Memory Bank tools in the ACTION
+        # surface and the root step_reminders mandate them, but this allowlist is
+        # authoritative and removed them -- 30 turns lost to 'not in my tool list'.
+        # Both are granted with always=True in tools.py, so the grant is certain.
+        - read_memory_bank
+        - update_memory_bank
       "test_fix:action":
         - read
         - write
@@ -487,9 +518,8 @@ profiles:
       - kind: claim_assigned_tasks
       - kind: lane_wind_down
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -498,7 +528,7 @@ profiles:
     name: "Frontend Engineer Agent"
     reasoning_effort: "high"  # frontend owns design specs + UI implementation + flow coverage; reasoning-heavy.
     description: "Frontend team lead (v3): task_ready triggered, two-phase (static UI when Design ready, API integration when Backend ready). No polling, no wait."
-    tool_categories: ["file", "reasoning", "runtime", "vision", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "visual_review", "mcp_registry", "team_spawn", "api_contract", "dependency", "reference", "image_search", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "design"]
+    tool_categories: ["file", "reasoning", "runtime", "vision", "communication", "progress", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "visual_review", "mcp_registry", "team_spawn", "api_contract", "dependency", "reference", "image_search", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "design"]
     include_vision: true
     timeout: 3600
     prompts:
@@ -668,6 +698,14 @@ profiles:
       # editing/diagnosis/registry toolset as implementation (a fix is
       # implementation-like work), NOT the full coordination surface — mirrors the
       # backend's test_fix:action.
+        # #349: same commit_gate instruction as the verifier.
+        - workhub_comment
+        # #350: stages.py deliberately keeps the Memory Bank tools in the ACTION
+        # surface and the root step_reminders mandate them, but this allowlist is
+        # authoritative and removed them -- 30 turns lost to 'not in my tool list'.
+        # Both are granted with always=True in tools.py, so the grant is certain.
+        - read_memory_bank
+        - update_memory_bank
       "test_fix:action":
         - read
         - write
@@ -774,9 +812,8 @@ profiles:
       - kind: claim_assigned_tasks
       - kind: lane_wind_down
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -966,6 +1003,19 @@ profiles:
         - glob
         - grep
         - list_generated_files
+        # #349: flow_coverage derives the REQUIRED ui_flow set from list_ui_pages(),
+        # and deliverability_ui_flow_missing (verifier-owned, dispatched 18x) cannot
+        # be cleared without those names. 19 turns were spent reporting it missing.
+        - registryhub_list_ui_pages
+        # #349: commit_gate tells EVERY agent this is the progress channel; 18 turns
+        # were lost across lanes discovering it was hidden in this stage.
+        - workhub_comment
+        # #350: stages.py deliberately keeps the Memory Bank tools in the ACTION
+        # surface and the root step_reminders mandate them, but this allowlist is
+        # authoritative and removed them -- 30 turns lost to 'not in my tool list'.
+        # Both are granted with always=True in tools.py, so the grant is certain.
+        - read_memory_bank
+        - update_memory_bank
     workflow_policies:
       - kind: verifier_validation_trigger
         allowed_sender: orchestrator
@@ -1007,9 +1057,8 @@ profiles:
       # check is now blocked at the source) or a peer's question unread.
       - kind: lane_wind_down
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -1024,7 +1073,7 @@ profiles:
     # boundary, same tool surface, but the runtime / live_monitor /
     # agent_subscriptions DEFAULT_SUBSCRIPTIONS all reference
     # ``debugger``. The old name is dead code.
-    tool_categories: ["reasoning", "communication", "memory", "knowledge_read", "knowledge_write", "analysis", "workhub", "registryhub", "codehub", "eventhub", "hub", "bug"]
+    tool_categories: ["reasoning", "communication", "progress", "memory", "knowledge_read", "knowledge_write", "analysis", "workhub", "registryhub", "codehub", "eventhub", "hub", "bug"]
     include_vision: false
     timeout: 3600
     prompts:
@@ -1132,9 +1181,8 @@ profiles:
         # (kickoff spurious-bug suppression); triaging a filed defect must not be
         # phase-gated.
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 3
         action: 6                 # bug triage needs: read inbox + lookup owner + bug_triage + broadcast + finish
         hub_commit_gate: 0
@@ -1236,9 +1284,8 @@ profiles:
       - codehub_resolve_merge_conflict
       - codehub_revert_commit
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 3
         hub_commit_gate: 0
         knowledge_sync: 3
@@ -1284,9 +1331,8 @@ profiles:
       - wait
       - wait_for_process
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -1330,9 +1376,8 @@ profiles:
       - wait
       - wait_for_process
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -1372,9 +1417,8 @@ profiles:
       - wait
       - wait_for_process
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         hub_commit_gate: 0
         knowledge_sync: 1
 
@@ -1450,9 +1494,8 @@ profiles:
         - grep
         - list_generated_files
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -1518,9 +1561,8 @@ profiles:
         - grep
         - list_generated_files
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -1601,9 +1643,8 @@ profiles:
         - grep
         - list_generated_files
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -1621,6 +1662,14 @@ profiles:
     tool_categories: ["file", "reasoning", "vision", "reference", "communication", "memory", "project", "analysis", "knowledge_read", "runtime", "progress"]
     include_vision: true
     timeout: 3600
+    execution_pipeline:
+      # F1 (design convergence, 2026-07-21): the analyst historically burned all 15 action
+      # rounds/step on vision calls without ever writing design_system.json (r3: ~880 vision
+      # calls, 0 writes, still on "Step 1/2000"). Capping rounds/step makes each step finish
+      # sooner so the loop advances toward the write+finish moves instead of grinding. The
+      # deterministic completion floor + single-shot enrich remain the authoritative backstop,
+      # and ENVGEN_DESIGN_ANALYST_TIMEOUT (now 600s) bounds the block regardless.
+      max_action_rounds_per_step: 4
     prompts:
       template: "v3/design_analyst.j2"
       system_macro: "design_analyst_system_prompt"
@@ -1636,6 +1685,35 @@ profiles:
       - knowledge_read_tools
       - reference_images
       - vision_tools
+    # Without an allowlist the ranker capped the offered set at ~10 tools and dropped the
+    # file-emission + crop/view tools, so the analyst could measure but not write
+    # design_system.json (→ "cannot complete file emission" → orchestrator single-shot fallback,
+    # unenriched doc). Pin the measurement AND file/crop/view tools (+ finish) so all are offered.
+    stage_tool_allowlist:
+      action:
+        - extract_palette
+        - decompose_reference
+        - crop_reference
+        - measure_layout
+        - sample_color
+        - zoom_compare
+        - list_reference_images
+        - copy_reference_image
+        - view_image
+        - read
+        - write
+        - edit
+        - apply_patch
+        - update_json_path
+        - update_yaml_path
+        - glob
+        - grep
+        - report_progress
+        - report_completion
+        - report_issue
+        - send_message
+        - check_inbox
+        - finish
 
 resident_lanes:
   # roster aligned to the 6-lane

@@ -6,6 +6,30 @@ from typing import Any, Dict, List, Optional, Set
 from utils.llm import Message
 
 from ....tool_surface import rank_tool_names
+from ..action_stage_policy import stage_category_hints_for
+
+
+# #361: tools whose ONLY legitimate moment is the last milestone. The
+# deliver_project guard rejects the call when `_is_final_milestone` is False --
+# a condition the runtime has already stamped on the agent BEFORE the tool is
+# offered. r91/r92/r93 made 53 deliver_project attempts and ZERO succeeded; 41
+# of the refusals were that guard alone. Offering a tool whose refusal is
+# predetermined trains the model to retry it.
+_DELIVERY_UNTIL_FINAL_MILESTONE: frozenset = frozenset({
+    "deliver_project", "submit_retro",
+})
+
+
+def withhold_delivery_before_final_milestone(agent: Any) -> bool:
+    """True when the delivery tools must not be offered yet.
+
+    Fail-open by construction: an unstamped or non-boolean signal reads as
+    FINAL, matching the guard's own `getattr(agent, "_is_final_milestone",
+    True)`. Getting that backwards would hide delivery forever and no run could
+    finish.
+    """
+    flag = getattr(agent, "_is_final_milestone", True)
+    return flag is False
 
 
 def _auto_stage(agent, file_path: str, *, action: str) -> None:
@@ -111,7 +135,10 @@ class AgentStepToolingMixin:
     ) -> Set[str]:
         if not candidate_names:
             return set()
-        preferred_categories = set(self.ACTION_STAGE_CATEGORY_HINTS.get(stage_name, set()))
+        # Orch-F1: override-aware. A profile that disables a stage
+        # re-homes that stage's categories onto one it still runs, so
+        # the ranker's category bonus follows the tools.
+        preferred_categories = stage_category_hints_for(self, stage_name)
         if stage_name == "delegate_team":
             candidate_names = candidate_names & (set(self.TEAM_TOOL_NAMES) | set(self.TEAM_MODE_SUPPORT_TOOLS))
         # Per-stage allowlist from agent config (PR3.1). Restricts the
@@ -212,6 +239,13 @@ class AgentStepToolingMixin:
                     always_include = set(always_include) - defer
             except Exception:
                 pass
+        # #361: the milestone axis, applied at the same place as the
+        # validation-ready axis above rather than as a second mechanism. Removed
+        # from BOTH the force-offer and the candidate pool — leaving it rankable
+        # would keep offering a tool whose refusal is already decided.
+        if withhold_delivery_before_final_milestone(self):
+            always_include = set(always_include) - _DELIVERY_UNTIL_FINAL_MILESTONE
+            candidate_names = set(candidate_names) - _DELIVERY_UNTIL_FINAL_MILESTONE
         # FIX #29: when a per-stage allowlist is configured, it already IS the
         # curated set of tools this workflow stage needs — so OFFER ALL OF THEM
         # rather than ranking down to the global top-k (~10). The 10-cap was
@@ -550,10 +584,12 @@ class AgentStepToolingMixin:
             # NO compression / NO cap (user decision 2026-06-24): the FULL tool result
             # reaches the agent — truncated tool output is a correctness hazard (the
             # agent acts on a partial view). This was the DOMINANT truncation: the live
-            # step pipeline ran ToolResultCompressor (COMPRESSION_RULES — ~1000 chars per
-            # tool, head/summary) on any result >1000 chars, THEN capped at 16000, so
-            # large file reads / hub dumps / chain results were silently shrunk to a
-            # digest before the model ever saw them. Removed both.
+            # step pipeline used to run a ToolResultCompressor (~1000 chars/tool,
+            # head/summary) on any result >1000 chars, THEN cap at 16000, so large file
+            # reads / hub dumps / chain results were silently shrunk to a digest before
+            # the model ever saw them. Both were removed here in 2026-06-24, and the
+            # now-orphaned compressor module itself was deleted 2026-07-27. Live context
+            # reduction is tool-level (compact list + get-by-id) + _mask_old_observations.
             # PATH FIREWALL: relativize absolute env/worktree roots before the
             # result reaches the model, so it perceives its workspace as root and
             # never learns the host path to script against (run #13 leak).

@@ -102,6 +102,51 @@ def _chain_action_404s(orch) -> List[str]:
         return []
 
 
+def _ui_flow_missing_names(orch) -> List[str]:
+    """FIX #284: re-derive the EXACT critical flows the ui_flow gate counts as missing,
+    from the same source the gate uses (compute_flow_coverage over the hub) — NOT from any
+    status the verifier reported. r68's verifier BROADCAST that fyp_feed / login_modal_route
+    were "recorded status=success" when the hub held no record under either name; the
+    dispatch trusted nothing it could contradict, so recompute the truth here.
+    Best-effort: any hub/import hiccup → [] (the dispatch falls back to #280's generic text)."""
+    try:
+        # module-level name so tests can monkeypatch rd.compute_flow_coverage; falls back
+        # to the real import when the attribute was not injected.
+        _cfc = globals().get("compute_flow_coverage")
+        if _cfc is None:
+            from .flow_coverage import compute_flow_coverage as _cfc
+        report = _cfc(orch.hubs.registryhub)
+        seen: set = set()
+        out: List[str] = []
+        for f in (getattr(report, "missing", None) or []):
+            s = str(f).strip()
+            if s and s not in seen:
+                seen.add(s)
+                out.append(s)
+        return out
+    except Exception:
+        return []
+
+
+def _ui_flow_missing_extra(missing: List[str]) -> str:
+    """The gate-specific remediation body for deliverability_ui_flow_missing. Names the exact
+    missing flows and states the contradiction that broke r68 out loud — so a verifier that
+    believes it "already recorded" them is forced to re-check the hub instead of re-asserting.
+    Empty when nothing is missing, leaving #280's generic text untouched."""
+    if not missing:
+        return ""
+    names = "\n- ".join(missing)
+    return (
+        "\n\nThese CRITICAL flows have NO passing `validation:ui_flow:<name>` record in the "
+        "hub RIGHT NOW — re-read the hub before claiming otherwise; a broadcast that they were "
+        "'already recorded' does not make the record exist (r68 idled 40min on exactly that "
+        "false claim):\n- " + names +
+        "\n\nFor EACH: run_validation to DRIVE the real browser flow (navigate + interact) and "
+        "WRITE a passing validation:ui_flow record under that exact name. If the flow genuinely "
+        "FAILS, bug_create for the owning lane (usually frontend) and re-run once fixed. Do not "
+        "report the task complete until a fresh compute shows these names cleared.")
+
+
 class RemediationDispatcher:
     """Routes failed-gate remediation back to the owning lane. Stateless —
     reads/writes the orchestrator's collaborators + per-milestone guards live."""
@@ -827,6 +872,21 @@ class RemediationDispatcher:
                 "isn't recorded yet, run_validation records it; if a flow FAILS, bug_create for the "
                 "owning lane (usually frontend) and re-run once fixed. Re-run until every critical "
                 "flow has a passing validation:ui_flow record."),
+            "deliverability_ui_flow_failed": (
+                # #280 (r63, live): the delivered app's FYP feed ui_flow FAILED — the SPA
+                # crashed post-login with "(void 0) is not a function" — and the gate logged
+                # "NO remediation owner" and dead-ended delivery. _GATE_OWNER had ui_flow_
+                # MISSING but not ui_flow_FAILED, so a merely-unrecorded flow was owned while a
+                # genuinely BROKEN one was not — backwards. The verifier owns the walk; on a
+                # failure it reads the recorded console/step evidence, locates the crash, and
+                # bug_creates for the owning lane (usually frontend), mirroring ui_flow_missing.
+                "verifier", "Fix the failing critical UI flow (blocks delivery)",
+                "a CRITICAL UI flow has a FAILING validation:ui_flow record — the delivered app "
+                "broke when the walk exercised it (e.g. a post-login SPA crash, a blank render, a "
+                "dead control). Read the recorded reason + console_errors for the failing flow, "
+                "bug_create for the owning lane (a JS/render crash or dead control is FRONTEND; a "
+                "500/data gap is BACKEND) with the exact error, then re-run run_validation until "
+                "the flow's validation:ui_flow record passes."),
             "verification_checklist_not_ready": (
                 "verifier", "Record a green verification/build checklist (blocks delivery)",
                 "the build checklist is NOT all-green — it needs the CodeHub checks "
@@ -867,8 +927,12 @@ class RemediationDispatcher:
             _GATECHECK_REFIRE = 3
             from tools.communication_tools import _create_message
             uncovered: List[str] = []
-            for raw in failed_checks:
-                name = str(raw)
+            # #328 (r93 dead-nav storm): a single gate decline surfaces one entry PER dead
+            # link (7× 'deliverability_dead_nav_link'), and the persist-counter below treated
+            # each in-list duplicate as a separate re-decline — firing 3 duplicate P0 tasks
+            # (dup #1/#4/#7) and waking the lane 10× for one trivial fix. Collapse duplicates
+            # so each DISTINCT check is handled once per gate-tick (order-preserving).
+            for name in dict.fromkeys(str(r) for r in failed_checks):
                 spec = _GATE_OWNER.get(name)
                 if not spec:
                     if name not in _COVERED_ELSEWHERE:
@@ -943,6 +1007,14 @@ class RemediationDispatcher:
                                           + "\n- ".join(_off[:10]))
                     except Exception:
                         pass
+                if name == "deliverability_ui_flow_missing":
+                    # FIX #284: hand the verifier the EXACT missing flow names + the
+                    # contradiction that broke r68 (it broadcast "already recorded" for
+                    # flows the hub never held). Generic #280 text gave a drifting verifier
+                    # nothing to refute; the specific names + "re-read the hub" do.
+                    _mf = _ui_flow_missing_names(orch)
+                    if _mf:
+                        _extra = _ui_flow_missing_extra(_mf)
                 task = orch.hubs.workhub.create_task(
                     title=title,
                     description=(

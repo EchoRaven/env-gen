@@ -6,6 +6,9 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from utils.llm import Message
 
 from ....hub_tool_surface import ALL_HUB_WRITES, hub_of_write_tool
+from ..action_stage_policy import (
+    resolve_enabled_action_stages as _enabled_action_stages,
+    round_plan_fires_every_round as _round_plan_every_round)
 
 # Hub-focus gating is OFF by default (2026-06-09): requiring focus_hub(<hub>) before
 # each hub's WRITE tools made the agents thrash focus switches instead of working
@@ -430,22 +433,40 @@ class AgentActionStageMixin:
             self._stamp_step_activity()
             round_used_tools = False
             round_internal_stage_results: List[Dict[str, Any]] = []
-            done, round_plan_result = await self._run_action_round_plan(
-                tool_schema_map=tool_schema_map,
-                messages=messages,
-                files_created=files_created,
-                files_modified=files_modified,
-                step=step,
-                action_round=action_round,
-                max_action_rounds=max_action_rounds,
-                step_trace=step_trace,
-                step_traces=step_traces,
-                loop_time=loop_time,
-            )
-            if done:
-                return done, no_action_tool_steps
+            # Cost: the round-plan call passes tools=[] (it cannot act) and
+            # appends its own text to `messages`, so every round after the
+            # first re-derives a plan already in the model's context. Plan on
+            # round 0; later rounds inherit. `action_round_plan: all` restores
+            # the per-round plan for a profile that wants it.
+            if action_round == 0 or _round_plan_every_round(self):
+                done, round_plan_result = await self._run_action_round_plan(
+                    tool_schema_map=tool_schema_map,
+                    messages=messages,
+                    files_created=files_created,
+                    files_modified=files_modified,
+                    step=step,
+                    action_round=action_round,
+                    max_action_rounds=max_action_rounds,
+                    step_trace=step_trace,
+                    step_traces=step_traces,
+                    loop_time=loop_time,
+                )
+                if done:
+                    return done, no_action_tool_steps
+            else:
+                round_plan_result = {
+                    "executed": False,
+                    "skip_reason": "round_plan_first_round_only",
+                }
 
-            for action_stage_name in self.ACTION_INTERNAL_STAGES:
+            # Orch-F1: a role that never acts in a stage must not pay an LLM
+            # call to say so. `_enabled_action_stages` narrows the walk to the
+            # profile's `execution_pipeline.action_stages` (all stages when
+            # unset), so a disabled stage costs zero tokens rather than the
+            # "no code to edit" filler that was 14.3% of the r93 orchestrator's
+            # calls. Category re-homing is validated at construction, so a
+            # skipped stage never strands a granted tool.
+            for action_stage_name in _enabled_action_stages(self):
                 if action_stage_name == "delegate_team" and self._execution_mode != "team":
                     continue
                 if action_stage_name == "deliver" and "deliver_project" not in all_names and "finish" not in all_names:
@@ -484,6 +505,16 @@ class AgentActionStageMixin:
                     mark_stage=mark_stage,
                 )
                 if done:
+                    # #358: a step that ends in finish() used to return HERE,
+                    # skipping the idle counter below entirely — so it neither
+                    # incremented nor reset and simply froze. That is the
+                    # dominant idle shape: r91's orchestrator made 550 finish()
+                    # calls, 74% of them no-ops ('No change.' x102, 'Idle.'
+                    # x97), and not one advanced the counter while each still
+                    # paid for its full-context LLM calls. A step that produced
+                    # no productive tool call is idle whether or not it finished.
+                    if not any_action_calls and not stage_used_tools:
+                        no_action_tool_steps += 1
                     return done, no_action_tool_steps
                 if stage_result:
                     round_internal_stage_results.append(stage_result)
@@ -525,7 +556,12 @@ class AgentActionStageMixin:
 
         if not any_action_calls:
             no_action_tool_steps += 1
-            if not background_mode and no_action_tool_steps >= 12:
+            # #358: the `not background_mode` gate meant background lanes
+            # could never reach the threshold, so the backstop was inert for
+            # them too. The threshold VALUE (12) and the resident-lane
+            # graceful-idle path below are deliberately unchanged — resident
+            # lanes are supposed to poll, and lowering 12 is a separate call.
+            if no_action_tool_steps >= 12:
                 step_trace["mode_after"] = self._execution_mode
                 step_traces.append(step_trace)
                 if getattr(self, "_is_resident_lane", False):

@@ -4,7 +4,7 @@ from typing import Optional
 
 from .shared import (
     BaseTool, ToolCategory, ToolResult, Workspace, create_tool_param,
-    MAX_READ_LINES, _record_file_read, _resolve_workspace_path, _workspace_rel,
+    MAX_READ_LINES, cap_read_content, _record_file_read, _resolve_workspace_path, _workspace_rel,
     sync_hub_read,
 )
 
@@ -113,7 +113,7 @@ Parameters:
                 "total_lines": total_lines,
                 "offset": start_line,
                 "limit": effective_limit,
-                "content": numbered or "File is empty.",
+                "content": cap_read_content(numbered)[0] or "File is empty.",
             },
         )
 

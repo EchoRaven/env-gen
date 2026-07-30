@@ -357,9 +357,13 @@ def compute_deliverability(hub_registry, app_root,
     # hatch for the opt-5 false-block lesson.
     if os.environ.get("ENVGEN_DEAD_NAV_GATE", "1") not in ("0", "false", "no"):
         try:
-            from .frontend_audit import dead_nav_link_blockers
+            from .frontend_audit import (
+                dead_nav_link_blockers, reference_screen_routes)
+            # #354: a dead link to a screen the REFERENCE shows must be authored,
+            # not deleted — app_root is <output>/app, so the design dir is its parent.
             blockers.extend(dead_nav_link_blockers(
-                Path(app_root) / "frontend" / "src"))
+                Path(app_root) / "frontend" / "src",
+                reference_routes=reference_screen_routes(Path(app_root).parent)))
         except Exception:
             pass
 
@@ -411,6 +415,20 @@ def compute_deliverability(hub_registry, app_root,
     # CAN author it). Clears the moment a non-empty valid JSON lands.
     try:
         import json as _json
+        # #324 (r92/r93 M1 wedge — dominant per-run sink, found independently by the backend
+        # AND orchestrator trajectory reviewers): the authored-seed check reads the INTEGRATION
+        # tree, but the backend commits its populated seed_data.json to its OWN lane worktree.
+        # #322's reconcile_integration_seed ran only at the two terminal MERGE sites, never
+        # before THIS read — so every deliverability poll re-read the {} placeholder and reported
+        # "authored seed missing" while a valid seed sat in the worktree; the gate could clear
+        # ONLY by force-delivering (which triggered the merge). Reconcile the lane-authored seed
+        # onto integration BEFORE reading, so the first poll reflects committed lane work.
+        # Idempotent + best-effort: #322 never clobbers a populated integration seed, never raises.
+        try:
+            from .heal_pipeline import reconcile_integration_seed
+            reconcile_integration_seed(Path(app_root).parent)
+        except Exception:
+            pass
         _seed_path = Path(app_root) / "backend" / "seed_data.json"
         _data = {}
         if _seed_path.exists():

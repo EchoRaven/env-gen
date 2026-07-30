@@ -586,6 +586,36 @@ class CodeHub:
                     }
         now = time.time()
         check_id = f"check_{pr_id}_{name}"
+        # #258: DETERMINISTIC EVIDENCE OUTRANKS AN OPINION — enforced HERE, at the store,
+        # because three writers reach it (the codehub_record_check agent tool, HubRegistry
+        # .record_validation_result, the task-suite executor) and the checks map is plain
+        # last-write-wins. #254 guarded only the HubRegistry path, so r52 died on exactly
+        # the same check as r51 (deliverability_ui_flow_failed, on a WORKING app) without
+        # the guard firing once: the framework's authenticated walk recorded 8 measured
+        # ui_flow PASSes and the verifier LLM erased them through the TOOL, with rows whose
+        # entire evidence was {"error": ...}. A record marked as measured may therefore be
+        # downgraded only by another measured record — the heal pipeline re-emits those
+        # every cycle, so real breakage still lands and recovery is never blocked. Two
+        # unmarked records keep last-write-wins, so this cannot freeze an opinion in place.
+        _ev = evidence or {}
+        _incoming_measured = bool(isinstance(_ev, dict) and _ev.get("deterministic_runtime_evidence"))
+        if str(status or "").strip().lower() not in ("success", "passed", "pass", "ok") \
+                and not _incoming_measured:
+            try:
+                _prev = self.stores.checks.get(check_id)
+                _pev = (_prev or {}).get("evidence") or {}
+                if (_prev
+                        and str(_prev.get("status") or "").strip().lower() in
+                        ("success", "passed", "pass", "ok")
+                        and isinstance(_pev, dict)
+                        and _pev.get("deterministic_runtime_evidence")):
+                    return {**_prev, "downgrade_rejected": True,
+                            "hint": (f"{name} holds DETERMINISTIC runtime evidence "
+                                     f"(a measured framework probe). Only another measured "
+                                     f"result may supersede it; {agent!r}'s '{status}' was "
+                                     f"not recorded.")}
+            except Exception:
+                pass  # fail-open: never block a write because the store could not be read
         check = {"id": check_id, "pr_id": pr_id, "name": name, "status": status, "evidence": evidence or {}, "updated_at": now}
         self.stores.checks.update(
             lambda m: m.set(check_id, check, agent),

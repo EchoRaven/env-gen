@@ -51,18 +51,36 @@ _LOG = logging.getLogger(__name__)
 # named after the screen they depict; keyword order matters (create_account
 # must win over create). A name that maps to no route is skipped (reported).
 # ---------------------------------------------------------------------------
+# #356: the keyword table keeps its ROUTE column and loses its AUTH column.
+#
+# The route half is real capability: `home` -> /feed, `search` -> /explore,
+# `video` -> /reels are SEMANTIC synonyms no filename-token matcher can derive,
+# and every entry is gated on the app actually serving that route. #352's
+# authoritative classifications cover MEASURED screens, but an unmeasured
+# reference image still needs this.
+#
+# The auth half was the defect. Only two rows ever set False, they matched on a
+# filename token, and after the loop's `break` the flag was applied whether or
+# not that row's ROUTE had been used — so any reference merely CONTAINING
+# "register" or "signin" was captured logged-out, and a protected page then
+# renders the login wall and scores ~0. (The True rows were always inert: True
+# is the default.) Auth now follows the RESOLVED route.
 _ROUTE_KEYWORDS: tuple = (
-    (("create_account", "signup", "sign_up", "register"), "/signup", False),
-    (("login", "sign_in", "signin"), "/login", False),
-    (("home", "feed", "timeline"), "/feed", True),
-    (("search", "explore", "discover"), "/explore", True),
-    (("video", "reel", "watch"), "/reels", True),
-    (("create", "new_post", "upload", "compose"), "/create", True),
-    (("profile", "account"), "/profile", True),
-    (("message", "inbox", "direct", "dm"), "/messages", True),
-    (("saved", "bookmark", "collection"), "/saved", True),
-    (("people", "suggested", "friends"), "/people", True),
+    (("create_account", "signup", "sign_up", "register"), "/signup"),
+    (("login", "sign_in", "signin"), "/login"),
+    (("home", "feed", "timeline"), "/feed"),
+    (("search", "explore", "discover"), "/explore"),
+    (("video", "reel", "watch"), "/reels"),
+    (("create", "new_post", "upload", "compose"), "/create"),
+    (("profile", "account"), "/profile"),
+    (("message", "inbox", "direct", "dm"), "/messages"),
+    (("saved", "bookmark", "collection"), "/saved"),
+    (("people", "suggested", "friends"), "/people"),
 )
+# Public BY CONSTRUCTION: the framework injects these itself and a login page
+# must be reachable logged-out. A fact about framework-owned routes, not a guess
+# about the app's domain.
+_FRAMEWORK_PUBLIC_ROUTES: frozenset = frozenset({"/login", "/signup"})
 
 # Home/landing screens conventionally live at the root route in ANY app, so a
 # "home"/"dashboard"/… reference maps to "/" when the app serves it — domain-
@@ -244,6 +262,14 @@ def map_reference_screens(
         _add(stem)
         for i in range(1, len(segs)):
             _add("_".join(segs[i:]))   # drop leading segment(s) — the app name
+        # #356: also drop TRAILING segment(s) — reference files are as often
+        # ``<screen>_<state>`` (login_modal, feed_logged_out, profile_own) as
+        # ``<app>_<screen>``. Without this the deleted social catalog was the
+        # only thing resolving login_modal -> /login. Added AFTER the fuller
+        # candidates so a more specific route still wins, and every candidate is
+        # still gated on the app actually serving it.
+        for i in range(len(segs) - 1, 0, -1):
+            _add("_".join(segs[:i]))
         if segs:
             _add(segs[-1])             # the trailing screen token alone
         # GENERIC (domain-agnostic): match the screenshot filename to a declared
@@ -258,13 +284,16 @@ def map_reference_screens(
         # screen is public) and fills the ROUTE only as a LAST resort (never
         # overriding a generic match, and only when the app serves it) — so a
         # non-social app whose screen name contains a social token isn't mis-routed.
-        for keys, r, a in _ROUTE_KEYWORDS:
-            if any(k in stem for k in keys):
-                if not isinstance(_cl.get("requires_auth"), bool):
-                    auth = a               # #132: authoritative requires_auth wins
-                if route is None and ((not known) or r in known):
+        if route is None:
+            for keys, r in _ROUTE_KEYWORDS:
+                if any(k in stem for k in keys) and ((not known) or r in known):
                     route = r
-                break
+                    break
+        # #356: auth follows the RESOLVED route, never a filename token. A
+        # measured requires_auth still wins over both.
+        if (route in _FRAMEWORK_PUBLIC_ROUTES
+                and not isinstance(_cl.get("requires_auth"), bool)):
+            auth = False
         # FIX #128 (visual-gate autopsy, run-47): an OVERLAY / interaction-STATE
         # reference (search_flyout = feed + a notifications MODAL; *_dropdown, *_popup,
         # …) has no URL route that reproduces it — route capture navigates to the base
@@ -297,7 +326,93 @@ _OVERLAY_NAME_RE = re.compile(
 # App boot + auth (the smoke validation tears the env down with ``down -v``,
 # so the gate boots the already-built images itself).
 # ---------------------------------------------------------------------------
-def _compose_up(project_dir: Path, timeout: int = 180) -> Optional[str]:
+def visual_gate_verdict(*, results, owned=None):
+    """The gate verdict, scoped to the milestone's DECLARED screens (#353).
+
+    `all([])` is True, so the old rule passed on an empty exam -- r92 logged
+    "PASSED (login_modal=0.08): all 0 screens >= 0.65". The denominator was
+    "screens that happen to map to a route the app already serves", and an
+    unmapped screen was skipped rather than failed, so not building a page
+    removed it from its own exam.
+
+    `owned` is the milestone's commitment: measured `kind == page` screens whose
+    route matches a REGISTERED ui_page. A milestone is judged on its own pages,
+    not on ones a later milestone owns.
+
+      * an owned screen that was never judged is a FAILURE, not a skip;
+      * a non-empty owned set with zero BLOCKING judgments cannot pass
+        (advisory judgments alone never carry the verdict).
+
+    With no ui_page registered yet the owned set is empty and the verdict is
+    exactly the old one -- blocking there would wedge every pre-kickoff tick.
+    """
+    rs = [r for r in (results or []) if isinstance(r, dict)]
+    blocking = [r for r in rs if not r.get("advisory")]
+    own = [str(n) for n in (owned or [])]
+    own_set = set(own)
+    judged = {str(r.get("name") or "") for r in rs}
+    unjudged = sorted(n for n in own if n not in judged)
+
+    scoped = [r for r in blocking if not own_set or str(r.get("name") or "") in own_set]
+    all_scoped_pass = all(bool(r.get("passed")) for r in scoped)
+
+    if not own_set:
+        return {"passed": all_scoped_pass, "unjudged": [], "reason": ""}
+
+    if unjudged:
+        return {
+            "passed": False, "unjudged": unjudged,
+            "reason": (f"{len(unjudged)} declared screen(s) were never judged: "
+                       f"{unjudged}. An unbuilt page is not exempt from its own "
+                       f"exam — author the page so it can be captured and scored."),
+        }
+    if not scoped:
+        return {
+            "passed": False, "unjudged": [],
+            "reason": ("no BLOCKING screen was judged although the milestone "
+                       "declares pages — advisory screens alone cannot carry "
+                       "the verdict; author the declared pages."),
+        }
+    return {"passed": all_scoped_pass, "unjudged": [], "reason": ""}
+
+
+def screen_coverage(*, results, measured, owned=None):
+    """How much of the reference the visual gate actually judged (#351).
+
+    The gate's verdict is `all(r["passed"] for r in blocking)`, and `all([])` is
+    True -- r92 logged "Visual fidelity PASSED (login_modal=0.08): all 0 screens
+    >= 0.65" while its one capturable screen scored 0.08.
+
+    That is not statistical dilution, it is structural self-exemption: a
+    reference only enters the judged set if it maps to a route the app ALREADY
+    SERVES, and one that does not is skipped rather than failed. So the
+    denominator is "screens that happen to be built" -- not building a page
+    removes it from its own exam, and the fewer pages exist the easier the gate
+    passes.
+
+    This reports; it does not judge. `owned` narrows the denominator to one
+    milestone's screens once a STRUCTURED owned set exists -- milestone->screen
+    attribution is currently only LLM prose in `description_slice`, which no
+    prompt mandates, so it is not parsed here.
+    """
+    judged = {str(r.get("name") or "") for r in (results or []) if isinstance(r, dict)}
+    denom = [str(n) for n in (owned if owned is not None else (measured or []))]
+    unjudged = sorted(n for n in denom if n not in judged)
+    blocking = [r for r in (results or [])
+                if isinstance(r, dict) and not r.get("advisory")
+                and str(r.get("name") or "") in set(denom)]
+    total = len(denom)
+    return {
+        "measured": total,
+        "judged": sum(1 for n in denom if n in judged),
+        "blocking_judged": len(blocking),
+        "unjudged": unjudged,
+        "coverage": (round((total - len(unjudged)) / total, 4) if total else 0.0),
+    }
+
+
+def _compose_up(project_dir: Path,
+                timeout: int = int(os.environ.get("ENVGEN_VISUAL_COMPOSE_TIMEOUT", "900") or 900)) -> Optional[str]:
     compose_file = project_dir / "docker" / "docker-compose.yml"
     cwd = project_dir / "docker"
     if not compose_file.exists():
@@ -954,7 +1069,41 @@ async def run_visual_fidelity(
     # reported but never BLOCK — they have no URL route that reproduces them, so their
     # score is a route-capture artifact, not a frontend-quality signal.
     _blocking = [r for r in results if not r.get("advisory")]
-    passed = all(r["passed"] for r in _blocking)
+    # #353: the milestone's DECLARED scope — measured page screens whose route
+    # the app has actually registered a ui_page for. Judging against "whatever
+    # mapped to a built route" let an unbuilt page exempt itself.
+    _registered_routes: set = set()
+    try:
+        import json as _json
+        _up = Path(project_dir) / "shared" / "hubs" / "registryhub_ui_pages.json"
+        if _up.exists():
+            _raw = _json.loads(_up.read_text(encoding="utf-8"))
+            for _v in (_raw if isinstance(_raw, list) else (_raw or {}).values()):
+                if isinstance(_v, dict) and str(_v.get("route") or "").startswith("/"):
+                    _registered_routes.add(str(_v["route"]).rstrip("/") or "/")
+    except Exception:
+        _registered_routes = set()
+    _owned = [s["name"] for s in screens
+              if not s.get("advisory")
+              and (str(s.get("route") or "").rstrip("/") or "/") in _registered_routes]
+    _verdict = visual_gate_verdict(results=results, owned=_owned)
+    passed = _verdict["passed"]
+    if _verdict.get("reason"):
+        _LOG.warning("VISUAL GATE BLOCKS: %s", _verdict["reason"])
+    # #351 (reporting only): name what the gate did NOT judge. `passed` above is
+    # deliberately untouched — turning this into a blocker comes after the
+    # page-seeding fix, or every run would start failing a gate it cannot yet
+    # satisfy.
+    _coverage = screen_coverage(
+        results=results, measured=[s.get("name") for s in screens])
+    if _coverage["unjudged"]:
+        _LOG.warning(
+            "VISUAL COVERAGE: judged %d/%d measured reference screen(s) "
+            "(%.0f%%). NOT judged: %s — an unmapped screen is skipped, not "
+            "failed, so these are exempt from the verdict above.",
+            _coverage["judged"], _coverage["measured"],
+            100.0 * _coverage["coverage"], _coverage["unjudged"],
+        )
     failing = [f"{r['name']}({r['similarity']:.2f})" for r in _blocking if not r["passed"]]
     _adv_note = [f"{r['name']}({r['similarity']:.2f})" for r in results
                  if r.get("advisory")]
@@ -969,6 +1118,8 @@ async def run_visual_fidelity(
     # their verdicts + remediation must flow this tick (a partial-blank must not discard
     # a fixable sibling's 0.55 and suppress its remediation).
     return {"passed": passed, "summary": summary, "screens": results, "skipped": skipped,
+            "coverage": _coverage,  # #351: reporting only — does not gate
+
             "capture_transient": bool(_blank_screens) and not shots,
             "min_similarity": min_similarity}
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -45,6 +46,219 @@ def suggest_tools(tool_name: str, available) -> list:
     fuzzy = difflib.get_close_matches(tool_name, sorted(available), n=3, cutoff=0.6)
     out = intent_hits + [h for h in fuzzy if h not in intent_hits]
     return out[:3]
+
+
+_TOOL_IO_LOG_THRESHOLD = int(os.environ.get('ENVGEN_TOOL_IO_LOG_CHARS', '20000') or 20000)
+
+
+# #257: per-tool RESULT-SIZE accounting. r51 measured 456.7M prompt vs 0.9M completion
+# tokens — the run's whole cost is prompt — and the uncached share was ~0.8x the per-step
+# GROWTH, i.e. the prompt cache is already near-optimal and the spend is simply how much
+# NEW text each step appends: 35-51k tokens per step per lane. That is tool OUTPUT, and
+# nothing recorded which tool produced it, so there was no way to aim. One line per call
+# plus a per-run rollup makes the next run answer it directly. Cheap (a len()), off the
+# hot path, and never raises.
+_TOOL_IO_TOTALS: Dict[str, list] = {}
+
+
+def _record_tool_io(agent, tool_name: str, result) -> None:
+    try:
+        payload = getattr(result, "output", None)
+        if payload is None:
+            payload = getattr(result, "data", None)
+        if payload is None:
+            payload = getattr(result, "error_message", "") or ""
+        # #262: measure what actually lands in the CONVERSATION. The step pipeline pops
+        # ``multimodal_content`` out of the result and injects it as a real image part
+        # (where #248 then bounds it), so counting it here credited view_image with 4.6M
+        # chars in r54 and pointed the whole reduction effort at a non-problem. An
+        # instrument that measures the wrong thing is worse than none: it aims confidently.
+        if isinstance(payload, dict) and "multimodal_content" in payload:
+            payload = {k: v for k, v in payload.items() if k != "multimodal_content"}
+        size = len(payload) if isinstance(payload, str) else len(str(payload))
+        row = _TOOL_IO_TOTALS.setdefault(tool_name, [0, 0, 0])
+        row[0] += 1
+        row[1] += size
+        row[2] = max(row[2], size)
+        if size >= _TOOL_IO_LOG_THRESHOLD:
+            logger = getattr(agent, "_logger", None)
+            if logger is not None:
+                logger.info("[tool-io] %s returned %s chars (~%sk tokens)",
+                            tool_name, f"{size:,}", size // 4000)
+    except Exception:
+        pass
+
+
+def tool_io_rollup(top: int = 25) -> str:
+    """Human-readable 'where did the prompt tokens come from' table."""
+    rows = sorted(_TOOL_IO_TOTALS.items(), key=lambda kv: -kv[1][1])[:top]
+    out = ["[tool-io] TOTAL chars returned per tool (calls / total / mean / max):"]
+    for name, (n, tot, mx) in rows:
+        out.append(f"  {name:34} {n:6}  {tot:12,}  {tot // max(n, 1):9,}  {mx:10,}")
+    return "\n".join(out)
+
+
+def drop_unaccepted_kwargs(fn: Any, tool_args: Dict) -> tuple:
+    """(kept, dropped_names) — strip args the callee cannot accept (#360).
+
+    Tools are invoked as `exec_fn(**tool_args)`, so an argument the model
+    supplies that the signature does not declare raises
+    `TypeError: got an unexpected keyword argument` and the whole call is lost.
+    124 such failures across the corpus (34 'uses', 14 'branch', 12 'task_id',
+    9 'error', 8 'check', 6 'ref', 4 'metadata' — that last one being agents
+    trying to pass metadata to codehub_record_check, which has no such param).
+
+    Same class as #335: an LLM-authored argument list meeting a strict boundary
+    unnormalised. Dropping the surplus keeps the call alive and the WARNING
+    keeps the mismatch visible. A signature with **kwargs accepts everything, so
+    nothing is dropped there; an uninspectable callable is left untouched.
+    """
+    if not isinstance(tool_args, dict) or not tool_args:
+        return tool_args, []
+    try:
+        import inspect
+        sig = inspect.signature(fn)
+    except Exception:
+        return tool_args, []
+    params = sig.parameters.values()
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params):
+        return tool_args, []
+    accepted = {p.name for p in params
+                if p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                              inspect.Parameter.KEYWORD_ONLY)}
+    dropped = sorted(k for k in tool_args if k not in accepted)
+    if not dropped:
+        return tool_args, []
+    return {k: v for k, v in tool_args.items() if k in accepted}, dropped
+
+
+def _effective_write_identity(agent: Any) -> Optional[str]:
+    """The identity a role-write gate must be evaluated against.
+
+    A spawned lane carries an INSTANCE id (``design_analyst_1``,
+    ``api_test_user_1_api_smoke``) while ``PathRoutedWorkspace.ROUTING_TABLE``
+    grants routes to the PROFILE name (``design_analyst``) by exact string
+    match. Gating on the raw instance id therefore fails closed against a route
+    the lane genuinely owns — r91/r92 denied 12/12 and 11/11 of the Design
+    Analyst's ``decompose_reference`` writes to ``design/component_specs/``,
+    so the measure-per-component phase that feeds UI fidelity produced nothing
+    (and r93 stopped calling the tool at all).
+
+    A spawned worker may also inherit the permission identity of its spawner,
+    which takes precedence over the profile.
+    """
+    effective = getattr(agent, "agent_id", None)
+    permission_parent_id = getattr(agent, "_permission_parent_id", None)
+    config_key = getattr(agent, "_config_key", None)
+    if permission_parent_id:
+        return permission_parent_id
+    if config_key:
+        return config_key
+    return effective
+
+
+def coerce_tool_args(schema: Any, tool_args: Dict) -> Dict:
+    """Coerce LLM-authored args to the types their own JSON-Schema declares.
+
+    Every tool advertises PARAMETERS to the model, but nothing applied it, and an
+    OpenAI-compatible gateway routinely emits an integer as "1" or an object as a
+    JSON *string*. Two P0s came from exactly that:
+
+    * `codehub_record_check(evidence=...)` is declared `type: object`; a JSON
+      STRING was persisted verbatim and every reader of `validation:*` evidence
+      then raised `'str' object has no attribute 'get'`. r91 logged
+      "framework delivery raised (non-fatal)" 218 times over 4h26m with the whole
+      delivery-gate layer dead inside that try block, and finished with no
+      delivery. One malformed row poisons the rest of the run.
+    * `milestone_index` is declared `integer` but arrived as a string in 502 calls
+      (71% of recent kickoff_declare_predicate calls); workhub's strict
+      isinstance check rejected every one, and r92's M2 ended with zero declared
+      predicates.
+
+    Fail-open by construction: anything that cannot be coerced is returned
+    untouched, so this can never turn a working call into a failing one. Only
+    keys the schema actually declares are considered.
+    """
+    if not isinstance(tool_args, dict) or not tool_args:
+        return tool_args
+    try:
+        props = (schema or {}).get("properties")
+    except Exception:
+        return tool_args
+    if not isinstance(props, dict) or not props:
+        return tool_args
+    out = dict(tool_args)
+    for key, value in tool_args.items():
+        spec = props.get(key)
+        if not isinstance(spec, dict) or value is None:
+            continue
+        declared = spec.get("type")
+        try:
+            coerced = _coerce_one(declared, value)
+        except Exception:
+            continue
+        if coerced is not _UNCOERCED:
+            out[key] = coerced
+    return out
+
+
+_UNCOERCED = object()
+
+
+def _coerce_one(declared: Any, value: Any) -> Any:
+    """One value against one declared type. Returns ``_UNCOERCED`` to leave it."""
+    import json as _json
+    if declared == "integer":
+        # bool is a subclass of int — a True must stay a True, not become 1.
+        if isinstance(value, bool) or isinstance(value, int):
+            return _UNCOERCED
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+            return int(value.strip())
+        return _UNCOERCED
+    if declared == "number":
+        if isinstance(value, bool) or isinstance(value, (int, float)):
+            return _UNCOERCED
+        if isinstance(value, str):
+            return float(value.strip())
+        return _UNCOERCED
+    if declared == "boolean":
+        if isinstance(value, bool):
+            return _UNCOERCED
+        if isinstance(value, str):
+            low = value.strip().lower()
+            if low in ("true", "yes", "1"):
+                return True
+            if low in ("false", "no", "0"):
+                return False
+        return _UNCOERCED
+    if declared == "object":
+        if isinstance(value, dict):
+            return _UNCOERCED
+        if isinstance(value, str):
+            try:
+                parsed = _json.loads(value)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                return parsed
+            # A non-object value for a declared object still must not reach a
+            # consumer that calls .get()/.items() — wrap rather than persist raw.
+            return {"raw": value}
+        return _UNCOERCED
+    if declared == "array":
+        if isinstance(value, (list, tuple)):
+            return _UNCOERCED
+        if isinstance(value, str):
+            try:
+                parsed = _json.loads(value)
+            except Exception:
+                return _UNCOERCED
+            if isinstance(parsed, list):
+                return parsed
+        return _UNCOERCED
+    return _UNCOERCED
 
 
 class AgentTooling:
@@ -319,7 +533,10 @@ class AgentTooling:
                 if hasattr(tool, "set_agent"):
                     tool.set_agent(self)
                 else:
-                    setattr(tool, "_agent_id", self.agent_id)
+                    # Self-gating tools (they call is_write_allowed with their
+                    # own _agent_id) must receive the WRITE identity, not the
+                    # instance id — otherwise they fail closed on their own route.
+                    setattr(tool, "_agent_id", _effective_write_identity(self))
                 if hasattr(tool, "_hubs"):
                     setattr(tool, "_hubs", hubs)
                 # Tools that hold the registry as `hub_registry` (coverage, seed,
@@ -404,13 +621,7 @@ class AgentTooling:
         # Effective agent id: a spawned worker may inherit the
         # permission identity of the agent that spawned it (e.g. backend
         # ↔ a backend-flavoured worker). Match the old resolution path.
-        effective_agent_id = self.agent_id
-        permission_parent_id = getattr(self, "_permission_parent_id", None)
-        config_key = getattr(self, "_config_key", None)
-        if permission_parent_id:
-            effective_agent_id = permission_parent_id
-        elif config_key:
-            effective_agent_id = config_key
+        effective_agent_id = _effective_write_identity(self)
 
         write_targets: List[str] = []
         # ``update_json_path`` / ``update_yaml_path`` belong in the
@@ -677,6 +888,13 @@ class AgentTooling:
         """Execute a tool and log it."""
         if tool_name in self._tool_instances:
             try:
+                # Apply the tool's own declared JSON-Schema types BEFORE the
+                # enforcement chain, so permission/precondition checks and the
+                # tool body all see well-typed args (#335).
+                tool_args = coerce_tool_args(
+                    getattr(self._tool_instances[tool_name], "PARAMETERS", None),
+                    tool_args,
+                )
                 mode_error = self._enforce_execution_mode(tool_name)
                 if mode_error is not None:
                     self.log_tool_call(tool_name, tool_args, mode_error)
@@ -707,6 +925,15 @@ class AgentTooling:
                     pass  # approval is best-effort — never wedge the pipeline on it
 
                 exec_fn = self._tool_instances[tool_name].execute
+                # #360: an arg the callee cannot accept would raise TypeError
+                # and lose the whole call. Drop it loudly instead.
+                tool_args, _dropped_args = drop_unaccepted_kwargs(exec_fn, tool_args)
+                if _dropped_args:
+                    self._logger.warning(
+                        "[%s] %s: dropped unaccepted argument(s) %s — the tool's "
+                        "signature does not declare them; check the tool schema "
+                        "the model was shown.",
+                        self.agent_id, tool_name, _dropped_args)
                 if asyncio.iscoroutinefunction(exec_fn):
                     result = await exec_fn(**tool_args)
                 else:
@@ -717,6 +944,7 @@ class AgentTooling:
                         self._exit_team_mode(reason=f"tool={tool_name}")
 
                 self.log_tool_call(tool_name, tool_args, result)
+                _record_tool_io(self, tool_name, result)
                 from .skill_consult import record_skill_consult
                 record_skill_consult(self, tool_name, tool_args, result)
                 return result

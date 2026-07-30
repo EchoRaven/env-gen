@@ -105,6 +105,60 @@ def _isolation_scoped_tables_from_chains(registryhub, table_names) -> set:
     return out
 
 
+def reconcile_integration_seed(repo_root, logger=None) -> dict:
+    """#322 — the backend authors ``app/backend/seed_data.json`` in ITS worktree, but it
+    was not reliably reaching the INTEGRATION tree the delivery gate (deliverability_
+    check) + the shipped docker image read: integration kept the ``{}`` placeholder that
+    ``_ensure_seed_json`` writes, so 'authored seed missing' blocked delivery FOREVER
+    even though the lane's seed was a valid populated file (r86 + r91: ~50 tasks; r91
+    burned the whole 6h wall-clock on it).
+
+    Called right AFTER the per-tick lane→integration merge: if integration's
+    seed_data.json is empty/``{}`` but a lane's worktree has a populated one, copy the
+    MOST-populated lane seed onto integration so the gate + the image see the real data.
+    NEVER overwrites a non-empty integration seed; best-effort, never raises. Returns
+    ``{"reconciled": path, "rows": n}`` or ``{}`` when there is nothing to do."""
+    try:
+        from pathlib import Path as _P
+        import json as _json
+
+        def _rows(p):
+            try:
+                d = _json.loads(_P(p).read_text(encoding="utf-8"))
+            except Exception:
+                return 0
+            return (sum(len(v) for v in d.values() if isinstance(v, list))
+                    if isinstance(d, dict) else 0)
+
+        repo = _P(repo_root)
+        integ = repo / "app" / "backend" / "seed_data.json"
+        if _rows(integ) > 0:
+            return {}                       # integration already has real authored data
+        best, best_rows = None, 0
+        wt = repo / "worktrees"
+        if wt.is_dir():
+            for d in sorted(wt.iterdir()):
+                cand = d / "app" / "backend" / "seed_data.json"
+                r = _rows(cand)
+                if r > best_rows:
+                    best, best_rows = cand, r
+        if best is None or best_rows == 0:
+            return {}
+        integ.parent.mkdir(parents=True, exist_ok=True)
+        integ.write_text(_P(best).read_text(encoding="utf-8"), encoding="utf-8")
+        if logger is not None:
+            try:
+                logger.warning(
+                    "🌱 #322 reconciled integration seed_data.json from %s (%d rows) — the "
+                    "authored seed had not reached integration (was empty {}); the delivery "
+                    "gate was chronically blocked on 'authored seed missing'.", best, best_rows)
+            except Exception:
+                pass
+        return {"reconciled": str(best), "rows": best_rows}
+    except Exception:
+        return {}
+
+
 class HealPipeline:
     """Groups the delivery-time repair/merge/commit steps. Stateless; borrows the
     orchestrator (output_dir / hubs / logger / llm) live."""
@@ -625,6 +679,7 @@ class HealPipeline:
         # working app; the LLM/visual/business-chain gates still catch real breakage.
         try:
             from .test_user_runner import clean_ui_flow_passes
+            from .hub_registry import DETERMINISTIC_EVIDENCE_KEY
             _passed_flows = clean_ui_flow_passes(report)
             for _flow in _passed_flows:
                 orch.hubs.record_validation_result(
@@ -632,7 +687,13 @@ class HealPipeline:
                     agent="framework-testuser", execution_mode="browser",
                     summary="authenticated browser walk rendered this page cleanly "
                             "(no blank/console-error/login-bounce/fallback)",
-                    metadata={"check": "ui_flow", "flow": _flow})
+                    metadata={"check": "ui_flow", "flow": _flow,
+                              # #254: this is a MEASURED result (DOM probe on a real
+                              # authenticated page), so it outranks an LLM's report of
+                              # the same flow — r51 had 7 of these erased by
+                              # evidence-free verifier 'failure' rows and aborted on a
+                              # working app.
+                              DETERMINISTIC_EVIDENCE_KEY: True})
             if _passed_flows:
                 orch._logger.warning(
                     "#240: recorded %s deterministic ui_flow PASS record(s) from the "
@@ -687,6 +748,7 @@ class HealPipeline:
                 repair_frontend_api_exports, scaffold_missing_local_pages,
                 repair_frontend_named_default_imports, reroute_inline_stub_routes,
                 repair_frontend_missing_local_exports, normalize_frontend_api_base,
+                normalize_frontend_token_key,
                 repair_frontend_escaped_backticks, repair_frontend_unimported_icons,
                 repair_frontend_default_export_wrapper,
                 neutralize_frontend_external_backgrounds,
@@ -780,6 +842,15 @@ class HealPipeline:
                 orch._logger.warning(
                     "Frontend absolute localhost API origins normalized to same-origin "
                     "relative URLs (lane bypassed the nginx proxy): %s", _nb.get("normalized"))
+            # #317: canonicalize the auth-token localStorage key so api.js/AuthProvider/
+            # pages can't mismatch (r85/r86 ui_flow wedge: api.js read 'tt_token' while
+            # pages wrote 'token'/'access_token' → token unreadable → app looked logged
+            # out → signup/feed flow failed). Framework enforces one key; lane can't drift.
+            _tk = normalize_frontend_token_key(fe)
+            if _tk.get("normalized"):
+                orch._logger.warning(
+                    "Frontend auth-token localStorage key canonicalized to 'access_token' "
+                    "(lane used a divergent key api.js/pages disagreed on): %s", _tk.get("normalized"))
             # VISUAL/self-contained (#75b, outlook run-62): a lane paints a CONTENT surface
             # (inbox reading-pane / feed / dashboard) with a full-bleed EXTERNAL stock photo
             # (a mountain unsplash bg) — it doesn't match the clean reference AND is an
@@ -1090,6 +1161,13 @@ class HealPipeline:
                     "(surfaced committed code the lane had not finish-merged).",
                     lane, info,
                 )
+        # #322: after merging the lane branches, guarantee the integration seed is the
+        # authoring lane's POPULATED seed, not the {} placeholder — else deliverability
+        # chronically 'authored seed missing'-blocks delivery (r86/r91). See fn docstring.
+        try:
+            reconcile_integration_seed(repo, logger=getattr(orch, "_logger", None))
+        except Exception:
+            pass
 
     def commit_framework_delivery(self) -> None:
         """Commit the framework's delivery-time writes (backend skeleton, frontend

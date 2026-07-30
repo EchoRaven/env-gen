@@ -898,8 +898,30 @@ class WorkHubListTasksTool(HubTool):
     DESCRIPTION = "List WorkHub tasks, optionally filtered by assignee, status, domain, or plan_id."
     PARAMETERS = {"type": "object", "properties": {"assignee": {"type": "string"}, "status": {"type": "string"}, "domain": {"type": "string"}, "plan_id": {"type": "string"}}}
 
+    # #305 CONTEXT: fields worth keeping in a LIST scan; the heavy content
+    # (description/evidence/metadata/result) is dropped and recoverable via
+    # workhub_get_task(id).
+    _KEEP = ("id", "title", "status", "assignee", "plan_id", "depends_on",
+             "priority", "domain", "created_at", "claimed_by")
+
+    @classmethod
+    def _compact(cls, t):
+        if not isinstance(t, dict):
+            return t
+        row = {k: t[k] for k in cls._KEEP if k in t}
+        md = t.get("metadata")
+        if isinstance(md, dict) and md.get("priority") and "priority" not in row:
+            row["priority"] = md["priority"]
+        return row
+
     async def _run(self, assignee: str = None, status: str = None, domain: str = None, plan_id: str = None) -> ToolResult:
-        return ToolResult(data={"tasks": self._hubs.workhub.list_tasks(assignee=assignee, status=status, domain=domain, plan_id=plan_id)})
+        tasks = self._hubs.workhub.list_tasks(assignee=assignee, status=status, domain=domain, plan_id=plan_id)
+        compact = [self._compact(t) for t in tasks] if isinstance(tasks, list) else tasks
+        return ToolResult(data={
+            "tasks": compact,
+            "_detail": "compact list — call workhub_get_task(id) for "
+                       "description/evidence/result",
+        })
 
 
 class WorkHubAvailableTasksTool(HubTool):
@@ -1616,7 +1638,21 @@ class RegistryHubListEndpointsTool(HubTool):
             endpoints = {k: v for k, v in endpoints.items() if v.get("status") == status}
         if provider:
             endpoints = {k: v for k, v in endpoints.items() if v.get("provider") == provider}
-        return ToolResult(data={"endpoints": endpoints})
+        # #303 CONTEXT: return COMPACT rows (id/method/path/status/provider) — the
+        # per-endpoint schema+metadata are ~85% of each row, rarely needed in a
+        # LIST, and this tool is re-fetched dozens of times per run. Full detail
+        # (schema/request/response) stays recoverable via registryhub_get_endpoint(id).
+        compact = {
+            k: {"id": v.get("id", k), "method": v.get("method"),
+                "path": v.get("path"), "status": v.get("status"),
+                "provider": v.get("provider")}
+            for k, v in endpoints.items() if isinstance(v, dict)
+        }
+        return ToolResult(data={
+            "endpoints": compact,
+            "_detail": "compact list — call registryhub_get_endpoint(id) for "
+                       "schema/request/response",
+        })
 
 
 class RegistryHubGetEndpointTool(HubTool):
@@ -1772,6 +1808,27 @@ class RegistryHubListTablesTool(HubTool):
         if status and isinstance(tables, dict):
             tables = {k: v for k, v in tables.items()
                       if isinstance(v, dict) and v.get("status") == status}
+        # #303 CONTEXT: compact rows — keep scalar identity fields + a column
+        # COUNT; the full columns/schema (the big nested fields) are recoverable
+        # via registryhub_get_table / get_table_breaking_changes. This list is
+        # re-fetched many times per run.
+        if isinstance(tables, dict):
+            compact = {}
+            for k, v in tables.items():
+                if not isinstance(v, dict):
+                    compact[k] = v
+                    continue
+                row = {f: val for f, val in v.items()
+                       if not isinstance(val, (dict, list))}
+                cols = v.get("columns")
+                if isinstance(cols, (list, dict)):
+                    row["columns_count"] = len(cols)
+                compact[k] = row
+            return ToolResult(data={
+                "tables": compact,
+                "_detail": "compact list — call registryhub_get_table(id) for "
+                           "full columns/schema",
+            })
         return ToolResult(data={"tables": tables})
 
 
@@ -2341,9 +2398,21 @@ class KickoffDeclareTableTool(_KickoffDeclareBase):
         "Declare ONE data_model table of your kickoff backend section (call "
         "once per table — declarations merge). columns: 'name:type' strings, "
         "optionally 'name:type:pk' or 'name:type:fk=users.id'. Set "
-        "owner_scoped_reads=true for a PER-USER-PRIVATE table (each user sees "
-        "only their OWN rows — notes/email/todos/drafts): the framework scopes "
-        "every read to the owner by construction, exactly like writes.")
+        "owner_scoped_reads=true ONLY for a table where EVERY read is PER-USER-"
+        "PRIVATE (notes/email/todos/drafts/DMs): the framework scopes every read to "
+        "the owner by construction, exactly like writes. ⚠ CRITICAL — do NOT set it "
+        "for PUBLIC content that merely HAS an owner (videos/posts/tweets/comments in "
+        "a social app): those rows are OWNED but PUBLICLY readable — anyone watches "
+        "anyone's feed. Owning a row (you created it) is NOT the same as a private "
+        "read. If you ALSO need a 'my X' profile view, keep this table false and add "
+        "ONE authenticated GET /api/me/<x> that filters by owner in custom_routes.py — "
+        "do NOT flip the whole table private (that force-auths its public feed → the "
+        "logged-out feed 401s → the ui_flow gate wedges). Set true only when the table "
+        "has NO public view at all. If you DO set it true but the table still has a "
+        "PUBLIC read (a feed/explore/public by-id), you MUST declare those specific read "
+        "endpoints auth_required=false — that serves them public (all rows, no login) "
+        "even on an owner-scoped table; only the authenticated 'my X' endpoint stays "
+        "owner-scoped.")
     PARAMETERS = {"type": "object", "properties": {
         "meeting_id": {"type": "string"},
         "name": {"type": "string", "description": "snake_case table name"},

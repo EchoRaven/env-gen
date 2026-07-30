@@ -7,6 +7,49 @@ from utils.tool import BaseTool, ToolResult, ToolCategory
 from ._manager import BrowserManager, PLAYWRIGHT_AVAILABLE
 
 
+_CANDIDATE_SELECTOR = "input, textarea, select, button, a[href], [role='button'], [contenteditable]"
+_CANDIDATE_ATTRS = ("name", "id", "placeholder", "aria-label", "type", "data-testid")
+
+
+async def describe_interactive_candidates(page, limit: int = 12) -> str:
+    """A short list of what IS interactable on the page (#362).
+
+    A selector miss returned only "Timeout 5000ms exceeded", so the model had no
+    way to learn what the page actually offers and guessed the next selector --
+    52 identical browser_fill failures on `input[name='username']` in r91's
+    verifier alone, plus 17 browser_click, each costing a 5s timeout AND a
+    full-context round.
+
+    Runs on an ALREADY-failing path, so it must never raise and never mask the
+    real error: any problem returns "".
+    """
+    if page is None:
+        return ""
+    try:
+        els = await page.query_selector_all(_CANDIDATE_SELECTOR)
+    except Exception:
+        return ""
+    out = []
+    for el in (els or [])[:limit * 3]:
+        try:
+            attrs = {}
+            for a in _CANDIDATE_ATTRS:
+                try:
+                    v = await el.get_attribute(a)
+                except Exception:
+                    v = None
+                if v:
+                    attrs[a] = str(v)[:40]
+            if not attrs:
+                continue          # nothing addressable — a selector cannot name it
+            out.append("{" + ", ".join(f"{k}={v!r}" for k, v in attrs.items()) + "}")
+            if len(out) >= limit:
+                break
+        except Exception:
+            continue
+    return "; ".join(out)
+
+
 class BrowserClickTool(BaseTool):
     NAME = "browser_click"
     """Click an element on the page with auto-retry and smart waiting"""
@@ -176,6 +219,11 @@ Features:
             error_hints.append("Multiple elements match - use a more specific selector")
         
         error_msg = f"Click failed after {retry} attempts: {last_error}"
+        # #362: same reasoning as the fill path above.
+        _cands = await describe_interactive_candidates(
+            getattr(getattr(self.browser, "state", None), "page", None))
+        if _cands:
+            error_msg += f" Interactable elements on this page: {_cands}"
         if error_hints:
             error_msg += "\n\nHints:\n- " + "\n- ".join(error_hints)
         
@@ -222,7 +270,12 @@ class BrowserFillTool(BaseTool):
             await self.browser.state.page.fill(selector, value, timeout=5000)
             return ToolResult.ok(f"Filled {selector} with '{value}'")
         except Exception as e:
-            return ToolResult.fail(f"Fill failed: {str(e)}")
+            # #362: name what IS on the page so one failure answers the question
+            # instead of seeding N more selector guesses.
+            _cands = await describe_interactive_candidates(self.browser.state.page)
+            _hint = (f" Interactable elements on this page: {_cands}"
+                     if _cands else "")
+            return ToolResult.fail(f"Fill failed: {str(e)}.{_hint}")
 
 
 class BrowserSelectTool(BaseTool):

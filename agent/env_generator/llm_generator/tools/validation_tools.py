@@ -174,6 +174,7 @@ then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
         # the gate honestly blocked).
         self._record_build_checks(report)
         self._record_chain_status(report)
+        self._record_api_smoke_check(report)
         data = {
             "passed": report["passed"],
             "summary": report["summary"],
@@ -298,6 +299,33 @@ then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
             except Exception:
                 continue
         return n
+
+    def _record_api_smoke_check(self, report: dict) -> int:
+        """FIX #286 (tiktok r68/r70/r71, live): the delivery gate's api_smoke_pass keys on a
+        validation record with ``status=passed`` and ``metadata.check='api_smoke'`` — but
+        run_validation only recorded per-endpoint contract_tests (status='recorded') + a RunHub
+        run, NEVER that record. So a healthy app that passed api_smoke still tripped
+        ``validation_api_smoke_missing``, the verifier was expected to hand-write the record
+        (its prompt even claims it auto-records), it drifts, and the run idled through both
+        converging-grace windows to fail-fast — on three separate runs. api_smoke IS this call's
+        own deterministic outcome, exactly like the contract_tests/build/runhub it already
+        records; emit the gate's record too. Framework authority (agent=''); best-effort, never
+        affects the verdict. (ui_smoke stays the verifier's browser job — run_validation is
+        api-only and does not probe the UI.)"""
+        hubs = self._hubs
+        codehub = getattr(hubs, "codehub", None) if hubs is not None else None
+        if codehub is None or not hasattr(codehub, "record_check"):
+            return 0
+        try:
+            codehub.record_check(
+                pr_id="main", name="validation:api_smoke",
+                status="success" if report.get("passed") else "failure",
+                evidence={"check": "api_smoke", "source": "run_validation",
+                          "summary": str(report.get("summary") or "")[:300]},
+                agent="")
+            return 1
+        except Exception:
+            return 0
 
     def _record_runhub_run(self, report: dict, project_dir) -> Optional[str]:
         """Record a RunHub run from this validation's live endpoint probes —

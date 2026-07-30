@@ -28,6 +28,7 @@ generator runs. Returns a report; never raises (failures are recorded, not throw
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import time
@@ -35,6 +36,12 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
+
+# A cold docker build for a heavy app (React npm-install+build + backend + postgres + staged assets)
+# can exceed the old 300s cut-off mid-`up --build` (r6: 6/6 api_smoke attempts timed out at 300s →
+# validation never ran → the visual gate never ran → no delivery). Reliability > speed: let the
+# build finish. Override with ENVGEN_DOCKER_UP_TIMEOUT.
+_DOCKER_UP_TIMEOUT = int(os.environ.get("ENVGEN_DOCKER_UP_TIMEOUT", "1200") or 1200)
 
 
 def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> subprocess.CompletedProcess:
@@ -145,6 +152,33 @@ def compose_unreachable_detail(unreachable: List[str], salient: str) -> str:
     return f"{joined[:220]} | backend traceback: {salient}"[:800]
 
 
+_CHAIN_5XX_RE = re.compile(r"→\s*5\d\d\b")
+
+
+def _chain_broken_has_5xx(broken) -> bool:
+    """#300 — True when any broken business_chain step returned a 5xx (server
+    error). Only then is a backend traceback worth fetching: a 4xx (404 parent
+    not found, 400 validation) is self-describing, but a 5xx hides the real
+    cause behind FastAPI's opaque 'Internal Server Error'."""
+    for s in (broken or []):
+        t = str(s)
+        if _CHAIN_5XX_RE.search(t) or "Internal Server Error" in t:
+            return True
+    return False
+
+
+def _business_chain_detail(broken, salient: str) -> str:
+    """#300 — the ``business_chain`` failure detail. r81 M2 STUCK (95min): a chain
+    step's POST /replies → 500 showed the lane only 'Internal Server Error' while
+    business_endpoints_reachable surfaced the file:line traceback for its 500s and
+    those got fixed. Attach the salient backend traceback to a chain 5xx too, so
+    the lane sees the real root cause (mirrors compose_unreachable_detail)."""
+    joined = "; ".join(broken or [])
+    if not salient:
+        return joined[:800]
+    return f"{joined[:520]} | backend traceback: {salient}"[:800]
+
+
 def _backend_logs_tail(compose_file: Path, cwd: Path, tail: int = 200) -> str:
     """Last ``tail`` lines of the backend service's logs; '' on any fault."""
     try:
@@ -192,12 +226,70 @@ def _safe_url(url: str) -> str:
     return quote(url, safe=":/?&=%+,@;$!*'()[]~._-#")
 
 
+def _form_retry_warranted(body: Optional[dict], status: Optional[int],
+                          body_text: str) -> bool:
+    """FIX #281 (tiktok r66, live): does this 4xx bear the JSON-vs-FORM signature?
+
+    ``_http`` always sends JSON, but an endpoint may legitimately declare FORM fields —
+    the framework's OWN scaffolded ``oauth_routes.py`` does exactly that for
+    ``POST /oauth/authorize`` (``email: str = Form(...)``), which is the correct OAuth2
+    shape. FastAPI then reports every form field as missing FROM THE BODY, so the step
+    400/422s no matter what the verifier authors: the chain-step schema cannot express
+    encoding, so the lane is dispatched to fix a defect it has no power to fix. In r66
+    that wedged business_chain through all 6 validation attempts → no successful run →
+    DELIVERY-GATE NO-CONVERGENCE ABORT at 76min, on an app whose endpoint was FINE
+    (re-sent form-encoded by hand: 401 + the real consent page).
+
+    True only when the response names as MISSING FROM THE BODY a field we demonstrably
+    DID send — a field we never sent is a genuine validation error and must keep its
+    teeth, and a ``loc: ["query", ...]`` miss cannot be cured by re-encoding the body."""
+    if not isinstance(body, Mapping) or not body:
+        return False
+    if not status or not (400 <= status < 500):
+        return False
+    try:
+        payload = json.loads(body_text or "{}")
+    except Exception:
+        return False
+    if not isinstance(payload, Mapping):
+        return False
+    errs = payload.get("errors")
+    if not isinstance(errs, list):
+        errs = payload.get("detail")
+    if not isinstance(errs, list):
+        return False
+    sent = {str(k) for k in body}
+    for e in errs:
+        if not isinstance(e, Mapping):
+            continue
+        loc = e.get("loc")
+        if not isinstance(loc, (list, tuple)) or len(loc) < 2:
+            continue
+        if str(loc[0]).lower() != "body":
+            continue
+        if str(e.get("type") or "").lower() != "missing":
+            continue
+        if str(loc[1]) in sent:
+            return True
+    return False
+
+
 def _http(method: str, url: str, *, token: Optional[str] = None,
-          body: Optional[dict] = None, timeout: int = 10) -> Dict[str, Any]:
-    """One HTTP call → {status, body_text, error}. Never raises."""
-    data = json.dumps(body).encode() if body is not None else None
+          body: Optional[dict] = None, timeout: int = 10,
+          form: bool = False) -> Dict[str, Any]:
+    """One HTTP call → {status, body_text, error}. Never raises.
+
+    ``form=True`` (FIX #281) urlencodes the body instead of JSON, for endpoints that
+    declare FORM fields (OAuth2 authorize/token being the standard case). Default is
+    unchanged JSON for every existing caller."""
+    if form and body is not None:
+        from urllib.parse import urlencode
+        data = urlencode({k: ("" if v is None else v) for k, v in body.items()}).encode()
+    else:
+        data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(_safe_url(url), data=data, method=method.upper())
-    req.add_header("Content-Type", "application/json")
+    req.add_header("Content-Type",
+                   "application/x-www-form-urlencoded" if form else "application/json")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     # FIX #98 (instagram run-16, live): 2048 bytes TRUNCATED any list response past 2KB
@@ -373,7 +465,7 @@ def run_smoke_validation(
     project_dir: Any,
     business_endpoints: List[Mapping[str, Any]],
     *,
-    up_timeout: int = 300,
+    up_timeout: int = _DOCKER_UP_TIMEOUT,
     health_timeout: int = 90,
     teardown: bool = True,
 ) -> Dict[str, Any]:
@@ -720,10 +812,23 @@ def run_smoke_validation(
             # inside a lane WORKTREE, is NOT the registry the gate audits (run v20:
             # chains pass live but the gate sees stale 'registered' → deadlock).
             chain_results = _chain.get("chains") or []
-            _add("business_chain", not _chain["broken"],
-                 ("; ".join(_chain["broken"]))[:800] if _chain["broken"]
-                 else f"{_chain['total_steps']} step(s) across "
-                      f"{len(_chain['chains'])} verifier-authored chain(s) pass")
+            if _chain["broken"]:
+                # #300: on a chain 5xx, attach the backend traceback (file:line
+                # root cause) — else the lane fixes blind (r81 M2 STUCK 95min on
+                # POST /replies → 500 shown only as 'Internal Server Error').
+                _chain_salient = ""
+                if _chain_broken_has_5xx(_chain["broken"]):
+                    try:
+                        _chain_salient = extract_salient_traceback(
+                            _backend_logs_tail(compose_file, cwd))
+                    except Exception:
+                        _chain_salient = ""
+                _add("business_chain", False,
+                     _business_chain_detail(_chain["broken"], _chain_salient))
+            else:
+                _add("business_chain", True,
+                     f"{_chain['total_steps']} step(s) across "
+                     f"{len(_chain['chains'])} verifier-authored chain(s) pass")
         except Exception as _chain_exc:
             _add("business_chain", False, f"chain runner crashed: {_chain_exc}")
 
@@ -737,6 +842,16 @@ def run_smoke_validation(
         try:
             _src_dir = Path(project_dir) / "app" / "frontend" / "src"
             _dead: list = []
+            # F6 (2026-07-21): use the SAME handler-token set as the delivery-time audit
+            # (frontend_audit._HANDLER_TOKENS) so a page wired via the default `api` client
+            # (`api.get(...)` / `await api`) is not flagged dead here while frontend_audit —
+            # which DOES recognize those tokens — clears it. The two gates were giving opposite
+            # verdicts on the exact React shape the prompts tell pages to use.
+            try:
+                from .frontend_audit import _HANDLER_TOKENS as _HANDLER_TOK
+            except Exception:
+                _HANDLER_TOK = ("onSubmit", "onClick", "fetch(", "apiGet", "apiPost",
+                                "apiPut", "apiDelete", "axios", "api.", "await api")
             if _src_dir.is_dir():
                 for _pf in sorted(_src_dir.rglob("*.jsx")):
                     try:
@@ -744,9 +859,7 @@ def run_smoke_validation(
                     except Exception:
                         continue
                     _interactive = ("<form" in _txt) or ('type="submit"' in _txt)
-                    _bound = any(tok in _txt for tok in (
-                        "onSubmit", "onClick", "fetch(", "apiGet", "apiPost",
-                        "apiPut", "apiDelete", "axios"))
+                    _bound = any(tok in _txt for tok in _HANDLER_TOK)
                     if _interactive and not _bound:
                         _dead.append(_pf.name)
             _add("frontend_dead_controls", not _dead,

@@ -15,6 +15,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, AsyncIterator, Optional, Union, Tuple, Set
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -101,6 +102,396 @@ def _sanitize_message_content(content: Optional[Union[str, list]]) -> Optional[U
     return _redact_secrets(str(content))
 
 
+# #248: per-image size ceiling. Claude on GCP Vertex rejects anything over 5 MB
+# ("image exceeds 5 MB maximum: 7876848 b") — the design-prep phase sends full-size
+# reference screenshots, so EVERY vision call failed on that provider while Gemini had
+# accepted the same bytes. Downscale/re-encode until it fits; never raise.
+_IMG_BYTE_LIMIT = int(os.environ.get("ENVGEN_IMAGE_BYTE_LIMIT", "4500000"))
+
+
+
+def _sniff_image_mime(raw: bytes):
+    """#248e — true image type from magic bytes. Claude accepts only jpeg/png/gif/webp and
+    rejects a payload whose declared media type disagrees with its bytes."""
+    if raw[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if raw[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _fit_image_b64(image_base64: str, mime_type: str = "image/png"):
+    """Return (base64, mime) shrunk to fit ``_IMG_BYTE_LIMIT``. No-op when it already
+    fits or when Pillow is unavailable — a provider with no limit is unaffected."""
+    # #248e: trust the BYTES over the declared media type — the engine sometimes labels a
+    # JPEG as image/png and Claude rejects the mismatch (found by the sidecar work).
+    # NOTE: providers measure the BASE64 STRING, not the decoded bytes — Vertex reported
+    # "exceeds 5 MB maximum: 5763156 b" for an image whose decoded size was only ~4.3 MB,
+    # so a decoded-size test skipped exactly the images that get rejected. Gate on len(b64).
+    try:
+        raw = base64.b64decode(image_base64)
+    except Exception:
+        return image_base64, mime_type
+    sniffed = _sniff_image_mime(raw)
+    if sniffed and sniffed != mime_type:
+        mime_type = sniffed
+    if len(image_base64) <= _IMG_BYTE_LIMIT:
+        return image_base64, mime_type
+    try:
+        import io
+        from PIL import Image
+        im = Image.open(io.BytesIO(raw))
+        if im.mode not in ("RGB", "L"):
+            im = im.convert("RGB")
+        data = None
+        for scale, quality in ((1.0, 82), (0.75, 80), (0.6, 75), (0.45, 70), (0.33, 65), (0.25, 60)):
+            buf = io.BytesIO()
+            if scale == 1.0:
+                shrunk = im
+            else:
+                w, h = im.size
+                shrunk = im.resize((max(1, int(w * scale)), max(1, int(h * scale))))
+            shrunk.save(buf, format="JPEG", quality=quality, optimize=True)
+            data = buf.getvalue()
+            enc = base64.b64encode(data).decode("ascii")
+            if len(enc) <= _IMG_BYTE_LIMIT:
+                return enc, "image/jpeg"
+        if data:
+            return base64.b64encode(data).decode("ascii"), "image/jpeg"
+    except Exception:
+        pass
+    return image_base64, mime_type
+
+
+
+def _fit_message_images(msg: dict) -> dict:
+    """#248 (universal): shrink every ``image_url`` data-URI in a serialized message so it
+    fits the provider's per-image cap. ``user_with_image`` is only ONE of the paths that
+    build vision content — design_prep builds ``image_url`` parts directly and hands them
+    to ``user_multimodal``, so the fit must live where EVERY message is serialized for the
+    request. Pure/best-effort: a message with no images is returned unchanged."""
+    try:
+        content = msg.get("content")
+        if not isinstance(content, list):
+            return msg
+        changed = False
+        parts = []
+        for part in content:
+            if (isinstance(part, dict) and part.get("type") == "image_url"
+                    and isinstance(part.get("image_url"), dict)):
+                url = str(part["image_url"].get("url") or "")
+                if url.startswith("data:") and ";base64," in url:
+                    head, b64 = url.split(";base64,", 1)
+                    mime = head[len("data:"):] or "image/png"
+                    nb64, nmime = _fit_image_b64(b64, mime)
+                    if nb64 is not b64:
+                        part = {**part, "image_url": {**part["image_url"],
+                                                      "url": f"data:{nmime};base64,{nb64}"}}
+                        changed = True
+            parts.append(part)
+        return {**msg, "content": parts} if changed else msg
+    except Exception:
+        return msg
+
+
+
+def _drop_orphan_tool_results(messages):
+    """#249 — keep a ``role=tool`` message only when the tool_call it answers was announced
+    by the MOST RECENT assistant turn.
+
+    Anthropic-backed providers reject the whole request with "unexpected `tool_use_id`
+    found in `tool_result` blocks … must have a corresponding `tool_use` block in the
+    PREVIOUS message". Adjacency matters, not mere presence somewhere earlier, and the
+    orphans are produced by observation masking/truncation — so this runs AFTER masking.
+    Handles BOTH Message objects and already-serialized dicts: some call sites pass dicts,
+    and an attribute-only implementation silently passed those straight through (#249c
+    shipped with that hole). OpenAI tolerates orphans; Anthropic does not. Pure."""
+    def _get(m, key):
+        if isinstance(m, dict):
+            return m.get(key)
+        return getattr(m, key, None)
+
+    try:
+        pending = set()          # ids announced by the most recent assistant turn
+        keep, dropped = [], 0
+        for m in messages:
+            role = _get(m, "role")
+            if role == "assistant":
+                pending = set()
+                for tc in (_get(m, "tool_calls") or []):
+                    tid = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                    if tid:
+                        pending.add(str(tid))
+            elif role == "tool":
+                tid = _get(m, "tool_call_id")
+                if not tid or str(tid) not in pending:
+                    dropped += 1
+                    continue
+            else:
+                pending = set()  # any other turn closes the tool_result window
+            keep.append(m)
+        return keep if dropped else messages
+    except Exception:
+        return messages
+
+
+
+_ANTHROPIC_FAMILIES = ("claude", "vertex", "anthropic", "fable", "opus", "sonnet", "haiku")
+
+
+def _needs_anthropic_shape(model: str) -> bool:
+    m = (model or "").lower()
+    return any(k in m for k in _ANTHROPIC_FAMILIES)
+
+
+def _normalize_for_anthropic(msgs: list) -> list:
+    """#250 — reshape an OpenAI-style message list into what Anthropic actually accepts.
+
+    Evidence (r46/r48 WIRE-SHAPE dumps): the assistant→tool pairing was ALREADY adjacent and
+    correct, yet the gateway still answered 'unexpected tool_use_id'. What the dumps show is
+    a shape Anthropic does not allow: system messages in the MIDDLE of the conversation
+    (indices 2 and 7) and runs of consecutive user turns (3,4,5 / 12,13 / 15,16,17). The
+    gateway must fold those into Anthropic's one-top-level-system + strictly alternating
+    user/assistant form, and its folding shifts the tool_result away from its tool_use.
+
+    So do the folding ourselves, deterministically:
+      * hoist every system message into ONE leading system message,
+      * merge consecutive same-role turns (text joined) — but NEVER merge across a
+        tool boundary, so an assistant's tool_calls stay immediately followed by results,
+      * leave role=tool messages alone (the gateway maps them to tool_result blocks).
+    Pure; only applied for Anthropic-backed models."""
+    if not msgs:
+        return msgs
+    sys_parts, rest = [], []
+    for m in msgs:
+        role = m.get("role")
+        if role == "system":
+            c = m.get("content")
+            if isinstance(c, str) and c.strip():
+                sys_parts.append(c)
+            continue
+        rest.append(m)
+
+    out = []
+    for m in rest:
+        role = m.get("role")
+        prev = out[-1] if out else None
+        mergeable = (
+            prev is not None
+            and prev.get("role") == role
+            and role in ("user", "assistant")
+            and not prev.get("tool_calls") and not m.get("tool_calls")
+            and isinstance(prev.get("content"), str) and isinstance(m.get("content"), str)
+        )
+        if mergeable:
+            prev["content"] = (prev["content"] or "") + "\n\n" + (m.get("content") or "")
+            continue
+        out.append(dict(m))
+
+    # #265b: Claude rejects a conversation that ends on an assistant turn ("does not
+    # support assistant message prefill"). Normally the framework's prompt IS the last
+    # user turn, but after #265 flattens an unanswered trailing tool call the assistant
+    # becomes last — trading one 400 for another. Close the turn explicitly.
+    if out and out[-1].get("role") == "assistant":
+        out.append({"role": "user", "content": "Continue."})
+    if sys_parts:
+        out.insert(0, {"role": "system", "content": "\n\n".join(sys_parts)})
+    return out
+
+
+def _flatten_tool_protocol(msgs: list) -> list:
+    """#259 — render a tool exchange as TEXT for a request that declares no tools.
+
+    Bisected live against the gateway: the SAME 8-message list returns 200 with a ``tools``
+    key and 400 ``unexpected tool_use_id ... must have a corresponding tool_use block in
+    the previous message`` without one. With no tool declarations there is nothing for the
+    assistant's ``tool_use`` block to refer to, so it is dropped in translation and the
+    following ``tool_result`` is orphaned. Every WIRE-SHAPE dump that made this look like a
+    pairing bug (r46/r48/r53) showed the pairing adjacent and correct — the payload was
+    simply unrepresentable, and the framework issues plenty of tool-less calls (planning,
+    summarisation, condensation) over histories that contain tool exchanges.
+
+    Information-preserving on purpose: the call and its result stay visible as text, so a
+    planning/summarising turn still knows what was invoked and what came back.
+    """
+    out = []
+    for m in msgs:
+        role = m.get("role")
+        if role == "tool" or m.get("tool_call_id"):
+            body = m.get("content")
+            out.append({"role": "user",
+                        "content": f"[tool result] {body if isinstance(body, str) else body}"})
+            continue
+        calls = m.get("tool_calls")
+        if calls:
+            lines = []
+            for c in calls:
+                fn = (c or {}).get("function") or {}
+                lines.append(f"[tool call] {fn.get('name')}({fn.get('arguments')})")
+            base = m.get("content")
+            base = base if isinstance(base, str) and base.strip() else ""
+            merged = (base + ("\n" if base else "") + "\n".join(lines)) or "[tool call]"
+            trimmed = {k: v for k, v in m.items() if k not in ("tool_calls", "function_call")}
+            trimmed["content"] = merged
+            out.append(trimmed)
+            continue
+        out.append(m)
+    return out
+
+
+_LEGAL_TOOL_ID_RE = re.compile(r"[^a-zA-Z0-9_-]")
+
+
+def _sanitize_tool_ids(msgs: list) -> list:
+    """#261 — tool ids must match ``^[a-zA-Z0-9_-]+$``.
+
+    r54 logged 220 x ``messages.N.content.0.tool_use.id: String should match
+    '^[a-zA-Z0-9_-]+$'``. Probed live: "", "a.b", "a:b", "a b" are all rejected; "call_1"
+    and a plain uuid pass. The rewrite is applied through ONE shared map so an assistant's
+    tool_calls and the matching tool message keep the same id — diverge and #249 sees an
+    orphan and silently drops the result.
+    """
+    mapping: dict = {}
+
+    def _fix(raw, i):
+        key = raw if isinstance(raw, str) else ""
+        if key in mapping:
+            return mapping[key]
+        clean = _LEGAL_TOOL_ID_RE.sub("_", key)
+        if not clean:
+            clean = f"call_{i}"
+        while clean in mapping.values() and mapping.get(key) != clean:
+            clean = f"{clean}_{i}"
+        mapping[key] = clean
+        return clean
+
+    out = []
+    for i, m in enumerate(msgs):
+        calls = m.get("tool_calls")
+        has_tcid = "tool_call_id" in m          # '' is a REAL id here, and it is falsy —
+        tcid = m.get("tool_call_id")            # testing truthiness skipped exactly the
+        if not calls and not has_tcid:          # empty ids this function exists to repair
+            out.append(m)
+            continue
+        n = dict(m)
+        if calls:
+            n["tool_calls"] = [{**c, "id": _fix(c.get("id"), i)} for c in calls]
+        if has_tcid:
+            n["tool_call_id"] = _fix(tcid, i)
+        out.append(n)
+    return out
+
+
+def _drop_empty_text_turns(msgs: list) -> list:
+    """#260 — an empty / whitespace-only / None TEXT block is rejected outright.
+
+    r54 logged 800 x "text content blocks must contain non-whitespace text". Probed live:
+    content="" -> "must be non-empty", content="   " -> "must contain non-whitespace
+    text", content=None -> "Unsupported message content type".
+
+    Scope matters. content=None is LEGAL on a message that carries tool_calls (its content
+    array holds the tool_use block), so those are kept as-is — dropping one would orphan
+    its result. A tool result with an empty body is kept too, with a placeholder: "the tool
+    ran and returned nothing" is information, and removing it would orphan the call. Only a
+    turn with no text, no tool_calls and no tool_call_id is dropped, and that carries
+    nothing at all.
+    """
+    out = []
+    for m in msgs:
+        c = m.get("content")
+        has_text = isinstance(c, str) and c.strip()
+        if not isinstance(c, str):          # multimodal / already-structured content
+            out.append(m)
+            continue
+        if has_text:
+            out.append(m)
+            continue
+        if m.get("tool_calls"):
+            out.append({**m, "content": None})
+            continue
+        if m.get("role") == "tool" or m.get("tool_call_id"):
+            out.append({**m, "content": "(empty result)"})
+            continue
+        # nothing to say and nothing to carry
+    return out
+
+
+def _flatten_dangling_tool_calls(msgs: list) -> list:
+    """#265 — the MIRROR of #249: a tool_call with no result is as fatal as the reverse.
+
+    r56 (live): ``400 messages.142: `tool_use` ids were found without `tool_result` blocks
+    immediately after: call_148`` — and the browser_test_user lane then wedged, every one of
+    its calls failing on the same message. #249 prunes orphan RESULTS; nothing pruned the
+    other direction, so an assistant turn whose calls were never answered (a step that ended
+    at its round budget, or a result lost to condensation) goes out with dangling tool_use
+    blocks and is rejected outright.
+
+    Repaired the same way as #259: keep the attempt as TEXT so the model still sees what it
+    tried to invoke, and drop only the protocol structure that cannot be satisfied.
+    """
+    out = []
+    for i, m in enumerate(msgs):
+        calls = m.get("tool_calls")
+        if not calls:
+            out.append(m)
+            continue
+        nxt = msgs[i + 1] if i + 1 < len(msgs) else None
+        answered = set()
+        if nxt is not None and (nxt.get("role") == "tool" or nxt.get("tool_call_id")):
+            j = i + 1
+            while j < len(msgs) and (msgs[j].get("role") == "tool"
+                                     or msgs[j].get("tool_call_id")):
+                answered.add(msgs[j].get("tool_call_id"))
+                j += 1
+        kept = [c for c in calls if c.get("id") in answered]
+        if len(kept) == len(calls):
+            out.append(m)
+            continue
+        lines = []
+        for c in calls:
+            if c.get("id") in answered:
+                continue
+            fn = (c or {}).get("function") or {}
+            lines.append(f"[tool call, no result recorded] {fn.get('name')}({fn.get('arguments')})")
+        base = m.get("content")
+        base = base if isinstance(base, str) and base.strip() else ""
+        n = dict(m)
+        n["content"] = (base + ("\n" if base else "") + "\n".join(lines)) or "[tool call]"
+        if kept:
+            n["tool_calls"] = kept
+        else:
+            n.pop("tool_calls", None)
+            n.pop("function_call", None)
+        out.append(n)
+    return out
+
+
+def _prepare_messages_for_request(messages, model: str = None, tools=None):
+    """Single serialization contract for EVERY request path: prune orphan tool_results
+    (#249), fit oversized images (#248), and — when the request declares no tools — flatten
+    the tool protocol to text (#259). Four call sites built the wire payload independently,
+    so a fix applied to one left the others failing; this is the one place provider-protocol
+    repairs belong."""
+    # ORDER IS LOAD-BEARING. #261 must run FIRST: every pairing decision below compares
+    # ids, and a raw EMPTY id made #249 treat a perfectly good result as an orphan, drop
+    # it, and leave #265 to strip the now-dangling call — losing the whole exchange.
+    wire = _sanitize_tool_ids([m if isinstance(m, dict) else m.to_dict()
+                               for m in messages])          # #261
+    wire = _drop_orphan_tool_results(wire)                   # #249 result -> call
+    wire = _flatten_dangling_tool_calls(wire)                # #265 call -> result
+    wire = [_fit_message_images(m) for m in wire]            # #248
+    wire = _drop_empty_text_turns(wire)                      # #260
+    if not tools:
+        wire = _flatten_tool_protocol(wire)
+    if _needs_anthropic_shape(model):
+        wire = _normalize_for_anthropic(wire)
+    return wire
+
+
 @dataclass
 class Message:
     """Chat message - supports both text and multimodal content"""
@@ -140,6 +531,7 @@ class Message:
     @classmethod
     def user_with_image(cls, text: str, image_base64: str, mime_type: str = "image/png") -> "Message":
         """Create user message with text and image (multimodal)"""
+        image_base64, mime_type = _fit_image_b64(image_base64, mime_type)
         return cls(
             role="user",
             content=[
@@ -190,6 +582,40 @@ def _ctx_cfg():
     return max(keep, 1), max(cap, 500)
 
 
+def _mask_block() -> int:
+    """#255: how many steps the masking cutoff holds still. 1 disables quantisation."""
+    try:
+        return max(1, int(os.environ.get("ENVGEN_MASK_BLOCK", "16") or 16))
+    except (TypeError, ValueError):
+        return 16
+
+
+def _total_str_chars(messages: list) -> int:
+    total = 0
+    for m in messages:
+        c = getattr(m, "content", None)
+        if isinstance(c, str):
+            total += len(c)
+    return total
+
+
+def _apply_observation_mask(messages: list, cutoff: int, max_old: int,
+                            first_task: int) -> list:
+    stub = "\n…[older output truncated to save context]…\n"
+    out = []
+    for i, m in enumerate(messages):
+        c = getattr(m, "content", None)
+        if (i >= cutoff or i == first_task or getattr(m, "role", "") == "system"
+                or not isinstance(c, str) or len(c) <= max_old):
+            out.append(m)
+            continue
+        out.append(Message(role=m.role,
+                           content=c[: max_old * 3 // 4] + stub + c[-max_old // 4:],
+                           name=m.name, function_call=m.function_call,
+                           tool_calls=m.tool_calls, tool_call_id=m.tool_call_id))
+    return out
+
+
 def _mask_old_observations(messages: list, model: str = None) -> list:
     """Truncate the bulky text content of stale messages to bound per-call input —
     but ONLY when the full history would exceed the model's RECOMMENDED WORKING
@@ -218,22 +644,44 @@ def _mask_old_observations(messages: list, model: str = None) -> list:
     n = len(messages)
     if n <= keep_recent:
         return messages
-    cutoff = n - keep_recent
     # protect the system prompt(s) and the first non-system message (the task)
     first_task = next((i for i, m in enumerate(messages)
                        if getattr(m, "role", "") != "system"), -1)
-    stub = "\n…[older output truncated to save context]…\n"
-    out = []
-    for i, m in enumerate(messages):
-        c = getattr(m, "content", None)
-        if (i >= cutoff or i == first_task or getattr(m, "role", "") == "system"
-                or not isinstance(c, str) or len(c) <= max_old):
-            out.append(m)
-            continue
-        out.append(Message(role=m.role,
-                           content=c[: max_old * 3 // 4] + stub + c[-max_old // 4:],
-                           name=m.name, function_call=m.function_call,
-                           tool_calls=m.tool_calls, tool_call_id=m.tool_call_id))
+    exact_cutoff = n - keep_recent
+
+    # #255 PREFIX STABILITY. A prompt cache is keyed on the longest common PREFIX, and
+    # ``exact_cutoff`` advances on EVERY step — so on every step the messages that just
+    # crossed it flip from full text to truncated text, invalidating the cache from that
+    # position onward. Forever. r51 measured 456.7M prompt vs 0.9M completion tokens, i.e.
+    # this run's entire cost IS the prompt, and 40% of it was re-sent uncached. Quantising
+    # the cutoff DOWN to a block boundary keeps the masked set byte-identical for BLOCK
+    # consecutive steps. It is also strictly information-preserving: a quantised cutoff is
+    # <= the exact one, so it never truncates a message the old code would have kept.
+    # (Latent on Gemini — 2.45M working window, masking never fired; constant on
+    # Claude/opus-4.7 at 313.6k, where r51's ~318k-char mean prompt is over the line on
+    # essentially every call.)
+    block = _mask_block()
+    cutoff = (exact_cutoff // block) * block if block > 1 else exact_cutoff
+    if cutoff <= 0:
+        cutoff = exact_cutoff
+    out = _apply_observation_mask(messages, cutoff, max_old, first_task)
+    if not budget or _total_str_chars(out) <= budget:
+        return out
+
+    # #255 BUDGET FLOOR. Under real pressure, fitting the window outranks cache reuse —
+    # and the old code did NOT actually fit it: masking was a fixed-shape truncation, so a
+    # long history stayed far over budget (400 messages capped at 6000 chars each is still
+    # 2.4M) and the provider answered 400. Give up stability first, then tighten the per-
+    # message cap, then the recent window — each step only as far as the budget demands.
+    out = _apply_observation_mask(messages, exact_cutoff, max_old, first_task)
+    cap = max_old
+    while _total_str_chars(out) > budget and cap > 400:
+        cap //= 2
+        out = _apply_observation_mask(messages, exact_cutoff, cap, first_task)
+    keep = keep_recent
+    while _total_str_chars(out) > budget and keep > 2:
+        keep = max(2, keep // 2)
+        out = _apply_observation_mask(messages, n - keep, cap, first_task)
     return out
 
 
@@ -331,6 +779,42 @@ def _extend_retry_budget(is_malformed, is_rate_limit, attempt, total_attempts,
         return target
     except Exception:
         return total_attempts
+
+
+# #326 — a TERMINAL provider error is UNRECOVERABLE: retrying wastes wall-clock and never
+# succeeds. The metagen key hitting its spend cap returned HTTP 400 "Spend exceeded. Budget
+# for mg key ..." on EVERY call; with no terminal classification, all four lanes spun ~4500
+# rejected attempts for hours until the wall-clock cap. Classify billing/quota exhaustion and
+# hard-auth rejection as terminal → fail the call immediately AND latch a reason the run loop
+# can poll (terminal_llm_error()) to abort the whole run cleanly.
+_TERMINAL_LLM_ERROR = {"reason": None}
+
+# Specific billing/quota phrases — deliberately NOT the generic "quota"/"exceeded" (those
+# appear in transient 429 rate-limit messages, e.g. Gemini ResourceExhausted).
+_TERMINAL_ERROR_PHRASES = (
+    "spend exceeded", "budget for", "insufficient_quota", "insufficient quota",
+    "payment required", "billing hard limit", "entitlement",
+)
+
+
+def _is_terminal_llm_error(error: Exception) -> bool:
+    """True for an UNRECOVERABLE provider error — spend/budget/quota exhaustion or a hard auth
+    rejection (401/403). A 429 rate limit is transient and explicitly NOT terminal."""
+    status = getattr(error, "status_code", None)
+    if isinstance(status, int) and status == 429:
+        return False
+    s = str(error).lower()
+    if any(p in s for p in _TERMINAL_ERROR_PHRASES):
+        return True
+    if isinstance(status, int) and status in (401, 403, 402):
+        return True
+    return False
+
+
+def terminal_llm_error() -> Optional[str]:
+    """The latched reason if any LLM call hit a terminal provider error (budget/quota exhausted,
+    hard auth), else None. A run loop should poll this and abort instead of spinning."""
+    return _TERMINAL_LLM_ERROR["reason"]
 
 
 @dataclass
@@ -522,7 +1006,17 @@ class BaseLLMClient(ABC):
                 last_error = e
                 error_type = type(e).__name__
                 error_msg = str(e)[:200]  # Truncate long errors
-                
+
+                # #326: a TERMINAL provider error (spend/budget/quota exhausted, hard auth) is
+                # unrecoverable — do NOT burn retries, and latch a reason the run loop can poll
+                # to abort. Latch BEFORE re-raising so a caught exception still surfaces it.
+                if _is_terminal_llm_error(e):
+                    _TERMINAL_LLM_ERROR["reason"] = f"[{error_type}] {error_msg}"
+                    self._logger.error(
+                        f"[LLM] TERMINAL provider error — not retrying, run should abort: "
+                        f"[{error_type}] {error_msg}")
+                    raise
+
                 is_rate_limit = self._is_rate_limit_error(e)
                 # FIX #187: budget extension is decided by the PURE rule (see
                 # _extend_retry_budget — it also fixes the old dead-code rate-limit
@@ -966,9 +1460,15 @@ class OpenAIClient(BaseLLMClient):
         client = self._get_client()
 
         # Always sanitize outgoing content (redact keys/tokens/password-like lines).
+        # #249: Anthropic-backed providers reject the WHOLE request with
+        # "unexpected `tool_use_id` found in `tool_result` blocks" when a role=tool
+        # message has no matching tool_call in a preceding assistant message. Observation
+        # masking/truncation can drop the assistant turn while keeping its results, so
+        # prune orphans before serializing. OpenAI tolerates them; Anthropic does not.
         safe_messages: list[Message] = [
             Message(role=m.role, content=_sanitize_message_content(m.content), name=m.name, function_call=m.function_call, tool_calls=m.tool_calls, tool_call_id=m.tool_call_id)
-            for m in _mask_old_observations(messages, self.config.model_name)
+            for m in _drop_orphan_tool_results(
+                _mask_old_observations(messages, self.config.model_name))
         ]
         
         # Determine token parameter name based on model. Reasoning-class models
@@ -979,17 +1479,40 @@ class OpenAIClient(BaseLLMClient):
         model_name = self.config.model_name
         use_completion_tokens = model_name.startswith(("gpt-5", "o1", "o3"))
         token_param = "max_completion_tokens" if use_completion_tokens else "max_tokens"
+        # #247: some providers reject the classic sampling params outright. Claude on GCP
+        # Vertex answers 400 "`temperature` is deprecated for this model", and the Llama
+        # API's OpenAI-compat gateway answers 400 "frequency_penalty is not supported in
+        # OpenAI compatibility mode" — every call fails, so a run on such a provider cannot
+        # start at all. Drop them for the known-hostile families (and via an env override
+        # for any provider we meet next); max_tokens is still sent, which Vertex REQUIRES.
+        _ml = (model_name or "").lower()
+        _drops_sampling = (
+            use_completion_tokens
+            or any(k in _ml for k in ("claude", "vertex", "anthropic", "fable"))
+            or str(os.environ.get("ENVGEN_NO_SAMPLING_PARAMS", "")).strip().lower()
+            in ("1", "true", "yes", "on"))
 
         request_params = {
             "model": model_name,
-            "messages": [m.to_dict() for m in safe_messages],
+            # #259: pass the OUTGOING tool declarations — a history containing a tool
+            # exchange is only representable when the request also declares tools.
+            "messages": _prepare_messages_for_request(safe_messages, model_name,
+                                                     tools=(tools or functions)),
             token_param: max_tokens or self.config.max_tokens,
         }
-        if not use_completion_tokens:
+        if not _drops_sampling:
             request_params["temperature"] = temperature if temperature is not None else self.config.temperature
             request_params["top_p"] = self.config.top_p
-            request_params["frequency_penalty"] = self.config.frequency_penalty
-            request_params["presence_penalty"] = self.config.presence_penalty
+            # #247: only send the penalties when they are actually SET. They default to
+            # 0.0 (a semantic no-op), yet third-party OpenAI-compatible endpoints reject
+            # them outright — the Llama API compat gateway answers every call with
+            # 400 "frequency_penalty is not supported in OpenAI compatibility mode",
+            # so a run on such a provider cannot make a single LLM call. Omitting a
+            # zero penalty changes nothing for providers that do accept it.
+            if self.config.frequency_penalty:
+                request_params["frequency_penalty"] = self.config.frequency_penalty
+            if self.config.presence_penalty:
+                request_params["presence_penalty"] = self.config.presence_penalty
         
         if stop:
             request_params["stop"] = stop
@@ -1052,6 +1575,22 @@ class OpenAIClient(BaseLLMClient):
             response = await self._retry_with_backoff(_call)
         except Exception as e:
             msg = str(e).lower()
+            if "tool_use_id" in msg or "integrity check" in msg:
+                # #249e DIAGNOSTIC: dump the ACTUAL wire message shape so the orphan can be
+                # identified instead of guessed at (three blind patches cost three runs).
+                try:
+                    shape = []
+                    for i, mm in enumerate(request_params.get("messages") or []):
+                        r = mm.get("role")
+                        ids = [tc.get("id") for tc in (mm.get("tool_calls") or [])
+                               if isinstance(tc, dict)]
+                        shape.append(f"{i}:{r}"
+                                     + (f" calls={ids}" if ids else "")
+                                     + (f" result_for={mm.get('tool_call_id')}"
+                                        if mm.get("tool_call_id") else ""))
+                    self._logger.error("[LLM] WIRE-SHAPE on tool-protocol 400: " + " | ".join(shape))
+                except Exception:
+                    pass
             if ("invalid_prompt" in msg) or ("flagged as potentially violating" in msg) or ("usage policy" in msg):
                 raise RuntimeError(
                     "OpenAI rejected the prompt as invalid_prompt (policy filter). "
@@ -1096,7 +1635,7 @@ class OpenAIClient(BaseLLMClient):
         
         request_params = {
             "model": self.config.model_name,
-            "messages": [m.to_dict() for m in messages],
+            "messages": _prepare_messages_for_request(messages, self.config.model_name),
             "temperature": temperature or self.config.temperature,
             "max_tokens": max_tokens or self.config.max_tokens,
             "stream": True,
@@ -1505,7 +2044,7 @@ class LocalLLMClient(BaseLLMClient):
         # Ollama format
         request_data = {
             "model": self.config.model_name,
-            "messages": [m.to_dict() for m in messages],
+            "messages": _prepare_messages_for_request(messages, self.config.model_name),
             "stream": False,
             "options": {
                 "temperature": temperature or self.config.temperature,
@@ -1549,7 +2088,7 @@ class LocalLLMClient(BaseLLMClient):
         
         request_data = {
             "model": self.config.model_name,
-            "messages": [m.to_dict() for m in messages],
+            "messages": _prepare_messages_for_request(messages, self.config.model_name),
             "stream": True,
             "options": {
                 "temperature": temperature or self.config.temperature,
@@ -1837,7 +2376,8 @@ class GoogleClient(BaseLLMClient):
         # Always sanitize outgoing content
         safe_messages: list[Message] = [
             Message(role=m.role, content=_sanitize_message_content(m.content), name=m.name, function_call=m.function_call, tool_calls=m.tool_calls, tool_call_id=m.tool_call_id)
-            for m in _mask_old_observations(messages, self.config.model_name)
+            for m in _drop_orphan_tool_results(
+                _mask_old_observations(messages, self.config.model_name))
         ]
         
         # Convert messages to Google format
@@ -2175,13 +2715,331 @@ class GoogleClient(BaseLLMClient):
                         yield part.text
 
 
+def _split_data_uri(url: str) -> Tuple[Optional[str], Optional[str]]:
+    """Return (mime, base64_data) from a ``data:<mime>;base64,<data>`` URL, else (None, None)."""
+    if not isinstance(url, str):
+        return None, None
+    m = re.match(r"data:([^;]+);base64,(.*)", url, re.DOTALL)
+    if m:
+        return m.group(1), m.group(2)
+    return None, None
+
+
+class MetagenClient(BaseLLMClient):
+    """Meta MetaGen provider — wraps the ``metagen`` SDK's ``dialog_completion`` behind the
+    engine's OpenAI-style ``chat`` contract (text + tools + vision + usage).
+
+    The engine's ``tools`` are already OpenAI/Azure function schema, which is exactly what
+    MetaGen's ``tools`` string expects for a 3P model (GPT/Claude/Gemini) — so use GPT-5.6
+    (native structured tool calling). Llama/2P/OSS models silently drop ``tools``.
+
+    ``metagen`` is a Meta-internal package imported LAZILY so this module still loads on hosts
+    without it. SDK symbol names that vary across versions are resolved defensively; if the real
+    SDK differs, the failure is localized here. Verify against
+    ``fbcode/gen_ai/metagen/pymetagen/lib/metagen_platform.py``.
+    """
+
+    def __init__(self, config: LLMConfig):
+        super().__init__(config)
+        self._platform = None
+        self._sdk_ns = None
+
+    # --- SDK bootstrap ---------------------------------------------------
+    def _sdk(self):
+        """Resolve metagen SDK symbols. ``metagen`` is a lazy package: the dialog classes
+        are bound only via ``from metagen import X`` (plain ``metagen.X`` attribute access
+        raises), so import them explicitly (matching the SDK's documented usage) and cache
+        them on a namespace. Optional/version-varying classes are resolved best-effort."""
+        if self._sdk_ns is None:
+            import types as _types
+            import metagen.bento as _bento  # side effect: full package init (SDK's import order)
+            ns = _types.SimpleNamespace(bento=_bento)
+            from metagen import (Dialog, DialogMessage, DialogSource,
+                                 DialogTextContent, MetaGenKey)
+            ns.Dialog = Dialog
+            ns.DialogMessage = DialogMessage
+            ns.DialogSource = DialogSource
+            ns.DialogTextContent = DialogTextContent
+            ns.MetaGenKey = MetaGenKey
+            for name in ("DialogAttachmentContent", "MessageAttachmentType",
+                         "DialogToolResponseContent",
+                         "DialogGenericToolCallRequestContentV2",
+                         "DialogGenericToolCallRequestContent",
+                         "DialogToolCallRequestContent"):
+                try:  # `from metagen import <name>` semantics (bare getattr won't bind it)
+                    setattr(ns, name, getattr(__import__("metagen", fromlist=[name]), name))
+                except Exception:
+                    setattr(ns, name, None)
+            self._sdk_ns = ns
+        return self._sdk_ns
+
+    def _get_platform(self):
+        if self._platform is None:
+            sdk = self._sdk()
+            key = self.config.api_key or os.environ.get("METAGEN_API_KEY")
+            factory = os.environ.get("ENVGEN_METAGEN_FACTORY", "bento").lower()
+            if factory == "devserver":
+                tpf = getattr(__import__("metagen", fromlist=["thrift_platform_factory"]),
+                              "thrift_platform_factory", None)
+                if tpf is not None:
+                    self._platform = tpf.create_for_current_unix_user_for_devserver_only(
+                        metagen_auth_credential=sdk.MetaGenKey(key=key), auto_rate_limit=True)
+                    return self._platform
+            self._platform = sdk.bento.create_metagen_platform(sdk.MetaGenKey(key=key))
+        return self._platform
+
+    # --- request conversion ---------------------------------------------
+    def _source(self, mg, role: str):
+        DS = mg.DialogSource
+        mapping = {"system": "SYSTEM", "user": "USER", "assistant": "ASSISTANT",
+                   "developer": "DEVELOPER", "tool": "IPYTHON", "function": "IPYTHON"}
+        return getattr(DS, mapping.get(role, "USER"), getattr(DS, "USER"))
+
+    def _attachment(self, mg, url: str):
+        mime, b64 = _split_data_uri(url)
+        if not b64:
+            return None
+        Att = getattr(mg, "DialogAttachmentContent", None)
+        MAT = getattr(mg, "MessageAttachmentType", None)
+        if Att is None or MAT is None:
+            return None
+        atype = getattr(MAT, "BASE64", None) or getattr(MAT, "BASE64_IMAGE", None)
+        for kw in ({"data": b64, "type": atype, "mime": mime or "image/png"},
+                   {"data": b64, "type": atype, "mime_type": mime or "image/png"}):
+            try:
+                return Att(**kw)
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _tc_name_args(tc) -> Tuple[str, str]:
+        if isinstance(tc, dict):
+            fn = tc.get("function") or {}
+            args = fn.get("arguments")
+            return (fn.get("name") or tc.get("name") or "",
+                    args if isinstance(args, str) else json.dumps(args or {}))
+        fn = getattr(tc, "function", None)
+        name = getattr(fn, "name", "") if fn else getattr(tc, "name", "")
+        args = getattr(fn, "arguments", "{}") if fn else "{}"
+        return name, args if isinstance(args, str) else json.dumps(args or {})
+
+    def _tool_call_content(self, mg, name: str, args_string: str):
+        for cls in ("DialogGenericToolCallRequestContentV2",
+                    "DialogGenericToolCallRequestContent", "DialogToolCallRequestContent"):
+            C = getattr(mg, cls, None)
+            if C is None:
+                continue
+            for kw in ({"name": name, "parameters_string": args_string},
+                       {"name": name, "parameters": args_string}):
+                try:
+                    return C(**kw)
+                except Exception:
+                    continue
+        return None
+
+    def _tool_response_content(self, mg, message: "Message") -> list:
+        body = (message.content if isinstance(message.content, str)
+                else json.dumps(message.content) if message.content is not None else "")
+        name = message.name or message.tool_call_id or "tool"
+        C = getattr(mg, "DialogToolResponseContent", None)
+        if C is not None:
+            for kw in ({"toolName": name, "toolData": body},
+                       {"tool_name": name, "tool_data": body}, {"name": name, "body": body}):
+                try:
+                    return [C(**kw)]
+                except Exception:
+                    continue
+        return [mg.DialogTextContent(text=f"[tool result {name}] {body}")]
+
+    def _contents_for(self, mg, message: "Message") -> list:
+        contents = []
+        c = message.content
+        if isinstance(c, str):
+            if c:
+                contents.append(mg.DialogTextContent(text=c))
+        elif isinstance(c, list):
+            for part in c:
+                if not isinstance(part, dict):
+                    contents.append(mg.DialogTextContent(text=str(part)))
+                    continue
+                if part.get("type") == "text":
+                    contents.append(mg.DialogTextContent(text=part.get("text", "")))
+                elif part.get("type") == "image_url":
+                    url = (part.get("image_url") or {}).get("url", "")
+                    att = self._attachment(mg, url)
+                    contents.append(att if att is not None else
+                                    mg.DialogTextContent(text="[image omitted: metagen attachment unsupported]"))
+        if message.tool_calls:
+            for tc in message.tool_calls:
+                name, args = self._tc_name_args(tc)
+                rc = self._tool_call_content(mg, name, args)
+                contents.append(rc if rc is not None else
+                                mg.DialogTextContent(text=f"[assistant tool_call] {name}({args})"))
+        if not contents:
+            contents.append(mg.DialogTextContent(text=""))
+        return contents
+
+    def _convert_messages(self, mg, messages: list) -> list:
+        dmsgs = []
+        for m in messages:
+            role = getattr(m, "role", "user")
+            if role == "tool":
+                dmsgs.append(mg.DialogMessage(source=self._source(mg, "tool"),
+                                              contents=self._tool_response_content(mg, m)))
+            else:
+                dmsgs.append(mg.DialogMessage(source=self._source(mg, role),
+                                              contents=self._contents_for(mg, m)))
+        return dmsgs
+
+    @staticmethod
+    def _tool_config(tool_choice):
+        if not tool_choice:
+            return None
+        if tool_choice in ("required", "any"):
+            return {"tool_choice": "required"}
+        if tool_choice == "auto":
+            return {"tool_choice": "auto"}
+        if isinstance(tool_choice, dict):
+            return {"tool_choice": "required", "tool_choice_name": tool_choice}
+        return None
+
+    @staticmethod
+    def _guided_schema(kwargs) -> Optional[str]:
+        if kwargs.get("response_mime_type") == "application/json":
+            sch = kwargs.get("response_schema")
+            if sch:
+                return sch if isinstance(sch, str) else json.dumps(sch)
+        return None
+
+    # --- response parsing ------------------------------------------------
+    @staticmethod
+    def _norm_finish(finish) -> str:
+        s = str(finish or "").upper()
+        if "MAX_OUTPUT" in s or "LENGTH" in s:
+            return "length"
+        return "stop"
+
+    def _parse_response(self, resp) -> Tuple[str, list, str, dict, Optional[str]]:
+        text_parts, reasoning_parts, tool_calls = [], [], []
+        choices = getattr(resp, "choices", None) or []
+        finish = None
+        if choices:
+            ch = choices[0]
+            finish = getattr(ch, "finish_reason", None)
+            dialog = getattr(ch, "dialog", None)
+            for msg in (getattr(dialog, "messages", None) or []):
+                for c in (getattr(msg, "contents", None) or []):
+                    nm = getattr(c, "name", None)
+                    ps = getattr(c, "parameters_string", None)
+                    if ps is None and hasattr(c, "getParametersString"):
+                        try:
+                            ps = c.getParametersString()
+                        except Exception:
+                            ps = None
+                    if nm is None and hasattr(c, "getName"):
+                        try:
+                            nm = c.getName()
+                        except Exception:
+                            nm = None
+                    if nm is not None and ps is not None:
+                        tool_calls.append({"id": f"call_{len(tool_calls)}", "type": "function",
+                                           "function": {"name": nm,
+                                                        "arguments": ps if isinstance(ps, str) else json.dumps(ps)}})
+                        continue
+                    txt = getattr(c, "text", None)
+                    if isinstance(txt, str):
+                        (reasoning_parts if "Reasoning" in type(c).__name__ else text_parts).append(txt)
+        u = getattr(resp, "usage", None)
+        usage = {}
+        if u is not None:
+            pt = getattr(u, "num_prompt_tokens", None) or 0
+            ctk = getattr(u, "num_completion_tokens", None) or 0
+            tt = getattr(u, "num_total_tokens", None)
+            usage = {"prompt_tokens": pt, "completion_tokens": ctk,
+                     "total_tokens": tt if tt is not None else pt + ctk}
+        fr = "tool_calls" if tool_calls else self._norm_finish(finish)
+        return "".join(text_parts), tool_calls, fr, usage, ("\n".join(reasoning_parts) or None)
+
+    # --- the chat contract ----------------------------------------------
+    async def _complete_once(self, dialog, params, tools_requested):
+        def _sync():
+            return self._get_platform().dialog_completion(dialog=dialog, **params)
+        timeout = _llm_hard_timeout(self.config.timeout, os.environ)
+        resp = await asyncio.wait_for(asyncio.to_thread(_sync), timeout=timeout)
+        parsed = self._parse_response(resp)
+        content, tool_calls, _fr, _u, _r = parsed
+        if tools_requested and not tool_calls and not (content or "").strip():
+            # empty text AND no parseable tool call — treat like MALFORMED so the
+            # retry/backoff ladder re-rolls (mirrors GoogleClient's MALFORMED path).
+            raise RuntimeError("metagen returned MALFORMED tool call: empty content and no tool_calls")
+        return resp, parsed
+
+    async def chat(
+        self,
+        messages: list,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        stop: Optional[list] = None,
+        functions: Optional[list] = None,
+        tools: Optional[list] = None,
+        **kwargs,
+    ) -> LLMResponse:
+        start = datetime.now()
+        safe = [Message(role=m.role, content=_sanitize_message_content(m.content),
+                        name=m.name, function_call=m.function_call,
+                        tool_calls=m.tool_calls, tool_call_id=m.tool_call_id)
+                for m in _drop_orphan_tool_results(
+                _mask_old_observations(messages, self.config.model_name))]
+        mg = self._sdk()
+        dialog = mg.Dialog(messages=self._convert_messages(mg, safe))
+        params = {
+            "model": self.config.model_name,
+            "temperature": self.config.temperature if temperature is None else temperature,
+            "max_tokens": self.config.max_tokens if max_tokens is None else max_tokens,
+        }
+        if self.config.top_p is not None:
+            params["top_p"] = self.config.top_p
+        tool_list = tools or functions
+        if tool_list:
+            params["tools"] = json.dumps(tool_list)  # OpenAI/Azure schema string (3P models)
+            tcfg = self._tool_config(kwargs.get("tool_choice"))
+            if tcfg:
+                params["tool_config"] = tcfg
+        gds = self._guided_schema(kwargs)
+        if gds:
+            params["guided_decode_json_schema"] = gds
+        resp, parsed = await self._retry_with_backoff(
+            self._complete_once, dialog, params, bool(tool_list))
+        content, tool_calls, fr, usage, reasoning = parsed
+        return LLMResponse(
+            content=content or "", model=self.config.model_name, finish_reason=fr,
+            usage=usage, tool_calls=tool_calls or None, raw_response=resp,
+            latency=(datetime.now() - start).total_seconds(), reasoning=reasoning)
+
+    async def chat_stream(
+        self,
+        messages: list,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        stop: Optional[list] = None,
+        **kwargs,
+    ) -> AsyncIterator[str]:
+        # MetaGen has a streaming API, but the multi-agent engine never streams; a
+        # single-chunk fallback satisfies the abstract method.
+        resp = await self.chat(messages, temperature=temperature,
+                               max_tokens=max_tokens, stop=stop, **kwargs)
+        if resp.content:
+            yield resp.content
+
+
 def create_llm_client(config: LLMConfig) -> BaseLLMClient:
     """
     Factory function to create LLM client based on config
-    
+
     Args:
         config: LLM configuration
-        
+
     Returns:
         Appropriate LLM client instance
     """
@@ -2191,6 +3049,7 @@ def create_llm_client(config: LLMConfig) -> BaseLLMClient:
         LLMProvider.ANTHROPIC: AnthropicClient,
         LLMProvider.GOOGLE: GoogleClient,  # Gemini via OpenAI-compatible API
         LLMProvider.AZURE: OpenAIClient,  # Azure uses OpenAI-compatible API
+        LLMProvider.METAGEN: MetagenClient,  # Meta MetaGen SDK (dialog_completion)
         LLMProvider.LOCAL: LocalLLMClient,
         LLMProvider.CUSTOM: LocalLLMClient,  # Custom endpoints use OpenAI-compatible API
     }

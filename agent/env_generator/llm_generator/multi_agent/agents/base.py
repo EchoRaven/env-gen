@@ -138,7 +138,9 @@ class EnvGenAgent(
         "parallel_execute",
     }
     TEAM_MODE_SUPPORT_TOOLS: Set[str] = {
-        "think", "wait", "check_inbox",
+        # #346: "think" is not a registered tool anywhere in tools/, and the
+        # action stages additionally discard it — an unresolvable pin.
+        "wait", "check_inbox",
         "send_message", "ask_agent", "broadcast",
         "report_progress", "get_progress", "report_issue", "report_completion",
         "finish",
@@ -333,7 +335,11 @@ class EnvGenAgent(
     _CONTRACT_READ = {
         "registryhub_get_endpoint",
         "registryhub_list_endpoints",
-        "registryhub_get_table",
+        # #346: `registryhub_get_table` was pinned here and matches NO registered
+        # tool, so the force-offer (always_include & candidate_names) dropped it
+        # silently — the framework believed it pinned a table read and pinned
+        # nothing. `registryhub_list_tables` below already provides that read, so
+        # this is dead weight, not a capability.
         "registryhub_list_tables",
     }
     # PROPOSAL #39 (#2): the DEBUGGER's canonical triage tools. The debugger's whole job is
@@ -450,7 +456,7 @@ class EnvGenAgent(
         "communicate": {"check_inbox", "send_message", "ask_agent", "broadcast", "report_progress", "finish"}
                         | _DESIGN_GOVERNANCE | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _MILESTONE_FLOW | _KNOWLEDGE_DOC_FLOW,
         "edit_code": {"read", "edit", "apply_patch", "write", "finish"} | _HUB_REGISTRATION | _CLAIM_FLOW | _CONFLICT_FLOW | _CONTRACT_READ | _REFERENCE_VIEW | _VISUAL_VERIFY_FLOW,
-        "run_checks": {"lint", "test_api", "finish"} | _CLAIM_FLOW | _VALIDATION_FLOW | _CONTRACT_READ | _REFERENCE_VIEW | _VISUAL_VERIFY_FLOW,
+        "run_checks": {"lint", "test_api", "finish"} | _CLAIM_FLOW | _VALIDATION_FLOW | _CONTRACT_READ | _VISUAL_VERIFY_FLOW,
         "delegate_team": {"finish"},
         # ``submit_retro`` + ``deliverability_check`` are the pre-delivery gate
         # tools — without them force-offered the ranker crowds them out and the
@@ -583,15 +589,11 @@ class EnvGenAgent(
         )
         self.memory_bank: Optional[MemoryBank] = None
         
-        # Advanced Context Management (combats Context Snowball)
-        # Inspired by Croto (Cross-Team Orchestration) and MemGPT
-        from ..context_management import AdvancedContextManager
-        self.context_manager = AdvancedContextManager(
-            max_tokens=8000,
-            storage_path=workspace_manager.base_dir / f".context_{self.agent_id}.json"
-            if hasattr(workspace_manager, 'base_dir') else None
-        )
-        
+        # (Context-Snowball manager removed 2026-07-27 — it was instantiated but
+        # never fed or read; the step pipeline sends the raw messages[] list to the
+        # LLM. Live context reduction is tool-level compaction (#302/#303/#305) plus
+        # _mask_old_observations in step_runner.py.)
+
         # Skills consulted via get_skill this run (read by SkillConsultGate;
         # populated at the tool chokepoint — skill_consult.py).
         self._consulted_skills: Set[str] = set()
@@ -1553,8 +1555,37 @@ class EnvGenAgent(
     
     # ==================== JINJA2 HELPERS ====================
     
+    @staticmethod
+    def resolve_prompt_version(template_path: str) -> str:
+        """#269: pick the prompt-version directory, falling back per FILE.
+
+        The audit (notes/prompt_audit_2026-07-22.md) measured 98-99% of every v3 template
+        rendering unconditionally into every request — roughly 160M system-prompt tokens in
+        a single run — and found the three biggest sections are prose restatements of rules
+        a HARD gate already enforces: 22.8% of frontend_agent.j2 is about response_key and
+        contract_alignment_failed still fired in 43% of 72 runs; 16.2% is about placeholders
+        and placeholder_stub_handler still fired in 46%. The topics with the SMALLEST prompt
+        footprint (dead nav link 1.3%, real map 1.3%) failed in 3% and 0%.
+
+        v4 rewrites only those sections. Falling back per file means v4 can be introduced
+        one lane at a time and any file can be reverted by deleting it — the comparison the
+        audit's own risk clause needs: if a compressed section makes its gate fail MORE
+        often, that section was doing real preventive work and goes back.
+        """
+        want = str(os.environ.get("ENVGEN_PROMPT_VERSION", "") or "").strip()
+        if not want or "/" not in template_path:
+            return template_path
+        head, _, tail = template_path.partition("/")
+        if not head.startswith("v") or head == want:
+            return template_path
+        candidate = f"{want}/{tail}"
+        if (PROMPTS_DIR / candidate).exists():
+            return candidate
+        return template_path
+
     def render_template(self, template_path: str, **kwargs) -> str:
         """Render a Jinja2 template."""
+        template_path = self.resolve_prompt_version(template_path)
         try:
             template = self._jinja_env.get_template(template_path)
             return template.render(**kwargs)
@@ -1564,6 +1595,7 @@ class EnvGenAgent(
     
     def render_macro(self, template_path: str, macro_name: str, **kwargs) -> str:
         """Render a specific macro from a template."""
+        template_path = self.resolve_prompt_version(template_path)   # #269
         try:
             template = self._jinja_env.get_template(template_path)
             macro = getattr(template.module, macro_name, None)

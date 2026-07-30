@@ -23,6 +23,35 @@ _VALID_STATUSES = (
 )
 
 
+def _resolve_compose_file(generated_dir: str) -> Optional[str]:
+    """#293 — locate the generated compose file under an env root.
+
+    The generated compose lives at ``<env_root>/docker/docker-compose.yml``
+    (the framework-wide convention: validation_runner, visual_fidelity,
+    heal_pipeline and docker_tools all invoke ``docker compose -f
+    <env_root>/docker/docker-compose.yml``). ``start_run`` previously built
+    ``ComposeLifecycle(cwd=env_root)`` with ``compose_file=None`` → ``docker
+    compose up`` ran in the ROOT, where there is no compose file → every run
+    aborted with ``"no configuration file provided"`` (r76 live: 16/16 aborted,
+    0 successful → hard deadlock). Search docker/ first, then a root compose,
+    mirroring docker_tools' order. Returns None if none exists (caller keeps
+    the cwd-relative behaviour rather than inventing a path)."""
+    root = Path(generated_dir)
+    candidates = (
+        root / "docker" / "docker-compose.yml",
+        root / "docker" / "docker-compose.dev.yml",
+        root / "docker-compose.yml",
+        root / "docker-compose.yaml",
+    )
+    for c in candidates:
+        try:
+            if c.exists():
+                return str(c)
+        except OSError:
+            continue
+    return None
+
+
 class RunHub:
     def __init__(self, hub_dir: Path, eventhub: Any = None):
         self.hub_dir = Path(hub_dir)
@@ -193,7 +222,9 @@ class RunHub:
         run = self.record_run(branch=branch, generated_dir=generated_dir, agent=agent)
         run_id = run["id"]
 
-        compose = compose or ComposeLifecycle(cwd=str(generated_dir))
+        compose = compose or ComposeLifecycle(
+            cwd=str(generated_dir),
+            compose_file=_resolve_compose_file(str(generated_dir)))
         healthcheck = healthcheck or HealthcheckProbe(
             url=base_url.rstrip("/") + "/health", poll_interval_s=2.0, timeout_s=60.0)
         probe_runner = probe_runner or self._default_probe_runner()

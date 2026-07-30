@@ -233,7 +233,13 @@ Example - Investigation team with diverse perspectives:
                     "agent_definition": {
                         "name": agent_def.get("name", "Worker"),
                         "role": agent_def.get("role", ""),
-                        "agent_type": agent_def.get("agent_type", ""),
+                        # #348: OPTIONAL per this tool's own docs ("if omitted,
+                        # the runtime must infer") and all three worked examples
+                        # omit it. Injecting "" sailed past the validator's
+                        # missing/None short-circuit and hit its non-empty check,
+                        # so following the documentation was a guaranteed
+                        # E_CHILD_TASK_CONTRACT rejection. Absent stays absent.
+                        "agent_type": agent_def.get("agent_type") or None,
                         "config_profile": agent_config_profile,
                         "skills": agent_def.get("skills", []),
                         "inherit_parent_skills": agent_def.get("inherit_parent_skills", True),

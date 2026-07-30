@@ -105,7 +105,12 @@ def kickoff_endpoints_implemented(
     # blocks only on genuinely-unserved endpoints (a missing custom route / a contract
     # path that no served route matches), which is exactly what the lane can act on.
     import os as _os
-    if _os.environ.get("ENVGEN_SYNC_STATUS_AT_FINISH"):
+    # F8 (2026-07-21): default-ON. Reliability > speed — an endpoint's 'implemented' status must
+    # reflect a SERVED route before all_business_endpoints_implemented drives any gate. This runs
+    # the same audit the heal pipeline uses, just earlier. Disable with ENVGEN_SYNC_STATUS_AT_FINISH
+    # in {0,false,no,off}.
+    if _os.environ.get("ENVGEN_SYNC_STATUS_AT_FINISH", "1").strip().lower() not in (
+            "0", "false", "no", "off"):
         _wt = getattr(agent, "_worktree_dir", None)
         if _wt:
             try:

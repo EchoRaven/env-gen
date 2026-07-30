@@ -520,8 +520,21 @@ _LOCAL_DEF_RE = re.compile(r"(?:^|\n)\s*(?:export\s+)?(?:default\s+)?"
 _REACT_BUILTINS = {"Fragment", "StrictMode", "Suspense", "Profiler", "ErrorBoundary"}
 
 
+def _strip_comments_for_scan(src: str) -> str:
+    """#295 — blank out comments so a JSX tag that appears ONLY in a comment
+    isn't mistaken for real usage. r78: `<Route>` inside
+    ``// … a wired <Route>`` was scanned as a used icon → an invalid
+    ``import { Route } from 'lucide-react'`` injected → vite build failed every
+    cycle → STUCK. Removes ``/* … */`` block comments (covers JSX ``{/* … */}``)
+    and ``// …`` line comments — but NOT the ``//`` of a ``://`` URL scheme, so a
+    real tag later on a URL-bearing line is still seen."""
+    src = re.sub(r"/\*.*?\*/", " ", src, flags=re.S)
+    src = re.sub(r"(?<!:)//[^\n]*", " ", src)
+    return src
+
+
 def _unimported_jsx_tags(src: str) -> List[str]:
-    used = set(_JSX_TAG_RE.findall(src))
+    used = set(_JSX_TAG_RE.findall(_strip_comments_for_scan(src)))
     if not used:
         return []
     known: Set[str] = set(_REACT_BUILTINS)
@@ -1146,7 +1159,13 @@ def repair_frontend_default_api_import(frontend_dir) -> Dict[str, object]:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
-_API_CALL_PATH_RE = re.compile(r"(\b(?:request|fetch)\(\s*[`'\"])(/[A-Za-z0-9_\-/]+)([`'\"])")
+# #325: the closing quote MUST be followed by a call-argument terminator (``)`` or ``,``).
+# Without this, a registered-path PREFIX being concatenated with an id —
+# ``request('/api/videos/' + id)`` — matched (the regex stops at the quote, ignoring the
+# ``+ id``), and the trailing slash got stripped to "match" ``/api/videos`` → the shipped app
+# requested ``/api/videos<ID>`` → 404 (r92 delivered a broken api.js this way; reconcile fired
+# 18x while the lane re-authored api.js 50+ times). A concatenation prefix is now skipped.
+_API_CALL_PATH_RE = re.compile(r"(\b(?:request|fetch)\(\s*[`'\"])(/[A-Za-z0-9_\-/]+)([`'\"])(?=\s*[),])")
 
 
 def reconcile_frontend_api_paths(frontend_dir, registered_paths) -> Dict[str, object]:
@@ -1192,6 +1211,12 @@ def reconcile_frontend_api_paths(frontend_dir, registered_paths) -> Dict[str, ob
                         return m.group(0)
                     cs = _segs(called)
                     if not cs:
+                        return m.group(0)
+                    # #325: a pure trailing-slash difference is NOT contract drift — the slash
+                    # is a legitimate separator (a prefix before an interpolated id, or a
+                    # harmless trailing slash on a full endpoint). Stripping it to "match" the
+                    # registered path is exactly the r92 corruption. Leave it untouched.
+                    if called.rstrip("/") in reg_set:
                         return m.group(0)
                     cands = sorted({
                         r for r in reg_static
@@ -1271,6 +1296,79 @@ def normalize_frontend_api_base(frontend_dir) -> Dict[str, object]:
             except OSError:
                 continue
             new = _ABS_LOCAL_ORIGIN_RE.sub(r"\1", text)
+            if new != text:
+                f.write_text(new, encoding="utf-8")
+                changed.append(str(f.relative_to(fe)))
+        result["normalized"] = sorted(changed)
+    except Exception as exc:  # never break generation/validation
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+# #317 — canonical auth-token localStorage KEY. A strong model shouldn't have to keep
+# api.js / AuthProvider / pages agreeing on a bare string by hand; the FRAMEWORK
+# enforces one key so they can't drift. The prompt's stated fixed key is access_token.
+_CANONICAL_TOKEN_KEY = "access_token"
+_LS_KEY_RE = re.compile(r"(localStorage\.(?:get|set|remove)Item\(\s*)(['\"])([^'\"]+)(['\"])")
+_TOKEN_ALIAS_EXACT = frozenset({
+    "token", "tt_token", "jwt", "jwttoken", "jwt_token", "accesstoken",
+    "authtoken", "auth_token", "access-token", "bearer", "bearertoken",
+    "bearer_token", "id_token", "idtoken", "apitoken", "api_token", "authorization",
+})
+
+
+def _is_auth_token_key(key: str) -> bool:
+    """True iff ``key`` is an access-token localStorage key that should collapse to the
+    canonical one. Excludes refresh_token (a DISTINCT token), and any user/tenant/csrf
+    key. Recognises the common aliases plus brand-prefixed ``<prefix>_token``."""
+    k = key.strip().lower()
+    if k == _CANONICAL_TOKEN_KEY:
+        return False  # already canonical
+    if "refresh" in k or "user" in k or "csrf" in k or "tenant" in k:
+        return False
+    if k in _TOKEN_ALIAS_EXACT:
+        return True
+    return bool(re.fullmatch(r"[a-z0-9]+_?token", k))  # e.g. tt_token, yt_token
+
+
+def normalize_frontend_token_key(frontend_dir) -> Dict[str, object]:
+    """#317 — canonicalize the auth-token localStorage KEY across the frontend so a
+    lane can't mismatch what api.js WRITES vs what a page / AuthProvider READS.
+
+    r85 + r86 both wedged deliverability_ui_flow this exact way: the lane's api.js read
+    ``tt_token`` while its SignupPage/LoginPage wrote ``token``/``access_token`` → after
+    login the token was stored under a key api.js never read → authHeaders() sent no
+    Bearer → every authed call was unauthenticated → the app looked logged-out → the
+    signup/feed ui_flow failed, and the lane thrash-rewrote the pages without ever
+    converging. The framework prompt SAYS the key is fixed (``access_token``) but never
+    ENFORCED it, and the scaffold even dual-wrote access_token+token — a hedge that
+    invites divergence. This heal makes the contract real: every localStorage token key
+    (token / tt_token / jwt / accessToken / authToken / <brand>_token …) is rewritten to
+    ``access_token``; refresh_token / user / tenant keys are left untouched. GENERAL,
+    idempotent (the canonical key is not an alias), best-effort. Mirrors
+    normalize_frontend_api_base; runs in the per-tick frontend heal pipeline."""
+    result: Dict[str, object] = {"normalized": []}
+    try:
+        fe = Path(frontend_dir)
+        src = fe / "src"
+        if not src.is_dir():
+            return result
+        changed: List[str] = []
+
+        def _sub(m):
+            if _is_auth_token_key(m.group(3)):
+                return f"{m.group(1)}{m.group(2)}{_CANONICAL_TOKEN_KEY}{m.group(4)}"
+            return m.group(0)
+
+        for f in src.rglob("*"):
+            if (f.suffix.lower() not in _FRONT_EXTS or not f.is_file()
+                    or "node_modules" in str(f)):
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            new = _LS_KEY_RE.sub(_sub, text)
             if new != text:
                 f.write_text(new, encoding="utf-8")
                 changed.append(str(f.relative_to(fe)))
@@ -1609,28 +1707,28 @@ export default function __COMP__() {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setError((d && (d.detail || d.error)) || ('Error ' + r.status)); return; }
       const token = d.access_token || d.token || (d.item && (d.item.access_token || d.item.token));
-      if (token) { localStorage.setItem('access_token', token); localStorage.setItem('token', token); }
+      if (token) { localStorage.setItem('access_token', token); }
       window.location.href = '/';
     } catch (err) { setError(String(err)); }
   };
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-50">
-      <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-semibold text-zinc-900">{isRegister ? 'Create account' : 'Sign in'}</h1>
+    <div className="min-h-screen flex items-center justify-center __CLS_PAGE__">
+      <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-xl border __CLS_CARD__ p-8 shadow-sm">
+        <h1 className="text-2xl font-semibold __CLS_TITLE__">{isRegister ? 'Create account' : 'Sign in'}</h1>
         {isRegister ? (
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name"
-                 className="w-full rounded-lg border border-zinc-300 px-3 py-2" />
+                 className="w-full rounded-lg border __CLS_INPUT__ px-3 py-2" />
         ) : null}
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required
-               className="w-full rounded-lg border border-zinc-300 px-3 py-2" />
+               className="w-full rounded-lg border __CLS_INPUT__ px-3 py-2" />
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required
-               className="w-full rounded-lg border border-zinc-300 px-3 py-2" />
+               className="w-full rounded-lg border __CLS_INPUT__ px-3 py-2" />
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button type="submit" className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700">
+        <button type="submit" className="w-full rounded-lg __CLS_SUBMIT__ px-4 py-2 font-medium">
           {isRegister ? 'Create account' : 'Log in'}
         </button>
         <button type="button" onClick={() => setIsRegister(!isRegister)}
-                className="w-full text-sm text-blue-600">
+                className="w-full text-sm __CLS_LINK__">
           {isRegister ? 'Have an account? Sign in' : 'New here? Create an account'}
         </button>
       </form>
@@ -1638,6 +1736,73 @@ export default function __COMP__() {
   );
 }
 """
+
+
+# #334: the auth page is re-projected on EVERY tick, so a hardcoded palette here
+# is not just wrong on screen — it is one half of a framework-vs-framework loop
+# (r92 logged the #209 darkify pass re-swapping these same two files 57 times).
+# Project the MEASURED palette instead and the loop has nothing left to fight.
+_AUTH_CLASSES_LIGHT = {
+    "__CLS_PAGE__": "bg-zinc-50",
+    "__CLS_CARD__": "border-zinc-200 bg-white",
+    "__CLS_TITLE__": "text-zinc-900",
+    "__CLS_INPUT__": "border-zinc-300",
+    "__CLS_SUBMIT__": "bg-blue-600 text-white hover:bg-blue-700",
+    "__CLS_LINK__": "text-blue-600",
+}
+
+
+def _is_dark_hex(value: str) -> bool:
+    """Relative luminance of a #rrggbb — decides the incidental neutrals. Derived
+    from the MEASURED background so it is correct for a light reference too."""
+    try:
+        h = value.lstrip("#")
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        r, g, b = (int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+    except Exception:
+        return True
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) < 0.5
+
+
+def _auth_page_classes(design) -> Dict[str, str]:
+    """Class fragments for the projected auth page.
+
+    No measured palette -> today's neutral light form, byte-identical, so an env
+    generated without design input is unaffected. With a palette, consume the
+    tokens ``render_measured_tailwind_theme`` actually emits (``bg`` /
+    ``accent`` / ``accent-<hue>``) so the page renders in the reference's own
+    colors and no light-neutral utility survives for the darkify pass.
+    """
+    pal = _palette_of(design)
+    if not pal:
+        return dict(_AUTH_CLASSES_LIGHT)
+    bg = pal.get("bg") or pal.get("background")
+    has_bg = isinstance(bg, str) and bool(_HEX_RE_208.match(bg))
+    accent = pal.get("accent")
+    has_accent = isinstance(accent, str) and bool(_HEX_RE_208.match(accent))
+    accents = pal.get("accents") if isinstance(pal.get("accents"), dict) else {}
+    if has_accent:
+        accent_bg, accent_text = "bg-accent", "text-accent"
+    elif accents:
+        hue = sorted(str(k).lower() for k in accents)[0]
+        accent_bg, accent_text = f"bg-accent-{hue}", f"text-accent-{hue}"
+    else:
+        # A palette with no accent at all: stay neutral rather than resolve to
+        # an undefined token (an unresolved class renders an invisible button).
+        accent_bg, accent_text = "bg-neutral-700", "text-neutral-300"
+    dark = _is_dark_hex(bg) if has_bg else (_theme_default(design) != "light")
+    page_bg = "bg-bg" if has_bg else ("bg-black" if dark else "bg-neutral-100")
+    return {
+        "__CLS_PAGE__": page_bg,
+        "__CLS_CARD__": ("border-white/10 bg-black/20" if dark
+                         else "border-black/10 bg-neutral-50"),
+        "__CLS_TITLE__": "text-white" if dark else "text-black",
+        "__CLS_INPUT__": ("border-white/15 bg-transparent text-white placeholder-white/40"
+                          if dark else "border-black/15 bg-transparent text-black"),
+        "__CLS_SUBMIT__": f"{accent_bg} text-white hover:opacity-90",
+        "__CLS_LINK__": accent_text,
+    }
 
 
 def _mark_fallback_page(src: str) -> str:
@@ -1649,6 +1814,32 @@ def _mark_fallback_page(src: str) -> str:
     if _PAGE_MARKER in src:
         return src
     return _PAGE_MARKER + "\n" + src
+
+
+def _measured_nav_jsx(nav_routes, colors) -> str:
+    """#296 — measured-palette top-nav for the no-reference floor. Inline colors
+    (self-contained), so a dark floor never ships a light nav bar and the darkify
+    healers need not recolor it. Returns '' when there are no other routes."""
+    routes = [(str(l).strip(), str(r).strip())
+              for (l, r) in (nav_routes or []) if str(r).strip()]
+    if not routes:
+        return ""
+    surface, border, muted = colors["surface"], colors["border"], colors["muted"]
+    links = "\n".join(
+        '        <a href="' + r + '" className="rounded-md px-3 py-1.5 text-sm '
+        "font-medium\" style={{ color: '" + muted + "' }}>" + l + "</a>"
+        for (l, r) in routes)
+    return (
+        '<nav className="-mx-6 -mt-6 mb-6 flex flex-wrap items-center gap-1 '
+        'border-b px-6 py-2" '
+        "style={{ backgroundColor: '" + surface + "', borderColor: '"
+        + border + "' }}>\n"
+        + links + "\n"
+        "        <button onClick={() => { localStorage.clear(); "
+        "window.location.href = '/login'; }} "
+        'className="ml-auto rounded-md px-3 py-1.5 text-sm" '
+        "style={{ color: '" + muted + "' }}>Sign out</button>\n"
+        "      </nav>")
 
 
 def _nav_links_jsx(nav_routes) -> str:
@@ -2269,6 +2460,87 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
         "}\n")
 
 
+def _measured_floor_colors(design):
+    """#296 — a normalized measured color set for the no-reference GET floor,
+    or None when no usable palette exists (caller then keeps the data-fallback
+    page). Reads THIS env's measured palette at design['design_system']['palette']
+    (same path _render_reference_page uses); missing sub-roles derive from bg +
+    measured neutrals — never a hardcoded product color."""
+    ds = (design or {}).get("design_system") or {}
+    if not isinstance(ds, dict):
+        return None
+    pal = ds.get("palette") or {}
+    if not isinstance(pal, dict):
+        return None
+    bg = pal.get("bg")
+    if not isinstance(bg, str) or not bg.strip():
+        return None
+
+    def _pick(keys, default):
+        for k in keys:
+            v = pal.get(k)
+            if isinstance(v, str) and v.strip():
+                return v
+        return default
+
+    theme = str(((ds.get("theme") or {}).get("default")) or "").lower()
+    if theme not in ("dark", "light"):
+        try:
+            h = bg.lstrip("#")
+            h = "".join(c * 2 for c in h) if len(h) == 3 else h
+            lum = (int(h[0:2], 16) * 0.299 + int(h[2:4], 16) * 0.587
+                   + int(h[4:6], 16) * 0.114)
+            theme = "dark" if lum < 128 else "light"
+        except Exception:
+            theme = "light"
+    text_default = "#f5f5f5" if theme == "dark" else "#18181b"
+    muted_default = ("rgba(255,255,255,0.55)" if theme == "dark"
+                     else "rgba(0,0,0,0.55)")
+    return {
+        "bg": bg,
+        "surface": _pick(["surface", "surface_2", "elevated", "card"], bg),
+        "text": _pick(["text"], text_default),
+        "muted": _pick(["text_2", "text_3", "text_muted", "muted"], muted_default),
+        "accent": _pick(["accent", "accent_red", "brand", "primary",
+                         "accent_blue"], "#2563eb"),
+        "border": _pick(["border", "divider"], "rgba(128,128,128,0.25)"),
+    }
+
+
+_FLOOR_GRID_KEYWORDS = frozenset({
+    "explore", "gallery", "grid", "discover", "browse", "photos", "media",
+    "thumbnails", "search"})
+_FLOOR_DETAIL_KEYWORDS = frozenset({"detail", "single"})
+
+
+def _floor_tokens(*texts) -> Set[str]:
+    """#298 — raw lowercase word tokens for floor-shape detection. Unlike
+    _semantic_tokens_226 this does NOT strip layout stopwords (grid/list/view),
+    since those ARE the shape signal here."""
+    toks: Set[str] = set()
+    for t in texts:
+        s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(t or ""))
+        toks |= set(re.findall(r"[a-z]+", s.lower()))
+    return toks
+
+
+def _floor_shape(page, get_ep, name) -> str:
+    """#298 — layout shape for the measured floor: 'detail' | 'grid' | 'list',
+    inferred from THIS page's endpoint + name semantics (env-agnostic). A
+    single-resource GET (path param) is a detail page; a gallery/explore surface
+    is a grid; everything else is a row list (the #297 default)."""
+    ep = str(get_ep or "")
+    if "{" in ep or ":" in ep:
+        return "detail"
+    toks = _floor_tokens((page or {}).get("route"), (page or {}).get("name"),
+                         (page or {}).get("component"), name)
+    if toks & _FLOOR_DETAIL_KEYWORDS:
+        return "detail"
+    if toks & _FLOOR_GRID_KEYWORDS:
+        return "grid"
+    return "list"
+
+
 def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
                             design=None) -> str:
     """Project a MINIMALLY-FUNCTIONAL, data-driven page from the contract instead
@@ -2285,8 +2557,12 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
     # /auth/login + /auth/register) — never the generic single-input POST stub or
     # the inert no-api stub, which would ship a login page a user can't use.
     if _is_auth_page(name, page):
-        return (_AUTH_PAGE_TEMPLATE.replace("__COMP__", name)
-                .replace("__IS_REGISTER__", "true" if _is_register_mode(name, page) else "false"))
+        _auth_src = (_AUTH_PAGE_TEMPLATE.replace("__COMP__", name)
+                     .replace("__IS_REGISTER__",
+                              "true" if _is_register_mode(name, page) else "false"))
+        for _ph, _cls in _auth_page_classes(design).items():
+            _auth_src = _auth_src.replace(_ph, _cls)
+        return _auth_src
     label = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").strip() or name
     if _is_landing_page(name, page):
         # Real entry page: wordmark/hero + WORKING sign-in/create-account nav. Derive
@@ -2322,6 +2598,132 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
                 pass  # fall through to the generic floor — never break the build
 
     if get_ep:
+        # #296 MEASURED FLOOR: when THIS env's measured palette is available,
+        # render the same functional row-list painted with the measured colors +
+        # data-projected="ref"/_STRUCTURED_MARKER, so it's a GENUINE floor the
+        # gates count as BUILT (not a data-fallback the framework then rejects).
+        # The lane still refines it in place (visual-fidelity remediation).
+        _floor = _measured_floor_colors(design)
+        if _floor is not None:
+            # #298 shape-aware floor: grid (gallery/explore) / detail (single
+            # resource) / list (default) — all measured + structured + built.
+            _shape = _floor_shape(page, get_ep, name)
+            _prelude = """import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+
+const _imgOf = (r) => { for (const k of ['thumbnail_url','image_url','avatar_url','banner_url','photo_url','cover_url','poster_url','image','thumbnail','avatar','url']) { if (r && r[k]) return r[k]; } return null; };
+const _titleOf = (r) => { for (const k of ['title','subject','name','display_name','full_name','label','handle','email']) { if (r && r[k]) return String(r[k]); } return (r && r.id != null) ? ('#' + r.id) : ''; };
+const _subOf = (r) => { for (const k of ['snippet','preview','summary','description','from_name','sender','body','caption','content','message','text']) { if (r && r[k]) return String(r[k]); } return ''; };
+const _metaOf = (r) => Object.keys(r || {}).filter((k) => !['id','password','password_hash'].includes(k) && !/_url$|^url$|^image$|^thumbnail$|^avatar$|title|subject|name|description|body|snippet/.test(k) && (typeof r[k] !== 'object')).slice(0, 3);
+
+export default function __COMP__() {
+  const params = useParams();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const token = (localStorage.getItem('access_token') || localStorage.getItem('token'));
+    fetch(__PATH__, token ? { headers: { Authorization: 'Bearer ' + token } } : {})
+      .then((r) => r.json())
+      .then(setData)
+      .catch((e) => setError(String(e)));
+  }, []);
+"""
+            _list_core = """  const rows = Array.isArray(data && data.items)
+    ? data.items
+    : (data && data.item ? [data.item] : (Array.isArray(data) ? data : []));
+  return (
+    <div data-projected="ref" className="min-h-screen px-6 py-6" style={{ backgroundColor: '__BG__', color: '__TEXT__' }}>
+      __NAV__
+      <h2 className="text-xl font-semibold mb-4">__LABEL__</h2>
+      {error ? <p className="text-sm mb-4" style={{ color: '__ACCENT__' }}>{error}</p> : null}
+      <div className="rounded-lg border shadow-sm" style={{ backgroundColor: '__SURFACE__', borderColor: '__BORDER__' }}>
+        {rows.map((row, i) => (
+          <div key={(row && row.id) || i} className="flex items-start gap-3 px-4 py-3 cursor-pointer" style={{ borderTop: i ? '1px solid __BORDER__' : 'none' }}>
+            {_imgOf(row)
+              ? <img src={_imgOf(row)} alt="" className="h-10 w-10 rounded-full object-cover shrink-0" style={{ backgroundColor: '__SURFACE__' }} />
+              : <div className="h-10 w-10 rounded-full shrink-0 flex items-center justify-center text-sm font-semibold" style={{ backgroundColor: '__ACCENT__', color: '#ffffff' }}>{(_titleOf(row).charAt(0) || '?').toUpperCase()}</div>}
+            <div className="min-w-0 flex-1">
+              <div className="font-medium text-sm truncate">{_titleOf(row)}</div>
+              {_subOf(row) ? <div className="text-sm truncate" style={{ color: '__MUTED__' }}>{_subOf(row)}</div> : null}
+              {_metaOf(row).length ? <div className="text-xs mt-0.5 truncate" style={{ color: '__MUTED__' }}>{_metaOf(row).map((k) => String(row[k])).join(' \\u00b7 ')}</div> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+      {rows.length === 0 && !error ? <p className="mt-6 text-sm" style={{ color: '__MUTED__' }}>No data yet.</p> : null}
+    </div>
+  );
+}
+"""
+            _grid_core = """  const rows = Array.isArray(data && data.items)
+    ? data.items
+    : (data && data.item ? [data.item] : (Array.isArray(data) ? data : []));
+  return (
+    <div data-projected="ref" className="min-h-screen px-6 py-6" style={{ backgroundColor: '__BG__', color: '__TEXT__' }}>
+      __NAV__
+      <h2 className="text-xl font-semibold mb-4">__LABEL__</h2>
+      {error ? <p className="text-sm mb-4" style={{ color: '__ACCENT__' }}>{error}</p> : null}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        {rows.map((row, i) => (
+          <div key={(row && row.id) || i} className="rounded-lg overflow-hidden border cursor-pointer" style={{ backgroundColor: '__SURFACE__', borderColor: '__BORDER__' }}>
+            {_imgOf(row)
+              ? <img src={_imgOf(row)} alt="" className="aspect-[3/4] w-full object-cover" style={{ backgroundColor: '__SURFACE__' }} />
+              : <div className="aspect-[3/4] w-full flex items-center justify-center text-lg font-semibold" style={{ backgroundColor: '__ACCENT__', color: '#ffffff' }}>{(_titleOf(row).charAt(0) || '?').toUpperCase()}</div>}
+            <div className="px-2 py-2">
+              <div className="text-sm font-medium truncate">{_titleOf(row)}</div>
+              {_subOf(row) ? <div className="text-xs truncate" style={{ color: '__MUTED__' }}>{_subOf(row)}</div> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+      {rows.length === 0 && !error ? <p className="mt-6 text-sm" style={{ color: '__MUTED__' }}>No data yet.</p> : null}
+    </div>
+  );
+}
+"""
+            _detail_core = """  const item = (data && data.item) ? data.item
+    : (Array.isArray(data && data.items) ? (data.items[0] || null)
+    : (Array.isArray(data) ? (data[0] || null) : (data || null)));
+  return (
+    <div data-projected="ref" className="min-h-screen px-6 py-6" style={{ backgroundColor: '__BG__', color: '__TEXT__' }}>
+      __NAV__
+      <h2 className="text-xl font-semibold mb-4">__LABEL__</h2>
+      {error ? <p className="text-sm mb-4" style={{ color: '__ACCENT__' }}>{error}</p> : null}
+      {item ? (
+        <div className="max-w-2xl mx-auto rounded-lg border overflow-hidden" style={{ backgroundColor: '__SURFACE__', borderColor: '__BORDER__' }}>
+          {_imgOf(item) ? <img src={_imgOf(item)} alt="" className="w-full max-h-[60vh] object-cover" style={{ backgroundColor: '__SURFACE__' }} /> : null}
+          <div className="px-5 py-4">
+            <h3 className="text-lg font-semibold mb-2">{_titleOf(item)}</h3>
+            {_subOf(item) ? <p className="text-sm mb-3" style={{ color: '__MUTED__' }}>{_subOf(item)}</p> : null}
+            <dl className="text-sm">
+              {_metaOf(item).map((k) => (
+                <div key={k} className="flex gap-3 py-1" style={{ borderTop: '1px solid __BORDER__' }}>
+                  <dt className="shrink-0" style={{ color: '__MUTED__' }}>{k}</dt>
+                  <dd className="min-w-0 truncate">{String(item[k])}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </div>
+      ) : (!error ? <p className="mt-6 text-sm" style={{ color: '__MUTED__' }}>No data yet.</p> : null)}
+    </div>
+  );
+}
+"""
+            _core = (_grid_core if _shape == "grid"
+                     else _detail_core if _shape == "detail" else _list_core)
+            mtpl = _prelude + _core
+            body = (mtpl.replace("__COMP__", name).replace("__LABEL__", label)
+                    .replace("__PATH__", _api_path_to_js(get_ep))
+                    .replace("__NAV__", _measured_nav_jsx(nav_routes, _floor))
+                    .replace("__BG__", _floor["bg"]).replace("__TEXT__", _floor["text"])
+                    .replace("__SURFACE__", _floor["surface"])
+                    .replace("__BORDER__", _floor["border"])
+                    .replace("__ACCENT__", _floor["accent"])
+                    .replace("__MUTED__", _floor["muted"]))
+            from .frontend_page_projector import _STRUCTURED_MARKER
+            return _STRUCTURED_MARKER + "\n" + body
+
         # LIST render (not a raw key:value dump, NOT a 16:9 video-card grid): a light,
         # neutral row list — leading avatar/thumbnail (or an initial), a title, a
         # snippet/sender subtitle, and a few scalar meta fields. This is the universal
@@ -3129,38 +3531,225 @@ def _theme_default(design_system) -> str:
     return d if d in ("dark", "light") else ""
 
 
+_COLOUR_FN_RE = re.compile(r"^(?:rgba?|hsla?)\(\s*[\d.%,\s/]+\)$", re.I)
+
+
+def _is_colour_value(value) -> bool:
+    """True for a measured value that IS a colour.
+
+    #343: the projector accepted `#rrggbb` only, so every `rgba(...)` the
+    design analyst measured was discarded -- 6 of r93's palette values
+    (text_2, text_muted, text_disabled, footer_text, video_progress_track).
+    `notes` is prose, numbers are scales, nested dicts are sub-palettes: the
+    rule is "the value IS a colour", not "the key exists".
+    """
+    if not isinstance(value, str):
+        return False
+    v = value.strip()
+    return bool(_HEX_RE_208.match(v)) or bool(_COLOUR_FN_RE.match(v))
+
+
+def _token_name(key: str) -> str:
+    """Tailwind reads kebab-case, and the analyst authors snake_case."""
+    return str(key).strip().lower().replace("_", "-")
+
+
+def _scale_of(design_system, key):
+    ds = design_system or {}
+    inner = ds.get("design_system") if isinstance(ds.get("design_system"), dict) else ds
+    return (inner or {}).get(key)
+
+
+def _px(value):
+    """A measured length -> a CSS length. Ints/floats are px; '50%'/'2rem' pass
+    through; prose returns None so it never becomes a token."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return f"{int(value) if float(value).is_integer() else value}px"
+    if isinstance(value, str):
+        v = value.strip()
+        if re.fullmatch(r"-?\d+(?:\.\d+)?", v):
+            return f"{v}px"
+        if re.fullmatch(r"-?\d+(?:\.\d+)?(?:px|rem|em|%|vh|vw)", v):
+            return v
+    return None
+
+
+def render_measured_theme_sections(design_system) -> str:
+    """#345: fontSize / borderRadius / boxShadow from the MEASURED scales.
+
+    design_system.json carries type_scale, radius_scale and shadow_scale on
+    every run and none of them ever reached tailwind.theme.js -- the file held
+    a `colors` block and nothing else -- so the lane had no measured name for a
+    radius, a text size or an elevation and fell back to Tailwind defaults.
+
+    The shapes are NOT stable across runs, so both spellings are read:
+    r91 uses type_scale[].line_px / .font and shadow_scale[].value; r93 uses
+    .line_height / .family and .css. Anything that is not a value (r91's
+    radius_scale `notes` prose) is skipped.
+
+    `spacing_scale_px` is deliberately NOT projected: Tailwind's `spacing` keys
+    are what `p-4`/`gap-2` resolve through, so emitting {'4': '4px'} would
+    silently redefine p-4 from 16px to 4px and break every spacing utility the
+    lane already wrote.
+    """
+    out = []
+
+    fonts = []
+    for item in (_scale_of(design_system, "type_scale") or []):
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip()
+        size = _px(item.get("size_px") or item.get("size"))
+        if not role or not size:
+            continue
+        extra = []
+        line = item.get("line_height", item.get("line_px"))
+        if isinstance(line, (int, float)) and not isinstance(line, bool):
+            extra.append(f"lineHeight: '{line}px'" if line > 4 else f"lineHeight: '{line}'")
+        weight = item.get("weight")
+        if isinstance(weight, (int, float)) and not isinstance(weight, bool):
+            extra.append(f"fontWeight: '{int(weight)}'")
+        meta = (", { " + ", ".join(extra) + " }") if extra else ""
+        fonts.append(f"    '{_token_name(role)}': ['{size}'{meta}]")
+    if fonts:
+        out.append("  fontSize: {\n" + ",\n".join(fonts) + ",\n  },")
+
+    radii = []
+    for name, value in (_scale_of(design_system, "radius_scale") or {}).items():
+        length = _px(value)
+        if length:
+            radii.append(f"    '{_token_name(name)}': '{length}'")
+    if radii:
+        out.append("  borderRadius: {\n" + ",\n".join(radii) + ",\n  },")
+
+    shadows = []
+    for item in (_scale_of(design_system, "shadow_scale") or []):
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip()
+        css = item.get("css") or item.get("value")
+        if role and isinstance(css, str) and css.strip():
+            shadows.append(f"    '{_token_name(role)}': '{css.strip()}'")
+    if shadows:
+        out.append("  boxShadow: {\n" + ",\n".join(shadows) + ",\n  },")
+
+    return "\n".join(out)
+
+
 def render_measured_tailwind_theme(design_system) -> str:
     """#208: tailwind.theme.js exporting the MEASURED colors as named tokens
     (bg / accent / accent-<hue>), so `bg-bg`, `text-accent`, `bg-accent-red`
     resolve to the reference's real hex. Empty palette → the empty baseline."""
     pal = _palette_of(design_system)
     colors: Dict[str, str] = {}
+    # #343: EVERY measured colour becomes a token. Emitting only bg/accent/
+    # accents.* discarded 73%/65%/81% of what was measured in r91/r92/r93 --
+    # surface, elevated, border, divider, text_2, input_bg, chip_bg ... the
+    # lane then had no measured name to reach for and fell back to generic
+    # Tailwind greys.
+    for key, value in (pal or {}).items():
+        if key in ("accents", "background"):
+            continue
+        if _is_colour_value(value):
+            colors[_token_name(key)] = value.strip()
     _bg = pal.get("bg") or pal.get("background")
-    if isinstance(_bg, str) and _HEX_RE_208.match(_bg):
-        colors["bg"] = _bg
-    _acc = pal.get("accent")
-    if isinstance(_acc, str) and _HEX_RE_208.match(_acc):
-        colors["accent"] = _acc
+    if isinstance(_bg, str) and _is_colour_value(_bg):
+        colors["bg"] = _bg.strip()   # canonical name #334's auth page consumes
     for hue, hexv in (pal.get("accents") or {}).items():
-        if isinstance(hexv, str) and _HEX_RE_208.match(hexv):
-            colors[f"accent-{str(hue).lower()}"] = hexv
+        if _is_colour_value(hexv):
+            colors[f"accent-{_token_name(hue)}"] = hexv.strip()
+    _sections = render_measured_theme_sections(design_system)
     if not colors:
+        if _sections:
+            return "export default {\n" + _sections + "\n}\n"
         return "export default {}\n"
     # #219: the pinned tailwind.config.js consumes this as `theme: { extend:
     # theme || {} }` — the export IS the extend object. Wrapping it in
     # theme/extend again double-nests and the tokens never resolve.
     _lines = ",\n".join(f"    '{k}': '{v}'" for k, v in colors.items())
-    return f"export default {{\n  colors: {{\n{_lines}\n  }},\n}}\n"
+    _tail = ("\n" + _sections) if _sections else ""
+    return f"export default {{\n  colors: {{\n{_lines}\n  }},{_tail}\n}}\n"
 
 
-def render_measured_base_css(design_system) -> str:
+_FONT_EXTS = {".woff2": "woff2", ".woff": "woff", ".ttf": "truetype", ".otf": "opentype"}
+_FONT_WEIGHTS = (("thin", 100), ("extralight", 200), ("light", 300), ("regular", 400),
+                 ("book", 400), ("medium", 500), ("semibold", 600), ("demibold", 600),
+                 ("bold", 700), ("extrabold", 800), ("black", 900))
+
+
+def _font_face_blocks(font_files) -> Tuple[str, str]:
+    """(@font-face css, primary family) for the fonts design-prep staged.
+
+    Design-prep drops the reference's real font files into
+    public/assets/fonts/ every run, and design_system.json carries a measured
+    font_stack -- but nothing ever emitted an @font-face or a body font-family,
+    so `grep -rl "font-family|@font-face"` over the delivered src/ + index.html
+    returned ZERO files in r91/r92/r93. The files shipped and no screen used
+    them. Staging was implemented; wiring never was.
+
+    Family name drops the weight suffix, so TikTokFont-Regular and
+    TikTokFont-Bold become ONE family at two weights rather than two families.
+    Returns ("", "") when nothing usable was staged, so an env without design
+    input is untouched.
+    """
+    from pathlib import Path as _P
+    blocks, primary = [], ""
+    for name in (font_files or []):
+        stem = _P(str(name)).stem
+        fmt = _FONT_EXTS.get(_P(str(name)).suffix.lower())
+        if not fmt or not stem:
+            continue
+        family, weight, italic = stem, 400, "normal"
+        low = stem.lower()
+        if low.endswith("-italic") or low.endswith("italic"):
+            italic = "italic"
+        for token, w in _FONT_WEIGHTS:
+            if low.endswith("-" + token) or low.endswith(token):
+                weight = w
+                family = stem[: len(stem) - len(token)].rstrip("-_") or stem
+                break
+        else:
+            # a variable font (…-VF) is one file covering the whole range
+            if low.endswith("-vf"):
+                family = stem[:-3].rstrip("-_") or stem
+                weight = "100 900"
+        if not primary:
+            primary = family
+        blocks.append(
+            "  @font-face {\n"
+            f"    font-family: '{family}';\n"
+            f"    src: url('/assets/fonts/{name}') format('{fmt}');\n"
+            f"    font-weight: {weight};\n"
+            f"    font-style: {italic};\n"
+            "    font-display: swap;\n"
+            "  }\n"
+        )
+    return "".join(blocks), primary
+
+
+def render_measured_base_css(design_system, font_files=None) -> str:
     """#208: index.css + a base layer painting `body` with the MEASURED background
     and a theme-derived default text color, so the canvas matches the reference by
     construction. No measured palette → the plain baseline (no injected layer)."""
     base = "@tailwind base;\n@tailwind components;\n@tailwind utilities;\n"
+    _faces, _primary = _font_face_blocks(font_files)
+    _stack = ""
+    try:
+        _inner = (design_system or {}).get("design_system") or design_system or {}
+        _stack = str(_inner.get("font_stack") or "").strip()
+    except Exception:
+        _stack = ""
+    if _faces and not _stack:
+        _stack = f"'{_primary}', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    _font_rule = f"  body {{ font-family: {_stack}; }}\n" if _faces and _stack else ""
     pal = _palette_of(design_system)
     _bg = pal.get("bg") or pal.get("background")
     if not (isinstance(_bg, str) and _HEX_RE_208.match(_bg)):
+        # #342: staged fonts wire up even without a measured palette.
+        if _faces:
+            return base + "\n@layer base {\n" + _faces + _font_rule + "}\n"
         return base
     # derive default text from theme (dark canvas → light text, and vice-versa);
     # if the theme is unstated, infer from the background luminance.
@@ -3176,9 +3765,12 @@ def render_measured_base_css(design_system) -> str:
         except Exception:
             theme = "dark"
     text = "#f5f5f5" if theme == "dark" else "#18181b"
+    _fam = f"    font-family: {_stack};\n" if (_faces and _stack) else ""
     return (base + "\n@layer base {\n"
+            + _faces +
             "  /* #208: measured canvas — reference ground-truth, by construction */\n"
-            f"  body {{\n    background-color: {_bg};\n    color: {text};\n  }}\n}}\n")
+            f"  body {{\n    background-color: {_bg};\n    color: {text};\n"
+            f"{_fam}  }}\n}}\n")
 
 
 # FIX #209 — when the MEASURED theme is dark, remap the lane's light-neutral
@@ -3198,7 +3790,13 @@ _BG_LIGHT_TO_DARK = {"50": "950", "100": "900", "200": "800", "300": "800"}
 _TEXT_DARK_SHADES = frozenset({"600", "700", "800", "900", "950"})
 _DARKIFY_RE = re.compile(
     r"(?<![\w-])((?:[a-z][a-z0-9]*:)*)(bg|text|border|divide|ring)-"
-    r"(white|black|zinc|gray|slate|neutral|stone)(?:-(\d{2,3}))?(?![\w-])"
+    # `/` and `[` end the utility but START an opacity modifier: `bg-white/15`
+    # and `bg-white/[0.12]` are TRANSLUCENT overlays, already correct on a dark
+    # surface. Without them in the lookahead, darkify matched the `bg-white`
+    # prefix and shipped `bg-zinc-950/15` -- a near-invisible dark-on-dark
+    # overlay. Delivered r91/r92/r93 carried 35/69/34 such conversions with
+    # ZERO surviving `bg-white/<opacity>`.
+    r"(white|black|zinc|gray|slate|neutral|stone)(?:-(\d{2,3}))?(?![\w\-/\[])"
 )
 
 
@@ -3323,7 +3921,7 @@ export async function login({ email, username, password }) {
   if (d.access_token) localStorage.setItem('token', d.access_token)
   return d
 }
-export function logout() { localStorage.removeItem('token') }
+export function logout() { localStorage.removeItem('access_token') }
 // Generic fixed-envelope CRUD helpers (the projector returns {item}/{items}); pages may
 // import these by name OR use the default `api` object (api.get/post/...).
 async function request(path, { method = 'GET', body } = {}) {
@@ -3382,7 +3980,7 @@ export default function App() {
           <button className="w-full p-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold">
             {mode === 'register' ? 'Sign up' : 'Log in'}
           </button>
-          <button type="button" className="w-full text-sm text-blue-600"
+          <button type="button" className="w-full text-sm __CLS_LINK__"
             onClick={() => setMode(mode === 'register' ? 'login' : 'register')}>
             {mode === 'register' ? 'Have an account? Log in' : 'New? Sign up'}
           </button>
@@ -3409,7 +4007,7 @@ _BC_AUTH_GUARD_JS = """// Global auth guard: any /api/ 401 redirects to /login. 
 function _bcOn401(url) {
   if (String(url).includes('/api/')
       && !['/login', '/register', '/signup'].includes(window.location.pathname)) {
-    localStorage.removeItem('token');
+    localStorage.removeItem('access_token');
     window.location.assign('/login');
   }
 }
@@ -4026,16 +4624,30 @@ def _apply_measured_palette(frontend_dir) -> None:
             _cur = _theme_p.read_text(encoding="utf-8") if _theme_p.exists() else ""
         except Exception:
             _cur = ""
-        _tok_re = re.compile(r"['\"]?([A-Za-z][\w-]*)['\"]?\s*:\s*['\"](#[0-9a-fA-F]{3,8})['\"]")
+        # #343: match ANY quoted colour value, not just hex — a hex-only merge
+        # pattern silently dropped every rgba() token a second time.
+        _tok_re = re.compile(r"['\"]?([A-Za-z][\w-]*)['\"]?\s*:\s*['\"]((?:#[0-9a-fA-F]{3,8}|(?:rgba?|hsla?)\([^)]*\)))['\"]")
         merged = {k: v for k, v in _tok_re.findall(_cur)}
         merged.update(dict(_tok_re.findall(_theme)))  # measured wins
         _lines = ",\n".join(f"    '{k}': '{v}'" for k, v in merged.items())
+        # #345: the merge rebuilds the file from `colors` alone, so the
+        # measured fontSize/borderRadius/boxShadow blocks must be re-appended
+        # or they would be discarded on the very next tick.
+        _sections = render_measured_theme_sections(ds)
+        _tail = ("\n" + _sections) if _sections else ""
         _theme_p.write_text(
-            f"export default {{\n  colors: {{\n{_lines}\n  }},\n}}\n",
+            f"export default {{\n  colors: {{\n{_lines}\n  }},{_tail}\n}}\n",
             encoding="utf-8")
     # index.css — inject the measured body layer ONCE (preserve lane styles).
     _css_p = Path(frontend_dir) / "src" / "index.css"
-    _measured = render_measured_base_css(ds)
+    # #342: design-prep stages the reference's real font files but nothing ever
+    # referenced them -- 0 font-family/@font-face hits in every delivered app.
+    _font_dir = Path(frontend_dir) / "public" / "assets" / "fonts"
+    try:
+        _fonts = sorted(f.name for f in _font_dir.iterdir() if f.is_file())
+    except Exception:
+        _fonts = []
+    _measured = render_measured_base_css(ds, font_files=_fonts)
     if "@layer base" not in _measured:
         return
     _layer = _measured.split("@layer base", 1)[1]

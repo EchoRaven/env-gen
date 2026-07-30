@@ -498,8 +498,70 @@ def _is_id_param(param: str) -> bool:
     return p == "id" or p.endswith("id") or p.endswith("_id")
 
 
+# #270: text-ish columns a by-NAME path param may legitimately match, most specific first.
+_NAMED_LOOKUP_COLS = ("username", "handle", "slug", "name", "title", "code", "key", "email")
+
+
+
+# #271: resolve whether a projected endpoint needs auth, treating an UNSTATED contract
+# (missing OR None) as "decide by shape", never as "public".
+_WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+# Path fragments that make a GET personal to the caller — a read of these is per-user and
+# cannot be anonymous. Kept generic (no app vocabulary): "me", the personalised feeds, and
+# the notification/inbox family.
+# #279: following/friends are personalised (a specific user's graph → auth). The FOR-YOU /
+# FYP feed is NOT — it is the app's public recommended stream, served logged-out in real
+# apps (TikTok's FYP is browsable anonymously; the login wall is only on interaction).
+# Marking it self-read (#271) required auth on it, which failed the anonymous ui_flow walk
+# on a working app (r62). An explicit auth_required in the contract still wins.
+_SELF_READ_MARKERS = ("/me", "/me/", "feed/following", "feed/friends",
+                      "notification", "inbox", "/mine")
+# The auth CONTROL surface mints tokens, so it must stay anonymous even for writes.
+_AUTH_CONTROL_PREFIXES = ("/auth/", "/api/auth/", "/oauth", "/api/oauth", "/.well-known")
+
+
+def resolve_endpoint_auth(method, path, ep, meta=None):
+    """True if this endpoint must project with Depends(get_current_user).
+
+    r58 (live): every unauthored endpoint carried auth_required=None, and
+    ``bool(ep.get("auth_required", True))`` returned False for a PRESENT-but-None key
+    (the default only applies when the key is ABSENT), so /api/me, /api/feed/following and
+    the video write routes all projected WIDE OPEN and 200'd anonymously. Fixed two ways:
+    None means "unstated" (explicit is-None check, not .get-with-default), and an unstated
+    endpoint defaults to auth ONLY when its shape needs it — a write, or a self/personalised
+    read — so public reads (a feed, an explore grid) stay open. An explicit True/False in
+    the contract or metadata always wins.
+    """
+    stated = ep.get("auth_required")
+    if stated is None and isinstance(meta, Mapping):
+        stated = meta.get("auth_required")
+    if stated is not None:
+        return bool(stated)
+    p = str(path or "").lower()
+    if any(p.startswith(pre) for pre in _AUTH_CONTROL_PREFIXES):
+        return False                              # token-minting surface stays anonymous
+    if str(method or "").upper() in _WRITE_METHODS:
+        return True                               # a mutation needs an actor
+    return any(mark in p for mark in _SELF_READ_MARKERS)   # personalised read needs one
+
+
 def _lookup_field(param: str, parent_meta: Dict[str, Any]) -> str:
-    """Which parent column a path param matches: id for ``*id``, else username/slug."""
+    """Which parent column a path param matches: id for ``*id``, else a NAMED column.
+
+    #270 (r58, live): ``/api/users/{username}/follow`` projected to
+    ``db.query(User).filter(getattr(User, "id") == username)``. That run's ``User`` has no
+    ``username`` column — it is id / email / name / password_hash / tenant_id / created_at,
+    the username lives on another model — so every rung of the old ladder missed and the
+    final ``return "id"`` compared an Integer primary key to "avachen". That is an
+    unconditional Postgres type error: three routes 500 on every request, no lane can fix
+    it, and it reads as a backend bug rather than a projection bug.
+
+    The fallback was the defect. For an id-LIKE param the PK is right. For a param named
+    after something else, the PK is a guaranteed 500, so prefer any TEXT-ish identifying
+    column the parent actually has: a text-to-text comparison cannot raise, and a miss
+    becomes an honest 404. Only an id-like param (or a model with nothing else) still
+    reaches ``id``.
+    """
     cols = parent_meta.get("cols", [])
     if _is_id_param(param):
         return "id"
@@ -509,6 +571,14 @@ def _lookup_field(param: str, parent_meta: Dict[str, Any]) -> str:
         return "username"
     if "slug" in cols:
         return "slug"
+    # #270: a name-shaped param must not claim the PK. Prefer a column whose name relates
+    # to the param, then any text-ish identifier the model carries.
+    for col in _NAMED_LOOKUP_COLS:
+        if col in cols and (col in param or param in col):
+            return col
+    for col in _NAMED_LOOKUP_COLS:
+        if col in cols:
+            return col
     return "id"
 
 
@@ -690,7 +760,21 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         parent_cls = parent_meta["cls"]
         parent_singular = parent_table.rstrip("s")
         parent_field = _lookup_field(parent_param, parent_meta)
-        if auth and owner_scoped_tables and parent_table in set(owner_scoped_tables):
+        # FIX #288 (tiktok r73, live): owner-scoping the parent lookup is correct for a PRIVATE
+        # container (/api/projects/{id}/tasks — you may only reach your own project), but WRONG
+        # for the app's primary PUBLIC content. TikTok's videos are public (#279 already serves
+        # the FYP feed logged-out); commenting/liking authenticates the ACTOR but targets ANY
+        # video. Scoping the parent turned "must log in to comment" into "can only comment on
+        # your OWN videos" → a non-author's POST/GET /api/videos/{id}/comments resolved
+        # parent=None → 404 → fyp_comments ui_flow failed (r73's sole remaining blocker). So skip
+        # the parent filter when the parent IS the primary content model (the public feed source,
+        # shape-derived) — mirroring #279 (the login wall is on interaction, not on the content).
+        # A genuinely private container (not the feed's content model) still scopes its parent,
+        # preserving the cross-user leak protection the filter was added for.
+        _pc = _primary_content_model(models)
+        _pc_table = _pc[0] if _pc else None
+        if (auth and owner_scoped_tables and parent_table in set(owner_scoped_tables)
+                and parent_table != _pc_table):
             _p_ofk = _owner_fk(parent_meta)
             if _p_ofk:
                 _parent_owner_filter = f'.filter(getattr({parent_cls}, "{_p_ofk}") == _fw_owner_val({parent_cls}, "{_p_ofk}", user))'
@@ -932,6 +1016,26 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 "        for k, v in valid.items():",
                 "            setattr(obj, k, v)",
             ]
+        elif m in ("PUT", "PATCH") and owner_fk and not last_param:
+            # #277 (r61, live): PATCH /api/settings 500'd. An owner-scoped SINGLETON with no
+            # id param and not ending in /me (settings / preferences / profile / config — one
+            # row per user) fell through to the CREATE path below, so PATCH did
+            # ``cls(**valid); db.add`` — a second INSERT that hit the owner/unique constraint
+            # (or a NOT-NULL owner it never set). It is a one-row-per-user resource, so load
+            # the caller's existing row (like /me) and setattr onto it; create it if absent so
+            # a first PATCH still works.
+            body_lines += [
+                "    try:",
+                f'        obj = db.query({cls}).filter('
+                f'getattr({cls}, "{owner_fk}") == _fw_owner_val({cls}, "{owner_fk}", user)).first()',
+                "        if obj is None:",
+                f'            obj = {cls}(**valid)',
+                f'            setattr(obj, "{owner_fk}", _fw_owner_val({cls}, "{owner_fk}", user))',
+                "            db.add(obj)",
+                "        else:",
+                "            for k, v in valid.items():",
+                "                setattr(obj, k, v)",
+            ]
         else:
             bound: List[str] = []
             # Bind a path-param parent into the relation's TARGET FK, and inject the
@@ -1158,7 +1262,35 @@ def project_missing_routes(
         if (method, _norm_path(path)) in existing:
             continue
         meta = ep.get("metadata") if isinstance(ep.get("metadata"), Mapping) else {}
-        auth = bool(ep.get("auth_required", meta.get("auth_required", True)))
+        _rm_cur = _resource_model(path, models)
+        _owner_scoped = bool(_rm_cur and _rm_cur[0] in scoped_read_tables)
+        # #320 (r88/r89 public-feed wedge): a table can hold OWNED-but-PUBLIC content
+        # (TikTok videos, IG posts, YT videos) — rows have a creator yet the feed is
+        # public (the design inputs literally include fyp_feed_logged_out.png). Its
+        # per-table owner_scoped_reads flag (set for the "my videos" profile view / write
+        # ownership) otherwise owner-scopes + #315-force-auths EVERY read, so the public
+        # feed 401s and the ui_flow gate wedges. An EXPLICIT auth_required=False is the
+        # lane's DELIBERATE "this read is public" declaration — honor it: serve public
+        # (no owner row-filter, no force-auth) for THIS endpoint. UNSTATED reads on an
+        # owner-scoped table still force-auth + owner-scope (r58/#315 leak protection: a
+        # private table's unstated read must NOT default open — a strong model marks a
+        # genuinely-private list private and only sets =False on a real public feed).
+        _explicit_public = (ep.get("auth_required") is False) or (
+            isinstance(meta, Mapping) and meta.get("auth_required") is False)
+        if _explicit_public and _owner_scoped:
+            _owner_scoped = False   # deliberate public read → all rows, no owner filter
+        # An owner-scoped resource is per-user PRIVATE (notes/email/drafts): its reads
+        # can only be scoped to ``owner_fk == the caller``, which REQUIRES an actor. #271
+        # made an unstated read default to PUBLIC — so a private resource whose contract
+        # marked owner_scoped_reads but not auth_required projected anonymous + UNSCOPED
+        # (owner_fk is None when auth is False → the owner filter is silently dropped →
+        # every caller, even anonymous, reads every row: a cross-user leak). Force auth
+        # for an owner-scoped resource so the by-construction read isolation actually
+        # takes effect. This DELIBERATELY overrides even an explicit auth_required=False:
+        # "per-user-private reads" and "public" are contradictory, and a private read is
+        # unscopable without an actor — so owner_scoped wins here. Non-owner-scoped
+        # endpoints keep resolve_endpoint_auth's decision unchanged (incl. explicit False).
+        auth = resolve_endpoint_auth(method, path, ep, meta) or _owner_scoped   # #271
         _schema = ep.get("schema") if isinstance(ep.get("schema"), Mapping) else {}
         response_key = str(
             ep.get("response_key")
@@ -1166,8 +1298,6 @@ def project_missing_routes(
             or meta.get("response_key")
             or ""
         ).strip()
-        _rm_cur = _resource_model(path, models)
-        _owner_scoped = bool(_rm_cur and _rm_cur[0] in scoped_read_tables)
         block_info.append((path, _generate_handler(method, path, auth, models, i, response_key, _owner_scoped, owner_scoped_tables=scoped_read_tables)))
         projected.append(f"{method} {path}")
         existing.add((method, _norm_path(path)))  # dedupe within this batch

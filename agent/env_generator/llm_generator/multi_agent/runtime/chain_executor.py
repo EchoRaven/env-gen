@@ -39,7 +39,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
-from .validation_runner import _http
+from .validation_runner import _http, _form_retry_warranted
 
 # Chains live in the REGISTRY (user design 2026-06-12) — registered via the
 # registryhub_register_verification_chain tool with boundary validation, not
@@ -88,6 +88,14 @@ _TOKEN_RESP_SYNONYMS = frozenset({
 
 
 _SUCCESS_CODES = frozenset({200, 201, 202, 203, 204, 205, 206})
+# #289: public, idempotent social interaction verbs — anyone may perform these on any public
+# item, so a cross-user "isolation" denial probe on them is a category error (they return 2xx).
+# A WHITELIST so sensitive actions (transfer/promote/approve/delete/ban) keep their isolation.
+_SOCIAL_ACTION_VERBS = frozenset({
+    "like", "unlike", "save", "unsave", "favorite", "unfavorite", "fav", "unfav",
+    "follow", "unfollow", "subscribe", "unsubscribe", "share", "repost", "unrepost",
+    "bookmark", "unbookmark", "pin", "unpin", "watch", "unwatch",
+})
 _CROSS_USER_DENIAL_CODES = frozenset({403, 404})
 
 
@@ -114,6 +122,65 @@ def _is_cross_user_denial(st: Mapping[str, Any]) -> bool:
     if not codes or any(c in _SUCCESS_CODES for c in codes):
         return False
     return any(c in _CROSS_USER_DENIAL_CODES for c in codes)
+
+
+_SELF_ACTION_PATH_RE = re.compile(r"^(?P<coll>.*/users)/(?P<id>[^/]+)/(?P<verb>[a-z_]+)$")
+
+
+def _self_targeted_social_user_action(expect, path, own_user_id):
+    """#299 — recognise a SUCCESS-expecting social action (follow/subscribe/…) on
+    ``/…/users/<own_user_id>/<verb>``. Such a step can NEVER pass — the app
+    correctly returns 400 "cannot follow yourself" — so business_chain wedges
+    (r80 M2 live: POST /api/users/81/follow, 81=the registered chain user, 6/6
+    attempts → NO-CONVERGENCE ABORT). The #81 avoid-self ladder only guards an
+    UNRESOLVED placeholder; a target that RESOLVED to own_user_id (a saved var, or
+    a literal that collides with the minted chain-user id) slips through.
+
+    Returns ``(users_collection_path, current_id_str)`` so the caller can
+    re-target a DIFFERENT user, or None. A deliberate self-deny test
+    (``expect==[400]``, no 2xx) returns None — it SHOULD self-target."""
+    if own_user_id is None:
+        return None
+    if not any(c in _SUCCESS_CODES for c in (expect or [])):
+        return None
+    m = _SELF_ACTION_PATH_RE.match(str(path or "").split("?", 1)[0].rstrip("/"))
+    if not m:
+        return None
+    if m.group("verb") not in _SOCIAL_ACTION_VERBS:
+        return None
+    if str(m.group("id")) != str(own_user_id):
+        return None
+    return (m.group("coll"), m.group("id"))
+
+
+_OAUTH_AUTHORIZE_RE = re.compile(r"/oauth/authorize\b")
+_OAUTH_CODE_CHALLENGE_RE = re.compile(r"code_challenge", re.I)
+
+
+def _oauth_authorize_lacks_pkce(path, body) -> bool:
+    """#301+#316 — a /oauth/authorize step that carries NO ``code_challenge`` cannot
+    complete on a PKCE-enforced AS: it correctly 400/422s ("code_challenge with S256
+    is required") and can NEVER pass — whether it is a fully BARE probe (#301, no flow
+    params at all) OR a PARAMS-BEARING step that merely omits the PKCE challenge (#316,
+    r86 final NO-CONVERGENCE ABORT: a framework-synthesized chain hit
+    ``/oauth/authorize?response_type=code&client_id=..&redirect_uri=..&state=xyz`` → 400
+    and, having client_id/response_type, was treated as NOT-bare → not tolerated → the
+    business_chain gate never went green → 75min abort even though every real PKCE flow
+    passed). Tolerate its 4xx so a synthesized probe can't wedge business_chain.
+
+    The discriminator is the PKCE ``code_challenge``, NOT the presence of any flow
+    param (that was #301's bug this fixes): a step that DOES carry ``code_challenge`` is
+    the REAL PKCE flow and MUST pass — a 4xx there is a genuine bug, never tolerated.
+    Same family as #281 (oauth Form) / #289 (denial probe) / #299 (self-follow)."""
+    if not _OAUTH_AUTHORIZE_RE.search(str(path or "")):
+        return False
+    hay = str(path or "")
+    try:
+        if body:
+            hay += " " + json.dumps(body)
+    except Exception:
+        pass
+    return not _OAUTH_CODE_CHALLENGE_RE.search(hay)
 
 
 def _trailing_resource_var(path: Any) -> Optional[str]:
@@ -318,13 +385,24 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
         # token from /auth/* with {email,password}, true regardless of domain), so
         # supply a framework-authored default body — mirrors the default-save above
         # so a body-less auth step can't permanently 422-block the chain.
-        if pth in ("/auth/register", "/auth/login") and not (
-                isinstance(st.get("body"), Mapping) and st.get("body")):
-            _ab: Dict[str, Any] = {"email": "chain_${rand}@example.com",
-                                   "password": "Chain123!x"}
-            if pth == "/auth/register":
+        # #321 (r90 M-final): the guard was `not body` — it filled only a MISSING/empty
+        # body, so a step with a PARTIAL body that omits email/password (verifier modelled
+        # a username/phone signup, or authored `{username: ...}`) still 422'd "email and
+        # password are required" and wedged business_chain 6/6 attempts. setdefault the
+        # required creds onto whatever body is there instead — fills the missing keys,
+        # never clobbers authored ones; ${rand} keeps emails unique for isolation chains.
+        if pth in ("/auth/register", "/auth/login"):
+            _had_body = bool(isinstance(st.get("body"), Mapping) and st.get("body"))
+            _ab: Dict[str, Any] = dict(st["body"]) if isinstance(st.get("body"), Mapping) else {}
+            _ab.setdefault("email", "chain_${rand}@example.com")
+            _ab.setdefault("password", "Chain123!x")
+            # name is OPTIONAL — add it only when filling a fully-empty body (old bodyless
+            # behavior); never enrich an AUTHORED body beyond the required creds, or an
+            # authored {email,password} step would no longer round-trip byte-for-byte.
+            if pth == "/auth/register" and not _had_body:
                 _ab["name"] = "Chain Tester"
             st["body"] = _ab
+        _authored_auth = st.get("auth")          # #266: remember who asked for it
         if pth.startswith("/api/") and not st.get("auth"):
             st["auth"] = "token"
         # FIX #91 (instagram run-11, live): a step expecting EXACTLY {401} is an
@@ -337,8 +415,49 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
         _exp401 = st.get("expect")
         _exp401 = _exp401 if isinstance(_exp401, (list, tuple, set)) else (
             [_exp401] if _exp401 is not None else [])
-        if {int(x) for x in _exp401 if str(x).isdigit()} == {401}:
+        _codes401 = {int(x) for x in _exp401 if str(x).isdigit()}
+        if _codes401 == {401}:
             st.pop("auth", None)
+        elif (401 in _codes401
+              and not (_codes401 & _SUCCESS_CODES)
+              and str(_authored_auth or st.get("auth")) == "token"):
+            # #266 (r57, live): the SAME contradiction, written the natural way. A probe
+            # meaning "must be rejected" is usually authored expect=[401, 403] because an
+            # app may answer either — which #91's exact-{401} test misses, so the
+            # auto-bearer above stayed and the "anonymous" probe went out AUTHENTICATED.
+            # r57: POST /api/videos/<id>/like -> 201 against expect=[401, 403], on an app
+            # whose get_current_user correctly 401s without a token. 11 of 12 chains were
+            # green and this one could not pass no matter what any lane did.
+            # A CROSS-USER probe carries a different actor's token (auth="tokenB") and is
+            # left alone: stripping it would still satisfy the assertion via 401 while
+            # silently ending the isolation check that is its entire purpose.
+            st.pop("auth", None)
+        # #275 (r60, live): an anonymous LOGOUT is a legitimate no-op. The unauth_guard chain
+        # asserted POST /api/auth/logout anon expect=[401, 403]; the app answered 200 and the
+        # chain failed — but logout is an idempotent auth-control action ("end whatever session
+        # you have"), and a correct app answers it 200/204 as readily as 401. resolve_endpoint_
+        # auth (#271) already treats /auth/logout as anonymous-accessible, so app + framework
+        # agree; only the probe is too strict and no lane can fix a correct logout. Widen a
+        # denial probe on an idempotent control-surface endpoint to ALSO accept 2xx, so it
+        # passes whether the app rejects OR no-ops. Real protected endpoints are untouched.
+        _p275 = str(st.get("path") or "").lower().rstrip("/")
+        _is_logout = _p275.endswith(("/logout", "/signout", "/sign-out", "/log-out"))
+        if _is_logout and 401 in _codes401 and not (_codes401 & _SUCCESS_CODES):
+            _widened = sorted(_codes401 | {200, 204})
+            st["expect"] = _widened
+        # FIX #289 (tiktok r74, live): the same principle for the SOCIAL-ACTION surface. A
+        # like/save/follow/share is PUBLIC (#288 made those parents public) and idempotent —
+        # there is NO per-user isolation to assert, so a cross-user denial probe on one
+        # (POST /api/videos/{id}/like auth=tokenA expect=[404]) can never pass on a correct app
+        # (it returns 201). r74's tenant_isolation_like wedged business_chain exactly this way,
+        # with the whole frontend already green -> NO-CONVERGENCE ABORT. Widen a denial probe
+        # (403/404, no 2xx) whose path TAIL is a WHITELISTED public social verb to also accept
+        # 2xx. A whitelist -- NOT "any action suffix" -- so sensitive verbs (/transfer,/promote,
+        # /approve,/delete,/ban) keep cross-user isolation and a real leak still fails.
+        _tail289 = _p275.rsplit("/", 1)[-1] if "/" in _p275 else _p275
+        if (_tail289 in _SOCIAL_ACTION_VERBS
+                and (_codes401 & {403, 404}) and not (_codes401 & _SUCCESS_CODES)):
+            st["expect"] = sorted(_codes401 | {200, 201, 204})
         out.append(st)
     # CANONICAL TOKEN-AUTH: a verifier can reference auth="<var>" that no step
     # actually saves (it saved under a different name, or a bare "token" while the
@@ -623,10 +742,35 @@ def load_seed_ids(project_dir: Any) -> Dict[str, Any]:
         for table, rows in data.items():
             if not isinstance(rows, list):
                 continue
-            for row in rows:
-                if isinstance(row, Mapping) and row.get("id") is not None:
+            # FIX #283 (tiktok r68, live): #144 assumed the authored seed DECLARES ids —
+            # nothing ever enforced that. r68's seed carried 23 videos / 10 sounds / 5 users
+            # with NOT ONE `id`, while the same file's FKs already assumed positional
+            # autoincrement (videos[0].author_id=1 → users[0]; likes[0].video_id=2 →
+            # videos[1]). load_seed_ids returned {} and the literal-id recovery ladder lost
+            # its deterministic rung. So: an explicit id still WINS wherever one exists
+            # (real data beats a guess, even if it appears in a later row); only when the
+            # table declares none do we fall back to the id the DB is about to assign on a
+            # clean boot — the row's 1-based position, exactly what the seed's own FKs point
+            # at. Type-safe by construction: these ids are consumed ONLY to replace a NUMERIC
+            # literal in a path, so a text/uuid-PK table is never reached this way.
+            # A pure ASSOCIATION row (every column an FK: {follower_id, followee_id},
+            # {user_id, video_id}) has a COMPOSITE pk and no `id` column at all — inventing
+            # one would be fabricating a column that does not exist, so those tables stay
+            # absent exactly as before. A row carrying real data columns (users: email/name,
+            # videos: video_url/caption) is an id-bearing table whose seed merely omitted it.
+            positional: Any = None
+            for idx, row in enumerate(rows, start=1):
+                if not isinstance(row, Mapping):
+                    continue
+                if row.get("id") is not None:
                     out[str(table)] = row["id"]
+                    positional = None
                     break
+                if positional is None and any(
+                        not str(k).endswith("_id") for k in row):
+                    positional = idx
+            if positional is not None and str(table) not in out:
+                out[str(table)] = positional
     except Exception:
         return {}
     return out
@@ -832,6 +976,29 @@ _REQUIRED_FIELD_RE = re.compile(
     re.IGNORECASE)
 
 
+# #272: framework-projected-defect classifier (Hatch design principle #5 — separate "my
+# framework code is broken" from "the app the lane wrote is broken"). A projected handler is
+# named ``_projected_*`` by route_projector, so a 5xx whose traceback names one is, by
+# definition, a bug in framework-emitted code the lane cannot touch. #263/#270/#271 were all
+# this shape and were recorded as ``broken`` app endpoints, sending lanes to fix handlers
+# they never wrote. Narrow on purpose: only a 5xx + a ``_projected_`` traceback qualifies; a
+# 4xx (a contract/data outcome) or a lane-authored traceback stays a normal app failure.
+_PROJECTED_TRACEBACK_RE = re.compile(r"backend traceback:[^\n]*\b_projected_[a-z0-9_]+", re.I)
+
+
+def classify_endpoint_failure(status, body_text):
+    """``"ok"`` | ``"framework_defect"`` | ``"broken"`` for one endpoint probe result."""
+    try:
+        code = int(status)
+    except (TypeError, ValueError):
+        code = 0
+    if 200 <= code < 300:
+        return "ok"
+    if code >= 500 and isinstance(body_text, str) and _PROJECTED_TRACEBACK_RE.search(body_text):
+        return "framework_defect"
+    return "broken"
+
+
 def _missing_required_fields(body_text: Optional[str],
                              method: str) -> "tuple[List[str], List[str]]":
     """``(body_fields, query_fields)`` the LIVE handler reports MISSING from a 4xx,
@@ -936,6 +1103,75 @@ def _harvest_resource_ids(payload: Any, into: Dict[str, Any]) -> None:
             into.setdefault(_singular(k), v["id"])
 
 
+_ID_KEYS = ("id", "uuid", "pk")
+
+
+def _ids_from_list_payload(payload: Any) -> list:
+    """#263 — ids of the objects in a LIST-shaped response, under any key.
+
+    A singular object (the /auth/register response) deliberately yields nothing: it is the
+    exact payload whose id kept landing on by-id paths for other resources.
+    """
+    def _id_of(o):
+        if not isinstance(o, Mapping):
+            return None
+        for k in _ID_KEYS:
+            if o.get(k) is not None:
+                return o[k]
+        for k, v in o.items():
+            if str(k).lower().endswith("_id") and v is not None:
+                return v
+        return None
+
+    def _from_seq(seq):
+        out = []
+        for o in seq:
+            i = _id_of(o)
+            if i is not None:
+                out.append(i)
+        return out
+
+    if isinstance(payload, list):
+        return _from_seq(payload)
+    if isinstance(payload, Mapping):
+        for v in payload.values():
+            if isinstance(v, list) and v and isinstance(v[0], Mapping):
+                got = _from_seq(v)
+                if got:
+                    return got
+    return []
+
+
+def _pick_id_for_resource(resource: Any, seen_responses: list, last_id: Any) -> Any:
+    """#263 — the id to use for a by-id path when no step saved the variable.
+
+    Order: (1) a list from a response whose PATH names this resource, (2) the MOST RECENT
+    list-shaped response — the collection a human would have read the id from ("GET the
+    feed, then GET the first video") — and only then (3) the global last_id.
+
+    r55 lost its whole 88-minute convergence budget because step (3) was reached directly:
+    ``GET /api/v1/videos/${first_video_id}`` was filled with the USER id from
+    /auth/register and answered 404 "video not found" on a WORKING app, 20 chains over.
+    Rung (1) missed because the feed response is keyed ``items`` (not ``videos``) and rung
+    (2) of the old ladder — a live LIST on ``/api/v1/videos`` — missed because this app has
+    no bare collection, only ``/feed/foryou``.
+    """
+    res = str(resource or "").lower().rstrip("s")
+    named, recent = None, None
+    for path, payload in seen_responses:
+        ids = _ids_from_list_payload(payload)
+        if not ids:
+            continue
+        recent = ids[0]
+        if res and res in str(path or "").lower():
+            named = ids[0]
+    if named is not None:
+        return named
+    if recent is not None:
+        return recent
+    return last_id
+
+
 def _resolve_unresolved_dollar_vars(value: Any, last_id: Any,
                                     by_resource: Optional[Mapping[str, Any]] = None) -> Any:
     """BODY counterpart of execute_chain's path UNRESOLVED-VARIABLE FALLBACK. A
@@ -1022,6 +1258,130 @@ def _recover_id_via_list(base: str, coll_path: str, token: Any, avoid: Any = Non
         return _extract_resource_id(payload)
     except Exception:
         return None
+
+
+# id-shaped param names: id, user_id, videoId (camelCase), pk, uuid — these stay
+# with the #136 numeric-id ladder; everything else (username/handle/slug) is #245.
+# #246: a CREATE step that violates a UNIQUE constraint is not a broken endpoint — the
+# row already exists (chains RE-RUN every validation cycle, so a create with a fixed
+# unique field goes green once and then red FOREVER). Detect from the server's own error.
+_UNIQUE_ERR_RE = re.compile(r"unique|duplicate|already exist|integrity constraint", re.I)
+_UNIQUE_FIELDS = ("username", "email", "slug", "handle", "code", "key", "name")
+
+
+_ID_PARAM_RE = re.compile(r"(?:^|_|(?<=[a-z]))(?:id|pk|uuid)$", re.I)
+
+# #323 — literals a verifier authors to MEAN "the current/authenticated user" instead of
+# a real value: GET /api/users/Owner/favorites, /api/users/me/liked. On an OWNER-SCOPED
+# resource (403 for any non-owner) the ONLY value that satisfies expect [200] is the chain
+# user's OWN identity — recovering a DIFFERENT user (the #245 default) 403s forever.
+_SELF_ALIAS = {
+    "owner", "me", "self", "myself", "mine", "my", "current", "currentuser",
+    "current_user", "current-user", "loggedin", "logged_in", "you",
+}
+
+
+def _extract_own_username(payload: Any) -> Any:
+    """The chain user's own username/handle from an /auth/register (or /login) response —
+    top-level or nested under ``user``. Owner-scoped self-view recovery targets THIS value."""
+    if not isinstance(payload, Mapping):
+        return None
+    containers = [payload]
+    _u = payload.get("user")
+    if isinstance(_u, Mapping):
+        containers.append(_u)
+    for c in containers:
+        for k in ("username", "handle", "slug", "user_name", "userName"):
+            v = c.get(k)
+            if v is not None and str(v).strip():
+                return str(v)
+    return None
+
+
+def _registered_param_for_path(path: Any, endpoints: Any):
+    """#245 (+#323) — match a LITERAL request path against the REGISTERED contract templates
+    and return ``(collection_path, param_name, seg_index)`` for a ``{param}`` segment whose
+    STATIC siblings all match, so recovery can fetch a real value of the RIGHT KIND and
+    replace the RIGHT segment.
+
+    Chains author a literal value (``/api/users/13``, ``/api/users/ProfileUser``) while the
+    contract declares ``/api/users/{username}``. Knowing the param NAME is what lets recovery
+    fetch a real value of the RIGHT KIND — the #136 ladder only recovers a numeric id, which
+    is exactly wrong for a ``{username}`` param (r29: the id 500'd the handler; r33: 404).
+
+    #323 (r92 M3 NO-CONVERGENCE, 75min): #245 only matched a TRAILING ``{param}`` — but a
+    chain authored ``GET /api/users/Owner/favorites`` against ``/api/users/{username}/favorites``
+    where the param is a MIDDLE segment, so #245 returned nothing and the invented "Owner"
+    404'd forever. Now the ``{param}`` may be in ANY position: ``collection_path`` is the path
+    UP TO it (for list recovery) and ``seg_index`` is its 0-based index (over non-empty
+    segments) so the caller replaces THAT segment. Returns (None, None, -1) on no match. Pure."""
+    if not path or not endpoints:
+        return None, None, -1
+    lit = [s for s in str(path).split("?", 1)[0].split("/") if s]
+    if not lit:
+        return None, None, -1
+    # STATIC WINS: a literal that IS a registered static endpoint (/api/users/suggested)
+    # must never be treated as a {param} value — rewriting it would mask a real failure
+    # of that endpoint.
+    _litp = "/" + "/".join(lit)
+    for ep in endpoints or []:
+        tplp = str((ep or {}).get("path") or "") if isinstance(ep, Mapping) else ""
+        if tplp and "{" not in tplp and tplp.rstrip("/") == _litp.rstrip("/"):
+            return None, None, -1
+    for ep in endpoints or []:
+        tpl = str((ep or {}).get("path") or "") if isinstance(ep, Mapping) else ""
+        segs = [s for s in tpl.split("/") if s]
+        if not segs or len(segs) != len(lit):
+            continue
+        for i, seg in enumerate(segs):
+            if not (seg.startswith("{") and seg.endswith("}")):
+                continue
+            # every STATIC sibling must equal the literal (other {params} resolve on their
+            # own); the matched param may sit in any position (trailing OR middle).
+            if all(segs[j] == lit[j] for j in range(len(segs))
+                   if j != i and not (segs[j].startswith("{") and segs[j].endswith("}"))):
+                return "/" + "/".join(segs[:i]), seg[1:-1], i
+    return None, None, -1
+
+
+def _rows_of_payload(payload: Any) -> list:
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, Mapping):
+        items = payload.get("items")
+        if isinstance(items, list):
+            return items
+        for k, v in payload.items():
+            if str(k).lower() in ("errors", "error", "detail", "warnings"):
+                continue
+            if isinstance(v, list):
+                return v
+    return []
+
+
+def _recover_field_via_list(base: str, coll_path: str, field: str, token: Any,
+                            avoid: Any = None) -> Any:
+    """#245 — GET the collection and return a real row's ``field`` (the value the registered
+    path param NAMES: username / handle / slug), not an id. ``avoid`` skips the chain user's
+    own value so a follow/unfollow step never targets self. Best-effort → None."""
+    if not coll_path or not field or "{" in coll_path or "${" in coll_path:
+        return None
+    try:
+        r = _http("GET", base + coll_path, token=token, body=None)
+        if not _status_ok(r.get("status"), [200]):
+            return None
+        for row in _rows_of_payload(json.loads(r.get("body_text") or "{}")):
+            if not isinstance(row, Mapping):
+                continue
+            v = row.get(field)
+            if v is None or not str(v).strip():
+                continue
+            if avoid is not None and str(v) == str(avoid):
+                continue
+            return v
+    except Exception:
+        return None
+    return None
 
 
 def _recover_id_via_create(base: str, coll_path: str, token: Any) -> Any:
@@ -1125,7 +1485,8 @@ def _reverify_denial_via_fresh_intruder(base, method, path, body, expect) -> boo
 
 
 def execute_chain(base: str, chain: Mapping[str, Any],
-                  seed_ids: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+                  seed_ids: Optional[Mapping[str, Any]] = None,
+                  endpoints: Optional[List[Mapping[str, Any]]] = None) -> Dict[str, Any]:
     """Run one chain; returns {name, steps: [...], broken: [...]}.
     Deterministic wiring; never raises. ``seed_ids`` (#144): {resource →
     known-present id from seed_data.json}, a recovery rung for literal-id
@@ -1144,8 +1505,10 @@ def execute_chain(base: str, chain: Mapping[str, Any],
     recorded: List[Dict[str, Any]] = []
     last_id: Any = None
     last_id_by_resource: Dict[str, Any] = {}  # resource -> its last-created id (FK resolution, fix #10)
+    seen_responses: List[Any] = []           # #263: (path, payload) of each step, for list-id recovery
     last_reg_creds: Dict[str, Any] = {}  # creds of the last successful /auth/register → reused if a later /auth/login 401s
     own_user_id: Any = None  # the chain user's own id (from /auth/register) — recovery must not target SELF (FIX #81)
+    own_username: Any = None  # #323: the chain user's OWN username — owner-scoped self-view recovery targets THIS
     unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
     # FIX #188: var → step-action whose OK response lacked the save path — the
     # silent-capture-failure class behind the "GET x → 200 marked failed" triage
@@ -1245,7 +1608,15 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             #     id → reading it → 200 false leak; leave the literal (404s,
             #     tolerated by the denial expectation).
             if _rid is None and not _is_denial:
-                _rid = last_id
+                # #263: before the blind global last_id, try an id from a LIST a prior
+                # step actually returned. r55 lost its entire convergence budget here:
+                # GET /api/v1/videos/${first_video_id} was filled with the USER id from
+                # /auth/register (last_id) and answered 404 "video not found" on a WORKING
+                # app, across 20 chains. Rung (1) missed because the feed response is keyed
+                # `items`, and list-recovery missed because this app has no bare
+                # /api/v1/videos collection — only /feed/foryou. A foreign id on a by-id
+                # path is a guaranteed 404 that reads exactly like an application bug.
+                _rid = _pick_id_for_resource(_pres, seen_responses, last_id)
             if _rid is not None:
                 path = _UNRESOLVED_PLACEHOLDER.sub(str(_rid), path)
         # #67 (outlook run-53, live): UNSATISFIABLE-BY-DATA read. A positive GET
@@ -1318,8 +1689,32 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             _unres_vars.add(_auth_ref)
         res = _http(method, base + path, token=token, body=body)
         status = res.get("status")
+        # FIX #281 (tiktok r66, live): the step sent JSON but the endpoint declares FORM
+        # fields — the framework's own scaffolded oauth_routes.py does exactly that for
+        # POST /oauth/authorize (email/password/client_id = Form(...)), the correct OAuth2
+        # shape. FastAPI calls every form field "missing from body", so the step 400s
+        # forever and the chain-step schema has NO way to say "urlencode this": the verifier
+        # was dispatched to fix a defect it had no power to fix, wedging business_chain
+        # through all 6 validation attempts → no successful run → NO-CONVERGENCE ABORT at
+        # 76min on an app whose endpoint was FINE. Retry ONCE form-encoded when the response
+        # bears that exact signature (it names as missing-from-body a field we DID send);
+        # a genuinely absent field keeps its teeth (see _form_retry_warranted).
+        if not _status_ok(status, expect) and _form_retry_warranted(
+                body, status, res.get("body_text") or ""):
+            _fres = _http(method, base + path, token=token, body=body, form=True)
+            if _status_ok(_fres.get("status"), expect):
+                res, status = _fres, _fres.get("status")
         ok = _status_ok(status, expect)
         autofilled: List[str] = []
+        # #301+#316: a /oauth/authorize step lacking the PKCE code_challenge (bare OR
+        # params-bearing) correctly 400/422s on a working AS and can never pass —
+        # tolerate it so a synthesized probe doesn't wedge business_chain (r82 M2 +
+        # r86 final both STUCK 75min on this; #316 widened #301 from "no flow params"
+        # to "no code_challenge"). A code_challenge-bearing step is the real flow and
+        # must pass on its own merits.
+        if not ok and status in (400, 422) and _oauth_authorize_lacks_pkce(path, body):
+            ok = True
+            autofilled.append("oauth-authorize-incomplete-tolerated")
         # FIX #136 (instagram run-52/58/60 — 3rd occurrence of the class): a verifier-
         # authored step with a LITERAL numeric id (POST /api/posts/4/repost) 404s when
         # the seed doesn't reach that id — the ${placeholder} recovery ladder above
@@ -1366,6 +1761,86 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                         res, status, ok = _res3, _res3.get("status"), True
                         path = _lpath
                         autofilled.append(f"literal-id->{_lid}")
+        # FIX #299 (tiktok r80 M2, live): a SUCCESS-expecting social action whose
+        # target is the chain user's OWN id can never pass — the app CORRECTLY
+        # 400s "cannot follow yourself" — so business_chain wedges (r80: POST
+        # /api/users/81/follow, 81=the registered chain user, 6/6 attempts →
+        # NO-CONVERGENCE ABORT on a functionally-correct app). The #81 avoid-self
+        # ladder only guards an UNRESOLVED placeholder; a target that RESOLVED to
+        # own_user_id slips through. Mirror #136: on a self-action 400, retry ONCE
+        # against a recovered DIFFERENT user (a deliberate self-deny test expects
+        # [400] and is NOT matched — see _self_targeted_social_user_action).
+        if not ok and status == 400:
+            _self = _self_targeted_social_user_action(expect, path, own_user_id)
+            if _self is not None:
+                _ucoll, _cur = _self
+                _other = _recover_id_via_list(base, _ucoll, token, avoid=own_user_id)
+                if _other is None:
+                    _other = _register_aux_user_id(base)
+                if _other is not None and str(_other) != str(own_user_id):
+                    _spath = re.sub(r"/users/[^/]+/", "/users/" + str(_other) + "/",
+                                    path, count=1)
+                    if _spath != path:
+                        _res5 = _http(method, base + _spath, token=token, body=body)
+                        if _status_ok(_res5.get("status"), expect):
+                            res, status, ok = _res5, _res5.get("status"), True
+                            path = _spath
+                            autofilled.append(f"self-social->{_other}")
+        # #245 PARAM-AWARE RECOVERY (r27/r29/r33 — the top recurring business_chain
+        # killer). The contract declares GET /api/users/{username}; chains author a
+        # literal id (/api/users/13 → 500 when the handler types the param as a string,
+        # or 404) or an invented name (/api/users/ProfileUser → 404). The #136 ladder
+        # only recovers NUMERIC ids and only on 404, so NONE of these were reachable —
+        # 15 broken steps across three runs, every one of them this shape. Match the
+        # authored literal against the REGISTERED template; when the param is not
+        # id-shaped, recover a real value of THAT FIELD from the collection and retry
+        # once. A genuinely broken endpoint fails the retry too and is recorded as before.
+        if not ok and status in (404, 500) and not _is_cross_user_denial(step):
+            _pcoll, _pname, _pidx = _registered_param_for_path(step.get("path"), endpoints)
+            if _pname and _pidx >= 0 and not _ID_PARAM_RE.search(_pname):
+                # #323: replace the segment at the {param} POSITION (not always the last),
+                # preserving the query string — fixes MIDDLE-param recovery
+                # (/api/users/Owner/favorites → /api/users/<real>/favorites).
+                _bare = str(path).split("?", 1)[0]
+                _query = str(path)[len(_bare):]
+                _psegs = [s for s in _bare.split("/") if s]
+                if 0 <= _pidx < len(_psegs):
+                    _lit_seg = str(_psegs[_pidx]).strip().lower()
+                    _self_val = own_username if own_username is not None else own_user_id
+                    # A literal that MEANS the current user ("Owner", "me", our own
+                    # username/id) → recover to SELF; on an OWNER-SCOPED resource
+                    # (favorites/liked) any OTHER user 403s, so SELF is the only 200.
+                    _is_self_alias = (
+                        _lit_seg in _SELF_ALIAS
+                        or (own_username is not None and _lit_seg == str(own_username).lower())
+                        or (own_user_id is not None and _lit_seg == str(own_user_id).lower())
+                    )
+                    # candidate identities, best-first; deduped, non-None only.
+                    _cands: list = []
+                    if _is_self_alias and _self_val is not None:
+                        _cands.append(_self_val)
+                    _other = _recover_field_via_list(base, _pcoll, _pname, token,
+                                                     avoid=own_user_id)
+                    if _other is not None:
+                        _cands.append(_other)
+                    # Owner-scoped resources 403 for a non-owner even when the literal
+                    # wasn't an obvious self-alias → always keep SELF as a fallback.
+                    if _self_val is not None and _self_val not in _cands:
+                        _cands.append(_self_val)
+                    for _pval in _cands:
+                        if str(_psegs[_pidx]) == str(_pval):
+                            continue
+                        _try = list(_psegs)
+                        _try[_pidx] = str(_pval)
+                        _ppath = "/" + "/".join(_try) + _query
+                        if _ppath == path:
+                            continue
+                        _res4 = _http(method, base + _ppath, token=token, body=body)
+                        if _status_ok(_res4.get("status"), expect):
+                            res, status, ok = _res4, _res4.get("status"), True
+                            path = _ppath
+                            autofilled.append(f"param:{_pname}->{_pval}")
+                            break
         # MISSING-FIELD AUTO-REPAIR (2026-06-24): a write step can 422 because the
         # LIVE handler requires a body field the chain didn't send — either the
         # verifier under-authored the body, OR (observed v19: POST
@@ -1381,6 +1856,34 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         # mirrors the auth-body-default / unresolved-var fallbacks. A wrong-typed or
         # genuinely-broken field still surfaces: the retry either resolves it or the
         # original failure is recorded (the type-mismatch retry just 422s again).
+        # #246 UNIQUE-CONSTRAINT RETRY (r35 M2): the verifier authored
+        # POST /api/users {"username": "${u3_name}"} where NO step saves u3_name, so the
+        # value is constant across cycles — the create succeeded once and then returned
+        # 400 "integrity constraint violated" on every later cycle, wedging business_chain
+        # permanently. Chains re-run each validation cycle, so ANY create whose unique key
+        # does not vary is red forever. Uniquify the unique-ish fields and retry ONCE
+        # (domain-agnostic: reads the server's own error, mirrors the 422 field repair).
+        if (not ok and status in (400, 409) and method == "POST"
+                and isinstance(body, Mapping) and body
+                and _UNIQUE_ERR_RE.search(str(res.get("body_text") or ""))):
+            import uuid as _uuid
+            _sfx = _uuid.uuid4().hex[:6]
+            _ubody, _uchanged = dict(body), False
+            for _uf in _UNIQUE_FIELDS:
+                _uv = _ubody.get(_uf)
+                if isinstance(_uv, str) and _uv.strip():
+                    if "@" in _uv:
+                        _lp, _, _dom = _uv.partition("@")
+                        _ubody[_uf] = f"{_lp}_{_sfx}@{_dom}"
+                    else:
+                        _ubody[_uf] = f"{_uv}_{_sfx}"
+                    _uchanged = True
+            if _uchanged:
+                _res5 = _http(method, base + path, token=token, body=_ubody)
+                if _status_ok(_res5.get("status"), expect):
+                    res, status, ok = _res5, _res5.get("status"), True
+                    body = _ubody
+                    autofilled.append(f"unique-suffix:{_sfx}")
         if not ok and status in (400, 422):
             # #70 (outlook run-58, live): the step sent NO body but the handler
             # requires one (e.g. POST /api/events/{id}/rsvp needs {"response":...})
@@ -1502,6 +2005,14 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 kind = "broken" if _built_404 else "missing"
             else:
                 kind = "broken"
+                # #272: a 5xx whose traceback names a framework-projected handler is a
+                # FRAMEWORK defect (route_projector emitted it, the lane cannot fix it) — do
+                # not record it as a broken APP endpoint that dispatches a lane to chase code
+                # it never wrote. It still fails the step (the chain did not pass), but under
+                # a distinct kind the gate/dispatcher can route to the framework, not a lane.
+                _fdef = classify_endpoint_failure(status, res.get("body_text"))
+                if _fdef == "framework_defect":
+                    kind = "framework_defect"
                 # #78: a cross-user DENIAL step got a 2xx (apparent leak). Re-verify with a
                 # GUARANTEED-fresh intruder before failing the gate — the recurring
                 # false-positive (run-64, smoke-feed) is the probe running as the OWNER via a
@@ -1534,6 +2045,15 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 # resolve later ${x_id} refs when no bare collection endpoint exists.
                 # setdefault-only — never clobbers an explicitly created/captured id.
                 _harvest_resource_ids(_payload, last_id_by_resource)
+                # #263: remember the RESPONSE ITSELF (path + payload) so a later
+                # by-id path can draw an id from a LIST a prior step returned —
+                # the feed a human would have read the id from. Bounded to the
+                # last 40 responses so a long chain cannot grow this without end.
+                try:
+                    seen_responses.append((str(step.get("path") or ""), _payload))
+                    del seen_responses[:-40]
+                except Exception:
+                    pass
                 _cid = _extract_resource_id(_payload)
                 if _cid is not None:
                     last_id = _cid
@@ -1548,6 +2068,17 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                     # (follow/unfollow) must prefer a DIFFERENT row (FIX #81).
                     if str(step.get("path", "")).rstrip("/").endswith("/auth/register"):
                         own_user_id = _cid
+                        # #323: remember our OWN username so an owner-scoped self-view
+                        # step (/api/users/Owner/favorites) can recover to SELF, not a
+                        # different user (which the app 403s). Prefer the response's
+                        # username; fall back to the register body's username.
+                        _own = _extract_own_username(_payload)
+                        if not _own and isinstance(body, Mapping):
+                            for _k in ("username", "handle", "slug", "user_name"):
+                                if body.get(_k) and str(body.get(_k)).strip():
+                                    _own = str(body.get(_k)); break
+                        if _own:
+                            own_username = _own
             except Exception:
                 pass
             # Capture the SUBSTITUTED creds of a successful /auth/register so a later
@@ -1616,13 +2147,17 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                                    if str(k) not in variables)
     # #188: broken lines carry the authored expectation — "GET x → 200 ({body})"
     # with a hidden expect [401] read as nonsense in 225x of triage lines.
-    broken = [
-        (f"{s['method']} {s['path']} → {s['status']} "
-         + (f"(expected {s['expect']}; {s['note']})" if s.get("expect")
-            else f"({s['note']})"))
-        for s in recorded if s["kind"] == "broken"]
+    def _fmt(s):
+        return (f"{s['method']} {s['path']} → {s['status']} "
+                + (f"(expected {s['expect']}; {s['note']})" if s.get("expect")
+                   else f"({s['note']})"))
+    broken = [_fmt(s) for s in recorded if s["kind"] == "broken"]
+    # #272: framework-projected defects are reported SEPARATELY so the gate can surface them
+    # as framework work, not fold them into `broken` where a lane would be dispatched to fix
+    # code it never wrote.
+    framework_defects = [_fmt(s) for s in recorded if s["kind"] == "framework_defect"]
     return {"name": str(chain.get("name") or "chain"), "steps": recorded,
-            "broken": broken}
+            "broken": broken, "framework_defects": framework_defects}
 
 
 AUTHORING_INSTRUCTIONS = (
@@ -1643,8 +2178,11 @@ def run_chains(base: str, project_dir: Any,
         return {"source": "missing", "chains": [],
                 "broken": [AUTHORING_INSTRUCTIONS], "total_steps": 0}
     _seed_ids = load_seed_ids(project_dir)  # #144: literal-id recovery rung
-    results = [execute_chain(base, ch, seed_ids=_seed_ids) for ch in chains]
+    results = [execute_chain(base, ch, seed_ids=_seed_ids,
+                          endpoints=list(business_endpoints or []))
+               for ch in chains]
     broken = [b for r in results for b in r["broken"]]
+    framework_defects = [b for r in results for b in r.get("framework_defects", [])]
     total = sum(len(r["steps"]) for r in results)
     # Record pass/fail back onto the registry records (best-effort) — the
     # registry is the single place to see chain health (monitor renders it).
@@ -1654,13 +2192,21 @@ def run_chains(base: str, project_dir: Any,
         for r in results:
             rec = (store.value() or {}).get(r["name"])
             if isinstance(rec, dict):
+                _fd = r.get("framework_defects") or []
+                # #272: a chain whose ONLY failures are framework-projected defects is not the
+                # lane's to fix — mark it framework_blocked, not failing (which would dispatch a
+                # lane) and not passing (which would hide a real framework bug).
+                _status = ("passing" if not r["broken"] and not _fd
+                           else "failing" if r["broken"]
+                           else "framework_blocked")
                 rec = {**rec,
-                       "status": "passing" if not r["broken"] else "failing",
-                       "last_result": {"broken": r["broken"], "steps": r["steps"]},
+                       "status": _status,
+                       "last_result": {"broken": r["broken"], "framework_defects": _fd,
+                                       "steps": r["steps"]},
                        "last_run_at": time.time()}
                 store.update(lambda m, _rec=rec, _n=r["name"]: m.set(_n, _rec, "chain_executor"),
                              change_info={"agent": "chain_executor"})
     except Exception:
         pass
     return {"source": "verifier", "chains": results, "broken": broken,
-            "total_steps": total}
+            "framework_defects": framework_defects, "total_steps": total}

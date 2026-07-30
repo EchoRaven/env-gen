@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 from utils.communication import MessageBus
 from utils.config import LLMConfig
 from utils.llm import LLM
+from utils.llm import terminal_llm_error as _terminal_llm_error  # #326
 
 from .workspace_manager import WorkspaceManager
 from . import delivery as _contract
@@ -1209,7 +1210,7 @@ class Orchestrator:
                     # ('orchestrator','kickoff_request','high') subscription
                     # and runs its kickoff_response prompt. The orchestrator
                     # lane wakes on workhub.meeting_decision_added events
-                    # and runs its kickoff_synthesis_prompt — which finalizes
+                    # and runs its kickoff_facilitation_prompt — which finalizes
                     # the meeting (and emits kickoff_complete) once every
                     # gate passes, OR queues a single revision round on
                     # conflict, OR no-ops while awaiting decisions.
@@ -1534,6 +1535,17 @@ class Orchestrator:
                                 budget_exceeded = f"wall-clock {elapsed:.0f}s exceeded cap {caps['max_wall_sec']:.0f}s"
                             elif tick_count >= caps["max_ticks"]:
                                 budget_exceeded = f"coordination ticks {tick_count} reached cap {caps['max_ticks']}"
+                        # #326: a TERMINAL LLM-provider error (spend/budget/quota exhausted, hard
+                        # auth) latched by the client is unrecoverable — abort within one tick
+                        # (~60s) instead of letting every lane spin thousands of rejected calls
+                        # to the wall-clock cap (r93: ~4500 rejected attempts over ~2h). This is
+                        # NOT a run-budget/tick overrun, so its message points at the real fix.
+                        if not budget_exceeded:
+                            _term = _terminal_llm_error()
+                            if _term:
+                                budget_exceeded = (
+                                    "LLM provider budget/auth exhausted — get a budget increase "
+                                    f"or a fresh key (raising ENVGEN_MAX_* will NOT help): {_term}")
                         if budget_exceeded:
                             self._logger.error(
                                 "Run budget exceeded (%s) before delivery; aborting generation.",
@@ -1857,6 +1869,17 @@ class Orchestrator:
             self.checkpoint.fail_generation(error=str(e), phase="agent_workflow")
             success = False
         finally:
+            # #257: where the prompt tokens actually came from. r51 measured 456.7M
+            # prompt vs 0.9M completion, with the uncached share ~0.8x the per-step
+            # GROWTH — i.e. the cache is already near-optimal and the cost IS the new
+            # text each step appends (35-51k tokens/step/lane), which is tool OUTPUT.
+            # Print the per-tool rollup once at exit so the next reduction is aimed at
+            # measured offenders instead of guesses.
+            try:
+                from .agents.runtime.tooling import tool_io_rollup
+                self._logger.info("%s", tool_io_rollup())
+            except Exception:
+                pass
             # FINAL FLUSH: merge every lane's committed work into integration on
             # disk before the run exits. Deterministic delivery can fire (and cut
             # the release) while a core lane is STILL committing its final
@@ -2259,6 +2282,20 @@ class Orchestrator:
         """Spawn the one-shot design_analyst agent to MEASURE each component and enrich
         design/design_system.json. Returns True iff it finished. Best-effort: no spawn_service, a
         spawn error, or a timeout → False (the caller uses the single-shot fallback)."""
+        # NR1 (2026-07-21, AMENDED #252): the analyst is the ONLY producer of per-component
+        # MEASURED design facts — the whole design-prep phase exists for it, and every lane's
+        # visual fidelity depends on it. NR1 proposed default-OFF from runs on one model
+        # (GPT-5.6 via the compat gateway, whose tool-call translation is independently known
+        # broken — see utils/llm.py #249). On the validated Gemini path it converges in EVERY
+        # observed run (r35 420s, r50 354s, r51 1419s — 3/3 "design_analyst finished", 0 timeouts).
+        # A model-specific non-convergence must NOT become the global default: that silently
+        # downgrades visual fidelity for every env. Default ON; turn OFF per-model/per-run with
+        # ENVGEN_DESIGN_ANALYST=0 (which is the right knob for the GPT-5.6 path).
+        if os.environ.get("ENVGEN_DESIGN_ANALYST", "1").strip().lower() in ("0", "false", "no", "off"):
+            self._logger.info(
+                "design_analyst subagent disabled via ENVGEN_DESIGN_ANALYST — using "
+                "deterministic single-shot design prep (skeleton + enrich + completion floor)")
+            return False
         spawn_service = getattr(self, "spawn_service", None)
         if spawn_service is None:
             return False
@@ -2277,6 +2314,13 @@ class Orchestrator:
             ev = getattr(res, "task_done_event", None)
             if ev is None:
                 return False
+            # F1 (2026-07-21, AMENDED #252): F1 tightened this to 600s to bound a NON-converging
+            # analyst. Correct intent, unsafe number: on the validated Gemini path the analyst
+            # CONVERGES at 354s / 420s / 1419s (r50 / r35 / r51) — 600s would have killed r51's
+            # analyst at 42% of its real work and silently fallen back, degrading every lane's
+            # visual input with no error anywhere. A backstop must sit above the observed
+            # converging maximum, not inside it. Keep 1800s (validated); the GPT-5.6 path can
+            # set ENVGEN_DESIGN_ANALYST_TIMEOUT=600 (or ENVGEN_DESIGN_ANALYST=0) for its model.
             timeout = float(os.environ.get("ENVGEN_DESIGN_ANALYST_TIMEOUT", "1800"))
             await asyncio.wait_for(ev.wait(), timeout=timeout)
             self._logger.info("design_analyst finished — design_system.json enriched")

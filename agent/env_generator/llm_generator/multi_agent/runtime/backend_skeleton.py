@@ -419,7 +419,21 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
 _URL = os.getenv("DATABASE_URL", "postgresql+psycopg://sandbox:sandbox@database:5432/app")
-engine = create_engine(_URL, pool_pre_ping=True, future=True)
+# #276: the connection pool MUST cover the request thread pool. FastAPI runs SYNC handlers
+# (all projected/custom handlers are `def`) on a thread pool of 40 by default, and each holds
+# a DB connection for its request. SQLAlchemy's DEFAULT pool is only pool_size=5 +
+# max_overflow=10 = 15, with pool_timeout=30 — so under load ~25 of 40 concurrent handlers
+# block up to 30s waiting for a connection and then raise TimeoutError, the health check
+# among them (r60, live: the container flipped `unhealthy`, /health stopped answering, and
+# api_smoke reported TimeoutError across the whole surface while the process sat idle at ~0%
+# CPU — an intermittent wedge that recovered when load dropped, then recurred). Size the pool
+# to 40 + a little headroom so a connection is always available and no handler starves.
+# QueuePool sizing applies to Postgres (the real target); SQLite uses SingletonThreadPool
+# and rejects max_overflow/pool_timeout, so gate the pool kwargs on the driver.
+_pool_kwargs = ({} if _URL.startswith("sqlite")
+                else {"pool_size": 20, "max_overflow": 30,
+                      "pool_timeout": 30, "pool_recycle": 1800})
+engine = create_engine(_URL, pool_pre_ping=True, future=True, **_pool_kwargs)
 
 
 class _Session(Session):
@@ -1846,7 +1860,37 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "        real = json.loads(Path(__file__).with_name('seed_dataset.json').read_text(encoding='utf-8'))\n"
         "        if isinstance(real, dict) and any(real.values()):\n"
         "            merged = dict(base)\n"
-        "            merged.update({k: v for k, v in real.items() if isinstance(v, list) and v})\n"
+        "            # #264: the dataset REPLACES a table wholesale, so a column its rows omit\n"
+        "            # is LOST. seed_dataset.json carries 35 real videos with no tenant_id, so\n"
+        "            # they loaded NULL-scoped and EVERY tenant-scoped read came back empty on a\n"
+        "            # FULL database (r56: the feed returned {items: []} while an unscoped by-id\n"
+        "            # read fetched the very same row). It reads as missing data, so the lanes\n"
+        "            # chase a phantom seeding bug. ONLY the scope column is carried over: the\n"
+        "            # dataset also omits email (unique -> 9 identical users would fail the\n"
+        "            # insert) and parent_id (a self-FK -> every comment a reply to comment 1),\n"
+        "            # so a blanket copy would corrupt the seed instead of repairing it.\n"
+        "            _SCOPE_KEYS = ('tenant_id', 'tenant', 'org_id', 'organization_id',\n"
+        "                           'workspace_id', 'account_id')\n"
+        "            for _t, _rows in real.items():\n"
+        "                if not (isinstance(_rows, list) and _rows):\n"
+        "                    continue\n"
+        "                _base = base.get(_t) or []\n"
+        "                _scope = dict()\n"
+        "                if _base and isinstance(_base[0], dict):\n"
+        "                    for _k in _SCOPE_KEYS:\n"
+        "                        if isinstance(_base[0].get(_k), (str, int)):\n"
+        "                            _scope[_k] = _base[0][_k]\n"
+        "                _out = []\n"
+        "                for _r in _rows:\n"
+        "                    if isinstance(_r, dict) and _scope:\n"
+        "                        _m = dict(_r)\n"
+        "                        for _k, _v in _scope.items():\n"
+        "                            if _k not in _m:\n"
+        "                                _m[_k] = _v\n"
+        "                        _out.append(_m)\n"
+        "                    else:\n"
+        "                        _out.append(_r)\n"
+        "                merged[_t] = _out\n"
         "            return merged\n"
         "    except Exception:\n"
         "        pass\n"
