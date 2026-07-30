@@ -8,6 +8,33 @@ from utils.tool import BaseTool, ToolResult, ToolCategory
 from ._manager import BrowserManager, PLAYWRIGHT_AVAILABLE
 
 
+_ASYNC_FRAMING_ERRORS = (
+    "illegal return statement",
+    "await is only valid in async",
+)
+
+
+def is_async_framing_error(message) -> bool:
+    """True when the engine rejected the snippet's FRAMING, not its logic (#364).
+
+    `page.evaluate` treats a snippet as an expression or a function body, so a
+    top-level `return` or `await` is a syntax error even though the JavaScript
+    is fine. 10 of the 15 browser_eval failures across r91/r92/r93 are exactly
+    these two messages (6 illegal-return, 4 top-level-await); the other 5 are
+    genuine runtime errors and must not be retried.
+    """
+    try:
+        text = str(message or "").lower()
+    except Exception:
+        return False
+    return any(m in text for m in _ASYNC_FRAMING_ERRORS)
+
+
+def wrap_in_async_iife(script: str) -> str:
+    """Re-frame a snippet as an async IIFE so top-level return/await are legal."""
+    return "(async () => {\n" + str(script or "") + "\n})()"
+
+
 class BrowserGetElementsTool(BaseTool):
     NAME = "browser_elements"
     """Get elements matching a selector"""
@@ -98,14 +125,30 @@ class BrowserEvaluateTool(BaseTool):
         if not self.browser.state.page:
             return ToolResult.fail("No page open. Use browser_navigate first.")
         
+        _ran = script
         try:
             result = await self.browser.state.page.evaluate(script)
-            return ToolResult.ok({
-                "script": script[:100] + "..." if len(script) > 100 else script,
-                "result": str(result)[:500] if result else None,
-            })
         except Exception as e:
-            return ToolResult.fail(f"Eval failed: {str(e)}")
+            # #364: only a FRAMING rejection is retried, and only once. Wrapping
+            # unconditionally would break expression semantics —
+            # `document.title` returns the title, `(async () => { document.title
+            # })()` returns undefined — and sniffing for a top-level
+            # return/await with a regex would misfire on a nested function or a
+            # string literal. Letting the engine's own error decide has no false
+            # positives: a script that works today is never touched.
+            if not is_async_framing_error(e):
+                return ToolResult.fail(f"Eval failed: {str(e)}")
+            _ran = wrap_in_async_iife(script)
+            try:
+                result = await self.browser.state.page.evaluate(_ran)
+            except Exception:
+                # Report the ORIGINAL failure — the retry is an implementation
+                # detail and its error would only mislead.
+                return ToolResult.fail(f"Eval failed: {str(e)}")
+        return ToolResult.ok({
+            "script": script[:100] + "..." if len(script) > 100 else script,
+            "result": str(result)[:500] if result else None,
+        })
 
 
 class BrowserGetUrlTool(BaseTool):
