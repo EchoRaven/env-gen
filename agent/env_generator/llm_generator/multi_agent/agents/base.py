@@ -138,7 +138,9 @@ class EnvGenAgent(
         "parallel_execute",
     }
     TEAM_MODE_SUPPORT_TOOLS: Set[str] = {
-        "think", "wait", "check_inbox",
+        # #346: "think" is not a registered tool anywhere in tools/, and the
+        # action stages additionally discard it — an unresolvable pin.
+        "wait", "check_inbox",
         "send_message", "ask_agent", "broadcast",
         "report_progress", "get_progress", "report_issue", "report_completion",
         "finish",
@@ -333,7 +335,11 @@ class EnvGenAgent(
     _CONTRACT_READ = {
         "registryhub_get_endpoint",
         "registryhub_list_endpoints",
-        "registryhub_get_table",
+        # #346: `registryhub_get_table` was pinned here and matches NO registered
+        # tool, so the force-offer (always_include & candidate_names) dropped it
+        # silently — the framework believed it pinned a table read and pinned
+        # nothing. `registryhub_list_tables` below already provides that read, so
+        # this is dead weight, not a capability.
         "registryhub_list_tables",
     }
     # PROPOSAL #39 (#2): the DEBUGGER's canonical triage tools. The debugger's whole job is
