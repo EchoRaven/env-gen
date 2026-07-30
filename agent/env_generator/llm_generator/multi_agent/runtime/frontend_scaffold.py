@@ -3600,7 +3600,13 @@ _BG_LIGHT_TO_DARK = {"50": "950", "100": "900", "200": "800", "300": "800"}
 _TEXT_DARK_SHADES = frozenset({"600", "700", "800", "900", "950"})
 _DARKIFY_RE = re.compile(
     r"(?<![\w-])((?:[a-z][a-z0-9]*:)*)(bg|text|border|divide|ring)-"
-    r"(white|black|zinc|gray|slate|neutral|stone)(?:-(\d{2,3}))?(?![\w-])"
+    # `/` and `[` end the utility but START an opacity modifier: `bg-white/15`
+    # and `bg-white/[0.12]` are TRANSLUCENT overlays, already correct on a dark
+    # surface. Without them in the lookahead, darkify matched the `bg-white`
+    # prefix and shipped `bg-zinc-950/15` -- a near-invisible dark-on-dark
+    # overlay. Delivered r91/r92/r93 carried 35/69/34 such conversions with
+    # ZERO surviving `bg-white/<opacity>`.
+    r"(white|black|zinc|gray|slate|neutral|stone)(?:-(\d{2,3}))?(?![\w\-/\[])"
 )
 
 
