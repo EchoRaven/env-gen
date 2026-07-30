@@ -47,6 +47,51 @@ def _schema_subset_check(expected: dict, actual: dict, path: str = "") -> "dict 
     return None
 
 
+_NOT_FOUND_OR_DENIED = frozenset({401, 403, 404, 410})
+
+
+def is_negative_probe_step(step) -> bool:
+    """True when a chain step exists ONLY to be refused (#363).
+
+    `business_chain_isolation`'s own remediation text demands exactly this
+    test -- "a SECOND user (or an unauthenticated request) reading another
+    user's resource MUST be refused (expect 401/403)" -- and every rejected step
+    of this shape in r91/r92/r93 carried expect=[404] on a deliberately invalid
+    id. The registry then refused the chain for using an id that does not
+    exist, which is the entire point of the probe.
+
+    Requires the expectation to be PURELY negative: `/api/videos/xyz/save` with
+    expect [200,201,401,404] also wants success and keeps the strict treatment.
+    """
+    try:
+        exp = step.get("expect")
+    except Exception:
+        return False
+    if not isinstance(exp, (list, tuple, set)) or not exp:
+        return False
+    try:
+        codes = {int(c) for c in exp}
+    except Exception:
+        return False
+    return bool(codes) and codes <= _NOT_FOUND_OR_DENIED
+
+
+def collapse_last_literal_segment(path: str) -> str:
+    """Rewrite the final path segment to a param placeholder (#363).
+
+    Minimal on purpose: one segment, and the result must still match a
+    REGISTERED template for the step to be accepted, so a genuinely wrong path
+    stays rejected.
+    """
+    raw = str(path or "")
+    if not raw.startswith("/"):
+        return raw
+    segs = [s for s in raw.split("/") if s != ""]
+    if len(segs) < 2:
+        return raw
+    return "/" + "/".join(segs[:-1] + ["{x}"])
+
+
 class RegistryHub:
     """Apifox-like API registry, schema, consumer, mock, test, and review hub."""
 
@@ -1673,9 +1718,22 @@ class RegistryHub:
                 p = _re.sub(r"/\d+(?=/|$)", "/{x}", p)
                 return self.endpoint_id(step.get("method") or "GET", p)
 
+            def _chain_eid_ok(s) -> bool:
+                if _chain_eid(s) in registered_ids:
+                    return True
+                # #363: a PURELY negative probe uses an id that must not exist —
+                # bind it to the registered TEMPLATE instead of refusing the
+                # chain for the property that makes it a probe. It still has to
+                # match a real registered route.
+                if is_negative_probe_step(s):
+                    alt = dict(s)
+                    alt["path"] = collapse_last_literal_segment(s.get("path") or "")
+                    return _chain_eid(alt) in registered_ids
+                return False
+
             unregistered = sorted({
                 _chain_eid(s) for s in norm if s.get("path")
-                if _chain_eid(s) not in registered_ids
+                if not _chain_eid_ok(s)
             })
             if unregistered:
                 return {"error": (
