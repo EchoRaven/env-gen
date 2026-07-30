@@ -1724,6 +1724,40 @@ class AnthropicClient(BaseLLMClient):
         return self._client
 
     @staticmethod
+    def _apply_prompt_caching(request_params: dict) -> None:
+        """Attach an ephemeral ``cache_control`` breakpoint to the stable system prompt.
+
+        Anthropic bills a cached prefix at ~10% of fresh input, and the engine sends a
+        large CONSTANT system prompt (per role, every turn) — so one breakpoint on
+        ``system`` (which caches the tools+system prefix, in canonical request order)
+        turns most of the per-turn input cost into a cache_read after the first call.
+
+        ANTHROPIC-NATIVE ONLY, and that is the point: the OpenAI-compat wrapper silently
+        DROPS ``cache_control`` for opus (proven inert — constant token count, no
+        cache_read), which is why the engine must talk the messages API directly. Verified
+        live on claude-opus-4-7: call 1 cache_creation=34303/read=0, call 2 read=34303.
+
+        Gated by ENVGEN_ANTHROPIC_CACHE (default on); a no-op when there is no system
+        prompt or a breakpoint is already present. Sub-minimum prefixes (<1024 tok for
+        opus) are simply not cached by the API — safe to always mark."""
+        if os.getenv("ENVGEN_ANTHROPIC_CACHE", "1").strip().lower() in ("0", "false", "no", "off"):
+            return
+        sysv = request_params.get("system")
+        if isinstance(sysv, str):
+            if sysv.strip():
+                request_params["system"] = [{
+                    "type": "text",
+                    "text": sysv,
+                    "cache_control": {"type": "ephemeral"},
+                }]
+        elif isinstance(sysv, list) and sysv:
+            if not any(isinstance(b, dict) and b.get("cache_control") for b in sysv):
+                for b in reversed(sysv):
+                    if isinstance(b, dict) and b.get("type") == "text":
+                        b["cache_control"] = {"type": "ephemeral"}
+                        break
+
+    @staticmethod
     def _convert_content_to_anthropic(content):
         """Convert OpenAI-style message content into Anthropic content blocks.
 
@@ -1922,6 +1956,7 @@ class AnthropicClient(BaseLLMClient):
             request_params["tools"] = self._convert_tools_to_anthropic(tools)
 
         request_params.update(kwargs)
+        self._apply_prompt_caching(request_params)
 
         effective_max_tokens = request_params.get("max_tokens")
         start_time = datetime.now()
@@ -1981,6 +2016,7 @@ class AnthropicClient(BaseLLMClient):
             request_params["stop_sequences"] = stop
 
         request_params.update(kwargs)
+        self._apply_prompt_caching(request_params)
 
         async with client.messages.stream(**request_params) as stream:
             async for text in stream.text_stream:
