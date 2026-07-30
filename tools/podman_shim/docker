@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# docker -> podman shim. This host has podman (5.8.3) + podman-compose but no docker;
+# the engine shells out to `docker` / `docker compose`. Put this dir first on PATH.
+#   `docker compose ...`  -> `podman-compose ...`
+#   `docker ...`          -> `podman ...`
+if [ "${1:-}" = "compose" ]; then
+  shift
+  exec podman-compose "$@"
+fi
+exec podman "$@"
