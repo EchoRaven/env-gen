@@ -811,20 +811,43 @@ def repair_custom_routes_param_types(backend_dir) -> Dict[str, object]:
         src = cr.read_text(encoding="utf-8")
         tree = ast.parse(src)
         lines = src.splitlines(keepends=True)
+        # #338: defer to #119 wherever main.py PROJECTS the route. This guess
+        # (`the segment before the first path param names the table, so that
+        # param is its PK`) is false for a NATURAL KEY: on
+        # /api/users/{username}/follow it reads `users`, sees users.id is an
+        # INTEGER pk, and rewrites `username: str` -> `username: int`, which
+        # 422s on every real username. r92's repo carries the flip and the lane
+        # having to undo it (35022b3 `-username: int` / `+username: str`).
+        # Where a route IS projected, the projected signature is authoritative
+        # and this heuristic can only corrupt it; where it is NOT projected,
+        # this stays the only signal and still applies (the run-23 wedge).
+        _projected_routes: set = set()
+        try:
+            _mn = be / "main.py"
+            if _mn.exists():
+                _projected_routes = set(
+                    _route_param_annotations(_mn.read_text(encoding="utf-8")).keys())
+        except Exception:
+            _projected_routes = set()
         fixed = 0
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             # route path from a @router.<verb>('<path>') decorator
             path = None
+            _verb = None
             for dec in node.decorator_list:
                 if (isinstance(dec, ast.Call) and dec.args
                         and isinstance(dec.args[0], ast.Constant)
                         and isinstance(dec.args[0].value, str)):
                     path = dec.args[0].value
+                    if isinstance(dec.func, ast.Attribute):
+                        _verb = dec.func.attr
                     break
             if not path:
                 continue
+            if _verb and (_verb, path) in _projected_routes:
+                continue  # #338: #119 owns this route's annotations
             segs = [s for s in path.strip("/").split("/") if s and s != "api"]
             params = [s[1:-1] for s in segs if s.startswith("{") and s.endswith("}")]
             if not params:
