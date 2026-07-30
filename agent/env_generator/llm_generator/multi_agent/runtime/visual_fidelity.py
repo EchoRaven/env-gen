@@ -297,6 +297,56 @@ _OVERLAY_NAME_RE = re.compile(
 # App boot + auth (the smoke validation tears the env down with ``down -v``,
 # so the gate boots the already-built images itself).
 # ---------------------------------------------------------------------------
+def visual_gate_verdict(*, results, owned=None):
+    """The gate verdict, scoped to the milestone's DECLARED screens (#353).
+
+    `all([])` is True, so the old rule passed on an empty exam -- r92 logged
+    "PASSED (login_modal=0.08): all 0 screens >= 0.65". The denominator was
+    "screens that happen to map to a route the app already serves", and an
+    unmapped screen was skipped rather than failed, so not building a page
+    removed it from its own exam.
+
+    `owned` is the milestone's commitment: measured `kind == page` screens whose
+    route matches a REGISTERED ui_page. A milestone is judged on its own pages,
+    not on ones a later milestone owns.
+
+      * an owned screen that was never judged is a FAILURE, not a skip;
+      * a non-empty owned set with zero BLOCKING judgments cannot pass
+        (advisory judgments alone never carry the verdict).
+
+    With no ui_page registered yet the owned set is empty and the verdict is
+    exactly the old one -- blocking there would wedge every pre-kickoff tick.
+    """
+    rs = [r for r in (results or []) if isinstance(r, dict)]
+    blocking = [r for r in rs if not r.get("advisory")]
+    own = [str(n) for n in (owned or [])]
+    own_set = set(own)
+    judged = {str(r.get("name") or "") for r in rs}
+    unjudged = sorted(n for n in own if n not in judged)
+
+    scoped = [r for r in blocking if not own_set or str(r.get("name") or "") in own_set]
+    all_scoped_pass = all(bool(r.get("passed")) for r in scoped)
+
+    if not own_set:
+        return {"passed": all_scoped_pass, "unjudged": [], "reason": ""}
+
+    if unjudged:
+        return {
+            "passed": False, "unjudged": unjudged,
+            "reason": (f"{len(unjudged)} declared screen(s) were never judged: "
+                       f"{unjudged}. An unbuilt page is not exempt from its own "
+                       f"exam — author the page so it can be captured and scored."),
+        }
+    if not scoped:
+        return {
+            "passed": False, "unjudged": [],
+            "reason": ("no BLOCKING screen was judged although the milestone "
+                       "declares pages — advisory screens alone cannot carry "
+                       "the verdict; author the declared pages."),
+        }
+    return {"passed": all_scoped_pass, "unjudged": [], "reason": ""}
+
+
 def screen_coverage(*, results, measured, owned=None):
     """How much of the reference the visual gate actually judged (#351).
 
@@ -990,7 +1040,27 @@ async def run_visual_fidelity(
     # reported but never BLOCK — they have no URL route that reproduces them, so their
     # score is a route-capture artifact, not a frontend-quality signal.
     _blocking = [r for r in results if not r.get("advisory")]
-    passed = all(r["passed"] for r in _blocking)
+    # #353: the milestone's DECLARED scope — measured page screens whose route
+    # the app has actually registered a ui_page for. Judging against "whatever
+    # mapped to a built route" let an unbuilt page exempt itself.
+    _registered_routes: set = set()
+    try:
+        import json as _json
+        _up = Path(project_dir) / "shared" / "hubs" / "registryhub_ui_pages.json"
+        if _up.exists():
+            _raw = _json.loads(_up.read_text(encoding="utf-8"))
+            for _v in (_raw if isinstance(_raw, list) else (_raw or {}).values()):
+                if isinstance(_v, dict) and str(_v.get("route") or "").startswith("/"):
+                    _registered_routes.add(str(_v["route"]).rstrip("/") or "/")
+    except Exception:
+        _registered_routes = set()
+    _owned = [s["name"] for s in screens
+              if not s.get("advisory")
+              and (str(s.get("route") or "").rstrip("/") or "/") in _registered_routes]
+    _verdict = visual_gate_verdict(results=results, owned=_owned)
+    passed = _verdict["passed"]
+    if _verdict.get("reason"):
+        _LOG.warning("VISUAL GATE BLOCKS: %s", _verdict["reason"])
     # #351 (reporting only): name what the gate did NOT judge. `passed` above is
     # deliberately untouched — turning this into a blocker comes after the
     # page-seeding fix, or every run would start failing a gate it cannot yet
