@@ -3531,21 +3531,51 @@ def _theme_default(design_system) -> str:
     return d if d in ("dark", "light") else ""
 
 
+_COLOUR_FN_RE = re.compile(r"^(?:rgba?|hsla?)\(\s*[\d.%,\s/]+\)$", re.I)
+
+
+def _is_colour_value(value) -> bool:
+    """True for a measured value that IS a colour.
+
+    #343: the projector accepted `#rrggbb` only, so every `rgba(...)` the
+    design analyst measured was discarded -- 6 of r93's palette values
+    (text_2, text_muted, text_disabled, footer_text, video_progress_track).
+    `notes` is prose, numbers are scales, nested dicts are sub-palettes: the
+    rule is "the value IS a colour", not "the key exists".
+    """
+    if not isinstance(value, str):
+        return False
+    v = value.strip()
+    return bool(_HEX_RE_208.match(v)) or bool(_COLOUR_FN_RE.match(v))
+
+
+def _token_name(key: str) -> str:
+    """Tailwind reads kebab-case, and the analyst authors snake_case."""
+    return str(key).strip().lower().replace("_", "-")
+
+
 def render_measured_tailwind_theme(design_system) -> str:
     """#208: tailwind.theme.js exporting the MEASURED colors as named tokens
     (bg / accent / accent-<hue>), so `bg-bg`, `text-accent`, `bg-accent-red`
     resolve to the reference's real hex. Empty palette → the empty baseline."""
     pal = _palette_of(design_system)
     colors: Dict[str, str] = {}
+    # #343: EVERY measured colour becomes a token. Emitting only bg/accent/
+    # accents.* discarded 73%/65%/81% of what was measured in r91/r92/r93 --
+    # surface, elevated, border, divider, text_2, input_bg, chip_bg ... the
+    # lane then had no measured name to reach for and fell back to generic
+    # Tailwind greys.
+    for key, value in (pal or {}).items():
+        if key in ("accents", "background"):
+            continue
+        if _is_colour_value(value):
+            colors[_token_name(key)] = value.strip()
     _bg = pal.get("bg") or pal.get("background")
-    if isinstance(_bg, str) and _HEX_RE_208.match(_bg):
-        colors["bg"] = _bg
-    _acc = pal.get("accent")
-    if isinstance(_acc, str) and _HEX_RE_208.match(_acc):
-        colors["accent"] = _acc
+    if isinstance(_bg, str) and _is_colour_value(_bg):
+        colors["bg"] = _bg.strip()   # canonical name #334's auth page consumes
     for hue, hexv in (pal.get("accents") or {}).items():
-        if isinstance(hexv, str) and _HEX_RE_208.match(hexv):
-            colors[f"accent-{str(hue).lower()}"] = hexv
+        if _is_colour_value(hexv):
+            colors[f"accent-{_token_name(hue)}"] = hexv.strip()
     if not colors:
         return "export default {}\n"
     # #219: the pinned tailwind.config.js consumes this as `theme: { extend:
@@ -4506,7 +4536,9 @@ def _apply_measured_palette(frontend_dir) -> None:
             _cur = _theme_p.read_text(encoding="utf-8") if _theme_p.exists() else ""
         except Exception:
             _cur = ""
-        _tok_re = re.compile(r"['\"]?([A-Za-z][\w-]*)['\"]?\s*:\s*['\"](#[0-9a-fA-F]{3,8})['\"]")
+        # #343: match ANY quoted colour value, not just hex — a hex-only merge
+        # pattern silently dropped every rgba() token a second time.
+        _tok_re = re.compile(r"['\"]?([A-Za-z][\w-]*)['\"]?\s*:\s*['\"]((?:#[0-9a-fA-F]{3,8}|(?:rgba?|hsla?)\([^)]*\)))['\"]")
         merged = {k: v for k, v in _tok_re.findall(_cur)}
         merged.update(dict(_tok_re.findall(_theme)))  # measured wins
         _lines = ",\n".join(f"    '{k}': '{v}'" for k, v in merged.items())
