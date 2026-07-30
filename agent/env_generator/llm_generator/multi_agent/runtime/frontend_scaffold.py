@@ -3725,7 +3725,7 @@ export async function login({ email, username, password }) {
   if (d.access_token) localStorage.setItem('token', d.access_token)
   return d
 }
-export function logout() { localStorage.removeItem('token') }
+export function logout() { localStorage.removeItem('access_token') }
 // Generic fixed-envelope CRUD helpers (the projector returns {item}/{items}); pages may
 // import these by name OR use the default `api` object (api.get/post/...).
 async function request(path, { method = 'GET', body } = {}) {
@@ -3811,7 +3811,7 @@ _BC_AUTH_GUARD_JS = """// Global auth guard: any /api/ 401 redirects to /login. 
 function _bcOn401(url) {
   if (String(url).includes('/api/')
       && !['/login', '/register', '/signup'].includes(window.location.pathname)) {
-    localStorage.removeItem('token');
+    localStorage.removeItem('access_token');
     window.location.assign('/login');
   }
 }
