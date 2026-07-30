@@ -3738,7 +3738,16 @@ def render_measured_base_css(design_system, font_files=None) -> str:
     _stack = ""
     try:
         _inner = (design_system or {}).get("design_system") or design_system or {}
-        _stack = str(_inner.get("font_stack") or "").strip()
+        _fs = _inner.get("font_stack")
+        # font_stack may be a STRING (legacy) or the measured DICT
+        # {'display':..,'ui':..,'note':..}. Emitting str(dict) put a Python dict
+        # literal into `font-family` → postcss "Missed semicolon" → npm run build
+        # fails → docker_up wedge (netflix r1). The body stack is the UI variant
+        # (display is for headings); `note` is metadata, never CSS.
+        if isinstance(_fs, dict):
+            _stack = str(_fs.get("ui") or _fs.get("display") or "").strip()
+        else:
+            _stack = str(_fs or "").strip()
     except Exception:
         _stack = ""
     if _faces and not _stack:
