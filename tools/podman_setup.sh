@@ -21,6 +21,18 @@ location = "vmvm-registry.fbinfra.net"
 EOF
 say "docker.io -> vmvm-registry.fbinfra.net mirror in place"
 
+# 1a2. netavark firewall_driver=none — on this host netavark's nftables ruleset apply FAILS
+# ("nft did not return successfully"), so rootless containers can't START (stuck Created) and
+# `podman-compose up` deadlocks on `podman wait --condition=healthy`. Skipping the firewall
+# rules lets the project bridge + aardvark-dns come up; inter-container name resolution
+# (backend -> database) works. NETWORK-only — no [engine] env (that would leak the build proxy
+# into runtime containers). Verified: container starts + `database` resolves.
+cat > ~/.config/containers/containers.conf <<'EOF'
+[network]
+firewall_driver = "none"
+EOF
+say "netavark firewall_driver=none in place"
+
 # 2. host relay FIRST (the uv build below needs it): <host>:RELAY_PORT -> fwdproxy.
 if ss -ltn 2>/dev/null | grep -q ":$RELAY_PORT "; then
   say "fwdproxy relay already up on :$RELAY_PORT"
