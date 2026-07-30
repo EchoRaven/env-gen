@@ -772,14 +772,25 @@ def assign_screen_routes(design_screens, spec_screens):
                 pairs.append((-overlap, -overlap / max(len(dt | st), 1),
                               str(d["name"]), str(sp["name"])))
     pairs.sort()
-    taken_design, taken_route = set(), set()
+    taken_design, taken_route, taken_path = set(), set(), set()
     for _o, _j, dname, sname in pairs:
         if dname in taken_design or sname in taken_route:
             continue
         route = next(s["route_hint"] for s in specs if s["name"] == sname)
-        out[dname] = {"route": route, "kind": "page", "spec_screen": sname}
+        # #355: the PATH part decides page-vs-state. A route that only adds a
+        # query/fragment to a path another screen already claims is a STATE of
+        # that page (r93's fyp_comments is `/?comments=1` — the comments panel
+        # opening over the feed), not a second page. Scaffolding it as a page
+        # emitted `<Route path="/?comments=1">`, which React Router matches
+        # against the PATHNAME only, so it could never match — a dead route, the
+        # exact class the #238 nav gate exists to catch. The full route is kept
+        # so the visual gate can still navigate to the state.
+        _path = route.split("?", 1)[0].split("#", 1)[0].rstrip("/") or "/"
+        _kind = "overlay" if _path in taken_path else "page"
+        out[dname] = {"route": route, "kind": _kind, "spec_screen": sname}
         taken_design.add(dname)
         taken_route.add(sname)
+        taken_path.add(_path)
     for d in designs:
         if d["name"] in out:
             continue
