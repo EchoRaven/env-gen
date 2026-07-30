@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# podman wrapper: force `podman build` onto the HOST network so in-container pip/npm reach
+# the fwdproxy relay at 127.0.0.1:19080 (rootless build default is pasta, which can't).
+# Everything else passes straight through to the real podman.
+REAL=/usr/bin/podman
+if [ "${1:-}" = "build" ]; then
+  shift
+  exec "$REAL" build --network=host "$@"
+fi
+exec "$REAL" "$@"
