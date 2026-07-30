@@ -47,6 +47,30 @@ from progress import EventType
 # failing-check remediation rails drive the lane; a lane fix changes the sig and
 # re-arms the fresh smoke. Same-sig failures are cached — never a docker churn.
 
+def contract_ddl_render_needed(*, orm_introspectable: bool, ddl_exists: bool) -> bool:
+    """Whether the CONTRACT-derived DDL render still has to run this tick.
+
+    #347: app/database/init/01_init.sql has two framework writers per tick --
+    the contract render (_generate_database) and the ORM render (#43
+    _repair_ddl_from_orm), which runs last and always wins. r91 logged 122 vs
+    121, r92 102 vs 100, r93 34 vs 33, so ~100 contract renders per run are
+    overwritten immediately.
+
+    They are NOT equivalent: the contract version emits a bogus `_meta` table
+    and strips every DEFAULT (`"verified" BOOLEAN` vs `boolean default false`).
+    The 1-tick gap in those counts is exactly the window where that variant is
+    what sits on disk.
+
+    #43 already states the ORM is the runtime truth. So the contract render
+    becomes a FALLBACK -- but it cannot be deleted: it is the only DDL author
+    before the skeleton has emitted models.py, and the delivery gate globs
+    app/database/*.sql, so the file must exist even on the first tick.
+    """
+    if not ddl_exists:
+        return True            # nothing on disk yet — the gate needs a file
+    return not orm_introspectable   # a broken/absent models.py means #43 no-ops
+
+
 def backend_source_signature(app_root: Any) -> Optional[str]:
     """Stable content hash of ``app/backend/**/*.py`` — the code that EXECUTES at
     backend boot (the lane-owned custom_routes.py included). Deliberately excludes
@@ -547,8 +571,25 @@ class FrameworkValidation:
                 # delivery FOREVER (instagram_v2/v3: api_smoke green, never delivered).
                 # Writing it HERE (on integration, pre-docker) means _commit_framework_
                 # delivery below ships it AND docker mounts a populated haibo-owned dir.
+                # #347: the ORM render below (#43) is authoritative and runs
+                # last, so re-rendering the contract DDL every tick is
+                # overwritten work — and its output differs (bogus `_meta`
+                # table, DEFAULTs stripped). Keep it as the FALLBACK that
+                # guarantees the delivery gate finds app/database/*.sql.
                 try:
-                    await orch._generate_database()
+                    from pathlib import Path as _DP
+                    _be = _DP(orch.output_dir) / "app" / "backend"
+                    _ddl = (_DP(orch.output_dir) / "app" / "database"
+                            / "init" / "01_init.sql")
+                    _orm_ok = False
+                    try:
+                        from .database_scaffold import introspect_orm_schema
+                        _orm_ok = bool(introspect_orm_schema(_be))
+                    except Exception:
+                        _orm_ok = False
+                    if contract_ddl_render_needed(
+                            orm_introspectable=_orm_ok, ddl_exists=_ddl.exists()):
+                        await orch._generate_database()
                 except Exception as _db_exc:
                     orch._logger.warning("per-tick database scaffold failed: %s", _db_exc)
                 orch._scaffold_frontend_baseline()
