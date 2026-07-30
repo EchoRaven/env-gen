@@ -333,7 +333,11 @@ def _param_column_type(param: str, path: str, models: Dict[str, Dict[str, Any]])
 
 
 def _match_model(seg: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tuple[str, Dict[str, Any]]]:
-    cand = seg.lower()
+    # N-P0-2 (Netflix): a kebab-case route segment (/api/my-list, /api/for-you) names a
+    # snake_case table (my_list / for_you). Only +s/-s and y->ies were normalized, so a
+    # hyphenated segment matched NOTHING → empty-stub projection. A '-' segment matched
+    # nothing before, so folding it to '_' can only add a correct match (never steal one).
+    cand = seg.lower().replace("-", "_")
     # FIX #202 (r11 live): the y→ies irregular plural — a segment 'activity'
     # must match table 'activities' (also category/categories, story/stories,
     # company/companies). Only the regular +s/-s was handled, so an '-y' resource
