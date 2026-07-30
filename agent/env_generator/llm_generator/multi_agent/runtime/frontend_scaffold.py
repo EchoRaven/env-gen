@@ -1712,23 +1712,23 @@ export default function __COMP__() {
     } catch (err) { setError(String(err)); }
   };
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-50">
-      <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-semibold text-zinc-900">{isRegister ? 'Create account' : 'Sign in'}</h1>
+    <div className="min-h-screen flex items-center justify-center __CLS_PAGE__">
+      <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-xl border __CLS_CARD__ p-8 shadow-sm">
+        <h1 className="text-2xl font-semibold __CLS_TITLE__">{isRegister ? 'Create account' : 'Sign in'}</h1>
         {isRegister ? (
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name"
-                 className="w-full rounded-lg border border-zinc-300 px-3 py-2" />
+                 className="w-full rounded-lg border __CLS_INPUT__ px-3 py-2" />
         ) : null}
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required
-               className="w-full rounded-lg border border-zinc-300 px-3 py-2" />
+               className="w-full rounded-lg border __CLS_INPUT__ px-3 py-2" />
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required
-               className="w-full rounded-lg border border-zinc-300 px-3 py-2" />
+               className="w-full rounded-lg border __CLS_INPUT__ px-3 py-2" />
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button type="submit" className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700">
+        <button type="submit" className="w-full rounded-lg __CLS_SUBMIT__ px-4 py-2 font-medium">
           {isRegister ? 'Create account' : 'Log in'}
         </button>
         <button type="button" onClick={() => setIsRegister(!isRegister)}
-                className="w-full text-sm text-blue-600">
+                className="w-full text-sm __CLS_LINK__">
           {isRegister ? 'Have an account? Sign in' : 'New here? Create an account'}
         </button>
       </form>
@@ -1736,6 +1736,73 @@ export default function __COMP__() {
   );
 }
 """
+
+
+# #334: the auth page is re-projected on EVERY tick, so a hardcoded palette here
+# is not just wrong on screen — it is one half of a framework-vs-framework loop
+# (r92 logged the #209 darkify pass re-swapping these same two files 57 times).
+# Project the MEASURED palette instead and the loop has nothing left to fight.
+_AUTH_CLASSES_LIGHT = {
+    "__CLS_PAGE__": "bg-zinc-50",
+    "__CLS_CARD__": "border-zinc-200 bg-white",
+    "__CLS_TITLE__": "text-zinc-900",
+    "__CLS_INPUT__": "border-zinc-300",
+    "__CLS_SUBMIT__": "bg-blue-600 text-white hover:bg-blue-700",
+    "__CLS_LINK__": "text-blue-600",
+}
+
+
+def _is_dark_hex(value: str) -> bool:
+    """Relative luminance of a #rrggbb — decides the incidental neutrals. Derived
+    from the MEASURED background so it is correct for a light reference too."""
+    try:
+        h = value.lstrip("#")
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        r, g, b = (int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+    except Exception:
+        return True
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) < 0.5
+
+
+def _auth_page_classes(design) -> Dict[str, str]:
+    """Class fragments for the projected auth page.
+
+    No measured palette -> today's neutral light form, byte-identical, so an env
+    generated without design input is unaffected. With a palette, consume the
+    tokens ``render_measured_tailwind_theme`` actually emits (``bg`` /
+    ``accent`` / ``accent-<hue>``) so the page renders in the reference's own
+    colors and no light-neutral utility survives for the darkify pass.
+    """
+    pal = _palette_of(design)
+    if not pal:
+        return dict(_AUTH_CLASSES_LIGHT)
+    bg = pal.get("bg") or pal.get("background")
+    has_bg = isinstance(bg, str) and bool(_HEX_RE_208.match(bg))
+    accent = pal.get("accent")
+    has_accent = isinstance(accent, str) and bool(_HEX_RE_208.match(accent))
+    accents = pal.get("accents") if isinstance(pal.get("accents"), dict) else {}
+    if has_accent:
+        accent_bg, accent_text = "bg-accent", "text-accent"
+    elif accents:
+        hue = sorted(str(k).lower() for k in accents)[0]
+        accent_bg, accent_text = f"bg-accent-{hue}", f"text-accent-{hue}"
+    else:
+        # A palette with no accent at all: stay neutral rather than resolve to
+        # an undefined token (an unresolved class renders an invisible button).
+        accent_bg, accent_text = "bg-neutral-700", "text-neutral-300"
+    dark = _is_dark_hex(bg) if has_bg else (_theme_default(design) != "light")
+    page_bg = "bg-bg" if has_bg else ("bg-black" if dark else "bg-neutral-100")
+    return {
+        "__CLS_PAGE__": page_bg,
+        "__CLS_CARD__": ("border-white/10 bg-black/20" if dark
+                         else "border-black/10 bg-neutral-50"),
+        "__CLS_TITLE__": "text-white" if dark else "text-black",
+        "__CLS_INPUT__": ("border-white/15 bg-transparent text-white placeholder-white/40"
+                          if dark else "border-black/15 bg-transparent text-black"),
+        "__CLS_SUBMIT__": f"{accent_bg} text-white hover:opacity-90",
+        "__CLS_LINK__": accent_text,
+    }
 
 
 def _mark_fallback_page(src: str) -> str:
@@ -2490,8 +2557,12 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
     # /auth/login + /auth/register) — never the generic single-input POST stub or
     # the inert no-api stub, which would ship a login page a user can't use.
     if _is_auth_page(name, page):
-        return (_AUTH_PAGE_TEMPLATE.replace("__COMP__", name)
-                .replace("__IS_REGISTER__", "true" if _is_register_mode(name, page) else "false"))
+        _auth_src = (_AUTH_PAGE_TEMPLATE.replace("__COMP__", name)
+                     .replace("__IS_REGISTER__",
+                              "true" if _is_register_mode(name, page) else "false"))
+        for _ph, _cls in _auth_page_classes(design).items():
+            _auth_src = _auth_src.replace(_ph, _cls)
+        return _auth_src
     label = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").strip() or name
     if _is_landing_page(name, page):
         # Real entry page: wordmark/hero + WORKING sign-in/create-account nav. Derive
@@ -3713,7 +3784,7 @@ export default function App() {
           <button className="w-full p-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold">
             {mode === 'register' ? 'Sign up' : 'Log in'}
           </button>
-          <button type="button" className="w-full text-sm text-blue-600"
+          <button type="button" className="w-full text-sm __CLS_LINK__"
             onClick={() => setMode(mode === 'register' ? 'login' : 'register')}>
             {mode === 'register' ? 'Have an account? Log in' : 'New? Sign up'}
           </button>
