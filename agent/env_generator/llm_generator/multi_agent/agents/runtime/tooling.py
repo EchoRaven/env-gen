@@ -123,6 +123,110 @@ def _effective_write_identity(agent: Any) -> Optional[str]:
     return effective
 
 
+def coerce_tool_args(schema: Any, tool_args: Dict) -> Dict:
+    """Coerce LLM-authored args to the types their own JSON-Schema declares.
+
+    Every tool advertises PARAMETERS to the model, but nothing applied it, and an
+    OpenAI-compatible gateway routinely emits an integer as "1" or an object as a
+    JSON *string*. Two P0s came from exactly that:
+
+    * `codehub_record_check(evidence=...)` is declared `type: object`; a JSON
+      STRING was persisted verbatim and every reader of `validation:*` evidence
+      then raised `'str' object has no attribute 'get'`. r91 logged
+      "framework delivery raised (non-fatal)" 218 times over 4h26m with the whole
+      delivery-gate layer dead inside that try block, and finished with no
+      delivery. One malformed row poisons the rest of the run.
+    * `milestone_index` is declared `integer` but arrived as a string in 502 calls
+      (71% of recent kickoff_declare_predicate calls); workhub's strict
+      isinstance check rejected every one, and r92's M2 ended with zero declared
+      predicates.
+
+    Fail-open by construction: anything that cannot be coerced is returned
+    untouched, so this can never turn a working call into a failing one. Only
+    keys the schema actually declares are considered.
+    """
+    if not isinstance(tool_args, dict) or not tool_args:
+        return tool_args
+    try:
+        props = (schema or {}).get("properties")
+    except Exception:
+        return tool_args
+    if not isinstance(props, dict) or not props:
+        return tool_args
+    out = dict(tool_args)
+    for key, value in tool_args.items():
+        spec = props.get(key)
+        if not isinstance(spec, dict) or value is None:
+            continue
+        declared = spec.get("type")
+        try:
+            coerced = _coerce_one(declared, value)
+        except Exception:
+            continue
+        if coerced is not _UNCOERCED:
+            out[key] = coerced
+    return out
+
+
+_UNCOERCED = object()
+
+
+def _coerce_one(declared: Any, value: Any) -> Any:
+    """One value against one declared type. Returns ``_UNCOERCED`` to leave it."""
+    import json as _json
+    if declared == "integer":
+        # bool is a subclass of int — a True must stay a True, not become 1.
+        if isinstance(value, bool) or isinstance(value, int):
+            return _UNCOERCED
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+            return int(value.strip())
+        return _UNCOERCED
+    if declared == "number":
+        if isinstance(value, bool) or isinstance(value, (int, float)):
+            return _UNCOERCED
+        if isinstance(value, str):
+            return float(value.strip())
+        return _UNCOERCED
+    if declared == "boolean":
+        if isinstance(value, bool):
+            return _UNCOERCED
+        if isinstance(value, str):
+            low = value.strip().lower()
+            if low in ("true", "yes", "1"):
+                return True
+            if low in ("false", "no", "0"):
+                return False
+        return _UNCOERCED
+    if declared == "object":
+        if isinstance(value, dict):
+            return _UNCOERCED
+        if isinstance(value, str):
+            try:
+                parsed = _json.loads(value)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                return parsed
+            # A non-object value for a declared object still must not reach a
+            # consumer that calls .get()/.items() — wrap rather than persist raw.
+            return {"raw": value}
+        return _UNCOERCED
+    if declared == "array":
+        if isinstance(value, (list, tuple)):
+            return _UNCOERCED
+        if isinstance(value, str):
+            try:
+                parsed = _json.loads(value)
+            except Exception:
+                return _UNCOERCED
+            if isinstance(parsed, list):
+                return parsed
+        return _UNCOERCED
+    return _UNCOERCED
+
+
 class AgentTooling:
     def _register_env_gen_tools(self):
         """Register environment generation tools based on allowed_tool_categories."""
@@ -750,6 +854,13 @@ class AgentTooling:
         """Execute a tool and log it."""
         if tool_name in self._tool_instances:
             try:
+                # Apply the tool's own declared JSON-Schema types BEFORE the
+                # enforcement chain, so permission/precondition checks and the
+                # tool body all see well-typed args (#335).
+                tool_args = coerce_tool_args(
+                    getattr(self._tool_instances[tool_name], "PARAMETERS", None),
+                    tool_args,
+                )
                 mode_error = self._enforce_execution_mode(tool_name)
                 if mode_error is not None:
                     self.log_tool_call(tool_name, tool_args, mode_error)
