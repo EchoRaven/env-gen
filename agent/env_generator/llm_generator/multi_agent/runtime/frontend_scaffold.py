@@ -3555,14 +3555,83 @@ def render_measured_tailwind_theme(design_system) -> str:
     return f"export default {{\n  colors: {{\n{_lines}\n  }},\n}}\n"
 
 
-def render_measured_base_css(design_system) -> str:
+_FONT_EXTS = {".woff2": "woff2", ".woff": "woff", ".ttf": "truetype", ".otf": "opentype"}
+_FONT_WEIGHTS = (("thin", 100), ("extralight", 200), ("light", 300), ("regular", 400),
+                 ("book", 400), ("medium", 500), ("semibold", 600), ("demibold", 600),
+                 ("bold", 700), ("extrabold", 800), ("black", 900))
+
+
+def _font_face_blocks(font_files) -> Tuple[str, str]:
+    """(@font-face css, primary family) for the fonts design-prep staged.
+
+    Design-prep drops the reference's real font files into
+    public/assets/fonts/ every run, and design_system.json carries a measured
+    font_stack -- but nothing ever emitted an @font-face or a body font-family,
+    so `grep -rl "font-family|@font-face"` over the delivered src/ + index.html
+    returned ZERO files in r91/r92/r93. The files shipped and no screen used
+    them. Staging was implemented; wiring never was.
+
+    Family name drops the weight suffix, so TikTokFont-Regular and
+    TikTokFont-Bold become ONE family at two weights rather than two families.
+    Returns ("", "") when nothing usable was staged, so an env without design
+    input is untouched.
+    """
+    from pathlib import Path as _P
+    blocks, primary = [], ""
+    for name in (font_files or []):
+        stem = _P(str(name)).stem
+        fmt = _FONT_EXTS.get(_P(str(name)).suffix.lower())
+        if not fmt or not stem:
+            continue
+        family, weight, italic = stem, 400, "normal"
+        low = stem.lower()
+        if low.endswith("-italic") or low.endswith("italic"):
+            italic = "italic"
+        for token, w in _FONT_WEIGHTS:
+            if low.endswith("-" + token) or low.endswith(token):
+                weight = w
+                family = stem[: len(stem) - len(token)].rstrip("-_") or stem
+                break
+        else:
+            # a variable font (…-VF) is one file covering the whole range
+            if low.endswith("-vf"):
+                family = stem[:-3].rstrip("-_") or stem
+                weight = "100 900"
+        if not primary:
+            primary = family
+        blocks.append(
+            "  @font-face {\n"
+            f"    font-family: '{family}';\n"
+            f"    src: url('/assets/fonts/{name}') format('{fmt}');\n"
+            f"    font-weight: {weight};\n"
+            f"    font-style: {italic};\n"
+            "    font-display: swap;\n"
+            "  }\n"
+        )
+    return "".join(blocks), primary
+
+
+def render_measured_base_css(design_system, font_files=None) -> str:
     """#208: index.css + a base layer painting `body` with the MEASURED background
     and a theme-derived default text color, so the canvas matches the reference by
     construction. No measured palette → the plain baseline (no injected layer)."""
     base = "@tailwind base;\n@tailwind components;\n@tailwind utilities;\n"
+    _faces, _primary = _font_face_blocks(font_files)
+    _stack = ""
+    try:
+        _inner = (design_system or {}).get("design_system") or design_system or {}
+        _stack = str(_inner.get("font_stack") or "").strip()
+    except Exception:
+        _stack = ""
+    if _faces and not _stack:
+        _stack = f"'{_primary}', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    _font_rule = f"  body {{ font-family: {_stack}; }}\n" if _faces and _stack else ""
     pal = _palette_of(design_system)
     _bg = pal.get("bg") or pal.get("background")
     if not (isinstance(_bg, str) and _HEX_RE_208.match(_bg)):
+        # #342: staged fonts wire up even without a measured palette.
+        if _faces:
+            return base + "\n@layer base {\n" + _faces + _font_rule + "}\n"
         return base
     # derive default text from theme (dark canvas → light text, and vice-versa);
     # if the theme is unstated, infer from the background luminance.
@@ -3578,9 +3647,12 @@ def render_measured_base_css(design_system) -> str:
         except Exception:
             theme = "dark"
     text = "#f5f5f5" if theme == "dark" else "#18181b"
+    _fam = f"    font-family: {_stack};\n" if (_faces and _stack) else ""
     return (base + "\n@layer base {\n"
+            + _faces +
             "  /* #208: measured canvas — reference ground-truth, by construction */\n"
-            f"  body {{\n    background-color: {_bg};\n    color: {text};\n  }}\n}}\n")
+            f"  body {{\n    background-color: {_bg};\n    color: {text};\n"
+            f"{_fam}  }}\n}}\n")
 
 
 # FIX #209 — when the MEASURED theme is dark, remap the lane's light-neutral
@@ -4443,7 +4515,14 @@ def _apply_measured_palette(frontend_dir) -> None:
             encoding="utf-8")
     # index.css — inject the measured body layer ONCE (preserve lane styles).
     _css_p = Path(frontend_dir) / "src" / "index.css"
-    _measured = render_measured_base_css(ds)
+    # #342: design-prep stages the reference's real font files but nothing ever
+    # referenced them -- 0 font-family/@font-face hits in every delivered app.
+    _font_dir = Path(frontend_dir) / "public" / "assets" / "fonts"
+    try:
+        _fonts = sorted(f.name for f in _font_dir.iterdir() if f.is_file())
+    except Exception:
+        _fonts = []
+    _measured = render_measured_base_css(ds, font_files=_fonts)
     if "@layer base" not in _measured:
         return
     _layer = _measured.split("@layer base", 1)[1]
