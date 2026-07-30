@@ -443,6 +443,18 @@ def _render_column(table_name: str, col: Any) -> str:
     if re.search(r"\bunique\b", _sqlt, re.IGNORECASE):
         _emb_uniq = True
         _sqlt = re.sub(r"\s*\bunique\b\s*", " ", _sqlt, flags=re.IGNORECASE).strip()
+    # (netflix docker_up killer) a column typed with an EMBEDDED default
+    # ("integer default 0") DOUBLES when the `default` flag (or _counter_default's
+    # forced 0) is also appended below → ``"view_count" INTEGER DEFAULT 0 DEFAULT 0``
+    # → postgres "multiple default values specified for column" → docker_up wedge.
+    # Mirror the #199 PK/NOT-NULL/UNIQUE handling: strip the embedded DEFAULT and
+    # fold it into the flag so exactly one DEFAULT is emitted. Runs AFTER the
+    # constraint strips above, so only the default value remains at the tail.
+    _emb_default = None
+    _m_def = re.search(r"\bdefault\b\s+(.+)$", _sqlt, re.IGNORECASE)
+    if _m_def:
+        _emb_default = _m_def.group(1).strip()
+        _sqlt = _sqlt[:_m_def.start()].strip()
     _sqlt = _sqlt.strip() or "text"  # a bare "primary key" type leaves nothing
     _is_pk = bool(col.get("primary_key") or col.get("pk")) or _emb_pk
     # A bare integer PRIMARY KEY does NOT auto-increment on Postgres (unlike
@@ -467,6 +479,8 @@ def _render_column(table_name: str, col: Any) -> str:
     if col.get("unique") or _emb_uniq:
         parts.append("UNIQUE")
     default = col.get("default")
+    if default is None and _emb_default is not None:
+        default = _emb_default  # type-only default (col carried it in the type string)
     if default is not None:
         parts.append(f"DEFAULT {default}")
     # Emit a STRUCTURED FK (``references``/``fk`` field) the same way the inline
