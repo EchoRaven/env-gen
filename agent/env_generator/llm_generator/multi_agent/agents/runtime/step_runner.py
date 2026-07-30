@@ -557,22 +557,6 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                 else:
                     _mark_stage("runtime_team_status", executed=False, skip_reason="disabled_by_config")
 
-                done = await self._run_planning_stage(
-                    enabled=_stage_enabled("planning"),
-                    tool_schema_map=tool_schema_map,
-                    messages=messages,
-                    files_created=files_created,
-                    files_modified=files_modified,
-                    step=step,
-                    max_calls_cfg=max_calls_cfg,
-                    step_trace=step_trace,
-                    step_traces=step_traces,
-                    loop_time=loop_time,
-                    mark_stage=_mark_stage,
-                )
-                if done:
-                    return done
-
                 done = await self._run_retrieve_context_stage(
                     enabled=_stage_enabled("retrieve_context"),
                     tool_schema_map=tool_schema_map,

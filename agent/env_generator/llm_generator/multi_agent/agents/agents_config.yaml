@@ -41,7 +41,6 @@ execution_pipeline_defaults:
   stages:
     - hub_pulse
     - runtime_team_status
-    - planning
     - retrieve_context
     - action
     - hub_commit_gate
@@ -54,7 +53,6 @@ execution_pipeline_defaults:
   # hub_pulse + hub_commit_gate collect data via hub method calls (not LLM tools).
   max_tool_calls_per_stage:
     hub_pulse: 0
-    planning: 1
     retrieve_context: 2
     hub_commit_gate: 0
     knowledge_sync: 1
@@ -202,9 +200,8 @@ profiles:
       # since the run ends right when the LLM might have called them.
       - kind: retro_before_deliver
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 3
         hub_commit_gate: 0
         knowledge_sync: 2
@@ -510,9 +507,8 @@ profiles:
       - kind: claim_assigned_tasks
       - kind: lane_wind_down
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -797,9 +793,8 @@ profiles:
       - kind: claim_assigned_tasks
       - kind: lane_wind_down
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -1030,9 +1025,8 @@ profiles:
       # check is now blocked at the source) or a peer's question unread.
       - kind: lane_wind_down
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -1155,9 +1149,8 @@ profiles:
         # (kickoff spurious-bug suppression); triaging a filed defect must not be
         # phase-gated.
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 3
         action: 6                 # bug triage needs: read inbox + lookup owner + bug_triage + broadcast + finish
         hub_commit_gate: 0
@@ -1259,9 +1252,8 @@ profiles:
       - codehub_resolve_merge_conflict
       - codehub_revert_commit
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 3
         hub_commit_gate: 0
         knowledge_sync: 3
@@ -1307,9 +1299,8 @@ profiles:
       - wait
       - wait_for_process
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -1353,9 +1344,8 @@ profiles:
       - wait
       - wait_for_process
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -1395,9 +1385,8 @@ profiles:
       - wait
       - wait_for_process
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         hub_commit_gate: 0
         knowledge_sync: 1
 
@@ -1473,9 +1462,8 @@ profiles:
         - grep
         - list_generated_files
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -1541,9 +1529,8 @@ profiles:
         - grep
         - list_generated_files
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
@@ -1624,9 +1611,8 @@ profiles:
         - grep
         - list_generated_files
     execution_pipeline:
-      stages: [hub_pulse, runtime_team_status, planning, retrieve_context, action, hub_commit_gate, knowledge_sync]
+      stages: [hub_pulse, runtime_team_status, retrieve_context, action, hub_commit_gate, knowledge_sync]
       max_tool_calls_per_stage:
-        planning: 1
         retrieve_context: 2
         hub_commit_gate: 0
         knowledge_sync: 1
