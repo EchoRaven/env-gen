@@ -968,7 +968,7 @@ revision-worthy.
     contract — if you see a gap the suite missed, that becomes a
     revision, not consensus).
 
-* `"request_revision"` — pick this when:
+{% if current_round < max_rounds %}* `"request_revision"` — pick this when:
   * One or more findings are status `error`/`warning`, AND
   * `cross_check_revisers` (or your own reading of the sections) maps
     each finding to a specific attendee, AND
@@ -981,12 +981,23 @@ revision-worthy.
     concretely what to fix (paths, field names, line of reasoning) —
     not a vague "please revise". The reviser's
     `kickoff_revision_prompt` reads this string verbatim.
-
+{% else %}
+{# #359: request_revision is NOT offered at the final round — its own stated
+   precondition is `current_round < max_rounds`, so with KICKOFF_MAX_ROUNDS=1
+   it rendered as the literal `1 < 1` and the chair burned its highest-value
+   reasoning turn resolving an option whose precondition said it was false
+   (r92 verbatim: "that's literally false"). Both runs then fell through to
+   synthesize_fallback, so the run's whole contract came from the fallback
+   path rather than from the facilitator. #}
+* `"request_revision"` is NOT available: this is the final round
+  (round {{ current_round }} of {{ max_rounds }}), so there is no further
+  round for a reviser to act in. Choose `consensus` or `escalate`.
+{% endif %}
 * `"escalate"` — pick this when ANY of:
-  * The same conflict persisted across rounds (e.g. round 1 said
+{% if max_rounds > 1 %}  * The same conflict persisted across rounds (e.g. round 1 said
     "backend `auth.model` mismatches frontend `auth_flow`", round 2
     still mismatches) AND `{{ current_round }} >= {{ max_rounds }}`.
-  * The requirements themselves contradict (e.g. user asked for "no
+{% endif %}  * The requirements themselves contradict (e.g. user asked for "no
     auth" but a `/api/me` endpoint requires auth — no amount of
     re-authoring resolves it).
   * The synthesizer reported `validation_failed` and the roadmap shape
