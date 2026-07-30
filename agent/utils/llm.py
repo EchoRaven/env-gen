@@ -1784,6 +1784,23 @@ class AnthropicClient(BaseLLMClient):
                     header, _, data = url.partition(",")
                     # header looks like "data:image/png;base64"
                     media_type = header[len("data:"):].split(";")[0] or "image/png"
+                    # The data-URI header frequently LIES (a .jpg staged as image/png):
+                    # Anthropic 400s on the mismatch ("appears to be a image/jpeg") and the
+                    # whole vision call is lost — 20+ reference decodes dropped on a Netflix
+                    # run. Trust the BYTES: sniff the magic number from the base64 head.
+                    try:
+                        import base64 as _b64
+                        head = _b64.b64decode(data[:24])[:12] if data else b""
+                        if head[:3] == b"\xff\xd8\xff":
+                            media_type = "image/jpeg"
+                        elif head[:8] == b"\x89PNG\r\n\x1a\n":
+                            media_type = "image/png"
+                        elif head[:6] in (b"GIF87a", b"GIF89a"):
+                            media_type = "image/gif"
+                        elif head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+                            media_type = "image/webp"
+                    except Exception:
+                        pass
                     blocks.append({
                         "type": "image",
                         "source": {"type": "base64",
