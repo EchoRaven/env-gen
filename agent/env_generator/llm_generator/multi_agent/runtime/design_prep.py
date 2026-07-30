@@ -722,6 +722,75 @@ def _reference_path(screen: Dict, resolved: Dict, output_dir: Path) -> Optional[
     return None
 
 
+_SCREEN_STOP_TOKENS = frozenset({
+    "screen", "page", "view", "state", "default", "empty", "own", "logged",
+    "out", "in", "panel", "grid", "menu", "suggested", "creators", "dm",
+})
+
+
+def _screen_tokens(name: str) -> set:
+    """Meaningful tokens of a screen name, for spec matching."""
+    parts = [t for t in str(name or "").lower().replace("-", "_").split("_") if t]
+    core = {t for t in parts if t not in _SCREEN_STOP_TOKENS}
+    return core or set(parts)
+
+
+def assign_screen_routes(design_screens, spec_screens):
+    """Deterministically give every MEASURED screen a route and a kind (#352).
+
+    `missing_design_screen_pages` skips a screen without a route, and
+    design_system.json has never carried one -- so the #225 page seeding fired 0
+    times in r91/r92/r93/r94. The analyst names screens after reference
+    FILENAMES ("explore_grid", "profile_own") while reference_spec.json uses
+    logical names ("explore", "profile"), so exact-name matching resolves only 2
+    of 11; tokens resolve all 11.
+
+    Assignment is greedy by overlap score with deterministic tie-breaking, and
+    each spec route may be claimed once -- r93 has two screens
+    (fyp_feed_comments_panel, fyp_feed_logged_out) that both overlap fyp_feed
+    and fyp_comments, and they must not collapse onto one route.
+
+    `kind` follows REACHABILITY, not the filename: a screen the spec gives a
+    route_hint is addressable by URL, so it is a `page`. Only a screen no route
+    can be assigned to is an `overlay`. The previous name-regex rule demoted
+    r92's login_modal (route_hint `/login`) to advisory and left the visual
+    gate's blocking set empty. Geometry cannot help here -- layout_metrics
+    measures the whole screenshot, so a modal is full-canvas like a page.
+    """
+    out = {}
+    designs = [d for d in (design_screens or []) if isinstance(d, dict) and d.get("name")]
+    specs = [s for s in (spec_screens or []) if isinstance(s, dict) and s.get("name")
+             and str(s.get("route_hint") or "").startswith("/")]
+    pairs = []
+    for d in designs:
+        dt = _screen_tokens(d["name"])
+        for sp in specs:
+            st = _screen_tokens(sp["name"])
+            overlap = len(dt & st)
+            if overlap:
+                # Jaccard breaks "which spec name is the better fit" ties.
+                pairs.append((-overlap, -overlap / max(len(dt | st), 1),
+                              str(d["name"]), str(sp["name"])))
+    pairs.sort()
+    taken_design, taken_route = set(), set()
+    for _o, _j, dname, sname in pairs:
+        if dname in taken_design or sname in taken_route:
+            continue
+        route = next(s["route_hint"] for s in specs if s["name"] == sname)
+        out[dname] = {"route": route, "kind": "page", "spec_screen": sname}
+        taken_design.add(dname)
+        taken_route.add(sname)
+    for d in designs:
+        if d["name"] in out:
+            continue
+        # No spec route to claim: not URL-addressable as far as the contract
+        # knows, so it is an overlay -- but still give it a slug so downstream
+        # seeding can decide, rather than dropping it silently.
+        slug = "-".join(t for t in str(d["name"]).lower().replace("_", "-").split("-") if t)
+        out[d["name"]] = {"route": f"/{slug}", "kind": "overlay", "spec_screen": None}
+    return out
+
+
 def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
     """Deterministically COMPLETE an accepted design_system doc in place (never raises):
 
@@ -733,7 +802,35 @@ def complete_design_system(ds: Dict, resolved: Dict, output_dir) -> Dict:
     then rewrites design_system.json/.md. Measured facts and analyst output are never changed."""
     import logging
     out = Path(output_dir)
-    stats = {"components": 0, "cropped": 0, "bg_filled": 0, "asset_mapped": 0}
+    stats = {"components": 0, "cropped": 0, "bg_filled": 0, "asset_mapped": 0,
+             "screens_routed": 0}
+    # #352: backfill route + kind on every measured screen. The analyst is never
+    # asked for them (they exist only in the unused single-shot fallback prompt),
+    # so missing_design_screen_pages skipped 11/11 screens and the #225 page
+    # seeding fired 0 times in r91/r92/r93/r94. Deterministic; never overwrites a
+    # field the analyst DID author.
+    try:
+        _screens = ds.get("screens") if isinstance(ds, dict) else None
+        if isinstance(_screens, list) and _screens:
+            _spec_p = out / "design" / "reference_spec.json"
+            _spec = []
+            if _spec_p.exists():
+                import json as _json
+                _spec = (_json.loads(_spec_p.read_text(encoding="utf-8")) or {}).get("screens") or []
+            _assigned = assign_screen_routes(_screens, _spec)
+            for _s in _screens:
+                if not isinstance(_s, dict):
+                    continue
+                _a = _assigned.get(str(_s.get("name") or ""))
+                if not _a:
+                    continue
+                if not str(_s.get("route") or "").strip():
+                    _s["route"] = _a["route"]
+                    stats["screens_routed"] += 1
+                if not str(_s.get("kind") or "").strip():
+                    _s["kind"] = _a["kind"]
+    except Exception:
+        pass  # backfill is best-effort; never block design-prep on it
     try:
         from .material_prep import _open_rgb, crop_region, region_background
         import re as _re
