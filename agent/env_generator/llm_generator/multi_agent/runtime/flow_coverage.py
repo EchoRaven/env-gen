@@ -303,10 +303,22 @@ _UI_FLOW_NAME_PREFIX = "validation:ui_flow:"
 def _index_ui_flow_records(hub_registry) -> Dict[str, str]:
     """Return ``{flow_name: best_status}`` over validation:ui_flow records.
 
-    ``best_status`` is ``"passed"`` if any record for that flow passed,
-    else ``"failed"`` if any failed, else the latest status. We collapse
-    duplicates by name so a later passing run can clear an earlier
-    failure (matches how the auto-retry loop works for smoke checks).
+    LATEST-WINS by ``recorded_at`` (#357).
+
+    This used to be "passed if ANY record passed", which is right in one
+    direction -- a later passing run should clear an earlier failure, matching
+    the auto-retry loop -- and blind in the other: a later FAILING record could
+    never clear an earlier pass. Once a flow had been green once the gate could
+    never see it regress, which is the entire purpose of a regression gate.
+    r91's store holds 18 records for 4 flows including success -> failure ->
+    success -> failure sequences, all of which read green forever after the
+    first success.
+
+    `get_validation_results` already maps `updated_at` onto `recorded_at` for
+    every row, so ordering is available. Records with NO usable timestamp keep
+    the old passed-wins collapse, so an old store cannot start reporting
+    differently just because it lacks the field; a timestamped record always
+    outranks an untimed one.
     """
     try:
         results = hub_registry.get_validation_results(limit=1000) or []
@@ -314,6 +326,7 @@ def _index_ui_flow_records(hub_registry) -> Dict[str, str]:
         results = []
 
     by_flow: Dict[str, str] = {}
+    seen_at: Dict[str, float] = {}   # #357: newest recorded_at seen per flow
     for r in results:
         if not isinstance(r, dict):
             continue
@@ -342,14 +355,28 @@ def _index_ui_flow_records(hub_registry) -> Dict[str, str]:
             continue
         status = r.get("status", "error")
         prev = by_flow.get(flow)
-        if prev == "passed":
-            continue
-        if status == "passed":
-            by_flow[flow] = "passed"
-        elif status in {"failed", "error"} and prev != "failed":
-            by_flow[flow] = "failed"
-        elif prev is None:
-            by_flow[flow] = status
+        # #357: the ratchet ITSELF lived here — `if prev == "passed": continue`
+        # short-circuited every record after the first success, so no later
+        # failure could ever be seen. Ordering is decided below instead.
+        _at = r.get("recorded_at")
+        try:
+            _at = float(_at) if _at not in (None, "") else None
+        except Exception:
+            _at = None
+        _prev_at = seen_at.get(flow)
+        if _at is not None:
+            # A timestamped record outranks any untimed one, and later wins.
+            if _prev_at is None or _at >= _prev_at:
+                by_flow[flow] = status
+                seen_at[flow] = _at
+        elif _prev_at is None and prev != "passed":
+            # Untimed: preserve the historical passed-wins collapse exactly.
+            if status == "passed":
+                by_flow[flow] = "passed"
+            elif status in {"failed", "error"} and prev != "failed":
+                by_flow[flow] = "failed"
+            elif prev is None:
+                by_flow[flow] = status
     return by_flow
 
 
