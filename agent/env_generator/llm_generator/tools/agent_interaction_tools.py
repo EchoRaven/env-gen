@@ -641,22 +641,13 @@ Args:
                             "docker_ok": {"type": "boolean"}
                         }
                     },
-                    "force_deliver": {
-                        "type": "boolean",
-                        "description": (
-                            "Orchestrator-only audited bypass of the coverage "
-                            "gate. Use when dead artifacts exist but shipping "
-                            "anyway is intentional. Logs a dead_code_bypass "
-                            "EventHub event."
-                        )
-                    }
                 },
                 "required": ["confirmation", "delivery_summary", "checklist"]
             }
         )
 
     def execute(self, confirmation: str, delivery_summary: str,
-                checklist: dict = None, force_deliver: bool = False) -> ToolResult:
+                checklist: dict = None) -> ToolResult:
         # PR 6 review (2026-05-30) deleted five gate blocks that
         # used to live here (retro / coverage / visual / seed /
         # runhub-since-session). All five were dead-on-production:

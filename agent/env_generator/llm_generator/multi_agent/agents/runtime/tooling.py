@@ -98,6 +98,40 @@ def tool_io_rollup(top: int = 25) -> str:
     return "\n".join(out)
 
 
+def drop_unaccepted_kwargs(fn: Any, tool_args: Dict) -> tuple:
+    """(kept, dropped_names) — strip args the callee cannot accept (#360).
+
+    Tools are invoked as `exec_fn(**tool_args)`, so an argument the model
+    supplies that the signature does not declare raises
+    `TypeError: got an unexpected keyword argument` and the whole call is lost.
+    124 such failures across the corpus (34 'uses', 14 'branch', 12 'task_id',
+    9 'error', 8 'check', 6 'ref', 4 'metadata' — that last one being agents
+    trying to pass metadata to codehub_record_check, which has no such param).
+
+    Same class as #335: an LLM-authored argument list meeting a strict boundary
+    unnormalised. Dropping the surplus keeps the call alive and the WARNING
+    keeps the mismatch visible. A signature with **kwargs accepts everything, so
+    nothing is dropped there; an uninspectable callable is left untouched.
+    """
+    if not isinstance(tool_args, dict) or not tool_args:
+        return tool_args, []
+    try:
+        import inspect
+        sig = inspect.signature(fn)
+    except Exception:
+        return tool_args, []
+    params = sig.parameters.values()
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params):
+        return tool_args, []
+    accepted = {p.name for p in params
+                if p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                              inspect.Parameter.KEYWORD_ONLY)}
+    dropped = sorted(k for k in tool_args if k not in accepted)
+    if not dropped:
+        return tool_args, []
+    return {k: v for k, v in tool_args.items() if k in accepted}, dropped
+
+
 def _effective_write_identity(agent: Any) -> Optional[str]:
     """The identity a role-write gate must be evaluated against.
 
@@ -891,6 +925,15 @@ class AgentTooling:
                     pass  # approval is best-effort — never wedge the pipeline on it
 
                 exec_fn = self._tool_instances[tool_name].execute
+                # #360: an arg the callee cannot accept would raise TypeError
+                # and lose the whole call. Drop it loudly instead.
+                tool_args, _dropped_args = drop_unaccepted_kwargs(exec_fn, tool_args)
+                if _dropped_args:
+                    self._logger.warning(
+                        "[%s] %s: dropped unaccepted argument(s) %s — the tool's "
+                        "signature does not declare them; check the tool schema "
+                        "the model was shown.",
+                        self.agent_id, tool_name, _dropped_args)
                 if asyncio.iscoroutinefunction(exec_fn):
                     result = await exec_fn(**tool_args)
                 else:
