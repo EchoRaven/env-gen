@@ -3554,6 +3554,90 @@ def _token_name(key: str) -> str:
     return str(key).strip().lower().replace("_", "-")
 
 
+def _scale_of(design_system, key):
+    ds = design_system or {}
+    inner = ds.get("design_system") if isinstance(ds.get("design_system"), dict) else ds
+    return (inner or {}).get(key)
+
+
+def _px(value):
+    """A measured length -> a CSS length. Ints/floats are px; '50%'/'2rem' pass
+    through; prose returns None so it never becomes a token."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return f"{int(value) if float(value).is_integer() else value}px"
+    if isinstance(value, str):
+        v = value.strip()
+        if re.fullmatch(r"-?\d+(?:\.\d+)?", v):
+            return f"{v}px"
+        if re.fullmatch(r"-?\d+(?:\.\d+)?(?:px|rem|em|%|vh|vw)", v):
+            return v
+    return None
+
+
+def render_measured_theme_sections(design_system) -> str:
+    """#345: fontSize / borderRadius / boxShadow from the MEASURED scales.
+
+    design_system.json carries type_scale, radius_scale and shadow_scale on
+    every run and none of them ever reached tailwind.theme.js -- the file held
+    a `colors` block and nothing else -- so the lane had no measured name for a
+    radius, a text size or an elevation and fell back to Tailwind defaults.
+
+    The shapes are NOT stable across runs, so both spellings are read:
+    r91 uses type_scale[].line_px / .font and shadow_scale[].value; r93 uses
+    .line_height / .family and .css. Anything that is not a value (r91's
+    radius_scale `notes` prose) is skipped.
+
+    `spacing_scale_px` is deliberately NOT projected: Tailwind's `spacing` keys
+    are what `p-4`/`gap-2` resolve through, so emitting {'4': '4px'} would
+    silently redefine p-4 from 16px to 4px and break every spacing utility the
+    lane already wrote.
+    """
+    out = []
+
+    fonts = []
+    for item in (_scale_of(design_system, "type_scale") or []):
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip()
+        size = _px(item.get("size_px") or item.get("size"))
+        if not role or not size:
+            continue
+        extra = []
+        line = item.get("line_height", item.get("line_px"))
+        if isinstance(line, (int, float)) and not isinstance(line, bool):
+            extra.append(f"lineHeight: '{line}px'" if line > 4 else f"lineHeight: '{line}'")
+        weight = item.get("weight")
+        if isinstance(weight, (int, float)) and not isinstance(weight, bool):
+            extra.append(f"fontWeight: '{int(weight)}'")
+        meta = (", { " + ", ".join(extra) + " }") if extra else ""
+        fonts.append(f"    '{_token_name(role)}': ['{size}'{meta}]")
+    if fonts:
+        out.append("  fontSize: {\n" + ",\n".join(fonts) + ",\n  },")
+
+    radii = []
+    for name, value in (_scale_of(design_system, "radius_scale") or {}).items():
+        length = _px(value)
+        if length:
+            radii.append(f"    '{_token_name(name)}': '{length}'")
+    if radii:
+        out.append("  borderRadius: {\n" + ",\n".join(radii) + ",\n  },")
+
+    shadows = []
+    for item in (_scale_of(design_system, "shadow_scale") or []):
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip()
+        css = item.get("css") or item.get("value")
+        if role and isinstance(css, str) and css.strip():
+            shadows.append(f"    '{_token_name(role)}': '{css.strip()}'")
+    if shadows:
+        out.append("  boxShadow: {\n" + ",\n".join(shadows) + ",\n  },")
+
+    return "\n".join(out)
+
+
 def render_measured_tailwind_theme(design_system) -> str:
     """#208: tailwind.theme.js exporting the MEASURED colors as named tokens
     (bg / accent / accent-<hue>), so `bg-bg`, `text-accent`, `bg-accent-red`
@@ -3576,13 +3660,17 @@ def render_measured_tailwind_theme(design_system) -> str:
     for hue, hexv in (pal.get("accents") or {}).items():
         if _is_colour_value(hexv):
             colors[f"accent-{_token_name(hue)}"] = hexv.strip()
+    _sections = render_measured_theme_sections(design_system)
     if not colors:
+        if _sections:
+            return "export default {\n" + _sections + "\n}\n"
         return "export default {}\n"
     # #219: the pinned tailwind.config.js consumes this as `theme: { extend:
     # theme || {} }` — the export IS the extend object. Wrapping it in
     # theme/extend again double-nests and the tokens never resolve.
     _lines = ",\n".join(f"    '{k}': '{v}'" for k, v in colors.items())
-    return f"export default {{\n  colors: {{\n{_lines}\n  }},\n}}\n"
+    _tail = ("\n" + _sections) if _sections else ""
+    return f"export default {{\n  colors: {{\n{_lines}\n  }},{_tail}\n}}\n"
 
 
 _FONT_EXTS = {".woff2": "woff2", ".woff": "woff", ".ttf": "truetype", ".otf": "opentype"}
@@ -4542,8 +4630,13 @@ def _apply_measured_palette(frontend_dir) -> None:
         merged = {k: v for k, v in _tok_re.findall(_cur)}
         merged.update(dict(_tok_re.findall(_theme)))  # measured wins
         _lines = ",\n".join(f"    '{k}': '{v}'" for k, v in merged.items())
+        # #345: the merge rebuilds the file from `colors` alone, so the
+        # measured fontSize/borderRadius/boxShadow blocks must be re-appended
+        # or they would be discarded on the very next tick.
+        _sections = render_measured_theme_sections(ds)
+        _tail = ("\n" + _sections) if _sections else ""
         _theme_p.write_text(
-            f"export default {{\n  colors: {{\n{_lines}\n  }},\n}}\n",
+            f"export default {{\n  colors: {{\n{_lines}\n  }},{_tail}\n}}\n",
             encoding="utf-8")
     # index.css — inject the measured body layer ONCE (preserve lane styles).
     _css_p = Path(frontend_dir) / "src" / "index.css"
