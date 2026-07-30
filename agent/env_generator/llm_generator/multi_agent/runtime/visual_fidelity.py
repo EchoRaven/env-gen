@@ -51,18 +51,36 @@ _LOG = logging.getLogger(__name__)
 # named after the screen they depict; keyword order matters (create_account
 # must win over create). A name that maps to no route is skipped (reported).
 # ---------------------------------------------------------------------------
+# #356: the keyword table keeps its ROUTE column and loses its AUTH column.
+#
+# The route half is real capability: `home` -> /feed, `search` -> /explore,
+# `video` -> /reels are SEMANTIC synonyms no filename-token matcher can derive,
+# and every entry is gated on the app actually serving that route. #352's
+# authoritative classifications cover MEASURED screens, but an unmeasured
+# reference image still needs this.
+#
+# The auth half was the defect. Only two rows ever set False, they matched on a
+# filename token, and after the loop's `break` the flag was applied whether or
+# not that row's ROUTE had been used — so any reference merely CONTAINING
+# "register" or "signin" was captured logged-out, and a protected page then
+# renders the login wall and scores ~0. (The True rows were always inert: True
+# is the default.) Auth now follows the RESOLVED route.
 _ROUTE_KEYWORDS: tuple = (
-    (("create_account", "signup", "sign_up", "register"), "/signup", False),
-    (("login", "sign_in", "signin"), "/login", False),
-    (("home", "feed", "timeline"), "/feed", True),
-    (("search", "explore", "discover"), "/explore", True),
-    (("video", "reel", "watch"), "/reels", True),
-    (("create", "new_post", "upload", "compose"), "/create", True),
-    (("profile", "account"), "/profile", True),
-    (("message", "inbox", "direct", "dm"), "/messages", True),
-    (("saved", "bookmark", "collection"), "/saved", True),
-    (("people", "suggested", "friends"), "/people", True),
+    (("create_account", "signup", "sign_up", "register"), "/signup"),
+    (("login", "sign_in", "signin"), "/login"),
+    (("home", "feed", "timeline"), "/feed"),
+    (("search", "explore", "discover"), "/explore"),
+    (("video", "reel", "watch"), "/reels"),
+    (("create", "new_post", "upload", "compose"), "/create"),
+    (("profile", "account"), "/profile"),
+    (("message", "inbox", "direct", "dm"), "/messages"),
+    (("saved", "bookmark", "collection"), "/saved"),
+    (("people", "suggested", "friends"), "/people"),
 )
+# Public BY CONSTRUCTION: the framework injects these itself and a login page
+# must be reachable logged-out. A fact about framework-owned routes, not a guess
+# about the app's domain.
+_FRAMEWORK_PUBLIC_ROUTES: frozenset = frozenset({"/login", "/signup"})
 
 # Home/landing screens conventionally live at the root route in ANY app, so a
 # "home"/"dashboard"/… reference maps to "/" when the app serves it — domain-
@@ -244,6 +262,14 @@ def map_reference_screens(
         _add(stem)
         for i in range(1, len(segs)):
             _add("_".join(segs[i:]))   # drop leading segment(s) — the app name
+        # #356: also drop TRAILING segment(s) — reference files are as often
+        # ``<screen>_<state>`` (login_modal, feed_logged_out, profile_own) as
+        # ``<app>_<screen>``. Without this the deleted social catalog was the
+        # only thing resolving login_modal -> /login. Added AFTER the fuller
+        # candidates so a more specific route still wins, and every candidate is
+        # still gated on the app actually serving it.
+        for i in range(len(segs) - 1, 0, -1):
+            _add("_".join(segs[:i]))
         if segs:
             _add(segs[-1])             # the trailing screen token alone
         # GENERIC (domain-agnostic): match the screenshot filename to a declared
@@ -258,13 +284,16 @@ def map_reference_screens(
         # screen is public) and fills the ROUTE only as a LAST resort (never
         # overriding a generic match, and only when the app serves it) — so a
         # non-social app whose screen name contains a social token isn't mis-routed.
-        for keys, r, a in _ROUTE_KEYWORDS:
-            if any(k in stem for k in keys):
-                if not isinstance(_cl.get("requires_auth"), bool):
-                    auth = a               # #132: authoritative requires_auth wins
-                if route is None and ((not known) or r in known):
+        if route is None:
+            for keys, r in _ROUTE_KEYWORDS:
+                if any(k in stem for k in keys) and ((not known) or r in known):
                     route = r
-                break
+                    break
+        # #356: auth follows the RESOLVED route, never a filename token. A
+        # measured requires_auth still wins over both.
+        if (route in _FRAMEWORK_PUBLIC_ROUTES
+                and not isinstance(_cl.get("requires_auth"), bool)):
+            auth = False
         # FIX #128 (visual-gate autopsy, run-47): an OVERLAY / interaction-STATE
         # reference (search_flyout = feed + a notifications MODAL; *_dropdown, *_popup,
         # …) has no URL route that reproduces it — route capture navigates to the base
