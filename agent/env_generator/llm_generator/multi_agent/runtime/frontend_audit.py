@@ -489,7 +489,40 @@ def _route_matchers(app_jsx: str) -> List:
     return matchers
 
 
-def dead_nav_link_remediation(target: str, jsx_name: str, declared_pages: set) -> str:
+def _norm_nav_target(target: str) -> str:
+    return (str(target or "").split("?", 1)[0].split("#", 1)[0].rstrip("/")) or "/"
+
+
+def reference_screen_routes(output_dir: Any) -> set:
+    """Routes of the measured REFERENCE screens that are real pages (#354).
+
+    #352 assigns every measured screen a route and a kind, so the framework can
+    finally tell "a nav item the lane invented" from "a page the reference
+    actually shows". Overlays are excluded: they are not URL-addressable, so
+    they are not pages to author. Missing/unreadable design system -> empty set,
+    which preserves the pre-#354 behaviour exactly.
+    """
+    try:
+        import json as _json
+        p = Path(output_dir) / "design" / "design_system.json"
+        if not p.exists():
+            return set()
+        ds = _json.loads(p.read_text(encoding="utf-8")) or {}
+        out = set()
+        for s in (ds.get("screens") or []):
+            if not isinstance(s, dict):
+                continue
+            if str(s.get("kind") or "").strip().lower() == "overlay":
+                continue
+            route = str(s.get("route") or "").strip()
+            if route.startswith("/"):
+                out.add(_norm_nav_target(route))
+        return out
+    except Exception:
+        return set()
+
+
+def dead_nav_link_remediation(target: str, jsx_name: str, declared_pages: set, reference_routes: set = None) -> str:
     """#278 — a DECISIVE one-line fix for a dead nav link, ordered by cost.
 
     r61 stalled 81 min on /shop + /upload nav links the sidebar drew from the TikTok
@@ -501,17 +534,28 @@ def dead_nav_link_remediation(target: str, jsx_name: str, declared_pages: set) -
     first: remove or repoint. When the target IS a declared page, the fix really is to wire
     its missing route.
     """
-    t = (target or "").split("?", 1)[0].split("#", 1)[0].rstrip("/") or "/"
+    t = _norm_nav_target(target)
     if t in (declared_pages or set()):
         return (f"nav link `{target}` ({jsx_name}) points at declared page `{t}` but App.jsx "
                 f"has NO matching <Route> → dead control (404). Wire the missing route.")
+    # #354 (FE-F5): the sidebar is drawn FROM the reference, so a link to a screen
+    # the reference SHOWS is not an "extra nav item" — it is a page the contract
+    # has not scoped yet. Telling the lane to delete it is how r93 shipped three
+    # routes against an 11-screen reference and r92 shipped 11 StubPages.
+    if t in (reference_routes or set()):
+        return (f"nav link `{target}` ({jsx_name}) resolves to no route → dead control "
+                f"(404), but `{t}` IS a screen in the REFERENCE design. Do NOT remove this "
+                f"nav item — the reference shows this page exists. AUTHOR the page: declare "
+                f"the ui_page, add its <Route> in App.jsx, and build it from its reference "
+                f"screenshot.")
     return (f"nav link `{target}` ({jsx_name}) is NOT a declared ui_page (not in the "
             f"contract) and resolves to no route → dead control (404). CHEAPEST FIX FIRST: "
             f"remove this extra nav item, or repoint it at an existing route; author a new "
             f"page ONLY if this screen is genuinely in scope.")
 
 
-def dead_nav_link_blockers(frontend_src: Any, limit: int = 20) -> List[str]:
+def dead_nav_link_blockers(frontend_src: Any, limit: int = 20,
+                           reference_routes: set = None) -> List[str]:
     """#238 (tiktok r27 M1, runtime-verified): the delivered app's own Profile
     nav (SidebarNavigation/TopRightActions ``<Link to="/profile">``) resolved to
     NO route — App.jsx wired only ``/@:username`` — so clicking Profile hit the
@@ -563,7 +607,8 @@ def dead_nav_link_blockers(frontend_src: Any, limit: int = 20) -> List[str]:
                     continue
                 seen.add(key)
                 blockers.append(
-                    dead_nav_link_remediation(target, jsx.name, _declared))
+                    dead_nav_link_remediation(target, jsx.name, _declared,
+                                              reference_routes=reference_routes))
                 if len(blockers) >= limit:
                     return blockers
     except Exception:

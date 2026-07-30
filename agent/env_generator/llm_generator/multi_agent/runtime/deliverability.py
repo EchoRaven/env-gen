@@ -357,9 +357,13 @@ def compute_deliverability(hub_registry, app_root,
     # hatch for the opt-5 false-block lesson.
     if os.environ.get("ENVGEN_DEAD_NAV_GATE", "1") not in ("0", "false", "no"):
         try:
-            from .frontend_audit import dead_nav_link_blockers
+            from .frontend_audit import (
+                dead_nav_link_blockers, reference_screen_routes)
+            # #354: a dead link to a screen the REFERENCE shows must be authored,
+            # not deleted — app_root is <output>/app, so the design dir is its parent.
             blockers.extend(dead_nav_link_blockers(
-                Path(app_root) / "frontend" / "src"))
+                Path(app_root) / "frontend" / "src",
+                reference_routes=reference_screen_routes(Path(app_root).parent)))
         except Exception:
             pass
 
