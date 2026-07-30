@@ -89,10 +89,19 @@ def _included_modules(main_src: str) -> Dict[str, str]:
     except SyntaxError:
         return out
     imported: Dict[str, str] = {}  # local_name -> source module
+    plain: Dict[str, str] = {}     # #344: `import <mod> [as <alias>]`
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module:
             for alias in node.names:
                 imported[alias.asname or alias.name] = node.module
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                plain[alias.asname or alias.name] = alias.name
+    _dynamic: set = set()
+    _referenced: set = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            _referenced.add(node.id)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -106,6 +115,17 @@ def _included_modules(main_src: str) -> Dict[str, str]:
             continue  # include_router(build_router(...)) etc. — not a lane module
         mod = imported.get(arg0.id)
         if not mod:
+            # #344: the framework's OWN main.py mounts dynamically —
+            # `import custom_routes as _custom_mod` (a plain Import) then
+            # `for _custom_router in _routers: app.include_router(_custom_router)`
+            # (a loop variable). Neither resolves through `imported`, so this
+            # auditor returned {} for the file the framework itself emits and
+            # every lane route was silently demoted implemented -> defined
+            # (r91: the backend re-registered 4 auth endpoints 56 times).
+            # An unresolvable include argument means a DYNAMIC mount: credit the
+            # plainly-imported modules this file actually references. A module
+            # that is never imported here (an orphan *_routes.py) still is not.
+            _dynamic.add(arg0.id)
             continue
         prefix = ""
         for kw in (node.keywords or []):
@@ -113,6 +133,10 @@ def _included_modules(main_src: str) -> Dict[str, str]:
                     and isinstance(kw.value.value, str):
                 prefix = kw.value.value
         out[mod] = prefix
+    if _dynamic:
+        for alias, mod in plain.items():
+            if alias in _referenced:
+                out.setdefault(mod, "")
     return out
 
 
@@ -251,6 +275,19 @@ def sync_endpoint_statuses(project_dir: Any, registryhub: Any) -> Dict[str, Any]
                 out["regressed"].append(f"{method} {path}")
             elif not is_served:
                 out["pending"].append(f"{method} {path}")
+        if out.get("regressed"):
+            # #344: a demotion REVERSES a lane's own write, and it used to be
+            # silent — `grep -c "ENDPOINT LIFECYCLE"` over r91 returns 0 while
+            # the backend re-registered the same 4 endpoints 56 times over
+            # 5h41m, each time being told it was wrong. A gate input that
+            # overrules an agent must be visible in the run log.
+            _logger.warning(
+                "ENDPOINT LIFECYCLE: %d endpoint(s) demoted implemented -> defined "
+                "because no mounted route was found for them in main.py's include "
+                "graph. If the lane DID author these, the auditor is blind to how "
+                "they are mounted (see #344): %s",
+                len(out["regressed"]), out["regressed"],
+            )
         if out.get("duplicated"):
             _logger.warning(
                 "backend_audit: %d endpoint(s) have DUPLICATE/shadowed route defs "
