@@ -87,6 +87,37 @@ def _compute_relative_cwd(workspace: Any, work_dir: Path) -> str:
 
 # ===== Environment State Cache =====
 
+def status_meets_expectation(status, expect) -> bool:
+    """True when an HTTP status matches a DECLARED expectation (#365).
+
+    test_api had no way to say what it expected, so every non-2xx was a FAILED
+    tool call -- including the negative probes the gates demand
+    (`auth_enforced_401` needs a business endpoint to refuse an unauthenticated
+    request; business_chain_isolation's remediation text says "MUST be refused
+    (expect 401/403)"). 282 of 508 test_api calls across r91/r92/r93 are
+    reported failures, 154 of them 401s.
+
+    Accepts ints, strings and lists of either, because LLM-authored args arrive
+    stringified (#335). Absent / empty / unparseable expectation never matches,
+    so every existing call keeps today's behaviour exactly.
+    """
+    if expect is None:
+        return False
+    items = expect if isinstance(expect, (list, tuple, set)) else [expect]
+    codes = set()
+    for x in items:
+        if isinstance(x, bool):
+            continue
+        try:
+            codes.add(int(x))
+        except (TypeError, ValueError):
+            continue
+    try:
+        return bool(codes) and int(status) in codes
+    except (TypeError, ValueError):
+        return False
+
+
 class EnvironmentStateCache:
     """
     Caches environment state to avoid repeated failed checks.
@@ -2152,6 +2183,12 @@ Examples:
     test_api("GET", "http://localhost:8000/health")
     test_api("POST", "http://localhost:8000/api/items", body='{"name": "test"}')
 
+Expected status: pass `expect` when a non-2xx IS the correct answer, e.g.
+    test_api("GET", ".../api/notes/1", expect=401)      # prove it refuses anonymously
+    test_api("GET", ".../api/notes/zzz", expect=[404])  # prove a missing id 404s
+A response matching `expect` is reported as SUCCESS; without it every non-2xx is
+a failure, which made the negative tests the delivery gates require look broken.
+
 Auth: protected endpoints return 401/403 without a token (that is CORRECT, not a bug).
 To test them, get a token first, then pass it as a header:
     test_api("POST", "http://localhost:8000/auth/login", body='{"username":"...","password":"..."}')
@@ -2200,7 +2237,8 @@ To test them, get a token first, then pass it as a header:
         method: str,
         url: str,
         body: str = None,
-        headers: dict = None
+        headers: dict = None,
+        expect=None,
     ) -> ToolResult:
         try:
             import urllib.request
@@ -2251,6 +2289,14 @@ To test them, get a token first, then pass it as a header:
                         "(e.g. /auth/login) to obtain a token, then pass "
                         "headers={'Authorization': 'Bearer <token>'}. Protected-endpoint "
                         "round-trips belong in the verifier's business_chain (auth step)."
+                    )
+                if status_meets_expectation(e.code, expect):
+                    # #365: the caller DECLARED this status — it is the result,
+                    # not a failure.
+                    return ToolResult(
+                        success=True,
+                        data={"status": e.code,
+                              "response": f"Status: {e.code} (expected)\n{content}"},
                     )
                 return ToolResult(
                     success=False,
