@@ -425,6 +425,12 @@ profiles:
         # #349: the remediation dispatcher wakes this lane with 'Claim task {id} and
         # fix it NOW' while this stage hid the tool that reads it (12 turns).
         - workhub_get_task
+        # #350: stages.py deliberately keeps the Memory Bank tools in the ACTION
+        # surface and the root step_reminders mandate them, but this allowlist is
+        # authoritative and removed them -- 30 turns lost to 'not in my tool list'.
+        # Both are granted with always=True in tools.py, so the grant is certain.
+        - read_memory_bank
+        - update_memory_bank
       "test_fix:action":
         - read
         - write
@@ -694,6 +700,12 @@ profiles:
       # backend's test_fix:action.
         # #349: same commit_gate instruction as the verifier.
         - workhub_comment
+        # #350: stages.py deliberately keeps the Memory Bank tools in the ACTION
+        # surface and the root step_reminders mandate them, but this allowlist is
+        # authoritative and removed them -- 30 turns lost to 'not in my tool list'.
+        # Both are granted with always=True in tools.py, so the grant is certain.
+        - read_memory_bank
+        - update_memory_bank
       "test_fix:action":
         - read
         - write
@@ -998,6 +1010,12 @@ profiles:
         # #349: commit_gate tells EVERY agent this is the progress channel; 18 turns
         # were lost across lanes discovering it was hidden in this stage.
         - workhub_comment
+        # #350: stages.py deliberately keeps the Memory Bank tools in the ACTION
+        # surface and the root step_reminders mandate them, but this allowlist is
+        # authoritative and removed them -- 30 turns lost to 'not in my tool list'.
+        # Both are granted with always=True in tools.py, so the grant is certain.
+        - read_memory_bank
+        - update_memory_bank
     workflow_policies:
       - kind: verifier_validation_trigger
         allowed_sender: orchestrator
