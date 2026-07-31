@@ -1957,6 +1957,52 @@ def _design_screen_for_route(design, route, hints=()) -> Optional[Dict[str, Any]
     return fuzzy
 
 
+def backfill_page_apis(ui_pages, endpoints):
+    """A ui_page that declares NO ``apis_used`` falls to a BARE, flagged fallback stub in
+    _project_page_component → ``deliverability_frontend_fallback_page`` HARD-blocks delivery
+    (netflix r9: `profiles` + `search`, kickoff-registered with empty apis_used and skipped
+    by #225/#226 as 'already covered', shipped as fallbacks even though GET /api/profiles and
+    GET /api/search exist). Backfill a GET endpoint by token overlap between the page
+    (name/route/component) and the registered GET collections, so the page projects a REAL
+    measured floor the lane refines — instead of a stub no lane authored and the gate rejects.
+    ADDITIVE: only fills an EMPTY apis_used; never overrides a declared one. Pure, env-agnostic,
+    best-effort (returns the input unchanged on any error)."""
+    try:
+        gets: List[str] = []
+        for ep in (endpoints or []):
+            if not isinstance(ep, dict):
+                continue
+            if str(ep.get("method") or "GET").upper() != "GET":
+                continue
+            path = str(ep.get("path") or "")
+            if not path.startswith("/api/") or "{" in path or ":" in path:
+                continue
+            gets.append(path)
+        if not gets:
+            return ui_pages
+
+        def _toks(s: str) -> Set[str]:
+            t = set(re.findall(r"[a-z]+", str(s).lower()))
+            return t | {x[:-1] for x in t if x.endswith("s") and len(x) > 3}
+
+        out: List[Dict[str, Any]] = []
+        for p in (ui_pages or []):
+            if not isinstance(p, dict) or (p.get("apis_used") or []):
+                out.append(p)
+                continue
+            ptoks = _toks(f"{p.get('name','')} {p.get('route','')} {p.get('component','')}")
+            best, best_score = None, 0
+            for path in gets:
+                seg = path.rstrip("/").split("/")[-1]
+                score = len(_toks(seg) & ptoks)
+                if score > best_score:
+                    best, best_score = path, score
+            out.append({**p, "apis_used": [f"GET {best}"]} if best else p)
+        return out
+    except Exception:
+        return ui_pages
+
+
 def missing_design_screen_pages(design, ui_pages, endpoints) -> List[Dict[str, Any]]:
     """#225 — synthesize ui_page specs for measured design screens whose route
     no registered ui_page covers (r19: kickoff declared ONE page for the whole

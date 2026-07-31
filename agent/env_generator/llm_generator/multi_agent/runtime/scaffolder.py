@@ -691,7 +691,7 @@ volumes:
                 try:
                     import json as _json
                     from pathlib import Path as _DP
-                    from .frontend_scaffold import missing_design_screen_pages
+                    from .frontend_scaffold import missing_design_screen_pages, backfill_page_apis
                     _ds_p = _DP(out_dir) / "design" / "design_system.json"
                     if _ds_p.exists():
                         _design = _json.loads(_ds_p.read_text(encoding="utf-8"))
@@ -712,6 +712,10 @@ volumes:
                             except Exception:
                                 continue
                         ui_pages = list((registryhub.list_ui_pages() or {}).values())
+                    # Backfill apis_used for pages that declared none (e.g. kickoff's
+                    # profiles/search) so they project a REAL data floor, not a fallback
+                    # stub the delivery gate rejects (deliverability_frontend_fallback_page).
+                    ui_pages = backfill_page_apis(ui_pages, _eps)
                 except Exception as _exc:
                     orch._logger.debug("#225 design-screen page seeding skipped: %s", _exc)
             if not ui_pages:
