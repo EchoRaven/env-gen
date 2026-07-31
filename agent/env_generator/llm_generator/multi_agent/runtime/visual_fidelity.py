@@ -315,6 +315,23 @@ def map_reference_screens(
     return screens
 
 
+def _select_judged_screens(screens: List[Dict[str, Any]], max_screens: int) -> List[Dict[str, Any]]:
+    """Which mapped screens the gate actually judges. EVERY blocking (page) screen
+    is judged: ``visual_gate_verdict`` FAILS any OWNED screen left unjudged, so a
+    flat ``[:max_screens]`` cap that drops one makes the gate mathematically
+    UNPASSABLE for any app with more page screens than the cap — no frontend work
+    can clear it (netflix r10: 13 mappable page screens vs cap 8 → 5 owned screens
+    'never judged', a permanent block). The cap now only trims ADVISORY
+    (overlay/interaction-state) overflow — those are EXCLUDED from the blocking
+    pass criterion (#128), so bounding THEM keeps cost sane without breaking the
+    gate. Only routed screens are judgeable; blocking screens come first so the
+    remaining cap budget goes to advisory extras."""
+    routed = [s for s in screens if s.get("route")]
+    blocking = [s for s in routed if not s.get("advisory")]
+    advisory = [s for s in routed if s.get("advisory")]
+    return blocking + advisory[:max(0, max_screens - len(blocking))]
+
+
 # Interaction-STATE name tokens — a reference so named is an overlay reachable only by
 # a click/hover, never a URL route, so it can't be fairly scored by route-capture.
 _OVERLAY_NAME_RE = re.compile(
@@ -896,7 +913,7 @@ async def run_visual_fidelity(
     screens = map_reference_screens(
         reference_images, known_routes,
         classifications=load_screen_classifications(project_dir))  # FIX #132
-    judged_screens = [s for s in screens if s.get("route")][:max_screens]
+    judged_screens = _select_judged_screens(screens, max_screens)
     skipped = [s["name"] for s in screens if not s.get("route")]
     if not judged_screens:
         return {"passed": True, "summary": "no mappable reference screens — visual gate vacuous",
