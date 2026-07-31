@@ -434,15 +434,28 @@ def _render_column(table_name: str, col: Any) -> str:
     # declaration keeps its constraint) — mirrors the CHECK-in-type handling.
     _emb_pk = _emb_nn = _emb_uniq = False
     _low = _sqlt.lower()
-    if "primary key" in _low:
+    # Match both the SQL keyword form ("primary key" / "not null") AND the ORM/underscore
+    # shorthand the LLM emits ("primary_key" / "not_null") — the latter is not valid SQL
+    # ("id" int primary_key → postgres syntax error → initdb exit(3) → docker_up wedge,
+    # netflix r1). ``[\s_]+`` covers both.
+    if re.search(r"primary[\s_]+key", _low):
         _emb_pk = True
-        _sqlt = re.sub(r"\s*primary\s+key\s*", " ", _sqlt, flags=re.IGNORECASE).strip()
-    if re.search(r"\bnot\s+null\b", _sqlt, re.IGNORECASE):
+        _sqlt = re.sub(r"\s*primary[\s_]+key\s*", " ", _sqlt, flags=re.IGNORECASE).strip()
+    if re.search(r"\bnot[\s_]+null\b", _sqlt, re.IGNORECASE):
         _emb_nn = True
-        _sqlt = re.sub(r"\s*not\s+null\s*", " ", _sqlt, flags=re.IGNORECASE).strip()
+        _sqlt = re.sub(r"\s*not[\s_]+null\s*", " ", _sqlt, flags=re.IGNORECASE).strip()
     if re.search(r"\bunique\b", _sqlt, re.IGNORECASE):
         _emb_uniq = True
         _sqlt = re.sub(r"\s*\bunique\b\s*", " ", _sqlt, flags=re.IGNORECASE).strip()
+    # Shorthand FK in the TYPE string ("int fk users.id" / "int foreign_key users.id"):
+    # postgres has no bare `fk` keyword → syntax error → initdb exit(3). Extract the
+    # (table, col) and render a proper REFERENCES in the FK section below (that path only
+    # recognizes `references` / the structured fk field). Accepts `.` or `(` separators.
+    _emb_fk = None
+    _m_fk = re.search(r"\b(?:fk|foreign[\s_]+key)\s+(\w+)\s*[.(]\s*(\w+)\s*\)?", _sqlt, re.IGNORECASE)
+    if _m_fk:
+        _emb_fk = (_m_fk.group(1), _m_fk.group(2))
+        _sqlt = (_sqlt[:_m_fk.start()] + " " + _sqlt[_m_fk.end():]).strip()
     # (netflix docker_up killer) a column typed with an EMBEDDED default
     # ("integer default 0") DOUBLES when the `default` flag (or _counter_default's
     # forced 0) is also appended below → ``"view_count" INTEGER DEFAULT 0 DEFAULT 0``
@@ -488,7 +501,7 @@ def _render_column(table_name: str, col: Any) -> str:
     # inline ``references`` (which the passthrough above renders), so the two
     # sources never double-emit a duplicate REFERENCES clause.
     if not _FK_INLINE_IN_TYPE_RE.search(ctype):
-        fk = _structured_fk_ref(col)
+        fk = _structured_fk_ref(col) or _emb_fk
         if fk:
             # ON DELETE CASCADE: a child row's FK to a parent (comments.post_id →
             # posts.id, posts.author_id → users.id, …) must cascade, else deleting
