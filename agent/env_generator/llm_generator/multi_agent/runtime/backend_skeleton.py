@@ -694,14 +694,32 @@ def _fw_owner_val(cls, col, user):
                                 _pt2 = _c.type.python_type
                             except Exception:
                                 _pt2 = str
-                            if _c.name in ("name", "display_name", "title", "label", "nickname"):
+                            # #394: produce a value of the column's ACTUAL python type — a
+                            # blanket "default" string broke a non-string column (netflix:
+                            # a timestamp column got "default" → InvalidDatetimeFormat → the
+                            # auto-create INSERT failed → #390 fell back → rating 404 again).
+                            # Unknown/exotic types are SKIPPED (left NULL) rather than fed a
+                            # wrong-typed string.
+                            import datetime as _dtm
+                            from decimal import Decimal as _Dec
+                            if _c.name in ("name", "display_name", "title", "label", "nickname") and _pt2 is str:
                                 _row[_c.name] = "Me"
                             elif _pt2 is bool:
                                 _row[_c.name] = False
-                            elif _pt2 in (int, float):
+                            elif _pt2 is int:
                                 _row[_c.name] = 0
-                            else:
+                            elif _pt2 in (float, _Dec):
+                                _row[_c.name] = _pt2(0)
+                            elif _pt2 is str:
                                 _row[_c.name] = "default"
+                            elif _pt2 is _dtm.datetime:
+                                _row[_c.name] = _dtm.datetime(2000, 1, 1)
+                            elif _pt2 is _dtm.date:
+                                _row[_c.name] = _dtm.date(2000, 1, 1)
+                            elif _pt2 is _dtm.time:
+                                _row[_c.name] = _dtm.time(0, 0, 0)
+                            else:
+                                continue  # unknown type → leave NULL rather than mis-type it
                         _np = _Sub(**_row)
                         _s.add(_np)
                         _s.commit()
