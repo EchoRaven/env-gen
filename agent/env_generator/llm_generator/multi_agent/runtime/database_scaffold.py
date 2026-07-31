@@ -253,7 +253,15 @@ def synthesize_missing_tables(tables: Any, endpoints: Any) -> Dict[str, Any]:
     convention: id(int,pk) + user_id(int→users.id) + nested parent FK + the request
     schema's fields (typed)."""
     out: Dict[str, Any] = dict(tables or {})
-    have = {str(k).lower() for k in out}
+    # Canonicalize table/resource names to snake_case for the "already tabled?" check:
+    # an endpoint resource `my-list` (kebab, from POST /api/my-list) MUST recognize the
+    # data-model table `my_list` (snake) as the same table. Without this a spurious
+    # `my-list` table was synthesized → a SECOND `class MyList(Base)` in models.py that
+    # `import *` shadowed (no profile_id) → GET/POST /api/my-list 500 → business_chain
+    # wedge (netflix r1). Mirrors #367's projector-side hyphen normalization.
+    def _canon(_s: Any) -> str:
+        return str(_s).lower().replace("-", "_")
+    have = {_canon(k) for k in out}
     for ep in (endpoints or []):
         if not isinstance(ep, dict):
             continue
@@ -272,8 +280,8 @@ def synthesize_missing_tables(tables: Any, endpoints: Any) -> Dict[str, Any]:
         segs = [s for s in p.split("/") if s and s != "api"]
         if not segs:
             continue
-        resource = segs[-1]
-        if resource.lower() in have or resource.lower() in _MISSING_TABLE_SPINE:
+        resource = _canon(segs[-1])
+        if resource in have or resource in _MISSING_TABLE_SPINE:
             continue
         cols: List[Dict[str, Any]] = [
             {"name": "id", "type": "int", "primary_key": True},
