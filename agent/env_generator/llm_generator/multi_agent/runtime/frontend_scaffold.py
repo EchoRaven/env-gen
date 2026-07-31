@@ -2034,34 +2034,72 @@ def missing_design_screen_pages(design, ui_pages, endpoints) -> List[Dict[str, A
         toks = set(re.findall(r"[a-z]+", str(s).lower()))
         return toks | {t[:-1] for t in toks if t.endswith("s") and len(t) > 3}
 
-    out: List[Dict[str, Any]] = []
-    seen_routes: Set[str] = set(covered)
+    # #389: the analyst-authored screen ``kind`` (page/overlay) is UNRELIABLE — for
+    # screens that SHARE a route it came back INVERTED (netflix r13: browse_home[overlay]
+    # ↔ card_hover_preview[page] @ /browse, title_detail[overlay] ↔ rate_dialog[page] @
+    # /title/:id), so the OVERLAY claimed the page route and the real page was dropped
+    # (route-less → the projector shipped a framework fallback → delivery hard-block).
+    # Resolve each route WITHOUT trusting kind: the owner is the screen whose NAME STEM
+    # contains the route's last path segment (browse_home∋'browse' beats card_hover_
+    # preview; title_detail∋'title' beats rate_dialog). kind + an overlay-NAME test only
+    # break ties and gate LONE screens, so a correctly-labeled lone overlay
+    # (player_controls @ /player-controls) is never promoted to a page.
+    from .visual_fidelity import _OVERLAY_NAME_RE  # dialog|menu|modal|flyout|… name test
+
+    def _route_seg_toks(r: str) -> Set[str]:
+        segs = [x for x in _norm_route_221(r).rstrip("/").split("/")
+                if x and not x.startswith(":") and x != "api"]
+        return _tokens(segs[-1]) if segs else set()
+
+    def _stem_of(s: Mapping[str, Any]) -> str:
+        return re.sub(r"[^a-z0-9]+", "_", str(s.get("name") or "page").lower()).strip("_")
+
+    by_route: Dict[str, List[Dict[str, Any]]] = {}
     for s in ((design or {}).get("screens") or []):
         if not isinstance(s, dict):
             continue
-        if str(s.get("kind") or "page").strip().lower() != "page":
-            continue
         route = str(s.get("route") or "").strip()
         norm = _norm_route_221(route)
-        if not route.startswith("/") or norm in seen_routes:
+        if not route.startswith("/") or norm in covered:
             continue
-        _st = _semantic_tokens_226(s.get("name"), route)
+        by_route.setdefault(norm, []).append(s)
+
+    out: List[Dict[str, Any]] = []
+    for norm in sorted(by_route):
+        group = by_route[norm]
+        route = str(group[0].get("route") or "").strip()
+        seg = _route_seg_toks(route)
+
+        def _rank(s: Mapping[str, Any], _seg=seg):
+            nm = _tokens(_stem_of(s).replace("_", " "))
+            not_overlay = 0 if _OVERLAY_NAME_RE.search(_stem_of(s)) else 1
+            kind_page = 1 if str(s.get("kind") or "page").strip().lower() == "page" else 0
+            return (1 if (_seg & nm) else 0, not_overlay, kind_page)
+
+        winner = max(group, key=_rank)
+        nmatch, not_overlay, kind_page = _rank(winner)
+        if not not_overlay:
+            continue                        # dialog/menu/modal NAME → never a page route
+        if len(group) == 1 and not kind_page:
+            continue                        # lone, non-page-kind screen → trust it: skip
+        if len(group) > 1 and not (nmatch or kind_page):
+            continue                        # ambiguous collision, no page signal → skip
+        _st = _semantic_tokens_226(winner.get("name"), route)
         if _st and any(_st & pt for pt in page_token_sets):
-            continue  # #226: fuzzy-covered by an existing page — no twin
-        seen_routes.add(norm)
-        stem = re.sub(r"[^a-z0-9]+", "_", str(s.get("name") or "page").lower()).strip("_")
+            continue                        # #226: fuzzy-covered by an existing page
+        stem = _stem_of(winner)
         comp = "".join(w.title() for w in stem.split("_")) or "Screen"
         if not comp.endswith("Page"):
             comp += "Page"
         screen_text = " ".join(
             [stem.replace("_", " ")]
-            + [f"{c.get('id')} {c.get('role')}" for c in (s.get("components") or [])
+            + [f"{c.get('id')} {c.get('role')}" for c in (winner.get("components") or [])
                if isinstance(c, dict)]).lower()
         st = _tokens(screen_text)
         best, best_score = None, 0
         for path in gets:
-            seg = path.rstrip("/").split("/")[-1]
-            score = len(_tokens(seg) & st)
+            pseg = path.rstrip("/").split("/")[-1]
+            score = len(_tokens(pseg) & st)
             if score > best_score:
                 best, best_score = path, score
         out.append({
@@ -2070,7 +2108,7 @@ def missing_design_screen_pages(design, ui_pages, endpoints) -> List[Dict[str, A
             "component": comp,
             "apis_used": [f"GET {best}"] if best else [],
             "kind": "page",
-            "metadata": {"reference_image": s.get("reference"),
+            "metadata": {"reference_image": winner.get("reference"),
                          "seeded_from_design": True},
         })
     return out
