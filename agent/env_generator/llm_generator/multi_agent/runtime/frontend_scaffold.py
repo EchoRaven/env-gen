@@ -3298,6 +3298,14 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
             if not route:
                 nm = re.sub(r"[^a-z0-9]+", "-",
                             str(page.get("name") or comp).lower()).strip("-")
+                # netflix r12: a ui_page named '<screen>_page' kickoff-registered with
+                # route='' (profiles_page) must derive the CANONICAL route '/<screen>'
+                # that the ui_flow gate + design expect ('/profiles'), NOT '/profiles-page'
+                # — else the canonical route renders BLANK and deliverability_ui_flow_failed
+                # HARD-blocks forever (the lane wires the page at the derived route, reports
+                # M1 complete, and never reconciles the mismatch). Drop a trailing 'page'
+                # token; a bare 'page' name keeps itself.
+                nm = re.sub(r"-?page$", "", nm).strip("-") or nm
                 route = "/" if not entries else f"/{nm or comp.lower()}"
             # de-dup routes so React-Router doesn't get two identical paths
             base_route, n = route, 2
