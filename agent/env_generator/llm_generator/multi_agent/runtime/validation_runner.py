@@ -61,17 +61,55 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
     )
 
 
-def _service_host_port(compose_file: Path, cwd: Path, service: str) -> Optional[int]:
-    """Resolve the published host port of a compose service."""
+def _declared_host_port_from_compose(compose_file: Path, service: str) -> Optional[int]:
+    """The published HOST port from the compose ``services.<svc>.ports`` mapping
+    (``"HOST:CONTAINER"`` — scaffolder.py writes ``"{api_port}:{backend_port}"``).
+    Deterministic + engine-agnostic: the framework KNOWS this port at scaffold time,
+    so a live-query miss must never wedge api_smoke. Best-effort → None."""
     try:
-        cid = _compose(compose_file, "ps", "-q", service, cwd=cwd, timeout=30).stdout.strip()
-        if not cid:
-            return None
-        ports = subprocess.run(["docker", "port", cid], capture_output=True, text=True, timeout=30).stdout
-        m = re.search(r"(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]):(\d+)", ports)
-        return int(m.group(1)) if m else None
+        import yaml  # engine dep
+        data = yaml.safe_load(Path(compose_file).read_text(encoding="utf-8")) or {}
+        svc = ((data.get("services") or {}).get(service) or {})
+        for entry in (svc.get("ports") or []):
+            s = str(entry.get("published") if isinstance(entry, dict) else entry)
+            m = re.search(r"(?:^|:)(\d+):\d+(?:/\w+)?$", s) or re.match(r"^(\d+)$", s)
+            if m:
+                return int(m.group(1))
     except Exception:
         return None
+    return None
+
+
+def _service_host_port(compose_file: Path, cwd: Path, service: str) -> Optional[int]:
+    """Resolve the published host port of a compose service.
+
+    ``docker compose ps -q <service>`` works on Docker Compose v2, but
+    podman-compose's ``ps`` has NO service positional (argparse: "unrecognized
+    arguments: <service>", exit 2, EMPTY stdout). On a podman-backed gen host that
+    returned "" → None → api_smoke wedged on "could not resolve backend published
+    port" and business_chain never executed (it early-returns before the chain
+    stage). Fall back to a container-name lookup (`ps --filter name=<service>`,
+    which podman DOES support), and finally to the compose file's DECLARED port
+    (deterministic; a live-query hiccup must never wedge a functioning app). On
+    Docker the first path resolves, so the fallbacks never run (unchanged)."""
+    try:
+        cid = _compose(compose_file, "ps", "-q", service, cwd=cwd, timeout=30).stdout.strip()
+        cid = cid.splitlines()[0].strip() if cid else ""
+        if not cid:
+            _r = subprocess.run(
+                ["docker", "ps", "-q", "--filter", f"name={service}"],
+                capture_output=True, text=True, timeout=30).stdout.strip().splitlines()
+            cid = _r[0].strip() if _r else ""
+        if cid:
+            ports = subprocess.run(["docker", "port", cid], capture_output=True, text=True, timeout=30).stdout
+            # 0.0.0.0:P / 127.0.0.1:P / [::]:P / :::P (unbracketed IPv6)
+            m = re.search(r"(?:\d+\.\d+\.\d+\.\d+|\[?::\]?):(\d+)", ports)
+            if m:
+                return int(m.group(1))
+    except Exception:
+        pass
+    # deterministic fallback: the compose file's declared host port
+    return _declared_host_port_from_compose(compose_file, service)
 
 
 def _backend_host_port(compose_file: Path, cwd: Path) -> Optional[int]:
