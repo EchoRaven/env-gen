@@ -41,6 +41,33 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from .validation_runner import _http, _form_retry_warranted
 
+try:
+    from .control_plane import CONTROL_SURFACE_ENDPOINTS as _CONTROL_SURFACE
+except Exception:  # pragma: no cover — keep chain_executor importable in isolation
+    _CONTROL_SURFACE = []
+
+# The FIXED control-plane infra endpoints that are contractually PUBLIC
+# (control_plane.py, auth_required=False) — a denial probe against one is mis-authored.
+_CONTROL_PLANE_PUBLIC = frozenset(
+    (str(e.get("method", "GET")).upper(), str(e.get("path", "")).rstrip("/"))
+    for e in (_CONTROL_SURFACE or []) if e.get("auth_required") is False)
+
+
+def _is_control_plane_public(method: Any, path: Any) -> bool:
+    """True iff (method, path) is a FIXED control-plane PUBLIC infra endpoint — a
+    concrete request matched against the templates, ``{param}`` = any one segment."""
+    m = str(method or "GET").upper()
+    reqp = str(path or "").split("?", 1)[0].rstrip("/") or "/"
+    rsegs = reqp.split("/")
+    for pm, tmpl in _CONTROL_PLANE_PUBLIC:
+        if pm != m:
+            continue
+        tsegs = (tmpl or "/").split("/")
+        if len(tsegs) == len(rsegs) and all(
+                t.startswith("{") or t == r for t, r in zip(tsegs, rsegs)):
+            return True
+    return False
+
 # Chains live in the REGISTRY (user design 2026-06-12) — registered via the
 # registryhub_register_verification_chain tool with boundary validation, not
 # written as a loose file (round 35: file authoring drifted schema silently).
@@ -1744,6 +1771,20 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         if not ok and status in (400, 422) and _oauth_authorize_lacks_pkce(path, body):
             ok = True
             autofilled.append("oauth-authorize-incomplete-tolerated")
+        # netflix r11: a verifier-authored DENIAL probe (expect has no 2xx, e.g.
+        # [401,403]) against a CONTROL-PLANE public infra endpoint (control_plane.py:
+        # /api/v1/tenants etc., auth_required=False) is MIS-AUTHORED — that endpoint is
+        # contractually PUBLIC (the login TenantPicker fetches GET /api/v1/tenants pre-
+        # auth), so a 2xx is CORRECT, not an auth hole, and the verifier can't "fix" it
+        # without breaking login → business_chain wedges forever (r11: 6× GET
+        # /api/v1/tenants → 200 vs expected [401,403] = permanent business_chain_failing).
+        # Scoped to the 6 FIXED control-plane paths, so a denial probe on a real BUSINESS
+        # endpoint keeps its teeth (a genuine cross-tenant/isolation leak still fails).
+        if (not ok and isinstance(status, int) and 200 <= status < 300
+                and expect and not any(200 <= e < 300 for e in expect)
+                and _is_control_plane_public(method, path)):
+            ok = True
+            autofilled.append("control-plane-public-denial-probe-waived")
         # FIX #136 (instagram run-52/58/60 — 3rd occurrence of the class): a verifier-
         # authored step with a LITERAL numeric id (POST /api/posts/4/repost) 404s when
         # the seed doesn't reach that id — the ${placeholder} recovery ladder above
