@@ -591,7 +591,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from database import Base, engine, get_db
+from database import Base, engine, get_db, SessionLocal
 from auth_dependency import get_current_user
 import models  # noqa: F401  (registers all ORM tables on Base.metadata)
 from models import *  # noqa: F401,F403
