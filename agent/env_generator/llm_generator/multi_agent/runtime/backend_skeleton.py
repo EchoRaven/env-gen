@@ -676,7 +676,17 @@ def _fw_owner_val(cls, col, user):
                         for _c in _Sub.__table__.columns:
                             if _c.name in _row or _c.primary_key:
                                 continue
-                            if _c.nullable or _c.default is not None or _c.server_default is not None:
+                            # #393: fill regardless of the ORM Column's ``nullable`` — it can
+                            # DISAGREE with the DB DDL (render_models sometimes emits a
+                            # NOT-NULL DDL column as a nullable ORM Column), and that mismatch
+                            # is inconsistent across renders. Trusting ORM ``nullable`` skipped
+                            # a column the DB requires (netflix: profiles.name) → the auto-
+                            # create INSERT NotNullViolation'd → the whole #390 fell back to
+                            # the user id → intermittent rating 404. Only skip columns with a
+                            # real default (the DB supplies those) or FKs (can't invent a ref);
+                            # filling a genuinely-nullable column with a typed default is
+                            # harmless for a throwaway default sub-entity.
+                            if _c.default is not None or _c.server_default is not None:
                                 continue
                             if _c.foreign_keys:
                                 continue
