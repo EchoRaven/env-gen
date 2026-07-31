@@ -2578,11 +2578,22 @@ class Orchestrator:
                     self._fwdeliver_stuck_count = 1
                 if (self._fwdeliver_stuck_count >= FWVAL_STUCK_ABORT_AFTER
                         and not getattr(self, "_fwval_abort_reason", None)):
+                    # Diagnostics accuracy: this branch can latch even when api_smoke
+                    # NEVER passed (the deliver gate is entered on route-code presence, not
+                    # on a passing smoke). Hardcoding "after api_smoke passed" sent a whole
+                    # review chasing a coordination wedge when the real fault was api_smoke
+                    # failing on backend-port resolution. Reflect the actual smoke state.
+                    _smoke_failed = "deliverability_no_successful_run" in _failed
+                    _smoke_note = (
+                        "WITHOUT any passing api_smoke run (deliverability_no_successful_run "
+                        "is red — the app never validated end-to-end; inspect the api_smoke / "
+                        "backend_port / RunHub failure, NOT the lanes)"
+                        if _smoke_failed else "after api_smoke passed")
                     self._fwval_abort_reason = (
                         f"delivery gate stuck on {_failed} for {self._fwdeliver_stuck_count} "
-                        "consecutive cycles with NO source/contract/chain change after "
-                        "api_smoke passed — no lane is making progress; failing fast instead "
-                        "of spinning to wall-clock.")
+                        f"consecutive cycles with NO source/contract/chain change {_smoke_note} "
+                        "— no lane is making progress; failing fast instead of spinning to "
+                        "wall-clock.")
                     # ABORT-GRACE bookkeeping: tag this as a DELIVER-stuck abort (so the
                     # run-loop consumption can distinguish it from a framework-validation /
                     # Site A abort) and STAMP the progress signature at latch time, so a
