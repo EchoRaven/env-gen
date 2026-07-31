@@ -500,7 +500,24 @@ def merge_agent_branch_to_main(
             # cleaning the framework app dirs wholesale (still preserving
             # shared/hubs + dot-state, which we never name here).
             for _d in ("app", "design", "docker", "docs"):
-                if (Path(repo) / _d).exists():
+                _dp = Path(repo) / _d
+                if not _dp.exists():
+                    continue
+                if _d == "design":
+                    # #388: NEVER git-clean design/dataset — it is the framework's REAL
+                    # seed source that _ensure_seed_dataset regenerates app/backend/
+                    # seed_dataset.json from on every tick. Cleaning design/ wholesale
+                    # removed it, so the api-smoke image shipped an EMPTY catalog → GET
+                    # /api/titles [] → POST /api/titles/1/rating 404 → business_chain
+                    # STUCK abort (netflix r13). Clean the colliding framework residue
+                    # (design/README.md etc.) but PRESERVE dataset. Agents never author
+                    # design/, so dataset can never be a genuine merge collision.
+                    for _sub in _dp.iterdir():
+                        if _sub.name == "dataset":
+                            continue
+                        _run_git(["clean", "-fd", "--",
+                                  str(_sub.relative_to(repo))], cwd=repo)
+                else:
                     _run_git(["clean", "-fd", "--", _d], cwd=repo)
         mc, _mo, me = _run_git(
             ["merge", "--squash", "--no-commit", agent_branch], cwd=repo,
