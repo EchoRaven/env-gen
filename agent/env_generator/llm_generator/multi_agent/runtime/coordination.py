@@ -224,6 +224,17 @@ class Coordination:
                 persist=True,
                 tags=["stall_escalation", "kickoff_followup"],
             )
+            # The verifier's VerifierValidationTriggerPolicy SUPPRESSES a resident
+            # wakeup unless the task_ready carries validation_phase / a known tag /
+            # keyword — so a bare stall nudge is thrown away and an idle verifier is
+            # never re-driven. Two sibling wake paths already stamp this
+            # (remediation_dispatcher.py, framework_validation.py); this third path
+            # (nudge_silent_resident_lanes) missed it → latent STUCK-ABORT cause.
+            if lane_id == "verifier":
+                try:
+                    message.metadata["validation_phase"] = True
+                except Exception:
+                    pass
             try:
                 delivered = await self._orch.message_bus.send(message)
             except Exception as exc:
