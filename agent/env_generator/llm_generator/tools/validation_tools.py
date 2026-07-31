@@ -173,6 +173,7 @@ then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
         # them deterministically here (failure self-corrects: a broken build keeps
         # the gate honestly blocked).
         self._record_build_checks(report)
+        self._record_frontend_build_check(report)
         self._record_chain_status(report)
         self._record_api_smoke_check(report)
         data = {
@@ -322,6 +323,34 @@ then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
                 status="success" if report.get("passed") else "failure",
                 evidence={"check": "api_smoke", "source": "run_validation",
                           "summary": str(report.get("summary") or "")[:300]},
+                agent="")
+            return 1
+        except Exception:
+            return 0
+
+    def _record_frontend_build_check(self, report: dict) -> int:
+        """Sibling of FIX #286 for the FRONTEND BUILD. ``validate_build_evidence``
+        (delivery_gate) keys on a validation record with ``metadata.check ==
+        'frontend_build'``, but the only frontend-build evidence written was a CodeHub
+        ``build:frontend`` check with NO ``check`` field — so the gate stayed blind and
+        raised ``frontend_build_not_recorded`` even on an app whose frontend built and
+        served (netflix r1). run_validation's own docker-up IS that evidence; emit the
+        gate's record too. Framework authority (agent=''); best-effort, never affects
+        the verdict."""
+        hubs = self._hubs
+        codehub = getattr(hubs, "codehub", None) if hubs is not None else None
+        if codehub is None or not hasattr(codehub, "record_check"):
+            return 0
+        by_name = {c.get("name"): (c.get("status") == "pass")
+                   for c in (report.get("checks") or []) if c.get("name")}
+        fe_ok = by_name.get("frontend_reachable", by_name.get("docker_up", False))
+        try:
+            codehub.record_check(
+                pr_id="main", name="validation:frontend_build",
+                status="success" if fe_ok else "failure",
+                evidence={"check": "frontend_build", "source": "run_validation",
+                          "summary": "frontend container built + reachable"
+                                     if fe_ok else "frontend not reachable"},
                 agent="")
             return 1
         except Exception:
