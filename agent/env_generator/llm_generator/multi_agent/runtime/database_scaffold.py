@@ -481,6 +481,11 @@ def _render_column(table_name: str, col: Any) -> str:
         _emb_default = _m_def.group(1).strip()
         _sqlt = _sqlt[:_m_def.start()].strip()
     _sqlt = _sqlt.strip() or "text"  # a bare "primary key" type leaves nothing
+    # Re-alias the BASE type AFTER the embedded constraints were stripped: _sql_type
+    # aliased the FULL string, so "string not null" missed the "string"→TEXT alias and,
+    # once NOT NULL was stripped above, left a bare invalid `string` (netflix r8:
+    # `type "string" does not exist` → initdb exit 3). Unknown types pass through.
+    _sqlt = _TYPE_ALIASES.get(_sqlt.lower(), _sqlt)
     _is_pk = bool(col.get("primary_key") or col.get("pk")) or _emb_pk
     # A bare integer PRIMARY KEY does NOT auto-increment on Postgres (unlike
     # SQLite): ``id INTEGER PRIMARY KEY`` forces every INSERT to supply id, so the
