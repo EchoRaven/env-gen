@@ -412,6 +412,24 @@ def _primary_content_model(
     return (table, meta)
 
 
+def _search_target_model(
+    models: Dict[str, Dict[str, Any]]
+) -> Optional[Tuple[str, Dict[str, Any]]]:
+    """The table a RESOURCE-LESS global search (``GET /api/search``) targets: the richest
+    non-spine business table (most columns; alphabetical tiebreak, deterministic). Unlike
+    _primary_content_model this does NOT require a timestamp — a catalog like Netflix
+    ``titles`` has none, so without this a bare ``/api/search`` fell to an empty
+    ``{"items":[],"total":0}`` stub → deliverability_placeholder_stub_handler hard-blocks
+    delivery (Gen-1). Returns None only when there is no business table at all."""
+    cands = [(len(m.get("cols", [])), t, m)
+             for t, m in models.items() if not _is_spine_table(t)]
+    if not cands:
+        return None
+    cands.sort(key=lambda c: (-c[0], c[1]))
+    _, table, meta = cands[0]
+    return (table, meta)
+
+
 def _resource_model(path: str, models: Dict[str, Dict[str, Any]]) -> Optional[Tuple[str, Dict[str, Any]]]:
     """Pick the ORM model a path operates on: the LAST path segment that matches a
     known table (plural or singular). ``/api/users/{u}/posts`` → posts(Post).
@@ -728,6 +746,13 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
     path = _sanitize_path_params(path)   # #57: never emit invalid Python for a bad brace param
     fn = "_projected_" + re.sub(r"[^a-zA-Z0-9]+", "_", f"{method}_{path}").strip("_").lower() + f"_{idx}"
     res = _resource_model(path, models)
+    # A bare GET search path (``/api/search``) names no resource → res is None → it fell
+    # to an empty ``{"items":[],"total":0}`` stub, a HARD delivery blocker
+    # (deliverability_placeholder_stub_handler, Gen-1). Resolve it to the content table so
+    # the real search handler below fires over that table's text columns. ``/api/<res>/
+    # search`` already resolves <res>, so this only rescues the resource-less search.
+    if res is None and method.upper() == "GET" and "search" in path.lower():
+        res = _primary_content_model(models) or _search_target_model(models)
     # No type annotations on the dependency params: a ``: User`` / ``: Session``
     # annotation REFERENCES those names at import time, so if the lane wrote a raw-SQL
     # app (no ``from models import User``) the projected handler crashes the whole app
