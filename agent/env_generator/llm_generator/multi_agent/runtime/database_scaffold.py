@@ -446,9 +446,13 @@ def _render_column(table_name: str, col: Any) -> str:
     # shorthand the LLM emits ("primary_key" / "not_null") — the latter is not valid SQL
     # ("id" int primary_key → postgres syntax error → initdb exit(3) → docker_up wedge,
     # netflix r1). ``[\s_]+`` covers both.
-    if re.search(r"primary[\s_]+key", _low):
+    # "primary key" / "primary_key" / the bare "PK" abbreviation (netflix r7:
+    # `"id" Integer PK` → syntax error at "PK" → initdb exit(3)). `\bpk\b` catches the
+    # abbreviation; postgres types never contain a standalone "pk" token.
+    if re.search(r"primary[\s_]+key", _low) or re.search(r"\bpk\b", _low):
         _emb_pk = True
-        _sqlt = re.sub(r"\s*primary[\s_]+key\s*", " ", _sqlt, flags=re.IGNORECASE).strip()
+        _sqlt = re.sub(r"\s*primary[\s_]+key\s*", " ", _sqlt, flags=re.IGNORECASE)
+        _sqlt = re.sub(r"\s*\bpk\b\s*", " ", _sqlt, flags=re.IGNORECASE).strip()
     if re.search(r"\bnot[\s_]+null\b", _sqlt, re.IGNORECASE):
         _emb_nn = True
         _sqlt = re.sub(r"\s*not[\s_]+null\s*", " ", _sqlt, flags=re.IGNORECASE).strip()
