@@ -45,6 +45,12 @@ _OWNER_FK_NAMES = (
     "user_id", "author_id", "owner_id", "creator_id", "created_by",
     "follower_id", "sender_id", "from_user_id", "actor_id", "uploaded_by",
     "posted_by", "account_id",
+    # N-P0-2 (netflix): per-profile private data (ratings / my_list /
+    # continue_watching) is owned by the caller's PROFILE, not their user row —
+    # the create handler must fill it or the insert NOT-NULL-violates. Last in the
+    # list so a user-level owner (user_id/account_id) still wins when both exist;
+    # the VALUE is resolved to the caller's profile by _fw_owner_val (backend).
+    "profile_id",
 )
 # Columns that name the TARGET/object of a relation — resolved from a path param.
 _TARGET_FK_NAMES = (

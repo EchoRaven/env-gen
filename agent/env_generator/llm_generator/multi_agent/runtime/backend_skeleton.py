@@ -622,6 +622,34 @@ def _fw_owner_val(cls, col, user):
     while a PYTHON-level ownership check ("16" != 16) silently denies every owner.
     Look at the ORM column's python_type and coerce to match; unknown -> _fw_uid as-is."""
     _v = _fw_uid(user)
+    # N-P0-2 (netflix "who's watching"): when the owner column references the `profiles`
+    # table, the owner value is the caller's PROFILE id, NOT their user id — a plain
+    # user id would NOT-NULL-satisfy but FK-violate (no profile with that id) or scope to
+    # the wrong rows. Resolve the user's (first) profile in a short session. Every failure
+    # (no profiles table, no profile yet, any error) falls back to the user id, so a
+    # non-profile app is completely unaffected.
+    try:
+        _refs_profiles = (col == "profile_id")
+        if not _refs_profiles:
+            for _fk in getattr(cls, col).property.columns[0].foreign_keys:
+                _refs_profiles = (_fk.column.table.name == "profiles")
+                break
+        if _refs_profiles:
+            _Prof = None
+            for _m in Base.registry.mappers:
+                _t = getattr(_m, "local_table", None)
+                if _t is not None and getattr(_t, "name", None) == "profiles":
+                    _Prof = _m.class_
+                    break
+            if _Prof is not None:
+                with SessionLocal() as _s:
+                    _p = (_s.query(_Prof)
+                            .filter(getattr(_Prof, "user_id") == _fw_uid(user))
+                            .order_by(getattr(_Prof, "id")).first())
+                    if _p is not None and getattr(_p, "id", None) is not None:
+                        _v = _p.id
+    except Exception:
+        _v = _fw_uid(user)
     try:
         _pt = getattr(cls, col).type.python_type
     except Exception:
