@@ -622,72 +622,86 @@ def _fw_owner_val(cls, col, user):
     while a PYTHON-level ownership check ("16" != 16) silently denies every owner.
     Look at the ORM column's python_type and coerce to match; unknown -> _fw_uid as-is."""
     _v = _fw_uid(user)
-    # N-P0-2 (netflix "who's watching"): when the owner column references the `profiles`
-    # table, the owner value is the caller's PROFILE id, NOT their user id — a plain
-    # user id would NOT-NULL-satisfy but FK-violate (no profile with that id) or scope to
-    # the wrong rows. Resolve the user's (first) profile in a short session. Every failure
-    # (no profiles table, no profile yet, any error) falls back to the user id, so a
-    # non-profile app is completely unaffected.
+    # N-P0-2 (generalized #391 from netflix "who's watching"): some apps scope per-user
+    # data through a SUB-ENTITY of the account, not the account itself — the owner column
+    # FK-targets a table that is ITSELF owned by the user (netflix `profiles`; equally a
+    # game's `characters`, a workspace's `members`, a SaaS `sub_accounts`). The owner value
+    # is then the caller's SUB-ENTITY id, NOT their user id — a plain user id NOT-NULL-
+    # satisfies but FK-VIOLATEs (no sub-entity with that id). Detected by SHAPE, not by
+    # name: the owner col references table T, and T has its OWN foreign key to the
+    # users/accounts table. Resolve (and, if absent, auto-create) the caller's first row in
+    # T. Every failure — and any app that scopes directly by user_id (T has no user FK, so
+    # the pattern doesn't match) — falls back to the user id, completely unaffected.
     try:
-        _refs_profiles = (col == "profile_id")
-        if not _refs_profiles:
-            for _fk in getattr(cls, col).property.columns[0].foreign_keys:
-                _refs_profiles = (_fk.column.table.name == "profiles")
-                break
-        if _refs_profiles:
-            _Prof = None
-            for _m in Base.registry.mappers:
-                _t = getattr(_m, "local_table", None)
-                if _t is not None and getattr(_t, "name", None) == "profiles":
-                    _Prof = _m.class_
+        _Sub = None       # the sub-entity ORM class (e.g. Profile)
+        _sub_ufk = None   # the sub-entity's column that FKs to users (e.g. "user_id")
+        _tgt_col = None   # the column the owner FK references (usually the PK, "id")
+        _tgt_table = None
+        for _fk in getattr(cls, col).property.columns[0].foreign_keys:
+            _tgt_table = _fk.column.table
+            _tgt_col = _fk.column.name
+            break
+        if _tgt_table is not None and _tgt_table.name != cls.__table__.name:
+            _USER_TABLES = ("users", "user", "accounts", "account")
+            for _tc in _tgt_table.columns:            # is T a per-user sub-entity?
+                for _tfk in _tc.foreign_keys:
+                    if _tfk.column.table.name in _USER_TABLES:
+                        _sub_ufk = _tc.name
+                        break
+                if _sub_ufk:
                     break
-            if _Prof is not None:
-                with SessionLocal() as _s:
-                    _p = (_s.query(_Prof)
-                            .filter(getattr(_Prof, "user_id") == _fw_uid(user))
-                            .order_by(getattr(_Prof, "id")).first())
-                    if _p is None:
-                        # #390 (netflix r14): the caller has NO profile yet — a freshly-
-                        # registered business_chain user, or a chain that never POSTed
-                        # /api/profiles first. Falling back to the user id (below) makes a
-                        # per-profile write (rating / my_list / continue_watching) FK-VIOLATE
-                        # → 404 "referenced resource not found", and because the verifier
-                        # authors chains non-deterministically this wedges business_chain
-                        # INTERMITTENTLY. Auto-create a default "who's watching" profile for
-                        # the caller (only when none exists), filling every NOT-NULL,
-                        # no-default, non-FK column with a typed default so the INSERT can't
-                        # fail; then per-profile writes always resolve to a real profile id.
-                        try:
-                            _row = {"user_id": _fw_uid(user)}
-                            for _c in _Prof.__table__.columns:
-                                if _c.name in _row or _c.primary_key:
-                                    continue
-                                if _c.nullable or _c.default is not None or _c.server_default is not None:
-                                    continue
-                                if _c.foreign_keys:
-                                    continue
-                                try:
-                                    _pt2 = _c.type.python_type
-                                except Exception:
-                                    _pt2 = str
-                                if _c.name in ("name", "display_name", "title", "label", "nickname"):
-                                    _row[_c.name] = "Me"
-                                elif _pt2 is bool:
-                                    _row[_c.name] = False
-                                elif _pt2 in (int, float):
-                                    _row[_c.name] = 0
-                                else:
-                                    _row[_c.name] = "default"
-                            _np = _Prof(**_row)
-                            _s.add(_np)
-                            _s.commit()
-                            _s.refresh(_np)
-                            _p = _np
-                        except Exception:
-                            _s.rollback()
-                            _p = None
-                    if _p is not None and getattr(_p, "id", None) is not None:
-                        _v = _p.id
+            if _sub_ufk is not None:
+                for _m in Base.registry.mappers:
+                    _t = getattr(_m, "local_table", None)
+                    if _t is not None and getattr(_t, "name", None) == _tgt_table.name:
+                        _Sub = _m.class_
+                        break
+        if _Sub is not None and _sub_ufk is not None and _tgt_col is not None:
+            with SessionLocal() as _s:
+                _p = (_s.query(_Sub)
+                        .filter(getattr(_Sub, _sub_ufk) == _fw_uid(user))
+                        .order_by(getattr(_Sub, _tgt_col)).first())
+                if _p is None:
+                    # #390/#391 (netflix r14): the caller has NO sub-entity row yet — a
+                    # freshly-registered business_chain user, or a chain that never created
+                    # one. Falling back to the user id (below) makes a per-sub-entity write
+                    # (rating / my_list / continue_watching) FK-VIOLATE → 404 "referenced
+                    # resource not found", and because the verifier authors chains non-
+                    # deterministically this wedges business_chain INTERMITTENTLY. Auto-
+                    # create a default sub-entity for the caller (only when none exists),
+                    # filling every NOT-NULL, no-default, non-FK column with a typed default
+                    # so the INSERT can't fail; then per-sub-entity writes always resolve.
+                    try:
+                        _row = {_sub_ufk: _fw_uid(user)}
+                        for _c in _Sub.__table__.columns:
+                            if _c.name in _row or _c.primary_key:
+                                continue
+                            if _c.nullable or _c.default is not None or _c.server_default is not None:
+                                continue
+                            if _c.foreign_keys:
+                                continue
+                            try:
+                                _pt2 = _c.type.python_type
+                            except Exception:
+                                _pt2 = str
+                            if _c.name in ("name", "display_name", "title", "label", "nickname"):
+                                _row[_c.name] = "Me"
+                            elif _pt2 is bool:
+                                _row[_c.name] = False
+                            elif _pt2 in (int, float):
+                                _row[_c.name] = 0
+                            else:
+                                _row[_c.name] = "default"
+                        _np = _Sub(**_row)
+                        _s.add(_np)
+                        _s.commit()
+                        _s.refresh(_np)
+                        _p = _np
+                    except Exception:
+                        _s.rollback()
+                        _p = None
+                if _p is not None and getattr(_p, _tgt_col, None) is not None:
+                    _v = getattr(_p, _tgt_col)
     except Exception:
         _v = _fw_uid(user)
     try:
