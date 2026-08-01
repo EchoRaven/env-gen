@@ -101,8 +101,25 @@ class GitOps:
     # ------------------------------------------------------------------
 
     def add_worktree(self, path: Path, branch: str) -> Path:
-        """Create a linked worktree checked out to *branch* (creates branch if absent)."""
-        path = Path(path)
+        """Create a linked worktree checked out to *branch* (creates branch if absent).
+
+        The path is RESOLVED to absolute first. Callers build it as
+        ``repo_root / "worktrees" / <agent>`` and ``repo_root`` is routinely RELATIVE
+        (e.g. ``generated/<name>``). ``_run`` sets ``cwd=self.repo_root``, so a relative
+        worktree path is re-resolved by git AGAINST the repo dir → the worktree is created
+        at ``generated/<name>/generated/<name>/worktrees/<agent>`` (doubly nested). That
+        does NOT match where ``path_routed_workspace`` + ``heal_pipeline`` read/write the
+        lane's files (``<cwd>/generated/<name>/worktrees/<agent>``, resolved against the
+        PROCESS cwd) — so a lane writes into a plain directory inside the MAIN checkout
+        instead of its real per-lane worktree. Its committed work then lands on whatever
+        branch the main checkout holds and NEVER reaches ``agent/<lane>`` → never merges to
+        ``integration`` → the build/audit ship a stale tree (netflix r2: real LandingPage +
+        components stranded on ``main`` while the audited ``app/`` stayed the bootstrap stub
+        → ``deliverability_ui_flow_failed`` deadlock). Resolving to an absolute path (against
+        the process cwd, exactly like the workspace/heal readers) makes ``git worktree add``
+        create the worktree at the single, canonical location every reader/writer agrees on,
+        regardless of git's cwd."""
+        path = Path(path).resolve()
         if not self.branch_exists(branch):
             # git worktree add -b <branch> <path>
             self._run("worktree", "add", "-b", branch, str(path))
@@ -112,8 +129,8 @@ class GitOps:
         return path
 
     def remove_worktree(self, path: Path, force: bool = False) -> None:
-        """Remove a linked worktree."""
-        cmd = ["worktree", "remove", str(path)]
+        """Remove a linked worktree (path resolved absolute to match add_worktree)."""
+        cmd = ["worktree", "remove", str(Path(path).resolve())]
         if force:
             cmd.append("--force")
         self._run(*cmd)
