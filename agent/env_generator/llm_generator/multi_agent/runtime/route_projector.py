@@ -1368,20 +1368,33 @@ def project_missing_routes(
             # TEXT owner column (lane DDL: messages.sender_id) + the int-coerced sub
             # binds `text = integer` -> psycopg UndefinedFunction -> every scoped read
             # 500s, and a Python-level ownership check ("16" != 16) denies every owner.
-            "def _fw_owner_val(cls, col, user):  # noqa: F811\n"
-            "    _v = _fw_uid(user)\n"
-            "    try:\n"
-            "        _pt = getattr(cls, col).type.python_type\n"
-            "    except Exception:\n"
+            # Audit rank-3 (single-source _fw_owner_val): this is a SIMPLE fallback that
+            # LACKS the skeleton header's per-profile sub-entity resolution + auto-create
+            # (#390/#391) and the #393/#394 typed fills. It must NEVER clobber the rich
+            # canonical version — an unconditional re-def here (inserted before the first
+            # route, i.e. AFTER the header def) silently overrode it and re-activated the
+            # per-profile rating-404 bug on netflix-shaped apps. Define it ONLY when main.py
+            # has no _fw_owner_val (a raw-SQL / lane-authored main the skeleton never wrote);
+            # when the header defined it, the ``try`` binds the name and the fallback is
+            # skipped — and even if this block were positioned first, the header's later def
+            # would win. Either way the canonical rich version is active.
+            "try:\n"
+            "    _fw_owner_val  # noqa: F821 — canonical (rich) header version wins if present\n"
+            "except NameError:\n"
+            "    def _fw_owner_val(cls, col, user):\n"
+            "        _v = _fw_uid(user)\n"
+            "        try:\n"
+            "            _pt = getattr(cls, col).type.python_type\n"
+            "        except Exception:\n"
+            "            return _v\n"
+            "        try:\n"
+            "            if _pt is str and not isinstance(_v, str):\n"
+            "                return str(_v)\n"
+            "            if _pt is int and not isinstance(_v, int):\n"
+            "                return int(_v)\n"
+            "        except (TypeError, ValueError):\n"
+            "            pass\n"
             "        return _v\n"
-            "    try:\n"
-            "        if _pt is str and not isinstance(_v, str):\n"
-            "            return str(_v)\n"
-            "        if _pt is int and not isinstance(_v, int):\n"
-            "            return int(_v)\n"
-            "    except (TypeError, ValueError):\n"
-            "        pass\n"
-            "    return _v\n"
             "try:\n"
             "    from models import *  # noqa: F401,F403\n"
             "except Exception:\n"
