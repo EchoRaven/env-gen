@@ -588,7 +588,7 @@ import os
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import or_
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, DataError
 from sqlalchemy.orm import Session
 
 from database import Base, engine, get_db, SessionLocal
@@ -777,21 +777,37 @@ def _coerce_body(cls, valid):
     column — and the raw INSERT then errors, so the rating chain 400s and business_chain
     wedges. Mirror the seed loader: a numeric string -> the number; a NON-numeric string in
     a numeric column -> 0 (so the row survives); a non-string scalar in a String/Text column
-    -> its str. Nested list/dict and unknown types are left untouched. Best-effort; never
-    raises, so a normal well-typed body is completely unaffected."""
+    -> its str; a bool-ish string ('true'/'1'/'on' / 'false'/'0'/'off') OR 1/0 in a Boolean
+    column -> the bool (rank-4). Nested list/dict, datetime/date/time, and unknown types are
+    left untouched (a bad datetime is caught by the global DataError->400 handler rather than
+    mis-coerced). Best-effort; never raises, so a normal well-typed body is unaffected."""
     try:
         from sqlalchemy import (String as _SAStr, Integer as _SAInt,
-                                Numeric as _SANum, Float as _SAFloat)
+                                Numeric as _SANum, Float as _SAFloat,
+                                Boolean as _SABool)
         cols = cls.__table__.columns
     except Exception:
         return valid
     out = dict(valid)
     for k, v in valid.items():
-        if k not in cols or v is None or isinstance(v, (bool, list, dict)):
+        if k not in cols or v is None or isinstance(v, (list, dict)):
             continue
         try:
             ct = cols[k].type
-            if isinstance(ct, _SAInt) and not isinstance(v, int):
+            if isinstance(ct, _SABool) and not isinstance(v, bool):
+                # rank-4: chains send "true"/"1"/"on" (or 1/0) for a Boolean column; the
+                # SQLAlchemy bind wants a real bool -> coerce it, else leave the value for
+                # the global DataError->400 handler.
+                _bs = str(v).strip().lower()
+                if _bs in ("true", "t", "1", "yes", "y", "on"):
+                    out[k] = True
+                elif _bs in ("false", "f", "0", "no", "n", "off"):
+                    out[k] = False
+            elif isinstance(ct, _SABool):
+                continue  # already a real bool -> leave it
+            elif isinstance(v, bool):
+                continue  # a bool into a non-bool column -> don't mangle (bool is an int)
+            elif isinstance(ct, _SAInt) and not isinstance(v, int):
                 try:
                     out[k] = int(float(str(v).strip()))
                 except (ValueError, TypeError):

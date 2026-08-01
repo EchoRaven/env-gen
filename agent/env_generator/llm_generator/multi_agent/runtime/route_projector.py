@@ -1016,6 +1016,13 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             "    valid = {k: v for k, v in valid.items() if not ("
             "isinstance(v, str) and v.endswith(\"}\") and (v.startswith(\"${\") or "
             "(v.startswith(\"{\") and v[1:-1].isidentifier())))}",
+            # Audit rank-4: coerce loosely-typed chain body values to each column's ACTUAL
+            # type for BOTH create AND update (was create-only #395). A thumbs rating
+            # {"value":"up"} into an INTEGER col, "true"/"1" into a Boolean col — the
+            # setattr / cls(**valid) below then can't 500 on a type mismatch, and a value
+            # that still can't be coerced (a bad datetime) is caught by the global
+            # DataError->400 handler rather than 500ing. No-op for a well-typed body.
+            f"    valid = _coerce_body({cls}, valid)",
         ]
         if m in ("PUT", "PATCH") and path.endswith("/me"):
             # mirror GET /me: resolve the user model DYNAMICALLY. Hardcoding `User`
@@ -1114,11 +1121,8 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                     body_lines += [f'    valid.setdefault("{ofk}", _fw_owner_val({cls}, "{ofk}", user))']
             if not _action_unmapped:
                 body_lines += [
-                    # #395: coerce loosely-typed chain body values to the column types
-                    # (netflix: a thumbs rating {"value":"up"} into the INTEGER value col)
-                    # so the INSERT doesn't error → business_chain 400. No-op for a
-                    # well-typed body.
-                    f"    valid = _coerce_body({cls}, valid)",
+                    # valid was already coerced to the column types up-front (rank-4,
+                    # covers create + update); just construct + add here.
                     "    try:",
                     f"        obj = {cls}(**valid)",
                     "        db.add(obj)",
@@ -1139,6 +1143,13 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             "        # by-construction global IntegrityError handler → reachability",
             "        # wedged. Rollback and RE-RAISE: the global handler maps it",
             "        # (FK 23503→404, unique 23505→409, other incl. NotNull→400).",
+            "        db.rollback()",
+            "        raise",
+            "    except DataError:",
+            "        # rank-4: a value that doesn't fit the column TYPE (bad datetime/int/",
+            "        # bool / out-of-range) is CLIENT data, not a server fault. Rollback and",
+            "        # RE-RAISE to the global DataError->400 handler — the catch-all's 500",
+            "        # below lands in no chain's expect list -> business_chain wedge.",
             "        db.rollback()",
             "        raise",
             "    except Exception as _exc:",
@@ -1349,6 +1360,10 @@ def project_missing_routes(
         guard = (
             "# by-construction projector deps (guarded; safe to re-import)\n"
             "from fastapi import Depends, HTTPException, Query  # noqa: F401,F811\n"
+            # rank-4: the projected write handlers re-raise IntegrityError/DataError to the
+            # global 4xx handlers; import them so this patch path (a lane-authored main that
+            # may not import them) doesn't NameError on the except at request time.
+            "from sqlalchemy.exc import IntegrityError, DataError  # noqa: F401,F811\n"
             # OWNER-ID COERCION (outlook run-39, live): auth deps commonly carry the JWT
             # `sub` as a STRING; comparing it against an INTEGER owner column made postgres
             # raise `operator does not exist: integer = character varying` → EVERY scoped

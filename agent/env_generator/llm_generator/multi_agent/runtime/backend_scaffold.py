@@ -516,6 +516,33 @@ if _FWIntegrityError is not None:
         except Exception:
             pass
         return _FWIntegrityJSON(status_code=status, content={"detail": detail})
+
+# Audit rank-4 (whack-a-mole eradication): a DataError is a value that doesn't fit the
+# column TYPE — InvalidDatetimeFormat, invalid integer/numeric text, value out of range.
+# It is CLIENT-DATA (a chain POSTing a bad datetime/int), not a server fault, but without
+# a handler it escaped the write handler's try/except as a raw 500 — in NO chain's expect
+# list -> business_chain wedge, exactly like the FK-500 that #82 fixed. _coerce_body now
+# fixes the common int/numeric/bool cases up-front; this maps whatever is left to 400,
+# symmetric with the IntegrityError mapping. Response prose is fixed (no DB internals
+# leaked); the driver detail goes to the log the owning lane can read.
+try:
+    from sqlalchemy.exc import DataError as _FWDataError
+except Exception:
+    _FWDataError = None
+
+if _FWDataError is not None:
+    @app.exception_handler(_FWDataError)
+    async def _framework_data_error_handler(request, exc):
+        try:
+            import logging as _fw_logging
+            _fw_logging.getLogger("app.integrity").error(
+                "DataError on %s %s -> 400: orig=%s",
+                getattr(request, "method", "?"),
+                getattr(getattr(request, "url", None), "path", "?"),
+                getattr(exc, "orig", None) or exc)
+        except Exception:
+            pass
+        return _FWIntegrityJSON(status_code=400, content={"detail": "invalid field value"})
 # === end integrity mapping ===
 '''
 
