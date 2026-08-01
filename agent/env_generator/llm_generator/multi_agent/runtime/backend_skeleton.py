@@ -745,6 +745,44 @@ def _fw_owner_val(cls, col, user):
         pass
     return _v
 
+def _coerce_body(cls, valid):
+    """#395: coerce a create/update body's scalar values to each column's ACTUAL type
+    before the INSERT. Verification chains send loosely-typed values — netflix: a thumbs
+    rating {"value": "up"} / {"value": "thumbs_up"} POSTed into the INTEGER ratings.value
+    column — and the raw INSERT then errors, so the rating chain 400s and business_chain
+    wedges. Mirror the seed loader: a numeric string -> the number; a NON-numeric string in
+    a numeric column -> 0 (so the row survives); a non-string scalar in a String/Text column
+    -> its str. Nested list/dict and unknown types are left untouched. Best-effort; never
+    raises, so a normal well-typed body is completely unaffected."""
+    try:
+        from sqlalchemy import (String as _SAStr, Integer as _SAInt,
+                                Numeric as _SANum, Float as _SAFloat)
+        cols = cls.__table__.columns
+    except Exception:
+        return valid
+    out = dict(valid)
+    for k, v in valid.items():
+        if k not in cols or v is None or isinstance(v, (bool, list, dict)):
+            continue
+        try:
+            ct = cols[k].type
+            if isinstance(ct, _SAInt) and not isinstance(v, int):
+                try:
+                    out[k] = int(float(str(v).strip()))
+                except (ValueError, TypeError):
+                    out[k] = 0
+            elif isinstance(ct, (_SANum, _SAFloat)) and not isinstance(v, (int, float)):
+                try:
+                    out[k] = float(str(v).strip())
+                except (ValueError, TypeError):
+                    out[k] = 0.0
+            elif isinstance(ct, _SAStr) and not isinstance(v, str):
+                out[k] = str(v)
+        except Exception:
+            continue
+    return out
+
+
 Base.metadata.create_all(bind=engine)
 
 

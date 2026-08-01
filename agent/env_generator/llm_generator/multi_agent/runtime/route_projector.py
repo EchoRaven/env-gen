@@ -1114,6 +1114,11 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                     body_lines += [f'    valid.setdefault("{ofk}", _fw_owner_val({cls}, "{ofk}", user))']
             if not _action_unmapped:
                 body_lines += [
+                    # #395: coerce loosely-typed chain body values to the column types
+                    # (netflix: a thumbs rating {"value":"up"} into the INTEGER value col)
+                    # so the INSERT doesn't error → business_chain 400. No-op for a
+                    # well-typed body.
+                    f"    valid = _coerce_body({cls}, valid)",
                     "    try:",
                     f"        obj = {cls}(**valid)",
                     "        db.add(obj)",
