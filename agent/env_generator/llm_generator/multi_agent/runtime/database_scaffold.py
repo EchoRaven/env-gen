@@ -172,25 +172,42 @@ _INLINE_REFERENCES_RE = re.compile(
 )
 
 
+def _promote_inline_modifiers(col: Dict[str, Any]) -> Dict[str, Any]:
+    """#396: promote inline modifiers in a column dict's ``type`` string (``primary key`` /
+    ``not null`` / ``unique`` / ``references x(y)``) to STRUCTURED flags, so the column
+    projects IDENTICALLY through BOTH the DDL renderer (database_scaffold — honours the type
+    string directly) and the ORM renderer (backend_skeleton — keys nullable/pk/unique/FK off
+    STRUCTURED flags). Previously this promotion ran ONLY for the flat-map shape (via
+    _column_from_flat), so a STRUCTURED dict whose ``type`` carried the constraint inline —
+    the LLM routinely emits ``{"name":"name","type":"text not null"}`` — got ``TEXT NOT NULL``
+    in the DDL but a NULLABLE ORM Column (the #393 root; likewise phantom-``id`` PK for a
+    non-id inline PK, and dropped inline FKs). Copy-on-write (never mutates the caller's dict);
+    idempotent; honours already-set structured flags; the full ``type`` string is preserved
+    for the DDL renderer (which de-dups an already-structured NOT NULL/PK)."""
+    if not isinstance(col, dict):
+        return col
+    spec = str(col.get("type") or "")
+    if not spec:
+        return col
+    out = dict(col)
+    if _INLINE_PK_RE.search(spec) and not (out.get("primary_key") or out.get("pk")):
+        out["primary_key"] = True
+    if (_INLINE_NOTNULL_RE.search(spec) and out.get("nullable") is not False
+            and not out.get("not_null")):
+        out["not_null"] = True
+    if _INLINE_UNIQUE_RE.search(spec) and not out.get("unique"):
+        out["unique"] = True
+    if not (out.get("references") or out.get("fk")):
+        m = _INLINE_REFERENCES_RE.search(spec)
+        if m:
+            out["references"] = "{}({})".format(m.group(1), m.group(2) or m.group(3))
+    return out
+
+
 def _column_from_flat(name: str, type_spec: Any) -> Dict[str, Any]:
-    """Build a canonical column dict from a flat-map ``name: "type string"``
-    entry, promoting inline modifiers (``primary key`` / ``not null`` /
-    ``unique`` / ``references x(y)``) to structured flags so the column
-    projects correctly through BOTH the DDL and ORM renderers. The full type
-    string (FK and all) is preserved verbatim as ``type`` for the DDL
-    renderer, which honours inline ``references`` directly."""
-    col: Dict[str, Any] = {"name": str(name), "type": str(type_spec or "").strip()}
-    spec = col["type"]
-    if _INLINE_PK_RE.search(spec):
-        col["primary_key"] = True
-    if _INLINE_NOTNULL_RE.search(spec):
-        col["not_null"] = True
-    if _INLINE_UNIQUE_RE.search(spec):
-        col["unique"] = True
-    m = _INLINE_REFERENCES_RE.search(spec)
-    if m:
-        col["references"] = "{}({})".format(m.group(1), m.group(2) or m.group(3))
-    return col
+    """Build a canonical column dict from a flat-map ``name: "type string"`` entry,
+    promoting inline modifiers to structured flags via _promote_inline_modifiers."""
+    return _promote_inline_modifiers({"name": str(name), "type": str(type_spec or "").strip()})
 
 
 def normalize_columns(schema: Any) -> List[Any]:
@@ -199,13 +216,17 @@ def normalize_columns(schema: Any) -> List[Any]:
       * a bare ``[{"name","type"}, ...]`` list  → itself (as-is)
       * a flat map ``{col: "type string"}``     → ``[{"name","type", …}]`` with
         inline modifiers promoted to structured flags (see _column_from_flat)
-    Returns [] for anything unrecognized (an empty/None schema)."""
+    Returns [] for anything unrecognized (an empty/None schema).
+
+    #396: inline modifiers (``not null``/``primary key``/``unique``/``references``) in a
+    column's ``type`` string are promoted to structured flags for EVERY shape (not just the
+    flat map), so the ORM renderer's nullable/pk/unique/FK match the DDL — the #393 root."""
     if isinstance(schema, list):
-        return schema
+        return [_promote_inline_modifiers(c) if isinstance(c, dict) else c for c in schema]
     if isinstance(schema, dict):
         cols = schema.get("columns")
         if isinstance(cols, list):
-            return cols
+            return [_promote_inline_modifiers(c) if isinstance(c, dict) else c for c in cols]
         # Flat map {column_name: "type string"} — the contract-tool shape.
         return [_column_from_flat(k, v) for k, v in schema.items()]
     return []
@@ -385,12 +406,21 @@ def _columns_of(table: Dict[str, Any]) -> List[Any]:
     of a flattened ``table["columns"]`` list AND of a raw flat-map
     ``{column: "type string"}`` schema (defense in depth: a legacy/raw
     store row still projects correctly), via ``normalize_columns`` — same
-    data, alternate location/shape, not an invented default."""
+    data, alternate location/shape, not an invented default.
+
+    #396: inline modifiers in a column's ``type`` string (``not null`` / ``primary key`` /
+    ``unique`` / ``references``) are promoted to structured flags for EVERY shape here — this
+    is the single chokepoint BOTH the ORM renderer (render_models/_models_meta) and the DDL
+    renderer read, so promoting here makes the ORM's nullable/pk/unique/FK match the DDL (the
+    #393 root: a canonical ``{"columns":[{"type":"text not null"}]}`` used to return raw, so
+    the ORM Column stayed nullable while the DDL emitted NOT NULL)."""
     schema = table.get("schema")
     if isinstance(schema, dict) and isinstance(schema.get("columns"), list):
-        return schema["columns"]
+        return [_promote_inline_modifiers(c) if isinstance(c, dict) else c
+                for c in schema["columns"]]
     if isinstance(table.get("columns"), list):
-        return table["columns"]
+        return [_promote_inline_modifiers(c) if isinstance(c, dict) else c
+                for c in table["columns"]]
     # Flat-map schema (or a bare list under ``schema``) — normalize so a row
     # that bypassed the write-boundary normalizer still yields its columns.
     if isinstance(schema, (dict, list)) and schema:
