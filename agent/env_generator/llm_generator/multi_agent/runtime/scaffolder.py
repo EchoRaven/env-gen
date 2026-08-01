@@ -163,6 +163,13 @@ services:
       POSTGRES_PASSWORD: sandbox
       POSTGRES_DB: app
       API_PORT: {backend_port}
+      # Audit rank-1 (whack-a-mole eradication): FW_DEBUG makes the generated backend's
+      # by-construction fallbacks (_fw_owner_val, the seed loader) LOUD — they print the
+      # swallowed exception to stderr (-> `docker logs backend`) instead of silently
+      # degrading, so ONE validation run surfaces ALL layered failures. Propagated from the
+      # shell that runs `docker compose up`; empty (a total no-op) unless the run exports
+      # FW_DEBUG=1, so a normal delivery run is byte-for-byte unaffected.
+      FW_DEBUG: "${{FW_DEBUG:-}}"
       # Embedded OAuth2 AS (zoom-style): the env mints its OWN RS256 tokens.
       # OAUTH_ISSUER is intentionally unset → derived from request.base_url.
       OAUTH_DEFAULT_AUDIENCE: app-api

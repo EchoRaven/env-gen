@@ -596,6 +596,28 @@ from auth_dependency import get_current_user
 import models  # noqa: F401  (registers all ORM tables on Base.metadata)
 from models import *  # noqa: F401,F403
 
+# Audit rank-1 (whack-a-mole eradication): the best-effort fallbacks below are correct by
+# construction, but SILENT — each swallowed exception hid one real bug that then surfaced
+# only one-per-50-min-run (the rating saga #392->#393->#394->#395 was four bugs stacked
+# under one ``except``). ``_fw_dbg`` makes them LOUD when FW_DEBUG is set: it prints the
+# swallowed exception (repr + traceback + where) to stderr, which lands in
+# ``docker logs backend``, so ONE validation run surfaces ALL layered failures instead of
+# one-per-run. No-op by default (FW_DEBUG unset) — zero behaviour change.
+_FW_DEBUG = os.environ.get("FW_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _fw_dbg(where, exc=None):
+    if not _FW_DEBUG:
+        return
+    try:
+        import sys as _sys
+        import traceback as _tb
+        print("[FW_DEBUG] %s: %r" % (where, exc), file=_sys.stderr, flush=True)
+        if exc is not None:
+            _tb.print_exception(type(exc), exc, exc.__traceback__, file=_sys.stderr)
+    except Exception:
+        pass
+
 
 def _fw_uid(user):
     """Authenticated caller's id, coerced to the owner column's likely type. Auth deps
@@ -725,16 +747,19 @@ def _fw_owner_val(cls, col, user):
                         _s.commit()
                         _s.refresh(_np)
                         _p = _np
-                    except Exception:
+                    except Exception as _e:
+                        _fw_dbg("fw_owner_val.autocreate_sub_entity", _e)
                         _s.rollback()
                         _p = None
                 if _p is not None and getattr(_p, _tgt_col, None) is not None:
                     _v = getattr(_p, _tgt_col)
-    except Exception:
+    except Exception as _e:
+        _fw_dbg("fw_owner_val.resolve", _e)
         _v = _fw_uid(user)
     try:
         _pt = getattr(cls, col).type.python_type
-    except Exception:
+    except Exception as _e:
+        _fw_dbg("fw_owner_val.python_type", _e)
         return _v
     try:
         if _pt is str and not isinstance(_v, str):
@@ -844,7 +869,8 @@ _ensure_temporal_alias_columns()
 try:
     from seed_data import seed_if_empty
     seed_if_empty()
-except Exception:
+except Exception as _e:
+    _fw_dbg("seed_if_empty", _e)
     pass  # seeding is best-effort; never block boot
 
 # JSON serialization for RAW SQLAlchemy rows. A lane GET handler that returns the result of
@@ -1886,10 +1912,22 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         'missing owner FK so owner-scoped reads are never empty, and backfilling a missing\n'
         'image URL so media screens are not full of empty boxes. Demo users log in with\n'
         'password "password". Idempotent."""\n'
-        "import json, hashlib\n"
+        "import json, hashlib, os\n"
         "from pathlib import Path\n"
         "from database import SessionLocal\n"
         "import models\n\n"
+        "# audit rank-1 (whack-a-mole eradication): the per-row / per-table seed inserts below\n"
+        "# swallow failures BY DESIGN (#218 savepoint) so one bad row can't empty a table — but\n"
+        "# silently, so a dropped seed row (FK to a missing parent, uncovered NOT NULL, wrong\n"
+        "# type) leaves a table empty/partial and only surfaces as a business_chain 404 a run\n"
+        "# later. _seed_dbg prints the dropped row's exception to stderr when FW_DEBUG is set.\n"
+        "_FW_DEBUG = os.environ.get('FW_DEBUG', '').strip().lower() in ('1', 'true', 'yes', 'on')\n"
+        "def _seed_dbg(where, exc):\n"
+        "    if not _FW_DEBUG:\n"
+        "        return\n"
+        "    import sys as _sys, traceback as _tb\n"
+        "    print('[FW_DEBUG] %s: %r' % (where, exc), file=_sys.stderr, flush=True)\n"
+        "    _tb.print_exception(type(exc), exc, exc.__traceback__, file=_sys.stderr)\n\n\n"
         f"_ORDER = {list(seed.keys())!r}\n"
         f"_CLASS = {classmap!r}\n"
         f"_OWNER_COL = {owner_col!r}\n"
@@ -2406,11 +2444,13 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "                            db.flush()\n"
         "                    else:\n"
         "                        db.add(_obj)\n"
-        "                except Exception:\n"
+        "                except Exception as _e:\n"
+        "                    _seed_dbg('seed_row_drop %s[%d]' % (t, i), _e)\n"
         "                    pass\n"
         "            try:\n"
         "                db.commit()\n"
-        "            except Exception:\n"
+        "            except Exception as _e:\n"
+        "                _seed_dbg('seed_commit_rollback %s' % t, _e)\n"
         "                db.rollback()\n"
         "        _sync_sequences(db)\n"
         "        _store_fingerprint(db, fp)\n"
