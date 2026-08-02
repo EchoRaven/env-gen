@@ -78,6 +78,37 @@ def _sql_type(raw: str) -> str:
     return _TYPE_ALIASES.get(t.lower(), t)
 
 
+# SQL default values that are literals / keywords / functions and must pass through UNQUOTED.
+_SQL_DEFAULT_KEYWORDS = frozenset({
+    "true", "false", "null", "current_timestamp", "current_date", "current_time",
+    "localtimestamp", "localtime", "current_user", "session_user",
+})
+_NUMERIC_DEFAULT_RE = re.compile(r"^-?\d+(\.\d+)?$")
+
+
+def _quote_default(value: Any) -> str:
+    """#404: render a column DEFAULT value as valid SQL. A numeric / already-quoted /
+    boolean-or-NULL keyword / SQL-function (contains ``(`` — now(), gen_random_uuid()) /
+    known-keyword default passes through; a BARE WORD text default (``status text default
+    active``) is SINGLE-QUOTED — else postgres reads ``active`` as an identifier (``column
+    "active" does not exist``) and initdb FAILS -> docker_up wedge (the #372/#382/#383
+    initdb-failure class). Mirrors the ORM renderer's default quoting so create_all + the DDL
+    agree."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    s = str(value).strip()
+    if not s:
+        return "''"
+    if (s[0] in ("'", '"')                       # already quoted
+            or s.lower() in _SQL_DEFAULT_KEYWORDS  # true/false/null/current_timestamp/...
+            or "(" in s                          # a function call: now(), gen_random_uuid()
+            or _NUMERIC_DEFAULT_RE.match(s)):    # a number (incl. negative/decimal)
+        return s
+    return "'" + s.replace("'", "''") + "'"
+
+
 # Postgres inline FK is ``REFERENCES table (col)``. Kickoff contracts
 # routinely emit the dotted ``references table.col`` form (postgres parses
 # that as schema=table/table=col → "schema ... does not exist", initdb
@@ -549,7 +580,7 @@ def _render_column(table_name: str, col: Any) -> str:
     if default is None and _emb_default is not None:
         default = _emb_default  # type-only default (col carried it in the type string)
     if default is not None:
-        parts.append(f"DEFAULT {default}")
+        parts.append(f"DEFAULT {_quote_default(default)}")
     # Emit a STRUCTURED FK (``references``/``fk`` field) the same way the inline
     # form is rendered — but ONLY when the type string doesn't already carry an
     # inline ``references`` (which the passthrough above renders), so the two
