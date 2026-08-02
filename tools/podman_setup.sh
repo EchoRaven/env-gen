@@ -21,6 +21,30 @@ location = "vmvm-registry.fbinfra.net"
 EOF
 say "docker.io -> vmvm-registry.fbinfra.net mirror in place"
 
+# 1a3. VMVM mirror mTLS CLIENT CERT (fix 2026-08-02): the mirror requires a client cert.
+# The fb x509 cert lives on an autofs path (/var/facebook/credentials/...) that podman
+# CANNOT traverse from its own mount namespace — a SYMLINK there resolves in the shell but
+# not inside podman ("open .../certs.d/vmvm-registry.fbinfra.net/client.cert: no such file
+# or directory") -> mirror auth fails -> docker.io fallback (walled) -> `docker_up` STEP 1
+# `FROM node:20-alpine` fails and wedges the whole run (netflix r4: mis-diagnosed for hours
+# as a "mirror outage"). Copy the RESOLVED cert into certs.d as a REAL file (not a symlink)
+# every setup: podman then reads a plain local file, AND cert rotation is picked up each run.
+_CERTD=~/.config/containers/certs.d/vmvm-registry.fbinfra.net
+_FBX509="$(readlink -f /var/facebook/credentials/haibotong/x509/haibotong.pem 2>/dev/null)"
+if [ -n "$_FBX509" ] && [ -r "$_FBX509" ]; then
+  mkdir -p "$_CERTD"
+  if cp "$_FBX509" "$_CERTD/client.cert.new" && cp "$_FBX509" "$_CERTD/client.key.new"; then
+    chmod 600 "$_CERTD/client.cert.new" "$_CERTD/client.key.new"
+    mv -f "$_CERTD/client.cert.new" "$_CERTD/client.cert"
+    mv -f "$_CERTD/client.key.new" "$_CERTD/client.key"
+    say "VMVM mirror mTLS cert refreshed (real copy, not a symlink) in certs.d"
+  else
+    say "WARN: could not copy fb x509 cert into certs.d — mirror pulls may fail"
+  fi
+else
+  say "WARN: fb x509 cert unreadable at /var/facebook/credentials/haibotong/x509/haibotong.pem — mirror pulls may fail"
+fi
+
 # 1a2. netavark firewall_driver=none — on this host netavark's nftables ruleset apply FAILS
 # ("nft did not return successfully"), so rootless containers can't START (stuck Created) and
 # `podman-compose up` deadlocks on `podman wait --condition=healthy`. Skipping the firewall
