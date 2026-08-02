@@ -60,8 +60,49 @@ def _build_ssl_context() -> ssl.SSLContext:
     return ctx
 
 
-# One shared client (httpx.Client is safe for concurrent requests from the threaded server).
-_CLIENT = httpx.Client(verify=_build_ssl_context(), timeout=UPSTREAM_TIMEOUT)
+# Shared client, REBUILT when the mTLS cert file changes on disk (#413). fb x509 certs
+# rotate every few days; a client that load_cert_chain'd the OLD cert at startup serves
+# 'SSLV3_ALERT_CERTIFICATE_EXPIRED' 502s until the PROCESS is restarted — this silently
+# killed a whole generation run (r10, 2026-08-02): the proxy's /health stayed 200 the
+# entire time (health never touches the upstream mTLS), so the launcher reused the stale
+# proxy. Reloading on realpath+mtime change makes the proxy self-heal across rotations.
+# httpx.Client is safe for concurrent use by the threaded server.
+import threading as _threading
+
+_CLIENT = None
+_CLIENT_KEY = None  # (realpath, mtime) the current _CLIENT was built for
+_CLIENT_LOCK = _threading.Lock()
+
+
+def _cert_key():
+    """(realpath, mtime) of the mTLS cert, or None if unreadable. Tracking the resolved
+    path AND mtime catches both a file rewrite and a symlink retarget (the fb cert path
+    is an autofs symlink)."""
+    try:
+        rp = os.path.realpath(CERT)
+        return (rp, os.path.getmtime(rp))
+    except OSError:
+        return None
+
+
+def _client() -> httpx.Client:
+    """The shared httpx client, rebuilt when the cert file changes (#413). Returns the
+    existing client unchanged when the cert is unreadable (transient) or unchanged."""
+    global _CLIENT, _CLIENT_KEY
+    key = _cert_key()
+    if _CLIENT is not None and (key is None or key == _CLIENT_KEY):
+        return _CLIENT
+    with _CLIENT_LOCK:
+        if _CLIENT is None or (key is not None and key != _CLIENT_KEY):
+            _old = _CLIENT
+            _CLIENT = httpx.Client(verify=_build_ssl_context(), timeout=UPSTREAM_TIMEOUT)
+            _CLIENT_KEY = key
+            if _old is not None:
+                try:
+                    _old.close()
+                except Exception:  # noqa: BLE001
+                    pass
+    return _CLIENT
 
 
 def _upstream_url(model: str, stream: bool) -> str:
@@ -130,13 +171,13 @@ class _Handler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.end_headers()
-                with _CLIENT.stream("POST", url, json=tbody) as r:
+                with _client().stream("POST", url, json=tbody) as r:
                     for chunk in r.iter_raw():
                         if chunk:
                             self.wfile.write(chunk)
                             self.wfile.flush()
             else:
-                r = _CLIENT.post(url, json=tbody)
+                r = _client().post(url, json=tbody)
                 self.send_response(r.status_code)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(r.content)))
