@@ -3394,18 +3394,65 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
             nav_routes.append((_lbl, _r))
         nav_routes = nav_routes[:7]
 
+        from .frontend_page_projector import _STRUCTURED_MARKER
         for comp, route, page in plan:
             target = pages_dir / f"{comp}.jsx"
             # Auth pages are ALWAYS (over)written with the framework's wired auth
             # form — the lane consistently ships a dead/unwired login. Other pages
             # are projected only when missing (never clobber the lane's real UI).
+            _body = None
             if _is_auth_page(comp, page) or not target.exists():
                 # Project a minimally-FUNCTIONAL page from the contract (fetches the
                 # declared endpoint + renders it), not an inert stub the audit then
                 # blocks. The lane may still overwrite it with richer UI.
-                target.write_text(_project_page_component(comp, page, nav_routes=nav_routes,
-                                                          design=design),
-                                  encoding="utf-8")
+                _body = _project_page_component(comp, page, nav_routes=nav_routes,
+                                                design=design)
+            else:
+                # #221 AUTHORITATIVE STRUCTURED FLOOR: a ui_page covered by a MEASURED
+                # design screen must ship the REFERENCE-STRUCTURED projection (measured
+                # region bands + real data, via _render_reference_page) as its FLOOR —
+                # even over a page the lane already authored. The confirmed UI-fidelity
+                # gap (per-screen ~0.10-0.15 vs the 0.65 "matches references" bar) came
+                # from the lane's GENERIC layouts winning by default: this projector was
+                # write-when-MISSING only, so the lane (which authors every page) was
+                # never clobbered and the sophisticated projection never shipped (r7/r8:
+                # 0 projected pages). Now, for a page WITH a matching design screen, the
+                # structured floor is authoritative. Guards that keep it safe:
+                #   * clobber ONLY a page that is NOT ALREADY the structured projection
+                #     (no _STRUCTURED_MARKER / data-projected="ref"), so the lane's
+                #     IN-PLACE visual-fidelity refinement of the floor SURVIVES (the
+                #     marker instructs "refine visuals in place; keep the data wiring");
+                #   * re-project only when the fresh output is GENUINELY structured, so
+                #     a screen-matched-but-not-projectable page (e.g. no GET endpoint)
+                #     is never DOWNGRADED to the generic floor.
+                # Pages with NO matching design screen, and landing pages, keep the
+                # never-clobber behavior above. This runs POST-lane-merge (the
+                # framework_validation heal tick and the at-release path both call
+                # scaffold_frontend_pages after merge_committed_agent_work, then commit),
+                # so the clobber SURVIVES into the delivered tree and the lane's next
+                # remediation tick refines the shipped floor.
+                if design and not _is_landing_page(comp, page):
+                    try:
+                        _screen = _design_screen_for_route(
+                            design, page.get("route"),
+                            hints=(page.get("name"), page.get("id"),
+                                   page.get("component"), comp))
+                    except Exception:
+                        _screen = None
+                    if _screen is not None:
+                        try:
+                            _existing = target.read_text(encoding="utf-8")
+                        except Exception:
+                            _existing = ""
+                        if (_STRUCTURED_MARKER not in _existing
+                                and 'data-projected="ref"' not in _existing):
+                            _cand = _project_page_component(
+                                comp, page, nav_routes=nav_routes, design=design)
+                            if (_STRUCTURED_MARKER in _cand
+                                    or 'data-projected="ref"' in _cand):
+                                _body = _cand
+            if _body is not None:
+                target.write_text(_body, encoding="utf-8")
                 scaffolded.append(str(target.relative_to(frontend_dir)))
 
         app_wired = False
