@@ -45,6 +45,13 @@ _TYPE_ALIASES: Dict[str, str] = {
     "float": "DOUBLE PRECISION", "double": "DOUBLE PRECISION",
     "number": "DOUBLE PRECISION", "real": "REAL",
     "decimal": "NUMERIC", "numeric": "NUMERIC",
+    # #403 (ORM/DDL parity, extends #396): the ORM renderer maps ``money`` -> SQLAlchemy
+    # Numeric, but the DDL used to pass ``money`` through as the native postgres MONEY type
+    # -> an ORM(Numeric)/DDL(money) type divergence (the #393 class) on any currency column
+    # (plausible in a streaming/billing app). Postgres MONEY is also discouraged (locale-
+    # dependent formatting, lossy). Render it as NUMERIC so both renderers agree AND currency
+    # is stored correctly.
+    "money": "NUMERIC",
     "bool": "BOOLEAN", "boolean": "BOOLEAN",
     "uuid": "UUID",
     "json": "JSONB", "jsonb": "JSONB",
