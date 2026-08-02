@@ -579,6 +579,25 @@ def _render_column(table_name: str, col: Any) -> str:
     default = col.get("default")
     if default is None and _emb_default is not None:
         default = _emb_default  # type-only default (col carried it in the type string)
+    # #407 (FW_DEBUG-surfaced on netflix r5): a NOT NULL column with NO default is a LANDMINE —
+    # the agent seed, the projected create, and the profile autocreate routinely OMIT it, so
+    # postgres NotNullViolations DROP the row (r5: all 7 profiles + episodes dropped on null
+    # created_at -> no profiles -> per-profile chains 404 -> business_chain wedge) or 500 the
+    # insert. For the types with an UNAMBIGUOUS safe default, supply it BY CONSTRUCTION (mirrors
+    # _ddl_type_from_introspect): NOT NULL timestamp -> now(), date -> CURRENT_DATE, time ->
+    # CURRENT_TIME, boolean -> false. Text/int/numeric are left alone (no universal default —
+    # a required name/email must stay required; no data invented).
+    _nn = (col.get("nullable") is False or col.get("not_null") or _emb_nn) and not _is_pk
+    if default is None and _nn:
+        _bt = _sqlt.upper()
+        if "TIMESTAMP" in _bt:
+            default = "now()"
+        elif _bt == "DATE":
+            default = "CURRENT_DATE"
+        elif _bt == "TIME":
+            default = "CURRENT_TIME"
+        elif "BOOL" in _bt:
+            default = "false"
     if default is not None:
         parts.append(f"DEFAULT {_quote_default(default)}")
     # Emit a STRUCTURED FK (``references``/``fk`` field) the same way the inline
