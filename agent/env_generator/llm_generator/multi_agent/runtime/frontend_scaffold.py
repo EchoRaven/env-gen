@@ -3325,6 +3325,21 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
         plan: List[tuple] = []
         seen_components: Set[str] = set()
         used_routes: Set[str] = set()
+        # #406: token-sets of pages that ALREADY carry an EXPLICIT route (the real, routed
+        # pages). A route-LESS page whose tokens are a SUBSET of one of these is a DUPLICATE
+        # — typically a #225 design-screen registration ('browse_home', route='', comp='')
+        # twinning the real routed page ('browse_home_page' @ /browse / BrowseHomePage). The
+        # component dedup below MISSES it (the twins derive different component names), so the
+        # route-less twin got wired at a NAME-DERIVED VARIANT route ('/browse-home') that ships
+        # as a framework FALLBACK STUB — which (a) HARD-BLOCKS delivery
+        # (deliverability_frontend_fallback_page), and (b) makes the reference screen map to the
+        # STUB instead of the real page, so visual fidelity can never match. Drop such twins.
+        # Reuses the #226 token vocabulary; SUBSET (not any-overlap) keeps it precise so a
+        # genuinely-new screen (browse_history vs /browse) is NOT falsely dropped.
+        _routed_page_toks = [
+            _semantic_tokens_226(p.get("route"), p.get("name"))
+            for p in (ui_pages or [])
+            if isinstance(p, dict) and str(p.get("route") or "").strip()]
         for i, page in enumerate(ui_pages or []):
             if not isinstance(page, dict):
                 continue
@@ -3334,6 +3349,13 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
             seen_components.add(comp)
             route = str(page.get("route") or "").strip()
             if not route:
+                # #406: drop a route-less duplicate of an already-routed page (see above) —
+                # else it wires a variant fallback-stub route that blocks delivery + defeats
+                # visual fidelity. Release the component so the real routed twin still wires.
+                _pt = _semantic_tokens_226(page.get("name"), comp)
+                if _pt and any(_pt <= _rt for _rt in _routed_page_toks):
+                    seen_components.discard(comp)
+                    continue
                 nm = re.sub(r"[^a-z0-9]+", "-",
                             str(page.get("name") or comp).lower()).strip("-")
                 # netflix r12: a ui_page named '<screen>_page' kickoff-registered with
