@@ -492,6 +492,18 @@ if _FWIntegrityError is not None:
             status, detail = 404, "referenced resource not found"
         elif code == "23505" or "unique constraint" in text or "duplicate key" in text:
             status, detail = 409, "duplicate resource"
+        elif code == "23502" or "null value in column" in text:
+            # FIX #411 (netflix r7/r8, live): a NOT-NULL violation names a REQUIRED
+            # request field the client OMITTED (r8: POST /api/my-list with no title_id).
+            # Surfacing WHICH column is legitimate required-field feedback — a 422 would
+            # say the same — NOT the FK/constraint/table internals #282 keeps generic. The
+            # verifier's chain (and the lane) can then auto-fill that field and retry
+            # instead of wedging business_chain on a permanently-empty create body.
+            import re as _fw_re
+            _nn = _fw_re.search(r'null value in column "?([a-z_][a-z0-9_]*)', text)
+            status, detail = 400, (
+                'null value in column "%s" violates not-null constraint' % _nn.group(1)
+                if _nn else "integrity constraint violated")
         else:
             status, detail = 400, "integrity constraint violated"
         # FIX #282 (tiktok r67, live): the mapping above is right, but returning ONLY the

@@ -1002,6 +1002,36 @@ _REQUIRED_FIELD_RE = re.compile(
     r"|missing\s+(?:required\s+)?(?:field\s+)?['\"]?([A-Za-z_]\w*)",
     re.IGNORECASE)
 
+# #411 (netflix r7/r8, live): a create step that inserted an explicit NULL for a
+# required NO-DEFAULT column 400s with psycopg ``null value in column "X" violates
+# not-null constraint`` (code 23502) — NOT a Pydantic 422, so _REQUIRED_FIELD_RE /
+# the structured-422 branch miss it, and the chain wedges (r8: POST /api/my-list →
+# 400 null title_id; the verifier omitted title_id because the endpoint's request
+# schema never declared it). Recover column X so the fill+retry sends it. SKIP the
+# DB-defaulted / system columns a handler must OMIT (id + created_at/updated_at and
+# any *_at timestamp): filling those with a literal would fight the DDL DEFAULT (see
+# #407/#409) — the fix there is the handler omitting them, not the chain sending one.
+_NOT_NULL_COL_RE = re.compile(
+    r'null value in column\s+\\?["\']?([A-Za-z_]\w*)', re.IGNORECASE)
+_NULLFILL_SKIP_COLS = {"id", "created_at", "updated_at"}
+
+
+def _notnull_missing_cols(body_text: "Optional[str]", method: str) -> "List[str]":
+    """#411: required NO-DEFAULT columns a create OMITTED, named by a NOT-NULL 400
+    (``null value in column "X"``, surfaced by backend_scaffold #411). Text scan —
+    tolerates JSON-escaped (``\\"X``) or plain quotes and a non-JSON body. SKIPs the
+    DB-defaulted / system cols a handler must OMIT (id + created_at/updated_at + any
+    ``*_at``): filling those fights the DDL DEFAULT (#407/#409), the wrong fix."""
+    out: "List[str]" = []
+    if method not in ("POST", "PUT", "PATCH"):
+        return out
+    for _m in _NOT_NULL_COL_RE.finditer(body_text or ""):
+        _c = _m.group(1)
+        if (_c and _c not in out and _c.lower() not in _NULLFILL_SKIP_COLS
+                and not _c.lower().endswith("_at")):
+            out.append(_c)
+    return out
+
 
 # #272: framework-projected-defect classifier (Hatch design principle #5 — separate "my
 # framework code is broken" from "the app the lane wrote is broken"). A projected handler is
@@ -1037,7 +1067,9 @@ def _missing_required_fields(body_text: Optional[str],
     ``query.q``). A plain-STRING detail ('text is required') is attributed to the
     BODY for a write method (only writes carry one). Domain-agnostic: reads the
     server's own error, never app knowledge."""
-    body: List[str] = []
+    # #411: seed with NOT-NULL columns the create omitted (scanned from the raw text so
+    # it survives a non-JSON body / the json-parse early-return below).
+    body: List[str] = _notnull_missing_cols(body_text, method)
     query: List[str] = []
     try:
         d = json.loads(body_text or "{}")
@@ -1980,7 +2012,10 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 _repaired = dict(body) if isinstance(body, Mapping) else (
                     body if not _miss_body else {})
                 for f in _miss_body:
-                    _repaired[f] = _filler
+                    # #411: an FK/id column needs an INTEGER, not the string filler — a
+                    # seeded parent row is id 1 (tables seed ids 1..N), satisfying both the
+                    # FK and NOT-NULL; the string filler would just re-fail on type/FK.
+                    _repaired[f] = 1 if f.endswith("_id") else _filler
                 _rpath = path
                 if _miss_query:
                     _rpath += ("&" if "?" in _rpath else "?") + "&".join(
