@@ -300,10 +300,21 @@ def _flow_key(name: str) -> str:
 _UI_FLOW_NAME_PREFIX = "validation:ui_flow:"
 
 
-def _index_ui_flow_records(hub_registry) -> Dict[str, str]:
+def _index_ui_flow_records(hub_registry, stale_before: float = 0.0) -> Dict[str, str]:
     """Return ``{flow_name: best_status}`` over validation:ui_flow records.
 
     LATEST-WINS by ``recorded_at`` (#357).
+
+    ``stale_before`` (#401): if > 0, a FAILED/ERROR record whose newest ``recorded_at`` is
+    older than this timestamp is DROPPED (the flow then reads as MISSING → re-verify). A
+    ui_flow verdict is verifier-driven and lags the build: a flow the frontend has since
+    FIXED keeps its old FAILURE record for the rest of the run, false-failing the delivery
+    gate to a STUCK/FAIL-FAST abort (netflix r3: browse_home/player recorded fail at 23:31,
+    fixed minutes later, never re-checked, aborted at 00:49). The caller passes the latest
+    build-validation time so a failure recorded against an EARLIER build is treated as needing
+    re-verification, not as a live regression. A PASSING record is NEVER dropped (a green flow
+    stays green — the regression-gate direction #357 protects is untouched); ``stale_before``
+    <= 0 (the default) preserves the old behaviour exactly.
 
     This used to be "passed if ANY record passed", which is right in one
     direction -- a later passing run should clear an earlier failure, matching
@@ -377,7 +388,45 @@ def _index_ui_flow_records(hub_registry) -> Dict[str, str]:
                 by_flow[flow] = "failed"
             elif prev is None:
                 by_flow[flow] = status
+    # #401: drop stale FAILURE records (older than the latest build validation) so a flow the
+    # frontend has since fixed re-reads as MISSING (re-verify) instead of a permanent hard-fail.
+    if stale_before and stale_before > 0:
+        for _f in [f for f, s in by_flow.items() if s in ("failed", "error")]:
+            _at = seen_at.get(_f)
+            if _at is not None and _at < stale_before:
+                del by_flow[_f]
     return by_flow
+
+
+# #401: grace so a genuine SAME-PASS failure (its ui_flow record is written seconds apart from
+# that pass's api_smoke record) is NOT mistaken for stale — only a failure predating the latest
+# build validation by more than this margin (i.e. a later full validation pass ran without
+# re-checking the flow) is dropped.
+_UI_FLOW_STALE_GRACE_S = 300.0
+
+
+def _latest_build_validation_time(hub_registry) -> float:
+    """#401: newest ``recorded_at`` across api_smoke validation records — the moment the CURRENT
+    build was last validated end-to-end. Returned minus a grace margin so a same-pass ui_flow
+    failure is preserved and only genuinely-older (stale) failures are dropped by
+    ``_index_ui_flow_records``. Best-effort: 0.0 (staleness disabled) on any hiccup."""
+    try:
+        results = hub_registry.get_validation_results(limit=1000) or []
+    except Exception:
+        return 0.0
+    latest = 0.0
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        meta = r.get("metadata") or {}
+        if meta.get("check") == "api_smoke" or "api_smoke" in str(r.get("name") or ""):
+            try:
+                _at = float(r.get("recorded_at") or 0)
+            except (TypeError, ValueError):
+                _at = 0.0
+            if _at > latest:
+                latest = _at
+    return (latest - _UI_FLOW_STALE_GRACE_S) if latest > 0 else 0.0
 
 
 def compute_flow_coverage(hub_registry, workspace=None) -> FlowCoverageReport:
@@ -399,7 +448,8 @@ def compute_flow_coverage(hub_registry, workspace=None) -> FlowCoverageReport:
     if not required:
         return FlowCoverageReport(source=source)
 
-    by_flow = _index_ui_flow_records(hub_registry)
+    by_flow = _index_ui_flow_records(
+        hub_registry, stale_before=_latest_build_validation_time(hub_registry))
     # #237: also index by suffix-normalized key so a record under `explore_page`
     # satisfies a required `explore` (and vice versa). A passing record under
     # EITHER spelling wins over a failing one under the other — same collapse
