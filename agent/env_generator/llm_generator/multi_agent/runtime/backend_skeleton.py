@@ -790,7 +790,32 @@ def _coerce_body(cls, valid):
         return valid
     out = dict(valid)
     for k, v in valid.items():
-        if k not in cols or v is None or isinstance(v, (list, dict)):
+        if k not in cols:
+            continue
+        if v is None:
+            # #420 (netflix r14, live): an EXPLICIT None OVERRIDES a column's DB
+            # default → NOT-NULL violation on INSERT. POST /api/my-list sent
+            # created_at=None (a Pydantic optional field defaulting to None) →
+            # 'null value in column "created_at" violates not-null constraint',
+            # regressing business_chain on re-validation despite DEFAULT now() in the
+            # DDL + server_default on the ORM column. Drop a None-valued key whose
+            # column can supply its OWN value (server_default / Python default /
+            # autoincrement PK) so the default/serial applies — the runtime twin of
+            # the #409 seed None-strip, on the create/update handler path, and the
+            # same "DB supplies it" signal used for the #390 sub-entity fill (line
+            # ~711). A None for a column WITHOUT a default STAYS → the #411
+            # IntegrityError handler 400s with the column name (correct
+            # required-field feedback, not a silent drop). Best-effort; generalizable
+            # (no product/column literals).
+            try:
+                _c = cols[k]
+                if (_c.server_default is not None or _c.default is not None
+                        or (_c.primary_key and _c.autoincrement)):
+                    out.pop(k, None)
+            except Exception:
+                pass
+            continue
+        if isinstance(v, (list, dict)):
             continue
         try:
             ct = cols[k].type
