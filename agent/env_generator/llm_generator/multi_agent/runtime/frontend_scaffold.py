@@ -2200,6 +2200,52 @@ def _asset_urls_227(design, asset_ids) -> Dict[str, str]:
     return out
 
 
+def _ref_image_pool(design) -> List[str]:
+    """#415 — served URLs of the app's STAGED REFERENCE PHOTOS: the real
+    photographic assets staged in design_system.json (backdrops/posters/stills…),
+    for the page-projector's HERO bg + RAIL/GRID posters. Rendering the app's OWN
+    staged imagery (not the seed rows' generic placeholders) is what makes a
+    projected screen look like the real product — the reference visual floor.
+
+    Selection is generalizable (NO product literals): photographic types only
+    (jpg/jpeg/png/webp), excluding icons/logos/placeholders/sprites/favicons/
+    wordmarks; PREFER poster/backdrop/still/thumb/hero/cover/banner-like assets,
+    else fall back to ALL qualifying photos. Returns served urls (staged_path
+    'public/assets/x.jpg' → '/assets/x.jpg'; else '/assets/<file>'), deduped and
+    order-preserving; [] when the app stages no usable photos (clean fallback)."""
+    _PHOTO = ("jpg", "jpeg", "png", "webp")
+    _EXCLUDE = ("icon", "logo", "placeholder", "sprite", "favicon", "wordmark")
+    _PREFER = ("backdrop", "poster", "still", "thumb", "hero", "cover", "banner")
+
+    def _served_url(a) -> Optional[str]:
+        sp = str(a.get("staged_path") or "").strip()
+        if sp.startswith("public/"):
+            return "/" + sp[len("public/"):]
+        if sp.startswith("/"):
+            return sp
+        f = str(a.get("file") or "").strip()
+        return ("/assets/" + f) if f else None
+
+    photos: List[Tuple[bool, str]] = []
+    seen: Set[str] = set()
+    for a in ((design or {}).get("assets") or []):
+        if not isinstance(a, dict):
+            continue
+        if str(a.get("type") or "").lower() not in _PHOTO:
+            continue
+        tokens = " ".join(str(a.get(k) or "")
+                          for k in ("id", "file", "staged_path")).lower()
+        if any(w in tokens for w in _EXCLUDE):
+            continue
+        url = _served_url(a)
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        photos.append((any(w in tokens for w in _PREFER), url))
+    preferred = [u for (p, u) in photos if p]
+    return preferred if preferred else [u for (_p, u) in photos]
+
+
 def _ref_nav_jsx(nav_routes, accent: str, vertical: bool,
                  asset_urls: Optional[Dict[str, str]] = None) -> str:
     """Measured-theme nav: vertical (left rail) or horizontal (top bar). Active
@@ -2384,6 +2430,19 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
     text = "#f5f5f5" if theme == "dark" else "#18181b"
     label = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").strip() or name
 
+    # #415 — the app's STAGED REFERENCE PHOTOS, injected as a JS pool so the HERO
+    # bg + RAIL/GRID posters paint the real product imagery instead of the seed
+    # rows' generic placeholders. When the app stages none, the pool is [] → every
+    # _refImg() returns null and the _imgOf(row) fallbacks make the page render
+    # exactly as before (clean fallback; _refImg is always defined). _refImg wraps
+    # (safe modulo) so any running index maps to a real photo.
+    _pool = _ref_image_pool(design)
+    _refimgs_js = (
+        "const _REFIMGS = " + json.dumps(_pool) + ";\n"
+        "const _refImg = (i) => (_REFIMGS.length ? "
+        "_REFIMGS[((i % _REFIMGS.length) + _REFIMGS.length) % _REFIMGS.length] "
+        ": null);\n")
+
     bands: Dict[str, List[Dict]] = {"left": [], "right": [], "top": [],
                                     "bottom": [], "main": []}
     for c in (screen.get("components") or []):
@@ -2527,11 +2586,15 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             hero_vh = min(max(_hh, 40.0), 85.0)
             _hero_urls = list(_asset_urls_227(design,
                                               hero_comp.get("assets")).values())
+            # #415 — a real staged photo first, then the hero's own mapped asset,
+            # then the row image. The conditional-render guard below keeps a broken
+            # <img> from rendering when every candidate is null (empty pool + no
+            # rows) so the page still builds.
             if _hero_urls:
-                _bg = json.dumps(_hero_urls[0])
+                _bg = "(_refImg(0) || " + json.dumps(_hero_urls[0]) + ")"
             else:
-                _bg = ("((cur && _imgOf(cur)) || (rows[0] && _imgOf(rows[0])) "
-                       "|| null)")
+                _bg = ("(_refImg(0) || (cur && _imgOf(cur)) || "
+                       "(rows[0] && _imgOf(rows[0])) || null)")
             _title = "((cur && _titleOf(cur)) || " + json.dumps(label) + ")"
             _btns = ""
             if action_labels:
@@ -2594,13 +2657,21 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
 
         def _rail_strip(ri: int, n: int, hdr: str) -> str:
             _hj = json.dumps(hdr)
+            # #415 — running index across rails so the poster wall shows DISTINCT
+            # real photos: rail 0 starts at 1 (index 0 is the hero), each later
+            # rail continues after the previous rail's slice length
+            # (Math.ceil(rows.length / n) == the _railSlice page size); consecutive
+            # posters use consecutive pool entries (+ i). _imgOf(row) is the
+            # fallback so an app with no staged photos renders exactly as before.
+            _src = ("(_refImg(1 + " + str(ri) + " * Math.ceil(rows.length / "
+                    + str(n) + ") + i) || _imgOf(row))")
             return (
                 "        <div className=\"px-6 py-4\">\n"
                 f"          <h3 className=\"mb-3 text-lg font-semibold\">{{{_hj}}}</h3>\n"
                 "          <div className=\"flex gap-3 overflow-x-auto pb-2\">\n"
                 f"            {{_railSlice(rows, {n}, {ri}).map((row, i) => (\n"
                 "              <div key={(row && row.id) || i} className=\"w-40 shrink-0\">\n"
-                "                {_imgOf(row) ? <img src={_imgOf(row)} alt=\"\" className=\"aspect-[2/3] w-full rounded-md object-cover\" /> : <div className=\"aspect-[2/3] w-full rounded-md\" style={{ backgroundColor: 'rgba(128,128,128,0.25)' }} />}\n"
+                "                {" + _src + " ? <img src={" + _src + "} alt=\"\" className=\"aspect-[2/3] w-full rounded-md object-cover\" /> : <div className=\"aspect-[2/3] w-full rounded-md\" style={{ backgroundColor: 'rgba(128,128,128,0.25)' }} />}\n"
                 "                <div className=\"mt-1 truncate text-xs opacity-80\">{_titleOf(row)}</div>\n"
                 "              </div>\n"
                 "            ))}\n"
@@ -2649,7 +2720,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             "            {rows.map((row, i) => (\n"
             "              <div key={(row && row.id) || i} className=\"overflow-hidden rounded-lg text-center\" "
             "style={{ backgroundColor: 'rgba(128,128,128,0.12)' }}>\n"
-            "                {_imgOf(row) ? <img src={_imgOf(row)} alt=\"\" className=\"aspect-[4/5] w-full object-cover\" /> : null}\n"
+            "                {(_refImg(i) || _imgOf(row)) ? <img src={_refImg(i) || _imgOf(row)} alt=\"\" className=\"aspect-[4/5] w-full object-cover\" /> : null}\n"
             "                <div className=\"px-3 py-2\">\n"
             "                  <div className=\"truncate text-sm font-semibold\">{_titleOf(row)}</div>\n"
             "                  {_subOf(row) ? <div className=\"truncate text-xs opacity-60\">{_subOf(row)}</div> : null}\n"
@@ -2726,7 +2797,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
                 "            {rows.map((row, i) => (\n"
                 "              <div key={(row && row.id) || i} className=\"overflow-hidden rounded-lg\" "
                 "style={{ backgroundColor: 'rgba(128,128,128,0.12)' }}>\n"
-                "                {_imgOf(row) ? <img src={_imgOf(row)} alt=\"\" className=\"aspect-[3/4] w-full object-cover\" /> : null}\n"
+                "                {(_refImg(i) || _imgOf(row)) ? <img src={_refImg(i) || _imgOf(row)} alt=\"\" className=\"aspect-[3/4] w-full object-cover\" /> : null}\n"
                 "                <div className=\"px-3 py-2\">\n"
                 "                  <div className=\"truncate text-sm font-medium\">{_titleOf(row)}</div>\n"
                 "                  {_subOf(row) ? <div className=\"truncate text-xs opacity-60\">{_subOf(row)}</div> : null}\n"
@@ -2765,7 +2836,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
         _STRUCTURED_MARKER + "\n"
         "import { useState, useEffect } from 'react';\n"
         "import { useParams } from 'react-router-dom';\n"
-        + _REF_HELPERS_JS + "\n"
+        + _REF_HELPERS_JS + _refimgs_js + "\n"
         f"export default function {name}() {{\n"
         "  const params = useParams();\n"
         "  const [data, setData] = useState(null);\n"
