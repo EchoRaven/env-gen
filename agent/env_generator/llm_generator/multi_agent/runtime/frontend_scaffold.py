@@ -2177,6 +2177,7 @@ const _subOf = (r) => { for (const k of ['snippet','preview','summary','descript
 const _metaOf = (r) => Object.keys(r || {}).filter((k) => !['id','password','password_hash'].includes(k) && !/_url$|^url$|^image$|^thumbnail$|^avatar$|title|subject|name|description|body|snippet|caption/.test(k) && (typeof r[k] !== 'object')).slice(0, 3);
 const _videoOf = (r) => { for (const k of ['video_url','media_url','playback_url','stream_url','video','src']) { const v = r && r[k]; if (typeof v === 'string' && v) return v; } const u = r && r.url; if (typeof u === 'string' && /\\.(mp4|webm|mov|m3u8)(\\?|$)/i.test(u)) return u; return null; };
 const _countsOf = (r) => Object.keys(r || {}).filter((k) => /(count|likes|views|shares|saves|comments|followers|plays)$/i.test(k) && typeof r[k] === 'number').slice(0, 5);
+const _railSlice = (rows, n, i) => { const arr = rows || []; const p = Math.ceil((arr.length || 0) / (n || 1)) || 1; const s = arr.slice(i * p, (i + 1) * p); return s.length ? s : arr; };
 """
 
 
@@ -2245,6 +2246,118 @@ def _ref_nav_jsx(nav_routes, accent: str, vertical: bool,
         "          <button onClick={() => { localStorage.clear(); window.location.href = '/login'; }} "
         'className="ml-auto rounded-md px-3 py-1.5 text-sm opacity-60 hover:opacity-100">Log out</button>\n'
         "        </nav>")
+
+
+# ── HERO / RAIL detection (generalizable — role/region/geometry, NO product
+# literals) ──────────────────────────────────────────────────────────────────
+# Streaming home pages, storefronts and dashboards encode their main surface as a
+# HERO band (a big featured item + action buttons) OVER one-or-more horizontal
+# poster RAILS — not a single grid. Any app whose design_system marks such
+# regions then renders reference-faithfully; screens without them are untouched
+# (see the main-surface branch in _render_reference_page).
+_HERO_ROLE_TERMS = ("hero", "featured", "title art", "title-art", "billboard",
+                    "spotlight")
+# sub-regions OF a hero (buttons / metadata) are not the banner itself
+_HERO_SUBPART_TERMS = ("button", "action", "metadata")
+_RAIL_ROLE_TERMS = ("rail", "carousel", "horizontal", "poster")
+# NON-rail siblings that may still share a token with a rail id (e.g.
+# 'rail-header', 'hero-metadata-row') — excluded from rail detection
+_RAIL_NEG_TERMS = ("header", "hero", "metadata", "nav", "tab", "billboard",
+                   "spotlight", "featured", "title art", "title-art")
+
+
+def _comp_text_221(comp) -> str:
+    return " ".join(str((comp or {}).get(k) or "")
+                    for k in ("id", "role", "state")).lower()
+
+
+def _comp_region_221(comp):
+    """(x0, y0, x1, y1) floats, or None when the region is missing/malformed."""
+    try:
+        x0, y0, x1, y1 = (float(v) for v in ((comp or {}).get("region") or []))
+        return x0, y0, x1, y1
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_rail_comp(comp) -> bool:
+    """A horizontal poster rail: NAMED by role/id (rail/carousel/poster/…), or a
+    wide-short region whose measured geometry is many columns (>=4) / a 'row'.
+    Excludes hero/header/nav siblings so 'rail-header' is not itself a rail."""
+    t = _comp_text_221(comp)
+    if any(term in t for term in _RAIL_NEG_TERMS):
+        return False
+    if any(term in t for term in _RAIL_ROLE_TERMS):
+        return True
+    r = _comp_region_221(comp)
+    if r is None:
+        return False
+    x0, y0, x1, y1 = r
+    h, w = y1 - y0, x1 - x0
+    if not (0.0 < h < 0.35 and w >= 0.5):
+        return False
+    try:
+        cols = int(((comp.get("geometry") or {}).get("columns")) or 0)
+    except (TypeError, ValueError):
+        cols = 0
+    return cols >= 4 or bool(re.search(r"\brow\b", t))
+
+
+def _is_hero_comp(comp) -> bool:
+    """A hero/billboard banner: NAMED by role/id, OR a large UPPER full-width band
+    (a band, not a whole-page content region — those stay grids/lists, so grid/
+    list screens are unaffected). Rail-shaped regions are not heroes."""
+    t = _comp_text_221(comp)
+    if any(term in t for term in _HERO_ROLE_TERMS):
+        return not any(term in t for term in _HERO_SUBPART_TERMS)
+    if _is_rail_comp(comp):
+        return False
+    r = _comp_region_221(comp)
+    if r is None:
+        return False
+    x0, y0, x1, y1 = r
+    h, w = y1 - y0, x1 - x0
+    return y0 < 0.5 and 0.22 < h <= 0.7 and w > 0.6 and y1 <= 0.85
+
+
+def _is_action_comp(comp) -> bool:
+    t = _comp_text_221(comp)
+    return ("button" in t) or ("action" in t)
+
+
+def _action_labels_221(text) -> List[str]:
+    """Named action buttons from a measured role (e.g. "Play (primary) and More
+    Info (secondary) buttons" → ['Play', 'More Info']). Quoted labels first, else
+    short Capitalized phrases before a '(' role-marker or the word 'button'."""
+    text = str(text or "")
+    labels = re.findall(r"['‘’“”\"]([A-Za-z][A-Za-z ]{1,18}?)['‘’“”\"]", text)
+    if not labels:
+        labels = re.findall(
+            r"\b([A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)?)\s*(?=\(|button)", text)
+    out: List[str] = []
+    seen: Set[str] = set()
+    for l in labels:
+        l = l.strip()
+        if l and 1 < len(l) <= 20 and l.lower() not in seen:
+            seen.add(l.lower())
+            out.append(l)
+    return out[:3]
+
+
+def _section_title_221(text) -> str:
+    """A rail's header text: a quoted section title, else the noun phrase after
+    'rail/carousel/row of …' (both env-agnostic)."""
+    text = str(text or "")
+    m = re.search(r"['‘’“”\"]([^'‘’“”\"]{2,60})['‘’“”\"]", text)
+    if m:
+        return m.group(1).strip()
+    m = re.search(
+        r"\b(?:rail|carousel|row|list|grid)\s+of\s+(.+?)"
+        r"(?:\s+(?:titles|items|videos|posters|shows|movies)\b|[.;]|$)",
+        text, re.I)
+    if m:
+        return m.group(1).strip()
+    return ""
 
 
 def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str, Any],
@@ -2372,7 +2485,145 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
     # ── main surface: media player, else grid/list, else detail panel ──
     media_comp = next((c for c in bands["main"] if _comp_kind_221(c) == "media"), None)
     list_comp = next((c for c in bands["main"] if _comp_kind_221(c) == "list"), None)
-    if rep_cards:
+
+    # ── HERO + RAIL surface (streaming home / storefront / dashboard): a big
+    # featured banner over horizontal poster rails, from the measured regions.
+    # Rails detected first so a shared region isn't double-classified; a hero
+    # region that is also a rail counts as a rail. This branch is taken ONLY when
+    # a hero or rail is present — otherwise the existing grid/list/media path
+    # below is unchanged (grid/list screens have a whole-page content region,
+    # which _is_hero_comp rejects, and no rail role/geometry). Rails stack DOWN
+    # the page, so the low ones land in the (otherwise-dropped) "bottom" band —
+    # scan main+bottom for rails/headers (purely additive; bottom nav bars are
+    # excluded by the rail NEG terms). Heroes are upper → main only. ──
+    _rail_pool = bands["main"] + bands["bottom"]
+    rail_comps = [c for c in _rail_pool if _is_rail_comp(c)]
+    rail_comps.sort(key=lambda c: (_comp_region_221(c) or (0.0, 0.0, 0.0, 0.0))[1])
+    hero_comps = [c for c in bands["main"] if _is_hero_comp(c) and c not in rail_comps]
+
+    def _area_221(c) -> float:
+        r = _comp_region_221(c)
+        return (r[2] - r[0]) * (r[3] - r[1]) if r else 0.0
+
+    hero_comp = max(hero_comps, key=_area_221) if hero_comps else None
+
+    if hero_comp is not None or rail_comps:
+        # named action buttons for the hero (only when a component names them)
+        action_labels: List[str] = []
+        if hero_comp is not None:
+            _act = next((c for c in bands["main"]
+                         if _is_action_comp(c)
+                         and _action_labels_221(c.get("role") or c.get("id"))),
+                        None)
+            if _act is not None:
+                action_labels = _action_labels_221(
+                    str(_act.get("role") or "") or str(_act.get("id") or ""))
+
+        # ── HERO band ──
+        hero_jsx = ""
+        if hero_comp is not None:
+            _hr = _comp_region_221(hero_comp)
+            _hh = (_hr[3] - _hr[1]) * 100.0 if _hr else 0.0
+            hero_vh = min(max(_hh, 40.0), 85.0)
+            _hero_urls = list(_asset_urls_227(design,
+                                              hero_comp.get("assets")).values())
+            if _hero_urls:
+                _bg = json.dumps(_hero_urls[0])
+            else:
+                _bg = ("((cur && _imgOf(cur)) || (rows[0] && _imgOf(rows[0])) "
+                       "|| null)")
+            _title = "((cur && _titleOf(cur)) || " + json.dumps(label) + ")"
+            _btns = ""
+            if action_labels:
+                _bp: List[str] = []
+                for _bi, _bl in enumerate(action_labels):
+                    _blab = json.dumps(_bl)
+                    if _bi == 0:
+                        _bp.append(
+                            "            <button className=\"rounded px-6 py-2 "
+                            "text-sm font-semibold\" "
+                            f"style={{{{ backgroundColor: '{accent}', color: '#ffffff' }}}}>"
+                            f"{{{_blab}}}</button>\n")
+                    else:
+                        _bp.append(
+                            "            <button className=\"rounded px-6 py-2 "
+                            "text-sm font-semibold\" "
+                            "style={{ backgroundColor: 'rgba(128,128,128,0.45)', color: 'inherit' }}>"
+                            f"{{{_blab}}}</button>\n")
+                _btns = ("          <div className=\"mt-5 flex flex-wrap gap-3\">\n"
+                         + "".join(_bp)
+                         + "          </div>\n")
+            hero_jsx = (
+                "        <section className=\"relative flex flex-col justify-end overflow-hidden\" "
+                f"style={{{{ minHeight: '{hero_vh:.0f}vh' }}}}>\n"
+                f"          {{{_bg} ? <img src={{{_bg}}} alt=\"\" className=\"absolute inset-0 h-full w-full object-cover\" /> : null}}\n"
+                "          <div className=\"absolute inset-0\" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.25) 55%, rgba(0,0,0,0.1) 100%)' }} />\n"
+                "          <div className=\"relative z-10 max-w-2xl px-8 pb-12\">\n"
+                f"            <h1 className=\"text-4xl font-bold drop-shadow-lg\" style={{{{ color: '#ffffff' }}}}>{{{_title}}}</h1>\n"
+                "            {cur && _subOf(cur) ? <p className=\"mt-3 text-sm\" style={{ color: '#ffffff', opacity: 0.9 }}>{_subOf(cur)}</p> : null}\n"
+                + _btns +
+                "          </div>\n"
+                "        </section>\n")
+
+        # ── RAIL strips (each a horizontal-scroll poster row) ──
+        _header_comps = [c for c in _rail_pool
+                         if (("header" in _comp_text_221(c))
+                             or ("section title" in _comp_text_221(c)))
+                         and not _is_rail_comp(c)]
+
+        def _rail_header(rc, ri: int) -> str:
+            _rr = _comp_region_221(rc)
+            _ry0 = _rr[1] if _rr else 0.0
+            _best, _bestd = None, 1e9
+            for _hc in _header_comps:
+                _hr = _comp_region_221(_hc)
+                if _hr is None:
+                    continue
+                _d = _ry0 - _hr[3]  # header just above the rail top
+                if -0.08 <= _d < _bestd:
+                    _best, _bestd = _hc, _d
+            if _best is not None:
+                _t = _section_title_221(str(_best.get("role") or "") + " "
+                                        + str(_best.get("id") or ""))
+                if _t:
+                    return _t
+            _t = _section_title_221(str(rc.get("role") or ""))
+            if _t:
+                return _t
+            return label if len(rail_comps) <= 1 else f"{label} {ri + 1}"
+
+        def _rail_strip(ri: int, n: int, hdr: str) -> str:
+            _hj = json.dumps(hdr)
+            return (
+                "        <div className=\"px-6 py-4\">\n"
+                f"          <h3 className=\"mb-3 text-lg font-semibold\">{{{_hj}}}</h3>\n"
+                "          <div className=\"flex gap-3 overflow-x-auto pb-2\">\n"
+                f"            {{_railSlice(rows, {n}, {ri}).map((row, i) => (\n"
+                "              <div key={(row && row.id) || i} className=\"w-40 shrink-0\">\n"
+                "                {_imgOf(row) ? <img src={_imgOf(row)} alt=\"\" className=\"aspect-[2/3] w-full rounded-md object-cover\" /> : <div className=\"aspect-[2/3] w-full rounded-md\" style={{ backgroundColor: 'rgba(128,128,128,0.25)' }} />}\n"
+                "                <div className=\"mt-1 truncate text-xs opacity-80\">{_titleOf(row)}</div>\n"
+                "              </div>\n"
+                "            ))}\n"
+                "          </div>\n"
+                "        </div>\n")
+
+        _rails_html = ""
+        if rail_comps:
+            _n = len(rail_comps)
+            for _ri, _rc in enumerate(rail_comps):
+                _rails_html += _rail_strip(_ri, _n, _rail_header(_rc, _ri))
+        elif hero_comp is not None:
+            # hero without an explicit rail → one default rail as a real floor
+            _rails_html = _rail_strip(0, 1, label)
+
+        main_jsx = (
+            "        <section className=\"flex flex-1 flex-col overflow-y-auto\">\n"
+            "          {error ? <p className=\"px-6 pt-4 text-sm opacity-70\">{error}</p> : null}\n"
+            + hero_jsx
+            + _rails_html
+            + "          {rows.length === 0 && !error ? <p className=\"px-6 py-6 text-sm opacity-50\">Loading...</p> : null}\n"
+            "        </section>\n")
+    elif rep_cards:
         _xs = set()
         for c in rep_cards:
             try:
