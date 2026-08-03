@@ -1279,6 +1279,10 @@ async def run_visual_fidelity(
         summary += " [advisory (overlay, non-blocking): %s]" % ", ".join(_adv_note)
     if _blank_screens:
         summary += " [blank capture: %s]" % ", ".join(_blank_screens)
+    # #419: PERSIST the per-dimension verdict to disk so fidelity iteration is
+    # TARGETED, not guessed (see _persist_verdict). Best-effort + write-only.
+    _persist_verdict(project_dir, passed=passed, min_similarity=min_similarity,
+                     summary=summary, coverage=_coverage, results=results)
     # FIX #75a: a REFUNDABLE transient ONLY when EVERY judged screen was a blank shell
     # (no real verdict obtained). If SOME screens produced real shots, do NOT refund —
     # their verdicts + remediation must flow this tick (a partial-blank must not discard
@@ -1288,6 +1292,42 @@ async def run_visual_fidelity(
 
             "capture_transient": bool(_blank_screens) and not shots,
             "min_similarity": min_similarity}
+
+
+def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
+                     summary: str, coverage: Any, results: List[Mapping[str, Any]]) -> None:
+    """#419: write design/visual_gate/verdict.json (latest attempt, overwritten)
+    with each screen's per-dimension detail, so fidelity iteration is TARGETED.
+
+    The judge scores 7 rich dimensions (layout / components / style / color /
+    typography / iconography / copy) per screen, but only the AGGREGATE similarity
+    reached the log and the full detail went ONLY into the transient frontend
+    remediation task — so post-hoc you could not tell WHICH dimension a screen lost
+    points on (is browse_home 0.25 a layout, a color, or a chrome-copy miss?). This
+    dumps dimensions/deviations/fixes/measured color diffs to disk so the next lever
+    fixes the ACTUAL weak dimension instead of guessing. Best-effort + write-only:
+    it never changes gate behavior and never raises into the judge loop.
+    Env/app-agnostic diagnostic."""
+    try:
+        vdir = Path(project_dir) / "design" / "visual_gate"
+        vdir.mkdir(parents=True, exist_ok=True)
+        screens = [{
+            "name": r.get("name"), "route": r.get("route"),
+            "similarity": r.get("similarity"), "passed": r.get("passed"),
+            "advisory": r.get("advisory"), "empty_state": r.get("empty_state"),
+            "blank": r.get("blank"),
+            "dimensions": r.get("dimensions") or {},
+            "deviations": r.get("deviations") or [],
+            "fixes": r.get("fixes") or [],
+            "measured_deviations": r.get("measured_deviations") or [],
+            "summary": r.get("summary") or "",
+        } for r in results]
+        (vdir / "verdict.json").write_text(json.dumps({
+            "passed": passed, "min_similarity": min_similarity,
+            "summary": summary, "coverage": coverage, "screens": screens,
+        }, indent=2, default=str), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def _measured_deviations(project_dir: Any, screen_name: str, screenshot_path: str) -> List[Dict[str, Any]]:
