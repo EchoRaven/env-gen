@@ -3089,12 +3089,18 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
         "  const [error, setError] = useState('');\n"
         "  const [idx, setIdx] = useState(0);\n"
         "  useEffect(() => {\n"
-        "    const token = (localStorage.getItem('access_token') || localStorage.getItem('token'));\n"
-        f"    fetch({_api_path_to_js(get_ep)}, token ? {{ headers: {{ Authorization: 'Bearer ' + token }} }} : {{}})\n"
-        "      .then((r) => r.json())\n"
-        "      .then(setData)\n"
-        "      .catch((e) => setError(String(e)));\n"
-        "  }, []);\n"
+        + ("    const token = (localStorage.getItem('access_token') || localStorage.getItem('token'));\n"
+           f"    fetch({_api_path_to_js(get_ep)}, token ? {{ headers: {{ Authorization: 'Bearer ' + token }} }} : {{}})\n"
+           "      .then((r) => r.json())\n"
+           "      .then(setData)\n"
+           "      .catch((e) => setError(String(e)));\n"
+           if get_ep else
+           # #426: no GET endpoint (e.g. a player/media screen with only param-fetched
+           # data) — render the reference STRUCTURE without a data fetch; emitting
+           # fetch('') would hit the page HTML → JSON.parse error = the very
+           # fetch-error this projection replaces.
+           "    /* no GET endpoint for this screen: render structure without a data fetch */\n")
+        + "  }, []);\n"
         "  const rows = Array.isArray(data && data.items)\n"
         "    ? data.items\n"
         "    : (data && data.item ? [data.item] : (Array.isArray(data) ? data : []));\n"
@@ -3249,18 +3255,29 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
     write_ep = next(((m, p) for (m, p) in parsed if m == "POST"), None) \
         or next(((m, p) for (m, p) in parsed if m in ("PUT", "PATCH", "DELETE")), None)
 
-    # #221: a route covered by a MEASURED design screen projects the reference's
-    # real region structure (populated, functional) — never the generic list.
-    if get_ep:
-        _screen = _design_screen_for_route(
-            design, page.get("route"),
-            hints=(page.get("name"), page.get("id"), page.get("component"), name))
-        if _screen is not None:
-            try:
-                return _render_reference_page(name, page, _screen, design or {},
-                                              nav_routes, get_ep)
-            except Exception:
-                pass  # fall through to the generic floor — never break the build
+    # #221 + #426: a route covered by a MEASURED design screen projects the
+    # reference's real region structure — even WITHOUT a GET list endpoint. The
+    # player/media/detail screens whose data comes from a PARAM-fetched resource
+    # (not a collection GET) had no get_ep, so this gate skipped them and the lane's
+    # fetch-error page shipped un-projected (netflix player 0.10-0.15). Compute the
+    # design screen regardless of get_ep; _render_reference_page skips its data fetch
+    # when get_ep is empty (guarded), so it renders the structure (video/media
+    # surface, region bands) without emitting a broken fetch(''). Screens with NO
+    # design match fall through to the get_ep-gated floors below (unchanged).
+    _screen = None
+    if design:
+        try:
+            _screen = _design_screen_for_route(
+                design, page.get("route"),
+                hints=(page.get("name"), page.get("id"), page.get("component"), name))
+        except Exception:
+            _screen = None
+    if _screen is not None:
+        try:
+            return _render_reference_page(name, page, _screen, design or {},
+                                          nav_routes, get_ep or "")
+        except Exception:
+            pass  # fall through to the generic floor — never break the build
 
     if get_ep:
         # #296 MEASURED FLOOR: when THIS env's measured palette is available,
