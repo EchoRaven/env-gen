@@ -2831,20 +2831,27 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             _title = "((cur && _titleOf(cur)) || " + json.dumps(label) + ")"
             _btns = ""
             if action_labels:
+                # #425: reference hero CTAs — the PRIMARY is a WHITE pill with a play
+                # glyph (▶), secondaries are translucent-gray with an info glyph (ⓘ);
+                # the projector shipped an accent-filled rect w/ no glyph (judge: "Play
+                # is red not white; buttons lack icons"). Generic media-CTA styling —
+                # generalizable, no product literals.
                 _bp: List[str] = []
                 for _bi, _bl in enumerate(action_labels):
                     _blab = json.dumps(_bl)
                     if _bi == 0:
                         _bp.append(
-                            "            <button className=\"rounded px-6 py-2 "
-                            "text-sm font-semibold\" "
-                            f"style={{{{ backgroundColor: '{accent}', color: '#ffffff' }}}}>"
+                            "            <button className=\"flex items-center gap-2 "
+                            "rounded px-6 py-2 text-sm font-semibold\" "
+                            "style={{ backgroundColor: '#ffffff', color: '#000000' }}>"
+                            "<span aria-hidden=\"true\">▶</span>"
                             f"{{{_blab}}}</button>\n")
                     else:
                         _bp.append(
-                            "            <button className=\"rounded px-6 py-2 "
-                            "text-sm font-semibold\" "
-                            "style={{ backgroundColor: 'rgba(128,128,128,0.45)', color: 'inherit' }}>"
+                            "            <button className=\"flex items-center gap-2 "
+                            "rounded px-6 py-2 text-sm font-semibold\" "
+                            "style={{ backgroundColor: 'rgba(109,109,110,0.7)', color: '#ffffff' }}>"
+                            "<span aria-hidden=\"true\">ⓘ</span>"
                             f"{{{_blab}}}</button>\n")
                 _btns = ("          <div className=\"mt-5 flex flex-wrap gap-3\">\n"
                          + "".join(_bp)
@@ -2857,6 +2864,10 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
                 "          <div className=\"relative z-10 max-w-2xl px-8 pb-12\">\n"
                 f"            <h1 className=\"text-4xl font-bold drop-shadow-lg\" style={{{{ color: '#ffffff' }}}}>{{{_title}}}</h1>\n"
                 "            {cur && _subOf(cur) ? <p className=\"mt-3 text-sm\" style={{ color: '#ffffff', opacity: 0.9 }}>{_subOf(cur)}</p> : null}\n"
+                # #425: metadata row (year / maturity rating / duration) from the
+                # title's own fields — reference heroes show it; data-driven so a
+                # non-media app whose rows lack these fields renders nothing.
+                "            {cur && (cur.year || cur.maturity_rating || cur.duration || cur.runtime) ? <div className=\"mt-2 flex flex-wrap items-center gap-3 text-sm font-medium\" style={{ color: '#ffffff', opacity: 0.85 }}>{[cur.year, cur.maturity_rating, cur.duration || cur.runtime].filter(Boolean).map((m, mi) => <span key={mi}>{m}</span>)}</div> : null}\n"
                 + _btns +
                 "          </div>\n"
                 "        </section>\n")
