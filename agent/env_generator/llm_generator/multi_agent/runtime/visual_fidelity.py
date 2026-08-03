@@ -1795,6 +1795,31 @@ class VisualFidelityGate:
         self._verdict_cache = {}       # #142: pixel-keyed verdicts are per milestone
         self.last_judgment_at = None   # #145: idle-source stamp is per milestone
 
+    def _frontend_wiring_blockers(self) -> list:
+        """#417: declared ui_pages with a HARD wiring defect (declared route not
+        wired in App.jsx, or the component file missing), via the delivery gate's
+        OWN static check (``ui_page_delivery_blockers``). Used to gate the visual
+        judge so it NEVER scores a pre-wiring app: api_smoke (which triggers this
+        loop) probes the BACKEND only, so it goes green while frontend routes are
+        still unwired — those routes fall through App.jsx's ``*`` catch-all and
+        render a redirect/404 (a NON-blank page, so the capture_transient refund
+        misses it), and the judge scores the projected UI at ~0.00. Best-effort
+        ``[]`` on any fault — an audit hiccup must never wedge the judge shut."""
+        orch = self._orch
+        try:
+            from .frontend_audit import ui_page_delivery_blockers
+            from pathlib import Path as _P
+            out = getattr(orch, "output_dir", None)
+            workhub = getattr(getattr(orch, "hubs", None), "workhub", None)
+            if not out or workhub is None:
+                return []
+            src = _P(out) / "app" / "frontend" / "src"
+            if not src.exists():
+                src = _P(out) / "frontend" / "src"
+            return ui_page_delivery_blockers(src, workhub) or []
+        except Exception:
+            return []
+
     async def maybe_run(self) -> None:
         """VISUAL FIDELITY gate — runs after api_smoke passes. Screenshots the
         running frontend on the routes the reference images depict, has the
@@ -1832,6 +1857,32 @@ class VisualFidelityGate:
                 # attempt budget counts DISTINCT source versions, so do NOT
                 # spend an attempt on an unchanged signature (increment AFTER
                 # this check).
+                return
+            # #417 (2026-08-02, live r13 diagnosis): do NOT judge until the
+            # frontend is actually WIRED. api_smoke (which gates this loop via
+            # framework_validation) probes the BACKEND only, so it goes green while
+            # declared ui_pages are still unwired — their routes fall through
+            # App.jsx's `*` catch-all and render a redirect/404 (NOT a blank shell,
+            # so the capture_transient refund below never catches them). r13 judged
+            # 12 screens at 18:22 (player.png 9.7KB, my_list.png 14KB — empty),
+            # scored them 0.00–0.35, filed a misleading "UI doesn't match" P1, and
+            # BURNED its one real attempt — yet the frontend didn't wire App.jsx
+            # until 18:51 (24min later) and the projector's REAL output was never
+            # judged (delivered below-threshold). Skip while pages are unwired: no
+            # attempt spent, no verdict recorded, no misleading remediation. The
+            # delivery gate's OWN deliverability_ui_page_unwired check already
+            # blocks release until the lane wires them (orchestrator returns "not
+            # deliverable yet" before the visual deferral clock is even anchored),
+            # so this loop then makes its FIRST judgment on the WIRED app. Reuses
+            # the delivery gate's single-source wiring check — env/app-agnostic.
+            _unwired = self._frontend_wiring_blockers()
+            if _unwired:
+                orch._logger.warning(
+                    "Visual fidelity: %s ui_page(s) still UNWIRED (e.g. %s) — "
+                    "deferring the judge until the frontend is wired (no attempt "
+                    "spent). Scoring a pre-wiring app judges catch-all/404 routes, "
+                    "not the projected UI.",
+                    len(_unwired), str(_unwired[0])[:120])
                 return
             self.attempts = self.attempts + 1
             # Per-component MODEL config: the visual JUDGE may run its own model
