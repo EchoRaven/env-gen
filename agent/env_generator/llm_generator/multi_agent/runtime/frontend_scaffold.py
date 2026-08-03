@@ -2313,6 +2313,88 @@ def _nav_utility_icons(design) -> List[Tuple[str, str]]:
     return out
 
 
+def _ref_nav_labels(design) -> List[str]:
+    """#422: the reference's measured primary-nav labels IN ORDER, parsed from the
+    design_system's primary-nav-links component role (e.g. role='horizontal primary
+    nav: Home, Shows, Movies, Games, New & Popular, My List, Browse by Languages').
+    The projector otherwise labels nav items from the URL segment (/new→'New',
+    /browse→'Browse'), which the visual judge flagged as WRONG copy on every r15
+    screen (copy dim 0.40). [] when no such enumeration exists (→ keep segment
+    labels). Generalizable — reads the design's own measured nav, no product
+    literals."""
+    best: List[str] = []
+    for s in ((design or {}).get("screens") or []):
+        if not isinstance(s, Mapping):
+            continue
+        for c in (s.get("components") or []):
+            if not isinstance(c, Mapping):
+                continue
+            cid = str(c.get("id", "")).lower()
+            role = str(c.get("role", ""))
+            if not ("primary-nav" in cid or "primary nav" in role.lower()
+                    or ("nav" in cid and "link" in cid)):
+                continue
+            # labels are enumerated after a colon or inside parens in the role text
+            m = re.search(r"(?:nav|links|categories|menu)\b[^:()]*[:(]\s*(.+)$",
+                          role, re.I)
+            if not m:
+                continue
+            seg = m.group(1).rstrip(") .")
+            # everything enumerated in a primary-nav-links role IS a nav link — do
+            # not name-filter (e.g. 'Profile' is a legit nav item for many apps);
+            # only length/alpha-guard against junk.
+            labels = [x.strip(" .)") for x in seg.split(",")]
+            labels = [l for l in labels
+                      if 1 <= len(l) <= 24 and re.search(r"[A-Za-z]", l)]
+            if len(labels) > len(best):
+                best = labels
+    return best
+
+
+def _assign_ref_labels(routes, design):
+    """#422: relabel each (segment_label, route) with the best UNIQUE reference nav
+    label (design-measured), keeping the ROUTE/href UNCHANGED so navigation still
+    works. Greedy by descending token-overlap so a stronger match claims a shared
+    label first — resolving the collision where '/browse' ('Browse', the home page)
+    and '/browse/languages' both token-match 'Browse by Languages': the 2-token
+    '/browse/languages' claims it, then a leftover Home-type label is paired to the
+    primary browse/root route. Routes with no confident label KEEP their segment
+    label (never a regression). Env/app-agnostic."""
+    ref = _ref_nav_labels(design)
+    if not ref:
+        return routes
+    rtoks = [_semantic_tokens_226(lbl, rt) for (lbl, rt) in routes]
+    reftoks = {rl: _semantic_tokens_226(rl) for rl in ref}
+    scored = []
+    for ri in range(len(routes)):
+        for rl in ref:
+            n = len(rtoks[ri] & reftoks[rl])
+            if n > 0:
+                scored.append((n, ri, rl))
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    out_label: Dict[int, str] = {}
+    used_ref: set = set()
+    for _n, ri, rl in scored:
+        if ri in out_label or rl in used_ref:
+            continue
+        out_label[ri] = rl
+        used_ref.add(rl)
+    # a leftover Home-type ref label (no token match to any route) → the primary
+    # browse/root route among those still unassigned.
+    leftover = [rl for rl in ref if rl not in used_ref]
+    home_like = next((rl for rl in leftover
+                      if reftoks[rl] & {"home", "browse", "for", "you", "discover"}),
+                     None)
+    if home_like:
+        unassigned = [ri for ri in range(len(routes)) if ri not in out_label]
+        if unassigned:
+            prim = min(unassigned,
+                       key=lambda ri: (routes[ri][1] not in ("/", "/browse", "/home"),
+                                       len(routes[ri][1])))
+            out_label[prim] = home_like
+    return [(out_label.get(ri, lbl), rt) for ri, (lbl, rt) in enumerate(routes)]
+
+
 def _ref_nav_jsx(nav_routes, accent: str, vertical: bool,
                  asset_urls: Optional[Dict[str, str]] = None,
                  design: Optional[Dict[str, Any]] = None) -> str:
@@ -2327,6 +2409,8 @@ def _ref_nav_jsx(nav_routes, accent: str, vertical: bool,
               for (l, r) in (nav_routes or []) if str(r).strip()]
     if not routes:
         return ""
+    # #422: relabel with the reference's measured nav labels (href unchanged).
+    routes = _assign_ref_labels(routes, design)
     asset_urls = asset_urls or {}
     # #421: prefer the brand wordmark resolved from the WHOLE design_system (the
     # nav component's own asset list routinely omits it) over the scoped lookup.
