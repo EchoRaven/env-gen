@@ -213,25 +213,126 @@ def load_screen_classifications(project_dir: Any) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+def load_ui_pages(project_dir: Any) -> List[Dict[str, Any]]:
+    """FIX #416 — the app's REGISTERED ui_pages (shared/hubs/registryhub_ui_pages.json)
+    as [{name, route, component}] for every page carrying a real route. This is the
+    app's OWN authoritative statement of which routed pages it actually built. The
+    visual gate uses it to link a measured design screen to the ACTUAL app route of
+    its page (routes are the stable key — a param route like /title/:id no filename
+    token derives), and to catch a real page the pixel-only design-prep analyst
+    (#132) mislabeled an overlay. Empty on any failure — the heuristics remain."""
+    out: List[Dict[str, Any]] = []
+    try:
+        up = Path(project_dir) / "shared" / "hubs" / "registryhub_ui_pages.json"
+        if not up.is_file():
+            return out
+        raw = json.loads(up.read_text(encoding="utf-8"))
+        if isinstance(raw, Mapping):
+            items = [{"name": v.get("name") or k, "route": v.get("route"),
+                      "component": v.get("component")}
+                     for k, v in raw.items()
+                     if k != "_meta" and isinstance(v, Mapping)]
+        elif isinstance(raw, list):
+            items = [v for v in raw if isinstance(v, Mapping)]
+        else:
+            items = []
+        for v in items:
+            route = str(v.get("route") or "").strip()
+            if not route:
+                continue
+            out.append({"name": str(v.get("name") or ""), "route": route,
+                        "component": str(v.get("component") or "")})
+    except Exception:
+        return []
+    return out
+
+
+# #416: the #226 screen<->page reconciliation vocabulary, kept as a LOCAL copy of
+# frontend_scaffold._semantic_tokens_226 / _FUZZY_STOPWORDS_226 so the gate can
+# link a design screen to a registered ui_page WITHOUT importing the heavy
+# frontend_scaffold module (this file is exec'd in isolation under test). Keep in
+# sync with frontend_scaffold. Generic layout/UI words never carry a match alone.
+_UI_PAGE_STOPWORDS: frozenset = frozenset({
+    "page", "screen", "view", "views", "main", "own", "my", "the", "of", "and",
+    "grid", "list", "menu", "modal", "empty", "logged", "out", "in", "panel",
+})
+
+
+def _screen_name_tokens(*texts) -> set:
+    """Lowercase word tokens (+ crude singulars) of a screen/page name, minus the
+    generic layout words — the fuzzy vocabulary for screen<->page reconciliation.
+    camelCase is split first so 'BrowseHomePage' yields {browse, home} (#229)."""
+    toks: set = set()
+    for t in texts:
+        s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(t or ""))
+        toks |= set(re.findall(r"[a-z]+", s.lower()))
+    toks |= {t[:-1] for t in list(toks) if t.endswith("s") and len(t) > 3}
+    return toks - _UI_PAGE_STOPWORDS
+
+
+def _match_ui_page(screen_tokens: set, ui_pages: List[Mapping[str, Any]],
+                   known: set) -> Optional[Mapping[str, Any]]:
+    """FIX #416 — the registered ui_page the app built FOR this design screen, or
+    None. The AUTHORITATIVE design_screen<->ui_page<->route link.
+
+    A STRONG match only: the ui_page's name/component tokens must EQUAL the
+    screen's name tokens (after the #226 stopword/singular normalization) — the
+    app's own statement that it authored a DEDICATED routed page for this screen
+    (browse_home <-> browse_home_page/BrowseHomePage; title_detail <->
+    title_detail_page/TitleDetailPage). Equality (not mere overlap) keeps a
+    variant/overlay (browse_home_ROWS, shows_genres_MENU, title_EPISODES) from
+    grafting onto the base page — those carry extra tokens the page lacks. The
+    ui_page's route must be one the app actually serves (in ``known``) so a
+    promotion never navigates to a 404."""
+    if not screen_tokens:
+        return None
+    kn = {str(r).rstrip("/") or "/" for r in (known or set())}
+    for up in ui_pages or []:
+        route = str(up.get("route") or "").strip()
+        if not route:
+            continue
+        if kn and (route.rstrip("/") or "/") not in kn:
+            continue
+        if _screen_name_tokens(up.get("name"), up.get("component")) == screen_tokens:
+            return up
+    return None
+
+
 def map_reference_screens(
     reference_images: List[Any],
     known_routes: Optional[set] = None,
     classifications: Optional[Mapping[str, Mapping[str, Any]]] = None,
+    ui_pages: Optional[List[Mapping[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """[{name, path, route, auth}] for every reference image whose filename maps
-    to a route. Two layers: the common-screen keyword table, then a GENERIC
-    fallback matching the filename against the app's actual routes (so an
-    arbitrary app's "boards.png" maps to its /boards screen without any
-    catalog). Unmappable images get route=None (skipped, not failed).
+    to a route. Layers, most authoritative first: the app's REGISTERED ui_pages
+    (#416), the design-prep classification (#132), the common-screen keyword
+    table, then a GENERIC fallback matching the filename against the app's actual
+    routes (so an arbitrary app's "boards.png" maps to its /boards screen without
+    any catalog). Unmappable images get route=None (skipped, not failed).
+
+    FIX #416: ``ui_pages`` (from load_ui_pages) is the app's OWN list of routed
+    pages it built. When a measured screen STRONGLY matches a registered ui_page
+    (name/component tokens equal — browse_home <-> browse_home_page), the gate
+    uses that page's ACTUAL route (the authoritative design_screen<->ui_page<->route
+    link — handles param routes like /title/:id and semantic renames) AND judges
+    it as a blocking page even if #132 mislabeled it an overlay: the app clearly
+    built a dedicated page for it, so the gate must score its own hero screens
+    (r13: browse_home/title_detail had real BrowseHomePage/TitleDetailPage pages
+    yet were dropped as advisory, so the fidelity metric never saw them). A screen
+    whose NAME is a structural overlay token (*_menu, *_dropdown) is NEVER promoted
+    (the #128 rule holds — dropdowns/popups stay advisory), and the promotion is
+    gated on the app actually serving the route (never a 404).
 
     FIX #132: ``classifications`` (from load_screen_classifications) is the
-    AUTHORITATIVE per-screen mapping the design-prep analyst produced from the
-    reference PIXELS. When present for a screen it wins over the filename
-    heuristics: kind=='overlay' -> advisory (the #128 name regex becomes the
-    fallback); requires_auth -> auth; route -> used when the app actually
-    serves it (a semantic suggestion never navigates to a 404)."""
+    per-screen mapping the design-prep analyst produced from the reference PIXELS.
+    When present for a screen it wins over the filename heuristics: kind=='overlay'
+    -> advisory (the #128 name regex becomes the fallback); requires_auth -> auth;
+    route -> used when the app actually serves it (a semantic suggestion never
+    navigates to a 404)."""
     known = {str(r) for r in (known_routes or set())}
     cls = classifications or {}
+    pages = [p for p in (ui_pages or []) if isinstance(p, Mapping)]
     screens: List[Dict[str, Any]] = []
     for ref in reference_images or []:
         p = Path(ref)
@@ -243,8 +344,22 @@ def map_reference_screens(
         _cl = cls.get(p.stem) or cls.get(stem) or {}
         if isinstance(_cl.get("requires_auth"), bool):
             auth = _cl["requires_auth"]
+        # #416: authoritative design_screen -> ui_page -> route link FIRST. A
+        # registered ui_page the app built for THIS screen (strong name match)
+        # supplies the real served route, ahead of the classification/filename
+        # guesses below (all of which stay as fallbacks when there is no match).
+        # A screen whose NAME is a structural overlay token (*_menu, *_dropdown)
+        # is deliberately excluded from the ui_page link — the #128 rule owns it,
+        # so a dropdown never inherits a page's route OR gets promoted, even if its
+        # stopword-stripped tokens coincidentally equal a page's (account_menu ->
+        # {account} == account_menu_page).
+        _overlay_by_name = bool(_OVERLAY_NAME_RE.search(stem))
+        _matched_page = (None if _overlay_by_name
+                         else _match_ui_page(_screen_name_tokens(p.stem, stem), pages, known))
+        if _matched_page is not None:
+            route = str(_matched_page.get("route") or "").strip() or None
         _cl_route = str(_cl.get("route") or "").strip()
-        if _cl_route and known and _cl_route in known:
+        if route is None and _cl_route and known and _cl_route in known:
             route = _cl_route  # authoritative route the app actually serves
         # Candidates from the full stem AND every TRAILING suffix of its segments.
         # Reference files are conventionally named ``<appname>_<screen>`` (e.g.
@@ -306,10 +421,20 @@ def map_reference_screens(
         # ('overlay' -> advisory, 'page' -> blocking even if the filename says
         # otherwise); the name regex remains the fallback.
         _kind = str(_cl.get("kind") or "").strip().lower()
-        if _kind in ("page", "overlay"):
+        if _matched_page is not None:
+            # #416: the app REGISTERED a dedicated routed page for this screen
+            # (and its name is not a structural overlay token — enforced when
+            # _matched_page was resolved) -> it is a real page, judged BLOCKING
+            # even if #132's pixel-only pass mislabeled it kind='overlay' (it can't
+            # see that the app built a page for it). This is the ONLY path that
+            # overrides the overlay label; a genuine overlay with no dedicated page
+            # (account_menu, *_dropdown) never matches a ui_page, so #128 holds and
+            # it stays advisory.
+            advisory = False
+        elif _kind in ("page", "overlay"):
             advisory = _kind == "overlay"
         else:
-            advisory = bool(_OVERLAY_NAME_RE.search(stem))
+            advisory = _overlay_by_name
         screens.append({"name": p.stem, "path": str(p), "route": route,
                         "auth": auth, "advisory": advisory})
     return screens
@@ -912,7 +1037,8 @@ async def run_visual_fidelity(
         pass
     screens = map_reference_screens(
         reference_images, known_routes,
-        classifications=load_screen_classifications(project_dir))  # FIX #132
+        classifications=load_screen_classifications(project_dir),  # FIX #132
+        ui_pages=load_ui_pages(project_dir))                       # FIX #416
     judged_screens = _select_judged_screens(screens, max_screens)
     skipped = [s["name"] for s in screens if not s.get("route")]
     if not judged_screens:
