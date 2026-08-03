@@ -737,6 +737,29 @@ def _theme_class_js(scheme: str) -> str:
             f"de.style.colorScheme = '{scheme}';" + " })()")
 
 
+# #418: a detail/param route (/title/:id, /browse/genre/:genreId, /watch/:titleId,
+# /title/{id}/episodes) navigated with the LITERAL param renders the page's
+# empty-state (the app fetches title ":id"/"{id}" → 404 → "not found"/blank), so
+# the judge scores a data-less page ~0.00 no matter how good the layout/projection
+# is (r13: genre_category 0.00, player 0.10 — the detail screens the projector
+# builds hero+rails for). Substitute every :param / {param} segment with a real
+# seeded id. "1" is safe + generalizable: Postgres serial PKs start at 1 and the
+# seed loader always seeds ≥1 row for each seeded table, so id 1 exists for the
+# primary entity of every detail route (the SAME id-1-is-seeded assumption the
+# chain-executor's required-FK repair already relies on, #411). A no-op for
+# param-less routes → non-detail screens are unaffected.
+_ROUTE_PARAM_RE = re.compile(r":[A-Za-z_]\w*|\{[^}/]+\}")
+
+
+def _concrete_capture_route(route: str) -> str:
+    """Fill param segments of an app route with a real seeded id so the captured
+    page loads CONTENT, not its empty-state (#418). ``/title/:id`` → ``/title/1``,
+    ``/browse/genre/:genreId`` → ``/browse/genre/1``. Param-less routes unchanged."""
+    if not route:
+        return route
+    return _ROUTE_PARAM_RE.sub("1", route)
+
+
 async def capture_route_screenshots(
     base_url: str,
     screens: List[Dict[str, Any]],
@@ -798,7 +821,7 @@ async def capture_route_screenshots(
                     if _want != (_applied_scheme or "light"):
                         await page.emulate_media(color_scheme=_want)
                         _applied_scheme = _want
-                    await page.goto(base_url + screen["route"],
+                    await page.goto(base_url + _concrete_capture_route(screen["route"]),
                                     wait_until="networkidle", timeout=20000)
                     if _scheme or _storage_dirty:
                         await page.evaluate(_theme_storage_js(_scheme))
