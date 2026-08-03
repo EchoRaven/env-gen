@@ -1652,7 +1652,7 @@ _LANDING_TEMPLATE = """export default function __COMP__() {
   return (
     <div className="min-h-screen bg-white text-zinc-900 flex flex-col">
       <header className="flex items-center justify-between px-6 sm:px-10 py-4 border-b border-zinc-200">
-        <div className="text-lg font-semibold text-blue-700">__APP__</div>
+        __BRAND_MARK__
         <nav className="flex items-center gap-2">
           <a href="/login" className="rounded-md px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100">Sign in</a>
           <a href="/signup" className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Create free account</a>
@@ -1712,7 +1712,9 @@ export default function __COMP__() {
     } catch (err) { setError(String(err)); }
   };
   return (
-    <div className="min-h-screen flex items-center justify-center __CLS_PAGE__">
+    <div className="min-h-screen __CLS_PAGE__">
+      __BRAND_HEADER__
+      <div className="flex items-center justify-center px-4 py-12">
       <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-xl border __CLS_CARD__ p-8 shadow-sm">
         <h1 className="text-2xl font-semibold __CLS_TITLE__">{isRegister ? 'Create account' : 'Sign in'}</h1>
         {isRegister ? (
@@ -1732,6 +1734,7 @@ export default function __COMP__() {
           {isRegister ? 'Have an account? Sign in' : 'New here? Create an account'}
         </button>
       </form>
+      </div>
     </div>
   );
 }
@@ -2319,6 +2322,20 @@ def _brand_logo_url(design) -> str:
                 if u:
                     return u
     return ""
+
+
+def _brand_mark_jsx(design, app: str, dark: bool = False) -> str:
+    """#424: the brand mark for the LOW-fidelity TEMPLATE screens (login 0.15,
+    landing 0.20) — the visual judge flagged 'no header; reference shows the brand
+    wordmark top-left'. Renders the app's staged brand wordmark as an <img> (via
+    _brand_logo_url) when present, else a text fallback in the app name. A router-
+    agnostic <a href="/">. Generalizable — any app with a staged wordmark."""
+    logo = _brand_logo_url(design)
+    if logo:
+        return (f'<a href="/" className="inline-block"><img src="{logo}" '
+                f'alt="{app}" className="h-8 w-auto" /></a>')
+    _tc = "text-white" if dark else "text-zinc-900"
+    return f'<a href="/" className="text-xl font-bold {_tc}">{app}</a>'
 
 
 # #421: the reference top nav carries a RIGHT-side utility cluster (search /
@@ -3181,9 +3198,18 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
     # /auth/login + /auth/register) — never the generic single-input POST stub or
     # the inert no-api stub, which would ship a login page a user can't use.
     if _is_auth_page(name, page):
+        _auth_app = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").replace(
+            "Login", "").replace("Signup", "").replace("Sign Up", "").strip() or "Sign in"
+        _auth_dark = _is_dark_hex(str(((design or {}).get("design_system") or {})
+                                      .get("palette", {}).get("bg") or "#ffffff"))
         _auth_src = (_AUTH_PAGE_TEMPLATE.replace("__COMP__", name)
                      .replace("__IS_REGISTER__",
-                              "true" if _is_register_mode(name, page) else "false"))
+                              "true" if _is_register_mode(name, page) else "false")
+                     # #424: brand wordmark header (reference shows it top-left)
+                     .replace("__BRAND_HEADER__",
+                              '<header className="px-6 sm:px-10 py-4">'
+                              + _brand_mark_jsx(design, _auth_app, _auth_dark)
+                              + "</header>"))
         for _ph, _cls in _auth_page_classes(design).items():
             _auth_src = _auth_src.replace(_ph, _cls)
         return _auth_src
@@ -3193,7 +3219,11 @@ def _project_page_component(name: str, page: Mapping[str, Any], nav_routes=None,
         # the app name by stripping the landing/welcome words (OutlookLanding → Outlook;
         # a bare LandingPage → "Welcome"). Never the dead <h2>Landing</h2> stub again.
         app = re.sub(r"\b(landing|welcome|page)\b", "", label, flags=re.I).strip() or "Welcome"
-        return _LANDING_TEMPLATE.replace("__COMP__", name).replace("__APP__", app)
+        # #424: brand wordmark in the header (reference shows the brand mark top-left,
+        # not a generic app-name text); the hero H1 keeps the app name.
+        return (_LANDING_TEMPLATE.replace("__COMP__", name)
+                .replace("__BRAND_MARK__", _brand_mark_jsx(design, app, dark=False))
+                .replace("__APP__", app))
     parsed = []
     for a in (page.get("apis_used") or []):
         parts = str(a).strip().split(None, 1)
