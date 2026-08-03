@@ -2246,6 +2246,48 @@ def _ref_image_pool(design) -> List[str]:
     return preferred if preferred else [u for (_p, u) in photos]
 
 
+def _ref_card_style(design) -> Tuple[str, str, bool]:
+    """#423: (css-aspectRatio, tailwind-width-class, show_caption) for the rail/grid
+    poster cards, DERIVED from the app's staged imagery. The projector hardcoded
+    PORTRAIT cards (aspect-[2/3]) with a title caption underneath, but the visual
+    judge flagged this on every streaming screen (r15/r16 iconography 0.25,
+    components 0.31): the reference row tiles are LANDSCAPE 16:9 stills with NO
+    caption. Streaming/media apps stage landscape backdrop/still assets (netflix
+    movie_*.jpg 1280x720) → use landscape 16:9 + wider card + no caption; poster-only
+    apps (portrait posters, no backdrops) keep the portrait 2:3 card + caption.
+    Decided by the design's OWN backdrop/still asset dims — generalizable, no product
+    literals; defaults to the prior portrait behavior when unsure."""
+    land: List[float] = []
+    for a in ((design or {}).get("assets") or []):
+        if not isinstance(a, dict):
+            continue
+        if str(a.get("type") or "").lower() not in ("jpg", "jpeg", "png", "webp"):
+            continue
+        t = (f"{a.get('id','')} {a.get('file','')} {a.get('staged_path','')}").lower()
+        if re.search(r"icon|logo|placeholder|sprite|favicon|wordmark", t):
+            continue
+        # landscape-TILE indicators only — a 'hero'/'cover' banner being landscape
+        # does NOT imply the rail TILES are (a poster app can have a landscape hero
+        # over portrait posters), so key off backdrop/still/banner/wide assets.
+        if not re.search(r"backdrop|still|banner|wide|landscape", t):
+            continue
+        dims = a.get("dims") or a.get("dimensions")
+        w = h = None
+        if isinstance(dims, (list, tuple)) and len(dims) >= 2:
+            w, h = dims[0], dims[1]
+        elif isinstance(dims, Mapping):
+            w = dims.get("width") or dims.get("w")
+            h = dims.get("height") or dims.get("h")
+        try:
+            if w and h and float(h) > 0:
+                land.append(float(w) / float(h))
+        except (TypeError, ValueError):
+            continue
+    if land and sum(1 for a in land if a >= 1.3) / len(land) >= 0.5:
+        return ("16 / 9", "w-64", False)   # landscape stills → 16:9 tiles, no caption
+    return ("2 / 3", "w-40", True)         # portrait posters → 2:3 card + caption
+
+
 def _brand_logo_url(design) -> str:
     """#421: served URL of the app's brand WORDMARK/logo, searched across the WHOLE
     design_system assets (NOT just a nav component's mapped assets — the top-nav
@@ -2598,6 +2640,9 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             theme = "light"
     text = "#f5f5f5" if theme == "dark" else "#18181b"
     label = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("Page", "").strip() or name
+    # #423: design-driven poster-card shape (landscape 16:9 for streaming stills vs
+    # portrait 2:3 for poster apps) — reference tiles are landscape w/ no caption.
+    _card_aspect, _card_w, _card_cap = _ref_card_style(design)
 
     # #415 — the app's STAGED REFERENCE PHOTOS, injected as a JS pool so the HERO
     # bg + RAIL/GRID posters paint the real product imagery instead of the seed
@@ -2836,15 +2881,17 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             # fallback so an app with no staged photos renders exactly as before.
             _src = ("(_refImg(1 + " + str(ri) + " * Math.ceil(rows.length / "
                     + str(n) + ") + i) || _imgOf(row))")
+            _cap = ("                <div className=\"mt-1 truncate text-xs opacity-80\">{_titleOf(row)}</div>\n"
+                    if _card_cap else "")
             return (
                 "        <div className=\"px-6 py-4\">\n"
                 f"          <h3 className=\"mb-3 text-lg font-semibold\">{{{_hj}}}</h3>\n"
                 "          <div className=\"flex gap-3 overflow-x-auto pb-2\">\n"
                 f"            {{_railSlice(rows, {n}, {ri}).map((row, i) => (\n"
-                "              <div key={(row && row.id) || i} className=\"w-40 shrink-0\">\n"
-                "                {" + _src + " ? <img src={" + _src + "} alt=\"\" className=\"aspect-[2/3] w-full rounded-md object-cover\" /> : <div className=\"aspect-[2/3] w-full rounded-md\" style={{ backgroundColor: 'rgba(128,128,128,0.25)' }} />}\n"
-                "                <div className=\"mt-1 truncate text-xs opacity-80\">{_titleOf(row)}</div>\n"
-                "              </div>\n"
+                f"              <div key={{(row && row.id) || i}} className=\"{_card_w} shrink-0\">\n"
+                "                {" + _src + " ? <img src={" + _src + "} alt=\"\" className=\"w-full rounded-md object-cover\" style={{ aspectRatio: '" + _card_aspect + "' }} /> : <div className=\"w-full rounded-md\" style={{ aspectRatio: '" + _card_aspect + "', backgroundColor: 'rgba(128,128,128,0.25)' }} />}\n"
+                + _cap
+                + "              </div>\n"
                 "            ))}\n"
                 "          </div>\n"
                 "        </div>\n")
@@ -2891,7 +2938,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             "            {rows.map((row, i) => (\n"
             "              <div key={(row && row.id) || i} className=\"overflow-hidden rounded-lg text-center\" "
             "style={{ backgroundColor: 'rgba(128,128,128,0.12)' }}>\n"
-            "                {(_refImg(i) || _imgOf(row)) ? <img src={_refImg(i) || _imgOf(row)} alt=\"\" className=\"aspect-[4/5] w-full object-cover\" /> : null}\n"
+            "                {(_refImg(i) || _imgOf(row)) ? <img src={_refImg(i) || _imgOf(row)} alt=\"\" className=\"w-full object-cover\" style={{ aspectRatio: '" + _card_aspect + "' }} /> : null}\n"
             "                <div className=\"px-3 py-2\">\n"
             "                  <div className=\"truncate text-sm font-semibold\">{_titleOf(row)}</div>\n"
             "                  {_subOf(row) ? <div className=\"truncate text-xs opacity-60\">{_subOf(row)}</div> : null}\n"
@@ -2968,7 +3015,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
                 "            {rows.map((row, i) => (\n"
                 "              <div key={(row && row.id) || i} className=\"overflow-hidden rounded-lg\" "
                 "style={{ backgroundColor: 'rgba(128,128,128,0.12)' }}>\n"
-                "                {(_refImg(i) || _imgOf(row)) ? <img src={_refImg(i) || _imgOf(row)} alt=\"\" className=\"aspect-[3/4] w-full object-cover\" /> : null}\n"
+                "                {(_refImg(i) || _imgOf(row)) ? <img src={_refImg(i) || _imgOf(row)} alt=\"\" className=\"w-full object-cover\" style={{ aspectRatio: '" + _card_aspect + "' }} /> : null}\n"
                 "                <div className=\"px-3 py-2\">\n"
                 "                  <div className=\"truncate text-sm font-medium\">{_titleOf(row)}</div>\n"
                 "                  {_subOf(row) ? <div className=\"truncate text-xs opacity-60\">{_subOf(row)}</div> : null}\n"
