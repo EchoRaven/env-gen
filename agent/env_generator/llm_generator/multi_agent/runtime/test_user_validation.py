@@ -86,6 +86,101 @@ def _owner_value(payload: Any) -> Any:
     return "__absent__"
 
 
+def _unwrap_item(payload: Any) -> Any:
+    """Dig the single row out of the canonical create/read envelopes ({item|data|…})."""
+    if isinstance(payload, dict):
+        for key in ("item", "post", "data", "result"):
+            inner = payload.get(key)
+            if isinstance(inner, dict):
+                return inner
+    return payload
+
+
+def _list_items(payload: Any) -> List[Any]:
+    """Rows out of the canonical list envelopes (bare list / {items|data|results})."""
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for k in ("items", "data", "results"):
+            v = payload.get(k)
+            if isinstance(v, list):
+                return v
+    return []
+
+
+def _find_by_id(items: List[Any], new_id: Any) -> Optional[Dict[str, Any]]:
+    """The row whose id matches ``new_id`` (type-tolerant, mirrors #122's str-compare)."""
+    if new_id is None:
+        return None
+    want = str(new_id)
+    for it in items or []:
+        if isinstance(it, dict) and it.get("id") is not None and (
+                it.get("id") == new_id or str(it.get("id")) == want):
+            return it
+    return None
+
+
+_EMPTY_VALUES = (None, "", 0, 0.0, False, [], {})
+
+
+def _write_lost(written: Any, read: Any) -> bool:
+    """R3(a): True iff a written state value did NOT take effect — we wrote a non-empty
+    value but the read-back is a DEFAULT/EMPTY one (None/0/''/False/[]/{}). Catches a
+    no-op write (e.g. a progress endpoint that ignores its body and always reads 0)
+    WITHOUT flagging a server that legitimately NORMALIZES a value to another non-empty
+    one (status -> 'pending'). Type-tolerant (str-compares) so 1 vs '1' is NOT a loss."""
+    if written == read:
+        return False
+    try:
+        if str(written) == str(read):
+            return False
+    except Exception:
+        pass
+    written_empty = any(written is e or written == e for e in _EMPTY_VALUES)
+    read_empty = any(read is e or read == e for e in _EMPTY_VALUES)
+    return (not written_empty) and read_empty
+
+
+def _created_appears(payload: Any, res_label: str, new_id: Any,
+                     state_fields: Optional[Mapping[str, Any]] = None):
+    """R3(a): a REAL list-persistence assertion. The prior ``_appears`` ALWAYS returned
+    True, so a created row that was ABSENT from the subsequent list never failed (a
+    non-persisting write read as green). Now: when we created a row (``new_id`` known) it
+    MUST appear in the list, and any state field it carries MUST hold the value we wrote —
+    else BROKEN. When no id was captured the check is N/A → advisory True (byte-identical)."""
+    items = _list_items(payload)
+    if new_id is None:
+        return True, f"{len(items)} {res_label} listed"  # not applicable — advisory
+    found = _find_by_id(items, new_id)
+    if found is None:
+        return False, (f"created {res_label} (id={new_id}) is ABSENT from the "
+                       f"{res_label} list — the write did not persist")
+    if state_fields:
+        mism = [f"{k}: wrote {v!r}, read back {found.get(k)!r}"
+                for k, v in state_fields.items() if _write_lost(v, found.get(k))]
+        if mism:
+            return False, (f"created {res_label} state not persisted — "
+                           + "; ".join(mism) + " (write is a no-op)")
+        return True, f"created {res_label} appears with persisted state"
+    return True, f"created {res_label} appears in the list"
+
+
+def _readback_persisted(payload: Any, res_label: str,
+                        state_fields: Mapping[str, Any]):
+    """R3(a): write->read-back VALUE assertion for a state entity (GET-by-id after a
+    create/update). A no-op write returns the field at its default/empty value ≠ what we
+    wrote → BROKEN — the class the 2xx-reachability check can never see."""
+    obj = _unwrap_item(payload)
+    def _got(k):
+        return obj.get(k) if isinstance(obj, dict) else None
+    mism = [f"{k}: wrote {v!r}, read back {_got(k)!r}"
+            for k, v in (state_fields or {}).items() if _write_lost(v, _got(k))]
+    if mism:
+        return False, (f"state value not persisted for {res_label} — "
+                       + "; ".join(mism) + " (write is a no-op)")
+    return True, f"state persisted for {res_label} ({', '.join(state_fields or {})})"
+
+
 def _register_or_login(base: str, email: str, name: str) -> Optional[str]:
     """Register a test user (or log in if they already exist) → access token."""
     pw = "TestUser!2024"
@@ -126,6 +221,10 @@ def _api_crud_journey(base: str, business_eps: List[Mapping[str, Any]], token: O
     Only 5xx/auth/null-owner is BROKEN; 404/405 is a softer 'missing'. Skips collections the
     social block already covers so a social app isn't double-walked."""
     from .validation_runner import _probe_body, _path_with_params
+    try:
+        from .completeness_audit import _is_state_column
+    except Exception:  # keep the journey working even if the classifier is unavailable
+        _is_state_column = lambda name, type_=None: False  # noqa: E731
 
     cols: Dict[str, Dict[str, Any]] = {}
 
@@ -168,7 +267,14 @@ def _api_crud_journey(base: str, business_eps: List[Mapping[str, Any]], token: O
             continue
         res = _resource_label(base_col)
         done += 1
-        cres = _http("POST", base + base_col, token=token, body=_probe_body(c["post"]))
+        # Capture the create body ONCE so the write->read-back value assertion below
+        # compares against exactly what we sent (not a fresh _probe_body call).
+        _post_body = _probe_body(c["post"])
+        # State fields in the body (progress/status/position/toggle/…) — the values a
+        # persisting write must round-trip; reuses the #557 classifier (no product literals).
+        _state_fields = {k: v for k, v in _post_body.items()
+                         if isinstance(k, str) and _is_state_column(k, None)}
+        cres = _http("POST", base + base_col, token=token, body=_post_body)
 
         def _owner_ck(payload, _res=res):
             obj = payload
@@ -189,22 +295,24 @@ def _api_crud_journey(base: str, business_eps: List[Mapping[str, Any]], token: O
         new_id = _first_id(_json(cres))
 
         if c["list"]:
-            def _appears(payload, _res=res, _id=new_id):
-                items = payload if isinstance(payload, list) else (
-                    (payload or {}).get("items") or (payload or {}).get("data")
-                    or (payload or {}).get("results") or [])
-                if _id is not None and isinstance(items, list) and any(
-                        isinstance(it, dict) and it.get("id") == _id for it in items):
-                    return True, f"created {_res} appears in the list"
-                return True, f"{len(items) if isinstance(items, list) else 0} {_res} listed"  # advisory
+            def _appears(payload, _res=res, _id=new_id, _sf=_state_fields):
+                # R3(a): REAL persistence check — a created row absent from the list (or
+                # present with a lost state value) is now BROKEN, not advisory-True.
+                return _created_appears(payload, _res, _id, _sf)
             rec(f"list {res}", "GET", base_col, _http("GET", base + base_col, token=token), _appears)
         if new_id is not None and c["item_get"]:
             ip = _path_with_params(c["item_get"], str(new_id))
-            rec(f"read {res}", "GET", c["item_get"], _http("GET", base + ip, token=token))
+            # R3(a): for a STATE entity, assert the written value round-trips (GET-by-id);
+            # for a non-state entity the check is N/A → None → byte-identical to before.
+            _read_ck = ((lambda payload, _res=res, _sf=_state_fields:
+                         _readback_persisted(payload, _res, _sf))
+                        if _state_fields else None)
+            rec(f"read {res}", "GET", c["item_get"],
+                _http("GET", base + ip, token=token), _read_ck)
         if new_id is not None and c["item_update"]:
             um, upath = c["item_update"]
             ip = _path_with_params(upath, str(new_id))
-            rec(f"update {res}", um, upath, _http(um, base + ip, token=token, body=_probe_body(c["post"])))
+            rec(f"update {res}", um, upath, _http(um, base + ip, token=token, body=_post_body))
         if new_id is not None and c["item_delete"]:
             ip = _path_with_params(c["item_delete"], str(new_id))
             rec(f"delete {res}", "DELETE", c["item_delete"], _http("DELETE", base + ip, token=token))

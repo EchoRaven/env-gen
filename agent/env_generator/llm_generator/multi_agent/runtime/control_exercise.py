@@ -27,10 +27,28 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 # Verbs in a control's accessible label that imply it MUTATES server state. Used to flag a
 # write-looking control that fires no network call (a dead/inert button) deterministically,
 # without needing the LLM. Kept domain-neutral (no app-specific vocab).
-_WRITE_INTENT_WORDS = (
+# R3(b): the original UI-action vocabulary (save/send/submit/…) UNIONED with the #557
+# mutation-verb set (play/start/resume/watch/rate/like/mark/toggle/track/progress/…) so a
+# STATE-BEARING control — a play/resume/rate/toggle button — that fires NO persisting call is
+# flagged as a dead control too (the class the old set missed). Matched by WORD-PART in
+# ``implies_write`` (not substring) so 'display'/'playlist'/'address' do NOT false-hit.
+_UI_ACTION_WORDS = frozenset({
     "save", "send", "create", "add", "new", "submit", "post", "publish", "update",
     "edit", "delete", "remove", "archive", "upload", "confirm", "apply", "invite",
-)
+})
+try:  # reuse #557's mutation vocabulary + splitter (single source; no product literals)
+    from .completeness_audit import (
+        _MUTATION_VERBS as _CA_MUTATION_VERBS, _split_ident as _split_label)
+    _WRITE_INTENT_WORDS = frozenset(_UI_ACTION_WORDS | set(_CA_MUTATION_VERBS))
+except Exception:  # keep the pure helpers self-contained if the classifier is unavailable
+    _WRITE_INTENT_WORDS = frozenset(_UI_ACTION_WORDS | {
+        "play", "start", "resume", "watch", "rate", "like", "mark", "toggle",
+        "progress", "track",
+    })
+
+    def _split_label(name: Any) -> List[str]:  # minimal fallback (mirrors _split_ident)
+        s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", str(name or "").strip())
+        return [p.lower() for p in re.split(r"[^A-Za-z0-9]+", s) if p]
 # Labels we must NOT click during an exercise pass — they end the session or leave the app,
 # poisoning every subsequent probe. (Logout/sign-out + external links.)
 _SKIP_INTENT_WORDS = ("log out", "logout", "sign out", "signout")
@@ -125,8 +143,15 @@ def off_contract_calls(
 
 
 def implies_write(label: str) -> bool:
-    low = (label or "").strip().lower()
-    return any(w in low for w in _WRITE_INTENT_WORDS)
+    """A control whose accessible label implies it MUTATES server state. Word-part matched
+    (exact for short verbs, prefix for len>=4 — reusing the #557 splitter) so 'Resume',
+    'Rate', 'Mark read', 'Save' hit while 'display'/'playlist'/'address' do NOT. Domain-
+    neutral (UI-action + #557 mutation vocabulary), no product literals."""
+    for p in _split_label(label):
+        for w in _WRITE_INTENT_WORDS:
+            if p == w or (len(w) >= 4 and p.startswith(w)):
+                return True
+    return False
 
 
 def should_skip(label: str) -> bool:

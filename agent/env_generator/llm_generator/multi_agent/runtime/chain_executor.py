@@ -37,7 +37,7 @@ import json
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from .validation_runner import _http, _form_retry_warranted
 
@@ -712,15 +712,94 @@ def _default_chain_body(ep: Mapping[str, Any]) -> Dict[str, Any]:
     return body
 
 
-def synthesize_default_chain(endpoints: List[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+def _missing_write_defect_chain(
+    endpoints: List[Mapping[str, Any]],
+    tables: Optional[Mapping[str, Any]],
+    flows: Optional[Sequence[str]],
+) -> Optional[Dict[str, Any]]:
+    """R2(b): a chain of SYNTHETIC-DEFECT steps, one per state-bearing entity / feature
+    flow the DECLARED contract can READ but not WRITE (the #557 classifier — the SAME
+    detection the oracle + the route-projector heal share). ``synthesize_default_chain``
+    today returns [] when the contract has no creatable collection, so a missing write-
+    path is silently produced-nothing; this makes the gap surface as ``framework_defect``s
+    on the chain gate (execute_chain records each without an HTTP call). Returns ``None``
+    (⇒ output byte-identical) when no table/flow is supplied or nothing is missing."""
+    if not tables and not flows:
+        return None
+    try:
+        from .completeness_audit import (
+            state_entities_missing_write, check_flow_no_write)
+    except Exception:
+        return None
+    eps_dict = {i: dict(e) for i, e in enumerate(endpoints or [])
+                if isinstance(e, Mapping)}
+    steps: List[Dict[str, Any]] = []
+    seen: set = set()
+
+    def _slug(s: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "-", str(s or "").strip().lower()).strip("-")
+
+    try:
+        missing_state = state_entities_missing_write(dict(tables or {}), eps_dict)
+    except Exception:
+        missing_state = {}
+    for entity, cols in sorted(missing_state.items()):
+        key = _slug(entity)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        col_txt = ", ".join(cols) or "its state"
+        steps.append({
+            "action": f"framework_missing_write_path_{key}",
+            "method": "POST", "path": f"/api/{key}", "synthetic_defect": True,
+            "note": (f"state-bearing entity `{entity}` (mutable field(s): {col_txt}) has a "
+                     f"GET but NO POST/PUT/PATCH endpoint — the feature can be READ but never "
+                     f"WRITTEN (missing_write_path). Declare + implement a write endpoint for "
+                     f"`{entity}` so its state can persist."),
+        })
+    try:
+        flow_findings = check_flow_no_write(None, eps_dict, list(flows or []))
+    except Exception:
+        flow_findings = []
+    for r in flow_findings:
+        flow = getattr(r, "flow", None) or ""
+        key = _slug(flow)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        steps.append({
+            "action": f"framework_missing_write_path_{key}",
+            "method": "POST", "path": f"/api/{key}", "synthetic_defect": True,
+            "note": (f"declared flow `{flow}` implies a mutation (verb "
+                     f"`{getattr(r, 'missing_verb', None)}`) but no POST/PUT/PATCH endpoint "
+                     f"backs it (missing_write_path) — the flow can be viewed but not performed."),
+        })
+    if not steps:
+        return None
+    return {"name": "framework_missing_write_paths", "steps": steps}
+
+
+def synthesize_default_chain(
+    endpoints: List[Mapping[str, Any]],
+    *,
+    tables: Optional[Mapping[str, Any]] = None,
+    flows: Optional[Sequence[str]] = None,
+) -> List[Dict[str, Any]]:
     """Project a default verification chain DETERMINISTICALLY FROM THE REGISTERED
     CONTRACT: register → for each business collection, create (saving the row id)
     → list → read-by-id → update → delete. This is generic projection (like
     ``_probe_body`` / route_projector), NOT a hand-rolled app-shaped journey — so
     it carries NO app bias and satisfies the generality principle. Used only as a
-    FILL-IN when the verifier registered no usable chain. Returns [] when the
-    contract exposes no creatable business resource (then the verifier-authoring
-    feedback path still applies)."""
+    FILL-IN when the verifier registered no usable chain.
+
+    R2(b): when ``tables``/``flows`` is supplied, ALSO append a
+    ``framework_missing_write_paths`` chain of synthetic-defect steps for every
+    state-bearing entity / mutation flow the contract can READ but not WRITE (the
+    #557 classifier) — so a MISSING write-path surfaces as a ``framework_defect`` on
+    the chain gate instead of being silently produced-nothing. Returns [] only when
+    the contract exposes no creatable business resource AND nothing is missing a write
+    (then the verifier-authoring feedback path still applies); byte-identical to the
+    prior behaviour when ``tables``/``flows`` is omitted or nothing is missing."""
     eps = [e for e in (endpoints or []) if isinstance(e, Mapping)]
     by_key: Dict[tuple, Mapping[str, Any]] = {}
     for e in eps:
@@ -778,10 +857,18 @@ def synthesize_default_chain(endpoints: List[Mapping[str, Any]]) -> List[Dict[st
                 st["expect"] = [200]
             steps.append(st)
 
-    if not made_any:
-        return []
-    norm, _errs = normalize_steps(steps)
-    return [{"name": "framework_default_crud", "steps": norm}] if norm else []
+    # R2(b): missing-write-path defects surface EVEN WHEN no creatable collection exists —
+    # built separately (NOT through normalize_steps, which would mutate a synthetic step) so
+    # they ride their own chain. `None` when nothing is missing → prior behaviour preserved.
+    defect_chain = _missing_write_defect_chain(eps, tables, flows)
+    out_chains: List[Dict[str, Any]] = []
+    if made_any:
+        norm, _errs = normalize_steps(steps)
+        if norm:
+            out_chains.append({"name": "framework_default_crud", "steps": norm})
+    if defect_chain is not None:
+        out_chains.append(defect_chain)
+    return out_chains
 
 
 def load_seed_ids(project_dir: Any) -> Dict[str, Any]:
@@ -870,7 +957,19 @@ def load_verifier_chains(project_dir: Any) -> List[Dict[str, Any]]:
             eps_data = json.loads(eps_path.read_text(encoding="utf-8"))
             eps = [v for k, v in (eps_data or {}).items()
                    if k != "_meta" and isinstance(v, Mapping)]
-            return synthesize_default_chain(eps)
+            # R2(b): also feed the TABLE contract so a state-bearing entity with no write
+            # endpoint surfaces as a framework_defect (missing_write_path) even when the
+            # contract has no creatable collection to project a CRUD chain from.
+            tbls: Dict[str, Any] = {}
+            try:
+                tbl_path = Path(project_dir) / "shared" / "hubs" / "registryhub_tables.json"
+                if tbl_path.exists():
+                    tbl_data = json.loads(tbl_path.read_text(encoding="utf-8"))
+                    tbls = {k: v for k, v in (tbl_data or {}).items()
+                            if k != "_meta" and isinstance(v, Mapping)}
+            except Exception:
+                tbls = {}
+            return synthesize_default_chain(eps, tables=tbls)
     except Exception:
         pass
     return out
@@ -1654,6 +1753,22 @@ def execute_chain(base: str, chain: Mapping[str, Any],
     for idx, step in enumerate(_steps):
         variables["rand"] = f"{_rand_base}{idx:02d}"
         method = str(step.get("method", "GET")).upper()
+        # R2(b): a SYNTHETIC-DEFECT step is a contract gap KNOWN at synthesis time (a
+        # state-bearing/feature-inventory entity with NO write endpoint — synthesize_default_
+        # chain emits it). It is not an app call: record it directly as a `framework_defect`
+        # (never executed over HTTP — the endpoint does not exist) so the gap SURFACES through
+        # the SAME #272 framework-defect path a projected-handler 5xx uses (framework work, not
+        # a lane dispatched to fix code it never wrote), instead of being silently absent.
+        if step.get("synthetic_defect"):
+            recorded.append({
+                "action": str(step.get("action") or "framework_missing_write_path"),
+                "method": method if step.get("method") else "",
+                "path": str(step.get("path") or ""),
+                "status": None, "ok": False, "kind": "framework_defect",
+                "note": str(step.get("note")
+                            or "declared feature has no write endpoint (missing_write_path)"),
+            })
+            continue
         # A broken step no longer aborts the whole chain (it used to `break`, so only the
         # FIRST failure was ever reported). Continue, but SKIP a step that depends on a
         # variable a broken step was supposed to save — it would cascade-fail on a missing

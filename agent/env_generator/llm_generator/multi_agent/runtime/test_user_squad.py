@@ -95,6 +95,87 @@ def _ui_page_entries(ui_pages: Any) -> List[Dict[str, str]]:
     return out
 
 
+def _missing_write_goals(
+    business_eps: Optional[Sequence[Mapping[str, Any]]],
+    tables: Optional[Mapping[str, Any]],
+    feature_inventory: Optional[Mapping[str, Any]],
+    acc: Sequence[str],
+) -> List[Dict[str, Any]]:
+    """R2(a): ENTITIES/FLOWS-NEEDING-WRITE that the DECLARED contract can't satisfy.
+
+    Reuses the #557 classifier (``completeness_audit``) — the SINGLE source that also
+    drives the oracle + the route-projector heal — so a state-bearing entity that is
+    READABLE but has NO POST/PUT/PATCH (the Continue-Watching class), or a declared
+    feature-inventory FLOW whose verb implies a mutation with no backing write, yields
+    an EXPLICIT ``missing_write_path`` goal instead of being silently skipped (today the
+    squad only derives goals from collections that already declare a POST, so a missing
+    write-path is invisible and coverage reads 100%). Each goal fails loudly: it tells
+    its agent to file a P0 via bug_create ("no endpoint to create/update <entity>").
+
+    Empty (⇒ the caller's output is byte-identical) when no table/inventory is supplied
+    or every state entity / mutation flow already has its write endpoint. Never raises."""
+    try:
+        from .completeness_audit import (
+            state_entities_missing_write, check_flow_no_write, _normalize_inventory)
+    except Exception:
+        return []
+    eps_dict = {i: dict(e) for i, e in enumerate(business_eps or [])
+                if isinstance(e, Mapping)}
+    goals: List[Dict[str, Any]] = []
+    seen: set = set()
+
+    def _slug(s: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "_", str(s or "").lower()).strip("_")
+
+    try:
+        missing_state = state_entities_missing_write(dict(tables or {}), eps_dict)
+    except Exception:
+        missing_state = {}
+    for entity, cols in sorted(missing_state.items()):
+        key = _slug(entity)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        col_txt = ", ".join(cols) or "its state"
+        goals.append({
+            "modality": "api", "kind": "missing_write_path",
+            "name": f"missing_write_{key}", "entity": entity,
+            "missing_verb": "POST/PUT/PATCH", "critical": True,
+            "goal": (f"CONTRACT GAP — MISSING WRITE PATH: the app declares the state-bearing "
+                     f"entity '{entity}' (mutable field(s): {col_txt}) with a READ endpoint but "
+                     f"NO create/update endpoint (no POST/PUT/PATCH). A user can VIEW '{entity}' "
+                     f"but can NEVER write it, so the feature cannot work and the write is lost. "
+                     f"Confirm there is NO endpoint to create/update '{entity}', then FILE A P0 "
+                     f"via bug_create titled 'no endpoint to create/update {entity}'. This goal "
+                     f"is a FAILURE until the write path exists — do NOT mark it passed."),
+            "acceptance": list(acc) or None,
+        })
+    try:
+        _, fi_flows = _normalize_inventory(dict(feature_inventory or {}))
+        flow_findings = check_flow_no_write(None, eps_dict, fi_flows)
+    except Exception:
+        flow_findings = []
+    for r in flow_findings:
+        flow = getattr(r, "flow", None) or ""
+        key = _slug(flow)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        goals.append({
+            "modality": "api", "kind": "missing_write_path",
+            "name": f"missing_write_{key}", "flow": flow,
+            "missing_verb": getattr(r, "missing_verb", None), "critical": True,
+            "goal": (f"CONTRACT GAP — MISSING WRITE PATH: the declared feature flow '{flow}' "
+                     f"implies a mutation (verb '{getattr(r, 'missing_verb', None)}') but NO "
+                     f"write endpoint (POST/PUT/PATCH) backs it — the flow can be viewed but "
+                     f"not performed. Confirm no write endpoint exists for '{flow}', then FILE "
+                     f"A P0 via bug_create titled 'no endpoint to perform {flow}'. This goal is "
+                     f"a FAILURE until the write path exists — do NOT mark it passed."),
+            "acceptance": list(acc) or None,
+        })
+    return goals
+
+
 def plan_test_user_goals(
     *,
     business_eps: Optional[Sequence[Mapping[str, Any]]] = None,
@@ -104,6 +185,8 @@ def plan_test_user_goals(
     multi_tenant: bool = False,
     mcp_present: bool = False,
     extra_flows: Optional[Sequence[Mapping[str, Any]]] = None,
+    tables: Optional[Mapping[str, Any]] = None,
+    feature_inventory: Optional[Mapping[str, Any]] = None,
     max_goals: int = 12,
 ) -> List[Dict[str, Any]]:
     """Define the test workflows (one agent per workflow), tagged by MODALITY. PURE.
@@ -120,6 +203,11 @@ def plan_test_user_goals(
       * API workflows — CRUD-per-resource lifecycle over the HTTP API (independent of the UI).
       * MCP workflow — when an MCP server exists: completeness (a tool per endpoint) + parity vs API.
       * ISOLATION workflow (§3.4) — when multi-tenant: a two-actor cross-tenant leak check (X-Tenant-Id).
+      * MISSING-WRITE-PATH goals (R2) — when ``tables``/``feature_inventory`` is supplied: for a
+        state-bearing entity or mutation flow the DECLARED contract can READ but not WRITE (the
+        #557 classifier), emit an explicit ``missing_write_path`` goal that fails loudly + files a
+        P0, instead of silently skipping it (the ROOT gap: goals were derived only from declared
+        POST collections, so a missing write-path was invisible and coverage read 100%).
     Each goal: {modality, kind, name, goal, steps?, acceptance?, tenant?, actor?}.
     """
     goals: List[Dict[str, Any]] = []
@@ -162,7 +250,11 @@ def plan_test_user_goals(
             "modality": "browser", "kind": "page", "name": f"page_{slug}",
             "goal": (f"Open the '{pg['name']}' page ({pg['route']}) as the user and exercise every "
                      f"interactive control on it; assert each control's RESULT matches its intent "
-                     f"(navigation / API call + status / DOM change). Then VERIFY the objective "
+                     f"(navigation / API call + status / DOM change). For any control that CHANGES "
+                     f"STATE (play/resume/rate/like/mark/toggle/save/add/progress/…), do a "
+                     f"PERSIST-THEN-RELOAD check: perform the action, RELOAD the page, and assert "
+                     f"the new state is still reflected — if it reverts, the write did not persist; "
+                     f"FILE A P0. Then VERIFY the objective "
                      f"signals a real user would notice (#181): the page shows REAL seeded data "
                      f"(specific realistic rows — NOT an empty state, placeholder/lorem/'Untitled' "
                      f"filler, or one value repeated); if it shows a MAP it is a REAL interactive "
@@ -218,7 +310,11 @@ def plan_test_user_goals(
             "tenant": t[0], "actor": "userA", "acceptance": acc or None,
         })
 
-    return goals[:max_goals]
+    # --- MISSING-WRITE-PATH goals (R2): entities/flows the DECLARED contract can't write ---
+    # Prepended (they are the loudest failures) and built SEPARATELY so they never perturb the
+    # page-dedup above; when nothing is missing this is `[] + goals` → byte-identical output.
+    missing_write = _missing_write_goals(business_eps, tables, feature_inventory, acc)
+    return (missing_write + goals)[:max_goals]
 
 
 def build_briefing(goal: Mapping[str, Any], *, ui_base: str, api_base: str,
@@ -374,7 +470,7 @@ def gather_squad_inputs(orch: Any) -> Dict[str, Any]:
     out: Dict[str, Any] = {
         "business_eps": [], "ui_pages": {}, "multi_tenant": False,
         "mcp_present": False, "ui_base": None, "api_base": None, "identity": None,
-        "acceptance": [],
+        "acceptance": [], "tables": {}, "feature_inventory": {},
     }
     proj = _P(getattr(orch, "output_dir", ".") or ".")
     hubs = getattr(orch, "hubs", None)
@@ -394,9 +490,17 @@ def gather_squad_inputs(orch: Any) -> Dict[str, Any]:
     try:
         if registryhub is not None:
             tbls = registryhub.list_tables() or {}
+            out["tables"] = tbls  # R2: state-entity source for missing-write-path goals
             out["multi_tenant"] = any(
                 str(k).rstrip("s").endswith("tenant") or "tenant" in str(k).lower()
                 for k in tbls.keys())
+    except Exception:
+        pass
+    # R2: feature_inventory (the INTENDED feature set) — reuse the #557 loader so a
+    # mutation flow with no backing write also yields a missing_write_path goal.
+    try:
+        from .completeness_audit import _load_feature_inventory
+        out["feature_inventory"] = _load_feature_inventory(hubs) or {}
     except Exception:
         pass
     try:
@@ -610,7 +714,8 @@ async def run_squad_for_delivery(orch: Any, version: str = "",
         goals = plan_test_user_goals(
             business_eps=inp["business_eps"], ui_pages=inp["ui_pages"],
             acceptance=inp["acceptance"], multi_tenant=inp["multi_tenant"],
-            mcp_present=inp["mcp_present"])
+            mcp_present=inp["mcp_present"], tables=inp.get("tables"),
+            feature_inventory=inp.get("feature_inventory"))
         if not goals:
             return {"ran": False, "reason": "no goals planned (empty contract)"}
         # Regression: re-test previously-FAILED goals first (design §3.5).
