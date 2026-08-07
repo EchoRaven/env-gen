@@ -283,6 +283,25 @@ def _bundle_deliverability_tools(builder: ToolPoolBuilder, context: ToolAssembly
         app_root = getattr(context.workspace, "root", None)
     if app_root is None:
         app_root = getattr(context, "workspace_path", None)
+    # #563: the app tree (backend/, frontend/, seed_data.json) always lives under
+    # <root>/app in this framework (cf. orchestrator deliver: self.output_dir / "app").
+    # When app_root resolves to a worktree/output ROOT (the fallbacks above yield the
+    # worktree root, not the app dir), compute_deliverability would read <root>/backend/
+    # seed_data.json — a STALE pre-scaffold bootstrap file. Multi-milestone hit this hard:
+    # the orchestrator worktree carried a 6-row bootstrap seed at
+    # worktrees/orchestrator/backend/seed_data.json while the real 137-row seed sat at
+    # worktrees/orchestrator/app/backend/seed_data.json → the seed-quality gate fired
+    # "only 6 structured rows" as a permanent FALSE POSITIVE and M1 never delivered.
+    # Descend into app/ only when it's the real app tree (has backend/); a correctly
+    # app-pointed app_root (single-milestone: <root>/app/app absent) is left unchanged.
+    if app_root is not None:
+        try:
+            from pathlib import Path as _P
+            _cand = _P(str(app_root)) / "app"
+            if _cand.is_dir() and (_cand / "backend").is_dir():
+                app_root = str(_cand)
+        except Exception:
+            pass
     session_start_ts = getattr(context, "session_start_ts", None) or 0.0
     builder.add(
         create_deliverability_tools(
