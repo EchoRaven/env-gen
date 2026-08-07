@@ -734,6 +734,62 @@ class Orchestrator:
                     f"Respawn: spawn of core lane {agent_id} failed: {spawn_err}"
                 )
 
+    async def _await_prior_milestone_delivery_drained(
+        self,
+        milestone_index: int,
+        *,
+        timeout_s: float = 600.0,
+        poll_s: float = 2.0,
+    ) -> bool:
+        """FIX #561 (serialize milestones): block until the PRIOR milestone's
+        delivery is FULLY DRAINED before M(i>=2) advances into its kickoff.
+
+        "Fully drained" = the orchestrator lane's ``_project_delivered_event`` is
+        set AND the prior milestone's release was cut (``self._project_delivered``).
+        The per-milestone delivery ``while`` loop normally blocks until this holds,
+        but a delivery that set the LANE event via the LLM ``deliver_project`` tool
+        without the framework release having been cut (``deliver_project`` only sets
+        the event; ``_maybe_framework_deliver`` is the SOLE ``create_release``
+        caller) — or any early loop break — could otherwise let M(i)'s kickoff +
+        ``_respawn_core_lanes`` + state-reset RACE an unfinished prior delivery
+        (observed: M2 kickoff running concurrently with unfinished M1 delivery).
+        This guard closes that race deterministically, right before the reset.
+
+        Idempotently cuts the prior milestone's release (``_maybe_framework_deliver``
+        no-ops once ``self._project_delivered`` is True) so "event set but release
+        not cut" converges to fully-drained. Bounded: returns True when drained,
+        False on timeout (logged loudly; caller proceeds rather than hang, since the
+        delivery loop already ran). NEVER invoked for M1, so the single-milestone
+        path is byte-identical (the whole method is behind ``if _m_idx > 1``).
+        """
+        prev_lane = self._agents.get("orchestrator")
+        if prev_lane is None:
+            return True
+        ev = getattr(prev_lane, "_project_delivered_event", None)
+        if ev is None:
+            return True
+        deadline = time.time() + max(0.0, timeout_s)
+        while True:
+            # Idempotent: cut the prior milestone's release if the lane signalled
+            # delivery but the framework release wasn't cut yet.
+            if not getattr(self, "_project_delivered", False):
+                try:
+                    await self._maybe_framework_deliver()
+                except Exception as _drain_err:
+                    self._logger.warning(
+                        "M%s drain: _maybe_framework_deliver raised (continuing): %s",
+                        milestone_index, _drain_err)
+            if getattr(self, "_project_delivered", False) and ev.is_set():
+                return True
+            if time.time() >= deadline:
+                self._logger.warning(
+                    "M%s: prior-milestone delivery drain wait exceeded %.0fs "
+                    "(delivered=%s, event_set=%s) — proceeding to avoid a hang.",
+                    milestone_index, timeout_s,
+                    getattr(self, "_project_delivered", False), ev.is_set())
+                return False
+            await asyncio.sleep(poll_s)
+
     async def _stop_agents(self):
         """Stop all agents."""
         agent_ids = list(self._agents.keys())
@@ -1318,6 +1374,18 @@ class Orchestrator:
                                 _milestone_req = _milestone_req + _spec_block
 
                     if _m_idx > 1:
+                        # FIX #561 (serialize milestones): M(i) kickoff MUST NOT begin
+                        # until M(i-1) delivery is FULLY DRAINED (prior
+                        # _project_delivered_event set + its release cut). The delivery
+                        # while-loop above normally guarantees this, but a lane-set
+                        # delivery event without a cut release (or an early break) could
+                        # let this milestone's reset/respawn/kickoff race the prior
+                        # milestone's delivery tail (observed: M2 kickoff concurrent with
+                        # unfinished M1 delivery). Confirm/await the drain BEFORE
+                        # clearing the event + resetting per-milestone state below, so
+                        # the reset never races the prior delivery. Bounded; no-op once
+                        # already drained. Never runs for M1 (byte-identical single-MS).
+                        await self._await_prior_milestone_delivery_drained(_m_idx)
                         # New milestone: reset per-milestone delivery state so the
                         # framework-deliver / framework-validation paths start
                         # clean, then re-spawn the core lanes for FRESH LLM

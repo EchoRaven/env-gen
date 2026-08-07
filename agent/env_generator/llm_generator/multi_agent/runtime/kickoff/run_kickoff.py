@@ -92,6 +92,7 @@ from .schema_tolerance import (
     normalize_feature_inventory as _normalize_feature_inventory,
     normalize_task_entries as _normalize_task_entries,
     pick_feature_inventory as _pick_feature_inventory,
+    synthesize_predicates_from_contract as _synthesize_predicates_from_contract,
     synthesize_task_tree as _synthesize_task_tree,
 )
 
@@ -774,6 +775,7 @@ def _build_roadmap(
     drafts: Mapping[str, Mapping[str, Any]],
     milestone_index: int,
     description: str = "",
+    registered_endpoints: Optional[Iterable[Mapping[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Assemble the validator-shaped roadmap snapshot from agent drafts.
 
@@ -828,14 +830,28 @@ def _build_roadmap(
     # validation_failed in an unwinnable loop → 1200s timeout → run abort.
     # The floor is the criterion the runtime ALREADY enforces deterministically.
     if not predicates:
-        predicates = [{
-            "id": "auto_default_api_smoke",
-            "kind": "api_smoke",
-            "description": ("every registered business endpoint passes the "
-                            "deterministic api_smoke suite (boot, auth, "
-                            "reachability, response shapes, write persistence)"),
-            "source": "auto_default",
-        }]
+        # FIX #561: at MILESTONE 2+, a no-net-new-predicate slice EXERCISES the
+        # cumulative contract (the endpoints M1..M(i-1) already registered).
+        # Synthesize an api_smoke predicate per registered BUSINESS endpoint —
+        # the acceptance criteria assert the reused cumulative surface still
+        # passes — instead of the single generic floor. Milestone 1 (the walking
+        # skeleton) has no cumulative contract yet, so it keeps the generic floor
+        # → the single-milestone / M1 path stays byte-identical.
+        _cumulative_preds = (
+            _synthesize_predicates_from_contract(registered_endpoints)
+            if int(milestone_index or 1) >= 2 else []
+        )
+        if _cumulative_preds:
+            predicates = _cumulative_preds
+        else:
+            predicates = [{
+                "id": "auto_default_api_smoke",
+                "kind": "api_smoke",
+                "description": ("every registered business endpoint passes the "
+                                "deterministic api_smoke suite (boot, auth, "
+                                "reachability, response shapes, write persistence)"),
+                "source": "auto_default",
+            }]
     # PREDICATE NORMALIZATION (2026-06-11 round 26): roadmap_validator's
     # canonical shape is {"id", "flow": str, "form": {"kind": <vocab>}} — but
     # the authoring surfaces (declare tools, chunked decisions, the floor
@@ -1644,7 +1660,13 @@ def try_synthesize(
         }
 
     # 3. Roadmap shape validation.
-    roadmap = _build_roadmap(drafts, milestone_index, _kickoff_description)
+    # FIX #561: pass the CUMULATIVE registered contract so a no-new-endpoint M2+
+    # slice with no net-new verifier predicates derives its acceptance predicates
+    # from the endpoints M1..M(i-1) already built (see _build_roadmap).
+    roadmap = _build_roadmap(
+        drafts, milestone_index, _kickoff_description,
+        registered_endpoints=registered,
+    )
     validation = validate_roadmap(roadmap, milestone_index)
     if not validation.get("ok", False):
         return {

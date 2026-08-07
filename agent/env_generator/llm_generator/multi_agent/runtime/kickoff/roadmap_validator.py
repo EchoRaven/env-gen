@@ -160,9 +160,25 @@ def _check_contract(contract: Any, milestone_index: int = 1) -> List[Finding]:
     # --- endpoints ---------------------------------------------------------
     endpoints = contract.get("endpoints")
     if not isinstance(endpoints, list) or len(endpoints) == 0:
+        # FIX #561 (instagram_v4 M2, live — sibling of #96/#108): the contract is
+        # CUMULATIVE. A vertical slice at milestone 2+ that adds NO NEW backend
+        # endpoints (a purely-visual slice, or one whose features REUSE the
+        # endpoints M1..M(i-1) already registered) is legitimate — an EMPTY
+        # endpoints list there is valid, NOT missing. The unconditional error made
+        # a no-new-endpoint slice's kickoff synthesis validation_failed → the
+        # deterministic reconcile could not derive a valid section → the 1200s
+        # kickoff timeout HARD-ABORTED the whole run right after M1 delivered
+        # (Missing=['backend','verifier']). Milestone 1 (the walking skeleton) still
+        # hard-requires endpoints. Mirrors the data_model / data_model.tables gating
+        # below; a slice that DOES declare endpoints is still fully shape-validated
+        # in the else branch (real-endpoint slices are NOT weakened).
         findings.append(_finding(
-            "contract", "endpoints_missing", "error",
-            "contract.endpoints MUST be a non-empty list",
+            "contract", "endpoints_missing",
+            "error" if int(milestone_index or 1) <= 1 else "warning",
+            "contract.endpoints MUST be a non-empty list"
+            if int(milestone_index or 1) <= 1 else
+            "contract.endpoints is empty — OK for a milestone 2+ slice on the "
+            "cumulative contract (M1..M(i-1) registered the endpoints)",
         ))
     else:
         required = ("method", "path", "response_key", "auth_required")

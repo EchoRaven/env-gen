@@ -73,6 +73,7 @@ __all__ = [
     "normalize_feature_inventory",
     "normalize_task_entries",
     "pick_feature_inventory",
+    "synthesize_predicates_from_contract",
     "synthesize_task_tree",
 ]
 
@@ -668,6 +669,56 @@ def ensure_critical_flow_coverage(
             "source": "auto_coverage",
         })
         covered.add(fid)
+    return out
+
+
+def synthesize_predicates_from_contract(
+    registered_endpoints: Iterable[Mapping[str, Any]],
+) -> List[Dict[str, Any]]:
+    """FIX #561: synthesize ``api_smoke`` acceptance predicates from the CUMULATIVE
+    registered contract (the endpoints built in M1..M(i-1)).
+
+    A milestone-2+ slice that adds NO NEW backend endpoints leaves the verifier lane
+    with no net-new predicates to author — but the slice's features still EXERCISE
+    the endpoints the earlier milestones already registered. Rather than requiring
+    the verifier to re-author predicates for an unchanged backend surface (which it
+    reliably under-authors → kickoff stall → the same 1200s abort #96/#108/#P
+    close), derive the acceptance criteria deterministically from the cumulative
+    contract: one ``api_smoke`` predicate per registered BUSINESS (``/api/``)
+    endpoint, asserting it still passes. Deterministic + idempotent + deduped by
+    (method, path). Empty-in → ``[]`` (the caller then keeps its generic floor).
+
+    Mirrors :func:`ensure_critical_flow_coverage`'s ``source=`` audit-marker
+    convention (``source="auto_cumulative_contract"``) so a contract review can see
+    which predicates were derived from the reused cumulative surface. Business-only
+    (``/api/``) so control-plane / auth / health endpoints — kind-exempt from the
+    business gates — don't manufacture spurious acceptance predicates.
+    """
+    out: List[Dict[str, Any]] = []
+    seen: set = set()
+    for ep in registered_endpoints or []:
+        if not isinstance(ep, Mapping):
+            continue
+        method = str(ep.get("method") or "").upper().strip()
+        path = str(ep.get("path") or "").strip()
+        if not method or not path or not path.startswith("/api/"):
+            continue
+        key = (method, path)
+        if key in seen:
+            continue
+        seen.add(key)
+        flow = (
+            f"{method.lower()}_{path}".replace("/", "_").replace("__", "_").strip("_")
+        ) or "cumulative"
+        out.append({
+            "id": f"pred.cumulative.{flow}",
+            "flow": flow,
+            "form": {
+                "kind": "api_smoke",
+                "body": {"method": method, "path": path, "cumulative": True},
+            },
+            "source": "auto_cumulative_contract",
+        })
     return out
 
 
