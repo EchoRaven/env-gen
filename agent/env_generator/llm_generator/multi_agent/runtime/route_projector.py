@@ -681,6 +681,69 @@ def _target_fk(child_meta: Dict[str, Any], parent_table: str, parent_singular: s
 # ---------------------------------------------------------------------------
 # Handler generation
 # ---------------------------------------------------------------------------
+
+# Imports/helpers the projected handlers rely on — injected idempotently + GUARDED
+# so a raw-SQL app with no models.py does not crash on load. Shared by BOTH
+# ``project_missing_routes`` and ``project_state_write_endpoints`` (#556) so a
+# state-write handler projected on its own (project_missing_routes may project
+# nothing) is still self-sufficient. FastAPI/HTTP names re-import harmlessly;
+# ``from models import *`` is best-effort; the ``_fw_*`` re-defs are idempotent and
+# never clobber the skeleton header's richer canonical versions (see inline notes).
+_PROJECTOR_GUARD = (
+    "# by-construction projector deps (guarded; safe to re-import)\n"
+    "from fastapi import Depends, HTTPException, Query  # noqa: F401,F811\n"
+    "from sqlalchemy.exc import IntegrityError, DataError  # noqa: F401,F811\n"
+    "def _fw_uid(user):  # noqa: F811 — idempotent re-definition is harmless\n"
+    "    _v = getattr(user, 'id', None)\n"
+    "    if _v is None and isinstance(user, dict):\n"
+    "        _v = user.get('id') or user.get('sub')\n"
+    "    if _v is None:\n"
+    "        _v = user\n"
+    "    try:\n"
+    "        return int(_v)\n"
+    "    except (TypeError, ValueError):\n"
+    "        return _v\n"
+    "try:\n"
+    "    _fw_owner_val  # noqa: F821 — canonical (rich) header version wins if present\n"
+    "except NameError:\n"
+    "    def _fw_owner_val(cls, col, user):\n"
+    "        _v = _fw_uid(user)\n"
+    "        try:\n"
+    "            _pt = getattr(cls, col).type.python_type\n"
+    "        except Exception:\n"
+    "            return _v\n"
+    "        try:\n"
+    "            if _pt is str and not isinstance(_v, str):\n"
+    "                return str(_v)\n"
+    "            if _pt is int and not isinstance(_v, int):\n"
+    "                return int(_v)\n"
+    "        except (TypeError, ValueError):\n"
+    "            pass\n"
+    "        return _v\n"
+    # #556: a state-write upsert handler projected into a lane-authored main.py that
+    # never ran generate_backend_skeleton would NameError on _coerce_body. Define a
+    # minimal fallback ONLY when the header's rich version is absent (the try binds the
+    # name → the fallback is skipped when the skeleton defined it). Best-effort coerce.
+    "try:\n"
+    "    _coerce_body  # noqa: F821 — canonical (rich) header version wins if present\n"
+    "except NameError:\n"
+    "    def _coerce_body(cls, valid):\n"
+    "        return valid\n"
+    "try:\n"
+    "    from models import *  # noqa: F401,F403\n"
+    "except Exception:\n"
+    "    pass\n"
+    "try:\n"
+    "    from auth_dependency import get_current_user  # noqa: F401,F811\n"
+    "except Exception:\n"
+    "    pass\n"
+    "try:\n"
+    "    from database import get_db  # noqa: F401,F811\n"
+    "except Exception:\n"
+    "    pass\n"
+)
+
+
 def _serialize_expr(var: str, cols: List[str]) -> str:
     """Build a dict literal serialising an ORM instance's columns (ISO datetimes)."""
     if not cols:
@@ -1367,78 +1430,12 @@ def project_missing_routes(
         existing.add((method, _norm_path(path)))  # dedupe within this batch
 
     if block_info:
-        # Imports the projected handlers rely on — injected idempotently + GUARDED so a
-        # raw-SQL app with no models.py (run #13) does not crash on load. FastAPI/HTTP
-        # names are re-imported harmlessly; ``from models import *`` is best-effort.
-        guard = (
-            "# by-construction projector deps (guarded; safe to re-import)\n"
-            "from fastapi import Depends, HTTPException, Query  # noqa: F401,F811\n"
-            # rank-4: the projected write handlers re-raise IntegrityError/DataError to the
-            # global 4xx handlers; import them so this patch path (a lane-authored main that
-            # may not import them) doesn't NameError on the except at request time.
-            "from sqlalchemy.exc import IntegrityError, DataError  # noqa: F401,F811\n"
-            # OWNER-ID COERCION (outlook run-39, live): auth deps commonly carry the JWT
-            # `sub` as a STRING; comparing it against an INTEGER owner column made postgres
-            # raise `operator does not exist: integer = character varying` → EVERY scoped
-            # read/write 500'd → business_endpoints_reachable STUCK-abort. Every projected
-            # owner comparison now goes through _fw_uid (int-coerce when digits, else as-is).
-            "def _fw_uid(user):  # noqa: F811 — idempotent re-definition is harmless\n"
-            "    _v = getattr(user, 'id', None)\n"
-            "    if _v is None and isinstance(user, dict):\n"
-            "        _v = user.get('id') or user.get('sub')\n"
-            "    if _v is None:\n"
-            "        _v = user\n"
-            "    try:\n"
-            "        return int(_v)\n"
-            "    except (TypeError, ValueError):\n"
-            "        return _v\n"
-            # FIX #134 (instagram run-57, live): coerce to the OWNER COLUMN's type — a
-            # TEXT owner column (lane DDL: messages.sender_id) + the int-coerced sub
-            # binds `text = integer` -> psycopg UndefinedFunction -> every scoped read
-            # 500s, and a Python-level ownership check ("16" != 16) denies every owner.
-            # Audit rank-3 (single-source _fw_owner_val): this is a SIMPLE fallback that
-            # LACKS the skeleton header's per-profile sub-entity resolution + auto-create
-            # (#390/#391) and the #393/#394 typed fills. It must NEVER clobber the rich
-            # canonical version — an unconditional re-def here (inserted before the first
-            # route, i.e. AFTER the header def) silently overrode it and re-activated the
-            # per-profile rating-404 bug on netflix-shaped apps. Define it ONLY when main.py
-            # has no _fw_owner_val (a raw-SQL / lane-authored main the skeleton never wrote);
-            # when the header defined it, the ``try`` binds the name and the fallback is
-            # skipped — and even if this block were positioned first, the header's later def
-            # would win. Either way the canonical rich version is active.
-            "try:\n"
-            "    _fw_owner_val  # noqa: F821 — canonical (rich) header version wins if present\n"
-            "except NameError:\n"
-            "    def _fw_owner_val(cls, col, user):\n"
-            "        _v = _fw_uid(user)\n"
-            "        try:\n"
-            "            _pt = getattr(cls, col).type.python_type\n"
-            "        except Exception:\n"
-            "            return _v\n"
-            "        try:\n"
-            "            if _pt is str and not isinstance(_v, str):\n"
-            "                return str(_v)\n"
-            "            if _pt is int and not isinstance(_v, int):\n"
-            "                return int(_v)\n"
-            "        except (TypeError, ValueError):\n"
-            "            pass\n"
-            "        return _v\n"
-            "try:\n"
-            "    from models import *  # noqa: F401,F403\n"
-            "except Exception:\n"
-            "    pass\n"
-            # Projected AUTH handlers reference get_current_user (user=Depends(get_current_user))
-            # and get_db — guard their imports too, so an app whose main.py didn't already
-            # import them (raw-SQL/malformed worktree) doesn't NameError-crash on an auth route.
-            "try:\n"
-            "    from auth_dependency import get_current_user  # noqa: F401,F811\n"
-            "except Exception:\n"
-            "    pass\n"
-            "try:\n"
-            "    from database import get_db  # noqa: F401,F811\n"
-            "except Exception:\n"
-            "    pass\n"
-        )
+        # Imports/helpers the projected handlers rely on — injected idempotently +
+        # GUARDED so a raw-SQL app with no models.py (run #13) does not crash on load.
+        # Single source of truth: _PROJECTOR_GUARD (shared with #556's state-write
+        # projection). The _fw_owner_val / _coerce_body re-defs are try/except-guarded
+        # so the skeleton header's richer canonical versions always win when present.
+        guard = _PROJECTOR_GUARD
         # STATIC routes (no path param) match an exact path only, so they can never
         # shadow anything — but a lane catch-all like /api/users/{username} WILL shadow
         # a projected /api/users/suggested if the latter is defined after it (run #13:
@@ -1461,3 +1458,263 @@ def project_missing_routes(
         main_py.write_text(new_src, encoding="utf-8")
 
     return {"projected": projected, "already": len(existing) - len(projected)}
+
+
+# ---------------------------------------------------------------------------
+# #556 — HEAL for the missing-write-path class (the #557 oracle's heal side)
+# ---------------------------------------------------------------------------
+# A STATE-BEARING entity (a table with a mutable data column — progress_seconds,
+# a status/position/value/is_* toggle) that is READABLE (has a GET) but has NO
+# write endpoint (no POST/PUT/PATCH) is non-functional: the feature only ever
+# reflects seed data because there is no way to RECORD state (Netflix "resume
+# watching" never updates progress). #557's oracle DETECTS this; the functions
+# below are the framework HEAL: for each such entity they auto-project an
+# idempotent UPSERT write handler (POST on the entity's collection) keyed off the
+# table's natural owner+subject FKs, so the loop closes and the feature works.
+# Generalizable — derived from the schema (mutable column(s) + owner/subject FKs),
+# never from any product literal. Byte-identical when the entity already has a
+# write or isn't state-bearing (the shared #557 classifier returns it empty).
+
+def _fk_columns(meta: Dict[str, Any]) -> List[str]:
+    """The table's foreign-key columns (schema order): a column declared with an
+    explicit ``ForeignKey(...)`` OR whose name is ``<x>_id`` (the overwhelming FK
+    convention). The bare ``id`` PK is never an FK."""
+    cols = meta.get("cols", []) or []
+    fks = meta.get("fks", {}) or {}
+    out: List[str] = []
+    for c in cols:
+        cl = str(c).lower()
+        if c in fks or (cl.endswith("_id") and cl != "id"):
+            out.append(c)
+    return out
+
+
+def _state_write_collection_path(entity: str, endpoints: Any) -> str:
+    """The FLAT collection path to hang the projected upsert on.
+
+    Prefer the entity's own existing GET collection path (so the POST sits beside
+    the GET the frontend already calls) — reusing the #557 oracle's token matcher
+    so "the entity's endpoint" means exactly what the oracle counted. A by-id GET
+    path is reduced to its collection (drop the trailing ``{param}``). Only a
+    param-less path is reused (the projected upsert handler takes no path params);
+    otherwise derive ``/api/<name kebab>`` from the table name (the projector's
+    ``_match_model`` folds ``-``→``_`` so it still resolves the model)."""
+    try:
+        from .completeness_audit import (
+            _entity_tokens, _iter_endpoints, _endpoint_touches, _norm)
+    except Exception:
+        _entity_tokens = _iter_endpoints = _endpoint_touches = _norm = None
+    if _entity_tokens is not None:
+        tokens = _entity_tokens(entity)
+        for rec in _iter_endpoints(endpoints or {}):
+            if _norm(rec.get("method")).upper() != "GET":
+                continue
+            raw = str(rec.get("path") or "")
+            if not _endpoint_touches(raw, tokens):
+                continue
+            p = _express_to_fastapi(raw).rstrip("/")
+            segs = p.split("/")
+            if segs and segs[-1].startswith("{"):
+                p = "/".join(segs[:-1])
+            if p and "{" not in p:   # only a flat collection our handler can serve
+                return p
+    base = re.sub(r"[^a-z0-9]+", "-", str(entity or "").strip().lower()).strip("-")
+    return f"/api/{base}"
+
+
+def _generate_upsert_handler(method: str, path: str, cls: str, cols: List[str],
+                             owner_fk: Optional[str], natural_keys: List[str],
+                             auth: bool, idx: int) -> str:
+    """Project an idempotent UPSERT handler for a state entity's write path.
+
+    Semantics ("record/update progress"): insert the row, or — when a row already
+    exists for the same NATURAL KEY (owner FK + subject FK(s), e.g. profile_id +
+    title_id) — UPDATE its mutable columns from the request body. So a repeated
+    write for the same (owner, subject) never duplicates and always reflects the
+    latest state. Reuses the existing projected-handler patterns: body coercion
+    (``_coerce_body``), owner-scoping (``_fw_owner_val`` injects the authenticated
+    caller into the owner FK), the ORM model (schema-correct by construction), and
+    the same 4xx re-raise / rollback envelope as the generic create handler."""
+    path = _sanitize_path_params(path)
+    fn = ("_projected_upsert_"
+          + re.sub(r"[^a-zA-Z0-9]+", "_", f"{method}_{path}").strip("_").lower()
+          + f"_{idx}")
+    deps = "db=Depends(get_db)"
+    if auth:
+        deps += ", user=Depends(get_current_user)"
+    sig = f"body: dict = None, {deps}"
+
+    body_lines: List[str] = [
+        "    payload = body if isinstance(body, dict) else {}",
+        f"    valid = {{k: v for k, v in payload.items() if hasattr({cls}, k)}}",
+        # drop unresolved verification-chain placeholders ("${x}" / "{x}") before the
+        # ORM write — a literal token into a typed column 500s (mirrors the create path).
+        "    valid = {k: v for k, v in valid.items() if not ("
+        "isinstance(v, str) and v.endswith(\"}\") and (v.startswith(\"${\") or "
+        "(v.startswith(\"{\") and v[1:-1].isidentifier())))}",
+        f"    valid = _coerce_body({cls}, valid)",
+    ]
+    # OWNER-SCOPING: inject the authenticated caller into the owner FK so the row is
+    # attributed to (and the natural-key lookup is scoped to) the caller — never trust
+    # a client-supplied owner id.
+    if auth and owner_fk:
+        body_lines.append(
+            f'    valid["{owner_fk}"] = _fw_owner_val({cls}, "{owner_fk}", user)')
+
+    footer = [
+        "        db.commit()",
+        "        db.refresh(obj)",
+        f"        return {{\"item\": {_serialize_expr('obj', cols)}}}",
+        "    except HTTPException:",
+        "        raise",
+        "    except IntegrityError:",
+        "        db.rollback()",
+        "        raise",
+        "    except DataError:",
+        "        db.rollback()",
+        "        raise",
+        "    except Exception as _exc:",
+        "        db.rollback()",
+        "        raise HTTPException(status_code=500, detail=f\"upsert failed: {_exc}\")",
+    ]
+
+    nk = [k for k in (natural_keys or []) if k]
+    if nk:
+        # UPSERT by natural key: find the existing (owner, subject...) row, else insert.
+        body_lines += [
+            "    try:",
+            f"        _q = db.query({cls})",
+            "        _have_key = True",
+            f"        for _nk in {nk!r}:",
+            "            _kv = valid.get(_nk)",
+            "            if _kv is None:",
+            "                _have_key = False",
+            "                break",
+            f"            _q = _q.filter(getattr({cls}, _nk) == _kv)",
+            "        obj = _q.first() if _have_key else None",
+            "        if obj is None:",
+            f"            obj = {cls}(**valid)",
+            "            db.add(obj)",
+            "        else:",
+            "            for _k, _v in valid.items():",
+            "                setattr(obj, _k, _v)",
+        ] + footer
+    else:
+        # No natural key (no FK columns) — a keyless state row: plain create.
+        body_lines += [
+            "    try:",
+            f"        obj = {cls}(**valid)",
+            "        db.add(obj)",
+        ] + footer
+
+    return (
+        f'@app.{method.lower()}("{path}")\n'
+        f"def {fn}({sig}):\n"
+        + "\n".join(body_lines)
+    )
+
+
+def project_state_write_endpoints(
+    backend_dir: Any,
+    endpoints: Any,
+    tables: Any,
+    owner_scoped_tables: Optional[Iterable[str]] = None,
+) -> Dict[str, Any]:
+    """#556 HEAL: auto-project an idempotent UPSERT write handler into ``main.py``
+    for every STATE-BEARING entity that is readable (GET) but has no write
+    (POST/PUT/PATCH) — the exact set the #557 oracle flags.
+
+    ``endpoints``: the ``registryhub.get_endpoints()`` map (``{id: rec}``).
+    ``tables``:    the ``registryhub.list_tables()`` map (``{name: rec}``).
+
+    Detection is delegated to ``completeness_audit.state_entities_missing_write``
+    (the SINGLE source shared with the oracle), so the heal closes precisely what
+    the oracle detects. Returns ``{"projected": [...], "endpoints": [descriptor,
+    ...]}`` — the caller registers each descriptor in RegistryHub so coverage +
+    the frontend see the new write route. Idempotent + best-effort: byte-identical
+    when there is nothing to heal (no state entity missing a write) or no ORM model
+    backs the entity; never raises."""
+    result: Dict[str, Any] = {"projected": [], "endpoints": []}
+    try:
+        backend_dir = Path(backend_dir)
+        main_py = backend_dir / "main.py"
+        if not main_py.exists():
+            result["error"] = "main.py absent"
+            return result
+        from .completeness_audit import state_entities_missing_write
+        missing = state_entities_missing_write(tables or {}, endpoints or {})
+        if not missing:
+            return result  # nothing to heal → main.py untouched (byte-identical)
+
+        src = main_py.read_text(encoding="utf-8")
+        existing = _existing_routes(src)
+        models = _orm_models(backend_dir)
+
+        projected: List[str] = []
+        synthesized: List[Dict[str, Any]] = []
+        block_info: List[Tuple[str, str]] = []
+        # Deterministic order so the emitted source is stable across runs.
+        for i, (entity, state_cols) in enumerate(sorted(missing.items())):
+            # Resolve the ORM model (schema-correct handler needs the class + cols).
+            meta = models.get(entity)
+            if meta is None:
+                mm = _match_model(entity, models)
+                meta = mm[1] if mm else None
+            if not meta or not meta.get("cls"):
+                continue  # no ORM model → cannot project a correct write; leave it
+
+            path = _state_write_collection_path(entity, endpoints)
+            # Never duplicate: if a write already sits at this exact path, skip.
+            if any((m, _norm_path(path)) in existing
+                   for m in ("POST", "PUT", "PATCH")):
+                continue
+
+            cls = meta["cls"]
+            m_cols = list(meta.get("cols", []) or [])
+            owner_fk = _owner_fk(meta)  # profile_id / user_id / author_id / ...
+            fk_cols = _fk_columns(meta)
+            subject_fks = [c for c in fk_cols if c != owner_fk]
+            natural_keys = ([owner_fk] if owner_fk else []) + subject_fks
+            # A write is a mutation → resolve_endpoint_auth returns True; owner
+            # injection then scopes the upsert to the caller.
+            auth = resolve_endpoint_auth("POST", path, {}, None)
+
+            handler = _generate_upsert_handler(
+                "POST", path, cls, m_cols, owner_fk, natural_keys, auth, i)
+            block_info.append((path, handler))
+            projected.append(f"POST {path}")
+            existing.add(("POST", _norm_path(path)))
+            synthesized.append({
+                "method": "POST",
+                "path": path,
+                "table": entity,
+                "cls": cls,
+                "state_columns": list(state_cols),
+                "owner_fk": owner_fk,
+                "subject_fks": subject_fks,
+                "natural_keys": natural_keys,
+                "response_key": "item",
+                "auth_required": auth,
+            })
+
+        if block_info:
+            static_blocks = [b for p, b in block_info if "{" not in p]
+            param_blocks = [b for p, b in block_info if "{" in p]
+            new_src = src
+            top = ("# === BY-CONSTRUCTION (#556 state-write heal): upsert write path\n"
+                   "# for a state entity that had a GET but no write, + guarded deps.\n"
+                   + _PROJECTOR_GUARD
+                   + ("\n" + "\n\n\n".join(static_blocks) if static_blocks else ""))
+            new_src = _insert_before_first_route(new_src, top)
+            if param_blocks:
+                new_src = _insert_before_main_guard(
+                    new_src,
+                    "# === BY-CONSTRUCTION (#556 state-write heal): param write routes.\n"
+                    + "\n\n\n".join(param_blocks))
+            main_py.write_text(new_src, encoding="utf-8")
+
+        result["projected"] = projected
+        result["endpoints"] = synthesized
+    except Exception as exc:  # best-effort — never wedge the heal run
+        result["error"] = str(exc)
+    return result

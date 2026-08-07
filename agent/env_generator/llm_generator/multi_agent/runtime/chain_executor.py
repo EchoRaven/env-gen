@@ -52,6 +52,18 @@ _CONTROL_PLANE_PUBLIC = frozenset(
     (str(e.get("method", "GET")).upper(), str(e.get("path", "")).rstrip("/"))
     for e in (_CONTROL_SURFACE or []) if e.get("auth_required") is False)
 
+# #554 — the FIXED control-plane TENANT-CREATE path(s): a POST to the tenants COLLECTION
+# (no trailing {param}). Its body shape is NOT pinned by the contract and the server
+# generates the PK when the client omits it, so a verifier-authored create must supply a
+# deterministic id (and capture it as ${tenantId}) rather than 400 / leave later steps
+# unresolved. Derived from the fixed surface (not a literal) so a DB-less / no-control-plane
+# app has an empty set → byte-identical.
+_CONTROL_PLANE_TENANT_CREATE = frozenset(
+    str(e.get("path", "")).rstrip("/")
+    for e in (_CONTROL_SURFACE or [])
+    if str(e.get("method", "")).upper() == "POST"
+    and str(e.get("path", "")).rstrip("/").endswith("/tenants"))
+
 
 def _is_control_plane_public(method: Any, path: Any) -> bool:
     """True iff (method, path) is a FIXED control-plane PUBLIC infra endpoint — a
@@ -429,6 +441,26 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
             if pth == "/auth/register" and not _had_body:
                 _ab["name"] = "Chain Tester"
             st["body"] = _ab
+        # #554 CONTROL-PLANE TENANT-CREATE BODY DEFAULT + SAVE (mirrors the #321 auth-body-
+        # default just above): the tenant control plane is a FIXED framework contract that
+        # pins method+path but NOT body shape; the body-tolerant framework handler generates
+        # the PK when the body omits it (never 400). A verifier authors the create the natural
+        # way — POST /api/v1/tenants {"name": ...} or body-less — with NO id, and later steps
+        # reference ${tenantId} that NOTHING saves (POST /api/v1/admin/init-tenant, DELETE
+        # /api/v1/tenants/${tenantId} both break). So setdefault a DETERMINISTIC id (from the
+        # step index — no clock/random) onto the body AND save the created id as `tenantId` so
+        # those later steps resolve. Byte-identical when N/A: the set is empty for a no-control-
+        # plane app, and a create that already carries id/tenant_id keeps it (setdefault never
+        # clobbers; the save still captures whatever id the server returns).
+        if (pth in _CONTROL_PLANE_TENANT_CREATE
+                and str(st.get("method", "")).upper() == "POST"):
+            _tb = dict(st["body"]) if isinstance(st.get("body"), Mapping) else {}
+            if not (_tb.get("id") or _tb.get("tenant_id")):
+                _tb["id"] = f"tenant_{i}"
+            st["body"] = _tb
+            _tsave = dict(st.get("save") or {})
+            _tsave.setdefault("tenantId", "id")
+            st["save"] = _tsave
         _authored_auth = st.get("auth")          # #266: remember who asked for it
         if pth.startswith("/api/") and not st.get("auth"):
             st["auth"] = "token"

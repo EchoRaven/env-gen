@@ -654,12 +654,18 @@ def reset(x_tenant_id: str | None = Header(None, alias="X-Tenant-Id"), db: Sessi
 def list_tenants(db: Session = Depends(get_db)):
     return {"items": [{"id": t.id} for t in db.query(Tenant).all()]}
 
-@app.post("/api/v1/tenants")
-def create_tenant(body: dict, db: Session = Depends(get_db)):
-    tid = body.get("id") or body.get("tenant_id")
-    if not db.get(Tenant, tid):
-        db.add(Tenant(id=tid)); db.commit()
-    return {"id": tid}
+@app.post("/api/v1/tenants", status_code=201)
+def create_tenant(body: dict | None = None, db: Session = Depends(get_db)):
+    # The client MAY omit the server-generated PK — NEVER 400 on a missing id.
+    body = body or {}
+    tid = (body.get("id") or body.get("tenant_id") or "").strip() or None
+    t = db.get(Tenant, tid) if tid else None
+    if t is None:
+        t = Tenant(name=body.get("name") or (tid or ""))
+        if tid:
+            t.id = tid                       # honour a client-supplied id ...
+        db.add(t); db.commit(); db.refresh(t)  # ... else the ORM default (uuid) fills it
+    return {"id": t.id, "name": getattr(t, "name", None)}
 
 @app.delete("/api/v1/tenants/{tenant_id}")
 def delete_tenant(tenant_id: str, db: Session = Depends(get_db)):

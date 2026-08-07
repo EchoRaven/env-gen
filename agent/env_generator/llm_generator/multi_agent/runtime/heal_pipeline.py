@@ -530,7 +530,8 @@ class HealPipeline:
                 return
             from pathlib import Path as _P
             from .lifecycle import business_endpoints
-            from .route_projector import project_missing_routes
+            from .route_projector import (
+                project_missing_routes, project_state_write_endpoints)
             declared = business_endpoints(registryhub.get_endpoints())
             if not declared:
                 return
@@ -538,6 +539,7 @@ class HealPipeline:
             # reads are projected owner-scoped by construction so the isolation chain
             # passes without a lane override (which fd56c2e closed for CRUD). One
             # decision per table at kickoff; default empty ⇒ open reads (public feed).
+            _tbls: dict = {}
             try:
                 _tbls = registryhub.list_tables() or {}
                 owner_scoped_tables = {
@@ -554,6 +556,52 @@ class HealPipeline:
                     registryhub, set(_tbls.keys()))
             except Exception:
                 owner_scoped_tables = set()
+
+            # #556 (HEAL for the missing-write-path class — the #557 oracle's heal
+            # side): a STATE-BEARING entity (a table with a mutable data column —
+            # progress_seconds / status / position / is_*) that is READABLE (GET) but
+            # has NO write endpoint is non-functional (Netflix "resume watching" only
+            # reflects seed data because playback progress can never be recorded). The
+            # declared-contract coverage gate is BLIND to it (the write was never
+            # declared). Auto-project an idempotent UPSERT write handler for each such
+            # entity (keyed off the table's natural owner+subject FKs) and REGISTER it in
+            # RegistryHub, so the loop closes end-to-end and the #557 oracle goes clean.
+            # Runs BEFORE project_missing_routes: the handler it writes into main.py is
+            # then seen as already-routed (deduped), and the registered POST is visible to
+            # coverage + the frontend. Detection reuses the single #557 classifier; a
+            # no-state-entity app is byte-identical (nothing projected/registered).
+            try:
+                _sw = project_state_write_endpoints(
+                    _P(out_dir) / "app" / "backend",
+                    registryhub.get_endpoints(), _tbls,
+                    owner_scoped_tables=owner_scoped_tables)
+                _sw_eps = _sw.get("endpoints") or []
+                for _ep in _sw_eps:
+                    try:
+                        registryhub.register_endpoint(
+                            method=_ep["method"], path=_ep["path"],
+                            schema={"response_key": _ep.get("response_key", "item"),
+                                    "auth_required": bool(_ep.get("auth_required"))},
+                            provider="orchestrator", agent="orchestrator",
+                            status="implemented",
+                            response_key=_ep.get("response_key", "item"),
+                            auth_required=bool(_ep.get("auth_required")),
+                            projected_by="completeness_state_write_heal_556",
+                            state_columns=list(_ep.get("state_columns") or []),
+                            natural_keys=list(_ep.get("natural_keys") or []))
+                    except Exception as _rex:
+                        orch._logger.debug(
+                            "state-write endpoint registration skipped (%s %s): %s",
+                            _ep.get("method"), _ep.get("path"), _rex)
+                if _sw.get("projected"):
+                    orch._logger.warning(
+                        "By-construction STATE-WRITE projection (#556): %s state entity "
+                        "read-but-no-write gap(s) healed — projected an idempotent upsert "
+                        "write path + registered it so the feature is functional (not "
+                        "seed-only): %s", len(_sw["projected"]), _sw["projected"])
+            except Exception as exc:
+                orch._logger.debug("state-write projection skipped: %s", exc)
+
             res = project_missing_routes(
                 _P(out_dir) / "app" / "backend", declared,
                 owner_scoped_tables=owner_scoped_tables)

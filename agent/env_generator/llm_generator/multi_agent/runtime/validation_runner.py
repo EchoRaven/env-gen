@@ -227,15 +227,45 @@ def _backend_logs_tail(compose_file: Path, cwd: Path, tail: int = 200) -> str:
         return ""
 
 
+def _db_readiness_probe_ok(base: str) -> bool:
+    """#555 — TRUE DB-readiness (not just HTTP liveness). ``GET /`` answers the moment
+    FastAPI is up, but Postgres can still be coming up (compose mid-restart/reseed) — so a
+    request that TOUCHES the DB 5xx's on an otherwise-'live' backend (netflix r105: POST
+    /auth/login → 500, an uncaught psycopg OperationalError racing the DB). The framework-
+    owned ``/auth/login`` opens a DB connection to verify credentials, so a throwaway login
+    is a genuine DB-touching probe present in EVERY generated app with the identity spine: it
+    returns a non-5xx (401 invalid credentials) once Postgres answers and a 5xx/503 while it
+    is still down.
+
+    GENERALIZABLE + byte-identical when there is no DB endpoint: a 404 (no such route, e.g.
+    a DB-less app) is <500 → treated as ready (the gate no-ops), so ONLY a real DB-down 5xx
+    holds the wait. A connection error (status None) means the backend/DB isn't answering yet
+    → not ready. Best-effort — the caller's try/except keeps this from ever raising."""
+    r = _http("POST", base + "/auth/login",
+              body={"email": "__db_readiness_probe__@example.invalid",
+                    "password": "__db_readiness_probe__"},
+              timeout=4)
+    st = r.get("status")
+    if st is None:
+        return False
+    return st < 500
+
+
 def wait_backend_ready(project_dir: Any, timeout_s: int = 90, gap_s: float = 3.0) -> bool:
-    """Bounded wait until the compose BACKEND answers HTTP (<500).
+    """Bounded wait until the compose BACKEND answers HTTP (<500) AND Postgres is ready.
 
     The FINAL delivery gate evaluates LIVE state (sql_tables introspection, business-chain
     runs) and the compose stack restarts between milestones — evaluating mid-restart saw
     sql_tables=4-of-11 + failing chains on a HEALTHY app and KILLED otherwise-delivered runs
     (outlook run-28 → rc=1; run-31 → Status: FAILED, both at orchestrator's post-loop gate).
     Callers wait for readiness, then re-evaluate ONCE before raising — recorded-result checks
-    are unaffected; only the live-probed ones get a fair read. Best-effort, never raises."""
+    are unaffected; only the live-probed ones get a fair read. Best-effort, never raises.
+
+    #555: HTTP liveness (``GET /`` <500) is necessary but NOT sufficient — FastAPI answers
+    while Postgres is still coming up, so the gate must ALSO clear a DB-touching probe
+    (``_db_readiness_probe_ok``) before returning ready. The DB probe no-ops (404 → ready)
+    for an app without the identity spine, so this stays byte-identical where there is no DB
+    endpoint to probe."""
     import time as _time
     try:
         compose = Path(project_dir) / "docker" / "docker-compose.yml"
@@ -244,8 +274,10 @@ def wait_backend_ready(project_dir: Any, timeout_s: int = 90, gap_s: float = 3.0
         while _time.time() < deadline:
             port = _backend_host_port(compose, cwd) if compose.exists() else None
             if port:
-                r = _http("GET", f"http://localhost:{port}/", timeout=4)
-                if r.get("status") is not None and (r.get("status") or 500) < 500:
+                base = f"http://localhost:{port}"
+                r = _http("GET", f"{base}/", timeout=4)
+                if (r.get("status") is not None and (r.get("status") or 500) < 500
+                        and _db_readiness_probe_ok(base)):
                     return True
             _time.sleep(gap_s)
         return False

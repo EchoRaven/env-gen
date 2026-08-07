@@ -15,6 +15,7 @@ class constructed with (output_dir, hubs, logger) + the 3 cross-group callbacks
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import Any, Dict, List, Optional
 
@@ -134,6 +135,25 @@ def delivery_gate_suggestions(gate: Dict[str, Any]) -> List[str]:
         suggestions.append(
             "Record at least one passed UI smoke check via `codehub_record_check(pr_id='main', "
             "name='validation:ui_smoke', status='success', evidence={...})`."
+        )
+    if "completeness_state_entity_no_write" in failed_checks:
+        suggestions.append(
+            "Contract-completeness (#557): a state-bearing table (mutable data column "
+            "like progress_seconds/status/value) is READABLE but has NO POST/PUT/PATCH "
+            "endpoint — declare + implement the missing write endpoint and register it "
+            "in RegistryHub so the feature can actually be persisted (the "
+            "Continue-Watching write-path class)."
+        )
+    if "completeness_flow_no_write" in failed_checks:
+        suggestions.append(
+            "Contract-completeness (#557): a declared feature_inventory flow whose verb "
+            "implies a mutation has no write endpoint backing it — add + register the "
+            "endpoint that performs that action."
+        )
+    if "completeness_entity_no_read" in failed_checks:
+        suggestions.append(
+            "Contract-completeness (#557): a declared entity has no GET endpoint — add + "
+            "register a read endpoint so it is reachable from the frontend."
         )
     if "contract_alignment_failed" in failed_checks:
         suggestions.append(
@@ -302,6 +322,20 @@ def format_delivery_gate_report(gate: Dict[str, Any]) -> str:
                     f"(domain_hint={item.get('domain_hint')}, mode={item.get('execution_mode')}) "
                     f"- {item.get('summary') or 'no summary'}"
                 )
+
+    # #557: completeness oracle findings (reported even when the gate otherwise
+    # passes — Stage 1 is advisory, not blocking).
+    completeness = gate.get("completeness", [])
+    if completeness:
+        lines.append(
+            f"- Completeness oracle (#557, reported): {len(completeness)} gap(s)")
+        for item in completeness[:8]:
+            if not isinstance(item, dict):
+                continue
+            target = item.get("entity") or item.get("flow") or "?"
+            lines.append(
+                f"  • [{item.get('severity')}] {item.get('check_id')}: "
+                f"{target} — {item.get('detail')}")
 
     suggestions = delivery_gate_suggestions(gate)
     if suggestions:
@@ -1427,6 +1461,50 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     if business_chain_block:
         failed_checks.append(business_chain_block["reason"])
 
+    # #557 (R1) CONTRACT-COMPLETENESS ORACLE — reconcile the app's DECLARED
+    # feature-set (feature_inventory ∪ state-bearing tables) against its WORKING
+    # surface (declared endpoints). Every other gate derives from the declared
+    # contract, so a MISSING endpoint is invisible: business_chain_api_coverage
+    # reports "100%" of declared endpoints while a needed write-path (the
+    # Continue-Watching progress POST/PUT) simply doesn't exist and the functional
+    # gate stays green with the feature broken. This oracle catches that class.
+    #
+    # STAGE 1 (this commit): COMPUTED + LOGGED + reported in the gate dict, but
+    # gated behind ENVGEN_COMPLETENESS_ENFORCE (default OFF) so it does NOT change
+    # delivery pass/fail yet. Stage 2 flips the flag on to make the error-severity
+    # results (state_entity_no_write) blocking.
+    completeness_results: List[Dict[str, Any]] = []
+    try:
+        from .completeness_audit import compute_completeness
+        completeness_report = compute_completeness(hubs)
+        completeness_results = completeness_report.to_dict().get("results", [])
+        if completeness_results and logger:
+            try:
+                logger.warning(
+                    "completeness oracle (#557, reported/not-blocking) flagged %d "
+                    "gap(s): %s",
+                    len(completeness_results),
+                    ", ".join(
+                        f"{r.get('check_id')}[{r.get('severity')}]:"
+                        f"{r.get('entity') or r.get('flow')}"
+                        for r in completeness_results[:8]
+                    ),
+                )
+            except Exception:
+                pass
+        _enforce = os.environ.get(
+            "ENVGEN_COMPLETENESS_ENFORCE", "0").lower() in ("1", "true", "yes", "on")
+        if _enforce:
+            for cid in completeness_report.blocking_check_ids("error"):
+                if cid not in failed_checks:
+                    failed_checks.append(cid)
+    except Exception as _completeness_err:
+        try:
+            logger.warning(
+                f"completeness_audit raised inside delivery gate: {_completeness_err}")
+        except Exception:
+            pass
+
     ok = not (missing_files or missing_dirs or invalid_json or failed_checks)
     soft_fail_only = (
         bool(failed_checks)
@@ -1445,6 +1523,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         "incomplete_required_tasks": incomplete_tasks,
         "noncanonical_response_keys": noncanonical_response_keys,
         "business_chain": business_chain_block,
+        "completeness": completeness_results,  # #557 reported (not-yet-blocking)
         "hub_counts": {
             "endpoints": len(endpoints),
             "tables": len(tables),

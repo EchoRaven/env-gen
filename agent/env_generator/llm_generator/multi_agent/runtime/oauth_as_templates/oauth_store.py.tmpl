@@ -43,6 +43,16 @@ from psycopg.rows import dict_row
 PASSWORD_SALT = "app_sandbox_salt_2024"
 
 
+class DatabaseUnavailable(Exception):
+    """Postgres is momentarily unreachable — compose mid-restart/reseed, not a bug.
+
+    Raised by ``_conn`` when ``psycopg.connect`` (or an in-flight query) hits an
+    ``OperationalError`` (connection refused / server closed the connection). The auth
+    routes map it to a RETRYABLE 503 instead of leaking an uncaught 500: a DB that is
+    momentarily down is a transient, retryable condition, not a server defect.
+    """
+
+
 def _conninfo() -> str:
     """Resolve a psycopg3 conninfo string.
 
@@ -83,17 +93,36 @@ class OAuthStore:
 
     @contextmanager
     def _conn(self):
-        conn = psycopg.connect(
-            self._conninfo or _conninfo(), row_factory=dict_row
-        )
+        # DB-READINESS RESILIENCE (#555): Postgres can be momentarily down while the
+        # backend is up (compose mid-restart/reseed). A raw psycopg.connect then raises
+        # OperationalError which, uncaught, surfaces as an opaque HTTP 500 — but a DB that
+        # is briefly unreachable is a RETRYABLE condition. Map the connect failure (and an
+        # in-flight connection loss) to DatabaseUnavailable so the auth route can answer a
+        # retryable 503, never a 500. The happy path is untouched.
+        try:
+            conn = psycopg.connect(
+                self._conninfo or _conninfo(), row_factory=dict_row
+            )
+        except psycopg.OperationalError as exc:
+            raise DatabaseUnavailable(str(exc)) from exc
         try:
             yield conn
             conn.commit()
+        except psycopg.OperationalError as exc:
+            # server closed the connection mid-query (restart between connect and use).
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise DatabaseUnavailable(str(exc)) from exc
         except Exception:
             conn.rollback()
             raise
         finally:
-            conn.close()
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     def ensure_schema(self) -> None:
         """Defensive idempotent re-create. init/01_init.sql owns the canonical
