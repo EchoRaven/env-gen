@@ -1185,7 +1185,15 @@ class Orchestrator:
                 # (the existing single-milestone fallback path, whole requirements as the
                 # slice) removes that surface entirely. GENERAL, not env-specific: any env
                 # just builds in one kickoff/delivery; byte-identical when the flag is off.
-                _force_single_ms = bool(os.environ.get("ENVGEN_SINGLE_MILESTONE"))
+                # Tolerant flag parse: os.environ.get returns a STRING, and
+                # bool("0") is True in Python — so `bool(os.environ.get(...))`
+                # can never be turned OFF (setting =0 still forced single-ms).
+                # Match the rest of the codebase idiom: only real truthy tokens
+                # enable it; unset/"0"/"false"/"no"/"off" leave the agent-planned
+                # multi-milestone split active (framework default = multi).
+                _force_single_ms = os.environ.get(
+                    "ENVGEN_SINGLE_MILESTONE", "0").strip().lower() in (
+                    "1", "true", "yes", "y", "on")
                 if _force_single_ms:
                     self._logger.warning(
                         "MILESTONE PLAN: single-milestone mode (ENVGEN_SINGLE_MILESTONE) — "
