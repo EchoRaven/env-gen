@@ -1194,6 +1194,101 @@ def _deliverability_check_token(blocker: str) -> str:
     return f"deliverability_other:{str(blocker)[:80]}"
 
 
+def enforce_completeness(output_dir, hubs, tables: Dict[str, Any],
+                         failed_checks: List[str], logger) -> List[Dict[str, Any]]:
+    """#557 R4-core (user-approved) — CONTRACT-COMPLETENESS: HEAL-THEN-ENFORCE.
+
+    Reconcile the app's DECLARED feature-set (feature_inventory ∪ state-bearing
+    tables) against its WORKING surface (declared endpoints) and — when enforcing —
+    HARD-BLOCK delivery on a genuinely-incomplete feature, after auto-healing every
+    HEALABLE gap FIRST so enforcement can never false-block.
+
+    Every other gate derives from the declared contract, so a MISSING endpoint is
+    invisible: business_chain_api_coverage reports "100%" of declared endpoints while
+    a needed write-path (the Continue-Watching progress POST) simply doesn't exist and
+    the functional gate stays green with the feature broken. This oracle catches that
+    class — the readable-but-not-writable STATE entity (severity ``error``).
+
+    ENFORCE is ON by DEFAULT (``ENVGEN_COMPLETENESS_ENFORCE``; set to ``0``/``false``
+    for the old reported-only behavior — BYTE-IDENTICAL: no heal runs, the oracle is
+    computed + logged but NEVER contributes a failed check). When enforcing:
+
+    1. HEAL-THEN-ENFORCE — the #556 state-write heal (reused verbatim via
+       ``heal_pipeline.heal_state_write_endpoints`` → ``route_projector.
+       project_state_write_endpoints``; NO duplication) runs BEFORE the oracle is
+       consulted. A HEALABLE gap — a state entity whose write the projector CAN back
+       from its ORM model — is projected + REGISTERED first, so ``compute_completeness``
+       then sees the healed write and does NOT flag it. This fixes the timing bug: the
+       #556 heal otherwise runs LATER (orchestrator final-flush / release-snapshot,
+       AFTER this gate), so naive enforcement would false-block a gap the heal WOULD
+       have closed. Idempotent: the later heal then no-ops (already projected/registered).
+    2. ENFORCE — only the error-severity ``completeness_state_entity_no_write`` is
+       promoted to ``failed_checks`` (hard-block). A GENUINELY unhealable gap (a state
+       entity with a GET but no ORM model the projector can back) survives step 1 and
+       correctly blocks — a real functional incompleteness must not ship. Warn-severity
+       findings (``completeness_flow_no_write`` / ``completeness_entity_no_read``) are
+       ALWAYS advisory and never block.
+
+    Mutates ``failed_checks`` in place (de-duped) and returns the reported results list
+    for the gate dict. Best-effort; never raises (a malformed hub degrades to reported-
+    only rather than wedging the gate)."""
+    completeness_results: List[Dict[str, Any]] = []
+    try:
+        from .completeness_audit import compute_completeness
+        _enforce = os.environ.get(
+            "ENVGEN_COMPLETENESS_ENFORCE", "1").lower() in ("1", "true", "yes", "on")
+        # (1) HEAL-THEN-ENFORCE: project + register any HEALABLE state-write BEFORE the
+        # oracle checks. Guarded on _enforce so ENFORCE=off stays byte-identical (the
+        # heal — which writes main.py + registers endpoints — never runs when off).
+        if _enforce:
+            try:
+                from .heal_pipeline import heal_state_write_endpoints
+                heal_state_write_endpoints(
+                    output_dir / "app" / "backend",
+                    getattr(hubs, "registryhub", None),
+                    tables=tables, logger=logger)
+            except Exception as _heal_err:
+                if logger is not None:
+                    try:
+                        logger.warning(
+                            "heal-then-enforce state-write heal raised inside delivery "
+                            "gate (enforcement proceeds on current state): %s", _heal_err)
+                    except Exception:
+                        pass
+        completeness_report = compute_completeness(hubs)
+        completeness_results = completeness_report.to_dict().get("results", [])
+        if completeness_results and logger:
+            try:
+                logger.warning(
+                    "completeness oracle (#557, %s) flagged %d gap(s): %s",
+                    "ENFORCED" if _enforce else "reported/not-blocking",
+                    len(completeness_results),
+                    ", ".join(
+                        f"{r.get('check_id')}[{r.get('severity')}]:"
+                        f"{r.get('entity') or r.get('flow')}"
+                        for r in completeness_results[:8]
+                    ),
+                )
+            except Exception:
+                pass
+        # (2) ENFORCE — only error-severity results block (state_entity_no_write). Warn
+        # findings (flow_no_write / entity_no_read) stay advisory: blocking_check_ids
+        # is queried with severity="error" so a warn can never enter failed_checks.
+        if _enforce:
+            for cid in completeness_report.blocking_check_ids("error"):
+                if cid not in failed_checks:
+                    failed_checks.append(cid)
+    except Exception as _completeness_err:
+        if logger is not None:
+            try:
+                logger.warning(
+                    "completeness_audit raised inside delivery gate: %s",
+                    _completeness_err)
+            except Exception:
+                pass
+    return completeness_results
+
+
 def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                            scaffold_design_readme, get_validation_results,
                            get_validation_summary,
@@ -1461,49 +1556,20 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     if business_chain_block:
         failed_checks.append(business_chain_block["reason"])
 
-    # #557 (R1) CONTRACT-COMPLETENESS ORACLE — reconcile the app's DECLARED
-    # feature-set (feature_inventory ∪ state-bearing tables) against its WORKING
-    # surface (declared endpoints). Every other gate derives from the declared
-    # contract, so a MISSING endpoint is invisible: business_chain_api_coverage
-    # reports "100%" of declared endpoints while a needed write-path (the
-    # Continue-Watching progress POST/PUT) simply doesn't exist and the functional
-    # gate stays green with the feature broken. This oracle catches that class.
-    #
-    # STAGE 1 (this commit): COMPUTED + LOGGED + reported in the gate dict, but
-    # gated behind ENVGEN_COMPLETENESS_ENFORCE (default OFF) so it does NOT change
-    # delivery pass/fail yet. Stage 2 flips the flag on to make the error-severity
-    # results (state_entity_no_write) blocking.
-    completeness_results: List[Dict[str, Any]] = []
-    try:
-        from .completeness_audit import compute_completeness
-        completeness_report = compute_completeness(hubs)
-        completeness_results = completeness_report.to_dict().get("results", [])
-        if completeness_results and logger:
-            try:
-                logger.warning(
-                    "completeness oracle (#557, reported/not-blocking) flagged %d "
-                    "gap(s): %s",
-                    len(completeness_results),
-                    ", ".join(
-                        f"{r.get('check_id')}[{r.get('severity')}]:"
-                        f"{r.get('entity') or r.get('flow')}"
-                        for r in completeness_results[:8]
-                    ),
-                )
-            except Exception:
-                pass
-        _enforce = os.environ.get(
-            "ENVGEN_COMPLETENESS_ENFORCE", "0").lower() in ("1", "true", "yes", "on")
-        if _enforce:
-            for cid in completeness_report.blocking_check_ids("error"):
-                if cid not in failed_checks:
-                    failed_checks.append(cid)
-    except Exception as _completeness_err:
-        try:
-            logger.warning(
-                f"completeness_audit raised inside delivery gate: {_completeness_err}")
-        except Exception:
-            pass
+    # #557 R4-core (user-approved) CONTRACT-COMPLETENESS — HEAL-THEN-ENFORCE.
+    # Reconcile the app's DECLARED feature-set (feature_inventory ∪ state-bearing
+    # tables) against its WORKING surface (declared endpoints). Every other gate
+    # derives from the declared contract, so a MISSING endpoint is invisible:
+    # business_chain_api_coverage reports "100%" of declared endpoints while a needed
+    # write-path (the Continue-Watching progress POST) simply doesn't exist and the
+    # functional gate stays green with the feature broken. This oracle catches that
+    # class and, with ENFORCE on (now the DEFAULT), HARD-BLOCKS delivery on a
+    # genuinely-incomplete feature — after auto-HEALING every healable gap FIRST (the
+    # #556 state-write projection) so enforcement can never false-block. Set
+    # ENVGEN_COMPLETENESS_ENFORCE=0/false for the old reported-only behavior
+    # (byte-identical). See enforce_completeness for the full contract.
+    completeness_results = enforce_completeness(
+        output_dir, hubs, tables, failed_checks, logger)
 
     ok = not (missing_files or missing_dirs or invalid_json or failed_checks)
     soft_fail_only = (
@@ -1556,6 +1622,6 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
 
 __all__ = ["format_delivery_gate_report", "delivery_gate_suggestions",
            "incomplete_required_tasks", "noncanonical_business_response_keys",
-           "business_chain_blockers",
+           "business_chain_blockers", "enforce_completeness",
            "extract_spec_tables", "validate_contract_alignment", "validate_build_evidence",
            "validate_delivery_gate"]

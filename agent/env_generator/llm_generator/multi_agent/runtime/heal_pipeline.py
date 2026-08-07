@@ -294,6 +294,94 @@ def distribute_seed_media(repo_root, logger=None) -> dict:
         return {}
 
 
+def heal_state_write_endpoints(backend_dir, registryhub, tables=None,
+                               owner_scoped_tables=None, logger=None) -> dict:
+    """#556 state-write HEAL as a standalone, reusable step (the #557 oracle's heal side).
+
+    For every STATE-BEARING entity that is READABLE (has a GET) but has NO write
+    (POST/PUT/PATCH) — the EXACT set the #557 completeness oracle flags — project an
+    idempotent UPSERT write handler into ``main.py`` AND register it in RegistryHub,
+    so coverage, the #557 oracle, and the frontend all see the new write path.
+    Detection is delegated to the single #557 classifier
+    (``completeness_audit.state_entities_missing_write`` via
+    ``route_projector.project_state_write_endpoints``), so the heal closes precisely
+    what the oracle detects.
+
+    Extracted from ``HealPipeline.project_missing_routes`` so BOTH the delivery-time
+    heal loop AND the delivery gate's HEAL-THEN-ENFORCE step (#557 R4-core,
+    ``delivery_gate.enforce_completeness``) run the SAME projection + registration —
+    never a duplicate. Idempotent + best-effort: byte-identical when there is nothing
+    to heal (no state entity missing a write, or no ORM model backs the entity →
+    nothing projected/registered), and re-running after it already ran is a no-op
+    (the write is then seen as already-routed + already-registered). Never raises.
+
+    Returns the ``project_state_write_endpoints`` result
+    (``{"projected": [...], "endpoints": [...]}``), or ``{"projected": [],
+    "endpoints": []}`` when it could not run (no registryhub / no backend)."""
+    result: dict = {"projected": [], "endpoints": []}
+    if registryhub is None:
+        return result
+    try:
+        from pathlib import Path as _P
+        from .route_projector import project_state_write_endpoints
+        _tbls = tables
+        if _tbls is None:
+            try:
+                _tbls = registryhub.list_tables() or {}
+            except Exception:
+                _tbls = {}
+        try:
+            _eps = registryhub.get_endpoints() or {}
+        except Exception:
+            _eps = {}
+        _sw = project_state_write_endpoints(
+            _P(backend_dir), _eps, _tbls, owner_scoped_tables=owner_scoped_tables)
+        for _ep in (_sw.get("endpoints") or []):
+            try:
+                registryhub.register_endpoint(
+                    method=_ep["method"], path=_ep["path"],
+                    schema={"response_key": _ep.get("response_key", "item"),
+                            "auth_required": bool(_ep.get("auth_required"))},
+                    provider="orchestrator", agent="orchestrator",
+                    status="implemented",
+                    response_key=_ep.get("response_key", "item"),
+                    auth_required=bool(_ep.get("auth_required")),
+                    projected_by="completeness_state_write_heal_556",
+                    state_columns=list(_ep.get("state_columns") or []),
+                    natural_keys=list(_ep.get("natural_keys") or []),
+                    # #556-pt2: the subject FK(s) + owner FK let the FRONTEND
+                    # (frontend_scaffold._load_state_write_endpoints_556b) fire this
+                    # write from the player action with the right body keys (owner is
+                    # server-derived; body carries subject + state).
+                    subject_fks=list(_ep.get("subject_fks") or []),
+                    owner_fk=_ep.get("owner_fk"))
+            except Exception as _rex:
+                if logger is not None:
+                    try:
+                        logger.debug(
+                            "state-write endpoint registration skipped (%s %s): %s",
+                            _ep.get("method"), _ep.get("path"), _rex)
+                    except Exception:
+                        pass
+        if _sw.get("projected") and logger is not None:
+            try:
+                logger.warning(
+                    "By-construction STATE-WRITE projection (#556): %s state entity "
+                    "read-but-no-write gap(s) healed — projected an idempotent upsert "
+                    "write path + registered it so the feature is functional (not "
+                    "seed-only): %s", len(_sw["projected"]), _sw["projected"])
+            except Exception:
+                pass
+        result = _sw
+    except Exception as exc:
+        if logger is not None:
+            try:
+                logger.debug("state-write projection skipped: %s", exc)
+            except Exception:
+                pass
+    return result
+
+
 class HealPipeline:
     """Groups the delivery-time repair/merge/commit steps. Stateless; borrows the
     orchestrator (output_dir / hubs / logger / llm) live."""
@@ -530,8 +618,7 @@ class HealPipeline:
                 return
             from pathlib import Path as _P
             from .lifecycle import business_endpoints
-            from .route_projector import (
-                project_missing_routes, project_state_write_endpoints)
+            from .route_projector import project_missing_routes
             declared = business_endpoints(registryhub.get_endpoints())
             if not declared:
                 return
@@ -570,43 +657,12 @@ class HealPipeline:
             # then seen as already-routed (deduped), and the registered POST is visible to
             # coverage + the frontend. Detection reuses the single #557 classifier; a
             # no-state-entity app is byte-identical (nothing projected/registered).
-            try:
-                _sw = project_state_write_endpoints(
-                    _P(out_dir) / "app" / "backend",
-                    registryhub.get_endpoints(), _tbls,
-                    owner_scoped_tables=owner_scoped_tables)
-                _sw_eps = _sw.get("endpoints") or []
-                for _ep in _sw_eps:
-                    try:
-                        registryhub.register_endpoint(
-                            method=_ep["method"], path=_ep["path"],
-                            schema={"response_key": _ep.get("response_key", "item"),
-                                    "auth_required": bool(_ep.get("auth_required"))},
-                            provider="orchestrator", agent="orchestrator",
-                            status="implemented",
-                            response_key=_ep.get("response_key", "item"),
-                            auth_required=bool(_ep.get("auth_required")),
-                            projected_by="completeness_state_write_heal_556",
-                            state_columns=list(_ep.get("state_columns") or []),
-                            natural_keys=list(_ep.get("natural_keys") or []),
-                            # #556-pt2: the subject FK(s) + owner FK let the FRONTEND
-                            # (frontend_scaffold._load_state_write_endpoints_556b) fire
-                            # this write from the player action with the right body keys
-                            # (owner is server-derived; body carries subject + state).
-                            subject_fks=list(_ep.get("subject_fks") or []),
-                            owner_fk=_ep.get("owner_fk"))
-                    except Exception as _rex:
-                        orch._logger.debug(
-                            "state-write endpoint registration skipped (%s %s): %s",
-                            _ep.get("method"), _ep.get("path"), _rex)
-                if _sw.get("projected"):
-                    orch._logger.warning(
-                        "By-construction STATE-WRITE projection (#556): %s state entity "
-                        "read-but-no-write gap(s) healed — projected an idempotent upsert "
-                        "write path + registered it so the feature is functional (not "
-                        "seed-only): %s", len(_sw["projected"]), _sw["projected"])
-            except Exception as exc:
-                orch._logger.debug("state-write projection skipped: %s", exc)
+            # Extracted to module-level heal_state_write_endpoints so the delivery gate's
+            # HEAL-THEN-ENFORCE step (#557 R4-core) runs the SAME projection+registration.
+            heal_state_write_endpoints(
+                _P(out_dir) / "app" / "backend", registryhub,
+                tables=_tbls, owner_scoped_tables=owner_scoped_tables,
+                logger=orch._logger)
 
             res = project_missing_routes(
                 _P(out_dir) / "app" / "backend", declared,

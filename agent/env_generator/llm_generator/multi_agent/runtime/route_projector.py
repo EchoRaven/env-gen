@@ -1633,7 +1633,14 @@ def project_state_write_endpoints(
     ...]}`` — the caller registers each descriptor in RegistryHub so coverage +
     the frontend see the new write route. Idempotent + best-effort: byte-identical
     when there is nothing to heal (no state entity missing a write) or no ORM model
-    backs the entity; never raises."""
+    backs the entity; never raises.
+
+    REGISTER-ONLY case: when a state entity's write already exists in the CODE
+    (lane-authored or a prior projection) but the REGISTRY does not yet know about it,
+    NO handler is projected (``projected`` stays empty, ``main.py`` byte-identical) but
+    a descriptor IS still emitted (marked ``already_coded``) so the caller registers
+    the already-coded write — otherwise heal-then-enforce (#557 R4-core) would
+    false-block a feature that works in code merely because its write was unregistered."""
     result: Dict[str, Any] = {"projected": [], "endpoints": []}
     try:
         backend_dir = Path(backend_dir)
@@ -1664,10 +1671,15 @@ def project_state_write_endpoints(
                 continue  # no ORM model → cannot project a correct write; leave it
 
             path = _state_write_collection_path(entity, endpoints)
-            # Never duplicate: if a write already sits at this exact path, skip.
-            if any((m, _norm_path(path)) in existing
-                   for m in ("POST", "PUT", "PATCH")):
-                continue
+            # A write already routed at this exact path in the CODE (lane-authored, or a
+            # prior projection) that the REGISTRY does not yet know about. The #557 oracle
+            # + ``missing`` read the REGISTRY, so the write reads as absent there even though
+            # the feature works in code. Do NOT project a duplicate handler (main.py stays
+            # byte-identical), but STILL emit a descriptor so the caller REGISTERS the
+            # already-coded write — otherwise heal-then-enforce (#557 R4-core) would
+            # FALSE-BLOCK a working feature merely because its write was never registered.
+            coded_write = next((m for m in ("POST", "PUT", "PATCH")
+                                if (m, _norm_path(path)) in existing), None)
 
             cls = meta["cls"]
             m_cols = list(meta.get("cols", []) or [])
@@ -1677,15 +1689,17 @@ def project_state_write_endpoints(
             natural_keys = ([owner_fk] if owner_fk else []) + subject_fks
             # A write is a mutation → resolve_endpoint_auth returns True; owner
             # injection then scopes the upsert to the caller.
-            auth = resolve_endpoint_auth("POST", path, {}, None)
+            method = coded_write or "POST"
+            auth = resolve_endpoint_auth(method, path, {}, None)
 
-            handler = _generate_upsert_handler(
-                "POST", path, cls, m_cols, owner_fk, natural_keys, auth, i)
-            block_info.append((path, handler))
-            projected.append(f"POST {path}")
-            existing.add(("POST", _norm_path(path)))
+            if coded_write is None:
+                handler = _generate_upsert_handler(
+                    "POST", path, cls, m_cols, owner_fk, natural_keys, auth, i)
+                block_info.append((path, handler))
+                projected.append(f"POST {path}")
+                existing.add(("POST", _norm_path(path)))
             synthesized.append({
-                "method": "POST",
+                "method": method,
                 "path": path,
                 "table": entity,
                 "cls": cls,
@@ -1695,6 +1709,9 @@ def project_state_write_endpoints(
                 "natural_keys": natural_keys,
                 "response_key": "item",
                 "auth_required": auth,
+                # True ⇒ the write already existed in code; we only REGISTER it (no new
+                # handler written), so main.py is untouched (byte-identical).
+                "already_coded": coded_write is not None,
             })
 
         if block_info:
