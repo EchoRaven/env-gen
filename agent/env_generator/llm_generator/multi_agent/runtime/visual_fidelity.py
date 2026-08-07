@@ -2501,6 +2501,11 @@ class VisualFidelityGate:
         self._seed_reminder_sent = False   # #133: one backend seed reminder per milestone
         self._best_by_screen: Dict[str, float] = {}  # #138: best similarity per blocking screen
         self.plateau_rounds = 0            # #138: consecutive judgments with no new best
+        self.avg_pass_rounds = 0           # #558: consecutive judged rounds whose gating
+        #                                    blocking_average cleared the min bar (the STABLE
+        #                                    precondition for the avg fast-release; a single
+        #                                    lucky pass never fires it). Reset when a round drops
+        #                                    below the bar; per-milestone (not reset by churn).
         self._verdict_cache: Dict[str, Dict[str, Any]] = {}  # #142: (screen, shot-md5) → verdict
         self.last_judgment_at = None       # #145: wall-clock of the last real judgment
         self.released = False              # #521: STICKY escape latch — once the deferral
@@ -2521,6 +2526,7 @@ class VisualFidelityGate:
         self._seed_reminder_sent = False  # #133: re-armed per milestone
         self._best_by_screen = {}      # #138: plateau tracking is per milestone
         self.plateau_rounds = 0
+        self.avg_pass_rounds = 0       # #558: avg-stable round tracking is per milestone
         self._verdict_cache = {}       # #142: pixel-keyed verdicts are per milestone
         self.last_judgment_at = None   # #145: idle-source stamp is per milestone
         self.released = False          # #521: sticky escape latch is per milestone
@@ -2675,6 +2681,20 @@ class VisualFidelityGate:
                 elif _n not in self._best_by_screen:
                     self._best_by_screen[_n] = _sim
             self.plateau_rounds = 0 if _improved else self.plateau_rounds + 1
+            # FIX #558: track consecutive REAL judgments whose gating blocking_average (#542,
+            # over BLOCKING screens only) cleared the min bar — the STABLE precondition for the
+            # avg fast-release (a single lucky pass never triggers a release; a round below the
+            # bar resets the count). Per-milestone, NOT reset by source churn (mirrors
+            # plateau_rounds). Best-effort: a result missing either field never advances it.
+            try:
+                _ba = result.get("blocking_average")
+                _mn = result.get("min_similarity")
+                if _ba is not None and _mn is not None and float(_ba) >= float(_mn):
+                    self.avg_pass_rounds = self.avg_pass_rounds + 1
+                else:
+                    self.avg_pass_rounds = 0
+            except Exception:
+                self.avg_pass_rounds = 0
             # FIX #129: latch each blocking screen that cleared the bar this round;
             # the gate passes once EVERY blocking screen has cleared at least once
             # this milestone (defeats the joint-probability wall the noisy judge

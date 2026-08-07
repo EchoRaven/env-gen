@@ -207,6 +207,26 @@ VISUAL_IDLE_S = float(os.environ.get(
 # floored escape, so it never fires early on noise, but it CANNOT be outrun by fast churn.
 VISUAL_PLATEAU_HARD_ROUNDS = int(os.environ.get(
     "ENVGEN_VISUAL_PLATEAU_HARD") or str(2 * VISUAL_PLATEAU_ROUNDS))  # churn-proof, no floor
+# FIX #558 (netflix r95/r103/r107, 2026-08-07): AVG FAST-RELEASE. The visual gate's clean
+# pass requires EVERY blocking screen ≥ the 0.65 bar (all-pass). But a run whose gating
+# blocking_average (#542, BLOCKING screens only) is comfortably ≥ the bar (r107 = 0.7258)
+# while a couple of screens lag (~0.50-0.60) is NOT a clean pass — so it DEFERS, and because
+# the per-source attempt counter resets on frontend source-churn the fast escapes never fire;
+# it grinds to the 3600s wall-clock escape (~40 wasted re-judgements, ~40-60 min), then
+# RELEASES the SAME app anyway. The wall-clock escape already delivers the avg-≥-bar outcome —
+# just ~60 min and ~40 re-judgements too late. This adds a FAST path to that EXACT release: a
+# run whose blocking_average has cleared the bar for N consecutive judged rounds (STABLE — a
+# single lucky pass never fires it; post-#548 captures are deterministic) and whose blocking
+# exam is complete (the same ≥1-blocking-judged coverage precondition #353's pass requires)
+# releases promptly. It is PURELY a faster route to the release the escape already grants — the
+# 0.65 bar, the all-pass clean-pass fast-path, and every escape backstop (wall-clock / plateau /
+# idle) are all untouched, and it reuses the #521 sticky-release latch so it never re-defers.
+# Default-ON; disable with ENVGEN_VISUAL_AVG_RELEASE=0. N = ENVGEN_VISUAL_AVG_RELEASE_ROUNDS
+# (default 2 — needs the avg stable over ≥2 real judgments, so noise/one lucky pass can't trip it).
+VISUAL_AVG_RELEASE = os.environ.get(
+    "ENVGEN_VISUAL_AVG_RELEASE", "1").lower() not in ("0", "false", "no", "off")
+VISUAL_AVG_RELEASE_ROUNDS = max(1, int(
+    os.environ.get("ENVGEN_VISUAL_AVG_RELEASE_ROUNDS") or "2"))
 
 
 def _fwval_should_attempt(attempts: int, last_attempt_ts: float, now: float,
@@ -342,10 +362,19 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
                              plateau_min_s: float = VISUAL_PLATEAU_MIN_S,
                              plateau_hard: int = VISUAL_PLATEAU_HARD_ROUNDS,
                              last_judgment_at=None,
-                             idle_s: float = VISUAL_IDLE_S) -> str:
+                             idle_s: float = VISUAL_IDLE_S,
+                             blocking_average=None, avg_min=None,
+                             avg_stable_rounds: int = 0,
+                             avg_release_rounds: int = VISUAL_AVG_RELEASE_ROUNDS,
+                             avg_release: bool = VISUAL_AVG_RELEASE,
+                             coverage_ok: bool = False) -> str:
     """Decide the visual-blocked delivery path. Returns:
-      * ``"defer"``  — keep blocking the release; the lane should iterate.
-      * ``"release"``— escape: deliver anyway (recorded below-threshold).
+      * ``"defer"``       — keep blocking the release; the lane should iterate.
+      * ``"release"``     — escape: deliver anyway (recorded below-threshold).
+      * ``"fast_release"``— FIX #558: the gating blocking_average already clears the
+        min bar STABLY, so release NOW instead of grinding to the escape (same
+        outcome, ~40-60 min sooner). Distinct value so the caller logs the fast-
+        release line; the caller treats it EXACTLY like ``"release"`` otherwise.
     Escapes (so the deferral ALWAYS terminates — PIPE-C3): the per-milestone
     wall-clock since the FIRST defer exceeds ``escape_s`` (anchored, NOT reset by
     lane churn), OR the per-source attempt budget is spent, OR the per-milestone
@@ -354,7 +383,26 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
     with no blocking screen beating its best-so-far) after at least
     ``plateau_min_s`` of deferral: further waiting buys nothing (log-mining runs
     50-62: the window averaged ~65min = ~40% of total wall-clock and 7/7 ended
-    on the timer, never a pass)."""
+    on the timer, never a pass).
+
+    FIX #558 (AVG FAST-RELEASE): checked FIRST so it pre-empts the wall-clock grind.
+    Fires ONLY when ALL hold — (1) the gating ``blocking_average`` (#542, over
+    BLOCKING screens only) is ≥ ``avg_min`` (the operationalized 0.65 Part-A bar,
+    NEVER lowered here), (2) it has been ≥ the bar for ``avg_release_rounds``
+    consecutive REAL judgments (``avg_stable_rounds`` — reuses the same per-milestone
+    round tracking as ``plateau_rounds`` so a single lucky pass can't trip it), and
+    (3) ``coverage_ok`` — the blocking exam is complete (≥1 blocking screen judged,
+    the same coverage precondition ``visual_gate_verdict``'s pass already requires).
+    This is a strict SUBSET of the states the wall-clock escape would eventually
+    release anyway, so it can NEVER ship an app the escape would not, only sooner. It
+    is a pure additive path: with the defaults (``coverage_ok`` False, averages None)
+    it never fires, so every other branch is byte-identical. Disable via
+    ``avg_release`` (env ENVGEN_VISUAL_AVG_RELEASE)."""
+    if (avg_release and coverage_ok and avg_release_rounds > 0
+            and blocking_average is not None and avg_min is not None
+            and blocking_average >= avg_min
+            and avg_stable_rounds >= avg_release_rounds):
+        return "fast_release"
     if deferred_since is not None and (now - deferred_since) > escape_s:
         return "release"
     if total_judgments >= total_cap:
@@ -390,6 +438,30 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
             and (now - last_judgment_at) >= idle_s):
         return "release"
     return "defer"
+
+
+def _visual_fast_release_args(gate) -> dict:
+    """FIX #558: the AVG fast-release inputs extracted from a VisualFidelityGate's LAST judged
+    result — the gating ``blocking_average`` (#542), the min bar (``min_similarity`` = the
+    operationalized ENVGEN_VISUAL_MIN), the consecutive-stable-round count (``avg_pass_rounds``,
+    reusing the per-milestone round tracking), and whether the blocking exam is COMPLETE
+    (``coverage_ok`` iff ≥1 blocking screen was judged — the same coverage precondition
+    ``visual_gate_verdict``'s pass requires; a partial capture records missing pages as 0.0 which
+    drags the average, so this can't mask an incomplete exam). Kwargs for ``_visual_release_decision``.
+    Pure + getattr-guarded: with no last_result (fast-release cannot fire) it returns safe defaults
+    that leave every other release branch byte-identical."""
+    res = getattr(gate, "last_result", None) or {}
+    cov = res.get("coverage") or {}
+    try:
+        _blocking_judged = int(cov.get("blocking_judged") or 0)
+    except Exception:
+        _blocking_judged = 0
+    return {
+        "blocking_average": res.get("blocking_average"),
+        "avg_min": res.get("min_similarity"),
+        "avg_stable_rounds": getattr(gate, "avg_pass_rounds", 0),
+        "coverage_ok": _blocking_judged >= 1,
+    }
 
 
 # FIX #139: registry-state check classes a lane can flip during the delivery tail —
@@ -2200,11 +2272,15 @@ class Orchestrator:
                 # final milestone reached but the deliver-check hasn't anchored the
                 # deferral yet — the gate is still ahead, not cleared: defer.
                 return True
+            # #558: pass the avg fast-release inputs so this defer-check agrees with the
+            # deliver-gate block — a fast-releasable state returns "fast_release" (≠ "defer"),
+            # so deliver_project is not blocked while the deliver block cuts the release.
             return _visual_release_decision(
                 _since, getattr(gate, "attempts", 0),
                 getattr(gate, "total_judgments", 0), time.time(),
                 plateau_rounds=getattr(gate, "plateau_rounds", 0),
-                last_judgment_at=getattr(gate, "last_judgment_at", None)) == "defer"
+                last_judgment_at=getattr(gate, "last_judgment_at", None),
+                **_visual_fast_release_args(gate)) == "defer"
         except Exception:
             return False
 
@@ -3001,6 +3077,7 @@ class Orchestrator:
                     _now,
                     plateau_rounds=getattr(self._vf_gate, "plateau_rounds", 0),
                     last_judgment_at=getattr(self._vf_gate, "last_judgment_at", None),
+                    **_visual_fast_release_args(self._vf_gate),
                 )
                 if _vf_decision == "defer":
                     self._logger.warning(
@@ -3020,33 +3097,54 @@ class Orchestrator:
                     # per-milestone total-judgment cap.
                     await self._maybe_run_visual_fidelity()
                     return
-                # FIX #102 (run-20, live): the escape often fires SECONDS after the lane
-                # lands its fix — run-20's release verdict came from a 23:45 capture of
-                # PRE-fix source (broken icon refs) while the delivered image serves all
-                # 47 icons with 200. Drive ONE final fresh capture+judge before releasing;
-                # _maybe_run_visual_fidelity self-guards (pass latch + per-source attempt
-                # cap), so this re-judges ONLY when the source actually changed since the
-                # stale verdict — the recorded score then reflects the DELIVERED source.
-                await self._maybe_run_visual_fidelity()
-                if self._vf_gate.passed:
+                if _vf_decision == "fast_release":
+                    # FIX #558: the gating blocking_average has cleared the min bar for N
+                    # consecutive judged rounds and the blocking exam is complete — cut the
+                    # SAME below-threshold-per-screen release the wall-clock escape would
+                    # grant, but ~40-60 min and ~40 re-judgements sooner. No final re-judge
+                    # (the avg is already 2-round STABLE — post-#548 captures are
+                    # deterministic, so another judge call buys nothing but tokens). Latch
+                    # #521-sticky so subsequent delivery polls skip the defer block, then
+                    # fall through to squad/deliver exactly like the escape path.
+                    _fra = _visual_fast_release_args(self._vf_gate)
+                    self._vf_gate.released = True  # #521: sticky release latch
                     self._logger.warning(
-                        "Visual fidelity PASSED on the final pre-release re-judge "
-                        "(fresh capture of the delivered source).")
-                else:
-                    # release: an escape fired — deliver anyway, loudly, below-threshold.
-                    _plat = getattr(self._vf_gate, "plateau_rounds", 0)
-                    self._vf_gate.released = True  # #521: LATCH — this milestone's release
-                    #                                is now sticky; subsequent delivery polls
-                    #                                skip the defer block (no re-defer loop).
-                    self._logger.warning(
-                        "Visual fidelity deferral RELEASED (escape after %ss deferred / "
-                        "%s attempts / %s total judged%s) — delivering anyway "
-                        "(recorded as below-threshold; #521 latched sticky).",
+                        "VISUAL FAST-RELEASE: blocking_average %.2f ≥ min %.2f over %s "
+                        "stable rounds — releasing without the wall-clock grind (#558; "
+                        "%ss deferred, %s judged; #521 latched sticky).",
+                        float(_fra["blocking_average"] or 0.0),
+                        float(_fra["avg_min"] or 0.0),
+                        _fra["avg_stable_rounds"],
                         int(_now - self._vf_gate.deferred_since),
-                        self._vf_gate.attempts,
-                        self._vf_gate.total_judgments,
-                        (" / PLATEAU %s no-improvement rounds — #138 early escape"
-                         % _plat) if _plat >= VISUAL_PLATEAU_ROUNDS else "")
+                        self._vf_gate.total_judgments)
+                else:
+                    # FIX #102 (run-20, live): the escape often fires SECONDS after the lane
+                    # lands its fix — run-20's release verdict came from a 23:45 capture of
+                    # PRE-fix source (broken icon refs) while the delivered image serves all
+                    # 47 icons with 200. Drive ONE final fresh capture+judge before releasing;
+                    # _maybe_run_visual_fidelity self-guards (pass latch + per-source attempt
+                    # cap), so this re-judges ONLY when the source actually changed since the
+                    # stale verdict — the recorded score then reflects the DELIVERED source.
+                    await self._maybe_run_visual_fidelity()
+                    if self._vf_gate.passed:
+                        self._logger.warning(
+                            "Visual fidelity PASSED on the final pre-release re-judge "
+                            "(fresh capture of the delivered source).")
+                    else:
+                        # release: an escape fired — deliver anyway, loudly, below-threshold.
+                        _plat = getattr(self._vf_gate, "plateau_rounds", 0)
+                        self._vf_gate.released = True  # #521: LATCH — this milestone's release
+                        #                                is now sticky; subsequent delivery polls
+                        #                                skip the defer block (no re-defer loop).
+                        self._logger.warning(
+                            "Visual fidelity deferral RELEASED (escape after %ss deferred / "
+                            "%s attempts / %s total judged%s) — delivering anyway "
+                            "(recorded as below-threshold; #521 latched sticky).",
+                            int(_now - self._vf_gate.deferred_since),
+                            self._vf_gate.attempts,
+                            self._vf_gate.total_judgments,
+                            (" / PLATEAU %s no-improvement rounds — #138 early escape"
+                             % _plat) if _plat >= VISUAL_PLATEAU_ROUNDS else "")
             # TEST-USER SQUAD BLOCKING GATE (§3.5, 2026-06-22): the verify->fix loop the
             # user's flow diagram puts INSIDE each milestone. The app is up (api_smoke
             # booted it; the visual gate just shot it), so spawn the three modality
