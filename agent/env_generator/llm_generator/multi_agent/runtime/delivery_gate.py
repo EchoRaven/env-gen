@@ -523,6 +523,42 @@ def _uncovered_business_endpoints(rh, authored_chains: List[Dict[str, Any]]) -> 
         return []
 
 
+def _business_endpoint_ids(rh) -> set:
+    """The endpoint_id set for the app's BUSINESS endpoints (excludes auth/oauth/
+    control-surface/infra via ``is_business``). Reuses ``registryhub.endpoint_id`` so
+    the ids match chain steps param-name-agnostically (same basis as
+    ``_uncovered_business_endpoints``). Empty on any error → callers degrade to a no-op."""
+    try:
+        from .lifecycle import business_endpoints
+        ids = set()
+        for ep in business_endpoints(rh.get_endpoints() or {}):
+            m = str(ep.get("method") or "").upper()
+            p = str(ep.get("path") or "")
+            if m and p:
+                ids.add(rh.endpoint_id(m, p))
+        return ids
+    except Exception:
+        return set()
+
+
+def _chain_touches_business(rh, rec: Dict[str, Any], biz_ids: set) -> bool:
+    """True iff ANY step of the chain targets one of the app's business endpoints
+    (the ``${var}`` -> ``{x}`` collapse mirrors ``_uncovered_business_endpoints`` so a
+    step ``/api/titles/${id}`` matches the registered ``/api/titles/{title_id}``). On
+    any error returns True — be conservative and let the chain keep its blocking power."""
+    try:
+        for st in (rec.get("steps") or []):
+            p = str(st.get("path") or "")
+            if not p:
+                continue
+            p = re.sub(r"\$\{[^}]+\}", "{x}", p)
+            if rh.endpoint_id(str(st.get("method") or "GET"), p) in biz_ids:
+                return True
+    except Exception:
+        return True
+    return False
+
+
 def complete_coverage_chain(hubs) -> Dict[str, Any]:
     """COVERAGE-BY-CONSTRUCTION (2026-07-01) — the verifier LLM authors the REAL business-flow
     + isolation chains, but reliably COVERING every registered business endpoint is a mechanical,
@@ -625,6 +661,22 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
     # which remain the VERIFIER's real-chain responsibility.
     authored = [rec for rec in _all_with_steps
                 if str(rec.get("kind") or "").lower() != "coverage"]
+    # #486: a chain that exercises NO business endpoint — only auth/control-surface/infra
+    # paths (a verifier-authored tenant-admin / reset / init-tenant sweep) — is not a
+    # business-FLOW chain: it verifies nothing about the APP, so its pass/fail must not gate
+    # business delivery (netflix r58, live: `tenant_admin_coverage` POSTs the framework
+    # /api/v1/tenants which 400s on a missing client-supplied id, wedging an app that is
+    # otherwise 27/27 business-green — the task#47 whack-a-mole). Mirrors the kind="coverage"
+    # exclusion and reuses the SAME is_business() classification the coverage check already
+    # trusts. SAFE: excluding an infra-only chain can NEVER hide a business bug (it touches
+    # zero business endpoints), and the full business surface stays enforced by
+    # _uncovered_business_endpoints below. Degrades to a no-op when the endpoint registry is
+    # unavailable (business ids empty → keep every chain). If the filter leaves NO chain, the
+    # verifier authored no business-flow chain → business_chain_missing correctly fires.
+    _biz_ids = _business_endpoint_ids(rh)
+    if _biz_ids:
+        authored = [rec for rec in authored
+                    if _chain_touches_business(rh, rec, _biz_ids)]
     if not authored:
         return {
             "reason": "business_chain_missing", "authored": 0,
@@ -639,11 +691,28 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
     # routes to the FRAMEWORK, not to a lane dispatched to fix code it never wrote — the
     # exact trap #263/#270/#271 sprang (Hatch design principle #5: infra-vs-app failures
     # must be structurally distinct).
+    # #510 (netflix r84, 2026-08-05): a NEVER-RUN chain (status 'registered', no last_result)
+    # has NO failure evidence — it must NOT block delivery like a chain that RAN and broke.
+    # r84 died here: the verifier RE-AUTHORED 5 comprehensive business chains at the deliver
+    # tail that never ran → business_chain_failing FOREVER → the milestone gate never cleared →
+    # the #139 final-gate DRIFT WAIVER (which needs a cleared milestone) never fired → main()=1,
+    # no release — though 11 authored chains PASSED and covered the surface. A never-run chain
+    # is INDETERMINATE, not a failure; only a chain that RAN and left broken steps (or status
+    # 'failing') blocks. The ≥1-passing guard below + the api-coverage check (+ the framework
+    # coverage-completion chain) still enforce that SOMETHING real verified the surface, so this
+    # can never ship a wholly-unverified app. Mirrors the framework's OWN model (the kind=
+    # 'coverage' chain is intentionally never-run yet counts). GENERALIZES: the verifier's unrun
+    # re-authoring / churn can no longer wedge a fully-verified app at the deliver tail.
+    def _never_ran(_rec):
+        return (not _rec.get("last_result")
+                and str(_rec.get("status") or "").lower()
+                not in ("passing", "framework_blocked", "failing", "broken"))
     not_passing = [
         str(rec.get("name") or rec.get("id"))
         for rec in authored
-        if (rec.get("status") not in ("passing", "framework_blocked"))
-        or (rec.get("last_result") or {}).get("broken")
+        if not _never_ran(rec) and (
+            (rec.get("status") not in ("passing", "framework_blocked"))
+            or (rec.get("last_result") or {}).get("broken"))
     ]
     framework_blocked = [
         str(rec.get("name") or rec.get("id"))
@@ -672,6 +741,19 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
                        + ", ".join(not_passing[:8]) + ". run_validation must show "
                        "business_chain green (re-author the broken step or fix the "
                        "endpoint) before delivery."),
+        }
+    # #510 GUARD: not_passing excludes never-run chains, so an authored set that is ALL
+    # never-run would otherwise fall through to GREEN with nothing actually verified. Require
+    # at least ONE authored chain to have PASSED — else the business surface is unverified.
+    if not any(rec.get("status") in ("passing", "framework_blocked")
+               and not (rec.get("last_result") or {}).get("broken")
+               for rec in authored):
+        return {
+            "reason": "business_chain_failing", "authored": len(authored),
+            "chains": [str(rec.get("name") or rec.get("id")) for rec in authored][:8],
+            "detail": ("verifier authored chain(s) but NONE has PASSED (all never-run/"
+                       "indeterminate) — run_validation must show at least one passing "
+                       "business chain before delivery."),
         }
     # HARD RULE (user 2026-06-24): the UNION of all authored chains must exercise
     # EVERY business API endpoint at least once — the chains collectively cover the
@@ -914,7 +996,13 @@ def validate_contract_alignment(output_dir, hubs) -> Dict[str, Any]:
     # so here flag only a call whose PATH has NO registered endpoint at all —
     # that is the genuine frontend↔contract drift this gate exists to catch.
     def _pa_path(mp: str) -> str:
-        pa = _contract.param_agnostic(mp)
+        # #494 (netflix r65): STRIP any ?query first. A query param does NOT define a
+        # new endpoint — GET /api/titles?kind=movie is the SAME endpoint as GET
+        # /api/titles. Without stripping, param_agnostic mangles "titles?kind=movie"
+        # into a :p param segment (GET /api/:p), which matches no declared path key →
+        # a FALSE "Frontend calls unregistered endpoint" error that hard-blocked r65's
+        # delivery (incomplete_required_tasks) even though /api/titles IS registered.
+        pa = _contract.param_agnostic(str(mp or "").split("?", 1)[0])
         return pa.split(" ", 1)[1] if " " in pa else pa
     declared_path_keys = {_pa_path(e) for e in declared_endpoints}
     unregistered_calls = []

@@ -1736,19 +1736,77 @@ class RegistryHub:
                 if not _chain_eid_ok(s)
             })
             if unregistered:
+                # Fix #71 (netflix r75, 2026-08-05): a verifier that authors a chain step for
+                # an endpoint the contract never defined (r75: PUT /api/profiles/{id} — a
+                # hallucinated update-profile route ABSENT from reference_spec.json) gets this
+                # reject and RE-SUBMITS the IDENTICAL chain — 38× in r75 — burning deliver-tail
+                # cycles (防止浪费token) while business_chain churns. Dedup the identical repeat
+                # (same chain name + same unregistered-endpoint set) and ESCALATE the guidance so
+                # the verifier DROPS the step instead of looping. Keyed on (name, unregistered)
+                # so it SELF-INVALIDATES the moment the missing endpoint IS registered
+                # (unregistered shrinks → new key → normal reject). Best-effort: any bookkeeping
+                # fault falls through to the plain reject. Additive: FIRST reject is unchanged,
+                # the happy path and chain content are untouched. Generalizes to every app/env.
+                _escalate = ""
+                try:
+                    # Count rejects PER unregistered ENDPOINT (not per chain-name/step-set).
+                    # r76 (2026-08-05) proved the (name, unregistered)-keyed counter never
+                    # escalated: the verifier re-submits the SAME missing endpoint under a
+                    # VARYING chain name (and/or a different companion endpoint) each time
+                    # (PUT /api/profiles/{} rejected 6×, 0 escalations). Per-endpoint counting
+                    # is robust to both — escalate when ANY endpoint in THIS reject has now been
+                    # rejected >=2 times across ALL chains. Self-invalidates: once an endpoint is
+                    # registered it drops out of `unregistered`, so its count stops advancing.
+                    _counts = getattr(self, "_chain_reject_endpoint_counts", None)
+                    if _counts is None:
+                        _counts = {}
+                        self._chain_reject_endpoint_counts = _counts
+                    _repeat = []
+                    for _ep in unregistered:
+                        _counts[_ep] = _counts.get(_ep, 0) + 1
+                        if _counts[_ep] >= 2:
+                            _repeat.append(_ep)
+                    if _repeat:
+                        _worst = max(_counts[_ep] for _ep in _repeat)
+                        _escalate = (
+                            " ⚠ Endpoint(s) [%s] have now been rejected %d times across your "
+                            "chains — they are NOT in the registered contract and cannot be "
+                            "tested. Re-submitting ANY chain that references them (under any name) "
+                            "will keep failing: DROP those steps (or the chain). If delivery "
+                            "genuinely needs this coverage, ask the backend lane to implement + "
+                            "register the endpoint FIRST." % (", ".join(_repeat), _worst))
+                except Exception:
+                    _escalate = ""
                 return {"error": (
                     "chain rejected: these steps reference endpoints NOT registered in "
                     "RegistryHub: " + ", ".join(unregistered) + ". A verification chain may "
                     "only exercise endpoints that exist — register the endpoint first "
                     "(registryhub_register_endpoint) or fix the chain to use a registered "
-                    "one. Registered endpoints: " + ", ".join(sorted(registered_ids)) + ".")}
+                    "one. Registered endpoints: " + ", ".join(sorted(registered_ids)) + "."
+                    + _escalate)}
         now = time.time()
         actor = agent or "registryhub"
-        rec = {"id": str(name), "name": str(name),
-               "description": str(description or ""),
-               "steps": norm, "status": "registered",
-               "last_result": None, "last_run_at": None,
-               "registered_by": actor, "_updated_at": now}
+        # #478: IDEMPOTENT re-registration (r52 convergence churn — never delivered). The
+        # old code reset EVERY re-register to status='registered' (unrun) + last_result=None,
+        # so the verifier's repeated re-registration (r52: 12× per run) kept flipping
+        # already-PASSING chains back to unrun → business_chain_failing → delivery-gate
+        # churn → 0 release. FIX: when the STEPS are UNCHANGED, PRESERVE the chain's proven
+        # status + last_result; only a genuinely NEW or step-CHANGED chain resets to
+        # 'registered' (must be re-run). run_chains re-executes all chains each validation,
+        # so a preserved status is re-validated — an app regression on unchanged steps is
+        # caught on the next run (never masks a real failure). Generalizable to every env.
+        _existing = (self._verification_chains.value() or {}).get(str(name))
+        if (isinstance(_existing, dict) and _existing.get("steps") == norm
+                and _existing.get("status") in ("passing", "framework_blocked")):
+            rec = {**_existing,
+                   "description": str(description or _existing.get("description", "")),
+                   "registered_by": actor, "_updated_at": now}
+        else:
+            rec = {"id": str(name), "name": str(name),
+                   "description": str(description or ""),
+                   "steps": norm, "status": "registered",
+                   "last_result": None, "last_run_at": None,
+                   "registered_by": actor, "_updated_at": now}
         self._verification_chains.update(
             lambda m: m.set(str(name), rec, actor), change_info={"agent": actor})
         # VERIFIER-DRIVEN READ ISOLATION (2026-06-30, user: "must work for ALL envs"): a chain

@@ -175,7 +175,24 @@ def _invented_field_blockers(app_root) -> List[str]:
     except Exception:
         return []
     try:
-        return invented_field_fallback_blockers(Path(app_root) / "frontend" / "src")
+        _fsrc = Path(app_root) / "frontend" / "src"
+        # #524 (netflix r94): HEAL-THEN-CHECK at the deliver-tail. The deterministic
+        # fabricated-fallback heal (repair_fabricated_fallbacks) previously ran ONLY in the
+        # build-time heal pipeline; a lane that authors `x || 'Literal'` fallbacks LATE (into
+        # the deliver-tail) then goes DARK (r94: frontend lane unresponsive — the SOUND gate
+        # rejected the SAME 5 lines 48x → infinite deliver_project loop, never delivered)
+        # never got healed → permanent rejection. The heal shares the checker's classifier
+        # and is a provable SUPERSET, so running it HERE first makes `heal → check = 0 flagged
+        # BY CONSTRUCTION` at the GATE, not just at build — independent of the (possibly dark)
+        # lane. Rewrites `x || 'Literal'` → `(x ?? '—')` (honest empty), so the SOUND checker
+        # is left completely untouched — we make the CODE compliant, we do not relax the gate.
+        # Best-effort; never raises.
+        try:
+            from .frontend_audit import repair_fabricated_fallbacks
+            repair_fabricated_fallbacks(_fsrc)
+        except Exception:
+            pass
+        return invented_field_fallback_blockers(_fsrc)
     except Exception:
         return []
 
@@ -429,6 +446,22 @@ def compute_deliverability(hub_registry, app_root,
             reconcile_integration_seed(Path(app_root).parent)
         except Exception:
             pass
+        # #470: also (re)stage the framework's REAL dataset seed (design/dataset →
+        # app/backend/seed_dataset.json) BEFORE the authored-seed read. r46 (closest-ever
+        # delivery: seed 261 rows, api_smoke 13/13, ui_flow 10/10) fired 'authored seed
+        # missing' PURELY because neither seed_data.json NOR seed_dataset.json had reached
+        # the gate's tree at check time — even though the gate ALREADY merges seed_dataset
+        # (below) and _ensure_seed_dataset stages it at skeleton-gen; the early staging just
+        # hadn't landed on the gate's app_root yet. Staging it here (idempotent regen from
+        # design/dataset, best-effort, no-op without design/dataset → zero regression) makes
+        # the gate see the real rows on the FIRST poll, so the seed-timing blocker stops
+        # firing spuriously — collapsing the remediation whack-a-mole that starved r46's
+        # delivery convergence. Generalizable to every app/env.
+        try:
+            from .backend_skeleton import _ensure_seed_dataset
+            _ensure_seed_dataset(Path(app_root) / "backend", Path(app_root).parent)
+        except Exception:
+            pass
         _seed_path = Path(app_root) / "backend" / "seed_data.json"
         _data = {}
         if _seed_path.exists():
@@ -438,6 +471,37 @@ def compute_deliverability(hub_registry, app_root,
                     _data = {}
             except Exception:
                 _data = {}
+        # #473 SEED-VISIBILITY RACE (2026-08-04, r46/r47/r49 chronic no-convergence): the
+        # gate reads the WORKING-TREE seed_data.json, but on some ticks that file is
+        # transiently EMPTY while the REAL seed is COMMITTED to integration HEAD (r49:
+        # 223 rows committed 07:17:48; the backend even force-resynced it 3× as the gate
+        # kept firing 'authored seed missing' → 22 deliver_project / 0 release). reconcile_
+        # integration_seed only scans worktree WORKING files (also transiently empty) and
+        # NEVER reads the committed HEAD, so it no-op'd. FIX: when the working-tree seed is
+        # empty, restore it from the committed integration HEAD — the tree the delivery
+        # SNAPSHOT/docker image actually ships — so the gate reflects true shipped state AND
+        # the working tree is repaired for the build. Activates ONLY in the empty case
+        # (never regresses a populated seed), no-ops when HEAD is also empty (genuine
+        # missing → still blocks correctly). Best-effort, read-only wrt real data.
+        if not any(isinstance(v, list) and v for v in _data.values()):
+            try:
+                import subprocess as _sp
+                _r = _sp.run(
+                    ["git", "show", "HEAD:app/backend/seed_data.json"],
+                    cwd=str(Path(app_root).parent), capture_output=True, text=True, timeout=15)
+                if _r.returncode == 0 and _r.stdout.strip():
+                    _head = _json.loads(_r.stdout)
+                    if isinstance(_head, dict) and any(
+                            isinstance(v, list) and v for v in _head.values()):
+                        _data = _head
+                        try:  # repair the working tree so the docker build ships the seed
+                            _seed_path.parent.mkdir(parents=True, exist_ok=True)
+                            _seed_path.write_text(
+                                _json.dumps(_head, indent=2) + "\n", encoding="utf-8")
+                        except Exception:
+                            pass
+            except Exception:
+                pass
         # F2: the framework-owned seed_dataset.json (design-prep REAL data the loader
         # merges into the DB) counts toward BOTH the authored check and the quality
         # row-floor — a run whose real rows live there must not trip the gate just

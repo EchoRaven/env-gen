@@ -87,6 +87,34 @@ def _api_register(api_base: str, creds: Mapping[str, str]) -> bool:
     return False
 
 
+def _api_login(api_base: str, creds: Mapping[str, str]) -> bool:
+    """#504 (netflix r81, 2026-08-05): CORROBORATION — does a DIRECT backend API login with the
+    seeded creds actually return a token? The pre-release BROWSER gate HARD-holds a release when
+    the FORM-drive login fails (auth_ok False → login-wall/hollow), but r81 proved that is a FALSE
+    NEGATIVE: the app's login works end-to-end (playwright form-drive with the correct seeded creds
+    stored a token + reached /browse with no bounce), and the gate failed only on a harness cred-
+    mismatch / transient mid-remediation build. This direct-API check answers the OBJECTIVE
+    question "can a real user with these creds authenticate against this app RIGHT NOW" — if YES,
+    a form-drive auth failure is a harness/transient artifact, not an unusable app, so the gate
+    must NOT hard-hold on it. True iff /auth/login (or /auth/signin) returns a token. Never raises."""
+    import urllib.request
+    body = json.dumps({"email": creds.get("email"), "password": creds.get("password"),
+                       "username": creds.get("username") or creds.get("email")}).encode()
+    for path in ("/auth/login", "/auth/signin"):
+        try:
+            req = urllib.request.Request(api_base.rstrip("/") + path, data=body,
+                                         headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=8) as r:
+                if 200 <= r.status < 300:
+                    d = json.loads(r.read().decode("utf-8", "replace"))
+                    if isinstance(d, dict) and (d.get("access_token") or d.get("token")
+                                                or (d.get("item") or {}).get("access_token")):
+                        return True
+        except Exception:
+            pass
+    return False
+
+
 def _is_param_seg(seg: str) -> bool:
     return seg.startswith(":") or (seg.startswith("{") and seg.endswith("}"))
 
@@ -498,6 +526,38 @@ async def run_browser_test_user(
                          "" if ok_auth else f"login did nothing: token={bool(token)} url={url} — the form is not wired to the API")
                 except Exception as exc:
                     step("auth flow", False, f"exception: {exc}")
+
+                # #504: corroborate a FORM-drive auth failure with a DIRECT-API login. If the app
+                # authenticates the seeded creds via the API, a failed form-drive (auth_ok False →
+                # login-wall/hollow) is a harness cred-mismatch / transient-build FALSE NEGATIVE,
+                # not an unusable app (r81: playwright form-drive with correct seeded creds worked
+                # end-to-end, yet the gate hard-held on a harness login failure). The gate
+                # predicates (browser_report_unusable / browser_gate_decision) read this to avoid
+                # false-blocking a provably-loginable app.
+                try:
+                    report["api_login_ok"] = bool(token) or (
+                        bool(api_base_url) and _api_login(api_base_url, creds))
+                except Exception:
+                    report["api_login_ok"] = bool(token)
+
+                # #491 (netflix r63) — POST-LOGIN PROFILE GATE. Catalog pages are
+                # routed as <RequireProfile>: logged in but with NO active profile
+                # selected, every catalog route redirects to /profiles, so the walk
+                # records the IDENTICAL profiles chooser for each page (false
+                # redirected-to-login / duplicate content). Mirror FIX #103's token
+                # approach (see visual_fidelity): discover the first profile id from
+                # the app's own session and establish it under every alias in both
+                # storages so the walk passes the gate. Best-effort — any failure
+                # silently proceeds (apps without a profile gate are unaffected).
+                try:
+                    from .visual_fidelity import (
+                        _PROFILE_DISCOVER_JS, _profile_select_init_js)
+                    _pid = await page.evaluate(_PROFILE_DISCOVER_JS, token or "")
+                    _profile_js = _profile_select_init_js(_pid) if _pid else ""
+                    if _profile_js:
+                        await ctx.add_init_script(_profile_js)
+                except Exception:
+                    pass  # no profile gate / discovery failed → proceed as before
 
                 # ---- 2 + 3. visit each page, screenshot, blank/console checks ----
                 from .frontend_audit import _is_map_page  # #172: map-surface identity
@@ -921,8 +981,17 @@ def browser_report_unusable(report: Optional[Mapping[str, Any]]) -> bool:
     so the gate criteria are unit-testable in isolation."""
     if not isinstance(report, dict) or not report.get("ran"):
         return False
-    return bool((not report.get("auth_ok")) or report.get("blank_pages")
-                or report.get("auth_redirect_pages") or report.get("hollow_frontend")
+    # #504 (netflix r81): when a DIRECT-API login with the seeded creds SUCCEEDS (api_login_ok),
+    # the app's auth provably works — so a form-drive auth failure and the tokenless walk's
+    # login-wall / hollow signals are harness cred-mismatch / transient-build FALSE NEGATIVES,
+    # NOT an unusable app. Drop ONLY those login-caused signals; EVERY non-login signal (blank
+    # pages, no real data, fake map, fallback DOM, empty primary route) still holds. api_login_ok
+    # absent/False → byte-identical to the prior behavior.
+    _login_broken = ((not report.get("auth_ok")) or report.get("auth_redirect_pages")
+                     or report.get("hollow_frontend"))
+    if report.get("api_login_ok"):
+        _login_broken = False
+    return bool(_login_broken or report.get("blank_pages")
                 or report.get("no_real_data") or report.get("fake_map_pages")
                 or report.get("fallback_dom_pages")  # #224: live generic fallback
                 or report.get("primary_dataless"))  # #231d: empty primary route
@@ -946,8 +1015,13 @@ def browser_gate_decision(report: Mapping[str, Any], squad_decision: str) -> str
     if str(_os.environ.get("ENVGEN_TESTUSER_HARD_GATE", "1")).strip().lower() in (
             "0", "false", "no", "off"):
         return squad_decision
-    if (not report.get("auth_ok") or report.get("hollow_frontend")
-            or report.get("fallback_dom_pages")
+    # #504: a login-broken HARD-defer must be CORROBORATED — if a DIRECT-API login with the
+    # seeded creds works (api_login_ok), the form-drive auth failure is a false-negative on a
+    # provably-loginable app, so do NOT hard-defer on it (honor the bounded escape instead). A
+    # genuinely dead auth (API login ALSO fails) → api_login_ok False → still hard-defers.
+    _login_broken = ((not report.get("auth_ok")) or report.get("hollow_frontend")) \
+        and not report.get("api_login_ok")
+    if (_login_broken or report.get("fallback_dom_pages")
             or report.get("primary_dataless")):
         # hard-unusable: never escape a dead app — incl. #224 a route whose
         # live DOM is the generic framework fallback (zero-fallback delivery)

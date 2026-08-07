@@ -1017,8 +1017,18 @@ def bare_authed_fetch_blockers(frontend_src: Any, limit: int = 12) -> List[str]:
                 # identifier) or a spread call inside the options is opaque: the
                 # gate only flags PROVABLY bare calls, so excuse it. The lane's
                 # api.js was fully correct and the run died on an unwinnable gate.
+                # #508 (netflix r83 FALSE-BLOCK → main()=1, no release, 2026-08-05): ALSO
+                # excuse ES6 SHORTHAND `{ headers }` (and `{ headers, … }` / `{ …, headers }`).
+                # A `headers` VARIABLE passed by shorthand is EXACTLY as opaque as the
+                # `headers: ident` case #233 already excuses — the colon-only #233 regex just
+                # missed the no-colon shorthand. r83 died here on a CORRECT app (TitleDetail
+                # Page: `const headers = token ? {Authorization: `Bearer ${token}`} : {};
+                # fetch(url, { headers })` — auth WAS attached via the variable). An inline
+                # LITERAL headers object without auth (`{ headers: { 'X': 'y' } }`) still has
+                # no colon-identifier / shorthand match → stays flagged (genuinely bare).
                 if re.search(r"headers\s*:\s*[A-Za-z_$][\w$.]*\s*(\(|[,}\)])", arg2) \
-                        or re.search(r"\.\.\.\s*[A-Za-z_$][\w$.]*\s*\(", arg2):
+                        or re.search(r"\.\.\.\s*[A-Za-z_$][\w$.]*\s*\(", arg2) \
+                        or re.search(r"[{,]\s*headers\s*[,}]", arg2):
                     continue
                 total += 1
                 if len(blockers) < limit:
@@ -1135,8 +1145,32 @@ _INVENTED_HONEST_PREFIX = ("no ", "unknown", "anonymous", "select ", "choose ", 
 _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{3,8}$")
 _ASSET_EXT = re.compile(r"\.(svg|png|jpe?g|gif|webp|ico|avif|bmp)($|\?|#)", re.I)
 # member.field || 'literal'     and     ? member.field : 'literal'
+# CHECKER regexes (invented_field_fallback_blockers) — member-access LHS only. SOUND; UNTOUCHED.
 _INVENTED_OR = re.compile(r"""(\b\w+(?:\.\w+)+)\s*\|\|\s*(['"])(.*?)\2""")
 _INVENTED_TERNARY = re.compile(r"""\?\s*(\b\w+(?:\.\w+)+)\s*:\s*(['"])(.*?)\2""")
+
+# ── FIX #496 (netflix r66): HEAL-side WIDENED patterns ────────────────────────────────────
+# r66 wedged on `deliverability_fabricated_field_fallback`: `title.live_label || 'Live now'`
+# (JSX-text) and `t.title || 'Title details'` (attr) — both member-LHS, so the CHECKER above
+# flagged them, and the heal (which shares the checker's member-only regexes) must clear
+# exactly these. To make the heal a PROVABLE SUPERSET of the checker — so the gate is ALWAYS
+# clearable (round-trip = 0 by construction) and can never drift narrower — the heal drives
+# off these widened patterns instead:
+#   `_HEAL_EXPR` = `[\w$]+(?:\.[\w$]+)*` matches a member LHS (`a.b.c`) AND a BARE identifier
+#   (`x`, 0 dots) AND JS `$`-names — so it strictly CONTAINS the checker's `\w+(?:\.\w+)+`
+#   (every checker OR/ternary site is also a heal site). The BARE-identifier LHS and the
+#   MIRROR ternary (`cond ? 'lit' : expr`) are forms the checker deliberately does NOT flag;
+#   the heal cleans them PROACTIVELY while the checker's proven-sound flag set stays untouched.
+# The literal guard `_is_fabricated_fallback_literal` is the SAME classifier the checker uses,
+# so legitimate defaults (`count || '0'`, `|| ''`, `|| 'all'`, error/asset/hex/state literals)
+# are NEVER rewritten — the heal inherits the checker's soundness on what NOT to touch.
+_HEAL_EXPR = r"[\w$]+(?:\.[\w$]+)*"
+# `(?<![\w$])` keeps the match anchored at an identifier start (mirrors the checker's `\b`,
+# and still permits a leading `.`/`(`/`{`/space, so `a().foo.bar || 'x'` matches `foo.bar`
+# exactly as the checker does — parity, no NEW build-break span).
+_HEAL_OR = re.compile(r"(?<![\w$])(" + _HEAL_EXPR + r")\s*\|\|\s*(['\"])(.*?)\2")
+_HEAL_TERNARY_FALSE = re.compile(r"\?\s*(" + _HEAL_EXPR + r")\s*:\s*(['\"])(.*?)\2")
+_HEAL_TERNARY_TRUE = re.compile(r"\?\s*(['\"])(.*?)\1\s*:\s*(" + _HEAL_EXPR + r")")
 
 
 def _is_fabricated_fallback_literal(s: str) -> bool:
@@ -1238,14 +1272,27 @@ def invented_field_fallback_blockers(frontend_src: Any, limit: int = 20) -> List
 
 
 def repair_fabricated_fallbacks(frontend_src: Any) -> Dict[str, Any]:
-    """FIX #191 (tiktok-r3 NO-CONVERGENCE): DETERMINISTIC rewrite of the exact
-    sites the #175 gate flags — `member || 'fabricated'` → `member ?? '—'` and
-    ternary fakes' literal branch → '—' (an honest empty state per the gate's
-    own remediation text). Shares the gate's regexes + literal classifier, so
-    the heal clears precisely what the gate blocks, BY CONSTRUCTION — r3's
-    frontend lane thrashed 75min on exactly this edit and the run aborted. The
-    gate stays HARD; field-name drift then shows as honest '—' cells, which the
-    no_real_data browser gate still owns. Idempotent; best-effort; never raises.
+    """FIX #191 (tiktok-r3 NO-CONVERGENCE) + #496 (netflix r66): DETERMINISTIC
+    rewrite of the fabricated-fallback sites the #175 gate flags —
+    `<expr> || 'fabricated'` → `(<expr> ?? '—')` and ternary fakes' literal
+    branch → '—' (an honest empty state per the gate's own remediation text).
+
+    #496: the heal drives off WIDENED patterns that form a PROVABLE SUPERSET of
+    the checker (`invented_field_fallback_blockers`) — `_HEAL_EXPR` contains the
+    checker's member-access LHS, so EVERY site the checker flags is repaired here
+    (r66 wedged 0×-heal-vs-3×-flag on `title.live_label || 'Live now'` /
+    `t.title || 'Title details'` — both now cleared). It ALSO cleans the
+    bare-identifier LHS (`x || 'Live now'`) and the mirror ternary
+    (`cond ? 'lit' : expr`) that the checker deliberately does NOT flag, keeping
+    the checker's sound flag set untouched while guaranteeing the gate is always
+    clearable: run checker → run heal → run checker = 0 flagged, BY CONSTRUCTION.
+
+    Shares the checker's literal classifier `_is_fabricated_fallback_literal`, so
+    legitimate defaults (`count || '0'`, `|| ''`, `|| 'all'`, error/asset/hex/
+    state literals) are NEVER rewritten. r3's frontend lane thrashed 75min on
+    exactly this edit and the run aborted. The gate stays HARD; field-name drift
+    then shows as honest '—' cells, which the no_real_data browser gate owns.
+    Idempotent; best-effort; never raises.
     Returns {"repaired": [relpaths], "sites": ["file:line before→after", ...]}."""
     repaired: List[str] = []
     sites: List[str] = []
@@ -1266,29 +1313,39 @@ def repair_fabricated_fallbacks(frontend_src: Any) -> Dict[str, Any]:
         new_lines: List[str] = []
         for i, line in enumerate(lines, 1):
             def _sub_or(m):
-                member, lit = m.group(1), m.group(3)
+                expr, lit = m.group(1), m.group(3)
                 if not _is_fabricated_fallback_literal(lit):
                     return m.group(0)
                 # #239 (tiktok r29 build-break abort): ALWAYS parenthesize the
                 # ?? replacement. JS forbids mixing ?? with || / && without parens
-                # (`a || b ?? c` is a SyntaxError esbuild rejects). The lane's
-                # `cur.title || cur.description || 'lit'` → this regex rewrites only
-                # the LAST `|| 'lit'` → `cur.title || cur.description ?? '—'` which
-                # broke the vite build → verification_checklist → r29 NO-CONVERGENCE
-                # abort — the framework's own #175 repair introduced the syntax error.
+                # (`a || b ?? c` is a SyntaxError esbuild rejects). A chain
+                # `cur.title || cur.description || 'lit'` rewrites only the LAST
+                # `|| 'lit'` → `cur.title || cur.description || ('lit'→)('—')`;
+                # without parens `... ?? '—'` broke the vite build → r29 abort.
                 # `(x ?? '—')` is always valid, standalone or inside a || / && chain.
-                sites.append(f"{f.name}:{i} `{member} || '{lit}'` → `({member} ?? '—')`")
-                return f"({member} ?? '—')"
+                sites.append(f"{f.name}:{i} `{expr} || '{lit}'` → `({expr} ?? '—')`")
+                return f"({expr} ?? '—')"
 
-            def _sub_ternary(m):
-                member, lit = m.group(1), m.group(3)
+            def _sub_ternary_false(m):
+                # `cond ? expr : 'lit'` — fabricated literal in the FALSE branch.
+                expr, lit = m.group(1), m.group(3)
                 if not _is_fabricated_fallback_literal(lit):
                     return m.group(0)
-                sites.append(f"{f.name}:{i} `? {member} : '{lit}'` → `? {member} : '—'`")
-                return f"? {member} : '—'"
+                sites.append(f"{f.name}:{i} `? {expr} : '{lit}'` → `? {expr} : '—'`")
+                return f"? {expr} : '—'"
 
-            new = _INVENTED_OR.sub(_sub_or, line)
-            new = _INVENTED_TERNARY.sub(_sub_ternary, new)
+            def _sub_ternary_true(m):
+                # #496 mirror: `cond ? 'lit' : expr` — fabricated literal in the
+                # TRUE branch. Rewrite the literal → honest '—'; expr is preserved.
+                lit, expr = m.group(2), m.group(3)
+                if not _is_fabricated_fallback_literal(lit):
+                    return m.group(0)
+                sites.append(f"{f.name}:{i} `? '{lit}' : {expr}` → `? '—' : {expr}`")
+                return f"? '—' : {expr}"
+
+            new = _HEAL_OR.sub(_sub_or, line)
+            new = _HEAL_TERNARY_FALSE.sub(_sub_ternary_false, new)
+            new = _HEAL_TERNARY_TRUE.sub(_sub_ternary_true, new)
             if new != line:
                 changed = True
             new_lines.append(new)

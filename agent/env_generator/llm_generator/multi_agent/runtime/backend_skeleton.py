@@ -167,6 +167,31 @@ def _render_column(col: Dict[str, Any]) -> Optional[str]:
     if col.get("unique"):
         kw.append("unique=True")
     default = col.get("default")
+    # #497 (netflix r67, live): mirror database_scaffold's #407 NOT-NULL-no-default heuristic so
+    # models.py and 01_init.sql AGREE on the DB default. The DDL scaffolder synthesizes
+    # now()/CURRENT_DATE/CURRENT_TIME/false for a NOT-NULL timestamp/date/time/bool column that
+    # carries NO explicit default — but it does so at DDL-render time, so that value never enters
+    # this shared col dict; the ORM Column here saw default=None and emitted NO server_default.
+    # Result: 01_init.sql had ``created_at TIMESTAMPTZ NOT NULL DEFAULT now()`` while models.py
+    # declared a bare NOT NULL, forcing EVERY create handler to hand-set created_at=datetime.utcnow();
+    # any path that OMITTED it 400'd ``null value in column "created_at"`` and wedged business_chain
+    # (r67 burned 6+ lane dispatches on this exact divergence). Synthesize the SAME default here so
+    # an insert that omits the column is safe BY CONSTRUCTION and #411's "handlers must OMIT
+    # db-defaulted columns" finally holds end-to-end. SAFE + IDENTICAL to the DDL: only fires when
+    # default is None AND NOT NULL AND not a PK, for the four types with an UNAMBIGUOUS default;
+    # text/int/numeric stay required (no data invented). DB behavior is unchanged (the DDL already
+    # shipped this default) — only the ORM catches up, so no create path can regress.
+    if default is None and (col.get("nullable") is False or col.get("not_null")) \
+            and not (col.get("primary_key") or col.get("pk")):
+        _bt = str(col.get("type") or "").lower()
+        if "timestamp" in _bt or "datetime" in _bt:
+            default = "now()"
+        elif "date" in _bt:
+            default = "CURRENT_DATE"
+        elif "time" in _bt:
+            default = "CURRENT_TIME"
+        elif "bool" in _bt:
+            default = "false"
     if default is not None:
         d = str(default).strip()
         # server_default writes the DEFAULT into the CREATE TABLE DDL that
@@ -182,6 +207,13 @@ def _render_column(col: Dict[str, Any]) -> Optional[str]:
         if d.lower() in ("now()", "current_timestamp"):
             args.append("default=datetime.utcnow")
             kw.append("server_default=_sa_text('now()')")
+        elif d.lower() in ("current_date", "current_time"):
+            # #497: a SQL-function default (not a literal). Emit it as a bare server_default
+            # SQL function so the DB fills it on any insert that omits the column; no ORM-side
+            # python default — SQLAlchemy omits the unset column and the server_default fires.
+            # (The generic elif below would wrongly wrap the bare word as a quoted string
+            # literal → ``DEFAULT 'CURRENT_DATE'``, which is not a date.)
+            kw.append(f"server_default=_sa_text({d.lower()!r})")
         elif not (col.get("primary_key") or col.get("pk")):
             # ORM-side literal. ``true``/``false`` must become Python ``True``/``False``
             # (a bare ``default=false`` is a NameError that breaks ``import models``).
@@ -1011,29 +1043,45 @@ def _custom_route_overrides_projected(method, path):
     last = segs[-1]
     n_params = sum(1 for s in segs if s.startswith("{") or s.startswith(":"))
     last_is_param = last.startswith("{") or last.startswith(":")
-    # standard CRUD shapes → projected wins (return False = do NOT let custom override):
-    # EXCEPT a GET on these shapes: the projected list / item-by-id handler is NOT owner-
-    # scoped (owner_scoped_reads is an opt-in the lane often omits), so a per-user-PRIVATE
-    # resource LEAKS other users' rows AND dropping the lane's custom GET discards its
-    # isolation remediation (outlook run-9: GET /api/messages/{id} cross-user leak wedged 7
-    # cycles — the lane's correct scoped read kept being dropped). Let the lane's GET WIN
-    # here (it carries the domain-correct scoping; a public feed's lane GET is unscoped and
-    # still wins -> behaviour unchanged for public resources). WRITES stay projected:
+    # STANDARD-CRUD read shapes → PROJECTED wins (return False = do NOT let the lane override):
+    # #528 (netflix, live): a lane custom GET on a bare collection (/api/titles) or item-by-id
+    # (/api/titles/{id}) for a REGISTERED resource routinely runs raw SQL over columns that do
+    # NOT exist → 500 → business_endpoints_reachable / business_chain wedge AND the frontend is
+    # data-starved. The framework's projected read (db.query(Model) list / db.get(Model, id)) is
+    # schema-safe and 200/404 by construction, so it MUST win for GET on these two shapes for
+    # ALL registered resources — not just the owner-scoped ones (#77). TRADE-OFF: public
+    # LIST/read now serves from the PROJECTED handler (schema-correct, returns rows) instead of
+    # lane raw SQL — this trades any lane-added filtering/sorting on PUBLIC lists for guaranteed
+    # reachability/correctness. Owner-scoped PRIVATE resources already projected-won here (#77:
+    # their projected read is owner-scoped by construction; a lane GET could only re-widen the
+    # scope → cross-user leak, outlook run-9) — UNCHANGED. Non-resource collection GETs (search:
+    # /api/search names no table → not in the registered set) and every NON-standard lane route
+    # (sub-collections/actions, custom verbs — they fall through below) still let the LANE win,
+    # so lane custom/non-standard routes are UNAFFECTED. GATE on registered-resource membership
+    # (guard: only decide projected-wins where a projected handler actually exists — an
+    # unregistered segment has none, so returning False there would 404). WRITES stay projected:
     # create/update/delete are already owner-safe + shape-consistent (the buggy-lane-CRUD
     # concern is for mutations), and projected NESTED reads keep their parent-owner isolation.
     _is_get = method.upper() == "GET"
-    if len(segs) == 1 and not last_is_param:          # collection: /messages
-        # #77: a framework-scoped PRIVATE resource keeps the PROJECTED scoped list — a lane
-        # custom GET can only re-leak. Public/unflagged resources: lane still wins.
-        if _is_get and segs[0].lower() in _OWNER_SCOPED_RESOURCES:
+    if len(segs) == 1 and not last_is_param:          # collection: /messages, /api/titles
+        # #528: the projected collection list wins for GET on any REGISTERED resource (a real
+        # table → a projected handler exists). _OWNER_SCOPED_RESOURCES is a subset, kept as an
+        # explicit belt-and-suspenders so #77 owner-scoped resources ALWAYS project-win even if
+        # the registered set is later narrowed. /api/search & other unregistered collection GETs
+        # are in NEITHER set → lane still wins (unchanged).
+        if _is_get and (segs[0].lower() in _NESTED_CHILD_RESOURCES
+                        or segs[0].lower() in _OWNER_SCOPED_RESOURCES):
             return False
         return _is_get
-    if last_is_param and n_params == 1:               # item by id: /messages/{id}
+    if last_is_param and n_params == 1:               # item by id: /messages/{id}, /api/titles/{id}
         # resource = the segment BEFORE the trailing {id} (segs[-2]) so a namespaced path
         # (/api/v1/messages/{id} → 'messages') is still covered, not the version prefix.
         _res = segs[-2].lower() if len(segs) >= 2 else segs[0].lower()
-        if _is_get and _res in _OWNER_SCOPED_RESOURCES:
-            return False                              # scoped projected read wins (no leak)
+        # #528: the projected item read (db.get(Model, id), 200/404 by construction) wins for
+        # GET on any REGISTERED resource; #77 owner-scoped stays projected (no cross-user leak).
+        # An unregistered by-id GET is in neither set → lane wins (unchanged).
+        if _is_get and (_res in _NESTED_CHILD_RESOURCES or _res in _OWNER_SCOPED_RESOURCES):
+            return False                              # projected read wins (schema-safe, no leak)
         return _is_get
     if last == "me":                                  # current-user singleton: /auth/me
         # The projector emits a /me handler (route_projector: path.endswith("/me")) ONLY for
@@ -1398,6 +1446,38 @@ def _ensure_seed_dataset(be: Path, output_dir: Any) -> bool:
         from .material_prep import assemble_seed_dataset
         real = assemble_seed_dataset(Path(output_dir) / "design" / "dataset")
         if real:
+            # #483: align dataset field names to the ORM model's columns before staging —
+            # a contract/model that names a column differently than design-prep's dataset
+            # (r55, live: titles.`title` vs dataset `name`) otherwise makes the loader DROP
+            # every row at seed time (NOT-NULL unset) → empty table → 0 release. Best-effort
+            # + additive: models.py absent (first upfront call) → no-op; matching names
+            # (r54) → byte-identical. The per-milestone re-calls (models.py present) restage
+            # the aligned dataset the DB seeds from.
+            try:
+                from .material_prep import (model_columns_from_models_py,
+                                            align_dataset_field_names)
+                _cols = model_columns_from_models_py(be / "models.py")
+                if _cols:
+                    real = align_dataset_field_names(real, _cols)
+            except Exception:
+                pass
+            # #552: fill a DECLARED-but-unseeded Top-N ranking column (top10_rank/rank/
+            # *_rank) so the projector's rank numerals / "#N in X Today" badges / data-
+            # derived Top-10 rail actually render (they gate on the row's top10_rank being
+            # non-null). Keyed off the SCHEMA (an int/nullable rank column the seed leaves
+            # null), never a product literal — generalizable to any such app. Deterministic
+            # + author-safe (never overwrites author-provided ranks) → byte-identical when
+            # the column isn't declared or is already populated; models.py absent (upfront
+            # call) → no schema → no-op. Applied at authoring time, so the runtime seed
+            # fingerprint stays stable (no re-seed loop).
+            try:
+                from .material_prep import (model_schema_from_models_py,
+                                            enrich_ranking_seed)
+                _schema = model_schema_from_models_py(be / "models.py")
+                if _schema:
+                    real = enrich_ranking_seed(real, _schema)
+            except Exception:
+                pass
             import json as _json
             (be / "seed_dataset.json").write_text(
                 _json.dumps(real, indent=2) + "\n", encoding="utf-8")

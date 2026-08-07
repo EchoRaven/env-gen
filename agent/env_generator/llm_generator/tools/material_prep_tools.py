@@ -22,6 +22,12 @@ from utils.tool import BaseTool, ToolResult, ToolCategory, create_tool_param  # 
 from workspace import Workspace  # noqa: E402
 from multi_agent.runtime import material_prep as mp  # noqa: E402
 
+# #464: per-run cache of the deterministic per-image vision decomposition (keyed by
+# resolved image path) — the design_analyst re-decomposes the same screens many times;
+# reusing the first result skips the redundant vision calls (time + tokens). Module-
+# level → per generation process (each run is a fresh process), cleared with the process.
+_DECOMPOSE_MEM_CACHE: dict = {}
+
 _REGION_SCHEMA = {
     "type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4,
     "description": "[x0,y0,x1,y1] as 0..1 FRACTIONS of width/height (e.g. the top 5.7% strip "
@@ -264,9 +270,19 @@ class DecomposeReferenceTool(BaseTool):
         p = self.workspace.resolve(image)
         if not p.exists():
             return ToolResult.fail(f"reference image not found: {image}")
-        res = await mp.decompose_reference(str(p), self._llm)
-        if "error" in res:
-            return ToolResult.fail(f"decompose_reference failed: {res['error']}")
+        # #464: cache the (deterministic) per-image vision decomposition within this
+        # run. The design_analyst re-decomposes the same screens many times (r44: 92
+        # decompose calls for 20 screens ≈ 4.6× each), and decompose is a pure vision
+        # call on a fixed image → the repeats only waste time + vision tokens (~5-8 min/
+        # run). Key by the resolved image path; reuse the first result on repeats (still
+        # runs the cheap write/gate below). Generalizable to any app; 防止浪费token.
+        _ck = str(p)
+        res = _DECOMPOSE_MEM_CACHE.get(_ck)
+        if res is None:
+            res = await mp.decompose_reference(str(p), self._llm)
+            if "error" in res:
+                return ToolResult.fail(f"decompose_reference failed: {res['error']}")
+            _DECOMPOSE_MEM_CACHE[_ck] = res
         import json as _json
         out_rel = save_as or f"design/component_specs/{Path(image).stem}.json"
         dest = self.workspace.resolve(out_rel)
@@ -278,8 +294,14 @@ class DecomposeReferenceTool(BaseTool):
         # injected by ``AgentTooling.attach``; a plain ``Workspace`` (early-init /
         # tests, pre-worktree) returns True by design. Gate on ``dest`` (the same
         # path we write) so the write-gate invariant is satisfied by construction.
+        # #453: prefer the WRITE identity (_write_agent_id, the resolved profile e.g.
+        # 'design_analyst') over _agent_id, which set_team_protocols clobbers to the raw
+        # instance id ('design_analyst_1') ∉ the design/ writers set → false 'write
+        # denied'. Fall back to _agent_id when the write attr isn't set (plain Workspace/
+        # tests). Generalizable to any dynamic-suffixed self-gating agent.
+        _gate_id = getattr(self, "_write_agent_id", None) or getattr(self, "_agent_id", None)
         if hasattr(self.workspace, "is_write_allowed") and not self.workspace.is_write_allowed(
-                dest, getattr(self, "_agent_id", None)):
+                dest, _gate_id):
             return ToolResult.fail(f"write denied by role gate: {out_rel}")
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)

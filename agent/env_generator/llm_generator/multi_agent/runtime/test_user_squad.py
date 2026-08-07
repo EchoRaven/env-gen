@@ -271,7 +271,7 @@ async def run_test_user_squad(
     api_base: str,
     identity: Optional[str] = None,
     max_concurrent: int = 4,
-    per_agent_timeout: float = 900.0,
+    per_agent_timeout: float = 180.0,
 ) -> Dict[str, Any]:
     """Spawn one `test_user` agent per goal, concurrently in waves of ``max_concurrent``.
 
@@ -566,6 +566,33 @@ def squad_gate_outcome(*, ran: bool, p0: int) -> str:
     if not ran:
         return "retry"
     return "pass" if int(p0 or 0) == 0 else "defect"
+
+
+def squad_gate_tick_action(*, task_exists: bool, task_done: bool) -> str:
+    """#532: single-flight decision for the BACKGROUND test-user squad gate.
+
+    The squad is ~42min of work (12 browser agents in 3 sequential waves) — running it
+    INLINE inside ``_maybe_framework_deliver`` wedges the whole coordination loop so
+    create_release is never reached. Instead the gate runs the squad as ONE background
+    task and consults this pure predicate each delivery tick (given the single task
+    handle's ``exists`` / ``done`` state):
+
+    - 'launch'  : no task in flight (first defer, or the prior one was consumed) → spawn
+                  exactly ONE background squad and defer this tick (never a 2nd — the
+                  single-flight invariant).
+    - 'defer'   : a task is in flight but not finished → defer WITHOUT spawning another
+                  and WITHOUT awaiting it inline; the loop keeps ticking.
+    - 'consume' : the in-flight task finished → read its result this tick (then the
+                  handle is cleared, so the next 'launch' may re-arm after the fix lands).
+
+    Pure + total (no I/O); the wall-clock/attempt escape (squad_release_decision) is
+    evaluated by the caller BEFORE this and can RELEASE the gate regardless of task state.
+    """
+    if not task_exists:
+        return "launch"
+    if not task_done:
+        return "defer"
+    return "consume"
 
 
 async def run_squad_for_delivery(orch: Any, version: str = "",

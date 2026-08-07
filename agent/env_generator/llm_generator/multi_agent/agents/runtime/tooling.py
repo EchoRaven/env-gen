@@ -537,6 +537,16 @@ class AgentTooling:
                     # own _agent_id) must receive the WRITE identity, not the
                     # instance id — otherwise they fail closed on their own route.
                     setattr(tool, "_agent_id", _effective_write_identity(self))
+                    # #453: set_team_protocols → inject_team_protocols runs AFTER this
+                    # and CLOBBERS _agent_id back to the raw instance id (design_analyst_1)
+                    # for message routing — which re-breaks the write gate (design_analyst_1
+                    # ∉ the design/ writers set) so decompose_reference's writes to
+                    # design/component_specs/*.json get 'write denied by role gate' (r35/r38:
+                    # 40 denials/run, dropping the measured per-component specs the analyst
+                    # reads back). Stash the WRITE identity under a dedicated attr that
+                    # team-injection never touches; self-gating tools prefer it. Generalizable
+                    # to any dynamic-suffixed agent's self-gating writes.
+                    setattr(tool, "_write_agent_id", _effective_write_identity(self))
                 if hasattr(tool, "_hubs"):
                     setattr(tool, "_hubs", hubs)
                 # Tools that hold the registry as `hub_registry` (coverage, seed,

@@ -737,5 +737,36 @@ volumes:
                     "%d route(s) wired (app_wired=%s)",
                     len(rep.get("scaffolded") or []), rep.get("routes", 0),
                     rep.get("app_wired"))
+            # #440: recover the lane's HIGH-FIDELITY nav (e.g. NetflixTopNav) into the
+            # projector pages — the lane authors a rich nav/header component but leaves
+            # it ORPHANED while the projector's generic inline nav ships. Safe no-op
+            # when the lane authored none / it isn't merged into `fe` yet; never raises.
+            try:
+                from .frontend_scaffold import recover_agent_nav
+                _nrep = recover_agent_nav(fe)
+                if _nrep.get("rewired"):
+                    orch._logger.info(
+                        "#440 recovered agent nav '%s' into %d page(s): %s",
+                        _nrep.get("nav"), len(_nrep["rewired"]), _nrep["rewired"])
+            except Exception as _e:
+                orch._logger.debug("#440 agent-nav recovery skipped: %s", _e)
+            # #534/#535: wire the CORRECT-but-unwired archetype components — a detail
+            # route mis-shipped as a video player gets the lane's detail modal; an
+            # owned-items list page (My List) gets the shared nav + poster-grid shell.
+            # Both are safe no-ops (byte-identical) when the components are absent.
+            try:
+                from .frontend_scaffold import (
+                    wire_detail_modal_534, wire_owned_list_shell_535)
+                _dm = wire_detail_modal_534(fe)
+                if _dm.get("wired"):
+                    orch._logger.info("#534 wired detail modal '%s' into %s",
+                                      _dm.get("modal"), _dm.get("wired"))
+                _ol = wire_owned_list_shell_535(fe)
+                if _ol.get("wired"):
+                    orch._logger.info(
+                        "#535 wired owned-list shell (nav '%s', grid '%s') into %s",
+                        _ol.get("nav"), _ol.get("grid"), _ol["wired"])
+            except Exception as _e:
+                orch._logger.debug("#534/#535 archetype wiring skipped: %s", _e)
         except Exception as exc:
             orch._logger.debug("frontend page projection skipped: %s", exc)

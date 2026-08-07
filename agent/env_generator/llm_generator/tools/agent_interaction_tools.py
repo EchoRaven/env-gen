@@ -686,8 +686,25 @@ Args:
                               "This is to prevent accidental project delivery."
             )
         
-        # Verify checklist
-        checklist = checklist or {}
+        # Verify checklist. ROBUSTNESS (#505, netflix r82): the schema declares
+        # ``checklist`` as a dict, but the LLM sometimes passes it as a JSON STRING
+        # (or prose). A non-empty str is truthy, so ``checklist or {}`` kept the str
+        # and ``checklist.get(...)`` below crashed with
+        # "'str' object has no attribute 'get'". deliver_project then errored on EVERY
+        # call — r82 retried it ~20× over 14min while the LIVE delivery gate was GREEN
+        # (0 blockers) and visual fidelity had passed, so the run NEVER delivered
+        # despite being fully deliverable. Coerce: parse a JSON-string checklist into a
+        # dict; any non-dict (prose / null / list) → {} (which fails the SELF-ASSERTED
+        # checks below with a CLEAR, actionable error instead of crashing). Generalizes
+        # to every app — all deliveries route through this tool.
+        if isinstance(checklist, str):
+            try:
+                import json as _json
+                checklist = _json.loads(checklist)
+            except Exception:
+                checklist = {}
+        if not isinstance(checklist, dict):
+            checklist = {}
         required_checks = ["no_bugs", "requirements_met", "fully_functional", "docker_ok"]
         failed_checks = []
         

@@ -1087,8 +1087,21 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 if tfk:
                     body_lines += [
                         f'    _parent = db.query({parent_cls}).filter(getattr({parent_cls}, "{parent_field}") == {parent_param}){_parent_owner_filter}.first()',
-                        "    if _parent is not None:",
-                        f'        valid["{tfk}"] = _parent.id',
+                        # #498 (netflix r67, live): a nested create under /parents/{id}/children whose
+                        # path-derived parent does NOT resolve must 404 — NOT silently omit the FK and
+                        # let the INSERT NULL-violate. r67 wedged here: the chain rated title 11 (seed
+                        # had only ids 1-6), _parent was None, ``valid`` never got title_id, the INSERT
+                        # 400'd ``null value in column "title_id"`` — an OPAQUE error the verifier
+                        # misread as a HANDLER bug and re-authored the chain 303× chasing it. A 404
+                        # ("parent not found") is the HONEST, correct-REST outcome: every chain
+                        # expect-family tolerates 404 (see #124), remediation routes to the missing
+                        # parent (chain/seed) instead of the handler, and the churn breaks. HAPPY PATH
+                        # (parent exists) is byte-identical to before — this only changes the
+                        # parent-missing branch, which previously produced a wedging 400 or an orphan
+                        # row. Generalizes to every projected nested create in every app.
+                        "    if _parent is None:",
+                        '        raise HTTPException(status_code=404, detail="parent resource not found")',
+                        f'    valid["{tfk}"] = _parent.id',
                     ]
                     bound.append(tfk)
             # FIX #124 (instagram run-43 M1, live): an ACTION-suffix POST whose action

@@ -831,6 +831,270 @@ def ingest_dataset(dataset_dir, stage_dir) -> List[Dict]:
     return manifest
 
 
+# #483 — dataset↔contract field-name alignment. design-prep's REAL dataset uses domain
+# field names (name/synopsis/kind/year/poster/backdrop/rating), but the contract-projected
+# ORM model's column names are NON-DETERMINISTIC across runs (netflix r54: titles.`name`;
+# r55: titles.`title`). When they diverge, the seed loader's `hasattr(cls,k)` filter DROPS
+# every unmatched field → a NOT-NULL column (r55: titles.title) is left unset → EVERY row
+# silently fails its per-row insert → empty table → chains 404 → 0 release (r55, live: 0
+# titles seeded from a 60-title dataset). Each group's FIRST element is the canonical/contract
+# name; the rest are common domain synonyms design-prep tends to emit.
+_FIELD_SYNONYM_GROUPS = (
+    ("title", "name"),
+    ("description", "synopsis", "summary", "overview"),
+    ("type", "kind", "category"),
+    ("release_year", "year"),
+    ("poster_url", "poster"),
+    ("backdrop_url", "backdrop"),
+    ("average_rating", "rating"),
+    ("duration_minutes", "duration", "runtime"),
+)
+
+
+def model_columns_from_models_py(models_py_path) -> Dict[str, set]:
+    """Parse the generated ``models.py`` → ``{table_name: {column, ...}}`` by regex — the
+    SQLAlchemy attribute names the seed loader inserts through (``hasattr(cls, k)``). No
+    import/subprocess (introspect_orm_schema needs the app's deps and returns None from the
+    framework venv), so this is the deterministic, dependency-free source. Best-effort:
+    unreadable/absent file → {}."""
+    import re as _re
+    from pathlib import Path as _P
+    try:
+        text = _P(models_py_path).read_text(encoding="utf-8")
+    except Exception:
+        return {}
+    out: Dict[str, set] = {}
+    # split into class blocks: `class X(Base):` ... up to the next top-level `class `/EOF
+    for m in _re.finditer(r"^class\s+\w+\s*\([^)]*\):\s*$(.*?)(?=^class\s|\Z)",
+                          text, _re.M | _re.S):
+        block = m.group(1)
+        tm = _re.search(r"__tablename__\s*=\s*['\"]([^'\"]+)['\"]", block)
+        if not tm:
+            continue
+        cols = set(_re.findall(r"^\s{4,}(\w+)\s*=\s*Column\(", block, _re.M))
+        if cols:
+            out[tm.group(1)] = cols
+    return out
+
+
+def align_dataset_field_names(dataset, columns_by_table) -> Dict[str, List]:
+    """#483 — map each dataset row's fields onto the ORM model's column names via
+    ``_FIELD_SYNONYM_GROUPS``. ADDITIVE + BEST-EFFORT (the crux of its safety): a target
+    column is filled from a synonym ONLY when (a) the target IS a real model column for that
+    table, (b) it is currently UNSET in the row, and (c) the source field is present but is
+    NOT itself a model column (so the loader would otherwise DROP it). A run whose names
+    already match (r54) has no unset target with a droppable synonym → byte-IDENTICAL; the
+    worst case is a no-op, never a regression. The original key is left in place (the loader's
+    hasattr filter drops it harmlessly). Generalizable to every table/env."""
+    try:
+        if not isinstance(dataset, dict) or not isinstance(columns_by_table, dict):
+            return dataset
+        for table, rows in dataset.items():
+            cols = columns_by_table.get(table)
+            if not cols or not isinstance(rows, list):
+                continue
+            colset = set(cols)
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                for group in _FIELD_SYNONYM_GROUPS:
+                    targets = [c for c in group if c in colset]
+                    if not targets:
+                        continue  # this table has no column in this synonym group
+                    target = targets[0]
+                    if row.get(target) is not None:
+                        continue  # already set — NEVER overwrite real data
+                    for syn in group:
+                        if syn == target or syn in colset:
+                            continue  # don't cannibalize a field that is its own column
+                        val = row.get(syn)
+                        if val is not None:
+                            row[target] = val
+                            break
+        return dataset
+    except Exception:
+        return dataset
+
+
+# ── #552 — deterministic Top-N ranking seed enrichment ───────────────────────
+# The generated projector already emits Netflix-signature Top-10 rank numerals /
+# "#N in X Today" badges + a data-derived Top-10 rail (frontend_scaffold #455/#531,
+# gated on a row's ``top10_rank``/``rank`` being non-null), but the REAL design-prep
+# dataset (design/dataset/*.json → seed_dataset.json) leaves those declared columns
+# NULL, so every ranked treatment renders NOTHING (live GET /api/titles: top10_rank
+# null, trending_score null). This fills the DECLARED-BUT-UNSEEDED ranking column at
+# authoring time so the delivered DB carries real ranks. Keyed off the SCHEMA (a
+# declared int rank column that the seed leaves null), never a product literal, so
+# ANY app whose ORM declares such a column gets ranks.
+_RANK_TOP_N = 10  # N≈10 (Netflix Top-10 rail; capped at the row count for small sets)
+# Integer-family column types (a rank is an ordinal → must be int/nullable).
+_SEED_INT_TYPES = frozenset({
+    "integer", "int", "biginteger", "bigint", "smallinteger", "smallint"})
+# Numeric column types that can carry a descending trending/popularity score.
+_SEED_NUM_TYPES = _SEED_INT_TYPES | frozenset({
+    "float", "numeric", "decimal", "double", "real", "number"})
+
+
+def _is_ranking_col(name: str) -> bool:
+    """A column that holds an ordinal Top-N rank (``top10_rank``/``rank``/``ranking``/
+    ``*_rank``). Deliberately narrow — it must be the ranking POSITION, not a score."""
+    n = (name or "").lower()
+    return n in ("rank", "ranking") or n.endswith("_rank")
+
+
+def _is_trending_col(name: str) -> bool:
+    """A numeric column that expresses trending/popularity magnitude (the projector's
+    ordering signal for a Top-N rail)."""
+    n = (name or "").lower()
+    return n in ("trending_score", "trending", "popularity", "popularity_score") \
+        or "trending" in n or "popularity" in n
+
+
+def model_schema_from_models_py(models_py_path) -> Dict[str, Dict[str, Dict]]:
+    """Parse the generated ``models.py`` → ``{table: {col: {type, nullable, pk}}}`` by
+    regex (no import/subprocess — same rationale as ``model_columns_from_models_py``:
+    the app's SQLAlchemy deps aren't importable from the framework venv). ``type`` is the
+    first type token inside ``Column(...)`` lower-cased (``integer``/``float``/…);
+    ``nullable`` is True unless ``nullable=False``/``primary_key=True``; ``pk`` reflects
+    ``primary_key=True``. Best-effort: unreadable/absent file → {}."""
+    import re as _re
+    from pathlib import Path as _P
+    try:
+        text = _P(models_py_path).read_text(encoding="utf-8")
+    except Exception:
+        return {}
+    out: Dict[str, Dict[str, Dict]] = {}
+    for m in _re.finditer(r"^class\s+\w+\s*\([^)]*\):\s*$(.*?)(?=^class\s|\Z)",
+                          text, _re.M | _re.S):
+        block = m.group(1)
+        tm = _re.search(r"__tablename__\s*=\s*['\"]([^'\"]+)['\"]", block)
+        if not tm:
+            continue
+        cols: Dict[str, Dict] = {}
+        for cm in _re.finditer(r"^\s{4,}(\w+)\s*=\s*Column\((.*)$", block, _re.M):
+            cname, args = cm.group(1), cm.group(2)
+            # skip an optional leading explicit column-name string: Column("db_name", Integer)
+            ttok = _re.match(r"\s*(?:['\"][^'\"]*['\"]\s*,\s*)?([A-Za-z_]\w*)", args)
+            ctype = (ttok.group(1) if ttok else "").lower()
+            is_pk = "primary_key=true" in args.lower().replace(" ", "")
+            nullable = not is_pk and "nullable=false" not in args.lower().replace(" ", "")
+            cols[cname] = {"type": ctype, "nullable": nullable, "pk": is_pk}
+        if cols:
+            out[tm.group(1)] = cols
+    return out
+
+
+def _seed_order_keyfn(col, numeric, descending):
+    """Deterministic sort key over ``(index, row)`` pairs by ``col``. None values sort
+    LAST; numeric=True coerces to float (non-numeric → treated as absent); descending=True
+    flips the numeric sign (Top-N: highest trending first). Original index breaks ties, so
+    the sort is stable and clock/random-free."""
+    def keyfn(pair):
+        idx, r = pair
+        v = r.get(col)
+        if v is None:
+            return (2, 0.0, "", idx)
+        if numeric:
+            fv = _coerce_float(v)
+            if fv is None:
+                return (1, 0.0, str(v), idx)
+            return (0, -fv if descending else fv, "", idx)
+        return (0, 0.0, str(v), idx)
+    return keyfn
+
+
+def enrich_ranking_seed(dataset, schema, top_n: int = _RANK_TOP_N) -> Dict[str, List]:
+    """#552 — deterministically assign Top-N ranks to the first N rows of any table whose
+    SCHEMA declares an int/nullable ranking column (``top10_rank``/``rank``/``*_rank``)
+    that the seed leaves NULL, and populate a declared+null trending/popularity score with
+    a descending value that matches the assigned ranks. This is what makes the projector's
+    Top-10 numerals / "#N in X Today" badges / data-derived Top-10 rail render (they gate
+    on the row's ``top10_rank`` being non-null).
+
+    GENERALIZABLE — keys off the declared column, never a table/product name; any app whose
+    ORM declares a ranking column gets ranks. DETERMINISTIC — stable order (an existing
+    order signal if present: trending desc, else created/id asc, else the dataset's own
+    order), no clock/random. CONTAINED + byte-IDENTICAL when: the table has no such column,
+    the schema is unknown, or the seed ALREADY populates the rank (author-provided ranks are
+    preserved, never overwritten). RE-SEED-SAFE — applied at authoring time (the resulting
+    seed_dataset.json is deterministic, so the runtime seed fingerprint stays stable).
+
+    ``schema`` is ``{table: {col: {type, nullable, pk}}}`` (see model_schema_from_models_py)."""
+    try:
+        if not isinstance(dataset, dict) or not isinstance(schema, dict):
+            return dataset
+        for table, rows in dataset.items():
+            if not isinstance(rows, list) or not rows:
+                continue
+            cols = schema.get(table)
+            if not isinstance(cols, dict) or not cols:
+                continue  # schema unknown for this table → no-op
+            # locate a declared int/nullable ranking column
+            rank_col = None
+            for cname, meta in cols.items():
+                if not _is_ranking_col(cname):
+                    continue
+                m = meta if isinstance(meta, dict) else {}
+                ctype = str(m.get("type") or "").lower()
+                if ctype and ctype not in _SEED_INT_TYPES:
+                    continue  # a rank must be an integer ordinal
+                if m.get("pk") or m.get("nullable") is False:
+                    continue
+                rank_col = cname
+                break
+            if rank_col is None:
+                continue  # table declares no ranking column → byte-identical
+            dict_rows = [r for r in rows if isinstance(r, dict)]
+            if not dict_rows:
+                continue
+            if any(r.get(rank_col) is not None for r in dict_rows):
+                continue  # author-provided ranks → preserve, byte-identical
+            # optional trending/popularity score column (numeric)
+            trend_col = None
+            trend_is_int = False
+            for cname, meta in cols.items():
+                if not _is_trending_col(cname):
+                    continue
+                m = meta if isinstance(meta, dict) else {}
+                ctype = str(m.get("type") or "").lower()
+                if ctype and ctype not in _SEED_NUM_TYPES:
+                    continue
+                trend_col = cname
+                trend_is_int = ctype in _SEED_INT_TYPES
+                break
+            # choose a stable order signal (no clock/random)
+            order_col, order_numeric, descending = None, True, False
+            if trend_col and any(r.get(trend_col) is not None for r in dict_rows):
+                order_col, order_numeric, descending = trend_col, True, True  # trending desc
+            else:
+                for cand in ("created_at", "created", "created_time", "id"):
+                    if cand in cols and any(r.get(cand) is not None for r in dict_rows):
+                        order_col, order_numeric, descending = cand, (cand == "id"), False
+                        break
+            indexed = list(enumerate(dict_rows))
+            if order_col is None:
+                ordered = indexed  # the dataset's own (deterministic) order
+            else:
+                ordered = sorted(
+                    indexed, key=_seed_order_keyfn(order_col, order_numeric, descending))
+            n = min(top_n, len(ordered))
+            for rank, (_idx, r) in enumerate(ordered[:n], start=1):
+                r[rank_col] = rank
+                if trend_col is not None and r.get(trend_col) is None:
+                    tval = top_n - rank + 1  # descending: rank 1 → highest
+                    r[trend_col] = int(tval) if trend_is_int else float(tval)
+        return dataset
+    except Exception:
+        return dataset
+
+
+def _coerce_float(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def assemble_seed_dataset(design_dataset_dir) -> Dict[str, List]:
     """F2 — fold the staged real dataset (design/dataset/*.json) into a single
     ``{table: [rows]}`` seed dict: each JSON file whose stem is a table name and whose
@@ -871,4 +1135,5 @@ def assemble_seed_dataset(design_dataset_dir) -> Dict[str, List]:
 __all__ = ["row_mode_color", "region_background", "find_accent", "extract_palette",
            "crop_region", "decompose_reference", "make_side_by_side",
            "color_distance", "spec_color_deviations", "theme_inversion",
-           "ingest_assets", "ingest_dataset", "assemble_seed_dataset"]
+           "ingest_assets", "ingest_dataset", "assemble_seed_dataset",
+           "model_schema_from_models_py", "enrich_ranking_seed"]

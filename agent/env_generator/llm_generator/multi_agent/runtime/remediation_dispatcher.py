@@ -79,6 +79,24 @@ def action_unimplemented_broken(broken) -> List[str]:
     return [str(b) for b in (broken or []) if _ACTION_404_RE.search(str(b))]
 
 
+def suppress_verifier_chain_reauthor(name: str, owner: str, chain_rerun_armed: bool) -> bool:
+    """#70(b) (netflix r76, 2026-08-05): should the ``business_chain_failing`` verifier
+    RE-AUTHOR dispatch be SKIPPED this deliver-tail tick?
+
+    True iff the blocker is ``business_chain_failing``, it is STILL owned by the verifier
+    (the #148 action-404 re-route did NOT flip it to the backend lane for a real missing
+    endpoint), AND the framework armed a deterministic chain re-run this tick
+    (``orch._chain_rerun_armed``, set from ``maybe_rerun_unrun_chains`` / #475). In that
+    state the framework is re-running the EXISTING chains to settle them green; dispatching
+    the verifier in parallel just makes it author MORE never-run chains, so run_chains never
+    catches up (r76: gate 17→2, then business_chain green→REGRESSED→restored with 11
+    never-run chains piling up, 0 delivery). Bounded by #475's 4/milestone cap: once spent,
+    ``chain_rerun_armed`` is False here and normal dispatch resumes; a genuinely-BROKEN chain
+    (where #475 no-ops) also leaves it False → the verifier IS dispatched to fix it. Pure."""
+    return bool(name == "business_chain_failing" and owner == "verifier"
+                and chain_rerun_armed)
+
+
 def _chain_action_404s(orch) -> List[str]:
     """Re-derive the #124-stub broken steps from the chain registry's
     last_result (the gate-level failed_checks carry names only — same
@@ -971,6 +989,19 @@ class RemediationDispatcher:
                             "status=implemented; if a registration is junk/obsolete, "
                             "deprecate it via registryhub_deprecate_endpoint instead:"
                             "\n- " + "\n- ".join(_act[:8]))
+                # #70(b) (netflix r76, 2026-08-05): if the framework armed a deterministic chain
+                # RE-RUN this tick (maybe_rerun_unrun_chains → orch._chain_rerun_armed) AND this
+                # blocker is STILL owned by the verifier (i.e. the action-404 re-route above did
+                # NOT flip it to backend for a real missing endpoint), SKIP the verifier RE-AUTHOR
+                # dispatch this tick. The framework is re-running the EXISTING chains to settle
+                # them green; dispatching the verifier in parallel makes it author MORE never-run
+                # chains → run_chains never catches up (r76: 17→2 then green→regressed→restored
+                # with 11 never-run chains, 0 delivery). Bounded: #475 caps at 4/milestone, so
+                # once spent _chain_rerun_armed is False and this dispatch resumes; a genuinely-
+                # BROKEN chain (where #475 no-ops) also leaves it False → verifier IS dispatched.
+                if suppress_verifier_chain_reauthor(
+                        name, owner, getattr(orch, "_chain_rerun_armed", False)):
+                    continue
                 if name == "business_chain_api_coverage":
                     # Hand the verifier the EXACT uncovered endpoints. The generic "cover the
                     # uncovered endpoints" left it guessing — run v17 got business_chain green

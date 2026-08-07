@@ -74,6 +74,17 @@ def _run_compose(
             ensure_assets_staged_for_build(compose_file)
         except Exception:
             pass
+        # FIX #450 (run-37 M4): a lane integration merge can transiently DROP the
+        # framework-owned backend/frontend Dockerfile (stash-drop / `git clean -fd`)
+        # right when the build reads the context → 'no Dockerfile yet' → blank image →
+        # visual gate ~0.00 across every screen. Restore any dropped Dockerfile from
+        # git AT the build entry. Idempotent, no-op when present. Same divergence class
+        # as #113/#121.
+        try:
+            from multi_agent.runtime.frontend_scaffold import ensure_build_infra_staged_for_build
+            ensure_build_infra_staged_for_build(compose_file)
+        except Exception:
+            pass
         # FIX #121 (run-39 M4): a lane integration checkout between a HEAL repair and
         # the build can revert repaired backend files (run-39: heal fixed
         # custom_routes' username annotation on disk, but the deployed image still

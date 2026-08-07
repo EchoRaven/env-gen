@@ -375,9 +375,20 @@ async def _chat_ladder(client, msgs, *, max_tokens: int) -> Optional[Dict]:
     import re
     resp = None
     try:
+        # #480: send the Anthropic force-tool DICT ({"type":"tool","name":...}) — a bare
+        # string "required" is rejected by the (now-stricter) vertex proxy with
+        # BadRequestError 400 'tool_choice: Input should be a valid dictionary' (r53: 59×;
+        # r51/r52 had 0 → an environment/proxy tightening, not the caller). Force the single
+        # screen-enrichment tool by name.
         resp = await client.chat(msgs, temperature=0.0, max_tokens=max_tokens,
-                                 tools=_SCREEN_TOOL, tool_choice="required")
-    except TypeError:
+                                 tools=_SCREEN_TOOL,
+                                 tool_choice={"type": "tool", "name": "submit_screen_enrichment"})
+    except Exception:
+        # #480: was `except TypeError` — the 400 above is a BadRequestError, NOT TypeError, so
+        # it propagated and failed the WHOLE screen enrichment instead of degrading. The
+        # ladder's intent is 'forced-function → JSON-mode → plain text; degrade per rung', so
+        # degrade on ANY forced-function failure → JSON-mode still yields the structured screen
+        # (robust to future provider/proxy changes; generalizable to every run's design phase).
         resp = None
     args = _tool_call_args(resp)
     if args is not None:
@@ -386,7 +397,7 @@ async def _chat_ladder(client, msgs, *, max_tokens: int) -> Optional[Dict]:
         try:
             resp = await client.chat(msgs, temperature=0.0, max_tokens=max_tokens,
                                      response_mime_type="application/json")
-        except TypeError:
+        except Exception:
             resp = await client.chat(msgs, temperature=0.0, max_tokens=max_tokens)
     text = getattr(resp, "content", "") or ""
     m = re.search(r"\{.*\}", text, re.DOTALL)

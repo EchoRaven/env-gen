@@ -354,7 +354,12 @@ def map_reference_screens(
         # stopword-stripped tokens coincidentally equal a page's (account_menu ->
         # {account} == account_menu_page).
         _overlay_by_name = bool(_OVERLAY_NAME_RE.search(stem))
-        _matched_page = (None if _overlay_by_name
+        # #542a: a TRANSIENT interaction-STATE name (hover/preview/ad — see
+        # _TRANSIENT_STATE_RE) is one a static route capture can NEVER reproduce, so — like a
+        # structural overlay token — it never inherits a ui_page route / gets promoted to a
+        # blocking page, and it is ALWAYS advisory (the classification branch below).
+        _transient_by_name = bool(_TRANSIENT_STATE_RE.search(stem))
+        _matched_page = (None if (_overlay_by_name or _transient_by_name)
                          else _match_ui_page(_screen_name_tokens(p.stem, stem), pages, known))
         if _matched_page is not None:
             route = str(_matched_page.get("route") or "").strip() or None
@@ -404,10 +409,18 @@ def map_reference_screens(
                 if any(k in stem for k in keys) and ((not known) or r in known):
                     route = r
                     break
-        # #356: auth follows the RESOLVED route, never a filename token. A
-        # measured requires_auth still wins over both.
-        if (route in _FRAMEWORK_PUBLIC_ROUTES
-                and not isinstance(_cl.get("requires_auth"), bool)):
+        # #356: auth follows the RESOLVED route, never a filename token.
+        # #73 (netflix r77, 2026-08-05): a framework-public route (login/signup) is
+        # PUBLIC BY CONSTRUCTION (framework-injected; a login page MUST be reachable
+        # logged-out — see _FRAMEWORK_PUBLIC_ROUTES comment). The old guard let a
+        # design_analyst that MIS-MEASURED requires_auth=true for the login screen
+        # OVERRIDE this → login captured AUTHED → its `if(isAuthed())nav('/profiles')`
+        # redirect fired → the judge scored the WRONG (redirected) page ~0.00 (r77
+        # login=0.00, a top Part-A drag). A measured requires_auth on a framework-public
+        # route is ALWAYS a measurement error, so the by-construction fact wins: capture
+        # these routes logged-out regardless of the (wrong) measured flag. Non-public
+        # routes are unaffected (their measured requires_auth still governs, line 345).
+        if route in _FRAMEWORK_PUBLIC_ROUTES:
             auth = False
         # FIX #128 (visual-gate autopsy, run-47): an OVERLAY / interaction-STATE
         # reference (search_flyout = feed + a notifications MODAL; *_dropdown, *_popup,
@@ -423,14 +436,24 @@ def map_reference_screens(
         _kind = str(_cl.get("kind") or "").strip().lower()
         if _matched_page is not None:
             # #416: the app REGISTERED a dedicated routed page for this screen
-            # (and its name is not a structural overlay token — enforced when
-            # _matched_page was resolved) -> it is a real page, judged BLOCKING
-            # even if #132's pixel-only pass mislabeled it kind='overlay' (it can't
-            # see that the app built a page for it). This is the ONLY path that
+            # (and its name is not a structural overlay / transient-state token —
+            # enforced when _matched_page was resolved) -> it is a real page, judged
+            # BLOCKING even if #132's pixel-only pass mislabeled it kind='overlay' (it
+            # can't see that the app built a page for it). This is the ONLY path that
             # overrides the overlay label; a genuine overlay with no dedicated page
             # (account_menu, *_dropdown) never matches a ui_page, so #128 holds and
             # it stays advisory.
             advisory = False
+        elif _transient_by_name:
+            # #542a: a transient interaction-STATE name (hover/preview/ad) is authoritative —
+            # such a screen has no navigable route of its own (it is a popover/card/ad slot
+            # layered on a base page), so it is ADVISORY even when the pixel-only analyst
+            # mislabeled it kind='page'. #389: the analyst's kind comes back INVERTED for
+            # screens that SHARE a route (netflix: card_hover_preview[page] <-> browse_home @
+            # /browse), which is exactly how card_hover_preview was scored 0.35 as a blocking
+            # screen and dragged the mean. The duplicate-route pass (below) is the complementary
+            # signal for a NON-transient-named screen that still duplicates a route.
+            advisory = True
         elif _kind in ("page", "overlay"):
             advisory = _kind == "overlay"
         else:
@@ -450,11 +473,93 @@ def _select_judged_screens(screens: List[Dict[str, Any]], max_screens: int) -> L
     (overlay/interaction-state) overflow — those are EXCLUDED from the blocking
     pass criterion (#128), so bounding THEM keeps cost sane without breaking the
     gate. Only routed screens are judgeable; blocking screens come first so the
-    remaining cap budget goes to advisory extras."""
-    routed = [s for s in screens if s.get("route")]
+    remaining cap budget goes to advisory extras.
+
+    #542b: the judged set is DETERMINISTIC run-to-run — the routed screens are sorted by
+    name before the blocking/advisory split, so the same measured input yields the same
+    judged set AND the same order every run (the analyst's run-to-run screen ORDERING no
+    longer changes which advisory extras fill the cap, i.e. the gating denominator). Blocking
+    screens are all judged regardless of order, so this never changes the gating verdict —
+    only makes the exam reproducible."""
+    routed = sorted((s for s in screens if s.get("route")),
+                    key=lambda s: str(s.get("name") or ""))
     blocking = [s for s in routed if not s.get("advisory")]
     advisory = [s for s in routed if s.get("advisory")]
     return blocking + advisory[:max(0, max_screens - len(blocking))]
+
+
+def _norm_screen_stem(name: Any) -> str:
+    """Normalized stem of a screen name for the token regexes (matches map_reference_screens)."""
+    return re.sub(r"[^a-z0-9]+", "_", str(name or "").lower()).strip("_")
+
+
+def _screen_is_transient(screen: Mapping[str, Any]) -> bool:
+    """#542a: is this screen a TRANSIENT interaction state (hover/preview/ad or a structural
+    overlay: modal/dialog/popover/tooltip/flyout/menu/…) that a static route capture cannot
+    reproduce? Pure name-token test over BOTH vocabularies. Generalizable; no product literals."""
+    stem = _norm_screen_stem(screen.get("name"))
+    return bool(_TRANSIENT_STATE_RE.search(stem) or _OVERLAY_NAME_RE.search(stem))
+
+
+def _demote_duplicate_route_screens(
+        screens: List[Dict[str, Any]],
+        owned: Optional[set] = None) -> List[Dict[str, Any]]:
+    """#542a: when several judged screens resolve to the SAME concrete capture route, a static
+    route-capture navigates to that ONE route and produces the SAME screenshot for all of them
+    (netflix: card_hover_preview and browse_home both -> /browse -> BYTE-IDENTICAL PNGs, yet the
+    duplicate was scored 0.35 as a blocking screen and mechanically lowered the mean). Only ONE
+    screen can be the canonical page for a route; the rest are transient interaction states
+    layered on it and cannot be fairly scored as blocking pages.
+
+    Keep exactly ONE blocking screen per route (deterministic canonical: an ``owned`` page wins,
+    then a real page — non-advisory AND not transient-named — then the earliest name) and mark
+    every OTHER same-route screen ADVISORY. In-place + returns ``screens``. This ONLY ever
+    demotes (never promotes), and a route with a single routed screen is untouched, so gating is
+    byte-identical when there are no duplicate-route screens."""
+    own = {str(n) for n in (owned or set())}
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for s in screens:
+        r = s.get("route")
+        if not r:
+            continue
+        groups.setdefault(_concrete_capture_route(str(r)), []).append(s)
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+
+        def _canon_key(s: Mapping[str, Any]):
+            name = str(s.get("name") or "")
+            # smaller sorts first -> canonical: an owned page, then a real (non-advisory,
+            # non-transient) page, then the earliest name (stable + deterministic).
+            return (0 if name in own else 1,
+                    1 if s.get("advisory") else 0,
+                    1 if _screen_is_transient(s) else 0,
+                    name)
+
+        canonical = min(group, key=_canon_key)
+        for s in group:
+            if s is not canonical and not s.get("advisory"):
+                s["advisory"] = True
+    return screens
+
+
+def _blocking_similarity_average(results: List[Mapping[str, Any]]) -> float:
+    """#542a: the gating fidelity average over BLOCKING screens ONLY — advisory
+    (overlay/hover/preview/modal/duplicate-route) screens are EXCLUDED so a transient screen a
+    static projector cannot render never drags the mean (a driver of the +-0.10 Part-A variance).
+    Blank mid-rebuild captures (#75a) are excluded too (a transient env glitch, not a design
+    score — mirrors _persist_verdict's _blocking_merged); a REAL capture failure (blank!=True)
+    counts as its 0.0 (a canonical page that never rendered is a real miss, NOT silently dropped
+    -- #542b). 0.0 over an empty blocking set. Does NOT change the pass/fail bar or any per-screen
+    score — it only chooses WHICH screens the average is taken over."""
+    def _sim(r: Mapping[str, Any]) -> float:
+        try:
+            return float(r.get("similarity") or 0.0)
+        except Exception:
+            return 0.0
+    blk = [r for r in (results or [])
+           if isinstance(r, dict) and not r.get("advisory") and r.get("blank") is not True]
+    return round(sum(_sim(r) for r in blk) / len(blk), 4) if blk else 0.0
 
 
 # Interaction-STATE name tokens — a reference so named is an overlay reachable only by
@@ -462,6 +567,128 @@ def _select_judged_screens(screens: List[Dict[str, Any]], max_screens: int) -> L
 _OVERLAY_NAME_RE = re.compile(
     r"(?:^|_)(?:flyout|modal|popup|pop_?over|dropdown|drop_?down|overlay|dialog|"
     r"drawer|tooltip|toast|sheet|menu|context_?menu|lightbox)(?:_|$)")
+
+# #542a: TRANSIENT interaction-STATE tokens a static route capture can NEVER reproduce — a
+# hover popover, a preview card, an ad slot. These are DISTINCT from the structural overlay
+# tokens above (menu/sheet can also legitimately NAME a real page — a restaurant menu, a
+# bottom-sheet page — so they only mark advisory via the classification fallback, preserving
+# #416/#132), whereas hover/preview/ad essentially NEVER name a navigable page, so a name
+# match here is authoritative and marks the screen ADVISORY even over a kind='page' mislabel.
+# Kept SEPARATE from _OVERLAY_NAME_RE so frontend_scaffold's route-owner ranking (which imports
+# _OVERLAY_NAME_RE) is unaffected. Word-segment anchored (no 'ad' inside 'add'/'read'); no
+# product literals.
+_TRANSIENT_STATE_RE = re.compile(r"(?:^|_)(?:hover|preview|ad|ad_?state)(?:_|$)")
+
+# #509 (netflix r84, 2026-08-05): MODAL/OVERLAY INTERACTION CAPTURE. #128 correctly marks
+# overlay screens (rate_dialog, account_menu, card_hover_preview, *_dropdown …) ADVISORY
+# because route-capture navigates to the PARENT page and never opens the overlay → the judge
+# compares the bare page against the modal reference → floor score (r84 rate_dialog=0.12,
+# card_hover=0.40). But advisory ≠ un-scorable: the reference_spec gives each overlay a
+# `route_hint` (parent route, already the screen's `route`), so after navigating there we can
+# DRIVE the interaction — click/hover the trigger — and screenshot the REAL overlay state for
+# a FAIR score. Best-effort + fallback (on any miss the caller keeps the plain-route shot →
+# never regresses / never worse than today). Generalizes to every app's overlays; no product
+# literals (keywords derive from the screen NAME).
+_OVERLAY_TOKEN_RE = re.compile(
+    r"(?:_?(?:flyout|modal|popup|pop_?over|dropdown|drop_?down|overlay|dialog|drawer|"
+    r"tooltip|toast|sheet|menu|context_?menu|lightbox|preview|hover|state|open|active))+$")
+_OVERLAY_STOPWORDS = frozenset((
+    "the", "and", "for", "with", "page", "screen", "view", "app", "user"))
+
+
+def _overlay_trigger_keywords(name: str) -> List[str]:
+    """Derive TRIGGER keywords from an overlay screen name (pure, testable). Strips the
+    trailing interaction token(s) (``rate_dialog`` → ``rate``; ``account_menu`` → ``account``;
+    ``card_hover_preview`` → ``card``) and returns the remaining >2-char tokens, plus generic
+    menu/account synonyms so a bare avatar trigger is still found. Generalizes; no literals."""
+    base = _OVERLAY_TOKEN_RE.sub("", str(name or "").lower()).strip("_")
+    kws = [w for w in re.split(r"[_\s]+", base)
+           if len(w) > 2 and w not in _OVERLAY_STOPWORDS]
+    low = str(name or "").lower()
+    if "menu" in low or "account" in low or "profile" in low or "dropdown" in low:
+        kws += ["account", "profile", "avatar", "menu", "user"]
+    return list(dict.fromkeys(kws))  # de-dup, order-preserving
+
+
+def _overlay_is_hover(name: str) -> bool:
+    """Hover-state overlays (card_hover_preview, *_hover) open on pointer-over, not click."""
+    low = str(name or "").lower()
+    return "hover" in low or "preview" in low
+
+
+# JS: find a plausible trigger element (accessible-name / class match, else a nav avatar /
+# aria-haspopup control) and click it (or dispatch hover events). Returns whether it fired.
+_OVERLAY_OPEN_JS = r"""
+([kws, isHover]) => {
+  const norm = s => (s||'').toLowerCase();
+  const acc = el => norm(el.innerText)+' '+norm(el.getAttribute&&el.getAttribute('aria-label'))
+      +' '+norm(el.getAttribute&&el.getAttribute('title'))+' '+norm(el.getAttribute&&el.getAttribute('alt'))
+      +' '+norm(el.className&&el.className.baseVal!==undefined?el.className.baseVal:el.className);
+  const cand = Array.from(document.querySelectorAll('button,a,[role=button],[aria-haspopup],[onclick]'));
+  let el = cand.find(e => { const t = acc(e); return kws.some(k => k && t.includes(k)); });
+  if (!el) {
+    el = document.querySelector('header [aria-haspopup], nav [aria-haspopup]');
+    if (!el) { const img = document.querySelector('header img, nav img');
+               if (img) el = img.closest('button,a') || img; }
+  }
+  if (!el) return false;
+  try { el.scrollIntoView({block:'center'}); } catch(e) {}
+  try {
+    if (isHover) { ['pointerover','mouseover','mouseenter','pointerenter']
+        .forEach(t => el.dispatchEvent(new MouseEvent(t, {bubbles:true, cancelable:true}))); }
+    else { el.click(); }
+  } catch(e) { return false; }
+  return true;
+}
+"""
+
+# JS: did an overlay become visible? role=dialog / aria-modal, or a large fixed/absolute
+# high-z element (a dropdown/menu/modal panel). Conservative size floor avoids scrims.
+_OVERLAY_DETECT_JS = r"""
+() => {
+  if (document.querySelector('[role=dialog],[aria-modal="true"]')) return true;
+  return Array.from(document.querySelectorAll('div,section,ul,nav,aside')).some(el => {
+    const s = getComputedStyle(el); const r = el.getBoundingClientRect();
+    return (s.position==='fixed'||s.position==='absolute') && (parseInt(s.zIndex)||0) >= 10
+        && r.width >= 120 && r.height >= 70 && s.visibility!=='hidden' && s.display!=='none'
+        && (parseFloat(s.opacity)||1) > 0.5;
+  });
+}
+"""
+
+
+async def _drive_overlay_open(page, name: str) -> bool:
+    """#509: best-effort open an overlay/modal so the screenshot captures it, not the bare
+    parent page. Returns True iff an overlay became visible. NEVER raises — any failure leaves
+    the page on the plain parent route (caller's existing shot), so it can only ever help."""
+    try:
+        # #509-review (2026-08-05): a trigger click can NAVIGATE (the fallback in _OVERLAY_OPEN_JS
+        # may click a header logo/avatar `<a href="/">`). Remember the capture route so that on a
+        # MISS (no overlay opened) we restore it — otherwise the caller's unconditional screenshot
+        # would capture the wrong route (home) and the screen would be judged against it → floor
+        # score → FALSE-BLOCK an otherwise-good app. Guarantees the "a miss leaves the plain-route
+        # shot / never regresses" invariant for real navigating triggers.
+        try:
+            _url_before = page.url
+        except Exception:
+            _url_before = None
+        kws = _overlay_trigger_keywords(name)
+        is_hover = _overlay_is_hover(name)
+        fired = await page.evaluate(_OVERLAY_OPEN_JS, [kws, is_hover])
+        if fired:
+            await page.wait_for_timeout(800)
+            if bool(await page.evaluate(_OVERLAY_DETECT_JS)):
+                return True
+        # miss (nothing fired, or fired but no overlay became visible) — undo any navigation.
+        try:
+            if _url_before and page.url != _url_before:
+                await page.goto(_url_before, wait_until="domcontentloaded", timeout=15000)
+                await page.wait_for_timeout(400)
+        except Exception:
+            pass
+        return False
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -760,6 +987,281 @@ def _concrete_capture_route(route: str) -> str:
     return _ROUTE_PARAM_RE.sub("1", route)
 
 
+# ---------------------------------------------------------------------------
+# #491 (netflix r63, confirmed) — POST-LOGIN PROFILE/SELECTION GATE.
+# App.jsx routes catalog pages as ``<RequireProfile><XxxPage/></RequireProfile>``;
+# RequireProfile redirects to ``/profiles`` when ``getActiveProfileId()`` (=
+# ``localStorage.getItem('active_profile_id')``) is empty. The capture logs in
+# (sets a token) but NEVER selects a profile → every catalog route bounces to the
+# profiles chooser → all catalog screenshots are IDENTICAL (the profiles list) →
+# fidelity collapses (~0.06-0.12) instead of scoring the real pages.
+#
+# Mirror the token block (FIX #103): the profile-selection storage KEY is pure
+# lane variance ('active_profile_id' vs camelCase vs 'profile' …), so once we know
+# an id we establish it under EVERY common alias in BOTH localStorage AND
+# sessionStorage. Best-effort everywhere — apps with no profile gate are
+# unaffected (the extra keys are inert to the app).
+# ---------------------------------------------------------------------------
+_PROFILE_KEY_ALIASES = (
+    "active_profile_id", "activeProfileId", "profile_id", "profileId",
+    "selected_profile_id", "selectedProfileId", "current_profile_id",
+    "currentProfileId", "activeProfile", "selectedProfile", "profile",
+)
+
+# Discover the first profile id via the app's OWN origin/session (most robust —
+# same fetch the app itself makes). Tries the common list endpoints in order,
+# unwraps the common envelopes, reads the first present id field. Returns null on
+# any miss so the caller silently proceeds. ``token`` is passed in (may be "").
+_PROFILE_DISCOVER_JS = """async (token) => {
+  const paths = ['/api/profiles', '/api/profile', '/profiles'];
+  const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+  for (const p of paths) {
+    try {
+      const r = await fetch(p, { headers });
+      if (!r.ok) continue;
+      const d = await r.json();
+      let arr = null;
+      if (Array.isArray(d)) arr = d;
+      else if (d && Array.isArray(d.profiles)) arr = d.profiles;
+      else if (d && Array.isArray(d.items)) arr = d.items;
+      else if (d && Array.isArray(d.data)) arr = d.data;
+      if (!arr || !arr.length) continue;
+      const row = arr[0];
+      if (!row || typeof row !== 'object') continue;
+      for (const k of ['id', 'profile_id', 'profileId', '_id', 'uuid']) {
+        if (row[k] !== undefined && row[k] !== null && row[k] !== '') {
+          return String(row[k]);
+        }
+      }
+    } catch (e) {}
+  }
+  return null;
+}"""
+
+
+def _profile_select_init_js(profile_id: str) -> str:
+    """A JS init-script that establishes ``profile_id`` as the ACTIVE profile
+    under every alias in ``_PROFILE_KEY_ALIASES`` in BOTH localStorage and
+    sessionStorage — the mirror of the token block (FIX #103), because the app's
+    profile-selection storage KEY is pure lane variance. Returns "" for a falsy
+    id (no gate to satisfy). The value is JSON-encoded so it is always a valid JS
+    string literal (no unbalanced quotes for any id)."""
+    if not profile_id:
+        return ""
+    _pid_js = json.dumps(str(profile_id))
+    return ";".join(
+        f"localStorage.setItem('{k}', {_pid_js});"
+        f"sessionStorage.setItem('{k}', {_pid_js})"
+        for k in _PROFILE_KEY_ALIASES) + ";"
+
+
+# ---------------------------------------------------------------------------
+# #548 (netflix, r103) — CAPTURE STABILITY across a MID-RUN DB RE-SEED.
+# ROOT of the Part-A run-to-run variance: the app's DB is periodically re-seeded
+# DURING a run, which momentarily WIPES the ``profiles`` table. The frontend gates
+# every protected route on a selected profile (``needProfile`` → renders the
+# "Who's watching?" picker when none is selected/persisted OR when the persisted
+# id no longer resolves to a live profile). So a screenshot taken while a re-seed
+# is in flight captures the tiny profile-picker instead of the real page, and the
+# judge scores that real screen ~0.05 — with NO code change (r103: browse_home
+# 0.78→0.06 in 13 min). The pre-existing FIX #491 selects a profile ONCE at boot,
+# which is defeated by a re-seed that lands mid-capture.
+#
+# Three additive, structural, best-effort mechanisms (all no-ops for an app with no
+# profile gate → byte-identical for such apps):
+#   (b) SEED-SETTLED wait: before capturing, poll the app's own /profiles endpoint
+#       until it is NON-EMPTY and STABLE (same count twice) so discovery/capture
+#       never starts mid-wipe.
+#   (a)+(c) INVALID-CAPTURE detect + RE-SELECT + retry: right before each protected
+#       screen's shot, probe the loaded DOM; if it is the profile picker (a
+#       who's-watching heading, or a /profiles chooser grid) — i.e. a re-seed
+#       re-raised the gate — RE-SELECT a profile (re-discover a now-valid id +
+#       re-persist under every alias + click the picker's first tile, which makes
+#       the app persist under its OWN key) and re-navigate, up to a small bound.
+#       A picker never scores a real screen.
+# The profiles screen ITSELF (a legitimate reference) is exempt (its picker capture
+# is correct). Purely structural signals; no product literals.
+# ---------------------------------------------------------------------------
+
+# JS probe: structural signals of a profile-SELECTION gate on the loaded page.
+# ``whos`` keys on a HEADING (not arbitrary body copy) matching the universal
+# who's-watching prompt; ``profilesRoute`` = the capture bounced to a /profiles
+# collection; ``avatars`` counts square selection tiles (excluding an add/new
+# affordance). Read-only — never mutates the page.
+_PROFILE_PICKER_PROBE = r"""() => {
+  const RE = /who[’'`]?s?\s+watch/i;
+  const heads = Array.from(document.querySelectorAll('h1,h2,h3,[role=heading]'));
+  const whos = heads.some(h => RE.test((h.innerText || '')));
+  const path = (location.pathname || '').replace(/\/+$/, '').toLowerCase();
+  const profilesRoute = /\/profiles$/.test(path);
+  const els = Array.from(document.querySelectorAll('button,a,[role=button],li'));
+  let avatars = 0, hasAdd = false;
+  for (const el of els) {
+    const lab = (((el.getAttribute && el.getAttribute('aria-label')) || '') + ' '
+                 + (el.innerText || '')).toLowerCase();
+    if (/\b(add|new|create|manage|edit)\b|(^|\s)\+(\s|$)/.test(lab)) { hasAdd = true; continue; }
+    const r = el.getBoundingClientRect();
+    if (r.width >= 48 && r.height >= 48
+        && Math.abs(r.width - r.height) <= Math.max(r.width, r.height) * 0.6) avatars++;
+  }
+  return { whos: whos, profilesRoute: profilesRoute, avatars: avatars, hasAdd: hasAdd };
+}"""
+
+# JS: click the first profile TILE of an on-screen picker (skipping an add/new tile).
+# The app's own onClick persists the active profile under its OWN key and navigates
+# on — the most robust selection path (defeats storage-key lane variance AND a
+# server-validated gate). Returns whether a tile was clicked.
+_PROFILE_PICKER_CLICK_JS = r"""() => {
+  const els = Array.from(document.querySelectorAll('button,a,[role=button]'));
+  const isAdd = el => {
+    const s = (((el.getAttribute && el.getAttribute('aria-label')) || '') + ' '
+               + (el.innerText || '')).toLowerCase();
+    return /\b(add|new|create|manage|edit)\b|(^|\s)\+(\s|$)/.test(s);
+  };
+  const tiles = els.filter(el => {
+    if (isAdd(el)) return false;
+    const r = el.getBoundingClientRect();
+    return r.width >= 48 && r.height >= 48;
+  });
+  const el = tiles[0] || els.find(e => !isAdd(e));
+  if (!el) return false;
+  try { el.scrollIntoView({ block: 'center' }); el.click(); } catch (e) { return false; }
+  return true;
+}"""
+
+# JS: the size of the app's own profiles collection (for the seed-settled wait).
+# Returns -1 when NO profiles endpoint exists → no gate → nothing to wait for.
+_PROFILE_COUNT_JS = r"""async (token) => {
+  const paths = ['/api/profiles', '/api/profile', '/profiles'];
+  const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+  for (const p of paths) {
+    try {
+      const r = await fetch(p, { headers });
+      if (!r.ok) continue;
+      const d = await r.json();
+      let arr = null;
+      if (Array.isArray(d)) arr = d;
+      else if (d && Array.isArray(d.profiles)) arr = d.profiles;
+      else if (d && Array.isArray(d.items)) arr = d.items;
+      else if (d && Array.isArray(d.data)) arr = d.data;
+      if (arr) return arr.length;
+    } catch (e) {}
+  }
+  return -1;
+}"""
+
+# how many times a still-picker capture is re-selected+re-navigated before we skip
+# the shot (rather than feed the judge a picker as a real screen). Small: a genuine
+# re-seed settles fast; a persistent picker is a real app defect (correctly unjudged).
+_PROFILE_RESELECT_MAX = int(os.environ.get("ENVGEN_VISUAL_PROFILE_RESELECT_MAX", "2") or 2)
+_SEED_SETTLE_POLLS = int(os.environ.get("ENVGEN_VISUAL_SEED_SETTLE_POLLS", "6") or 6)
+_SEED_SETTLE_INTERVAL_MS = int(os.environ.get("ENVGEN_VISUAL_SEED_SETTLE_MS", "800") or 800)
+
+# who's-watching / plural "profiles" collection — the screen's OWN identity. Plain
+# "profiles" (plural) as a substring so underscore forms ('select_profiles') match
+# too; singular "profile" (an account page, not a chooser) deliberately does NOT.
+_PROFILE_SCREEN_NAME_RE = re.compile(
+    r"who[’'`]?s?\s*[-_ ]*watch|profiles|profile[_\s-]*(?:picker|select|chooser)",
+    re.I)
+
+
+def _is_profile_picker_capture(probe: Optional[Mapping[str, Any]]) -> bool:
+    """(#548, pure) Decide from a ``_PROFILE_PICKER_PROBE`` result whether the
+    captured page is a profile-SELECTION gate ("Who's watching?"), not the real
+    screen. True iff:
+      * a who…watching HEADING is present (the universal picker prompt), OR
+      * the capture bounced to a /profiles collection route AND shows an avatar
+        selection grid (>=2 same-shape tiles).
+    CONSERVATIVE by design: a real content page (no such heading, not bounced to a
+    /profiles chooser) is NEVER flagged, so an app with NO profile gate triggers no
+    re-select/retry and its capture is byte-identical."""
+    if not isinstance(probe, Mapping):
+        return False
+    if probe.get("whos"):
+        return True
+    if probe.get("profilesRoute") and int(probe.get("avatars") or 0) >= 2:
+        return True
+    return False
+
+
+def _screen_is_profile_screen(screen: Mapping[str, Any]) -> bool:
+    """(#548, pure) Is THIS screen itself the profile-picker ('who's watching' /
+    plural /profiles collection) — so a picker capture is the CORRECT capture and
+    must NOT be flagged invalid? Keyed on the screen's own name/route naming a
+    profile COLLECTION picker. A singular ``/profile`` account page (not a chooser)
+    is deliberately NOT matched, so its gate-bounce is still re-selected."""
+    if not isinstance(screen, Mapping):
+        return False
+    name = str(screen.get("name") or "")
+    route = str(screen.get("route") or "").rstrip("/").lower()
+    if route.endswith("/profiles"):
+        return True
+    return bool(_PROFILE_SCREEN_NAME_RE.search(name))
+
+
+async def _wait_seed_settled(page, token: Optional[str]) -> None:
+    """(#548b) Best-effort: block until the app's profiles collection is NON-EMPTY
+    and STABLE (same count on two consecutive polls) so a capture never starts DURING
+    a mid-run re-seed that momentarily wiped the table. Returns immediately when there
+    is NO profiles endpoint (count -1 → no gate → byte-identical for such apps) or when
+    the poll budget is spent. Never raises."""
+    _prev: Optional[int] = None
+    for _ in range(max(1, _SEED_SETTLE_POLLS)):
+        try:
+            _n = await page.evaluate(_PROFILE_COUNT_JS, token or "")
+        except Exception:
+            return
+        try:
+            _n = int(_n)
+        except Exception:
+            return
+        if _n < 0:
+            return  # no profiles endpoint → no gate to settle
+        if _n > 0 and _prev is not None and _n == _prev:
+            return  # non-empty and stable
+        _prev = _n
+        try:
+            await page.wait_for_timeout(_SEED_SETTLE_INTERVAL_MS)
+        except Exception:
+            return
+
+
+async def _ensure_profile_selected(page, ctx, token: Optional[str]) -> bool:
+    """(#548a) (Re-)establish an ACTIVE profile so protected routes render real
+    content, robust to a mid-run re-seed that invalidated a previously-persisted id.
+    Belt-and-suspenders (each step best-effort; never raises):
+      1) RE-DISCOVER the first profile id from the app's own /profiles endpoint (a
+         re-seed yields a fresh valid id) and persist it under EVERY alias — via an
+         init-script (future page loads) AND on the CURRENT page (immediate);
+      2) if a picker is on-screen, CLICK its first tile — the app's own handler
+         persists under the app's OWN key, defeating storage-key lane variance and
+         satisfying a server-validated gate.
+    Returns True iff a profile was (re-)selected by either path."""
+    ok = False
+    try:
+        _pid = await page.evaluate(_PROFILE_DISCOVER_JS, token or "")
+    except Exception:
+        _pid = None
+    _js = _profile_select_init_js(_pid) if _pid else ""
+    if _js:
+        try:
+            await ctx.add_init_script(_js)          # all future page loads
+        except Exception:
+            pass
+        try:
+            await page.evaluate("() => { " + _js + " }")  # the current page, immediately
+            ok = True
+        except Exception:
+            pass
+    try:
+        if await page.evaluate(_PROFILE_PICKER_CLICK_JS):
+            await page.wait_for_timeout(600)
+            ok = True
+    except Exception:
+        pass
+    return ok
+
+
 async def capture_route_screenshots(
     base_url: str,
     screens: List[Dict[str, Any]],
@@ -807,6 +1309,30 @@ async def capture_route_screenshots(
                     f"sessionStorage.setItem('{k}', {_tok_js})"
                     for k in _aliases) + ";")
             page = await ctx.new_page()
+            # #491 (netflix r63) — POST-LOGIN PROFILE GATE. A token alone does not
+            # pass <RequireProfile>: catalog routes redirect to /profiles until an
+            # ACTIVE profile is selected, collapsing every catalog shot to the
+            # identical profiles chooser (fidelity ~0.06-0.12). Mirror FIX #103's
+            # token approach: discover the first profile id via the app's OWN
+            # origin/session, then establish it under every alias in both storages
+            # (ctx.add_init_script) so ALL subsequent page loads pass the gate.
+            # Best-effort — ANY failure (no such endpoint, network, parse) silently
+            # proceeds exactly as before; apps without a profile gate are unaffected.
+            # #548b: FIRST wait for the seed to SETTLE — the DB is periodically
+            # re-seeded mid-run, momentarily wiping the profiles table; discovering
+            # (and later capturing) mid-wipe reads an EMPTY collection → the profile
+            # gate never gets a valid id → every protected shot is the picker. The
+            # wait is a no-op for an app with no /profiles endpoint (byte-identical).
+            try:
+                await page.goto(base_url, wait_until="domcontentloaded",
+                                timeout=20000)
+                await _wait_seed_settled(page, token)
+                _pid = await page.evaluate(_PROFILE_DISCOVER_JS, token or "")
+                _profile_js = _profile_select_init_js(_pid) if _pid else ""
+                if _profile_js:
+                    await ctx.add_init_script(_profile_js)
+            except Exception:
+                pass  # no profile gate / discovery failed → proceed as before
             _applied_scheme: Optional[str] = None   # FIX #141 emulation state
             _storage_dirty = False                  # theme keys we set last screen
             for screen in screens:
@@ -835,6 +1361,38 @@ async def capture_route_screenshots(
                             if auth_redirected is not None:
                                 auth_redirected.append(screen["name"])
                             continue
+                    # #548a/c: PROFILE-GATE re-assert. A mid-run re-seed can re-raise
+                    # the "Who's watching?" gate over a PROTECTED route even though a
+                    # profile was selected at boot — the capture would then score a real
+                    # screen ~0.05 (the picker), the root of the Part-A variance. If the
+                    # loaded DOM IS the picker, RE-SELECT a (now-valid) profile and
+                    # re-navigate, up to a small bound; a picker never scores a real
+                    # screen. The profiles screen itself is exempt (its picker capture is
+                    # correct). No-op for an app with no profile gate → byte-identical.
+                    if not _screen_is_profile_screen(screen):
+                        _still_picker = False
+                        for _attempt in range(_PROFILE_RESELECT_MAX + 1):
+                            try:
+                                _pk = await page.evaluate(_PROFILE_PICKER_PROBE)
+                            except Exception:
+                                _pk = None
+                            _still_picker = _is_profile_picker_capture(_pk)
+                            if not _still_picker or _attempt >= _PROFILE_RESELECT_MAX:
+                                break
+                            await _ensure_profile_selected(page, ctx, token)
+                            try:
+                                await page.goto(
+                                    base_url + _concrete_capture_route(screen["route"]),
+                                    wait_until="networkidle", timeout=20000)
+                                await page.wait_for_timeout(1200)
+                            except Exception:
+                                break
+                        if _still_picker:
+                            # exhausted retries — do NOT feed a picker to the judge as a
+                            # real screen (a false ~0.05). Skip the shot (reported blank).
+                            if blank_screens is not None:
+                                blank_screens.append(screen["name"])
+                            continue
                     # FIX #75a: an un-hydrated blank shell — re-poll before concluding.
                     try:
                         _p = await page.evaluate(_CAPTURE_BLANK_PROBE)
@@ -860,6 +1418,23 @@ async def capture_route_screenshots(
                             await page.wait_for_timeout(400)
                         except Exception:
                             pass
+                    # #509: for an OVERLAY/modal screen the parent route is now loaded but the
+                    # overlay is closed — DRIVE the interaction (click/hover its trigger) so the
+                    # screenshot captures the real overlay state, not the bare page (r84
+                    # rate_dialog=0.12/card_hover=0.40 were bare-page vs modal-reference).
+                    # best-effort — a miss leaves the plain parent shot (never regresses).
+                    # #509-review (2026-08-05): drive ONLY for ADVISORY screens — advisory IS the
+                    # authoritative #128 overlay classification. The old `_OVERLAY_NAME_RE OR ...`
+                    # branch also fired on BLOCKING routed pages whose name coincidentally holds an
+                    # overlay token (`menu`, `sheet` — e.g. a restaurant 'menu' PAGE): driving a
+                    # trigger there could open a dropdown / navigate over a page that must be judged
+                    # as-is → floor score → false-block. A blocking page is always judged plain.
+                    if screen.get("advisory"):
+                        try:
+                            if await _drive_overlay_open(page, screen["name"]):
+                                await page.wait_for_timeout(300)  # let the overlay settle
+                        except Exception:
+                            pass  # keep the plain-route shot
                     dest = out_dir / f"{screen['name']}.png"
                     await page.screenshot(path=str(dest))
                     shots[screen["name"]] = str(dest)
@@ -953,13 +1528,16 @@ def _clamp01(v: Any) -> Optional[float]:
 def _parse_verdict(text: str) -> Dict[str, Any]:
     m = re.search(r"\{.*\}", text or "", re.DOTALL)
     if not m:
+        # #466: a parse failure is a TRANSIENT judge glitch, NOT real 0.0 fidelity —
+        # flag judge_error so it is never CACHED as truth (line ~1215) and is re-judged
+        # next milestone (with the #466 larger token budget, the retry now succeeds).
         return {"similarity": 0.0, "dimensions": {}, "deviations": ["judge returned no JSON"],
-                "summary": str(text)[:200]}
+                "summary": str(text)[:200], "judge_error": True}
     try:
         data = json.loads(m.group(0))
     except Exception:
         return {"similarity": 0.0, "dimensions": {}, "deviations": ["judge JSON unparseable"],
-                "summary": m.group(0)[:200]}
+                "summary": m.group(0)[:200], "judge_error": True}
     dims: Dict[str, Any] = {}
     raw_dims = data.get("dimensions") or {}
     if isinstance(raw_dims, Mapping):
@@ -1010,8 +1588,15 @@ async def judge_screen_pair(llm: Any, screen: Mapping[str, Any], screenshot_path
         # The high-level LLM wrapper's chat() takes a prompt STRING; multimodal
         # messages need the underlying provider client (BaseLLMClient.chat).
         client = getattr(llm, "_client", llm)
+        # #466: 3000 tok TRUNCATED the 7-dimension rubric JSON on complex screens
+        # (r45 shows=0.00 = 'judge JSON unparseable' — a 1.5MB rendered screen falsely
+        # scored 0.0 and dragged the mean). The rubric (7 dims × score+notes+fix +
+        # deviations + fixes + summary) needs >3000 tok for a busy screen → give it
+        # ample headroom so the JSON never truncates. temp=0 + JSON-only instruction
+        # means it emits only what the verdict needs, capped here. Generalizable
+        # (every judge call, every app) — measurement integrity.
         resp = await client.chat([Message.user_multimodal(parts)],
-                                 temperature=0.0, max_tokens=3000)
+                                 temperature=0.0, max_tokens=8000)
         return _parse_verdict(getattr(resp, "content", "") or "")
     except Exception as exc:
         # judge_error marks a TRANSIENT failure — #142 must never cache it
@@ -1062,6 +1647,12 @@ async def run_visual_fidelity(
         reference_images, known_routes,
         classifications=load_screen_classifications(project_dir),  # FIX #132
         ui_pages=load_ui_pages(project_dir))                       # FIX #416
+    # #542a: a screen that DUPLICATES another's capture route (same route -> same static
+    # screenshot) can't be fairly scored as its own blocking page — demote the non-canonical
+    # duplicate to ADVISORY so it is still judged/reported but never drags the blocking
+    # pass/average. Deterministic + only-demotes, so gating is byte-identical when there are
+    # no duplicate-route screens (transient names are already advisory from map_reference_screens).
+    screens = _demote_duplicate_route_screens(screens)
     judged_screens = _select_judged_screens(screens, max_screens)
     skipped = [s["name"] for s in screens if not s.get("route")]
     if not judged_screens:
@@ -1107,11 +1698,24 @@ async def run_visual_fidelity(
                                 "host port after 240s — refusing to screenshot a "
                                 "possibly-unrelated :8080 service; skipping judgment"),
                     "screens": [], "skipped": skipped}
-        auth_needed = any(s["auth"] for s in judged_screens)
+        auth_measured = any(s["auth"] for s in judged_screens)
+        # #522b (netflix r93): DO NOT gate token minting on the design-analyst's per-screen
+        # `requires_auth` flag — it is lane-NOISY (r92 measured catalog auth → token minted →
+        # catalog rendered 0.50; r93 measured it public → token=None → NO token injected →
+        # /api/games 401 → every catalog page stuck 0.08). The token injection (add_init_script,
+        # both keys, pre-navigation) is INERT on a truly-public app but is the ONLY thing that
+        # makes an auth-gated GET return DATA instead of 401. So mint whenever the app HAS an
+        # auth system — a DETERMINISTIC signal (a seed user exists OR a /login|/signin route was
+        # projected) — independent of the noisy per-screen flag. Generalizable: a no-auth app has
+        # neither signal → token stays None → unchanged behavior.
+        _demo = _seed_demo_login(project_dir)
+        _has_login_route = any(str(r).rstrip("/").lower() in ("/login", "/signin", "/signup")
+                               for r in (known_routes or set()))
+        has_auth = auth_measured or bool(_demo) or _has_login_route
         # Log in as the SEEDED demo user so authed screens render POPULATED (matching the
         # references), not the empty lists a fresh throwaway user sees under tenant-scoping.
-        token = _mint_token(be_port, demo=_seed_demo_login(project_dir)) if auth_needed else None
-        if auth_needed and not token:
+        token = _mint_token(be_port, demo=_demo) if has_auth else None
+        if auth_measured and not token:
             # Not a judgment: without a session every auth route renders the
             # login page. Report it; the orchestrator refunds the attempt.
             return {"passed": False, "auth_unavailable": True,
@@ -1270,11 +1874,17 @@ async def run_visual_fidelity(
             _coverage["judged"], _coverage["measured"],
             100.0 * _coverage["coverage"], _coverage["unjudged"],
         )
+    # #542a: the gating fidelity average over BLOCKING screens ONLY (advisory/transient
+    # screens excluded). Reported alongside the pass/fail so the recorded Part-A metric
+    # stops being dragged by transient interaction-state screens a static projector cannot
+    # render. Purely additive — the pass/fail verdict + the 0.65 bar are unchanged.
+    _blk_avg = _blocking_similarity_average(results)
     failing = [f"{r['name']}({r['similarity']:.2f})" for r in _blocking if not r["passed"]]
     _adv_note = [f"{r['name']}({r['similarity']:.2f})" for r in results
                  if r.get("advisory")]
     summary = ("all %d screens ≥ %.2f" % (len(_blocking), min_similarity) if passed
                else "below %.2f: %s" % (min_similarity, ", ".join(failing)))
+    summary += " (blocking avg %.2f)" % _blk_avg
     if _adv_note:
         summary += " [advisory (overlay, non-blocking): %s]" % ", ".join(_adv_note)
     if _blank_screens:
@@ -1289,25 +1899,33 @@ async def run_visual_fidelity(
     # a fixable sibling's 0.55 and suppress its remediation).
     return {"passed": passed, "summary": summary, "screens": results, "skipped": skipped,
             "coverage": _coverage,  # #351: reporting only — does not gate
-
+            "blocking_average": _blk_avg,  # #542a: gating avg over BLOCKING screens only
             "capture_transient": bool(_blank_screens) and not shots,
             "min_similarity": min_similarity}
 
 
 def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                      summary: str, coverage: Any, results: List[Mapping[str, Any]]) -> None:
-    """#419: write design/visual_gate/verdict.json (latest attempt, overwritten)
-    with each screen's per-dimension detail, so fidelity iteration is TARGETED.
+    """#419/#500: write design/visual_gate/verdict.json — the BEST per-screen result MERGED
+    across the milestone's captures — with each screen's per-dimension detail, so fidelity
+    iteration is TARGETED and the recorded Part-A metric reflects the app's real fidelity.
 
-    The judge scores 7 rich dimensions (layout / components / style / color /
-    typography / iconography / copy) per screen, but only the AGGREGATE similarity
-    reached the log and the full detail went ONLY into the transient frontend
-    remediation task — so post-hoc you could not tell WHICH dimension a screen lost
-    points on (is browse_home 0.25 a layout, a color, or a chrome-copy miss?). This
-    dumps dimensions/deviations/fixes/measured color diffs to disk so the next lever
-    fixes the ACTUAL weak dimension instead of guessing. Best-effort + write-only:
-    it never changes gate behavior and never raises into the judge loop.
-    Env/app-agnostic diagnostic."""
+    The judge scores 7 rich dimensions (layout / components / style / color / typography /
+    iconography / copy) per screen; this dumps dimensions/deviations/fixes/measured color diffs
+    to disk so the next lever fixes the ACTUAL weak dimension instead of guessing.
+
+    #500 (netflix r68, live): it used to persist the LATEST attempt (overwrite). A TRANSIENT
+    capture — the env mid-rebuild (a lane rebuilding a shared component → restart →
+    ERR_CONNECTION_REFUSED → auth-bounce → every catalog page 0.00) — then CLOBBERED a prior good
+    capture: r68's catalog pages measured 0.35–0.65 at one tick, 0.00 at the next (during a
+    top_nav_bar rebuild), and the 0.00 persisted → recorded Part-A 0.00 while the app truly renders
+    ~0.51 (delivery-time test-user: auth_ok, 14 pages, real data, no login wall). Now MERGE with the
+    prior verdict.json, keeping the MAX per-screen similarity (+ that capture's full detail).
+    Max-latch is correct for MEASUREMENT: a screen that never renders keeps 0.00 (still fails); one
+    that rendered once keeps its real score — it can never FALSELY pass a broken screen. VERDICT.JSON
+    IS DIAGNOSTIC-ONLY (nothing reads it back to gate delivery — the gate uses in-memory results +
+    the #129/#138 latch), so this never changes gate/delivery behavior. Best-effort; never raises.
+    Env/app-agnostic."""
     try:
         vdir = Path(project_dir) / "design" / "visual_gate"
         vdir.mkdir(parents=True, exist_ok=True)
@@ -1322,9 +1940,50 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
             "measured_deviations": r.get("measured_deviations") or [],
             "summary": r.get("summary") or "",
         } for r in results]
+
+        def _sim(rec: Mapping[str, Any]) -> float:
+            try:
+                return float(rec.get("similarity") or 0.0)
+            except Exception:
+                return 0.0
+
+        # #500: merge with the prior persisted verdict, keeping the BEST per-screen capture.
+        prior_by_name: Dict[str, Any] = {}
+        try:
+            _pp = vdir / "verdict.json"
+            if _pp.is_file():
+                _pj = json.loads(_pp.read_text(encoding="utf-8"))
+                for s in (_pj.get("screens") or []):
+                    if isinstance(s, dict) and s.get("name") is not None:
+                        prior_by_name[s["name"]] = s
+        except Exception:
+            prior_by_name = {}
+
+        merged: List[Dict[str, Any]] = []
+        _names_now = set()
+        for s in screens:
+            _names_now.add(s.get("name"))
+            p = prior_by_name.get(s.get("name"))
+            merged.append(p if (p is not None and _sim(p) > _sim(s)) else s)
+        # carry over prior screens absent from this (possibly partial) capture
+        for name, p in prior_by_name.items():
+            if name not in _names_now:
+                merged.append(p)
+
+        # recompute pass from the merged max scores (blocking, non-advisory, non-blank screens)
+        _blocking_merged = [s for s in merged
+                            if not s.get("advisory") and s.get("blank") is not True]
+        _merged_passed = (all(_sim(s) >= min_similarity for s in _blocking_merged)
+                          if _blocking_merged else bool(passed))
+        # #542a: the recorded Part-A metric — the average over BLOCKING screens ONLY, so a
+        # transient/advisory or duplicate-route screen never drags the persisted fidelity.
+        _blocking_average = (round(sum(_sim(s) for s in _blocking_merged) / len(_blocking_merged), 4)
+                             if _blocking_merged else 0.0)
+
         (vdir / "verdict.json").write_text(json.dumps({
-            "passed": passed, "min_similarity": min_similarity,
-            "summary": summary, "coverage": coverage, "screens": screens,
+            "passed": bool(passed) or _merged_passed, "min_similarity": min_similarity,
+            "blocking_average": _blocking_average,  # #542a: Part-A over BLOCKING screens only
+            "summary": summary, "coverage": coverage, "screens": merged,
         }, indent=2, default=str), encoding="utf-8")
     except Exception:
         pass
@@ -1844,6 +2503,13 @@ class VisualFidelityGate:
         self.plateau_rounds = 0            # #138: consecutive judgments with no new best
         self._verdict_cache: Dict[str, Dict[str, Any]] = {}  # #142: (screen, shot-md5) → verdict
         self.last_judgment_at = None       # #145: wall-clock of the last real judgment
+        self.released = False              # #521: STICKY escape latch — once the deferral
+        #                                    escapes (below-threshold delivery earned), the
+        #                                    milestone stays released; a later >0.02 per-screen
+        #                                    improvement must NOT reset plateau_rounds and re-
+        #                                    defer (r91/r92: escape fired then re-deferred, so
+        #                                    the deliver_project loop only terminated at the
+        #                                    3600s wall-clock — 44/88 narrations, ~75min tails).
 
     def reset_for_milestone(self) -> None:
         """Anchor the deferral clock + total-judgment backstop to a NEW milestone
@@ -1857,6 +2523,7 @@ class VisualFidelityGate:
         self.plateau_rounds = 0
         self._verdict_cache = {}       # #142: pixel-keyed verdicts are per milestone
         self.last_judgment_at = None   # #145: idle-source stamp is per milestone
+        self.released = False          # #521: sticky escape latch is per milestone
 
     def _frontend_wiring_blockers(self) -> list:
         """#417: declared ui_pages with a HARD wiring defect (declared route not

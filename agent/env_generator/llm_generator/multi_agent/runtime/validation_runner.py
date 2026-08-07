@@ -622,6 +622,39 @@ def run_smoke_validation(
                 repair_custom_routes_param_types_vs_projection(_be)
         except Exception:
             pass
+        # FIX #450 (run-37 M4): the deterministic validation build goes through THIS
+        # module's own _compose, so #450's Dockerfile-restore (wired into
+        # tools/docker_tools._run_compose) never fired here — and this is the exact
+        # path that recorded run-37's docker_up=fail ('no Dockerfile') → 0.069 blank.
+        # A lane merge can transiently drop the framework Dockerfile; restore it from
+        # git before the clean-boot build. Same build-input floor as #113/#125 above.
+        try:
+            from .frontend_scaffold import ensure_build_infra_staged_for_build
+            ensure_build_infra_staged_for_build(compose_file)
+        except Exception:
+            pass
+        # #99 EFFICIENCY (r97-r99 delivery-tail sink): localize the seed's EXTERNAL image
+        # URLs to /assets/ RIGHT HERE — this clean boot is the deterministic AUTHORITY for
+        # the stored re-seed fingerprint (the loader hashes the seed CONTENT and re-seeds
+        # when it changes). The frontend-api heal ALSO localizes the seed, but LATER and
+        # DECOUPLED from this boot, so api_smoke seeded the EXTERNAL-URL seed, that later
+        # rewrite flipped the fingerprint, and the visual gate's reuse boot (`up -d`, same
+        # postgres volume, no `down -v`) then RE-SEEDED mid-capture → every data-driven page
+        # rendered transiently data-starved (~0.05) → DELIVERY DEFERRED churn + ~8-min
+        # recovery, EVERY run. Localizing here — after ensure_assets_staged_for_build above
+        # stages the /assets targets, so matches resolve and NEVER 404 — makes THIS boot
+        # store the localized fingerprint, so the visual gate's reuse boot finds it unchanged
+        # and never re-seeds. Idempotent (rewrites only http(s):// image URLs; a no-op →
+        # byte-identical seed when there is nothing to localize); never raises. Same
+        # build-input floor as the #113/#125/#450 repairs above.
+        try:
+            from .frontend_scaffold import localize_seed_external_images
+            _be_seed = compose_file.parent.parent / "app" / "backend"
+            _fe_dir = compose_file.parent.parent / "app" / "frontend"
+            if _be_seed.is_dir():
+                localize_seed_external_images(_be_seed, _fe_dir)
+        except Exception:
+            pass
         _compose(compose_file, "down", "-v", "--remove-orphans", cwd=cwd, timeout=120)
         up = _compose(compose_file, "up", "-d", "--build", "--remove-orphans", cwd=cwd, timeout=up_timeout)
         if up.returncode != 0:

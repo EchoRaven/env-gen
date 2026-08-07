@@ -195,6 +195,18 @@ VISUAL_PLATEAU_MIN_S = float(os.environ.get(
     "ENVGEN_VISUAL_PLATEAU_MIN_S") or "1500")  # never plateau-escape before this deferral floor
 VISUAL_IDLE_S = float(os.environ.get(
     "ENVGEN_VISUAL_IDLE_S") or "600")  # FIX #145: idle-source escape (0 disables)
+# FIX #519 (netflix r91): a frontend lane that edits the source on every visual-fail keeps
+# resetting the ONLY fast escape — the per-source attempt cap (reset to 0 on each source-
+# signature change) — so under sustained churn the attempts>=3 escape never fires and the
+# soft plateau/idle escapes are floored at 1500s; delivery deferred 1418s+ and only the
+# 3600s wall-clock (or the 20-judgment cap) would release. plateau_rounds, by contrast, is
+# per-milestone and is NOT reset by source churn (it counts real judgments with no blocking
+# screen beating its best-so-far, _best_by_screen accumulating across sources), so a HARD
+# plateau count is conclusive churn-proof evidence the scores are final — escape with NO
+# time floor. Set to 2x the soft plateau: needs 2x as many no-improvement judgments as the
+# floored escape, so it never fires early on noise, but it CANNOT be outrun by fast churn.
+VISUAL_PLATEAU_HARD_ROUNDS = int(os.environ.get(
+    "ENVGEN_VISUAL_PLATEAU_HARD") or str(2 * VISUAL_PLATEAU_ROUNDS))  # churn-proof, no floor
 
 
 def _fwval_should_attempt(attempts: int, last_attempt_ts: float, now: float,
@@ -267,7 +279,20 @@ def _fwval_can_early_return(has_passing_run: bool, failed_checks) -> bool:
     re-validation, so they do NOT keep the loop running here. Pure + unit-tested."""
     if not has_passing_run:
         return False
-    return "business_chain_failing" not in set(failed_checks or [])
+    # #502 (netflix r80, 2026-08-05): verification_checklist_not_ready, like
+    # business_chain_failing, IS fixable by RE-RUNNING framework validation — the shared
+    # RunValidationTool re-records FRESH build:* checks (a stale build:* failure on a
+    # provably-built app supersedes to success; a genuine build failure re-records honestly,
+    # so this never masks a real break). maybe_refresh_stale_build_checklist (#120/#492)
+    # resets the api_smoke attempt counter for exactly this blocker, but this early-return
+    # short-circuited maybe_run BEFORE the re-run could happen → the reset was wasted and the
+    # stale build:* never refreshed. r80 reached the deliver tail with the ONLY blocker =
+    # verification_checklist_not_ready (all 4 build:* stale-failure though api_smoke PASSED,
+    # 15 endpoints, 0 docker_up errors); #492 fired 3× but this early-return blocked the
+    # re-validation → final gate failed → main() returned 1, no release. Keep the loop
+    # running for BOTH re-validation-fixable blockers so #492's reset is actually used.
+    _revalidation_fixable = {"business_chain_failing", "verification_checklist_not_ready"}
+    return not (_revalidation_fixable & set(failed_checks or []))
 
 
 def _abort_grace_should_defer(is_deliver_stuck: bool, grace_used: int,
@@ -302,6 +327,7 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
                              plateau_rounds: int = 0,
                              plateau_cap: int = VISUAL_PLATEAU_ROUNDS,
                              plateau_min_s: float = VISUAL_PLATEAU_MIN_S,
+                             plateau_hard: int = VISUAL_PLATEAU_HARD_ROUNDS,
                              last_judgment_at=None,
                              idle_s: float = VISUAL_IDLE_S) -> str:
     """Decide the visual-blocked delivery path. Returns:
@@ -325,6 +351,19 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
     if (plateau_cap > 0 and plateau_rounds >= plateau_cap
             and deferred_since is not None
             and (now - deferred_since) >= plateau_min_s):
+        return "release"
+    # FIX #519 (netflix r91): CHURN-ROBUST hard plateau — NO time floor. A lane that
+    # edits the source on every visual-fail resets the per-source attempt cap (the only
+    # fast escape) to 0 each time, so attempts>=3 never fires and the soft plateau/idle
+    # escapes above are gated behind the 1500s floor — delivery deferred 1418s+ with only
+    # the 3600s wall-clock (or 20-judgment cap) left to release. plateau_rounds is
+    # per-milestone and is NOT reset by source churn (it counts real judgments where no
+    # blocking screen beat its best-so-far, _best_by_screen accumulating across sources),
+    # so a HARD plateau (2x the soft cap) is conclusive evidence the scores are final no
+    # matter how fast the lane flips the source — release with no floor. Additive escape;
+    # every existing escape (incl. the 3600s backstop) is untouched, so delivery still
+    # ALWAYS eventually fires, and 2x the soft cap means noise alone can't trip it early.
+    if plateau_hard > 0 and plateau_rounds >= plateau_hard:
         return "release"
     # FIX #145 (run-68 M4): the gate judges on SOURCE CHANGE — when the
     # frontend stops producing changes the plateau counter freezes below its
@@ -1076,6 +1115,14 @@ class Orchestrator:
                     self._tu_squad_passed = False
                     self._tu_squad_deferred_since = None
                     self._tu_squad_attempts = 0
+                    # #532: the squad now runs as a single-flight BACKGROUND task; a
+                    # leftover handle from the prior milestone must not be consumed by
+                    # this one. Cancel any in-flight squad and drop the handle so the
+                    # first defer of THIS milestone re-launches a fresh single-flight run.
+                    _prev_tu_task = getattr(self, "_tu_squad_task", None)
+                    if _prev_tu_task is not None and not _prev_tu_task.done():
+                        _prev_tu_task.cancel()
+                    self._tu_squad_task = None
                     # This milestone's requirement slice → kickoff input. When
                     # milestones were NOT explicitly supplied, the single
                     # synthesized M1 MUST receive the exact legacy ``raw_req``
@@ -2059,7 +2106,13 @@ class Orchestrator:
                     "0", "false", "no", "off"):
                 return False
             gate = getattr(self, "_vf_gate", None)
-            if gate is None or getattr(gate, "passed", False):
+            # #533: also honor the STICKY escape-release (consistent with #521). Once
+            # the bounded-deferral escape has fired (gate.released is True — set only
+            # AFTER the escape earned a below-threshold delivery), the visual gate is
+            # no longer deferring, so deliver_project must not be blocked by GUARD 2c.
+            # No false-delivery risk: released is never True before the escape fires.
+            if (gate is None or getattr(gate, "passed", False)
+                    or getattr(gate, "released", False)):
                 return False
             _since = getattr(gate, "deferred_since", None)
             if _since is None:
@@ -2558,6 +2611,53 @@ class Orchestrator:
                     maybe_refresh_stale_build_checklist(self, _failed)
                 except Exception:
                     pass
+                # #475: business_chain_failing blocked ONLY by NEVER-RUN chains (verifier
+                # re-authored a chain that hasn't been executed yet) → re-run the chains
+                # deterministically (reset the api_smoke attempt counter) so run_chains
+                # records their real status, instead of the verifier re-authoring (which
+                # adds more unrun chains → the r50 churn: 14 deliver_project / 0 release).
+                # No-ops when any chain is genuinely BROKEN — that stays a verifier fix.
+                try:
+                    from .runtime.framework_validation import maybe_rerun_unrun_chains
+                    # #70(b) (netflix r76, 2026-08-05): CAPTURE whether a deterministic chain
+                    # re-run was armed THIS tick. When armed, the remediation dispatcher SUPPRESSES
+                    # the business_chain_failing verifier RE-AUTHOR dispatch for this tick — else the
+                    # verifier authors MORE never-run chains while #475 is still re-running the
+                    # existing batch, so run_chains never catches up (r76: converged 17→2 then
+                    # business_chain went green→REGRESSED→restored with 11 never-run chains piling
+                    # up, 0 delivery). Bounded: #475 caps at 4/milestone, so once spent this flag
+                    # stays False and normal verifier dispatch resumes (a genuinely-broken chain,
+                    # where #475 no-ops, also leaves it False → verifier IS dispatched to fix it).
+                    self._chain_rerun_armed = bool(maybe_rerun_unrun_chains(self, _failed))
+                except Exception:
+                    self._chain_rerun_armed = False
+                # #489 (netflix r61, task#47): delivery blocked on
+                # deliverability_ui_flow_missing while the app is FULLY functional
+                # (api_smoke green, 15/15 endpoints, frontend navigable) — the verifier
+                # keeps FAILING to author the validation:ui_flow records (r61: 6+
+                # dispatches over 11min, never cleared; r68/r91-93 same). The framework's
+                # own authenticated browser walk auto-authors those records (#240,
+                # heal_pipeline), but it only runs AFTER the gate clears → chicken-and-egg.
+                # Run it pre-gate so the records get authored from a REAL passing walk and
+                # the gate clears deterministically. PASS-ONLY (can't unblock a broken
+                # app); app-up-gated; bounded per milestone. Generalizes to every app.
+                try:
+                    from .runtime.framework_validation import (
+                        maybe_author_ui_flow_evidence)
+                    await maybe_author_ui_flow_evidence(self, _failed)
+                except Exception:
+                    pass
+                # #74 (netflix r78): database_sql_missing while the DB is functional (api_smoke
+                # passed) — the deterministic app/database/ scaffold ran once post-kickoff and its
+                # .sql didn't survive to the audited tree (no deliver-tail re-emit). Re-emit it
+                # deterministically from the registered SchemaHub tables so the file-existence gate
+                # clears without the flaky LLM backend lane (r78 wedged 11min on this). Guarded +
+                # idempotent + never raises; no-ops when a .sql already exists.
+                try:
+                    from .runtime.framework_validation import maybe_emit_schema_sql
+                    maybe_emit_schema_sql(self, _failed)
+                except Exception:
+                    pass
                 # FORWARD-PROGRESS GUARANTEE for POST-api_smoke gate blockers (audit #2).
                 # The deterministic stuck-abort ladder lives in the api_smoke-FAILING branch
                 # of _maybe_run_framework_validation, so once api_smoke passes, a delivery-gate
@@ -2801,7 +2901,15 @@ class Orchestrator:
                     and getattr(self, "_is_final_milestone", True)
                     and os.environ.get("ENVGEN_VISUAL_BLOCKING", "1").lower()
                         not in ("0", "false", "no", "off")
-                    and not self._vf_gate.passed):
+                    and not self._vf_gate.passed
+                    # #521: STICKY escape — once the deferral has escaped (below-threshold
+                    # delivery earned), do NOT re-enter the defer/re-judge block. Without
+                    # this a post-escape >0.02 per-screen improvement resets plateau_rounds,
+                    # so the next delivery poll re-defers and delivery only finalizes at the
+                    # 3600s wall-clock (r91/r92: 44/88 deliver_project narrations, ~75min
+                    # deliver-tail). The recorded below-threshold verdict already reflects
+                    # the delivered source; keep it and let delivery proceed.
+                    and not getattr(self._vf_gate, "released", False)):
                 if self._vf_gate.deferred_since is None:
                     self._vf_gate.deferred_since = time.time()  # anchor: milestone's FIRST defer
                 _now = time.time()
@@ -2846,10 +2954,13 @@ class Orchestrator:
                 else:
                     # release: an escape fired — deliver anyway, loudly, below-threshold.
                     _plat = getattr(self._vf_gate, "plateau_rounds", 0)
+                    self._vf_gate.released = True  # #521: LATCH — this milestone's release
+                    #                                is now sticky; subsequent delivery polls
+                    #                                skip the defer block (no re-defer loop).
                     self._logger.warning(
                         "Visual fidelity deferral RELEASED (escape after %ss deferred / "
                         "%s attempts / %s total judged%s) — delivering anyway "
-                        "(recorded as below-threshold).",
+                        "(recorded as below-threshold; #521 latched sticky).",
                         int(_now - self._vf_gate.deferred_since),
                         self._vf_gate.attempts,
                         self._vf_gate.total_judgments,
@@ -2868,7 +2979,8 @@ class Orchestrator:
             if (squad_gate_enabled(os.environ)
                     and not getattr(self, "_tu_squad_passed", False)):
                 from .runtime.test_user_squad import (
-                    run_squad_for_delivery, squad_release_decision, squad_gate_outcome)
+                    run_squad_for_delivery, squad_release_decision, squad_gate_outcome,
+                    squad_gate_tick_action)
                 _now = time.time()
                 if getattr(self, "_tu_squad_deferred_since", None) is None:
                     self._tu_squad_deferred_since = _now
@@ -2876,12 +2988,46 @@ class Orchestrator:
                     self._tu_squad_deferred_since,
                     getattr(self, "_tu_squad_attempts", 0), _now)
                 if _tu_decision == "defer":
+                    # #532: run the squad in the BACKGROUND (single-flight) — NEVER inline.
+                    # The squad is ~42min of work (12 browser agents in 3 sequential waves);
+                    # awaiting it here wedged the whole coordination loop so create_release
+                    # was never reached and the run never delivered (this was THE delivery
+                    # blocker). Instead spawn ONE background task and defer this tick — the
+                    # loop stays live (re-ticks every ~60s, keeps driving lanes) while the
+                    # squad tests, and squad_release_decision's wall-clock (900s, evaluated
+                    # ABOVE) still preempts to RELEASE even if the squad is still running.
+                    # Decide launch-vs-defer-vs-consume from the single task handle:
+                    _tu_task = getattr(self, "_tu_squad_task", None)
+                    _tu_action = squad_gate_tick_action(
+                        task_exists=_tu_task is not None,
+                        task_done=bool(_tu_task is not None and _tu_task.done()))
+                    if _tu_action == "launch":
+                        # SINGLE-FLIGHT: exactly one background squad run, then defer.
+                        self._tu_squad_task = asyncio.create_task(
+                            run_squad_for_delivery(
+                                self, getattr(self, "_current_milestone_version", "1.0.0")))
+                        self._logger.warning(
+                            "TEST-USER SQUAD launched in BACKGROUND (single-flight, %ss "
+                            "deferred) — deferring this delivery tick; the coordination loop "
+                            "keeps running while it tests.",
+                            int(_now - self._tu_squad_deferred_since))
+                        return  # defer this tick; do NOT await the squad inline
+                    if _tu_action == "defer":
+                        # A squad run is in flight but not finished → defer WITHOUT spawning a
+                        # second (single-flight) and WITHOUT awaiting it inline; re-check
+                        # task.done() next tick. The loop stays live meanwhile.
+                        return
+                    # 'consume': the background squad finished → read its result exactly ONCE,
+                    # clear the handle (so it is never re-read and a later 'launch' re-arms it
+                    # after the fix lands), then run the SAME pass/retry/defect handling as the
+                    # original inline gate.
                     try:
-                        _tu_result = await run_squad_for_delivery(
-                            self, getattr(self, "_current_milestone_version", "1.0.0"))
-                    except Exception as _tu_exc:
+                        _tu_result = self._tu_squad_task.result()
+                    except Exception as _tu_exc:  # includes a cancelled/failed background task
                         self._logger.debug("test-user squad gate run failed: %s", _tu_exc)
                         _tu_result = {"ran": False}
+                    finally:
+                        self._tu_squad_task = None  # consumed — single-flight may re-arm
                     _p0 = int((_tu_result.get("bugs") or {}).get("p0", 0))
                     _tu_outcome = squad_gate_outcome(ran=bool(_tu_result.get("ran")), p0=_p0)
                     if _tu_outcome == "pass":
@@ -2904,6 +3050,14 @@ class Orchestrator:
                             _tu_result.get("modalities"))
                         return  # block this milestone's release until the defects clear
                 else:
+                    # squad_release_decision escape fired (wall-clock 900s / attempt cap) →
+                    # RELEASE regardless of the background task's state. Cancel any in-flight
+                    # squad (findings are advisory once we've decided to ship) and drop the
+                    # handle so it can't be re-read; the release then proceeds this tick.
+                    _tu_task = getattr(self, "_tu_squad_task", None)
+                    if _tu_task is not None and not _tu_task.done():
+                        _tu_task.cancel()
+                    self._tu_squad_task = None
                     self._logger.warning(
                         "Test-user squad gate RELEASED (escape after %ss / %s attempts) — "
                         "delivering with possibly-open test-user defects.",

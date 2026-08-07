@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, Mapping, Optional
@@ -87,6 +88,36 @@ def backend_source_signature(app_root: Any) -> Optional[str]:
             if "__pycache__" in f.parts or not f.is_file():
                 continue
             h.update(str(f.relative_to(be)).encode() + b"\0")
+            h.update(f.read_bytes())
+        return h.hexdigest()
+    except Exception:
+        return None
+
+
+def frontend_source_signature(app_root: Any) -> Optional[str]:
+    """#501 (netflix r70, live): stable content hash of ``app/frontend/src/**`` source
+    (jsx/tsx/js/ts/mjs/css) — the code that determines the FRONTEND build. Mirrors
+    ``backend_source_signature`` (which deliberately EXCLUDES the frontend) and is used ALONGSIDE
+    it by the checklist self-heal so a stale ``build:frontend`` re-invalidated by a FRONTEND-only
+    fix also grants a settle-refresh. r70 wedged on ``verification_checklist_not_ready``:
+    ``build:frontend`` went stale while the backend source stayed stable, so #492 — which keyed the
+    settle-refresh on the BACKEND signature alone — exhausted its flat budget and never re-armed →
+    permanent checklist red despite 3 heal attempts. Source files under src/ are lane-authored /
+    projector-emitted and byte-stable (unlike the .sql/.json the backend sig excludes). Skips
+    node_modules/dist/build (not source). ``None`` when src/ is missing or on any fault (caller must
+    NOT block delivery on our own failure)."""
+    try:
+        fe = Path(app_root) / "frontend" / "src"
+        if not fe.is_dir():
+            return None
+        _exts = {".jsx", ".tsx", ".js", ".ts", ".mjs", ".css"}
+        h = hashlib.sha256()
+        for f in sorted(fe.rglob("*"), key=lambda p: str(p)):
+            if not f.is_file() or f.suffix.lower() not in _exts:
+                continue
+            if any(seg in ("node_modules", "dist", "build") for seg in f.parts):
+                continue
+            h.update(str(f.relative_to(fe)).encode() + b"\0")
             h.update(f.read_bytes())
         return h.hexdigest()
     except Exception:
@@ -331,41 +362,420 @@ def _fwval_is_source_edit_progress(app_sig, prev_app_sig, source_churn, cap) -> 
         return False
 
 
+# #492 (netflix r64, 2026-08-04): the flat per-milestone budget for FIX #120's
+# stale-build refresh, plus a HIGHER hard cap that a LEGITIMATE churn can climb — a
+# churny deliver tail regenerates the by-construction backend skeleton on every
+# app-source/contract change (r64: 13× in 22min), and each regen is a NEW build
+# state whose api_smoke recording legitimately needs one fresh run to re-record
+# build:* truth. The flat cap alone (3) was EXHAUSTED at 20:37:32 while the skeleton
+# kept regenerating through 20:47:30, so verification_checklist_not_ready could never
+# be re-recorded → permanent wedge (delivery relied on the LLM verifier, which never
+# complied). See maybe_refresh_stale_build_checklist for the settle-then-record rule.
+_CHECKLIST_REFRESH_FLAT_CAP = 3
+_CHECKLIST_REFRESH_HARD_CAP = 10
+
+# #511: build/validation checks that a gate-passing api_smoke run PROVES succeeded — a passing
+# api_smoke means docker-compose up built every service (backend+frontend+db) and the endpoints
+# answered, so a stale FAILURE on any of these is provably wrong and may be recorded = success.
+_BUILD_TRUTH_CHECK_RE = re.compile(
+    r"^(?:build:(?:docker|backend|frontend|database)|validation:(?:api_smoke|frontend_build))$")
+
+
+def _record_build_truth_from_passing_run(orch: Any) -> int:
+    """#511 — when a gate-passing api_smoke RunHub run exists this session, DIRECTLY re-record
+    any stale (non-success) build:*/validation:{api_smoke,frontend_build} check = success with
+    deterministic_runtime_evidence (so it outranks the stale opinion, #258). Returns the count
+    re-recorded (0 if no passing run, or nothing stale). Never raises. Generalizable: gated on a
+    real passing run; a genuinely broken build has no passing api_smoke → records nothing."""
+    hubs = getattr(orch, "hubs", None)
+    runhub = getattr(hubs, "runhub", None)
+    codehub = getattr(hubs, "codehub", None)
+    if runhub is None or codehub is None or not hasattr(runhub, "last_successful_run_since"):
+        return 0
+    session_ts = getattr(orch, "_session_start_ts", 0.0) or 0.0
+    passing = runhub.last_successful_run_since(session_ts)
+    if not passing:
+        return 0  # no proof the app built + booted + served → do NOT fabricate success
+    # #511-review (2026-08-05): the passing run must reflect the CURRENT code. A gate-passing
+    # api_smoke EARLIER this session does NOT prove the app builds NOW if a later source change
+    # broke it and a fresh run FAILED afterwards. Without this guard, the stale earlier pass still
+    # satisfies last_successful_run_since → we re-record build:* = success (deterministic evidence
+    # OUTRANKS the fresh real failure, #258) AND return True (skipping #492's reset-and-rerun) →
+    # a genuinely broken build (white-screen frontend) SHIPS. So: if ANY run FAILED/ABORTED more
+    # recently than the last successful run, the build truth is stale — record NOTHING. Best-effort
+    # (only enforced when RunHub exposes the run list + a comparable timestamp; degrades to the
+    # prior trust-the-pass behavior otherwise, e.g. unit fakes). Generalizable: no product literals.
+    try:
+        if isinstance(passing, dict) and hasattr(runhub, "list_runs"):
+            _pass_ts = float(passing.get("started_at") or 0.0)
+            for _r in (runhub.list_runs(limit=1000) or []):
+                if (str((_r or {}).get("status") or "").strip().lower() in ("failed", "aborted")
+                        and float((_r or {}).get("started_at") or 0.0) > _pass_ts):
+                    return 0  # a later run broke the build → the earlier pass is stale
+    except Exception:
+        pass
+    try:
+        checks = codehub.list_checks(pr_id="main") or []
+    except Exception:
+        return 0
+    _passok = ("success", "passed", "pass", "ok")
+    recorded = 0
+    for c in checks:
+        name = str((c or {}).get("name") or "")
+        if not _BUILD_TRUTH_CHECK_RE.match(name):
+            continue
+        if str((c or {}).get("status") or "").strip().lower() in _passok:
+            continue
+        try:
+            codehub.record_check(
+                pr_id="main", name=name, status="success",
+                evidence={"deterministic_runtime_evidence": True, "source": "#511",
+                          "reason": "gate-passing api_smoke run exists this session — "
+                                    "docker-compose up built every service and endpoints "
+                                    "answered, so this stale build/validation failure is "
+                                    "provably wrong"},
+                agent="")
+            recorded += 1
+        except Exception:
+            pass
+    if recorded and hasattr(orch, "_logger"):
+        try:
+            orch._logger.warning(
+                "STALE BUILD-CHECKLIST record-the-truth (#511): a gate-passing api_smoke run "
+                "exists → directly re-recorded %d stale build/validation check(s) = success "
+                "(app provably built+booted; #492 reset-and-rerun did not land on r80/r84/r85).",
+                recorded)
+        except Exception:
+            pass
+    return recorded
+
+
+
 def maybe_refresh_stale_build_checklist(orch: Any, failed_checks) -> bool:
-    """FIX #120 (run-38 STUCK, 2026-07-09): a transient run_validation failure
-    (mid visual-window rebuild churn) stamped all four ``build:*`` CodeHub checks =
-    failure, and NOTHING re-ran validation afterwards — the checklist remediation
-    messages the VERIFIER (LLM-dependent; it never complied), so an
-    otherwise-deliverable run hit the 75-min no-convergence wall on
-    ``verification_checklist_not_ready`` alone. Deterministic self-heal: when the
-    deliver gate declines with that blocker, reset the framework's own api_smoke
+    """FIX #120 (run-38 STUCK, 2026-07-09) + #492 (netflix r64, 2026-08-04): a
+    transient run_validation failure (mid visual-window rebuild churn) stamped all
+    four ``build:*`` CodeHub checks = failure, and NOTHING re-ran validation
+    afterwards — the checklist remediation messages the VERIFIER (LLM-dependent; it
+    never complied), so an otherwise-deliverable run hit the 75-min no-convergence
+    wall on ``verification_checklist_not_ready`` alone. Deterministic self-heal: when
+    the deliver gate declines with that blocker, reset the framework's own api_smoke
     attempt counter (BOUNDED per milestone) so the fast retry re-runs validation —
     the shared RunValidationTool records FRESH build:* truth either way (a pass
     supersedes the stale failure; a real failure re-records with fresh evidence).
+
+    SETTLE-THEN-RECORD (#492): the original FLAT cap of 3 fits a STATIC stale
+    checklist, but a CHURNY-but-legitimate deliver tail regenerates the backend
+    skeleton on each app-source/contract change and re-invalidates build:* freshness
+    every regen — r64 exhausted the 3-budget at 20:37:32 while the skeleton kept
+    regenerating through 20:47:30, leaving the checklist permanently red. Beyond the
+    flat budget, ALSO grant a refresh when the backend BUILD STATE genuinely CHANGED
+    since the last refresh (``backend_source_signature`` differs from the stored
+    ``_checklist_refresh_last_sig``), up to a HIGHER hard cap. No livelock: a STATIC
+    stuck state (sig unchanged) still caps at the flat 3, and a PERPETUAL churn is
+    bounded by the hard cap → the existing no-convergence abort still fires.
     Returns True when a refresh was armed. Never raises."""
     try:
         if "verification_checklist_not_ready" not in set(failed_checks or ()):
             return False
+        # #511 (netflix r84+r85, 2026-08-05): RECORD-THE-TRUTH. #492's reset-and-rerun (below)
+        # demonstrably DOESN'T LAND — r80/r84/r85 all died on verification_checklist_not_ready
+        # with build:* + validation:api_smoke stale=failure DESPITE a gate-passing api_smoke run
+        # (r85: 34 api_smoke passes, visual passed, app provably built+booted+served). A passing
+        # api_smoke run means docker-compose up built EVERY service (backend+frontend+db) and the
+        # endpoints answered — so those build/validation checks are LOGICALLY success. Directly
+        # re-record them (same pattern as #74/#489 "record the deterministic truth", not #492's
+        # reset-and-hope). Marked deterministic_runtime_evidence so it OUTRANKS the stale opinion
+        # (#258 guard) and persists. SOUND + GENERALIZABLE: gated on a REAL passing run — a
+        # genuinely broken build has no passing api_smoke → nothing recorded; only touches
+        # build:*/validation:{api_smoke,frontend_build} that are currently non-success.
+        try:
+            if _record_build_truth_from_passing_run(orch):
+                return True
+        except Exception:
+            pass
         ms = str(getattr(orch, "_current_milestone_version", "") or "")
         budget = getattr(orch, "_checklist_refresh_by_ms", None)
         if budget is None:
             budget = {}
             orch._checklist_refresh_by_ms = budget
-        if budget.get(ms, 0) >= 3:
+        used = int(budget.get(ms, 0) or 0)
+        # Current backend build state — best-effort; None on any fault (never blocks
+        # the flat path, which mirrors the original sig-free behaviour exactly).
+        cur_sig = None
+        try:
+            _out = getattr(orch, "output_dir", None)
+            if _out:
+                _app_root = Path(_out) / "app"
+                if not _app_root.exists():
+                    _app_root = Path(_out)
+                # #501: key the settle-refresh on BOTH backend AND frontend source. A stale
+                # build:frontend re-invalidated by a FRONTEND-only fix must also grant a refresh —
+                # r70 wedged on verification_checklist_not_ready because #492 keyed on the backend
+                # signature alone, so a build:frontend that went stale while the backend stayed
+                # stable never re-armed once the flat budget was spent. Combined sig changes if
+                # EITHER lane's source changes → additive (strictly more refreshes, still bounded by
+                # the hard cap). None only when BOTH are unavailable (preserves the flat-path fallback).
+                _be = backend_source_signature(_app_root)
+                _fe = frontend_source_signature(_app_root)
+                cur_sig = None if (_be is None and _fe is None) else f"{_be}|{_fe}"
+        except Exception:
+            cur_sig = None
+        _flat = used < _CHECKLIST_REFRESH_FLAT_CAP
+        _settle = (
+            used < _CHECKLIST_REFRESH_HARD_CAP
+            and cur_sig is not None
+            and cur_sig != getattr(orch, "_checklist_refresh_last_sig", None))
+        if not (_flat or _settle):
+            return False
+        budget[ms] = used + 1
+        orch._checklist_refresh_last_sig = cur_sig
+        orch._framework_validation_attempts = 0
+        try:
+            orch._logger.warning(
+                "STALE BUILD-CHECKLIST self-heal (FIX #120/#492): "
+                "verification_checklist_not_ready is blocking delivery — resetting "
+                "the framework validation attempt counter (refresh %s/%s for v%s, %s) "
+                "so api_smoke re-runs and records FRESH build:* checks itself.",
+                budget[ms], _CHECKLIST_REFRESH_HARD_CAP, ms,
+                "flat budget" if _flat else "settle: backend build state changed")
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
+
+
+def maybe_rerun_unrun_chains(orch: Any, failed_checks) -> bool:
+    """#475 (r50, 2026-08-04): delivery blocked on business_chain_failing but the
+    offending chains were merely NEVER RUN, not failed. business_chain_blockers
+    (delivery_gate.py) flags a chain not-passing when status ∉ (passing,
+    framework_blocked) — which lumps a NEVER-EXECUTED chain (status unset/'?', no
+    broken last_result) together with a genuinely FAILED one. The verifier keeps
+    re-authoring chains (r50: count churned 28→24→31) and the newest stays UNRUN
+    before the next run_chains, so the gate re-dispatches the verifier to RE-AUTHOR
+    (adding more unrun chains) → churn (r50: 14 deliver_project / 0 release, 29/31
+    chains 'passing' + 1 '?'; seed✓ functional✓ visual✓ — this was the SOLE blocker).
+
+    Deterministic self-heal (mirrors FIX #120's stale-build refresh): when the ONLY
+    business_chain blockers are unrun chains, reset the framework's api_smoke attempt
+    counter (BOUNDED per milestone) so run_chains re-executes ALL registered chains and
+    records fresh status — a chain that PASSES clears the gate (and the verifier is no
+    longer dispatched → churn broken); one that FAILS re-records broken → stays
+    business_chain_failing (verifier dispatched to fix it). NEVER acts when any chain has
+    a BROKEN last_result (a real failure must NOT be masked by a re-run). Returns True
+    when a re-run was armed. Never raises. Generalizable to every app/env."""
+    try:
+        if "business_chain_failing" not in set(failed_checks or ()):
+            return False
+        rh = getattr(getattr(orch, "hubs", None), "registryhub", None)
+        if rh is None or not hasattr(rh, "get_verification_chains"):
+            return False
+        chains = rh.get_verification_chains() or {}
+        authored = [
+            rec for name, rec in chains.items()
+            if name != "_meta" and isinstance(rec, dict) and rec.get("steps")
+            and str(rec.get("kind") or "").lower() != "coverage"
+        ]
+        not_passing = [
+            rec for rec in authored
+            if rec.get("status") not in ("passing", "framework_blocked")
+            or (rec.get("last_result") or {}).get("broken")
+        ]
+        if not not_passing:
+            return False
+        # A REAL failure (ran + left steps broken) must go to the verifier, NOT be
+        # re-run away — bail so the normal dispatch handles it.
+        if any((rec.get("last_result") or {}).get("broken") for rec in not_passing):
+            return False
+        # All blockers are merely UNRUN → re-run the chains (bounded per milestone).
+        ms = str(getattr(orch, "_current_milestone_version", "") or "")
+        budget = getattr(orch, "_unrun_chain_rerun_by_ms", None)
+        if budget is None:
+            budget = {}
+            orch._unrun_chain_rerun_by_ms = budget
+        if budget.get(ms, 0) >= 4:
             return False
         budget[ms] = budget.get(ms, 0) + 1
         orch._framework_validation_attempts = 0
         try:
             orch._logger.warning(
-                "STALE BUILD-CHECKLIST self-heal (FIX #120): "
-                "verification_checklist_not_ready is blocking delivery — resetting "
-                "the framework validation attempt counter (refresh %s/3 for v%s) so "
-                "api_smoke re-runs and records FRESH build:* checks itself.",
-                budget[ms], ms)
+                "UNRUN-CHAIN self-heal (#475): business_chain_failing is blocked ONLY by "
+                "%d never-run chain(s) (status unset, no broken steps) — resetting the "
+                "api_smoke attempt counter (rerun %s/4 for v%s) so run_chains executes them "
+                "and records fresh status, instead of re-dispatching the verifier to "
+                "re-author (which adds more unrun chains → churn).",
+                len(not_passing), budget[ms], ms)
         except Exception:
             pass
         return True
     except Exception:
+        return False
+
+
+def maybe_emit_schema_sql(orch: Any, failed_checks) -> bool:
+    """#74 (netflix r78, 2026-08-05): delivery blocked on ``database_sql_missing`` while the app's
+    DB is FUNCTIONAL (api_smoke passed — a clean docker boot that created + probed the schema).
+    ``database_sql_missing`` (delivery_gate.py) is a pure FILE-EXISTENCE check: app/database/**/*.sql
+    must exist. The deterministic ``app/database/`` scaffold (scaffolder.write_database_scaffold →
+    database_scaffold.render_schema_sql — "no agent, no variance") is called ONCE post-finalize_kickoff;
+    if it never ran, or a later lane merge clobbered app/database/, there is NO deliver-tail re-emit,
+    so the gate stays red for the rest of the run (r78: gate frozen at 15 for 11min on this + wedged).
+
+    Deterministic self-heal (mirrors #489/#492/#475): when database_sql_missing is a failed check,
+    re-emit app/database/ from the registered SchemaHub tables (+ synthesized backing tables for
+    endpoint-only resources) using the SAME render_schema_sql the by-construction scaffold uses. This
+    GUARANTEES the check clears without depending on the flaky LLM backend lane, and generalizes to
+    every app. Idempotent + guarded: no-ops when the check isn't failing, when a .sql already exists,
+    or when no tables are registered. Best-effort; never raises. Returns True when it (re-)wrote the
+    schema. Validate the gate-clear on a run."""
+    try:
+        if "database_sql_missing" not in set(failed_checks or ()):
+            return False
+        out = Path(getattr(orch, "output_dir", "") or "")
+        if not str(out):
+            return False
+        if any((out / "app" / "database").glob("**/*.sql")):
+            return False  # already present — nothing to heal
+        hubs = getattr(orch, "hubs", None)
+        sh = getattr(hubs, "schema_hub", None)
+        if sh is None or not hasattr(sh, "list_tables"):
+            return False
+        tables = sh.list_tables() or {}
+        from .database_scaffold import write_database_scaffold, synthesize_missing_tables
+        _rh = getattr(hubs, "registryhub", None)
+        if _rh is not None:
+            try:
+                from .lifecycle import business_endpoints
+                tables = synthesize_missing_tables(
+                    tables, business_endpoints(_rh.get_endpoints() or {}))
+            except Exception:
+                pass
+        if not tables:
+            return False  # no contract tables → nothing deterministic to emit
+        paths = write_database_scaffold(out, tables)
+        try:
+            orch._logger.warning(
+                "DATABASE-SQL self-heal (#74): database_sql_missing but the app DB is functional — "
+                "deterministically re-emitted app/database/ from %d registered table(s) → %s "
+                "(by-construction render_schema_sql, no LLM lane).",
+                paths.get("table_count", 0), paths.get("schema_sql"))
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
+
+
+async def maybe_author_ui_flow_evidence(orch: Any, failed_checks) -> bool:
+    """#489 (netflix r58/r61, 2026-08-04, task#47): delivery blocked on
+    ``deliverability_ui_flow_missing`` while the app is FULLY functional (r61:
+    "verifier reports full PASS — 15/15 endpoints, 51/51 chain steps, frontend
+    navigable, 0 bugs"). The ONLY gap is that the LLM verifier never authored the
+    ``validation:ui_flow`` records the gate requires as evidence — it was dispatched
+    to run_validation 6+ times over 11 min and never complied (r68/r91-93 the same
+    failure). This is the task#47 convergence wedge: the app works, a bookkeeping
+    record the LLM lane keeps failing to write blocks delivery.
+
+    The framework ALREADY converts a passing authenticated browser walk into those
+    records — ``_run_browser_test_user`` → ``clean_ui_flow_passes`` →
+    ``record_validation_result`` tagged ``DETERMINISTIC_EVIDENCE_KEY`` (#240, proven
+    in r80: 7 records cleared the gate). But that walk only runs AFTER the gate is
+    already clear (the pre-release browser gate + post-release net), so while
+    ui_flow_missing is RED it never fires — chicken-and-egg. Run it HERE, pre-gate,
+    so the records get authored from a REAL passing walk and the gate clears
+    deterministically instead of waiting on the flaky verifier.
+
+    SOUND (never hacks the gate): ``clean_ui_flow_passes`` is PASS-ONLY — it records
+    only pages that render cleanly (auth ok, not blank, no console error, not
+    login-bounced, not fallback DOM), so a genuinely-broken flow gets NO record and
+    stays blocked (correctly routed to the verifier/frontend lane). COST-SAFE: gated
+    on api_smoke having passed (``deliverability_no_successful_run`` absent → the app
+    is up) so the expensive Playwright walk never runs against a down app (and
+    ``_run_test_user_validation`` itself health-pre-checks + self-skips otherwise),
+    and BOUNDED per milestone. Threaded (the walk is blocking + spins its own
+    asyncio.run) via ``asyncio.to_thread`` so it never blocks the event loop — the
+    same invocation the pre-release gate already uses (orchestrator.py:2943).
+    Returns True when a walk was armed/run. Never raises. Generalizes to every
+    app/env (critical ui_flows are contract-derived from the registered ui_pages)."""
+    try:
+        fset = set(map(str, failed_checks or ()))
+        if "deliverability_ui_flow_missing" not in fset:
+            return False
+        # The app must be validated end-to-end (i.e. UP) before spending on a browser
+        # walk. If api_smoke never passed, the walk would just self-skip (app
+        # unreachable) — skip cheaply here rather than spawn a doomed thread. This
+        # also matches the exact r61 shape (api_smoke green, only ui_flow records absent).
+        if "deliverability_no_successful_run" in fset:
+            return False
+        ms = str(getattr(orch, "_current_milestone_version", "") or "")
+        budget = getattr(orch, "_ui_flow_walk_by_ms", None)
+        if budget is None:
+            budget = {}
+            orch._ui_flow_walk_by_ms = budget
+        if budget.get(ms, 0) >= 3:
+            return False
+        budget[ms] = budget.get(ms, 0) + 1
+        try:
+            orch._logger.warning(
+                "UI-FLOW EVIDENCE self-heal (#489): deliverability_ui_flow_missing is "
+                "blocking delivery but api_smoke passed (app is up) — running the "
+                "deterministic authenticated browser walk (walk %s/3 for v%s) to AUTHOR "
+                "validation:ui_flow PASS records for the pages that render cleanly, "
+                "instead of waiting on the verifier LLM (which keeps failing to author "
+                "them). PASS-ONLY: a broken flow gets no record and stays blocked.",
+                budget[ms], ms)
+        except Exception:
+            pass
+        import asyncio as _aio
+        # _run_test_user_validation is blocking (health pre-check + Playwright walk +
+        # its own asyncio.run) → thread it; its browser walk auto-authors the
+        # deterministic ui_flow PASS records as a side-effect (heal_pipeline #240).
+        await _aio.to_thread(
+            orch._run_test_user_validation,
+            getattr(orch, "_current_milestone_version", "1.0.0"))
+        return True
+    except Exception:
+        return False
+
+
+async def reauthor_missing_database_sql(orch: Any) -> bool:
+    """#482 — restore ``app/database/*.sql`` whenever it is MISSING, independent of
+    skeleton-regen. THE last Part-B blocker on a fully-converged run (r53 + r54, live):
+
+    ``_generate_database`` writes ``app/database/init/01_init.sql`` at startup, but the
+    per-tick ``_merge_committed_agent_work`` can DROP the working-tree copy (a lane's
+    worktree branched before the scaffold → merging it removes app/database). The only
+    per-tick re-author is nested inside ``if _should_regen_skeleton(...)`` — so a merge
+    that wipes app/database WITHOUT changing the backend-skeleton signature leaves it
+    GONE. The delivery gate's ``database_has_sql`` (globs app/database/**/*.sql) then
+    stays False → ``database_sql_missing`` → the final post-loop gate RAISES
+    ``RuntimeError`` → the run dies with 0 releases even though 10/10 business chains
+    passed, api_smoke was green, and there was zero churn (r54: EXACTLY this).
+
+    FIX: an UNCONDITIONAL write-if-missing each tick (same precedent as
+    ``_scaffold_design_readme`` — a required delivery artifact outside the app-source
+    signature). Returns True if it re-authored, False if already present / on error.
+    Best-effort: never raises into the tick loop. Generalizable to every env — any app
+    whose DB is projected from the contract and can be merge-wiped mid-run."""
+    try:
+        from pathlib import Path as _DBP
+        db_dir = _DBP(orch.output_dir) / "app" / "database"
+        if any(db_dir.glob("**/*.sql")):
+            return False  # present → nothing to do (cheap glob, no subprocess)
+        await orch._generate_database()
+        restored = any(db_dir.glob("**/*.sql"))
+        if restored:
+            orch._logger.warning(
+                "#482 re-authored app/database/*.sql (a merge wiped it; skeleton "
+                "unchanged so the gated re-author never fired) — unblocks the "
+                "database_sql_missing delivery gate.")
+        return restored
+    except Exception as _exc:
+        try:
+            orch._logger.warning(
+                "#482 app/database re-author (write-if-missing) failed: %s", _exc)
+        except Exception:
+            pass
         return False
 
 
@@ -519,6 +929,11 @@ class FrameworkValidation:
             # missing) — cheap, and keeps the final delivery gate from failing an
             # otherwise-working app on a missing doc.
             orch._scaffold_design_readme()
+            # #482 — restore app/database/*.sql if a merge wiped it (see the helper's
+            # docstring). UNCONDITIONAL write-if-missing, same precedent as the design
+            # readme scaffold above; the skeleton-gated re-author below is NOT enough
+            # because the wipe is independent of skeleton-signature changes.
+            await reauthor_missing_database_sql(orch)
             # OPTIMIZATION (heal-on-change): the deterministic heal repairs
             # (frontend baseline/api.js, backend entrypoint/AS-wiring/auth, ORM-DDL)
             # are idempotent, but re-running them EVERY coordination tick is wasteful

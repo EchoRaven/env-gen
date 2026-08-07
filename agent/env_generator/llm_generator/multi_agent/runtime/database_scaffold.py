@@ -405,9 +405,16 @@ def synthesize_missing_create_endpoints(endpoints: Any, tables: Any):
         if col and method == "POST":
             post_collections.add(col)
         segs = [s for s in path.split("/") if s and s != "api"]
-        if segs:  # a write on /<res>/{id} or a POST sub-action /<res>/{id}/<verb> ⇒ mutable
+        if segs:  # #477: ONLY a DIRECT item mutation (PATCH/PUT/DELETE /<res>/{id}) proves the
+            # resource is user-mutable ⇒ warrants a plain CREATE ("you can create X if you can
+            # edit/delete X"). A POST SUB-ACTION (/<res>/{id}/<verb> — e.g. /titles/{id}/rating,
+            # a rate/like/follow ACTION on a RELATED resource) does NOT imply the collection is
+            # user-CREATABLE: it wrongly marked the READ-ONLY titles catalog 'writable' → a
+            # spurious POST /api/titles the business_chain then tested → 400 → convergence churn
+            # (r48/r51, never delivered). The outlook messages case is preserved — it has
+            # PATCH/DELETE /messages/{id} (direct mutations), so it still gets its create.
             res = segs[0].lower()
-            if method in ("PATCH", "PUT", "DELETE") or (method == "POST" and len(segs) > 1):
+            if method in ("PATCH", "PUT", "DELETE"):
                 writable.add(res)
 
     added: List[str] = []
@@ -485,7 +492,21 @@ def _counter_default(col: Any) -> Any:
     return col
 
 
-def _render_column(table_name: str, col: Any) -> str:
+def _col_is_pk(col: Any) -> bool:
+    """#517 — True if a real column is a PRIMARY KEY (flag or inline in its type string).
+    Mirrors _render_column's _is_pk detection, for composite-PK grouping in render_schema_sql."""
+    if not isinstance(col, dict):
+        return False
+    if col.get("primary_key") or col.get("pk"):
+        return True
+    t = str(col.get("type") or "")
+    return bool(re.search(r"primary[\s_]+key", t, re.I) or re.search(r"\bpk\b", t, re.I))
+
+
+def _render_column(table_name: str, col: Any, suppress_pk: bool = False) -> str:
+    """#517: suppress_pk renders a PK-flagged column WITHOUT its own ``PRIMARY KEY`` (and without
+    SERIAL promotion) so a COMPOSITE primary key can be emitted as one table-level constraint — a
+    per-column PK on each of >=2 columns is invalid ("multiple primary keys not allowed")."""
     if not isinstance(col, dict):
         raise ValueError(
             f"database_scaffold: table {table_name!r} has a non-mapping column: {col!r}"
@@ -564,15 +585,17 @@ def _render_column(table_name: str, col: Any) -> str:
     # create returned no id → ``${api_posts_id}`` reached GET/DELETE → 422. Promote
     # a bare integer PK to SERIAL/BIGSERIAL so it auto-assigns — matching the spine
     # (users.id SERIAL) and what the ORM's create_all emits for an int PK anyway.
-    if _is_pk and _sqlt.upper() in ("INTEGER", "INT", "INT4"):
+    if _is_pk and not suppress_pk and _sqlt.upper() in ("INTEGER", "INT", "INT4"):
         _sqlt = "SERIAL"
-    elif _is_pk and _sqlt.upper() in ("BIGINT", "INT8"):
+    elif _is_pk and not suppress_pk and _sqlt.upper() in ("BIGINT", "INT8"):
         _sqlt = "BIGSERIAL"
     parts = [_quote_ident(cname), _sqlt]
     # Optional constraints — honored ONLY when explicitly declared.
-    if _is_pk:
+    if _is_pk and not suppress_pk:
         parts.append("PRIMARY KEY")
-    if (col.get("nullable") is False or col.get("not_null") or _emb_nn) and not _is_pk:
+    # #517: a composite-PK column (per-column PK suppressed) is still implicitly NOT NULL.
+    if ((col.get("nullable") is False or col.get("not_null") or _emb_nn) and not _is_pk) \
+            or (_is_pk and suppress_pk):
         parts.append("NOT NULL")
     if col.get("unique") or _emb_uniq:
         parts.append("UNIQUE")
@@ -1117,13 +1140,42 @@ def render_schema_sql(tables: Dict[str, Any]) -> str:
         # a trailing ``UNIQUE (a, b)`` clause, not a broken column definition.
         rendered_cols: List[str] = []
         constraint_lines: List[str] = []
+        # #517: a COMPOSITE primary key (>=2 columns flagged PK — e.g. a junction table
+        # title_genres(title_id PK, genre_id PK)) must be ONE table-level `PRIMARY KEY (a, b)`,
+        # not a per-column `SERIAL PRIMARY KEY` on each (postgres: "multiple primary keys for
+        # table not allowed" → initdb exit 3 → docker_up wedge, netflix r89). Detect it and render
+        # those columns WITHOUT their own PK (a composite-PK FK column stays a plain int FK), then
+        # emit the composite constraint. If one of the PK-flagged columns is 'id', treat 'id' as
+        # the sole PK and DEMOTE the others (mis-marked FKs) — the common id+FK mis-modeling.
+        # Skip when an explicit table-level PRIMARY KEY pseudo-constraint already exists.
+        # Generalizes to every M:N join table; no product literals.
+        _real_cols = [c for c in cols if not _is_constraint_pseudo_column(c)]
+        _pk_cols = [c for c in _real_cols if _col_is_pk(c)]
+        _has_tablevel_pk = any(
+            _is_constraint_pseudo_column(c)
+            and "primary" in str(c.get("name") or "").lower()
+            for c in cols)
+        _composite_pk = False
+        _suppress_ids = set()
+        if len(_pk_cols) >= 2 and not _has_tablevel_pk:
+            _id_pk = next((c for c in _pk_cols
+                           if str(c.get("name") or "").strip().lower() == "id"), None)
+            if _id_pk is not None:
+                _suppress_ids = {id(c) for c in _pk_cols if c is not _id_pk}  # id is PK; demote rest
+            else:
+                _composite_pk = True
+                _suppress_ids = {id(c) for c in _pk_cols}
         for c in cols:
             if _is_constraint_pseudo_column(c):
                 clause = _render_table_constraint(c)
                 if clause:
                     constraint_lines.append(clause)
                 continue  # unparseable pseudo-constraint → drop (don't break DDL)
-            rendered_cols.append(_render_column(name, c))
+            rendered_cols.append(_render_column(name, c, suppress_pk=(id(c) in _suppress_ids)))
+        if _composite_pk:
+            _pk_names = [str(c.get("name") or "").strip() for c in _pk_cols]
+            constraint_lines.append(
+                "    PRIMARY KEY (" + ", ".join(_quote_ident(n) for n in _pk_names if n) + ")")
         if not rendered_cols:
             # FIX #90: all columns were constraint pseudo-columns → same synthesis.
             rendered_cols = [_render_column(name, {"name": "id", "type": "integer",
