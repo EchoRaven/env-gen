@@ -988,6 +988,103 @@ def _concrete_capture_route(route: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# #565 (netflix r111) — NON-FINAL MILESTONE advisory-judge SCOPING.
+# On an intermediate milestone the advisory visual judge scored the WHOLE reference
+# set (all screens across every milestone) and filed frontend remediation for pages a
+# LATER milestone owns — so M1 churned the frontend for ~1h on M2/M3's movies/my_list.
+# These helpers let VisualFidelityGate.maybe_run pass THIS milestone's OWNED routes so
+# non-owned screens are demoted to advisory (still captured/reported, but out of the
+# blocking pass/average/failing/remediation). Final/single-milestone passes None → the
+# full set → byte-identical.
+# ---------------------------------------------------------------------------
+def _norm_route_for_scope(route: Any) -> str:
+    """Normalize a route for milestone-scope comparison: drop query/fragment, lowercase,
+    ensure a single leading slash, strip a trailing slash, and collapse param segments
+    (``:id`` / ``{id}``) to ``*`` so ``/title/:id`` compares equal to ``/title/1``.
+    Returns '' for an empty/None route."""
+    s = str(route or "").split("?", 1)[0].split("#", 1)[0].strip().lower()
+    if not s:
+        return ""
+    if not s.startswith("/"):
+        s = "/" + s
+    s = re.sub(r"[:{][^/}]*\}?", "*", s)   # :id / {id} -> * (param-insensitive compare)
+    s = re.sub(r"^/\d+$|(?<=/)\d+(?=/|$)", "*", s)  # numeric id segments -> *
+    if len(s) > 1:
+        s = s.rstrip("/")
+    return s or "/"
+
+
+def _route_resource_token(norm_route: str) -> str:
+    """Last non-param ('*'), non-empty segment of a normalized route ('' for '/')."""
+    segs = [seg for seg in str(norm_route or "").split("/") if seg and seg != "*"]
+    return segs[-1] if segs else ""
+
+
+def _route_in_scope(screen_route: Any, owned_norm: set) -> bool:
+    """INCLUSIVE ownership test, biased to KEEP a screen blocking (under-scoping is the
+    safe direction — it degrades toward today's full-set behavior, never hides an owned
+    page): a screen is owned iff its normalized route equals an owned route OR shares its
+    last resource token with one. An empty route (or a token-less '/' absent from the
+    owned set) is never owned."""
+    sr = _norm_route_for_scope(screen_route)
+    if not sr:
+        return False
+    if sr in owned_norm:
+        return True
+    tok = _route_resource_token(sr)
+    if not tok:
+        return False
+    return any(_route_resource_token(o) == tok for o in owned_norm)
+
+
+def _milestone_declared_routes(milestone: Mapping[str, Any]) -> set:
+    """#565: the NORMALIZED frontend routes a milestone declares it OWNS.
+
+    SURPRISE (verified 2026-08-07): a milestone registry record
+    (``milestone_registry._norm``) carries NO structural screen/page/route list — only
+    prose (``description_slice`` + kickoff-authored ``detail`` + ``acceptance``), and no
+    registered ui_page carries a milestone tag. So the owned routes are EXTRACTED from
+    that prose: HTTP-method-prefixed paths (``GET /movies``), bare ``/path`` tokens, and
+    — since a page route commonly mirrors its resource endpoint — the ``/api``-stripped
+    variant of any ``/api/<rest>`` path.
+
+    Returns a NORMALIZED set (via ``_norm_route_for_scope``); the extraction is
+    deliberately GENEROUS because an over-large owned set only UNDER-scopes (keeps more
+    screens blocking = safe), whereas a too-small one could hide an owned page. Returns an
+    EMPTY set when nothing parseable is found, so the caller falls back to NO scoping (the
+    full set) rather than hiding everything on a prose miss."""
+    if not isinstance(milestone, Mapping):
+        return set()
+    parts: List[str] = []
+    for k in ("description_slice", "detail"):
+        v = milestone.get(k)
+        if v:
+            parts.append(str(v))
+    for a in (milestone.get("acceptance") or []):
+        parts.append(str(a))
+    text = "\n".join(parts)
+    if not text.strip():
+        return set()
+    raw: set = set()
+    for m in re.findall(r"(?:GET|POST|PUT|PATCH|DELETE)\s+(/[A-Za-z0-9_./:{}\-]+)", text):
+        raw.add(m)
+    for m in re.findall(r"(?<![\w/])/[A-Za-z0-9_][A-Za-z0-9_./:{}\-]*", text):
+        raw.add(m)
+    out: set = set()
+    for r in raw:
+        nr = _norm_route_for_scope(r)
+        if not nr:
+            continue
+        out.add(nr)
+        if nr.startswith("/api/"):
+            stripped = _norm_route_for_scope("/" + nr[len("/api/"):])
+            if stripped:
+                out.add(stripped)
+    out.discard("")
+    return out
+
+
+# ---------------------------------------------------------------------------
 # #491 (netflix r63, confirmed) — POST-LOGIN PROFILE/SELECTION GATE.
 # App.jsx routes catalog pages as ``<RequireProfile><XxxPage/></RequireProfile>``;
 # RequireProfile redirects to ``/profiles`` when ``getActiveProfileId()`` (=
@@ -1619,6 +1716,7 @@ async def run_visual_fidelity(
     capture_fn: Optional[Callable] = None,
     judge_fn: Optional[Callable] = None,
     verdict_cache: Optional[Dict[str, Dict[str, Any]]] = None,
+    milestone_owned_routes: Optional[set] = None,
 ) -> Dict[str, Any]:
     """Compare the running app against the reference designs.
 
@@ -1653,6 +1751,40 @@ async def run_visual_fidelity(
     # pass/average. Deterministic + only-demotes, so gating is byte-identical when there are
     # no duplicate-route screens (transient names are already advisory from map_reference_screens).
     screens = _demote_duplicate_route_screens(screens)
+    # #565: NON-FINAL milestone advisory scoping. When the caller supplies THIS
+    # milestone's OWNED routes (VisualFidelityGate.maybe_run does this ONLY for a
+    # non-final milestone — final/single-milestone passes None), demote every BLOCKING
+    # screen whose route the milestone does NOT own to ADVISORY: still captured/reported,
+    # but excluded from `passed`, the blocking average, `failing`, and remediation_text —
+    # so an intermediate milestone stops scoring + filing frontend remediation for pages a
+    # LATER milestone owns (M1 churning on M2/M3's movies/my_list). Default None → no
+    # demotion → byte-identical. SAFETY: never make the exam vacuous — if scoping would
+    # leave ZERO blocking screens, skip it (judge the full set) and log loudly. Same
+    # only-demotes mechanism as _demote_duplicate_route_screens, so gating is byte-identical
+    # when milestone_owned_routes is None/empty.
+    _scope_excluded_names: List[str] = []
+    if milestone_owned_routes:
+        _owned_norm = {_norm_route_for_scope(r) for r in milestone_owned_routes}
+        _owned_norm.discard("")
+        if _owned_norm:
+            _blk = [s for s in screens if not s.get("advisory")]
+            _demote = [s for s in _blk if not _route_in_scope(s.get("route"), _owned_norm)]
+            if _demote and len(_demote) < len(_blk):
+                for s in _demote:
+                    s["advisory"] = True          # out of passed / blocking-avg / failing
+                    s["scope_excluded"] = True    # out of remediation_text (this-milestone only)
+                _scope_excluded_names = sorted(str(s.get("name")) for s in _demote)
+                _LOG.warning(
+                    "VISUAL MILESTONE-SCOPE (#565): demoted %d non-owned screen(s) %s to "
+                    "advisory for this milestone (owned routes=%s) — %d owned blocking "
+                    "screen(s) scored.",
+                    len(_demote), _scope_excluded_names,
+                    sorted(_owned_norm), len(_blk) - len(_demote))
+            elif _demote:
+                _LOG.warning(
+                    "VISUAL MILESTONE-SCOPE (#565): scoping to owned routes=%s would hide "
+                    "ALL %d blocking screen(s) — skipping scope (judging the full set) to "
+                    "avoid a vacuous gate.", sorted(_owned_norm), len(_blk))
     judged_screens = _select_judged_screens(screens, max_screens)
     skipped = [s["name"] for s in screens if not s.get("route")]
     if not judged_screens:
@@ -1901,6 +2033,10 @@ async def run_visual_fidelity(
             "coverage": _coverage,  # #351: reporting only — does not gate
             "blocking_average": _blk_avg,  # #542a: gating avg over BLOCKING screens only
             "capture_transient": bool(_blank_screens) and not shots,
+            # #565: screens demoted for THIS (non-final) milestone — excluded from
+            # remediation_text so an intermediate milestone never files frontend work for a
+            # later milestone's pages. Empty on the final/single-milestone path.
+            "scope_excluded_screens": _scope_excluded_names,
             "min_similarity": min_similarity}
 
 
@@ -2130,6 +2266,10 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
     still open (some OTHER screen never latched), so remediation must focus the
     lane's effort on the screens that have never hit the bar."""
     latched = latched or set()
+    # #565: screens the caller (a NON-FINAL milestone) demoted as out-of-milestone-scope —
+    # never file frontend remediation for a LATER milestone's pages. Empty on the
+    # final/single-milestone path, so that remediation body is byte-identical to before.
+    _scope_excluded = {str(n) for n in (result.get("scope_excluded_screens") or [])}
     lines = ["Visual fidelity below threshold vs the reference designs. "
              "Fix the implemented screens to match the references:"]
     dim_titles = {d["key"]: d["title"] for d in _DIMENSIONS}
@@ -2143,7 +2283,7 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
     _emitted: set = set()
     _mandated_screens = 0
     for r in result.get("screens", []):
-        if r.get("passed") or r.get("name") in latched:
+        if r.get("passed") or r.get("name") in latched or r.get("name") in _scope_excluded:
             continue
         lines.append(f"\n## {r['name']}  (route {r['route']}, similarity {r['similarity']:.2f})")
         if _ab_on and _audit is not None:
@@ -2628,8 +2768,21 @@ class VisualFidelityGate:
                 _judge_llm = get_component_llm(orch, "visual_judge") or orch.llm
             except Exception:
                 _judge_llm = orch.llm
+            # #565: on a NON-FINAL milestone, scope this advisory judge to THIS
+            # milestone's OWNED routes so it stops scoring + filing frontend remediation
+            # for pages a later milestone owns (M1 churning on M2/M3). Final/single-
+            # milestone — or an orchestrator with no _current_milestone — leaves _scope
+            # None → the full set → byte-identical to the r107-r109 path. An empty extracted
+            # set also stays None (never hide everything on a prose miss).
+            _scope = None
+            if not getattr(orch, "_is_final_milestone", True):
+                _ms = getattr(orch, "_current_milestone", None) or {}
+                _routes = _milestone_declared_routes(_ms)
+                if _routes:
+                    _scope = _routes
             result = await run_visual_fidelity(orch.output_dir, refs, _judge_llm,
-                                               verdict_cache=self._verdict_cache)
+                                               verdict_cache=self._verdict_cache,
+                                               milestone_owned_routes=_scope)
             if result.get("capture_unavailable") or result.get("auth_unavailable"):
                 # Not a judgment — the app wasn't reachable (mid-rebuild) or
                 # the authed session was rejected wholesale (token mint failed
