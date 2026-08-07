@@ -758,7 +758,8 @@ def _missing_write_defect_chain(
                      f"`{entity}` so its state can persist."),
         })
     try:
-        flow_findings = check_flow_no_write(None, eps_dict, list(flows or []))
+        flow_findings = check_flow_no_write(None, eps_dict, list(flows or []),
+                                            dict(tables or {}))
     except Exception:
         flow_findings = []
     for r in flow_findings:

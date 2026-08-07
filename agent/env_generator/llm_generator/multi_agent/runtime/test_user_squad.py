@@ -152,7 +152,8 @@ def _missing_write_goals(
         })
     try:
         _, fi_flows = _normalize_inventory(dict(feature_inventory or {}))
-        flow_findings = check_flow_no_write(None, eps_dict, fi_flows)
+        flow_findings = check_flow_no_write(None, eps_dict, fi_flows,
+                                            dict(tables or {}))
     except Exception:
         flow_findings = []
     for r in flow_findings:

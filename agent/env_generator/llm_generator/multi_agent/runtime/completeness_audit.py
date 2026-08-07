@@ -31,8 +31,13 @@ suggested_fix}``):
   (has a GET) but has NO POST/PUT/PATCH endpoint: the feature can be read but
   never written (the Continue-Watching class). severity ``error``.
 * ``completeness_flow_no_write`` — a declared feature-inventory FLOW whose verb
-  implies mutation (play/resume/watch/rate/like/add/save/update/track/progress/
-  mark/toggle/start/create) but no write endpoint backs it. severity ``warn``.
+  GENUINELY implies mutation (create/update/save/add/remove/rate/like/post/submit/
+  track/record/set/toggle/play/resume/watch/progress/mark/start) AND which no
+  write endpoint backs — where "backs" includes a write on the flow's own route, a
+  write on a state entity the flow references, or (for a play/watch/resume flow) a
+  progress state-write endpoint like Continue-Watching (#556). View-only/static
+  flows (marketing/landing/splash/browse/…) carry no mutation verb and are never
+  flagged. severity ``warn``. (Precision hardened in #559.)
 * ``completeness_entity_no_read`` — a declared entity with no GET (secondary).
   severity ``warn``.
 
@@ -95,9 +100,50 @@ _TIMESTAMP_NAMES = frozenset({"created", "updated", "timestamp", "created_at",
                               "updated_at", "deleted_at", "modified_at"})
 
 # Verbs whose presence in a FLOW name implies a mutation (write) is required.
+# Word-part matched against a flow name (see ``_mutation_verb_of``): the token is
+# the bare verb OR the verb + a real inflection suffix (``play`` -> ``player`` /
+# ``playing``; ``mark`` -> ``marks`` / ``marking``) — NOT any arbitrary word that
+# merely starts with the verb (``mark`` must NOT match ``marketing``; ``play``
+# must NOT match ``playlist``).
 _MUTATION_VERBS = frozenset({
-    "play", "resume", "watch", "rate", "like", "add", "save", "update", "track",
-    "progress", "mark", "toggle", "start", "create",
+    # playback / lifecycle (original)
+    "play", "resume", "watch", "progress", "mark", "start",
+    # explicit create/update/toggle vocabulary
+    "create", "update", "save", "add", "remove", "rate", "like", "post",
+    "submit", "track", "record", "set", "toggle",
+})
+
+# Inflection suffixes that keep a token a form of its verb. Includes agent/action
+# noun forms (``play`` -> ``player``) so a "<verb>er" flow still reads as the
+# action, while blocking coincidental longer words (``mark`` + ``eting`` is NOT a
+# suffix, so ``marketing`` is not a mutation; ``play`` + ``list`` is not a suffix,
+# so ``playlist`` is not a mutation).
+_VERB_SUFFIXES = frozenset({"", "s", "es", "d", "ed", "ing", "er", "ers"})
+
+# View-only / static flow tokens: a flow described ONLY by these implies NO
+# mutation (a splash/marketing/landing/browse surface). Whole-token matched so
+# ``review`` / ``overview`` never collide with ``view``. If a flow ALSO carries a
+# genuine mutation verb it is still treated as a mutation flow (these never
+# suppress a real write requirement).
+_VIEW_ONLY_TOKENS = frozenset({
+    "marketing", "landing", "splash", "welcome", "browse", "view", "explore",
+    "discover", "home", "hero", "promo", "banner", "billboard", "gallery",
+    "showcase", "carousel", "menu", "nav", "navigation", "preview",
+})
+
+# Playback/progress-class mutation verbs — their write is a per-row *progress*
+# state update, which a media app records through a state-write endpoint on a
+# progress-bearing table (e.g. a Continue-Watching ``POST``). A ``play``/``watch``
+# flow is therefore SATISFIED when such a state-write endpoint exists (#556), even
+# though its own name does not token-match that table's route.
+_PLAYBACK_VERBS = frozenset({"play", "resume", "watch", "progress"})
+
+# The mutable-state column tokens that denote playback/progress state (a subset of
+# ``_STATE_TOKENS``). A state-write-backed table carrying one of these backs a
+# playback flow's mutation.
+_PLAYBACK_STATE_TOKENS = frozenset({
+    "progress", "seconds", "secs", "elapsed", "remaining", "position", "offset",
+    "timecode", "watched", "played", "viewed", "seen", "watchtime",
 })
 
 _WRITE_METHODS = frozenset({"POST", "PUT", "PATCH"})
@@ -370,14 +416,43 @@ def _normalize_inventory(fi: Dict[str, Any]) -> Tuple[List[str], List[str]]:
     return [], flows
 
 
+def _mutation_verb_of(token: str) -> Optional[str]:
+    """Return the mutation verb a single word-part *is a form of*, else ``None``.
+
+    A token matches a verb when it is the bare verb OR the verb followed by a real
+    inflection suffix (``_VERB_SUFFIXES``): ``play``/``player``/``playing`` ->
+    ``play``; ``mark``/``marks``/``marking`` -> ``mark``. A word that merely STARTS
+    with a verb but whose remainder is not a suffix does NOT match — ``marketing``
+    (``mark`` + ``eting``) and ``playlist`` (``play`` + ``list``) are not
+    mutations. Descriptive/identity tokens (``poster`` etc.) and view-only tokens
+    can never be a verb even if they inflection-match (``poster`` -> ``post``)."""
+    if not token or token in _DESCRIPTIVE_TOKENS or token in _VIEW_ONLY_TOKENS:
+        return None
+    if token in _MUTATION_VERBS:
+        return token
+    for v in sorted(_MUTATION_VERBS):
+        if len(v) >= 3 and token.startswith(v) and token[len(v):] in _VERB_SUFFIXES:
+            return v
+    return None
+
+
 def _flow_mutation_verb(flow_name: str) -> Optional[str]:
-    """Return the mutation verb a flow name implies, else ``None``. Word-part
-    matched (exact for short verbs, prefix for len>=4) so ``continue_watching`` ->
-    ``watch`` and ``player`` -> ``play`` while ``display`` does NOT hit ``play``."""
-    for p in _split_ident(flow_name):
-        for v in _MUTATION_VERBS:
-            if p == v or (len(v) >= 4 and p.startswith(v)):
-                return v
+    """Return the mutation verb a flow name genuinely implies, else ``None``.
+
+    Rule 2 (non-mutation flows): a flow whose word-parts are ALL view-only/static
+    (``landing_marketing``, ``browse_home``, ``splash``) implies no write and
+    returns ``None``. Otherwise the first word-part that is a form of a mutation
+    verb wins (``player`` -> ``play``, ``continue_watching`` -> ``watch``,
+    ``create_order`` -> ``create``). A flow carrying BOTH a view-only token and a
+    real mutation verb is still a mutation flow — view-only tokens never suppress a
+    genuine write requirement."""
+    parts = _split_ident(flow_name)
+    if not parts:
+        return None
+    for p in parts:
+        v = _mutation_verb_of(p)
+        if v:
+            return v
     return None
 
 
@@ -485,19 +560,78 @@ def check_state_entity_no_write(tables: Dict[str, Any],
     return out
 
 
+def state_entities_with_write(tables: Dict[str, Any],
+                              endpoints: Dict[str, Any]) -> Dict[str, List[str]]:
+    """The COMPLEMENT of ``state_entities_missing_write``: state-bearing entities
+    that DO have a POST/PUT/PATCH endpoint — i.e. their mutation is satisfied by a
+    real write (e.g. ``continue_watching`` once #556 projects its progress write).
+    Returned as ``{entity: [state_column, ...]}``. Shares the SAME classifier and
+    the SAME endpoint reconciliation as the error-side detection, so the two can
+    never drift."""
+    out: Dict[str, List[str]] = {}
+    for entity, cols in _state_entities(tables).items():
+        methods = _methods_touching(endpoints, _entity_tokens(entity))
+        if methods & _WRITE_METHODS:
+            out[entity] = cols
+    return out
+
+
+def _has_playback_state_write(state_write_backed: Dict[str, List[str]]) -> bool:
+    """True iff some state-write-backed entity carries a playback/progress state
+    column — the write that records a ``play``/``watch``/``resume`` mutation."""
+    for cols in state_write_backed.values():
+        for col in cols:
+            if any(p in _PLAYBACK_STATE_TOKENS for p in _split_ident(col)):
+                return True
+    return False
+
+
+def _flow_references_entity(flow_parts: List[str], entity: str) -> bool:
+    """True iff the flow name contains the entity as a sub-phrase — every word-part
+    of ``entity`` appears among ``flow_parts`` (``track_watch_progress`` references
+    ``watch_progress``). Word-part matched so a partial word never collides."""
+    ent_parts = _split_ident(entity)
+    if not ent_parts:
+        return False
+    fset = set(flow_parts)
+    return all(p in fset for p in ent_parts)
+
+
 def check_flow_no_write(hubs, endpoints: Dict[str, Any],
-                        flows: List[str]) -> List[CompletenessResult]:
-    """A declared feature-inventory FLOW whose verb implies mutation but which no
-    write (POST/PUT/PATCH) endpoint backs."""
+                        flows: List[str],
+                        tables: Optional[Dict[str, Any]] = None) -> List[CompletenessResult]:
+    """A declared feature-inventory FLOW whose verb genuinely implies a mutation
+    but which NO write (POST/PUT/PATCH) endpoint backs.
+
+    A flow's mutation is considered SATISFIED (not flagged) when any of:
+      * its subject tokens touch a write endpoint's route (``_methods_touching``);
+      * its subject tokens reference a state entity that HAS a write endpoint
+        (``state_entities_with_write`` — the #556 complement); or
+      * it is a playback/progress-class flow (``play``/``watch``/``resume``) and
+        the app has a state-write endpoint on a progress-bearing table (the
+        Continue-Watching write that records playback progress).
+
+    Non-mutation flows (view-only/static: marketing, landing, splash, browse …)
+    carry no mutation verb and are never candidates. Only a flow whose verb truly
+    implies a write, with NO backing write anywhere, is flagged — so a real gap
+    still surfaces while already-satisfied / static flows do not."""
     out: List[CompletenessResult] = []
+    tables = tables or {}
+    state_write_backed = state_entities_with_write(tables, endpoints)
+    playback_backed = _has_playback_state_write(state_write_backed)
     for flow in flows:
         verb = _flow_mutation_verb(flow)
         if not verb:
-            continue
+            continue  # rule 2: non-mutation / view-only flow implies no write
         tokens = _entity_tokens(flow)
         methods = _methods_touching(endpoints, tokens)
         if methods & _WRITE_METHODS:
             continue  # a write endpoint plausibly backs the flow
+        flow_parts = _split_ident(flow)
+        if any(_flow_references_entity(flow_parts, ent) for ent in state_write_backed):
+            continue  # rule 1: flow references a state entity that HAS a write
+        if verb in _PLAYBACK_VERBS and playback_backed:
+            continue  # rule 1: playback mutation recorded via a progress write
         out.append(CompletenessResult(
             check_id="completeness_flow_no_write",
             ok=False, severity="warn", flow=flow, missing_verb=verb,
@@ -560,7 +694,7 @@ def compute_completeness(hubs) -> CompletenessReport:
         entities, flows = _normalize_inventory(_load_feature_inventory(hubs))
 
         report.results.extend(check_state_entity_no_write(tables, endpoints))
-        report.results.extend(check_flow_no_write(hubs, endpoints, flows))
+        report.results.extend(check_flow_no_write(hubs, endpoints, flows, tables))
         report.results.extend(check_entity_no_read(endpoints, entities))
     except Exception:
         # Defense in depth: a malformed hub must never crash the gate.
@@ -571,5 +705,6 @@ def compute_completeness(hubs) -> CompletenessReport:
 __all__ = [
     "CompletenessResult", "CompletenessReport", "compute_completeness",
     "check_state_entity_no_write", "check_flow_no_write", "check_entity_no_read",
-    "state_entities_missing_write", "_is_state_column", "_state_entities",
+    "state_entities_missing_write", "state_entities_with_write",
+    "_is_state_column", "_state_entities", "_flow_mutation_verb",
 ]
