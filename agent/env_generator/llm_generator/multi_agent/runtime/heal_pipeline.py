@@ -588,7 +588,13 @@ class HealPipeline:
                             auth_required=bool(_ep.get("auth_required")),
                             projected_by="completeness_state_write_heal_556",
                             state_columns=list(_ep.get("state_columns") or []),
-                            natural_keys=list(_ep.get("natural_keys") or []))
+                            natural_keys=list(_ep.get("natural_keys") or []),
+                            # #556-pt2: the subject FK(s) + owner FK let the FRONTEND
+                            # (frontend_scaffold._load_state_write_endpoints_556b) fire
+                            # this write from the player action with the right body keys
+                            # (owner is server-derived; body carries subject + state).
+                            subject_fks=list(_ep.get("subject_fks") or []),
+                            owner_fk=_ep.get("owner_fk"))
                     except Exception as _rex:
                         orch._logger.debug(
                             "state-write endpoint registration skipped (%s %s): %s",

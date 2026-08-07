@@ -3100,6 +3100,15 @@ def _load_design_for_projection(frontend_dir) -> Dict[str, Any]:
                         d["_registered_get_endpoints"] = _reg
                 except Exception:
                     pass
+                # #556-pt2: attach the app's PROJECTED state-write endpoints so the
+                # player screen can fire the write (play -> persist -> resume). Empty
+                # when the #556 heal projected none -> no write wiring is emitted.
+                try:
+                    _sw = _load_state_write_endpoints_556b(frontend_dir)
+                    if _sw:
+                        d["_state_write_endpoints"] = _sw
+                except Exception:
+                    pass
             return d if isinstance(d, dict) else {}
     except Exception:
         pass
@@ -5160,6 +5169,186 @@ def _hero_title_crop_url_461(screen, design) -> str:
     return ""
 
 
+# === #556-pt2 (frontend companion to the #556 state-write heal) =============
+# #556 auto-projects a backend UPSERT WRITE endpoint (POST on a state
+# collection, projected_by 'completeness_state_write_heal_556') for any
+# state-bearing entity that had a GET (a read/rail) but no write — e.g. POST
+# /api/continue-watching persisting progress_seconds, owner-scoped. But the
+# FRONTEND never fired it, so the "resume watching" UX recorded NOTHING (the
+# Continue-Watching rail only reflected seed data). This half makes the projected
+# frontend FIRE that write from the natural mutating action (playing a title on
+# the player screen), so the rail reflects real viewing on reload. Everything is
+# derived from the projected write descriptor + the entity's own columns — no
+# product literals; byte-identical when no such endpoint exists.
+_OWNER_FK_RE_556B = re.compile(
+    r"^(user|owner|account|profile|member|author|customer|creator|actor)_?id$", re.I)
+
+
+def _slug_556b(s) -> str:
+    """alpha-only, lowercased, de-pluralized token (for entity/FK slug matching)."""
+    return re.sub(r"[^a-z]", "", str(s or "").lower()).rstrip("s")
+
+
+def _fk_subject_slug_556b(fk) -> str:
+    """The SUBJECT slug named by an FK column: strip the ``_id``/``id`` suffix then
+    slug it (``title_id`` -> ``title``), so it matches the content entity (``titles``
+    -> ``title``). Generalizable, no product literals."""
+    f = str(fk or "").lower()
+    if f.endswith("_id"):
+        f = f[:-3]
+    elif f.endswith("id") and len(f) > 2:
+        f = f[:-2]
+    return _slug_556b(f)
+
+
+def _state_write_descriptor_556b(path, md) -> Dict[str, Any]:
+    """Normalize a registered #556 write endpoint into a frontend descriptor:
+    {path, state_columns, natural_keys, subject_fks, owner_fk}. ``subject_fks`` /
+    ``owner_fk`` are read straight from the descriptor when present (the heal
+    registers them); otherwise derived from ``natural_keys`` by peeling off the
+    owner-like FK (the owner is SERVER-derived — the #556 handler overrides it — so
+    the body carries only the subject FK(s) + the state value)."""
+    md = md or {}
+    nat = [str(k) for k in (md.get("natural_keys") or []) if k]
+    subj = md.get("subject_fks")
+    owner = md.get("owner_fk")
+    if not subj:
+        if not owner:
+            owner = next((k for k in nat if _OWNER_FK_RE_556B.match(k)), None)
+        subj = [k for k in nat if k != owner]
+    return {
+        "path": str(path),
+        "state_columns": [str(c) for c in (md.get("state_columns") or []) if c],
+        "natural_keys": nat,
+        "subject_fks": [str(s) for s in (subj or []) if s],
+        "owner_fk": owner,
+    }
+
+
+def _load_state_write_endpoints_556b(frontend_dir) -> List[Dict[str, Any]]:
+    """The app's PROJECTED STATE-WRITE endpoints (#556) from
+    shared/hubs/registryhub_endpoints.json (walked up from frontend_dir, same as
+    _load_registered_get_endpoints): every POST whose ``metadata.projected_by`` is
+    ``completeness_state_write_heal_556``. Returns one normalized descriptor per
+    endpoint so the frontend can fire the write from the natural mutating action.
+    Best-effort → [] (then NO write wiring is emitted → byte-identical)."""
+    import json as _json
+    from pathlib import Path as _P
+    out: List[Dict[str, Any]] = []
+    try:
+        base = _P(frontend_dir).resolve()
+        for up in [base] + list(base.parents)[:6]:
+            reg = up / "shared" / "hubs" / "registryhub_endpoints.json"
+            if not reg.is_file():
+                continue
+            data = _json.loads(reg.read_text(encoding="utf-8"))
+            stack = [data]
+            while stack:
+                x = stack.pop()
+                if isinstance(x, dict):
+                    md = x.get("metadata") if isinstance(x.get("metadata"), dict) else {}
+                    if (str((md or {}).get("projected_by") or "")
+                            == "completeness_state_write_heal_556"
+                            and str(x.get("method") or "").upper() == "POST"
+                            and x.get("path")):
+                        out.append(_state_write_descriptor_556b(x.get("path"), md))
+                    stack.extend(x.values())
+                elif isinstance(x, list):
+                    stack.extend(x)
+            break  # first registry found wins
+    except Exception:
+        return []
+    seen: Set[str] = set()
+    uniq: List[Dict[str, Any]] = []
+    for d in out:
+        if d["path"] in seen:
+            continue
+        seen.add(d["path"])
+        uniq.append(d)
+    return uniq
+
+
+def _state_write_effect_556b(screen, page, design) -> str:
+    """#556-pt2: for a PLAYER screen whose subject entity has a projected #556
+    state-write endpoint, emit a ``useEffect`` that POSTs the state (the subject FK
+    keyed to the played record + the state column) to that write endpoint on
+    play-start, periodically, and on unmount/leave — closing continue-watching
+    END-TO-END (play -> persist -> resume): the Continue-Watching rail (a GET
+    already read on load) now reflects REAL viewing after a reload.
+
+    Everything is DERIVED (no product literals): the POST path + the subject-FK
+    body key + the state-column body key come from the projected write descriptor
+    + the entity's own columns. The subject id is the loaded record's ``id`` (else
+    the route's own param). The owner (profile/user) is SERVER-derived — the #556
+    handler overrides it — so the body carries only the subject key + state value.
+
+    Returns '' when no such endpoint applies to this screen -> the emitted
+    component is BYTE-IDENTICAL (apps without the heal are unaffected).
+
+    Extension point: only the player->numeric-progress case is wired here — the one
+    case with a naturally-generated continuous value. A boolean/status state column
+    (is_watched / status) would fire the same POST from ITS own control (a toggle
+    button); hook it where that control is emitted, reusing this descriptor."""
+    sw = (design or {}).get("_state_write_endpoints") or []
+    if not sw or not _screen_is_player_449(screen):
+        return ""
+    # the SUBJECT this player plays = the app's content entity (image-bearing
+    # dataset), else the route's trailing collection segment.
+    subj_slug = _slug_556b(_content_entity_from_design(design) or "")
+    if not subj_slug:
+        route = str((page or {}).get("route") or (screen or {}).get("route") or "")
+        tail = re.sub(r"[:{].*$", "", route).strip("/").split("/")
+        subj_slug = _slug_556b(tail[-1] if tail else "")
+    # pick the write endpoint whose subject FK names THIS screen's subject; a lone
+    # state entity on a player screen matches by construction (the common case).
+    chosen: Optional[Tuple[Dict[str, Any], str]] = None
+    for d in sw:
+        for fk in d.get("subject_fks") or []:
+            if _fk_subject_slug_556b(fk) and _fk_subject_slug_556b(fk) == subj_slug:
+                chosen = (d, fk)
+                break
+        if chosen:
+            break
+    if chosen is None and len(sw) == 1 and (sw[0].get("subject_fks")):
+        chosen = (sw[0], sw[0]["subject_fks"][0])
+    if chosen is None:
+        return ""
+    d, subject_fk = chosen
+    state_cols = d.get("state_columns") or []
+    if not state_cols:
+        return ""
+    state_col = state_cols[0]  # player -> the continuous progress column
+    path = d["path"]
+    _rt_pm = re.search(r"[:{]([a-zA-Z_]\w*)",
+                       str((page or {}).get("route")
+                           or (screen or {}).get("route") or ""))
+    route_param = _rt_pm.group(1) if _rt_pm else "id"
+
+    def _q(s: str) -> str:  # single-quoted JS string literal (identifiers/paths)
+        return "'" + str(s).replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+    _body = "{ " + _q(subject_fk) + ": _swSid, " + _q(state_col) + ": _swPlayed.current }"
+    return (
+        # #556-pt2: record playback progress to the projected state-write endpoint.
+        "  const _swPlayed = useRef(0);\n"
+        "  useEffect(() => {\n"
+        "    const _swSid = (cur && cur.id) || params." + route_param + ";\n"
+        "    if (_swSid === undefined || _swSid === null) return;\n"
+        "    const _swTok = (localStorage.getItem('access_token') || localStorage.getItem('token'));\n"
+        "    const _swPost = () => {\n"
+        "      fetch(" + _q(path) + ", {\n"
+        "        method: 'POST',\n"
+        "        headers: { 'Content-Type': 'application/json', ...(_swTok ? { Authorization: 'Bearer ' + _swTok } : {}) },\n"
+        "        body: JSON.stringify(" + _body + "),\n"
+        "      }).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); }).catch(() => {});\n"
+        "    };\n"
+        "    _swPost();\n"  # play start
+        "    const _swTimer = setInterval(() => { _swPlayed.current += 15; _swPost(); }, 15000);\n"
+        "    return () => { clearInterval(_swTimer); _swPost(); };\n"  # pause / leave / unmount
+        "  }, [cur && cur.id]);\n"
+    )
+
+
 def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str, Any],
                            design: Dict[str, Any], nav_routes, get_ep: str) -> str:
     """Emit a reference-structured, data-populated page: one layout band per
@@ -6348,9 +6537,16 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             "    : (data && data.item ? [data.item] : (Array.isArray(data) ? data\n"
             "      : (data && typeof data === 'object' ? (Object.values(data).find((v) => Array.isArray(v)) || []) : [])));\n"
             "  const cur = rows.length ? rows[Math.min(idx, rows.length - 1)] : null;\n")
+    # #556-pt2: fire the projected state-write endpoint from the player's viewing
+    # action (play -> persist -> resume). '' when no such endpoint applies to this
+    # screen -> the emitted component is byte-identical (needs no useRef import).
+    _sw_effect_556b = _state_write_effect_556b(screen, page, design)
+    _react_import_556b = (
+        "import { useState, useEffect, useRef } from 'react';\n" if _sw_effect_556b
+        else "import { useState, useEffect } from 'react';\n")
     return (
         _STRUCTURED_MARKER + "\n"
-        "import { useState, useEffect } from 'react';\n"
+        + _react_import_556b +
         "import { useParams } from 'react-router-dom';\n"
         + _REF_HELPERS_JS + _refimgs_js + "\n"
         f"export default function {name}() {{\n"
@@ -6363,6 +6559,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
         + _effect_547
         + "  }, []);\n"
         + _rows_cur_547
+        + _sw_effect_556b
         + "  return (\n"
         + (
             # #429 detail-modal: a scrim + centered card, NO app-shell nav/aside
