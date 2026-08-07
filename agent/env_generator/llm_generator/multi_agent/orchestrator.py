@@ -262,6 +262,20 @@ def _fwval_stuck_decision(stuck_count: int, *,
     return "wait"
 
 
+# Delivery-gate blockers that a RE-RUN of framework validation can clear (as opposed to
+# a structural failure — docker/contract/build/ui_* — that a re-run cannot). These are
+# the checks whose verdict is (re-)recorded by RunValidationTool against the LIVE app:
+#   * business_chain_failing        — re-executing every verification chain re-records
+#                                     fresh per-chain status (a TRANSIENT step failure —
+#                                     e.g. a login 500 right after a compose restart —
+#                                     clears; a genuine bug re-fails and still blocks).
+#   * verification_checklist_not_ready — re-records FRESH build:* CodeHub checks (#502).
+# Shared by _fwval_can_early_return (keep the coordination loop running) and
+# _final_gate_revalidation_warranted (bounded final-gate re-run before rc=1).
+REVALIDATION_FIXABLE_CHECKS = frozenset({
+    "business_chain_failing", "verification_checklist_not_ready"})
+
+
 def _fwval_can_early_return(has_passing_run: bool, failed_checks) -> bool:
     """May ``_maybe_run_framework_validation`` EARLY-RETURN (a gate-passing api_smoke run
     already exists, nothing left for it to do)?
@@ -291,8 +305,7 @@ def _fwval_can_early_return(has_passing_run: bool, failed_checks) -> bool:
     # 15 endpoints, 0 docker_up errors); #492 fired 3× but this early-return blocked the
     # re-validation → final gate failed → main() returned 1, no release. Keep the loop
     # running for BOTH re-validation-fixable blockers so #492's reset is actually used.
-    _revalidation_fixable = {"business_chain_failing", "verification_checklist_not_ready"}
-    return not (_revalidation_fixable & set(failed_checks or []))
+    return not (REVALIDATION_FIXABLE_CHECKS & set(failed_checks or []))
 
 
 def _abort_grace_should_defer(is_deliver_stuck: bool, grace_used: int,
@@ -382,9 +395,10 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
 # FIX #139: registry-state check classes a lane can flip during the delivery tail —
 # a FRESH milestone-gate verdict outranks a final-gate re-read that fails ONLY on
 # these (ig run-61: a chain re-registered status='registered' 1s before the final
-# evaluation; outlook run-28/31 were the live-probe flavor of the same drift).
-FINAL_GATE_DRIFT_CLASSES = frozenset({
-    "business_chain_failing", "verification_checklist_not_ready"})
+# evaluation; outlook run-28/31 were the live-probe flavor of the same drift). Same
+# membership as REVALIDATION_FIXABLE_CHECKS — a re-validatable blocker is exactly one
+# a stale milestone verdict can outrank OR a re-run can clear.
+FINAL_GATE_DRIFT_CLASSES = REVALIDATION_FIXABLE_CHECKS
 
 
 def _final_gate_drift_waiver(ms_cleared_at, failed_checks, now: float,
@@ -399,6 +413,31 @@ def _final_gate_drift_waiver(ms_cleared_at, failed_checks, now: float,
         return False
     failed = set(failed_checks or [])
     return bool(failed) and failed <= FINAL_GATE_DRIFT_CLASSES
+
+
+def _final_gate_revalidation_warranted(failed_checks) -> bool:
+    """True when a failed FINAL gate should trigger a BOUNDED re-run of framework
+    validation (re-execute every verification chain against the LIVE backend and
+    re-record fresh status) BEFORE raising rc=1, rather than failing immediately.
+
+    Warranted iff the failure set is NON-EMPTY and consists ONLY of re-validatable
+    checks (``REVALIDATION_FIXABLE_CHECKS``) — a STRUCTURAL failure
+    (docker/contract/build/ui_*) is not re-runnable and MUST raise immediately, so
+    any check outside that set disqualifies the whole set.
+
+    WHY (netflix r105, 2026-08-06): on the visual-ESCAPE delivery path
+    (deliver-anyway) the framework-deliver clear branch never runs, so
+    ``_milestone_gate_cleared_at`` is never stamped and the #139 drift-waiver above
+    cannot fire. The existing final-gate readiness retry only WAITS + RE-READS the
+    (stale) chain registry — it never RE-EXECUTES the chains — so a TRANSIENT chain
+    failure at the final gate (r105: ``auth_register_login_round_trip`` hit a single
+    ``POST /auth/login → 500`` while two IDENTICAL login chains passed in the same
+    pass) wedged an otherwise fully-green run (Part-A solved, delivered 6× before) to
+    rc=1 with NO release. A clean-boot re-run clears the transient; a genuine failure
+    (a create 500ing deterministically, a 2xx-expected step returning 4xx) re-fails
+    and still raises — so this never ships a broken app. Pure + unit-tested."""
+    failed = set(failed_checks or [])
+    return bool(failed) and failed <= REVALIDATION_FIXABLE_CHECKS
 
 
 class Orchestrator:
@@ -1865,6 +1904,48 @@ class Orchestrator:
                             int(time.time() - _ms_clear), sorted(_failed))
                         gate = dict(gate)
                         gate["ok"] = True
+                if not gate["ok"] and not getattr(self, "_final_gate_revalidated", False):
+                    # FINAL-GATE CONVERGENCE RE-RUN (#553, netflix r105, live): the readiness
+                    # retry above only WAITS + RE-READS the chain registry — it never RE-EXECUTES
+                    # the chains — and on the visual-ESCAPE delivery path the #139 drift-waiver is
+                    # unavailable (_milestone_gate_cleared_at is never stamped when the visual gate
+                    # ESCAPES rather than CLEARS). So a TRANSIENT chain failure at the final gate
+                    # (r105: auth_register_login_round_trip hit ONE POST /auth/login → 500 while two
+                    # IDENTICAL login chains passed in the same pass) killed an otherwise fully-green
+                    # run (Part-A solved, delivered 6× before) to rc=1 with NO release. When the ONLY
+                    # blockers are re-validatable (business_chain_failing / verification_checklist_not
+                    # _ready — NOT structural docker/contract/build/ui_*), do ONE bounded re-run of
+                    # framework validation (RunValidationTool: clean boot + re-execute every chain
+                    # against the live backend + re-record fresh chain/build status), then re-evaluate
+                    # ONCE. A transient failure clears; a GENUINE failure (a create 500ing
+                    # deterministically, a 2xx-expected step returning 4xx) re-fails and still raises
+                    # below — so this NEVER ships a broken app. Bounded via _final_gate_revalidated.
+                    _failed = set(gate.get("failed_checks") or [])
+                    if _final_gate_revalidation_warranted(_failed):
+                        self._final_gate_revalidated = True  # at most ONE re-run per run()
+                        self._logger.warning(
+                            "FINAL-GATE CONVERGENCE RE-RUN (#553): the final gate failed ONLY on "
+                            "re-validatable check(s) %s and the #139 drift-waiver did not apply "
+                            "(visual-ESCAPE delivery path leaves _milestone_gate_cleared_at unset). "
+                            "Re-EXECUTING framework validation (clean boot + re-run every "
+                            "verification chain against the live backend, re-recording fresh "
+                            "status) before deciding — a transient chain failure clears; a genuine "
+                            "one re-fails and still raises.", sorted(_failed))
+                        try:
+                            from tools.validation_tools import RunValidationTool
+                            _rv = RunValidationTool(workspace=None)
+                            _rv._hubs = getattr(self, "hubs", None)
+                            _rv._agent_id = "orchestrator"
+                            await _rv.execute()
+                        except Exception as _rv_err:
+                            self._logger.error(
+                                "FINAL-GATE CONVERGENCE RE-RUN raised (non-fatal — gate is "
+                                "re-evaluated on whatever state exists): %s", _rv_err)
+                        gate = self._validate_delivery_gate()
+                        if gate["ok"]:
+                            self._logger.warning(
+                                "FINAL-GATE CONVERGENCE RE-RUN CLEARED the gate — the prior "
+                                "failure was transient/re-runnable; delivering.")
                 if not gate["ok"]:
                     report = self._format_delivery_gate_report(gate)
                     raise RuntimeError(f"Delivery gate failed.\n{report}")
