@@ -330,7 +330,7 @@ def build_router(db: OAuthStore, jwt_manager: JWTManager) -> APIRouter:
         if not isinstance(body, dict):
             body = {}
         email = str(body.get("email") or "").strip()
-        password = body.get("password") or ""
+        password = str(body.get("password") or "")
         if not email or not password:
             return JSONResponse(
                 {"detail": "email and password are required"}, status_code=422)
@@ -363,7 +363,7 @@ def build_router(db: OAuthStore, jwt_manager: JWTManager) -> APIRouter:
             body = {}
         if not isinstance(body, dict):
             body = {}
-        password = body.get("password") or ""
+        password = str(body.get("password") or "")
         tenant_id = str(body.get("tenant_id") or "default")
         email = str(body.get("email") or "").strip()
         username = str(body.get("username") or "").strip()
