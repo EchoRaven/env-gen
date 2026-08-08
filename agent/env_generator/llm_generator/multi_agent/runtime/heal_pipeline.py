@@ -519,7 +519,106 @@ def heal_state_write_endpoints(backend_dir, registryhub, tables=None,
                 logger.debug("state-write projection skipped: %s", exc)
             except Exception:
                 pass
+    # #566f note: request-schema completion for lane-declared creates runs in the delivery-time
+    # heal loop (see the heal_state_write_endpoints call site), NOT here — so it stays OUT of the
+    # #557 R4 completeness-enforce path (a distinct concern: that gate is state-write completeness).
     return result
+
+
+def heal_create_endpoint_request_schemas(registryhub, backend_dir, logger=None) -> dict:
+    """#566f (netflix r115/r117): a LANE-DECLARED create (e.g. POST /api/my-list) can be registered
+    with NO ``schema.request`` and no subject_fks, so the test-user journey's ``_probe_body`` — and
+    chain synth / frontend — omit the target table's required subject FK (``title_id``) → NOT-NULL 400.
+    #566d fixed only the #556-PROJECTED state-writes (which already carry ``subject_fks``); a
+    lane-declared create carries none, so #566d never reached it.
+
+    Generalize: for EVERY registered ``POST`` create on a COLLECTION whose target table has non-owner
+    FK columns missing from ``schema.request``, ADD them (flat ``{fk: "int"}``, the shape ``_probe_body``
+    reads). Reuses the #556 subject-FK derivation (``_fk_columns`` minus ``_owner_fk``) — the framework
+    does not model column nullability, so a non-owner ``_id``/ForeignKey is treated as a required subject
+    FK by the same convention #556/#566d already use.
+
+    BYTE-SAFE: only ADDS missing non-owner FK ids; never overwrites an existing request field; EXCLUDES
+    the server-derived owner FK (the projected handler injects it from the session); preserves the
+    endpoint's provider/status/metadata. The projected handler drops any non-column key and maps a bad
+    FK to 404, so this can only ever add the missing required id. Best-effort, never raises. No product
+    literals. Returns ``{"healed": [{"path", "added"}, ...]}``."""
+    healed: List[dict] = []
+    if registryhub is None:
+        return {"healed": healed}
+    try:
+        from pathlib import Path as _P
+        from .route_projector import _orm_models, _resource_model, _fk_columns, _owner_fk
+        try:
+            from .kickoff.contract import FIXED_ENDPOINT_KINDS as _FIXED
+        except Exception:
+            _FIXED = frozenset()
+        try:
+            models = _orm_models(_P(backend_dir))
+        except Exception:
+            models = {}
+        if not models:
+            return {"healed": healed}
+        try:
+            eps = registryhub.get_endpoints() or {}
+        except Exception:
+            return {"healed": healed}
+        for _rec in list(eps.values() if isinstance(eps, dict) else eps):
+            try:
+                if not isinstance(_rec, dict):
+                    continue
+                if str(_rec.get("method") or "").upper() != "POST":
+                    continue
+                path = str(_rec.get("path") or "")
+                if not path.startswith("/"):
+                    continue
+                segs = [s for s in path.strip("/").split("/") if s]
+                # create on a COLLECTION only: no path params (skip nested/item/action verbs)
+                if not segs or any(s.startswith("{") or s.startswith(":") for s in segs):
+                    continue
+                _kind = str((_rec.get("metadata") or {}).get("kind") or _rec.get("kind") or "")
+                if _kind in _FIXED:
+                    continue
+                res = _resource_model(path, models)
+                if not res:
+                    continue
+                _table, meta = res
+                owner_fk = _owner_fk(meta)
+                subject_fks = [c for c in _fk_columns(meta) if c != owner_fk]
+                if not subject_fks:
+                    continue
+                schema = dict(_rec.get("schema") or {})
+                _req = schema.get("request")
+                existing_req = dict(_req) if isinstance(_req, dict) else {}
+                missing = [fk for fk in subject_fks if fk not in existing_req]
+                if not missing:
+                    continue
+                schema["request"] = {**existing_req, **{fk: "int" for fk in missing}}
+                registryhub.register_endpoint(
+                    method=_rec.get("method"), path=path,
+                    schema=schema,
+                    provider=_rec.get("provider") or "backend",
+                    agent="orchestrator",
+                    status=_rec.get("status") or "defined",
+                    response_key=(_rec.get("metadata") or {}).get("response_key")
+                    or schema.get("response_key") or "item",
+                    auth_required=bool((_rec.get("metadata") or {}).get("auth_required")
+                                       or schema.get("auth_required")))
+                healed.append({"path": path, "added": missing})
+                if logger is not None:
+                    try:
+                        logger.warning(
+                            "🔧 #566f completed request schema of %s — lane-declared create omitted "
+                            "required subject FK(s) %s, so probes/chains/frontend sent no value → "
+                            "NOT-NULL 400. Added them (server-derived owner FK excluded).",
+                            path, missing)
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+        return {"healed": healed}
+    except Exception:
+        return {"healed": healed}
 
 
 class HealPipeline:
@@ -803,6 +902,15 @@ class HealPipeline:
                 _P(out_dir) / "app" / "backend", registryhub,
                 tables=_tbls, owner_scoped_tables=owner_scoped_tables,
                 logger=orch._logger)
+            # #566f: complete request schemas for LANE-DECLARED creates (superset of #566d,
+            # which only reaches #556-projected state-writes) — so the test-user journey probe /
+            # chain synth / frontend send the target table's required subject FK(s). Runs in the
+            # delivery-time heal loop only (NOT the #557 R4 enforce path). Best-effort.
+            try:
+                heal_create_endpoint_request_schemas(
+                    registryhub, _P(out_dir) / "app" / "backend", logger=orch._logger)
+            except Exception:
+                pass
 
             res = project_missing_routes(
                 _P(out_dir) / "app" / "backend", declared,
