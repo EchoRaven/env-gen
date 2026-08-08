@@ -245,6 +245,50 @@ def reconcile_integration_frontend_pages(repo_root, logger=None) -> dict:
         return {}
 
 
+def reconcile_integration_frontend_app_jsx(repo_root, ui_pages, logger=None) -> dict:
+    """#566e (netflix r117 — 75-min M1 timeout via ui-page churn): the App.jsx ROUTE analogue of
+    #566b (which reconciles page COMPONENTS). The delivery gate audits integration's
+    ``<repo>/app/frontend/src/App.jsx`` and hard-blocks on ``route `/x` not wired in App.jsx``. A
+    frontend lane's committed App.jsx route edit reaches integration ONLY via
+    merge_committed_agent_work, which aborts-on-conflict + SUPERSEDES lane edits to framework-touched
+    files — and the framework rewrites App.jsx every heal tick — so a committed route edit can sit
+    unmerged across every gate poll → deliverability_ui_page_unwired stays red → re-dispatch churn
+    (r117: 96 finishes in ~9 min) → STUCK / no-deliver timeout.
+
+    Deterministically wire every DECLARED ui_page route into the integration App.jsx before the audit
+    reads, reusing the additive, idempotent, gate-predicate-sharing injector
+    ``frontend_scaffold.project_missing_ui_routes`` (only injects routes the gate would flag as
+    unwired; never removes/rewrites a lane route; never raises). Best-effort; byte-identical when every
+    declared route is already wired or App.jsx is absent. No product literals. Returns
+    ``{"injected": [...], "count": n}`` or ``{}``."""
+    try:
+        from pathlib import Path as _P
+        from .frontend_scaffold import project_missing_ui_routes
+        app = _P(repo_root) / "app" / "frontend" / "src" / "App.jsx"
+        if not app.is_file():
+            return {}
+        try:
+            text = app.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return {}
+        new_text, injected = project_missing_ui_routes(text, list(ui_pages or []))
+        if injected and new_text != text:
+            app.write_text(new_text, encoding="utf-8")
+            if logger is not None:
+                try:
+                    logger.warning(
+                        "🔀 #566e wired %d declared route(s) into integration App.jsx (lane route "
+                        "committed-but-unmerged or absent): %s — the delivery gate was reading a "
+                        "route the declared page needs but App.jsx did not wire.",
+                        len(injected), ", ".join(injected))
+                except Exception:
+                    pass
+            return {"injected": injected, "count": len(injected)}
+        return {}
+    except Exception:
+        return {}
+
+
 # #512 (netflix r84, 2026-08-05, user-surfaced) — DISTRIBUTE REAL SEED MEDIA. The LLM-authored
 # seed wired the SAME single image to every catalog row's poster/backdrop (r84: all 30 titles →
 # '/assets/crops/browse_home__poster-card-1.png'), so every rail rendered 30 IDENTICAL cards —

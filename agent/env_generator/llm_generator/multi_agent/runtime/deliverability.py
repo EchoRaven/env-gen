@@ -133,6 +133,15 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
     try:
         from .heal_pipeline import reconcile_integration_frontend_pages
         reconcile_integration_frontend_pages(Path(app_root).parent)
+        # #566e: also wire DECLARED routes into integration App.jsx (the route analogue of #566b's
+        # component reconcile). A lane's committed App.jsx route edit reaches integration only via a
+        # conflict-abort/supersede merge, so it can sit unmerged across every poll → 'route not wired'
+        # stays red → re-dispatch churn (r117). Source the same page set the audit uses; additive +
+        # idempotent, so byte-identical once all routes are wired. Component reconcile runs FIRST so the
+        # injected ./pages/{comp} import resolves to a real component.
+        from .heal_pipeline import reconcile_integration_frontend_app_jsx
+        _pages = workhub.get_ui_pages() or {}
+        reconcile_integration_frontend_app_jsx(Path(app_root).parent, list(_pages.values()))
     except Exception:
         pass
     try:
