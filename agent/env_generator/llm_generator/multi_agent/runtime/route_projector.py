@@ -660,6 +660,29 @@ def _scope_fk(child_meta: Dict[str, Any], parent_table: str, parent_singular: st
     return None
 
 
+def _assoc_table(
+    models: Dict[str, Dict[str, Any]], parent_table: Optional[str], child_table: Optional[str]
+) -> Optional[Tuple[str, str, str]]:
+    """For a MANY-TO-MANY nested collection whose child has no direct parent FK
+    (``_scope_fk`` → None), find the association table linking parent↔child and return
+    ``(assoc_cls, parent_link_col, child_link_col)``. Generalizable: ANY third table
+    whose FKs point to BOTH the parent and the child qualifies — e.g. ``title_genres``
+    (``genre_id``→genres, ``title_id``→titles) for ``/genres/{id}/titles``. Returns None
+    when nothing links them (the caller then best-effort lists, still 404-ing a missing
+    parent). No product literals: keyed purely off the contract's FK graph."""
+    if not parent_table or not child_table:
+        return None
+    for _t, _m in (models or {}).items():
+        if _t in (parent_table, child_table):
+            continue
+        fks = _m.get("fks", {}) or {}
+        p_col = next((c for c, tgt in fks.items() if tgt == parent_table), None)
+        c_col = next((c for c, tgt in fks.items() if tgt == child_table), None)
+        if p_col and c_col:
+            return (_m["cls"], p_col, c_col)
+    return None
+
+
 def _target_fk(child_meta: Dict[str, Any], parent_table: str, parent_singular: str) -> Optional[str]:
     """The child column naming the TARGET of a relation (the path-param parent) —
     e.g. ``following_id`` for ``Follow`` under ``/users/{username}/follow``."""
@@ -895,6 +918,32 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             f'    rows = db.query({cls}).filter(getattr({cls}, "{scope_fk}") == parent.id).limit(100).all()',
             f'    return {{"items": [{_serialize_expr("r", cols)} for r in rows], "total": len(rows)}}',
         ]
+    elif cls and m == "GET" and not _ends_in_param(path) and parent_ctx:
+        # NESTED COLLECTION, no direct child→parent FK (scope_fk is None): the link is
+        # MANY-TO-MANY via an association table (e.g. /genres/{id}/titles where `titles`
+        # has no genre_id column — the link lives in title_genres). The old code fell
+        # THROUGH to the plain-collection branch below → returned EVERY child row, 200,
+        # ignoring the parent entirely (netflix r112 live: GET /api/genres/{missing}/titles
+        # → 200 instead of 404 → business_chain wedged for ~50 min, never cut a release).
+        # Resolve the parent (404 if missing — mirrors the scope_fk branch above, incl. the
+        # #288/#77 owner filter) and, when an association table links parent↔child, scope
+        # the list THROUGH it so the child rows are actually the parent's.
+        _assoc = _assoc_table(models, parent_table, table)
+        body_lines = [
+            f'    parent = db.query({parent_cls}).filter(getattr({parent_cls}, "{parent_field}") == {parent_param}){_parent_owner_filter}.first()',
+            "    if parent is None:",
+            '        raise HTTPException(status_code=404, detail="not found")',
+        ]
+        if _assoc:
+            _acls, _a_pcol, _a_ccol = _assoc
+            body_lines.append(
+                f'    rows = db.query({cls}).join({_acls}, getattr({_acls}, "{_a_ccol}") == getattr({cls}, "id")).filter(getattr({_acls}, "{_a_pcol}") == parent.id).limit(100).all()'
+            )
+        else:
+            body_lines.append(f"    rows = db.query({cls}).limit(100).all()")
+        body_lines.append(
+            f'    return {{"items": [{_serialize_expr("r", cols)} for r in rows], "total": len(rows)}}'
+        )
     elif cls and m == "GET" and _ends_in_param(path) and last_param and _is_id_param(last_param):
         # GET item by id
         body_lines = [
