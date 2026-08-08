@@ -160,6 +160,91 @@ def reconcile_integration_seed(repo_root, logger=None) -> dict:
         return {}
 
 
+def reconcile_integration_frontend_pages(repo_root, logger=None) -> dict:
+    """#566b (netflix r113 — fail-fast rc=1) — the frontend lane authors a REAL page
+    component in ITS worktree, but the integration tree the delivery gate audits
+    (deliverability_ui_page_unwired) can still hold the projector STUB / framework-fallback
+    for that page until a lane→integration merge lands. Between merges every gate poll
+    re-reads the stub and reports the page 'declared but unusable'; if it persists
+    FWVAL_STUCK_ABORT_AFTER ticks the run FAIL-FAST aborts (r113: TitleDetailPage was a real
+    390-line page in the lane worktree, a stub in integration → STUCK-ABORT ~1s after the
+    real page finally flipped app_wired=True).
+
+    Mirror reconcile_integration_seed: when an integration page file is a stub/fallback (or
+    missing) but a lane worktree has a REAL version (calls the api client OR wires handlers,
+    and is not the framework fallback), copy the real one onto integration BEFORE the audit
+    reads. NEVER clobbers a real integration page; best-effort, never raises. Generalizable
+    — no product literals; the real-vs-stub decision reuses the frontend_audit predicates.
+    Returns ``{"reconciled": [names], "count": n}`` or ``{}`` when there is nothing to do."""
+    try:
+        from pathlib import Path as _P
+        from .frontend_audit import _has_real_api_call, _is_generic_fallback_page
+        _PLACEHOLDER = ("this section is being set up", "under construction",
+                        "coming soon", "placeholder page", "todo: implement")
+        _HANDLERS = ("onSubmit", "onClick", "fetch(", "apiGet", "apiPost",
+                     "apiPut", "apiDelete", "axios", "api.", "await api")
+
+        def _read(p):
+            try:
+                return _P(p).read_text(encoding="utf-8")
+            except Exception:
+                return None
+
+        def _is_stub(text) -> bool:
+            if not text:
+                return True                       # missing → treat as stub
+            if any(m in text.lower() for m in _PLACEHOLDER):
+                return True
+            return _is_generic_fallback_page(text)
+
+        def _is_real(text) -> bool:
+            if not text or _is_stub(text):
+                return False
+            return _has_real_api_call(text) or any(t in text for t in _HANDLERS)
+
+        repo = _P(repo_root)
+        wt = repo / "worktrees"
+        if not wt.is_dir():
+            return {}
+        integ_pages = repo / "app" / "frontend" / "src" / "pages"
+        # best (longest) REAL candidate per page filename across all lane worktrees
+        best = {}
+        for d in sorted(wt.iterdir()):
+            wt_pages = d / "app" / "frontend" / "src" / "pages"
+            if not wt_pages.is_dir():
+                continue
+            for wt_file in sorted(list(wt_pages.glob("*.jsx")) + list(wt_pages.glob("*.tsx"))):
+                wt_text = _read(wt_file)
+                if not _is_real(wt_text):
+                    continue
+                cur = best.get(wt_file.name)
+                if cur is None or len(wt_text) > len(cur[1]):
+                    best[wt_file.name] = (wt_file, wt_text)
+        reconciled = []
+        for name, (_wt_file, wt_text) in best.items():
+            integ_file = integ_pages / name
+            if not _is_stub(_read(integ_file)):
+                continue                          # integration already real → never clobber
+            try:
+                integ_file.parent.mkdir(parents=True, exist_ok=True)
+                integ_file.write_text(wt_text, encoding="utf-8")
+                reconciled.append(name)
+            except Exception:
+                continue
+        if reconciled and logger is not None:
+            try:
+                logger.warning(
+                    "🔀 #566b reconciled %d integration frontend page(s) from lane worktrees "
+                    "(stub/fallback in integration, real in lane): %s — the delivery gate was "
+                    "reading a stale stub for a page the lane had already built.",
+                    len(reconciled), ", ".join(sorted(reconciled)))
+            except Exception:
+                pass
+        return {"reconciled": sorted(reconciled), "count": len(reconciled)} if reconciled else {}
+    except Exception:
+        return {}
+
+
 # #512 (netflix r84, 2026-08-05, user-surfaced) — DISTRIBUTE REAL SEED MEDIA. The LLM-authored
 # seed wired the SAME single image to every catalog row's poster/backdrop (r84: all 30 titles →
 # '/assets/crops/browse_home__poster-card-1.png'), so every rail rendered 30 IDENTICAL cards —

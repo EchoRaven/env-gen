@@ -125,6 +125,16 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
     workhub = getattr(hub_registry, "workhub", None)
     if workhub is None:
         return []
+    # #566b: reconcile lane-authored REAL page components onto integration BEFORE the audit
+    # reads (mirrors #324's seed reconcile). Else a page the frontend lane already built in
+    # its worktree, but not yet merged, reads as the integration stub → a spurious
+    # deliverability_ui_page_unwired that can persist and trip the 7-cycle STUCK-ABORT
+    # (netflix r113). Idempotent, best-effort, never clobbers a real integration page.
+    try:
+        from .heal_pipeline import reconcile_integration_frontend_pages
+        reconcile_integration_frontend_pages(Path(app_root).parent)
+    except Exception:
+        pass
     try:
         return ui_page_delivery_blockers(Path(app_root) / "frontend" / "src", workhub)
     except Exception:

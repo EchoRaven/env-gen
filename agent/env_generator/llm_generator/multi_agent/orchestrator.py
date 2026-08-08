@@ -2909,6 +2909,30 @@ class Orchestrator:
                 else:
                     self._fwdeliver_stuck_key = _stuck_key
                     self._fwdeliver_stuck_count = 1
+                # #566b LAST-CHANCE RECONCILE before the fail-fast latch: if we are about to
+                # abort with deliverability_ui_page_unwired among the blockers, first surface
+                # any lane-committed-but-unmerged frontend page onto integration. If that copies
+                # a real page it is genuine progress (r113: the real 390-line TitleDetailPage sat
+                # in the lane worktree while integration held the projector stub, and the abort
+                # fired ~1s after it finally merged) → reset the stuck counter so the abort does
+                # NOT latch this cycle. Best-effort; no-op when there is no unmerged real page.
+                if (self._fwdeliver_stuck_count >= FWVAL_STUCK_ABORT_AFTER
+                        and not getattr(self, "_fwval_abort_reason", None)
+                        and "deliverability_ui_page_unwired" in _failed):
+                    try:
+                        from pathlib import Path as _P
+                        from .runtime.heal_pipeline import reconcile_integration_frontend_pages
+                        _rc = reconcile_integration_frontend_pages(
+                            _P(getattr(self, "output_dir", "") or "."), self._logger)
+                    except Exception:
+                        _rc = {}
+                    if _rc.get("count"):
+                        self._logger.warning(
+                            "DELIVERY-GATE STUCK-ABORT deferred: reconciled %d lane frontend "
+                            "page(s) onto integration — committed lane work had not merged; "
+                            "treating as progress, not a wedge.", _rc.get("count"))
+                        self._fwdeliver_stuck_count = 1
+                        self._fwdeliver_stuck_key = None
                 if (self._fwdeliver_stuck_count >= FWVAL_STUCK_ABORT_AFTER
                         and not getattr(self, "_fwval_abort_reason", None)):
                     # Diagnostics accuracy: this branch can latch even when api_smoke
