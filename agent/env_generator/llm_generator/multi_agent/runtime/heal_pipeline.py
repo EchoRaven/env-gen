@@ -423,10 +423,21 @@ def heal_state_write_endpoints(backend_dir, registryhub, tables=None,
             _P(backend_dir), _eps, _tbls, owner_scoped_tables=owner_scoped_tables)
         for _ep in (_sw.get("endpoints") or []):
             try:
+                # #566d (netflix r115 advisory journey): emit a `request` sub-schema from
+                # the subject FK(s) so contract-derived probes (test-user _probe_body, chain
+                # synth, frontend) send them. Without it a projected state-write create (e.g.
+                # POST /api/continue-watching) sent no title_id → NOT-NULL 400. Subject FKs are
+                # ids (int); the projected handler drops any non-column key and maps a bad FK to
+                # 404 (tolerated), so this only ever ADDS the missing required id. No literals.
+                _req_schema = {
+                    str(_fk): "int" for _fk in (_ep.get("subject_fks") or []) if _fk}
+                _schema = {"response_key": _ep.get("response_key", "item"),
+                           "auth_required": bool(_ep.get("auth_required"))}
+                if _req_schema:
+                    _schema["request"] = _req_schema
                 registryhub.register_endpoint(
                     method=_ep["method"], path=_ep["path"],
-                    schema={"response_key": _ep.get("response_key", "item"),
-                            "auth_required": bool(_ep.get("auth_required"))},
+                    schema=_schema,
                     provider="orchestrator", agent="orchestrator",
                     status="implemented",
                     response_key=_ep.get("response_key", "item"),
