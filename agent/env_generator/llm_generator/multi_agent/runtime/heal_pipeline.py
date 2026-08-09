@@ -584,16 +584,32 @@ def heal_create_endpoint_request_schemas(registryhub, backend_dir, logger=None) 
                     continue
                 _table, meta = res
                 owner_fk = _owner_fk(meta)
+                _cols = list(meta.get("cols", []) or [])
                 subject_fks = [c for c in _fk_columns(meta) if c != owner_fk]
-                if not subject_fks:
+                # #566i (r119): also complete common REQUIRED non-FK TEXT columns. A create like
+                # POST /api/profiles NOT-NULL-violates on `name` when the probe omits it
+                # (IntegrityError 23502 → the handler's "invalid field value" 400) — but `name` is
+                # not a FK, so the #566f subject-FK pass alone skipped it (profiles has only the
+                # owner FK). Nullability isn't modeled in _orm_models, so use the SAME generic
+                # required-text-column convention _fw_owner_val's auto-create already applies. These
+                # are generic scalar names (never a product literal); sending a probe value for an
+                # optional one is harmless, and it satisfies the NOT-NULL for a required one.
+                _REQ_TEXT = ("name", "title", "label", "display_name", "nickname")
+                _to_add = {}
+                for _fk in subject_fks:
+                    _to_add[_fk] = "int"
+                for _c in _cols:
+                    if _c in _REQ_TEXT and _c != owner_fk and _c not in subject_fks:
+                        _to_add[_c] = "str"
+                if not _to_add:
                     continue
                 schema = dict(_rec.get("schema") or {})
                 _req = schema.get("request")
                 existing_req = dict(_req) if isinstance(_req, dict) else {}
-                missing = [fk for fk in subject_fks if fk not in existing_req]
+                missing = {k: v for k, v in _to_add.items() if k not in existing_req}
                 if not missing:
                     continue
-                schema["request"] = {**existing_req, **{fk: "int" for fk in missing}}
+                schema["request"] = {**existing_req, **missing}
                 registryhub.register_endpoint(
                     method=_rec.get("method"), path=path,
                     schema=schema,
@@ -604,14 +620,14 @@ def heal_create_endpoint_request_schemas(registryhub, backend_dir, logger=None) 
                     or schema.get("response_key") or "item",
                     auth_required=bool((_rec.get("metadata") or {}).get("auth_required")
                                        or schema.get("auth_required")))
-                healed.append({"path": path, "added": missing})
+                healed.append({"path": path, "added": sorted(missing.keys())})
                 if logger is not None:
                     try:
                         logger.warning(
-                            "🔧 #566f completed request schema of %s — lane-declared create omitted "
-                            "required subject FK(s) %s, so probes/chains/frontend sent no value → "
-                            "NOT-NULL 400. Added them (server-derived owner FK excluded).",
-                            path, missing)
+                            "🔧 #566f/#566i completed request schema of %s — lane-declared create "
+                            "omitted required field(s) %s (subject FK and/or NOT-NULL text column), so "
+                            "probes/chains/frontend sent no value → NOT-NULL 400. Added them "
+                            "(server-derived owner FK excluded).", path, sorted(missing.keys()))
                     except Exception:
                         pass
             except Exception:
