@@ -788,6 +788,16 @@ def _fw_owner_val(cls, col, user):
     except Exception as _e:
         _fw_dbg("fw_owner_val.resolve", _e)
         _v = _fw_uid(user)
+    # #566h (r119 instrument): log the RESOLVED owner value per call so a read-after-write
+    # mismatch (POST binds profile_id=X, GET filters profile_id=Y → created row absent from
+    # the list) is pinnable from the backend container log under FW_DEBUG. Best-effort;
+    # runs AFTER resolution so it can never affect the resolved value.
+    try:
+        _fw_dbg("fw_owner_val.resolved", {
+            "table": getattr(getattr(cls, "__table__", None), "name", None),
+            "col": col, "uid": _fw_uid(user), "resolved": _v})
+    except Exception:
+        pass
     try:
         _pt = getattr(cls, col).type.python_type
     except Exception as _e:
