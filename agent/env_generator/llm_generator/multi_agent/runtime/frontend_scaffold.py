@@ -4756,6 +4756,23 @@ def wire_detail_modal_534(frontend_dir) -> Dict[str, object]:
             cur = page_file.read_text(encoding="utf-8")
         except Exception:
             return {"wired": None}
+        # #566j: NEVER clobber a REAL lane-authored detail PAGE. #534 exists to fix a
+        # framework MIS-projection (a detail route projected as a video player); but when the
+        # lane already built a genuine full detail page (it fetches + renders the detail
+        # itself), overwriting it with an 11-line modal-mount DESTROYS real UI and — via the
+        # audit's inert check — wedges deliverability_ui_page_unwired to the 75-min no-deliver
+        # abort (netflix r117/r120: a real 230-line TitleDetailPage was overwritten by this
+        # heal). Only re-project a framework projection/stub, never a real lane page.
+        try:
+            from .frontend_audit import _has_real_api_call as _hrac534
+            _cur_is_lane_real = (
+                _hrac534(cur)
+                and _STRUCTURED_MARKER not in cur and _PAGE_MARKER not in cur
+                and "framework-projected" not in cur and "framework-wired" not in cur)
+        except Exception:
+            _cur_is_lane_real = False
+        if _cur_is_lane_real:
+            return {"wired": None}   # lane authored a real detail page → leave it intact
         if ("framework-wired detail modal" in cur
                 or re.search(r"import\s+" + re.escape(modal_name) + r"\b", cur)):
             return {"wired": None}   # already mounts the modal → byte-identical

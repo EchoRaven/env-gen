@@ -399,8 +399,14 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         # stub → deliverability_ui_page_unwired wedged M1 7 cycles on a working app.
         # Mirror the existing service-module delegation tolerance: credit a page that
         # imports >=1 component from a components/ path AND renders a custom JSX child.
+        # #566j: allow an optional FILE EXTENSION on the import path — `import X from
+        # '../components/X.jsx'` (or .tsx/.js) is the common style, and the old
+        # `components/\w+['"]` (word immediately followed by a quote) MISSED it, so a page
+        # that mounts `<X/>` from a .jsx import was falsely inert → ui_page_unwired wedge
+        # to the 75-min no-deliver abort (netflix r117/r120: TitleDetailPage mounting a
+        # TitleDetailModal.jsx). Extension-agnostic now.
         _composes_child = bool(re.search(
-            r"import\s+\w+\s+from\s+['\"][^'\"]*components/\w+['\"]",
+            r"import\s+\w+\s+from\s+['\"][^'\"]*components/\w+(?:\.\w+)?['\"]",
             comp_file_text)) and bool(re.search(r"<[A-Z]\w+[\s/>]", comp_file_text))
         _declared_but_inert = (bool(apis) and not _has_call and not _composes_child
                                and not any(tok in comp_file_text for tok in _HANDLER_TOKENS))
