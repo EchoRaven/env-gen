@@ -421,27 +421,49 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                 try:
                     await page.goto(frontend_base + route,
                                     wait_until="networkidle", timeout=20000)
-                    for inp in await page.locator("input").all():
-                        ph = ((await inp.get_attribute("placeholder")) or "").lower()
-                        typ = ((await inp.get_attribute("type")) or "").lower()
-                        if "email" in ph or typ == "email" or "mobile" in ph:
-                            await inp.fill(f"uiflow{sfx}@t.io")
-                        elif "pass" in ph or typ == "password":
-                            await inp.fill("UiFlow123!x")
-                        elif "user" in ph:
-                            await inp.fill(f"uiflow{sfx}")
-                        elif "name" in ph:
-                            await inp.fill("Ui Flow")
-                        else:
-                            await inp.fill(f"uiflow{sfx}")
-                    btn = page.locator(
-                        "button[type=submit], form button, button").first
-                    await btn.click()
-                    await page.wait_for_timeout(2500)
-                    token = await page.evaluate(
-                        "() => localStorage.getItem('token') || "
-                        "localStorage.getItem('access_token')")
-                    moved = not page.url.rstrip("/").endswith(route)
+                    async def _fill_visible_inputs():
+                        for inp in await page.locator("input").all():
+                            try:
+                                if not await inp.is_visible():
+                                    continue        # step-hidden field (e.g. password before step 1)
+                            except Exception:
+                                pass
+                            ph = ((await inp.get_attribute("placeholder")) or "").lower()
+                            typ = ((await inp.get_attribute("type")) or "").lower()
+                            if "email" in ph or typ == "email" or "mobile" in ph:
+                                await inp.fill(f"uiflow{sfx}@t.io")
+                            elif "pass" in ph or typ == "password":
+                                await inp.fill("UiFlow123!x")
+                            elif "user" in ph:
+                                await inp.fill(f"uiflow{sfx}")
+                            elif "name" in ph:
+                                await inp.fill("Ui Flow")
+                            else:
+                                await inp.fill(f"uiflow{sfx}")
+
+                    # Up to 3 fill+submit rounds so a legitimate MULTI-STEP auth form is not
+                    # mis-reported as "form not wired". Netflix-style email-first login
+                    # (LoginPage `single=true`) ADVANCES a step on the first submit WITHOUT
+                    # calling the API and reveals the password field only then — a single click
+                    # stores no token + does not navigate, which the old one-shot check read as
+                    # a dead form. Re-fill the now-visible fields and submit again; stop as soon
+                    # as a token is stored or the page navigates. Single-step forms succeed on
+                    # round 1 (later rounds are a no-op once token/navigation is observed).
+                    token, moved = None, False
+                    for _round in range(3):
+                        await _fill_visible_inputs()
+                        try:
+                            await page.locator(
+                                "button[type=submit], form button, button").first.click()
+                        except Exception:
+                            break
+                        await page.wait_for_timeout(2000)
+                        token = await page.evaluate(
+                            "() => localStorage.getItem('token') || "
+                            "localStorage.getItem('access_token')")
+                        moved = not page.url.rstrip("/").endswith(route)
+                        if token or moved:
+                            break
                     ok = bool(token) or moved
                     out["flows"].append({
                         "flow": label, "ok": ok,
