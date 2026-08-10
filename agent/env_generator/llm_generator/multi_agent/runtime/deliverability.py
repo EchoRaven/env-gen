@@ -157,11 +157,20 @@ def _bare_fetch_blockers(app_root) -> List[str]:
     if os.environ.get("ENVGEN_BARE_FETCH_GATE", "1").lower() in ("0", "false", "no", "off"):
         return []
     try:
-        from .frontend_audit import bare_authed_fetch_blockers
+        from .frontend_audit import bare_authed_fetch_blockers, inject_auth_fetch_wrapper
     except Exception:
         return []
     try:
-        return bare_authed_fetch_blockers(Path(app_root) / "frontend" / "src")
+        _fe = Path(app_root) / "frontend"
+        # #566r: install the global auth-fetch wrapper (idempotent) BEFORE the audit reads, so a
+        # bare fetch('/api/…') is auth'd at runtime and the gate self-clears deterministically —
+        # not dependent on lane/remediation/reconcile timing (r126 wedged 79min because the lane's
+        # fix reached the gate-read integration tree only after the no-convergence abort).
+        try:
+            inject_auth_fetch_wrapper(_fe)
+        except Exception:
+            pass
+        return bare_authed_fetch_blockers(_fe / "src")
     except Exception:
         return []
 

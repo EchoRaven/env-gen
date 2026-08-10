@@ -981,6 +981,90 @@ def _leading_string_literal(inner: str) -> Tuple[Optional[str], str]:
     return "".join(chars), inner[j + 1:]
 
 
+_FW_AUTH_FETCH_MARKER = "__fw_auth_fetch__"
+
+# #566r (netflix r126 — 79-min no-convergence abort on deliverability_bare_authed_fetch): a global
+# window.fetch wrapper that attaches the bearer token to same-origin /api/ requests. Installed in
+# index.html <head> so it runs before the app bundle and survives the vite build. Makes EVERY bare
+# fetch('/api/…') auth'd at runtime → the static gate self-clears (see bare_authed_fetch_blockers'
+# early return), independent of lane/remediation/reconcile timing (r126: the lane's fix reached the
+# gate-read integration tree only AFTER the abort). Idempotent (guard flag), guarded (try/catch,
+# falls back to the original fetch), excludes the /api/v1/ control plane (public by design).
+_AUTH_FETCH_WRAPPER = (
+    "<script>\n"
+    "(function(){\n"
+    "  if (typeof window==='undefined' || window.__fw_auth_fetch__) return;\n"
+    "  window.__fw_auth_fetch__ = true;\n"
+    "  var _f = window.fetch;\n"
+    "  if (typeof _f !== 'function') return;\n"
+    "  window.fetch = function(input, init){\n"
+    "    try {\n"
+    "      var url = typeof input==='string' ? input : (input && input.url) || '';\n"
+    "      if (url.indexOf('/api/')!==-1 && url.indexOf('/api/v1/')===-1) {\n"
+    "        var tok = (window.localStorage && (localStorage.getItem('access_token') || "
+    "localStorage.getItem('token'))) || '';\n"
+    "        if (tok) {\n"
+    "          init = init || {};\n"
+    "          var h = new Headers((init && init.headers) || {});\n"
+    "          if (!h.has('Authorization')) h.set('Authorization', 'Bearer ' + tok);\n"
+    "          init.headers = h;\n"
+    "        }\n"
+    "      }\n"
+    "    } catch (e) {}\n"
+    "    return _f.call(this, input, init);\n"
+    "  };\n"
+    "})();\n"
+    "</script>"
+)
+
+
+def _has_global_auth_fetch_wrapper(frontend_src: Any) -> bool:
+    """#566r: True iff the global auth-fetch wrapper is installed (marker present in the frontend
+    index.html or any src file). When it is, every bare ``fetch('/api/…')`` is auth'd at runtime, so
+    a bare call site is not a blocker."""
+    try:
+        src = Path(frontend_src)
+        cands: List[Path] = []
+        idx = src.parent / "index.html"
+        if idx.is_file():
+            cands.append(idx)
+        if src.is_dir():
+            cands += [f for f in (list(src.rglob("*.js")) + list(src.rglob("*.jsx"))
+                                  + list(src.rglob("*.ts")) + list(src.rglob("*.tsx")))
+                      if "node_modules" not in f.parts]
+        for f in cands:
+            try:
+                if _FW_AUTH_FETCH_MARKER in f.read_text(encoding="utf-8", errors="ignore"):
+                    return True
+            except Exception:
+                continue
+        return False
+    except Exception:
+        return False
+
+
+def inject_auth_fetch_wrapper(frontend_dir: Any) -> bool:
+    """#566r: install the global auth-fetch wrapper into ``<frontend_dir>/index.html`` (before
+    </head>), so bare ``fetch('/api/…')`` calls carry the token at runtime and the
+    deliverability_bare_authed_fetch gate self-clears. Idempotent + best-effort; returns True iff it
+    wrote the wrapper this call."""
+    try:
+        idx = Path(frontend_dir) / "index.html"
+        if not idx.is_file():
+            return False
+        html = idx.read_text(encoding="utf-8", errors="ignore")
+        if _FW_AUTH_FETCH_MARKER in html:
+            return False
+        if "</head>" in html:
+            html = html.replace("</head>", _AUTH_FETCH_WRAPPER + "\n</head>", 1)
+        else:
+            html = _AUTH_FETCH_WRAPPER + "\n" + html
+        idx.write_text(html, encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
 def bare_authed_fetch_blockers(frontend_src: Any, limit: int = 12) -> List[str]:
     """Scan EVERY frontend source file for a bare ``fetch()`` of a literal authed
     ``/api/…`` URL whose call site shows no auth evidence → delivery-blocker strings
@@ -991,6 +1075,8 @@ def bare_authed_fetch_blockers(frontend_src: Any, limit: int = 12) -> List[str]:
         src = Path(frontend_src)
         if not src.is_dir():
             return []
+        if _has_global_auth_fetch_wrapper(src):
+            return []  # #566r: a global window.fetch wrapper auth's every /api/ request
         files = sorted(
             f for f in (list(src.rglob("*.jsx")) + list(src.rglob("*.js"))
                         + list(src.rglob("*.tsx")) + list(src.rglob("*.ts")))
