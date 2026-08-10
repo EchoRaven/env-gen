@@ -108,15 +108,35 @@ def _list_items(payload: Any) -> List[Any]:
     return []
 
 
-def _find_by_id(items: List[Any], new_id: Any) -> Optional[Dict[str, Any]]:
-    """The row whose id matches ``new_id`` (type-tolerant, mirrors #122's str-compare)."""
+def _find_by_id(items: List[Any], new_id: Any,
+                res_key: Any = None) -> Optional[Dict[str, Any]]:
+    """The row whose id matches ``new_id`` (type-tolerant, mirrors #122's str-compare).
+
+    #566k: a create returns the ENTRY id (POST /api/my-list → {"item":{"id": <my_list row>}}),
+    but a DENORMALIZED list view keys items by the RELATED entity — e.g. GET /api/my-list returns
+    titles (item `id` = title id) with the entry id under a `<table>_id` alias (`my_list_id`). So
+    also match ``new_id`` against a resource-derived ``<res>_id`` alias, else a genuinely-persisted
+    row reads as ABSENT (netflix r121: 13 false 'ABSENT' advisories on a working my-list/
+    continue-watching whose write DID persist). Restricted to the resource's OWN alias (not any
+    ``*_id``) so an unrelated FK that happens to equal ``new_id`` can't produce a false match."""
     if new_id is None:
         return None
     want = str(new_id)
+    aliases = set()
+    if res_key:
+        k = str(res_key).strip().strip("/").replace("-", "_")
+        for cand in (k, k[:-1] if k.endswith("s") else k):   # my_list / continue_watching (+ deplural)
+            if cand:
+                aliases.add(cand + "_id")
     for it in items or []:
-        if isinstance(it, dict) and it.get("id") is not None and (
+        if not isinstance(it, dict):
+            continue
+        if it.get("id") is not None and (
                 it.get("id") == new_id or str(it.get("id")) == want):
             return it
+        for a in aliases:
+            if it.get(a) is not None and (it.get(a) == new_id or str(it.get(a)) == want):
+                return it
     return None
 
 
@@ -142,7 +162,8 @@ def _write_lost(written: Any, read: Any) -> bool:
 
 
 def _created_appears(payload: Any, res_label: str, new_id: Any,
-                     state_fields: Optional[Mapping[str, Any]] = None):
+                     state_fields: Optional[Mapping[str, Any]] = None,
+                     res_key: Any = None):
     """R3(a): a REAL list-persistence assertion. The prior ``_appears`` ALWAYS returned
     True, so a created row that was ABSENT from the subsequent list never failed (a
     non-persisting write read as green). Now: when we created a row (``new_id`` known) it
@@ -151,7 +172,7 @@ def _created_appears(payload: Any, res_label: str, new_id: Any,
     items = _list_items(payload)
     if new_id is None:
         return True, f"{len(items)} {res_label} listed"  # not applicable — advisory
-    found = _find_by_id(items, new_id)
+    found = _find_by_id(items, new_id, res_key=res_key)
     if found is None:
         return False, (f"created {res_label} (id={new_id}) is ABSENT from the "
                        f"{res_label} list — the write did not persist")
@@ -295,10 +316,10 @@ def _api_crud_journey(base: str, business_eps: List[Mapping[str, Any]], token: O
         new_id = _first_id(_json(cres))
 
         if c["list"]:
-            def _appears(payload, _res=res, _id=new_id, _sf=_state_fields):
+            def _appears(payload, _res=res, _id=new_id, _sf=_state_fields, _bc=base_col):
                 # R3(a): REAL persistence check — a created row absent from the list (or
                 # present with a lost state value) is now BROKEN, not advisory-True.
-                return _created_appears(payload, _res, _id, _sf)
+                return _created_appears(payload, _res, _id, _sf, res_key=_bc)
             rec(f"list {res}", "GET", base_col, _http("GET", base + base_col, token=token), _appears)
         if new_id is not None and c["item_get"]:
             ip = _path_with_params(c["item_get"], str(new_id))
