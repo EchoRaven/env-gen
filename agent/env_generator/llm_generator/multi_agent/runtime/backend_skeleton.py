@@ -812,6 +812,63 @@ def _fw_owner_val(cls, col, user):
         pass
     return _v
 
+
+def _fw_owns(cls, col, fk_val, user):
+    """#566s (netflix r127 cross-user IDOR): True iff the CLIENT-SUPPLIED owner FK ``fk_val`` for
+    ``cls.col`` belongs to the caller — the caller's own user id for a direct user-owned FK, or a
+    sub-entity (profile / member / character / sub_account) the caller owns for a per-user
+    sub-entity FK. Lets an owner-scoped create REJECT (403) a cross-user write (userB POSTing a
+    body ``profile_id`` that is userA's) WHILE still honoring the caller's own NON-default
+    sub-entity (multi-profile). Reuses _fw_owner_val's proven FK introspection. Fail-OPEN only on
+    an introspection/query FAULT (a framework bug must never block a legitimate write); a clean
+    "not owned" returns False → the handler 403s."""
+    try:
+        if fk_val is None or fk_val == "":
+            return True   # absent → the handler resolves the caller's own via _fw_owner_val
+        _uid = _fw_uid(user)
+        _tgt_table = None
+        _tgt_col = None
+        for _fk in getattr(cls, col).property.columns[0].foreign_keys:
+            _tgt_table = _fk.column.table
+            _tgt_col = _fk.column.name
+            break
+        _USER_TABLES = ("users", "user", "accounts", "account")
+        # direct user-owned FK (or self / unknown target) → the value must be the caller's own uid
+        if (_tgt_table is None or _tgt_table.name in _USER_TABLES
+                or _tgt_table.name == cls.__table__.name):
+            try:
+                return str(fk_val) == str(_uid)
+            except Exception:
+                return True
+        # per-user SUB-ENTITY FK → the value must be a row in T owned by the caller
+        _sub_ufk = None
+        for _tc in _tgt_table.columns:
+            for _tfk in _tc.foreign_keys:
+                if _tfk.column.table.name in _USER_TABLES:
+                    _sub_ufk = _tc.name
+                    break
+            if _sub_ufk:
+                break
+        if _sub_ufk is None:
+            return True   # T is not a per-user sub-entity → cannot assert ownership → fail-open
+        _Sub = None
+        for _m in Base.registry.mappers:
+            _t = getattr(_m, "local_table", None)
+            if _t is not None and getattr(_t, "name", None) == _tgt_table.name:
+                _Sub = _m.class_
+                break
+        if _Sub is None:
+            return True
+        with SessionLocal() as _s:
+            _row = (_s.query(_Sub)
+                      .filter(getattr(_Sub, _tgt_col) == fk_val)
+                      .filter(getattr(_Sub, _sub_ufk) == _uid).first())
+            return _row is not None
+    except Exception as _e:
+        _fw_dbg("fw_owns", _e)
+        return True
+
+
 def _coerce_body(cls, valid):
     """#395: coerce a create/update body's scalar values to each column's ACTUAL type
     before the INSERT. Verification chains send loosely-typed values — netflix: a thumbs

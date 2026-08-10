@@ -1259,7 +1259,14 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             if m == "POST" and auth:
                 ofk = _owner_fk(meta, exclude=tuple(bound))
                 if ofk:
-                    body_lines += [f'    valid.setdefault("{ofk}", _fw_owner_val({cls}, "{ofk}", user))']
+                    # #566s: REJECT a cross-user create — a body owner-FK the caller does NOT own
+                    # → 403 (IDOR: userB POSTing body profile_id=userA's). An OWNED value is kept
+                    # (multi-profile); absent → resolve the caller's own via _fw_owner_val.
+                    body_lines += [
+                        f'    if valid.get("{ofk}") is not None and not _fw_owns({cls}, "{ofk}", valid.get("{ofk}"), user):',
+                        f'        raise HTTPException(status_code=403, detail="{ofk} does not belong to the caller")',
+                        f'    valid.setdefault("{ofk}", _fw_owner_val({cls}, "{ofk}", user))',
+                    ]
             if not _action_unmapped:
                 body_lines += [
                     # valid was already coerced to the column types up-front (rank-4,
@@ -1621,7 +1628,8 @@ def _generate_upsert_handler(method: str, path: str, cls: str, cols: List[str],
     ]
     # OWNER-SCOPING: inject the authenticated caller into the owner FK so the row is
     # attributed to (and the natural-key lookup is scoped to) the caller — never trust
-    # a client-supplied owner id.
+    # a client-supplied owner id. (This upsert path OVERRIDES the body owner FK, so it is
+    # already safe against the #566s cross-user IDOR — no ownership check needed here.)
     if auth and owner_fk:
         body_lines.append(
             f'    valid["{owner_fk}"] = _fw_owner_val({cls}, "{owner_fk}", user)')
