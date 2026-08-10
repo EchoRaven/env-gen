@@ -202,6 +202,7 @@ def _orm_models(backend_dir: Path) -> Dict[str, Dict[str, Any]]:
         cols: List[str] = []
         fks: Dict[str, str] = {}
         types: Dict[str, str] = {}
+        required: List[str] = []
         for stmt in node.body:
             # __tablename__ = "users"
             if isinstance(stmt, ast.Assign):
@@ -224,8 +225,23 @@ def _orm_models(backend_dir: Path) -> Dict[str, Dict[str, Any]]:
                             if (getattr(fc, "id", None) == "ForeignKey" or getattr(fc, "attr", None) == "ForeignKey") \
                                     and a.args and isinstance(a.args[0], ast.Constant):
                                 fks[name] = str(a.args[0].value).split(".")[0]
+                        # #566n: a column the create body MUST supply = NOT-NULL, not the PK,
+                        # and no default/server_default. Lets the request-schema heal add exactly
+                        # the required fields (e.g. rating.value) without over-sending optional or
+                        # server-defaulted columns.
+                        _kw = {k.arg: k.value for k in stmt.value.keywords if k.arg}
+                        def _is_true(_v):
+                            return isinstance(_v, ast.Constant) and _v.value is True
+                        def _is_false(_v):
+                            return isinstance(_v, ast.Constant) and _v.value is False
+                        _is_pk = _is_true(_kw.get("primary_key"))
+                        _notnull = _is_false(_kw.get("nullable"))
+                        _has_default = ("default" in _kw) or ("server_default" in _kw)
+                        if _notnull and not _is_pk and not _has_default:
+                            required.append(name)
         if tablename:
-            models[tablename] = {"cls": node.name, "cols": cols, "fks": fks, "types": types}
+            models[tablename] = {"cls": node.name, "cols": cols, "fks": fks,
+                                 "types": types, "required": required}
     return models
 
 

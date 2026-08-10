@@ -548,7 +548,8 @@ def heal_create_endpoint_request_schemas(registryhub, backend_dir, logger=None) 
         return {"healed": healed}
     try:
         from pathlib import Path as _P
-        from .route_projector import _orm_models, _resource_model, _fk_columns, _owner_fk
+        from .route_projector import (_orm_models, _resource_model, _fk_columns,
+                                      _owner_fk, _match_model)
         try:
             from .kickoff.contract import FIXED_ENDPOINT_KINDS as _FIXED
         except Exception:
@@ -573,8 +574,14 @@ def heal_create_endpoint_request_schemas(registryhub, backend_dir, logger=None) 
                 if not path.startswith("/"):
                     continue
                 segs = [s for s in path.strip("/").split("/") if s]
-                # create on a COLLECTION only: no path params (skip nested/item/action verbs)
-                if not segs or any(s.startswith("{") or s.startswith(":") for s in segs):
+                # #566n: heal a genuine COLLECTION create — top-level (POST /api/my-list) OR
+                # NESTED (POST /api/titles/{id}/rating). Skip only ITEM ops (last segment is a
+                # path param, e.g. DELETE-shaped /api/my-list/{id}). The last-segment-matches-table
+                # guard below then excludes ACTION verbs (/{id}/toggle, /{id}/like).
+                if not segs:
+                    continue
+                _last = segs[-1]
+                if _last.startswith("{") or _last.startswith(":"):
                     continue
                 _kind = str((_rec.get("metadata") or {}).get("kind") or _rec.get("kind") or "")
                 if _kind in _FIXED:
@@ -583,24 +590,50 @@ def heal_create_endpoint_request_schemas(registryhub, backend_dir, logger=None) 
                 if not res:
                     continue
                 _table, meta = res
+                # Only a genuine collection create: the LAST segment must NAME the resolved table
+                # (plural/singular). An action verb (/{id}/toggle) resolves to a PARENT via fallback,
+                # and force-adding the parent's required columns to an action body would be wrong.
+                _lm = _match_model(_last, models)
+                if not _lm or _lm[0] != _table:
+                    continue
                 owner_fk = _owner_fk(meta)
                 _cols = list(meta.get("cols", []) or [])
+                _types = dict(meta.get("types", {}) or {})
+                _required = list(meta.get("required", []) or [])
                 subject_fks = [c for c in _fk_columns(meta) if c != owner_fk]
+
+                def _sa_typestr(_sa):
+                    _s = str(_sa or "").lower()
+                    if "bool" in _s:
+                        return "bool"
+                    if ("float" in _s or "numeric" in _s or "decimal" in _s
+                            or "double" in _s or "real" in _s):
+                        return "float"
+                    if "int" in _s:
+                        return "int"
+                    return "str"
+
                 # #566i (r119): also complete common REQUIRED non-FK TEXT columns. A create like
                 # POST /api/profiles NOT-NULL-violates on `name` when the probe omits it
-                # (IntegrityError 23502 → the handler's "invalid field value" 400) — but `name` is
-                # not a FK, so the #566f subject-FK pass alone skipped it (profiles has only the
-                # owner FK). Nullability isn't modeled in _orm_models, so use the SAME generic
-                # required-text-column convention _fw_owner_val's auto-create already applies. These
-                # are generic scalar names (never a product literal); sending a probe value for an
-                # optional one is harmless, and it satisfies the NOT-NULL for a required one.
+                # (IntegrityError 23502 → the handler's "invalid field value" 400) — `name` is not a
+                # FK, so the subject-FK pass alone skipped it. Generic scalar names, no product literal.
                 _REQ_TEXT = ("name", "title", "label", "display_name", "nickname")
                 _to_add = {}
                 for _fk in subject_fks:
                     _to_add[_fk] = "int"
                 for _c in _cols:
                     if _c in _REQ_TEXT and _c != owner_fk and _c not in subject_fks:
-                        _to_add[_c] = "str"
+                        _to_add.setdefault(_c, "str")
+                # #566n (r124): add every genuinely-REQUIRED column (NOT-NULL, non-PK, no default —
+                # parsed from the ORM) that the body must supply — e.g. rating.value (a NOT-NULL
+                # numeric on a NESTED create POST /api/titles/{id}/rating that the subject-FK/text
+                # passes miss) → business_chain 400 "DB constraint on missing field". Typed from the
+                # ORM column; owner FK excluded (server-derived). Precise (nullable=False only), so no
+                # optional/defaulted column is force-sent.
+                for _c in _required:
+                    if _c == owner_fk:
+                        continue
+                    _to_add.setdefault(_c, _sa_typestr(_types.get(_c)))
                 if not _to_add:
                     continue
                 schema = dict(_rec.get("schema") or {})
@@ -624,9 +657,9 @@ def heal_create_endpoint_request_schemas(registryhub, backend_dir, logger=None) 
                 if logger is not None:
                     try:
                         logger.warning(
-                            "🔧 #566f/#566i completed request schema of %s — lane-declared create "
-                            "omitted required field(s) %s (subject FK and/or NOT-NULL text column), so "
-                            "probes/chains/frontend sent no value → NOT-NULL 400. Added them "
+                            "🔧 #566f/#566i/#566n completed request schema of %s — create omitted "
+                            "required field(s) %s (subject FK / NOT-NULL text / NOT-NULL typed column), "
+                            "so probes/chains/frontend sent no value → NOT-NULL 400. Added them "
                             "(server-derived owner FK excluded).", path, sorted(missing.keys()))
                     except Exception:
                         pass
