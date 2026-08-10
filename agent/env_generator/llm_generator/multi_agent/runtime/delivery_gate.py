@@ -1405,16 +1405,25 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             if c.get("name", "").startswith("build:")
         ]
         by_component: dict = {}
+        # #566q (netflix r124/r126 verification_checklist wedge): keep the latest check DICT per
+        # component, NOT the status string. list_checks() (no pr_id) returns build:* across ALL PRs
+        # (one per milestone), so a component gets >1 record; the old code stored the STATUS STRING
+        # then called prev.get("updated_at") on it → AttributeError on the 2nd record → swallowed by
+        # the outer except → ready_for_delivery=False FOREVER → verification_checklist_not_ready
+        # wedged M1 despite every build:* being success (stuck 35-55min).
         for c in build_checks:
             comp = c.get("name", "").removeprefix("build:")
             prev = by_component.get(comp)
             if prev is None or c.get("updated_at", 0) > prev.get("updated_at", 0):
-                by_component[comp] = c.get("status", "pending")
+                by_component[comp] = c
+
+        def _st(_comp):
+            return (by_component.get(_comp) or {}).get("status", "pending")
         checklist_statuses_map = {
-            "sql_syntax": by_component.get("database", "pending"),
-            "docker_build": by_component.get("docker", "pending"),
-            "npm_install": by_component.get("frontend", "pending"),
-            "backend_start": by_component.get("backend", "pending"),
+            "sql_syntax": _st("database"),
+            "docker_build": _st("docker"),
+            "npm_install": _st("frontend"),
+            "backend_start": _st("backend"),
         }
         all_passing = all(s == "success" for s in checklist_statuses_map.values())
         checklist = {
