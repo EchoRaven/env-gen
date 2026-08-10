@@ -869,6 +869,49 @@ def _fw_owns(cls, col, fk_val, user):
         return True
 
 
+def _fw_fill_required_defaults(cls, valid, db):
+    """#566t (netflix r128): a create body may DROP a NOT-NULL column — the verifier authored the
+    WRONG key ({"rating":"thumbs_up"} instead of {"value":"up"}), so the unknown field is filtered
+    out and the ORM INSERTs NULL → NOT-NULL 400, EVEN when the column has a DB DEFAULT (the lane's
+    ALTER … SET DEFAULT 'up'), because SQLAlchemy emits an explicit NULL for the unset non-null
+    column instead of omitting it (so the DB default never fires). For each NOT-NULL, no-MODEL-
+    default column ABSENT from the body, read the column's DB default from information_schema and
+    apply it EXPLICITLY, so the row lands the intended default instead of 400ing. Best-effort; never
+    raises; a well-formed body (column already present) is untouched."""
+    try:
+        import re as _re
+        from sqlalchemy import text as _text
+        _tbl = getattr(cls.__table__, "name", None)
+        if not _tbl:
+            return valid
+        for _c in cls.__table__.columns:
+            if (_c.primary_key or _c.nullable or _c.name in valid
+                    or _c.default is not None or _c.server_default is not None):
+                continue
+            try:
+                _d = db.execute(_text(
+                    "SELECT column_default FROM information_schema.columns "
+                    "WHERE table_name = :t AND column_name = :c"),
+                    {"t": _tbl, "c": _c.name}).scalar()
+            except Exception:
+                _d = None
+            if _d is None:
+                continue
+            _ds = str(_d).strip()
+            if _ds.lower().startswith(("nextval(", "null")):
+                continue   # serial PK / explicit null default — leave to the DB
+            _m = _re.match(r"^'(.*?)'::", _ds) or _re.match(r"^'(.*)'$", _ds)
+            if _m:
+                valid[_c.name] = _m.group(1)
+            elif _ds.lstrip("-").replace(".", "", 1).isdigit():
+                valid[_c.name] = int(_ds) if _ds.lstrip("-").isdigit() else float(_ds)
+            elif _ds.lower() in ("true", "false"):
+                valid[_c.name] = (_ds.lower() == "true")
+    except Exception as _e:
+        _fw_dbg("fw_fill_required_defaults", _e)
+    return valid
+
+
 def _coerce_body(cls, valid):
     """#395: coerce a create/update body's scalar values to each column's ACTUAL type
     before the INSERT. Verification chains send loosely-typed values — netflix: a thumbs

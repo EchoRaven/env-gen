@@ -1267,6 +1267,11 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                         f'        raise HTTPException(status_code=403, detail="{ofk} does not belong to the caller")',
                         f'    valid.setdefault("{ofk}", _fw_owner_val({cls}, "{ofk}", user))',
                     ]
+            if m == "POST":
+                # #566t: a create body that DROPPED a NOT-NULL column (verifier authored the wrong
+                # key) INSERTs NULL even when the column has a DB DEFAULT → NOT-NULL 400. Apply the
+                # column's DB default explicitly for any absent NOT-NULL no-model-default column.
+                body_lines += [f'    valid = _fw_fill_required_defaults({cls}, valid, db)']
             if not _action_unmapped:
                 body_lines += [
                     # valid was already coerced to the column types up-front (rank-4,
