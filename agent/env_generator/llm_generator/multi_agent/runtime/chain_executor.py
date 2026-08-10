@@ -976,6 +976,12 @@ def load_verifier_chains(project_dir: Any) -> List[Dict[str, Any]]:
     return out
 
 
+def _is_idx(part: Any) -> bool:
+    """#566m: True iff ``part`` is an integer list index (``0`` / ``-1`` / ``"2"``)."""
+    s = str(part)
+    return s.lstrip("-").isdigit()
+
+
 def _dig_path(payload: Any, parts: List[str]) -> Optional[Any]:
     # ENVELOPE TOLERANCE (2026-06-13): the route projector wraps every business
     # response in the canonical {"item": {...}} (single) / {"items": [...]}
@@ -995,6 +1001,26 @@ def _dig_path(payload: Any, parts: List[str]) -> Optional[Any]:
     for part in parts:
         if isinstance(cur, Mapping) and part in cur:
             cur = cur[part]
+        elif isinstance(cur, list) and _is_idx(part):
+            # #566m: a numeric index into a BARE list — e.g. save "0.id" against a list
+            # endpoint that ships a bare array (not the {items:[...]} envelope). r123's
+            # GET /api/profiles returns `[ {id,...} ]`; the old resolver returned None here,
+            # so `${pid}` fell back to a FOREIGN id (1) → profile-scoped reads 403'd
+            # (business_chain "profile IDOR").
+            i = int(part)
+            if not (-len(cur) <= i < len(cur)):
+                return None
+            cur = cur[i]
+        elif isinstance(cur, Mapping) and _is_idx(part):
+            # #566m: a numeric index applied to a {items|data|results|rows:[...]} envelope.
+            _env = next((cur[k] for k in ("items", "data", "results", "rows")
+                         if isinstance(cur.get(k), list)), None)
+            if _env is None:
+                return None
+            i = int(part)
+            if not (-len(_env) <= i < len(_env)):
+                return None
+            cur = _env[i]
         else:
             return None
     return cur
@@ -1002,17 +1028,17 @@ def _dig_path(payload: Any, parts: List[str]) -> Optional[Any]:
 
 def _dig(payload: Any, dotted: str) -> Optional[Any]:
     parts = str(dotted).split(".")
-    val = _dig_path(payload, parts)
-    if val is None and len(parts) > 1:
-        # LEAF FALLBACK (2026-06-20): the verifier often prefixes the save-path
-        # with a wrong wrapper/resource key — save {"note_id": "note.id"} or
-        # {"id": "data.id"} where the canonical response is {item:{id}}. The full
-        # path misses (no "note"/"data" key), so resolve the LEAF field alone
-        # (with envelope descent). Closes the save-path-prefix class: id /
-        # item.id / note.id / response.note.id all resolve. Only fires when the
-        # explicit path already failed, so a real nested path is never overridden.
-        val = _dig_path(payload, [parts[-1]])
-    return val
+    # #566m: try the full path, then progressively STRIP leading segments. A verifier
+    # routinely prefixes the save-path with a wrong wrapper/resource key — "items.0.id"
+    # against a BARE list, "note.id"/"data.id"/"response.note.id" against {item:{id}}.
+    # Stripping resolves "items.0.id" → "0.id" (bare list) and "note.id" → "id"; the LONGER
+    # correct path always wins because it is tried first, so a real nested path is never
+    # overridden. Subsumes the prior single-leaf fallback (last iteration is [parts[-1]]).
+    for _start in range(len(parts)):
+        val = _dig_path(payload, parts[_start:])
+        if val is not None:
+            return val
+    return None
 
 
 def _subst(value: Any, variables: Mapping[str, str], bare: bool = False) -> Any:
