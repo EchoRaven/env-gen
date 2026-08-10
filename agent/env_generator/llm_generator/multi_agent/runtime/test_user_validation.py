@@ -471,6 +471,25 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                     # as a token is stored or the page navigates. Single-step forms succeed on
                     # round 1 (later rounds are a no-op once token/navigation is observed).
                     token, moved = None, False
+                    # #566o: capture the auth network response so a FAILED login is diagnosed
+                    # accurately. The LoginPage is often correctly wired (fetch('/auth/login') +
+                    # token store), but the submit can still store no token — because the UI login
+                    # user was never registered (401), or the response shape differs (2xx, no token).
+                    # The old note ALWAYS said "form is not wired to the API", which misdiagnoses a
+                    # wired form → agents chase a non-bug. Record /auth/* responses to tell the modes
+                    # apart: no request = dead form; non-2xx = creds/backend; 2xx+no token = shape.
+                    _auth_resps: list = []
+
+                    def _on_resp(_r):
+                        try:
+                            if "/auth/" in _r.url:
+                                _auth_resps.append(int(_r.status))
+                        except Exception:
+                            pass
+                    try:
+                        page.on("response", _on_resp)
+                    except Exception:
+                        pass
                     for _round in range(3):
                         await _fill_visible_inputs()
                         try:
@@ -486,12 +505,22 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                         if token or moved:
                             break
                     ok = bool(token) or moved
+                    if ok:
+                        _note = ""
+                    elif not _auth_resps:
+                        _note = ("submit sent NO /auth request — the form is not wired to the API "
+                                 "(button has no handler / submit does nothing)")
+                    elif all(s >= 400 for s in _auth_resps):
+                        _note = (f"the form IS wired but /auth returned {sorted(set(_auth_resps))} "
+                                 f"(login user not registered / bad credentials / backend error) — "
+                                 f"not a wiring bug")
+                    else:
+                        _note = (f"/auth returned {sorted(set(_auth_resps))} but no token was stored "
+                                 f"and no navigation — response shape or post-login handling issue")
                     out["flows"].append({
                         "flow": label, "ok": ok,
                         "token_stored": bool(token), "navigated": moved,
-                        "note": "" if ok else (
-                            "submit did nothing: no token stored, no "
-                            "navigation — the form is not wired to the API")})
+                        "auth_status": sorted(set(_auth_resps)), "note": _note})
                 except Exception as exc:
                     out["flows"].append({"flow": label, "ok": False,
                                          "note": f"{type(exc).__name__}: {exc}"[:160]})
