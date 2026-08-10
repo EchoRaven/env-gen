@@ -35,13 +35,29 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 # A cold docker build for a heavy app (React npm-install+build + backend + postgres + staged assets)
 # can exceed the old 300s cut-off mid-`up --build` (r6: 6/6 api_smoke attempts timed out at 300s →
 # validation never ran → the visual gate never ran → no delivery). Reliability > speed: let the
 # build finish. Override with ENVGEN_DOCKER_UP_TIMEOUT.
 _DOCKER_UP_TIMEOUT = int(os.environ.get("ENVGEN_DOCKER_UP_TIMEOUT", "1200") or 1200)
+
+# #566l (netflix r122 run_validation 20-min hang): the old `up -d --build` re-ran the app's
+# network package installs (frontend `npm install`, backend `uv pip install`) on EVERY validation
+# with no caching, so a flaky registry/proxy window hung the build for the full 1200s docker-up cap
+# → no successful run → M1 gate wedged. Fixes: (a) build with RETRY so a transient blip recovers and
+# the classic layer cache makes retries resume from completed layers (offline-capable once warm);
+# (b) FAIL-FAST — a dedicated, shorter build timeout + a short up-only timeout with a clear
+# "build hung on npm/uv (network)" diagnostic instead of burning the whole cap; (c) SKIP the rebuild
+# entirely when the app source is unchanged since the last SUCCESSFUL build (reuse the cached image).
+# All env-overridable; raise ENVGEN_DOCKER_BUILD_TIMEOUT if a legit cold build needs longer.
+_DOCKER_BUILD_TIMEOUT = int(os.environ.get("ENVGEN_DOCKER_BUILD_TIMEOUT", "900") or 900)
+_UP_ONLY_TIMEOUT = int(os.environ.get("ENVGEN_DOCKER_UP_ONLY_TIMEOUT", "240") or 240)
+_BUILD_RETRIES = int(os.environ.get("ENVGEN_DOCKER_BUILD_RETRIES", "1") or 1)
+_SKIP_UNCHANGED_BUILD = (
+    os.environ.get("ENVGEN_SKIP_UNCHANGED_BUILD", "1") or "1").strip().lower() in (
+    "1", "true", "yes", "on")
 
 
 def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> subprocess.CompletedProcess:
@@ -59,6 +75,87 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
         cwd=str(cwd), capture_output=True, text=True, timeout=timeout,
         env={**_os.environ, "DOCKER_BUILDKIT": "0", "COMPOSE_DOCKER_CLI_BUILD": "0"},
     )
+
+
+def _compose_capture(compose_file: Path, *args: str, cwd: Path, timeout: int):
+    """#566l: `_compose` that converts a TimeoutExpired into a synthetic FAILED result
+    (returncode 124) instead of raising, so a hung build/up is handled as a normal failure
+    (fail-fast + retry) rather than propagating. Returns ``(CompletedProcess, timed_out)``."""
+    try:
+        return _compose(compose_file, *args, cwd=cwd, timeout=timeout), False
+    except subprocess.TimeoutExpired as e:
+        _out = e.stdout if isinstance(e.stdout, str) else (
+            e.stdout.decode("utf-8", "ignore") if isinstance(e.stdout, (bytes, bytearray)) else "")
+        _err = e.stderr if isinstance(e.stderr, str) else (
+            e.stderr.decode("utf-8", "ignore") if isinstance(e.stderr, (bytes, bytearray)) else "")
+        return subprocess.CompletedProcess(e.cmd, 124, _out or "", _err or ""), True
+
+
+def _app_source_fingerprint(compose_file: Path) -> Optional[str]:
+    """#566l-c: content hash of everything that feeds the docker BUILD — the app/ source
+    (backend + frontend) plus the compose file — so an unchanged source can skip the rebuild.
+    Excludes build OUTPUTS + deps (node_modules/dist/__pycache__/…). Returns None on ANY read
+    error → the caller treats None as 'changed' and rebuilds (fail-safe: never skip on doubt)."""
+    import hashlib
+    root = compose_file.parent.parent / "app"
+    if not root.is_dir():
+        return None
+    skip = {"node_modules", "dist", "build", "__pycache__", ".git", ".vite",
+            ".next", "coverage", ".pytest_cache", ".turbo", ".cache"}
+    h = hashlib.sha256()
+    try:
+        h.update(b"compose\0")
+        h.update(compose_file.read_bytes())
+        for p in sorted(root.rglob("*")):
+            if not p.is_file():
+                continue
+            if any(part in skip for part in p.parts):
+                continue
+            h.update(str(p.relative_to(root)).encode("utf-8", "ignore"))
+            h.update(b"\0")
+            h.update(p.read_bytes())
+        return h.hexdigest()
+    except Exception:
+        return None
+
+
+def _read_build_fingerprint(cwd: Path) -> Optional[str]:
+    try:
+        fp = cwd / ".last_build_fingerprint"
+        return fp.read_text(encoding="utf-8").strip() if fp.is_file() else None
+    except Exception:
+        return None
+
+
+def _write_build_fingerprint(cwd: Path, val: Optional[str]) -> None:
+    try:
+        (cwd / ".last_build_fingerprint").write_text(val or "", encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _build_with_retry(compose_file: Path, cwd: Path) -> Tuple[bool, str]:
+    """#566l-a/b: `docker compose build` with a bounded timeout + RETRY. A retry resumes from
+    the classic layer cache (completed layers = offline), so a transient registry blip recovers;
+    a persistent hang fails in bounded time with a clear diagnostic instead of eating the cap.
+    Returns ``(ok, detail)``."""
+    last = "docker build did not run"
+    for attempt in range(_BUILD_RETRIES + 1):
+        cp, timed_out = _compose_capture(
+            compose_file, "build", cwd=cwd, timeout=_DOCKER_BUILD_TIMEOUT)
+        if cp.returncode == 0:
+            return True, ""
+        tail = (((cp.stdout or "") + "\n" + (cp.stderr or "")).strip())[-3000:]
+        if timed_out:
+            last = (f"docker build exceeded {_DOCKER_BUILD_TIMEOUT}s "
+                    f"(attempt {attempt + 1}/{_BUILD_RETRIES + 1}) — most likely a hung "
+                    f"npm/uv package install on a flaky registry/proxy (the app build fetches "
+                    f"packages from the network). Raise ENVGEN_DOCKER_BUILD_TIMEOUT if this is a "
+                    f"genuinely slow cold build. Build transcript tail:\n" + tail)
+        else:
+            last = (f"docker build FAILED (attempt {attempt + 1}/{_BUILD_RETRIES + 1}). "
+                    f"Transcript tail:\n" + tail)
+    return False, last
 
 
 def _declared_host_port_from_compose(compose_file: Path, service: str) -> Optional[int]:
@@ -688,7 +785,31 @@ def run_smoke_validation(
         except Exception:
             pass
         _compose(compose_file, "down", "-v", "--remove-orphans", cwd=cwd, timeout=120)
-        up = _compose(compose_file, "up", "-d", "--build", "--remove-orphans", cwd=cwd, timeout=up_timeout)
+        # #566l: build SEPARATELY from up so a hung/flaky network install fails fast + retries
+        # (classic layer cache = offline-capable for completed layers), and SKIP the rebuild
+        # entirely when the app source is unchanged since the last SUCCESSFUL build. Root cause of
+        # the r122 run_validation 20-min hang: `up --build` re-ran a network package install every
+        # validation and a flaky-registry window burned the full 1200s docker-up cap.
+        _fp = _app_source_fingerprint(compose_file)
+        _need_build = ((not _SKIP_UNCHANGED_BUILD) or _fp is None
+                       or _fp != _read_build_fingerprint(cwd))
+        if _need_build:
+            _bok, _bdetail = _build_with_retry(compose_file, cwd)
+            if not _bok:
+                _add("docker_up", False, _bdetail)
+                return _finalize(checks, backend_port, endpoint_results)
+            _write_build_fingerprint(cwd, _fp)
+        up, _ = _compose_capture(compose_file, "up", "-d", "--remove-orphans",
+                                 cwd=cwd, timeout=_UP_ONLY_TIMEOUT)
+        if up.returncode != 0 and not _need_build:
+            # #566l safety net: we SKIPPED the build (source unchanged) but `up` failed — the
+            # cached image may be missing/stale/pruned. Never ship stale: rebuild + retry up once
+            # before giving up (so skip-when-unchanged can only ever save time, never mis-validate).
+            _bok, _bdetail = _build_with_retry(compose_file, cwd)
+            if _bok:
+                _write_build_fingerprint(cwd, _fp)
+                up, _ = _compose_capture(compose_file, "up", "-d", "--remove-orphans",
+                                         cwd=cwd, timeout=_UP_ONLY_TIMEOUT)
         if up.returncode != 0:
             # S1 (PROPOSAL #3): `docker compose up`'s OWN stderr is often just a
             # benign warning (e.g. "attribute `version` is obsolete") while the REAL
