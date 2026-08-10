@@ -174,8 +174,14 @@ def _created_appears(payload: Any, res_label: str, new_id: Any,
         return True, f"{len(items)} {res_label} listed"  # not applicable — advisory
     found = _find_by_id(items, new_id, res_key=res_key)
     if found is None:
-        return False, (f"created {res_label} (id={new_id}) is ABSENT from the "
-                       f"{res_label} list — the write did not persist")
+        # #566p: show WHAT the list returned so an ABSENT readback is diagnosable — an EMPTY list
+        # means not-persisted OR the read is scoped to a different owner than the write (created
+        # under uid A, read as uid B); a list of OTHER ids means a scope/owner mismatch, not a lost
+        # write. (netflix r125: profiles created id=26/28/29 reported ABSENT — need this to tell apart.)
+        _seen = [it.get("id") for it in (items or []) if isinstance(it, dict)][:8]
+        return False, (f"created {res_label} (id={new_id}) is ABSENT from the {res_label} list "
+                       f"(list has {len(items or [])} row(s), ids={_seen}) — the write did not "
+                       f"persist, or the read is scoped to a different owner than the write")
     if state_fields:
         mism = [f"{k}: wrote {v!r}, read back {found.get(k)!r}"
                 for k, v in state_fields.items() if _write_lost(v, found.get(k))]
