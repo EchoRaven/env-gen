@@ -3171,15 +3171,33 @@ def _design_screen_for_route(design, route, hints=()) -> Optional[Dict[str, Any]
     rt = _semantic_tokens_226(want, *hints)
     if not rt:
         return None
-    fuzzy, fuzzy_score = None, 0
+    # #571 (netflix r134, live; r98 before it): this loop used to SKIP every non-page screen,
+    # contradicting the docstring above — "kind=='page' PREFERRED over overlays" is a
+    # preference, and it was implemented as a hard filter. A detail route ('/title/:id',
+    # screen `title_detail`, classified kind=overlay) therefore could never reach its own
+    # reference, and the best remaining page won on route tokens alone: `player`
+    # (/watch/:titleId) shares {title, id}. Both routes then projected the SAME component —
+    # r134 shipped Player.jsx and TitleDetailModal.jsx byte-identical apart from the function
+    # name, scoring title_detail 0.08 (r98: 0.06) and dragging the blocking average under the
+    # bar. Unfixable by the lane: both pages are framework-projected. #534 papers over it only
+    # when the lane happens to have authored its own detail-modal component; r134's had not.
+    # Rank instead: score first (today's criterion, so a clear winner is unchanged), then NAME
+    # COVERAGE — how much of the screen's own name the route vocabulary accounts for, which is
+    # what separates `title_detail` (2/2) from `player` (0/1) when they tie — then the
+    # documented page preference as the final tie-break.
+    fuzzy, fuzzy_rank = None, ()
     for s in ((design or {}).get("screens") or []):
         if not (isinstance(s, dict) and (s.get("components") or [])):
             continue
-        if str(s.get("kind") or "page").strip().lower() != "page":
-            continue
         score = len(rt & _semantic_tokens_226(s.get("name"), s.get("route")))
-        if score > fuzzy_score:
-            fuzzy, fuzzy_score = s, score
+        if not score:
+            continue
+        _name_toks = _semantic_tokens_226(s.get("name"))
+        _cov = (len(_name_toks & rt) / len(_name_toks)) if _name_toks else 0.0
+        _is_page = 1 if str(s.get("kind") or "page").strip().lower() == "page" else 0
+        rank = (score, _cov, _is_page)
+        if rank > fuzzy_rank:
+            fuzzy, fuzzy_rank = s, rank
     return fuzzy
 
 
