@@ -254,6 +254,37 @@ def _request_identity(step: Mapping[str, Any], method: Any, path: Any, body: Any
             str(step.get("auth") or ""), _b)
 
 
+def _authored_success_identities(steps: Sequence[Mapping[str, Any]]) -> set:
+    """#570 — the request identities the chain ITSELF expects to SUCCEED somewhere.
+
+    #566z only waived a contradictory step when the identical request had ALREADY succeeded
+    EARLIER in the chain, and its test pinned that order-dependence as deliberate ("no earlier
+    success to contradict"). netflix r135 proved the reasoning wrong: steps [6][7][8] were the
+    same request by the same actor expecting [400], [200], [403]. [8] was waived and [6] was
+    not — purely because it sat before the success. The contradiction is a property of the
+    AUTHORED CHAIN, not of execution order, and the waiver's safety (same actor, so no second
+    identity is involved) does not depend on order either. Computed on the AUTHORED steps, so
+    both sides of the comparison are pre-substitution and always agree.
+
+    A step "expects success" when its expect list contains a 2xx or is absent (the default)."""
+    out: set = set()
+    for st in (steps or []):
+        if not isinstance(st, Mapping):
+            continue
+        _exp = st.get("expect")
+        if _exp is None:
+            codes: List[int] = []
+        elif not isinstance(_exp, (list, tuple, set)):
+            codes = [int(_exp)] if str(_exp).isdigit() else []
+        else:
+            codes = [int(x) for x in _exp if str(x).isdigit()]
+        if codes and not any(200 <= c < 300 for c in codes):
+            continue
+        out.add(_request_identity(st, st.get("method") or "GET",
+                                  str(st.get("path") or ""), st.get("body")))
+    return out
+
+
 def _oauth_authorize_lacks_pkce(path, body) -> bool:
     """#301+#316 — a /oauth/authorize step that carries NO ``code_challenge`` cannot
     complete on a PKCE-enforced AS: it correctly 400/422s ("code_challenge with S256
@@ -1858,6 +1889,8 @@ def execute_chain(base: str, chain: Mapping[str, Any],
     _steps = [dict(s) if isinstance(s, Mapping) else s
               for s in (chain.get("steps") or [])]
     _drop_auth_save_clobbers(_steps)
+    # #570: order-independent companion to #566z's runtime set (see _authored_success_identities).
+    _authored_success = _authored_success_identities(_steps)
     # FIX #91 runtime guard (same #59c rationale — STORED chains bypass normalize):
     # a step expecting EXACTLY {401} is an unauthenticated-denial probe; an authored
     # (or auto-attached) auth ref contradicts its own expectation — the correct
@@ -2102,9 +2135,15 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         # waiver fires only when the actor is IDENTICAL to one already entitled to a 2xx on
         # that exact request, so no second identity is involved. A different auth ref, query
         # string or body yields a different identity and keeps every tooth.
+        # #570 widens the evidence from "already succeeded EARLIER" to "the chain expects this
+        # very request to succeed ANYWHERE" — r135 wedged because the contradictory step sat
+        # BEFORE its twin. Both keys require the same actor, so neither can hide a leak.
         if (not ok and isinstance(status, int) and 200 <= status < 300
                 and expect and not any(200 <= e < 300 for e in expect)
-                and _request_identity(step, method, path, body) in succeeded_requests):
+                and (_request_identity(step, method, path, body) in succeeded_requests
+                     or _request_identity(step, step.get("method") or "GET",
+                                          str(step.get("path") or ""),
+                                          step.get("body")) in _authored_success)):
             ok = True
             autofilled.append("unsatisfiable-duplicate-expectation-waived")
         # netflix r11: a verifier-authored DENIAL probe (expect has no 2xx, e.g.
