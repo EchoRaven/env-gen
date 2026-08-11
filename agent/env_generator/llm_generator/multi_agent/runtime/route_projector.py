@@ -1152,6 +1152,10 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             # DataError->400 handler rather than 500ing. No-op for a well-typed body.
             f"    valid = _coerce_body({cls}, valid)",
         ]
+        # #566u: owner-scoped STATE-WRITE upsert-on-conflict params (set only for a POST create below)
+        _uc_enabled = False
+        _uc_ofk = None
+        _uc_subject_fks: List[str] = []
         if m in ("PUT", "PATCH") and path.endswith("/me"):
             # mirror GET /me: resolve the user model DYNAMICALLY. Hardcoding `User`
             # broke /me updates for any app whose user table isn't literally named
@@ -1272,6 +1276,13 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 # key) INSERTs NULL even when the column has a DB DEFAULT → NOT-NULL 400. Apply the
                 # column's DB default explicitly for any absent NOT-NULL no-model-default column.
                 body_lines += [f'    valid = _fw_fill_required_defaults({cls}, valid, db)']
+                # #566u: enable upsert-on-conflict for an owner-scoped STATE-WRITE (owner + subject FKs
+                # = natural key: rating/my_list/continue_watching re-write must UPDATE, not 409).
+                _uc_ofk = _owner_fk(meta, exclude=tuple(bound))
+                if not _action_unmapped and _uc_ofk:
+                    _uc_subject_fks = [str(_f) for _f in (meta.get("fks") or {})
+                                       if str(_f) != str(_uc_ofk)]
+                    _uc_enabled = bool(_uc_subject_fks)
             if not _action_unmapped:
                 body_lines += [
                     # valid was already coerced to the column types up-front (rank-4,
@@ -1297,6 +1308,11 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             "        # wedged. Rollback and RE-RAISE: the global handler maps it",
             "        # (FK 23503→404, unique 23505→409, other incl. NotNull→400).",
             "        db.rollback()",
+            *(([  # #566u: owner-scoped state-write → UPSERT on the (owner,subject) conflict, not 409
+                f'        _uc = _fw_upsert_on_conflict(db, {cls}, valid, user, "{_uc_ofk}", {_uc_subject_fks!r})',
+                "        if _uc is not None:",
+                f"            return {{\"item\": {_serialize_expr('_uc', cols)}}}",
+             ]) if _uc_enabled else []),
             "        raise",
             "    except DataError:",
             "        # rank-4: a value that doesn't fit the column TYPE (bad datetime/int/",

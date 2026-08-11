@@ -912,6 +912,51 @@ def _fw_fill_required_defaults(cls, valid, db):
     return valid
 
 
+def _fw_upsert_on_conflict(db, cls, valid, user, owner_fk, subject_fks):
+    """#566u (netflix r129): an owner-scoped STATE-WRITE (rating / my_list / continue_watching) that is
+    re-created with the SAME (owner, subject) natural key hits a UNIQUE constraint → 409, but a re-write
+    should UPSERT (re-rating updates; toggling a list is idempotent). REACTIVE: called only AFTER an
+    IntegrityError, it loads the caller's existing row by owner_fk + subject_fks and UPDATEs it,
+    returning the row; returns None when no such row exists (a DIFFERENT unique violation → the caller
+    re-raises → 409). Because it fires only on a real conflict AND requires an owner+subject match, a
+    non-unique / non-state-write resource is never wrongly upserted."""
+    try:
+        if not owner_fk or not subject_fks:
+            return None
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        _own = valid.get(owner_fk)
+        if _own is None:
+            _own = _fw_owner_val(cls, owner_fk, user)
+        _q = db.query(cls).filter(getattr(cls, owner_fk) == _own)
+        for _sf in subject_fks:
+            if valid.get(_sf) is None:
+                return None
+            _q = _q.filter(getattr(cls, _sf) == valid.get(_sf))
+        _row = _q.first()
+        if _row is None:
+            return None
+        for _k, _v in valid.items():
+            if _k == owner_fk or _k in subject_fks:
+                continue
+            try:
+                setattr(_row, _k, _v)
+            except Exception:
+                pass
+        db.commit()
+        db.refresh(_row)
+        return _row
+    except Exception as _e:
+        _fw_dbg("fw_upsert_on_conflict", _e)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return None
+
+
 def _coerce_body(cls, valid):
     """#395: coerce a create/update body's scalar values to each column's ACTUAL type
     before the INSERT. Verification chains send loosely-typed values — netflix: a thumbs
