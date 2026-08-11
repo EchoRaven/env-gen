@@ -428,6 +428,31 @@ def _primary_content_model(
     return (table, meta)
 
 
+def _is_user_persona_table(table: str, models: Dict[str, Dict[str, Any]]) -> bool:
+    """#569 — a per-user PERSONA / account sub-entity (``profiles``): the table is itself
+    user-owned AND another table's OWNER column points at it (``my_list``'s owner FK is
+    ``profile_id`` → ``profiles``). That combination marks an ACCOUNT record, not content: a
+    resource-less global search over it enumerates every user's personas.
+
+    "Owner column", not "any reference" — that distinction is the whole rule. A social app's
+    ``posts`` is user-owned and IS referenced by ``comments.post_id``, but comments' OWNER is
+    ``author_id`` → ``users``; nothing is OWNED BY a post, so ``posts`` stays a legitimate
+    search target and public-feed search is unaffected. (An earlier any-reference version of
+    this predicate flagged ``posts`` and would have broken every feed app — caught by this
+    change's own test.) Shape-derived from the FK graph; no product literals."""
+    meta = models.get(table) or {}
+    if not any(str(t).lower() == "users" for t in (meta.get("fks") or {}).values()):
+        return False
+    _t = str(table).lower()
+    for other, m in models.items():
+        if other == table:
+            continue
+        _ofk = _owner_fk(m)
+        if _ofk and str((m.get("fks") or {}).get(_ofk, "")).lower() == _t:
+            return True
+    return False
+
+
 def _search_target_model(
     models: Dict[str, Dict[str, Any]]
 ) -> Optional[Tuple[str, Dict[str, Any]]]:
@@ -438,7 +463,8 @@ def _search_target_model(
     ``{"items":[],"total":0}`` stub → deliverability_placeholder_stub_handler hard-blocks
     delivery (Gen-1). Returns None only when there is no business table at all."""
     cands = [(len(m.get("cols", [])), t, m)
-             for t, m in models.items() if not _is_spine_table(t)]
+             for t, m in models.items()
+             if not _is_spine_table(t) and not _is_user_persona_table(t, models)]
     if not cands:
         return None
     cands.sort(key=lambda c: (-c[0], c[1]))
@@ -877,8 +903,16 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
     # (deliverability_placeholder_stub_handler, Gen-1). Resolve it to the content table so
     # the real search handler below fires over that table's text columns. ``/api/<res>/
     # search`` already resolves <res>, so this only rescues the resource-less search.
+    # #569 (netflix r134, live): _primary_content_model ran FIRST and REQUIRES a timestamp, so
+    # a catalog whose content table has none (titles) lost to the only timestamped, owned,
+    # non-spine table — `profiles` — and the projection emitted an UNSCOPED search over every
+    # account's personas (id, user_id, name, avatar). The lane had to install HTTP middleware
+    # and mutate app.routes at import time to stop it serving. _search_target_model exists for
+    # exactly this case (its docstring names the Netflix `titles` shape) but was unreachable
+    # behind the `or`. Ask the SEARCH-specific resolver first; keep the feed resolver as the
+    # fallback for feed-shaped apps, where both agree anyway.
     if res is None and method.upper() == "GET" and "search" in path.lower():
-        res = _primary_content_model(models) or _search_target_model(models)
+        res = _search_target_model(models) or _primary_content_model(models)
     # No type annotations on the dependency params: a ``: User`` / ``: Session``
     # annotation REFERENCES those names at import time, so if the lane wrote a raw-SQL
     # app (no ``from models import User``) the projected handler crashes the whole app
