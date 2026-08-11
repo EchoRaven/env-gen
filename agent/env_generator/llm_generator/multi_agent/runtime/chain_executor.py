@@ -1701,6 +1701,28 @@ def _register_aux_user_id(base: str) -> Any:
         return None
 
 
+def _response_has_rows(body_text) -> bool:
+    """#566v: True iff a list response carries at least one ROW. Used to tell a real cross-user READ
+    leak (a fresh intruder's owner-scoped GET returns the FOREIGN owner's rows) from a SECURE override
+    (the app ignored the foreign owner param and returned the caller's OWN — empty — view). Only a
+    CLEARLY-EMPTY list envelope (items/data/results/rows == [] or a bare []) counts as no-rows; anything
+    ambiguous (unparseable, a non-list/object payload, an unrecognized envelope) returns True so a leak
+    is NEVER masked."""
+    try:
+        _b = json.loads(body_text or "")
+    except Exception:
+        return True  # unparseable → cannot prove empty → conservative (keep the leak verdict)
+    if isinstance(_b, list):
+        return len(_b) > 0
+    if isinstance(_b, Mapping):
+        for _k in ("items", "data", "results", "rows"):
+            _v = _b.get(_k)
+            if isinstance(_v, list):
+                return len(_v) > 0
+        return True  # no recognized list envelope → could be a single-object leak → conservative
+    return True
+
+
 def _reverify_denial_via_fresh_intruder(base, method, path, body, expect) -> bool:
     """#78: a cross-user DENIAL step (expect 403/404) got a 2xx (apparent leak). Register a
     GUARANTEED-fresh intruder and re-run the SAME request as them. The recurring false-positive
@@ -1725,7 +1747,17 @@ def _reverify_denial_via_fresh_intruder(base, method, path, body, expect) -> boo
             return True  # no fresh intruder → cannot disprove → keep the leak verdict (safe)
         _r = _http(method, base + path, token=_tok,
                    body=(body if isinstance(body, Mapping) else None))
-        return not _status_ok(_r.get("status"), expect)  # real leak iff NOT denied
+        if _status_ok(_r.get("status"), expect):
+            return False  # fresh intruder DENIED → original 2xx was a probe artifact → not a leak
+        # #566v: a fresh intruder (who owns NO data) got 2xx on a cross-user READ denial probe. This
+        # is a REAL leak ONLY if the response carries the FOREIGN owner's ROWS; an EMPTY list means the
+        # app securely scoped it to the intruder's own (empty) view (it ignored the foreign owner param
+        # — a valid secure implementation the verifier's strict 403 expectation over-penalizes, which
+        # made the lane oscillate own-403 ↔ cross-user-200 and wedge, netflix r130). Reads only; a
+        # WRITE that succeeds as a fresh intruder is still a real leak.
+        if str(method or "").upper() == "GET":
+            return _response_has_rows(_r.get("body_text"))
+        return True  # non-GET 2xx as a fresh intruder → real leak
     except Exception:
         return True  # any failure → conservative → keep the leak verdict
 
