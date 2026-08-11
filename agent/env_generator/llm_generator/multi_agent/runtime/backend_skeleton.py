@@ -1182,6 +1182,15 @@ _NESTED_CHILD_RESOURCES = set(__NESTED_CHILD_RESOURCES__)
 # flagged) and a multi-principal DM table (sender+recipient — the projected single-owner read
 # would 404 the recipient) are DELIBERATELY excluded, so the lane still wins for them.
 _OWNER_SCOPED_RESOURCES = set(__OWNER_SCOPED_RESOURCES__)
+# #568 (netflix r133, live cross-user leak): resources whose PROJECTED model is DEGENERATE —
+# the contract registered the table with an empty column schema, so the model carries only its
+# primary key. #528's whole premise for "projected read wins" is that the projected read is
+# SCHEMA-SAFE by construction; with no columns to be safe about, that premise fails: the read
+# cannot owner-scope (no owner FK exists in the model) and serves every user's rows. r133
+# registered `my_list` with schema.columns == [] -> `class MyList(Base): id = Column(...)` ->
+# GET /api/my-list returned another account's row while the lane's OWN correct handler
+# (filter MyList.profile_id == prof.id) sat shadowed. For these the LANE keeps the route.
+_DEGENERATE_RESOURCES = set(__DEGENERATE_RESOURCES__)
 
 
 def _custom_route_overrides_projected(method, path):
@@ -1235,6 +1244,10 @@ def _custom_route_overrides_projected(method, path):
         # explicit belt-and-suspenders so #77 owner-scoped resources ALWAYS project-win even if
         # the registered set is later narrowed. /api/search & other unregistered collection GETs
         # are in NEITHER set → lane still wins (unchanged).
+        # #568: a degenerate projected model cannot be schema-safe OR owner-scoped — the
+        # premise of projected-wins fails, so the lane keeps its (schema-complete) read.
+        if _is_get and _fw_resource_seg(segs[0]) in _DEGENERATE_RESOURCES:
+            return True
         if _is_get and (_fw_resource_seg(segs[0]) in _NESTED_CHILD_RESOURCES
                         or _fw_resource_seg(segs[0]) in _OWNER_SCOPED_RESOURCES):
             return False
@@ -1246,6 +1259,8 @@ def _custom_route_overrides_projected(method, path):
         # #528: the projected item read (db.get(Model, id), 200/404 by construction) wins for
         # GET on any REGISTERED resource; #77 owner-scoped stays projected (no cross-user leak).
         # An unregistered by-id GET is in neither set → lane wins (unchanged).
+        if _is_get and _res in _DEGENERATE_RESOURCES:
+            return True                               # #568: nothing to be schema-safe about
         if _is_get and (_res in _NESTED_CHILD_RESOURCES or _res in _OWNER_SCOPED_RESOURCES):
             return False                              # projected read wins (schema-safe, no leak)
         return _is_get
@@ -1525,10 +1540,35 @@ def render_skeleton_main(endpoints: List[Mapping[str, Any]], tables: Dict[str, A
         _n = str(_t).strip().lower()
         if _n:
             _owner_scoped_resources |= {_n, _n + "s", _n.rstrip("s")}
+    # #568: tables whose projected model is DEGENERATE — only the primary key survived, so the
+    # projected read has no column to serialize beyond `id` and no owner FK to filter on. That
+    # is not a schema-safe handler, and #528/#566w hand it the route anyway unless we say so
+    # here. netflix r133: the contract registered `my_list` with schema.columns == [] (its
+    # siblings `ratings`/`continue_watching` registered in full), the model came out PK-only,
+    # and GET /api/my-list served another account's row while the lane's correct handler was
+    # shadowed. Keyed off the parsed model, so ANY cause of a degenerate model is covered.
+    # Keyed on the CONTRACT's declared columns, not on the parsed model's count: a table that
+    # genuinely declares only a primary key has a KNOWN, complete schema and must keep
+    # projecting (its `{"id": …}` read is correct). Degenerate means the contract declared
+    # NOTHING and the model's PK was synthesized — the schema is unknown, not minimal.
+    _degenerate_resources: set = set()
+    for _t, _tdef in (tables or {}).items():
+        try:
+            _declared = [c for c in (_columns_of(_tdef) or [])
+                         if not _is_constraint_pseudo_column(c)]
+        except Exception:
+            _declared = []
+        if _declared:
+            continue
+        _n = str(_t).strip().lower()
+        if _n:
+            _degenerate_resources |= {_n, _n + "s", _n.rstrip("s")}
     custom_include = _CUSTOM_ROUTES_INCLUDE.replace(
         "__NESTED_CHILD_RESOURCES__", repr(sorted(_nested_resources))
     ).replace(
-        "__OWNER_SCOPED_RESOURCES__", repr(sorted(_owner_scoped_resources)))
+        "__OWNER_SCOPED_RESOURCES__", repr(sorted(_owner_scoped_resources))
+    ).replace(
+        "__DEGENERATE_RESOURCES__", repr(sorted(_degenerate_resources)))
     # _CUSTOM_ROUTES_INCLUDE precedes the projected blocks so a lane custom_routes
     # handler OVERRIDES the projected one for the same METHOD+path (first-registered
     # wins in Starlette) — the documented lane-override intent, which the old footer
