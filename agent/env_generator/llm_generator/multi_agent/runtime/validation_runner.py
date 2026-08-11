@@ -443,12 +443,17 @@ def _form_retry_warranted(body: Optional[dict], status: Optional[int],
 
 def _http(method: str, url: str, *, token: Optional[str] = None,
           body: Optional[dict] = None, timeout: int = 10,
-          form: bool = False) -> Dict[str, Any]:
+          form: bool = False,
+          headers: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
     """One HTTP call → {status, body_text, error}. Never raises.
 
     ``form=True`` (FIX #281) urlencodes the body instead of JSON, for endpoints that
     declare FORM fields (OAuth2 authorize/token being the standard case). Default is
-    unchanged JSON for every existing caller."""
+    unchanged JSON for every existing caller.
+
+    ``headers`` (#566x) adds request headers the CALLER needs to express a contract
+    the URL alone cannot — the control plane's ``X-Tenant-Id`` scope selector being
+    the case that motivated it. Omitted → byte-identical to the previous behaviour."""
     if form and body is not None:
         from urllib.parse import urlencode
         data = urlencode({k: ("" if v is None else v) for k, v in body.items()}).encode()
@@ -459,6 +464,9 @@ def _http(method: str, url: str, *, token: Optional[str] = None,
                    "application/x-www-form-urlencoded" if form else "application/json")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
+    for _hk, _hv in (headers or {}).items():
+        if _hk and _hv is not None:
+            req.add_header(str(_hk), str(_hv))
     # FIX #98 (instagram run-16, live): 2048 bytes TRUNCATED any list response past 2KB
     # mid-JSON — once #74/#84 made seeds dense, explore/feed bodies blew the cap, so
     # json.loads failed SILENTLY in both the chain's save-dig and the auto-capture/

@@ -64,6 +64,51 @@ _CONTROL_PLANE_TENANT_CREATE = frozenset(
     if str(e.get("method", "")).upper() == "POST"
     and str(e.get("path", "")).rstrip("/").endswith("/tenants"))
 
+# #566x — the FIXED control-plane RESET path(s). Per the contract (control_plane.py):
+# "scoped (X-Tenant-Id → that tenant's business rows) or FACTORY (no header)". A chain
+# step that POSTs it bare therefore takes the FACTORY branch and DELETEs every business
+# row — including the seeded catalog every OTHER chain reads its ${...} ids from. The
+# step itself passes (200 is the correct answer), so the damage is invisible here and
+# surfaces as misleading application-level 404s in every chain that runs AFTER it.
+# Derived from the fixed surface (not a literal) → an app with no control plane yields
+# an empty set and the guard below is inert. See _scoped_reset_header.
+_CONTROL_PLANE_RESET = frozenset(
+    str(e.get("path", "")).rstrip("/")
+    for e in (_CONTROL_SURFACE or [])
+    if str(e.get("method", "")).upper() == "POST"
+    and str(e.get("path", "")).rstrip("/").endswith("/reset"))
+
+# The control plane's fixed tenant-scope selector (control_plane.py contract,
+# test_user_squad's isolation workflow, the bundled oauth contract tests).
+_TENANT_SCOPE_HEADER = "X-Tenant-Id"
+
+
+def _is_factory_reset(method: Any, path: Any) -> bool:
+    """True iff (method, path) is the FIXED control-plane reset endpoint — which,
+    called WITHOUT a tenant scope, factory-wipes the shared business fixture."""
+    return (str(method or "").upper() == "POST"
+            and str(path or "").split("?", 1)[0].rstrip("/") in _CONTROL_PLANE_RESET)
+
+
+def _scoped_reset_header(chain_name: Any, own_tenant_id: Any,
+                         last_reg_creds: Optional[Mapping[str, Any]]) -> Dict[str, str]:
+    """The ``X-Tenant-Id`` scope to send a control-plane reset with, so it deletes
+    THIS chain's own rows instead of factory-wiping the shared fixture.
+
+    Preference order — most faithful to what the step meant, first:
+      1. a tenant THIS chain created (its reset is unambiguously its own to do),
+      2. the chain user's registered tenant (its own business rows),
+      3. a deterministic per-chain synthetic id — no such tenant exists, so the
+         handler deletes NOTHING and still answers 200: the endpoint stays covered
+         and reachable, with zero blast radius.
+    Never harvested from ``GET /api/v1/tenants``: the first row there is typically
+    the DEFAULT tenant that OWNS the seed fixture — the very thing to protect."""
+    scope = own_tenant_id or (last_reg_creds or {}).get("tenant_id")
+    if not (scope and str(scope).strip()):
+        _slug = re.sub(r"[^A-Za-z0-9_-]", "_", str(chain_name or "chain"))[:40]
+        scope = f"_fwscope_{_slug}"
+    return {_TENANT_SCOPE_HEADER: str(scope)}
+
 
 def _is_control_plane_public(method: Any, path: Any) -> bool:
     """True iff (method, path) is a FIXED control-plane PUBLIC infra endpoint — a
@@ -1786,6 +1831,7 @@ def execute_chain(base: str, chain: Mapping[str, Any],
     seen_responses: List[Any] = []           # #263: (path, payload) of each step, for list-id recovery
     last_reg_creds: Dict[str, Any] = {}  # creds of the last successful /auth/register → reused if a later /auth/login 401s
     own_user_id: Any = None  # the chain user's own id (from /auth/register) — recovery must not target SELF (FIX #81)
+    own_tenant_id: Any = None  # #566x: a tenant THIS chain created → the scope its reset may safely wipe
     own_username: Any = None  # #323: the chain user's OWN username — owner-scoped self-view recovery targets THIS
     unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
     # FIX #188: var → step-action whose OK response lacked the save path — the
@@ -1981,7 +2027,23 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         _auth_ref = str(step.get("auth") or "")
         if _auth_ref and _auth_ref not in variables:
             _unres_vars.add(_auth_ref)
-        res = _http(method, base + path, token=token, body=body)
+        # #566x (netflix r130, live — 10/10 failing chains were AFTER the reset chain,
+        # 0 before it): a bare POST to the control-plane reset takes its FACTORY branch
+        # and DELETEs every business row, including the seeded catalog. The step passes
+        # (200 is correct), then every LATER chain in the same pass reads an empty
+        # collection: its `save: {titleId: items.0.id}` captures nothing, the
+        # placeholder ladder fills the gap with an unrelated id, and the writes come
+        # back 404 "referenced resource not found" — read by the gate as an application
+        # defect and dispatched to a lane that has nothing to fix. Deterministic every
+        # pass, so the gate can never see all chains green in ONE eval → wedge.
+        # Send it tenant-SCOPED: the endpoint stays covered, the fixture survives.
+        _headers: Optional[Dict[str, str]] = None
+        _scope_note: Optional[str] = None
+        if _is_factory_reset(method, path):
+            _headers = _scoped_reset_header(chain.get("name"), own_tenant_id,
+                                            last_reg_creds)
+            _scope_note = f"reset-scoped->{_headers[_TENANT_SCOPE_HEADER]}"
+        res = _http(method, base + path, token=token, body=body, headers=_headers)
         status = res.get("status")
         # FIX #281 (tiktok r66, live): the step sent JSON but the endpoint declares FORM
         # fields — the framework's own scaffolded oauth_routes.py does exactly that for
@@ -2000,6 +2062,8 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 res, status = _fres, _fres.get("status")
         ok = _status_ok(status, expect)
         autofilled: List[str] = []
+        if _scope_note:
+            autofilled.append(_scope_note)  # #566x: SAY it in the record, never silently
         # #301+#316: a /oauth/authorize step lacking the PKCE code_challenge (bare OR
         # params-bearing) correctly 400/422s on a working AS and can never pass —
         # tolerate it so a synthesized probe doesn't wedge business_chain (r82 M2 +
@@ -2365,6 +2429,16 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                     del seen_responses[:-40]
                 except Exception:
                     pass
+                # #566x: a tenant THIS chain created is a scope its own reset may
+                # safely wipe. Prefer the server's echoed id; fall back to the id the
+                # step ASKED for (the contract does not pin the create's response
+                # shape, and r130's `save: {tid: item.tenant_id}` captured nothing).
+                if str(path).split("?", 1)[0].rstrip("/") in _CONTROL_PLANE_TENANT_CREATE:
+                    _tid = _extract_resource_id(_payload)
+                    if _tid is None and isinstance(body, Mapping):
+                        _tid = body.get("tenant_id") or body.get("id")
+                    if _tid is not None and str(_tid).strip():
+                        own_tenant_id = _tid
                 _cid = _extract_resource_id(_payload)
                 if _cid is not None:
                     last_id = _cid
