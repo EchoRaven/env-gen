@@ -50,9 +50,18 @@ _PROBE = """() => {
   // #224: a live [data-fallback] root means the user is looking at the generic
   // framework fallback page — runtime truth, independent of source cosmetics.
   const fbEls = document.querySelectorAll('[data-fallback]').length;
+  // #573: did this route actually ASK the backend for anything? Runtime truth from the
+  // Resource Timing buffer — no driver wiring, no source parsing. It separates a page that
+  // fetched and rendered nothing (a real empty shell) from one that never fetched because
+  // it is not a data surface at all (a logged-out marketing landing).
+  let apiReqs = 0;
+  try {
+    apiReqs = performance.getEntriesByType('resource')
+      .filter((e) => /\\/api\\//.test(e.name || '')).length;
+  } catch (e) { apiReqs = -1; }   // unsupported → -1 = "unknown", never "none"
   return { textLen: txt.length, sample: txt.slice(0, 120), text: txt.slice(0, 4000),
            buttons: btns, inputs: inputs, pw: pw, signin: signin, mapEls: mapEls,
-           fbEls: fbEls };
+           fbEls: fbEls, apiReqs: apiReqs };
 }"""
 
 
@@ -614,6 +623,10 @@ async def run_browser_test_user(
                         rec["map_rendered"] = _mapn > 0
                         # #224: live [data-fallback] DOM + per-route seed rendering
                         rec["fallback_dom"] = int(probe.get("fbEls", 0) or 0) > 0
+                        # #573: -1/absent = unknown (older probe / unsupported API) → the
+                        # dataless rules keep their previous behaviour; 0 = provably never
+                        # asked the backend for anything.
+                        rec["api_requests"] = probe.get("apiReqs")
                         if seed_values:
                             _rt_rd = real_data_verdict(
                                 [str(probe.get("text", ""))], seed_values)
@@ -753,9 +766,19 @@ def _finalize_walkthrough(report: Dict[str, Any]) -> Dict[str, Any]:
     # #231d (r21): the PRIMARY route ('/') rendering ZERO seed data is the
     # delivered app's face showing an empty shell ('No videos found' while the
     # API served 39 rows) — HARD, unlike the advisory dataless_pages above.
+    # #573 (netflix r137, live): this held delivery for 6 attempts / 38 min on a CORRECT app.
+    # The primary route was a logged-out marketing landing (LandingPage.jsx: 198 lines, zero
+    # fetch(), zero catalog markup — exactly what netflix.com serves at '/'), so of course it
+    # rendered no seed value. The premise of #231d is "the delivered app's FACE is showing an
+    # empty shell", which only holds for a page that ASKED for data and got nothing back.
+    # Require that: a route that never issued an /api/ request is not a data surface and
+    # cannot be an empty shell. r21's motivating case is preserved exactly — that feed DID
+    # fetch (the API served 39 rows) and still rendered "No videos found", so it keeps firing.
+    # api_requests is None/-1 when unknown (older probe, unsupported timing API) → unchanged.
     report["primary_dataless"] = any(
         str(p.get("route") or "").rstrip("/") in ("", "/")
         and p.get("route_seed_hit") is False and not p.get("blank")
+        and p.get("api_requests") != 0
         for p in pages)
     # HOLLOW FRONTEND: the app builds + serves, the login form is present, but a logged-in
     # user cannot actually reach the app — at least half the PROTECTED pages bounce to the
