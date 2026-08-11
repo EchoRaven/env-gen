@@ -1195,6 +1195,17 @@ def _custom_route_overrides_projected(method, path):
         segs = segs[1:]
     if not segs:
         return True
+
+    def _fw_resource_seg(seg):
+        """#566w: map a URL path SEGMENT into the namespace the resource sets use.
+        The sets are built from TABLE names (snake_case: my_list, continue_watching) but REST
+        paths for the same resource are kebab-case (/api/my-list). Comparing the raw segment
+        missed EVERY multi-word resource, dropping it out of the #77/#528 projected-read-wins
+        guard so a buggy lane GET shadowed the safe projected read (netflix r130, live:
+        GET /api/my-list oscillated 403-own / 200-cross-user and wedged the run at 0 tags).
+        Defined INSIDE this function: the #528 test harness slices this def out of the
+        template and execs it standalone, so it must not reference module-level helpers."""
+        return str(seg or "").strip().lower().replace("-", "_")
     last = segs[-1]
     n_params = sum(1 for s in segs if s.startswith("{") or s.startswith(":"))
     last_is_param = last.startswith("{") or last.startswith(":")
@@ -1224,14 +1235,14 @@ def _custom_route_overrides_projected(method, path):
         # explicit belt-and-suspenders so #77 owner-scoped resources ALWAYS project-win even if
         # the registered set is later narrowed. /api/search & other unregistered collection GETs
         # are in NEITHER set → lane still wins (unchanged).
-        if _is_get and (segs[0].lower() in _NESTED_CHILD_RESOURCES
-                        or segs[0].lower() in _OWNER_SCOPED_RESOURCES):
+        if _is_get and (_fw_resource_seg(segs[0]) in _NESTED_CHILD_RESOURCES
+                        or _fw_resource_seg(segs[0]) in _OWNER_SCOPED_RESOURCES):
             return False
         return _is_get
     if last_is_param and n_params == 1:               # item by id: /messages/{id}, /api/titles/{id}
         # resource = the segment BEFORE the trailing {id} (segs[-2]) so a namespaced path
         # (/api/v1/messages/{id} → 'messages') is still covered, not the version prefix.
-        _res = segs[-2].lower() if len(segs) >= 2 else segs[0].lower()
+        _res = _fw_resource_seg(segs[-2]) if len(segs) >= 2 else _fw_resource_seg(segs[0])
         # #528: the projected item read (db.get(Model, id), 200/404 by construction) wins for
         # GET on any REGISTERED resource; #77 owner-scoped stays projected (no cross-user leak).
         # An unregistered by-id GET is in neither set → lane wins (unchanged).
@@ -1259,7 +1270,7 @@ def _custom_route_overrides_projected(method, path):
             and not (segs[2].startswith("{") or segs[2].startswith(":"))
             and ((len(segs) == 3 and not last_is_param)
                  or (len(segs) == 4 and last_is_param))
-            and segs[2].lower() in _NESTED_CHILD_RESOURCES):
+            and _fw_resource_seg(segs[2]) in _NESTED_CHILD_RESOURCES):
         return False
     return True                                       # actions / search / novel → custom wins
 
