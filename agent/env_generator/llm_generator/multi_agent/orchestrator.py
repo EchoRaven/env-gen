@@ -3370,7 +3370,8 @@ class Orchestrator:
                 # Block ONLY when the walk actually RAN and found an objective unusable-app
                 # signal ("a real user cannot use this app"). A None/could-not-run report
                 # falls through (infra never blocks delivery). Pure predicate — unit-tested.
-                from .runtime.test_user_runner import browser_report_unusable
+                from .runtime.test_user_runner import (browser_report_unusable,
+                                                        browser_unusable_signals)
                 _bg_unusable = browser_report_unusable(_bg_report)
                 if _bg_unusable:
                     # Bounded deferral (same escape as the squad/visual gates — a generic
@@ -3392,15 +3393,18 @@ class Orchestrator:
                     _bg_decision = browser_gate_decision(_bg_report, _bg_decision)
                     self._tu_browser_attempts = getattr(self, "_tu_browser_attempts", 0) + 1
                     if _bg_decision == "defer":
+                        # #572: name the signals that ACTUALLY fired, derived from the
+                        # predicate itself. The old hand-listed subset omitted
+                        # fallback_dom_pages/primary_dataless, so r137 deferred 4x while
+                        # logging an all-clean line and dispatching a P0 that named nothing.
+                        _bg_signals = browser_unusable_signals(_bg_report) or {
+                            "(none — predicate and message disagree)": True}
                         self._logger.warning(
                             "DELIVERY DEFERRED: browser test-user found the app UNUSABLE "
-                            "(auth_ok=%s blank=%s login_wall=%s hollow=%s no_real_data=%s "
-                            "fake_map=%s) — P0 dispatched to the frontend; re-testing after the "
+                            "(%s) — P0 dispatched to the frontend; re-testing after the "
                             "fix lands (attempt %s, %ss deferred). Set "
                             "ENVGEN_TESTUSER_BROWSER_GATE=0 to disable.",
-                            _bg_report.get("auth_ok"), _bg_report.get("blank_pages"),
-                            _bg_report.get("auth_redirect_pages"), _bg_report.get("hollow_frontend"),
-                            _bg_report.get("no_real_data"), _bg_report.get("fake_map_pages"),
+                            ", ".join(f"{_k}={_v!r}" for _k, _v in _bg_signals.items()),
                             self._tu_browser_attempts,
                             int(_bg_now - self._tu_browser_deferred_since))
                         return  # hold this milestone's release until the UI is usable

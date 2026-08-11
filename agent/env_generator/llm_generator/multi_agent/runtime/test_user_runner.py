@@ -963,6 +963,33 @@ def clean_ui_flow_passes(report: Mapping[str, Any]) -> List[str]:
     return passes
 
 
+def browser_unusable_signals(report: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+    """#572 — the signals that actually make ``browser_report_unusable`` True, as
+    ``{name: value}``, so the operator-facing message can be DERIVED from the predicate
+    instead of hand-listing a subset of it.
+
+    netflix r137, live: the deferral log printed
+    ``auth_ok=True blank=[] login_wall=[] hollow=False no_real_data=False fake_map=[]`` — every
+    field clean — while deferring delivery for the 4th time (23 min). The predicate had grown
+    two newer signals, ``fallback_dom_pages`` (#224) and ``primary_dataless`` (#231d), that the
+    message was never taught to print, so the hold looked evidence-free and the frontend's P0
+    named nothing to fix. Returning the fired set keeps the two from drifting again."""
+    out: Dict[str, Any] = {}
+    if not isinstance(report, dict) or not report.get("ran"):
+        return out
+    if not report.get("api_login_ok"):
+        if not report.get("auth_ok"):
+            out["auth_ok"] = report.get("auth_ok")
+        for _k in ("auth_redirect_pages", "hollow_frontend"):
+            if report.get(_k):
+                out[_k] = report.get(_k)
+    for _k in ("blank_pages", "no_real_data", "fake_map_pages",
+               "fallback_dom_pages", "primary_dataless"):
+        if report.get(_k):
+            out[_k] = report.get(_k)
+    return out
+
+
 def browser_report_unusable(report: Optional[Mapping[str, Any]]) -> bool:
     """PRE-RELEASE GATE predicate (2026-06-30): True iff the browser walk RAN and found an
     OBJECTIVE "a real user cannot use this app" signal — login broken (``auth_ok`` False),
