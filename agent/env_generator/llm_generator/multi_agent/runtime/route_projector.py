@@ -661,6 +661,30 @@ def _owner_fk(child_meta: Dict[str, Any], exclude: Tuple[str, ...] = ()) -> Opti
     return None
 
 
+def _is_per_user_sub_entity_fk(child_meta: Dict[str, Any], owner_fk: str,
+                               models: Dict[str, Dict[str, Any]]) -> bool:
+    """#566y — True iff ``owner_fk`` attributes the row to a PER-USER SUB-ENTITY (a
+    persona row that itself belongs to a user: ``continue_watching.profile_id`` →
+    ``profiles.user_id`` → ``users``) rather than to the user DIRECTLY
+    (``posts.author_id`` → ``users``).
+
+    This decides whether a projected READ may be owner-scoped WITHOUT the contract's
+    ``owner_scoped_reads`` opt-in. A DIRECTLY user-owned collection is genuinely
+    ambiguous — a public feed is a list of rows each owned by some user — so it stays
+    opt-in, exactly as before. A SUB-ENTITY-owned row is per-persona private state by
+    construction, and the projection already treats it that way on the WRITE side: the
+    create refuses a body owner-FK the caller does not own (#566s, 403) and auto-fills
+    the caller's own via ``_fw_owner_val``. A read that returns every persona's rows
+    contradicts the write it is paired with — and leaks.
+
+    Shape-derived from the contract's FK graph; no product literals."""
+    tgt = (child_meta.get("fks") or {}).get(owner_fk)
+    if not tgt or tgt == "users":
+        return False
+    parent = models.get(tgt) or {}
+    return any(t == "users" for t in (parent.get("fks") or {}).values())
+
+
 def _scope_fk(child_meta: Dict[str, Any], parent_table: str, parent_singular: str) -> Optional[str]:
     """The child column linking it to a parent — used to LIST/scope by the parent."""
     cols = child_meta.get("cols", [])
@@ -873,6 +897,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
     cols: List[str] = []
     table = ""
     owner_fk = None
+    owner_sub_entity = False  # #566y
     if res:
         table, meta = res
         cls, cols = meta["cls"], meta["cols"]
@@ -882,6 +907,16 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         # off this — "only see your own rows" is domain-dependent (private notes
         # vs a public feed), so it stays a separate, explicit decision.
         owner_fk = _owner_fk(meta) if auth else None
+        # #566y: a SUB-ENTITY owner (profile_id → profiles → users) makes the resource
+        # per-persona private BY CONSTRUCTION, so its reads scope without waiting for
+        # the contract flag — which a draw may simply omit (netflix r131: `profiles`
+        # carried owner_scoped_reads, `continue_watching` did not, so the projected
+        # GET /api/continue-watching served EVERY profile's rows to any authenticated
+        # caller while its own POST 403'd a foreign profile_id).
+        owner_sub_entity = bool(owner_fk) and _is_per_user_sub_entity_fk(meta, owner_fk, models)
+    # A read is owner-scoped when the CONTRACT says so, or when the owner FK's shape
+    # already settles it. Direct-user-owned resources keep the opt-in (public feed).
+    read_scoped = bool(owner_fk) and (bool(owner_scoped_reads) or owner_sub_entity)
 
     # Nested parent: /api/users/{username}/posts → parent users(User) via {username}.
     parent_ctx = _parent_context(path, models, table) if cls else None
@@ -967,10 +1002,11 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             "    if obj is None:",
             '        raise HTTPException(status_code=404, detail="not found")',
         ]
-        if owner_scoped_reads and owner_fk:
+        if read_scoped:
             # PRIVATE resource: a non-owner read is a 404 (not 403 — don't even
             # leak existence), exactly like the PUT/DELETE owner gate. Opt-in via
-            # the resource's owner_scoped_reads contract signal; open by default.
+            # the resource's owner_scoped_reads contract signal (or, #566y, settled
+            # by a sub-entity owner FK); open by default.
             body_lines += [
                 f'    if getattr(obj, "{owner_fk}", None) != _fw_owner_val(type(obj), "{owner_fk}", user):',
                 '        raise HTTPException(status_code=404, detail="not found")',
@@ -1070,7 +1106,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             "    term = (q or \"\").strip()",
             f"    query = db.query({cls})",
         ]
-        if owner_scoped_reads and owner_fk:
+        if read_scoped:
             body_lines.append(
                 f'    query = query.filter(getattr({cls}, "{owner_fk}") == _fw_owner_val({cls}, "{owner_fk}", user))')
         body_lines += [
@@ -1116,7 +1152,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             body_lines = ['    return {"item": {}}']
     elif cls and m == "GET":
         # GET collection
-        if owner_scoped_reads and owner_fk:
+        if read_scoped:
             # PRIVATE resource: the list is the caller's own rows only.
             body_lines = [
                 f'    rows = db.query({cls}).filter(getattr({cls}, "{owner_fk}") == _fw_owner_val({cls}, "{owner_fk}", user)).limit(100).all()',
