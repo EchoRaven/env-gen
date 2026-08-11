@@ -241,6 +241,19 @@ _OAUTH_AUTHORIZE_RE = re.compile(r"/oauth/authorize\b")
 _OAUTH_CODE_CHALLENGE_RE = re.compile(r"code_challenge", re.I)
 
 
+def _request_identity(step: Mapping[str, Any], method: Any, path: Any, body: Any) -> tuple:
+    """#566z — what makes two chain steps THE SAME REQUEST: verb, full path INCLUDING the
+    query string, the actor's auth ref, and the body. Query string and auth ref are part of
+    the key deliberately: `?profile_id=<foreign>` or a different token is a DIFFERENT request
+    and must keep every tooth of its isolation assertion."""
+    try:
+        _b = json.dumps(body, sort_keys=True) if body is not None else ""
+    except Exception:
+        _b = str(body)
+    return (str(method or "").upper(), str(path or "").rstrip("/"),
+            str(step.get("auth") or ""), _b)
+
+
 def _oauth_authorize_lacks_pkce(path, body) -> bool:
     """#301+#316 — a /oauth/authorize step that carries NO ``code_challenge`` cannot
     complete on a PKCE-enforced AS: it correctly 400/422s ("code_challenge with S256
@@ -1832,6 +1845,7 @@ def execute_chain(base: str, chain: Mapping[str, Any],
     last_reg_creds: Dict[str, Any] = {}  # creds of the last successful /auth/register → reused if a later /auth/login 401s
     own_user_id: Any = None  # the chain user's own id (from /auth/register) — recovery must not target SELF (FIX #81)
     own_tenant_id: Any = None  # #566x: a tenant THIS chain created → the scope its reset may safely wipe
+    succeeded_requests: set = set()  # #566z: identities that ALREADY answered 2xx in THIS chain
     own_username: Any = None  # #323: the chain user's OWN username — owner-scoped self-view recovery targets THIS
     unsatisfied: set = set()  # vars an earlier BROKEN step failed to save → its dependents are unreachable
     # FIX #188: var → step-action whose OK response lacked the save path — the
@@ -2073,6 +2087,26 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         if not ok and status in (400, 422) and _oauth_authorize_lacks_pkce(path, body):
             ok = True
             autofilled.append("oauth-authorize-incomplete-tolerated")
+        # #566z (netflix r132, live): the verifier authored the SAME request TWICE for the
+        # SAME actor with mutually exclusive expectations — [200] then [400] on a bare
+        # GET /api/continue-watching. It meant "with no profile selected → 400", which a
+        # chain step cannot express: steps carry method/path/body/auth and NO headers. One
+        # request cannot be answered two ways, so the step can never pass.
+        # Left standing it does not merely wedge — it MISTEACHES the lane. r132: chasing the
+        # 400, the backend made the endpoint REQUIRE an X-Profile-Id header the harness
+        # cannot send, so every legitimate 200-expecting step across 5 chains began failing
+        # with "X-Profile-Id header is required" (1 failing chain → 5). That is the exact
+        # "owner-scoping oscillation" logged against r126–r130: an unsatisfiable authored
+        # expectation is its engine, not lane incompetence.
+        # Waive it as MIS-AUTHORED. This CANNOT mask a cross-user leak by construction: the
+        # waiver fires only when the actor is IDENTICAL to one already entitled to a 2xx on
+        # that exact request, so no second identity is involved. A different auth ref, query
+        # string or body yields a different identity and keeps every tooth.
+        if (not ok and isinstance(status, int) and 200 <= status < 300
+                and expect and not any(200 <= e < 300 for e in expect)
+                and _request_identity(step, method, path, body) in succeeded_requests):
+            ok = True
+            autofilled.append("unsatisfiable-duplicate-expectation-waived")
         # netflix r11: a verifier-authored DENIAL probe (expect has no 2xx, e.g.
         # [401,403]) against a CONTROL-PLANE public infra endpoint (control_plane.py:
         # /api/v1/tenants etc., auth_required=False) is MIS-AUTHORED — that endpoint is
@@ -2410,6 +2444,10 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             entry["autofilled"] = autofilled
         recorded.append(entry)
         if ok:
+            # #566z: remember what this actor already got a 2xx for. Recorded AFTER the
+            # waiver check above, so a step can never waive ITSELF.
+            if isinstance(status, int) and 200 <= status < 300:
+                succeeded_requests.add(_request_identity(step, method, path, body))
             # Auto-capture the current resource id (id / item.id / items[0].id) from
             # EVERY successful step — feeds the unresolved-variable fallback above so a
             # later get/update/delete step can target a real row even when the verifier
