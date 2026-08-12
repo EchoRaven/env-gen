@@ -8333,6 +8333,80 @@ def _dominant_route_wrapper(app_jsx: str) -> Optional[str]:
     return name if cnt >= 2 and in_scope else None
 
 
+def repair_stale_route_components_597(app_jsx: str, ui_pages: List[Dict[str, Any]],
+                                      pages_dir: Any) -> tuple:
+    """#597 — a route that IS wired, but to the component the contract used to name.
+
+    `project_missing_ui_routes` only ever INJECTS: it asks `_route_is_wired(route, app_jsx)`
+    and skips anything already present. `/login` IS present — pointing at the wrong file — so
+    the drift it cannot see is exactly the one that orphans the lane's work.
+
+    App.jsx is projected from the ui_pages contract at one moment; the contract's `component`
+    can change afterwards and the router is never re-projected. Timestamps from the artifacts:
+
+        r134  ui_page `login` updated 07:34:51 -> component `Login`, path .../Login.jsx
+              App.jsx last written    07:09:15   (25 min EARLIER, still importing LoginPage)
+        r115  ui_page `login` updated 00:50:23 -> component `Login`
+              App.jsx last written    00:49:39   (44 s earlier)
+
+    The lane then builds what the CONTRACT names and is silently unrouted. r134's orphaned
+    `Login.jsx` says so in its own comment — "the canonical /login page component declared in
+    the ui_page contract (name='login', component='Login')" — and composes AuthShell+AuthForm,
+    while the router keeps serving the framework's 72-line base template. r115's orphan is a
+    162-line page with router navigation, an auth service and a logo component.
+
+    Both were found by a structural arbiter (imported project components x2 + a services
+    import + react-router usage) run over all 23 forked `X.jsx`/`XPage.jsx` pairs in the arc:
+    it AGREES with the router on 21 and disagrees on exactly these 2 — and on both it is right.
+    Line count is NOT the arbiter and would be wrong twice over: r134's orphan is 17 lines
+    (it delegates to two components) and r134's `Landing.jsx` is a 3-line re-export shim.
+
+    Rewrites the import + JSX element only when the contract's component file EXISTS on disk,
+    so this can never point a route at a missing file. Returns ``(text, [(old, new), ...])``.
+    """
+    try:
+        if not app_jsx or not ui_pages:
+            return app_jsx, []
+        from pathlib import Path as _P
+        _pd = _P(str(pages_dir)) if pages_dir else None
+        text = app_jsx
+        fixed: List[tuple] = []
+        for page in ui_pages:
+            if not isinstance(page, dict):
+                continue
+            route = str(page.get("route") or "").strip()
+            comp = str(page.get("component") or "").strip()
+            if not route or not comp or not re.match(r"^[A-Za-z_$][\w$]*$", comp):
+                continue
+            m = re.search(r"""<Route\s+path=["']"""
+                          + re.escape(route)
+                          + r"""["'][^>]*element=\{\s*<([A-Za-z_$][\w$]*)""", text)
+            if not m:
+                continue
+            routed = m.group(1)
+            want = _safe_import_alias(comp)
+            if routed == want:
+                continue
+            # only when the contract's own file is really there — never dangle a route
+            if _pd is None or not (_pd / f"{comp}.jsx").is_file():
+                continue
+            # ...and only when the routed twin is the SUFFIX variant of it, i.e. the same
+            # page under the older name. An unrelated component is someone's deliberate
+            # wiring, not drift.
+            if routed not in (f"{comp}Page", comp + "page", comp.replace("Page", "")):
+                continue
+            text = re.sub(r"""import\s+""" + re.escape(routed)
+                          + r"""\s+from\s+['"][^'"]*/pages/[^'"]+['"]\s*;?""",
+                          f"import {want} from './pages/{comp}.jsx';", text, count=1)
+            text = re.sub(r"""(<Route\s+path=["']""" + re.escape(route)
+                          + r"""["'][^>]*element=\{\s*<)""" + re.escape(routed) + r"\b",
+                          r"\g<1>" + want, text, count=1)
+            fixed.append((routed, want))
+        return (text, fixed) if fixed else (app_jsx, [])
+    except Exception:
+        return app_jsx, []      # never corrupt a lane file
+
+
 def project_missing_ui_routes(app_jsx: str, ui_pages: List[Dict[str, Any]]
                               ) -> Tuple[str, List[str]]:
     """ADDITIVELY inject a ``<Route>`` (+ default import) for every declared
@@ -8683,7 +8757,12 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                 # /feed/library → delivery hard-blocked forever). Frontend twin of the
                 # backend's additive project_missing_routes. Idempotent; never clobbers.
                 new_text, injected_routes = project_missing_ui_routes(existing, ui_pages)
-                if injected_routes:
+                # #597: and repair the routes that ARE wired but to the component the
+                # contract used to name — the drift project_missing_ui_routes cannot see,
+                # because `_route_is_wired` is satisfied by the stale import.
+                new_text, _recomped = repair_stale_route_components_597(
+                    new_text, ui_pages, app.parent / "pages")
+                if injected_routes or _recomped:
                     app.write_text(new_text, encoding="utf-8")
         return {"scaffolded": sorted(scaffolded), "routes": len(entries),
                 "app_wired": app_wired, "injected_routes": injected_routes}
