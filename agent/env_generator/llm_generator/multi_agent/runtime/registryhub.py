@@ -1716,7 +1716,11 @@ class RegistryHub:
                                "clean gate. To ADD coverage use a NEW chain name; the freeze "
                                "lifts automatically at the next milestone (new endpoints)."),
                 }
-        from .chain_executor import normalize_steps, unsatisfiable_expectation_pairs
+        from .chain_executor import (
+            normalize_steps,
+            undecidable_access_expectations,
+            unsatisfiable_expectation_pairs,
+        )
         norm, errors = normalize_steps(steps)
         if errors or not norm:
             return {"error": (
@@ -1741,6 +1745,23 @@ class RegistryHub:
                 "REJECTION, make it a genuinely different request: a different actor (auth), "
                 "a foreign id in the path/query, or a different body — a chain step carries no "
                 "headers, so 'the same call without a header' cannot be expressed.")}
+        # #591: the MIRROR of #586 — an expectation nothing can FALSIFY. A business step that
+        # accepts both a 2xx and 401/403 passes whether the app served the data or refused the
+        # caller, so it proves nothing about access control while still counting toward the
+        # green chain total. Arc-wide: 56 such steps in 16 runs, sitting on exactly the
+        # resources every owner-scoping leak lived on (/api/my-list x26, rating x8,
+        # /api/continue-watching x6) — r133 (the #568 live leak) has 12, r142 has 13.
+        _blind = undecidable_access_expectations(norm)
+        if _blind:
+            _d = "; ".join(f"step[{i}] {p} expects {c}" for i, p, c in _blind[:3])
+            return {"error": (
+                "chain rejected: undecidable access expectation — " + _d +
+                ". Accepting a 2xx AND 401/403 for the same step means it passes whether the "
+                "request was SERVED or REFUSED, so it cannot detect a cross-user leak or a "
+                "wrongly-denied owner. Decide what this actor should get: keep the 2xx for the "
+                "OWNER, and put the denial in a SEPARATE step that uses a different actor "
+                "(auth) or a foreign id. Control-plane paths (/auth, /oauth, /api/v1/*, "
+                "/health, /.well-known) are exempt; 409 and 404 are not denial codes.")}
         # PROPOSAL #42 (user): every chain step MUST exercise a REGISTERED endpoint. A
         # chain that references an endpoint which doesn't exist tests a phantom (404/422)
         # and fails business_chain forever (the verifier authors loose paths). All

@@ -359,6 +359,57 @@ def unsatisfiable_expectation_pairs(steps: Sequence[Mapping[str, Any]]) -> List[
     return sorted(out)
 
 
+#591 — the MIRROR of #586. #586 rejects an expectation nothing can satisfy; this rejects one
+# NOTHING CAN FALSIFY. A BUSINESS step whose `expect` accepts both a 2xx and 401/403 passes
+# whether the app served the data or refused the caller, so it verifies nothing about access
+# control — while still counting toward the green chain total the delivery gate reads.
+#
+# Measured over the arc's 1682 chains / 5861 business steps carrying an explicit expectation:
+# 56 such steps in 16 runs, and they sit on exactly the resources every owner-scoping leak in
+# this arc lived on — `/api/my-list` x26, `/api/titles/{id}/rating` x8, `/api/continue-watching`
+# x6, `/api/profiles` x2. r133 (the #568 live cross-user leak) has 12; r142, one of the three
+# *** MULTI-MILESTONE VALIDATED *** runs, has 13.
+#
+# Scope is deliberately narrow. CONTROL-PLANE paths are exempt: on /auth, /oauth, /api/v1/*,
+# /health and /.well-known a chain legitimately means "this surface exists and answers sanely"
+# and cannot know whether its user is an admin — 710 steps arc-wide accept a 2xx together with
+# some 4xx, and 654 of them are exactly that. 409 (already exists) and 404 (already gone) are
+# NOT denial codes and never trip this: `POST /auth/register [200,201,409]`, the single most
+# common wide expectation in the arc, is untouched.
+_UNDECIDABLE_DENIAL_CODES = (401, 403)
+_CHAIN_CONTROL_PREFIXES = ("/auth", "/oauth", "/api/v1/", "/health", "/.well-known", "/mcp")
+
+
+def undecidable_access_expectations(steps: Sequence[Mapping[str, Any]]) -> List[tuple]:
+    """#591 — business steps that pass whether the request was served OR denied.
+
+    Returns ``[(i, "METHOD path", sorted_codes)]``. A step is only reported when its expectation
+    is EXPLICIT (an absent expect means "must succeed" and is decidable), names at least one 2xx
+    AND at least one of 401/403, and targets a business path."""
+    out: List[tuple] = []
+    for i, st in enumerate(steps or []):
+        if not isinstance(st, Mapping):
+            continue
+        path = str(st.get("path") or "")
+        bare = path.split("?", 1)[0]
+        if not bare or bare.startswith(_CHAIN_CONTROL_PREFIXES):
+            continue
+        _exp = st.get("expect")
+        if _exp is None:
+            continue
+        if not isinstance(_exp, (list, tuple, set)):
+            codes = [int(_exp)] if str(_exp).isdigit() else []
+        else:
+            codes = [int(x) for x in _exp if str(x).isdigit()]
+        if not codes:
+            continue
+        if any(200 <= c < 300 for c in codes) and any(
+                c in _UNDECIDABLE_DENIAL_CODES for c in codes):
+            out.append((i, f"{str(st.get('method') or 'GET').upper()} {bare}",
+                        sorted(set(codes))))
+    return out
+
+
 def _authored_success_identities(steps: Sequence[Mapping[str, Any]]) -> set:
     """#570 — the request identities the chain ITSELF expects to SUCCEED somewhere.
 
