@@ -565,6 +565,7 @@ def _models_meta(tables: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 
     def add(table: str, cols: List[Dict[str, Any]]) -> None:
         names, fks, types, uniq = [], {}, {}, []
+        required: List[str] = []          # #599
         have_pk = False
         pk_name, pk_type = None, "integer"
         for c in cols:
@@ -588,6 +589,13 @@ def _models_meta(tables: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
                 have_pk = True
                 pk_name = n
                 pk_type = str(c.get("type") or "integer")
+            # #599: NOT NULL with no default of any kind — the seed MUST provide a value or
+            # the whole row is dropped at load. Carried here because `_build_seed_rows` has
+            # only this meta to work from.
+            elif (c.get("nullable") is False
+                    and c.get("default") in (None, "")
+                    and c.get("server_default") in (None, "")):
+                required.append(n)
             tgt = _fk_target(c)
             if tgt:
                 fks[n] = tgt.split(".")[0]
@@ -598,7 +606,7 @@ def _models_meta(tables: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
             pk_name = "id"  # synthesized SERIAL id
         meta[table] = {"cls": _class_name(table), "cols": names, "fks": fks,
                        "pk": pk_name, "pk_type": pk_type, "types": types,
-                       "unique": uniq}
+                       "unique": uniq, "required": required}
 
     add("tenants", _merge_cols(_SPINE_TENANT_COLS, by_name.get("tenants", [])))
     add("users", _merge_cols(_SPINE_USER_COLS, by_name.get("users", [])))
@@ -2101,6 +2109,26 @@ def _seed_topo_order(meta: Dict[str, Dict[str, Any]]) -> List[str]:
     return order
 
 
+def _seed_required_fallback(sa_type: Any, i: int) -> Any:
+    """#599 — a deterministic value for a NOT NULL column no naming rule covers.
+
+    Type-directed, mirroring what ``_fw_fill_required_defaults`` does for a request body:
+    the point is only that the row LOADS. Returns ``_SEED_OMIT`` for a type it cannot
+    safely fill, so behaviour there is unchanged."""
+    t = str(sa_type or "").lower()
+    if "bool" in t:
+        return i % 2 == 0
+    if "int" in t or "numeric" in t or "float" in t or "decimal" in t:
+        return i + 1
+    if "date" in t or "time" in t:
+        return _SEED_OMIT           # the loader's datetime coercion path stays untouched
+    if "json" in t:
+        return {}
+    if "text" in t or "string" in t or "char" in t or "unicode" in t or "uuid" in t:
+        return _SEED_TITLES[i % len(_SEED_TITLES)]
+    return _SEED_OMIT
+
+
 def _build_seed_rows(tables: Dict[str, Any]):
     """Build the deterministic default seed ``{table: [rows]}`` + the metadata the loader
     needs (class map, per-table owner column, whether the user PK is integer). Shared by
@@ -2126,6 +2154,25 @@ def _build_seed_rows(tables: Dict[str, Any]):
                 _fk = fks.get(c) or _seed_infer_fk(c, known_tables)
                 v = _seed_cell(c, t, i, _fk, counts,
                                pk_name=_pk_name, pk_type=_pk_type, pk_types=pk_types)
+                if v is _SEED_OMIT and c in (meta[t].get("required") or ()):
+                    # #599: `_seed_cell` omits a column it has no naming rule for, and the
+                    # loader then drops the ENTIRE row on the NOT NULL — silently, by design
+                    # ("a dropped seed row … uncovered NOT NULL … _seed_dbg prints it when
+                    # FW_DEBUG is set"). Measured over the 1196 seeded tables in the arc: 204
+                    # columns are NOT NULL with no default of any kind and never set, and the
+                    # damage is whole EMPTY TABLES, not missing fields — r134, one of the three
+                    # *** MULTI-MILESTONE VALIDATED *** runs, ships `ratings` empty
+                    # (`value Text NOT NULL`, seed rows are `{profile_id, title_id}`) AND
+                    # `episodes` empty (`season Integer NOT NULL`, never seeded). Top offenders
+                    # arc-wide: ratings.value x80, episodes.season x34, genres.slug x15.
+                    # 4 instances survive into r134+.
+                    #
+                    # A required column has no naming rule precisely because it is
+                    # domain-specific, so fall back on the column's TYPE — the same thing
+                    # `_fw_fill_required_defaults` already does for a request body on the API
+                    # path. Deterministic, and only ever reached where the alternative is a
+                    # dropped row.
+                    v = _seed_required_fallback(meta[t].get("types", {}).get(c), i)
                 if v is not _SEED_OMIT:
                     row[c] = v
             if t == "users":
