@@ -613,6 +613,119 @@ _OVERLAY_NAME_RE = re.compile(
 # them, some later pass overwrote them (r142: a reprojected 118-line shell); that is a build
 # regression and no similarity score should be able to buy it a pass. Recorded as a separate
 # blocking reason so `_blocking_average` — reporting-only since #542a — stays untouched.
+#595 — TWO OPEN DROPDOWNS IS NOT A STATE ANY APP CAN BE IN. #128/#542a demote a transient
+# capture by the screen's NAME (`*_menu`, `*_dropdown`, `hover`, `preview`, `ad`). §5.0t already
+# recorded the hole that leaves: on `player.jpg` the transient-ness was in the IMAGE, invisible
+# to every name-based guard. `browse_by_languages` — mean 0.424, the WORST screen in the arc and
+# a blocker in 27 of 40 scored runs — is the second independent instance, and a worse one: its
+# reference was captured with the Original-Language dropdown open, the language list open
+# (Arabic→Vietnamese, occluding the whole right column), AND a hover preview card floating over
+# row 2. Three overlays at once.
+#
+# The measurement already says so, per region, machine-readably:
+#     original-language-dropdown  state "open, showing options"
+#     language-options-menu       state "expanded, long list visible"
+#     title-preview-popover       role "hover/preview popover…"  state "open over row 2"
+#
+# The rule is physical, not aesthetic: opening a second dropdown CLOSES the first, so a frame
+# holding two INDEPENDENT open overlays is not a state the implementation can ever be in. A
+# dropdown and the list it opens are ONE interaction (adjacent boxes, merged), two different
+# dropdowns are two. Measured over the 45 design systems, that separates cleanly:
+#     browse_by_languages  1.78 mean, >=2 in 36/45  <- the target
+#     account_menu 1.78 (36/45) / shows_genres_menu 1.16 (8/45)
+#                                                   <- already advisory via _OVERLAY_NAME_RE
+#     my_list 1.44 (21/45)                          <- per-run, and genuinely the same disease:
+#         r100's frame carries "third tile hovered → expanded preview overlay", "like button
+#         hovered with 'I like this' tooltip visible", and a `status-url-tooltip` that is the
+#         BROWSER's own link-hover status bar — not app UI at all.
+#     title_episodes 0.89 (3/45)
+#     login, games, player, browse_home, movies, shows, landing, genre_category,
+#     title_detail, card_preview, card_hover_preview, rate_dialog, player_controls  -> 0/45
+#
+# `title_detail` is the case a naive AREA threshold gets wrong: its modal occludes 0.504 of the
+# frame, more than any other screen, but it is ONE overlay and it IS the subject. Counting
+# clusters keeps it blocking (where #584 belongs); area would have excused it.
+_OVERLAY_ROLE_RE = re.compile(
+    r"dropdown|menu|popover|overlay|modal|tooltip|hover|preview|flyout|dialog", re.I)
+_OVERLAY_OPEN_RE = re.compile(r"\bopen\b|expanded|hover|showing options", re.I)
+# how close two overlay boxes may sit and still be ONE interaction (normalized frame units) —
+# a dropdown and the list it opens share an edge, so pure intersection links nothing
+_OVERLAY_GAP = 0.02
+
+
+def _overlay_box(region: Any) -> Optional[tuple]:
+    try:
+        x0, y0, x1, y1 = [float(v) for v in (region or [])][:4]
+    except Exception:
+        return None
+    return (x0, y0, x1, y1) if x1 > x0 and y1 > y0 else None
+
+
+def open_overlay_clusters(screen_design: Any) -> int:
+    """#595 — how many INDEPENDENT overlays the reference frame was captured with open.
+
+    A dropdown and the option list it owns overlap, so they count once; two different
+    dropdowns do not, so they count twice. 0 when nothing was measured."""
+    if not isinstance(screen_design, Mapping):
+        return 0
+    boxes: List[tuple] = []
+    for reg in (screen_design.get("regions") or screen_design.get("components") or []):
+        if not isinstance(reg, Mapping):
+            continue
+        if not _OVERLAY_ROLE_RE.search(f"{reg.get('role') or ''} {reg.get('id') or ''}"):
+            continue
+        if not _OVERLAY_OPEN_RE.search(str(reg.get("state") or "")):
+            continue
+        b = _overlay_box(reg.get("region"))
+        if b:
+            boxes.append(b)
+
+    # A dropdown and the list it opens are ADJACENT, not overlapping — they share an edge and
+    # their intersection area is exactly zero. So link by PROXIMITY (each box inflated by
+    # _OVERLAY_GAP on every side, then intersected), and merge transitively: dropdown→list→
+    # sub-list must collapse to one interaction, not a chain of three.
+    n = len(boxes)
+    parent = list(range(n))
+
+    def _find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i in range(n):
+        ax0, ay0, ax1, ay1 = boxes[i]
+        for j in range(i + 1, n):
+            bx0, by0, bx1, by1 = boxes[j]
+            if (min(ax1, bx1) + _OVERLAY_GAP >= max(ax0, bx0)
+                    and min(ay1, by1) + _OVERLAY_GAP >= max(ay0, by0)):
+                ri, rj = _find(i), _find(j)
+                if ri != rj:
+                    parent[ri] = rj
+    return len({_find(i) for i in range(n)})
+
+
+def screens_captured_mid_interaction(project_dir: Any) -> Dict[str, int]:
+    """#595 — ``{screen_name: cluster_count}`` for screens whose reference frame holds TWO or
+    more independent open overlays. Empty when there is no measured design to read."""
+    out: Dict[str, int] = {}
+    try:
+        ds = json.loads((Path(project_dir) / "design" / "design_system.json")
+                        .read_text(encoding="utf-8"))
+    except Exception:
+        return out
+    for sc in ((ds or {}).get("screens") or []):
+        if not isinstance(sc, Mapping):
+            continue
+        nm = str(sc.get("name") or sc.get("id") or "").strip()
+        if not nm:
+            continue
+        n = open_overlay_clusters(sc)
+        if n >= 2:
+            out[nm] = n
+    return out
+
+
 def player_chrome_missing(frontend_dir: Any, component: Any) -> Optional[List[str]]:
     """Controls the framework's own player emitter defines that this page does NOT contain.
 
@@ -2178,6 +2291,24 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         for name, p in prior_by_name.items():
             if name not in _names_now:
                 merged.append(p)
+
+        # #595: a reference frame captured with TWO OR MORE independent overlays open is not a
+        # state the app can be in — demote before the chrome checks, same as #128/#542a do by
+        # name. Runs BEFORE #588/#589 so a screen already excused here is not re-examined.
+        try:
+            _midint = screens_captured_mid_interaction(project_dir)
+            for _s in merged:
+                if _s.get("advisory"):
+                    continue
+                _n = _midint.get(str(_s.get("name") or ""))
+                if _n:
+                    _s["advisory"] = True
+                    _s["advisory_reason"] = (
+                        f"#595 reference frame was captured with {_n} independent overlays open "
+                        "at once — opening one closes another, so no implementation can render "
+                        "this state")
+        except Exception:
+            pass
 
         # #588: a CONTENT-DOMINATED screen whose framework-defined chrome is provably COMPLETE
         # is demoted to advisory — the residual difference is content the app cannot reproduce.

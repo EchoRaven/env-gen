@@ -74,7 +74,9 @@ def test_the_demotion_is_gated_on_being_below_the_bar_and_not_already_advisory()
     import inspect
     from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as vf
     src = inspect.getsource(vf._persist_verdict)
-    i = src.index("#588")
+    # anchor on the block's own opening line, not a bare "#588" — #595's comment references
+    # "#588/#589" and would otherwise win the index()
+    i = src.index("#588: a CONTENT-DOMINATED")
     window = src[i:i + 2400]
     # #589 split the old single guard: already-advisory screens are still skipped outright,
     # and the demotion itself still requires being below the bar.
