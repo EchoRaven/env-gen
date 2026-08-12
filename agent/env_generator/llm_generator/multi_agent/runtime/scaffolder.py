@@ -750,6 +750,19 @@ volumes:
                         _nrep.get("nav"), len(_nrep["rewired"]), _nrep["rewired"])
             except Exception as _e:
                 orch._logger.debug("#440 agent-nav recovery skipped: %s", _e)
+            # #576: a projected page that renders NO nav is invisible to #440 (which only
+            # REWIRES an existing one), so it ships without the app's own chrome — r139
+            # genre_category 0.28 vs browse_home 0.85, the single screen holding the visual
+            # average under the bar. Mount the app's majority-shared component on it.
+            try:
+                from .frontend_scaffold import mount_shared_nav_on_projected_pages
+                _mrep = mount_shared_nav_on_projected_pages(fe)
+                if _mrep.get("mounted"):
+                    orch._logger.info(
+                        "#576 mounted shared nav '%s' on %d chrome-less projected page(s): %s",
+                        _mrep.get("nav"), len(_mrep["mounted"]), _mrep["mounted"])
+            except Exception as _e:
+                orch._logger.debug("#576 shared-nav mount skipped: %s", _e)
             # #534/#535: wire the CORRECT-but-unwired archetype components — a detail
             # route mis-shipped as a video player gets the lane's detail modal; an
             # owned-items list page (My List) gets the shared nav + poster-grid shell.
