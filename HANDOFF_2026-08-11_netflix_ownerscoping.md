@@ -1135,6 +1135,20 @@ are route-less — but the delivered trees **disprove any landing graft** (jacca
 (b) r134's 3-line `Landing.jsx` is a lane-written **re-export shim**, not a thin regression — a
 line-count heuristic flags it and is simply wrong.
 
+**`login`'s deviation clusters are now all attributed.** 282 deviations clustered as
+background/gradient 49, footer 48, card/border 42, get-help 39, register-link 35:
+
+| cluster | verdict |
+|---|---|
+| background/gradient 49 | **#602** — the measured gradient the projector flattened (141 runs carry it in region text) |
+| footer 48 | **#603** — `mx-auto max-w-4xl` + `grid-cols-2 sm:grid-cols-4` were CONSTANTS; the measurement says full-frame (x 0.000→1.000 median) and 4 columns in **139 of 143** |
+| card/border 42 | **#594** — 39 of 45 measured login screens declare no card region at all |
+| get-help 39 | **measured NON-cause** — present in 28/43 delivered pages, score with 0.592 vs without 0.596 |
+| register-link 35 | the framework's own affordance; the reference words it *"Or get started with a new account."* — copy, not structure |
+
+All three fixes are measurement-driven and degrade to byte-identical output where nothing was
+measured (#603: 4 of 143; #594: `None` keeps the panel; #602: an authored `surfaces` entry wins).
+
 > **Next levers, in order.** (1) `login` 29/40 — after #594 the residue is background-gradient
 > and footer detail; the gradient is measured but only in 1 of 45 design systems, so
 > screen-level gradient capture is the prerequisite. (2) `title_detail` 20/40 — #584 fixed the
