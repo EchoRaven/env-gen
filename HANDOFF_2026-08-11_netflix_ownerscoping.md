@@ -1000,6 +1000,74 @@ r103/r113/r115). Breadcrumb: `metadata.schema_wipe_prevented_by`.
 
 ---
 
+### §5.0v — what ACTUALLY keeps the UI gate red, ranked (2026-08-12)
+
+The per-screen gate has never passed, and the arc had been chasing `games`. **`games` is the 6th
+blocker.** Over the 40 runs with a scored gate, counting non-advisory screens below 0.65:
+
+| screen | blocks | mean | best | status |
+|---|---|---|---|---|
+| **login** | **29/40** | 0.593 | 0.82 | framework-scaffolded → **#594** |
+| **browse_by_languages** | **27/40** | **0.424** | 0.82 | **worst screen in the set — UNINVESTIGATED** |
+| player | 20/40 | 0.625 | 0.92 | #588/#589 |
+| title_detail | 20/40 | 0.580 | 0.85 | #584 |
+| genre_category | 9/40 | 0.607 | 0.72 | — |
+| games | 8/40 | 0.671 | 0.80 | see below |
+| shows / my_list / movies | 6/6/5 | ~0.69 | 0.85 | — |
+
+Only **4 of 40** runs had exactly ONE screen below the bar (`login` ×2, `my_list`, `browse_by_languages`)
+— so no single fix flips the gate; this is a stack.
+
+**`login` (#594, LANDED).** 282 deviations cluster as background/gradient 49, footer 48,
+**card/border 42**, get help 39, register-link 35. Only card/border has a structural signal:
+**39 of 45** measured `login` screens declare no card/panel region, yet the template wrapped the
+form in `rounded-md border-white/10 bg-black/20` unconditionally. Now measurement-driven;
+unmeasured (`None`) keeps the panel. Replay: 38 drop, 7 keep, 0 disagreements.
+
+Ruled out on `login` — **do not re-chase**: the chrome slots ARE filled (reCAPTCHA line in
+**42/43** delivered pages — an earlier "0/43" was a bad regex, the framework words it "not a bot"
+with no product literal; `<footer>` 43/43; brand header 43/43; footer links median 6). `Get Help`
+is missing in 15/43 but scores 0.592 with vs 0.596 without — **nothing**.
+
+**Documented, not fixed — the discarded gradient.** `design_system.json` measures it
+(`login: {"background": "#161616", "gradient_note": "top-left radial #3A1010 → transparent →
+#000 bottom"}`, `player_controls: {"gradient": "bottom rgba(0,0,0,0.85) → transparent (top
+40%)"}`) and `_screen_surface_bg` keeps only the flat hex — exactly the judge's "implementation
+is flat black; reference uses a dark red gradient". But only **1 of 45** design systems records a
+screen-level gradient (7 record one at `palette` level), so there is no basis for a projector
+change yet. If screen-level gradient capture becomes reliable, this is the next lever.
+
+**`games` — explained, not fixed.** Every dimension is 0.82–0.89 except `components` 0.610; the
+deviations say "section titled 'New' with movie posters instead of 'Party Games' with game
+tiles". **40 of 45 runs declare a Games page; 0 have a games table or endpoint.** Deterministic
+contract gap: the design analyst reads `games.jpg` and declares the page, the backend contract
+never gets the entity, and `synthesize_missing_tables` cannot help because there is no POST. So
+the page renders `titles` — a user clicking Games sees Movies, which is a FUNCTIONAL bug, not
+just a fidelity one. Not fixed here because synthesising a read-only entity is speculative
+(what columns? what rows?); the honest options are (a) extend synthesis to read-only catalog
+pages declared by the design, or (b) a contract-gap task, the read analog of
+`test_user_squad`'s MISSING WRITE PATH.
+
+**Closed as a NEGATIVE result:** "unbacked page ⇒ low score" is false — pages with a resolvable
+`apis_used` mean **0.619**, dangling **0.574** (n=10), none-declared **0.674**.
+
+**#593 (LANDED) while measuring the above.** The ui_page store is keyed by NAME, so
+`<name>_page` (the #225 design-screen seed) and `<name>` (the contract) each created a record for
+ONE route: **28 duplicate routes in 6 runs, all 28 disagreeing** on `apis_used`/`components`;
+r142 (a VALIDATED run) carries 9, r133 carries 8. The router dispatches on the route, so every
+consumer that iterates the store acted on whichever it hit first. Now merged by route.
+**Stated honestly: this is hygiene, not a fidelity fix** — duplicate-route screens score 0.641
+vs 0.624 and the within-run paired deltas swing +0.183 to −0.252. Merging is strictly not-worse:
+both records were already live and already audited. Replay: 28 → 0, no route lost.
+
+> **Next lever if this is picked up again: `browse_by_languages`, mean 0.424 across 40 runs** —
+> by far the worst screen in the set and never investigated. Its dimensions are components
+> 0.445 / layout 0.547 / copy 0.590, and its deviations name a dual dropdown vs a single one, a
+> 6-col flat grid with captions vs 5-col category rows with TOP-10 ribbons, and a missing hover
+> preview card.
+
+---
+
 ## 6. Other KNOWN-OPEN issues — ALL FOUR CLOSED 2026-08-12
 
 > **2026-08-12: every item below has a measured verdict. Nothing here is open.** Three were
