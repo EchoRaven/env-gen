@@ -1174,6 +1174,7 @@ class RegistryHub:
         # DDL, every other column silently dropped on re-registered tables).
         # Collapse to ONE canonical shape here so the store holds a single
         # representation every downstream reader already understands.
+        _wiped_by: str = ""
         if schema is not None:
             from .database_scaffold import normalize_table_schema
             stored_schema: Any = normalize_table_schema(schema)
@@ -1181,6 +1182,33 @@ class RegistryHub:
             # seed flows register name-first shapes routinely. The junk-table fatality
             # is fixed render-side: database_scaffold synthesises an `id` PK instead of
             # raising, mirroring what render_models always did.)
+            #
+            # #590 — EMPTY IS "UNSPECIFIED", NEVER "THE TABLE HAS NO COLUMNS". FIX #90 made an
+            # empty-columns registration legal for a table nobody has described yet; it must
+            # not also mean a re-registration can DESTROY a schema that is already known.
+            # A table with zero columns cannot exist — database_scaffold synthesises an `id`
+            # PK rather than raising, which is the system already saying "empty carries no
+            # information". So the merge-upsert has to treat it exactly like ``schema=None``.
+            #
+            # r133 ground truth (event stream, `table_registered` for `my_list`):
+            #     03:17:05 cols=4  by=orchestrator      … registered at kickoff
+            #     04:37:21 cols=3  by=orchestrator
+            #     04:57:03 cols=0  by=BACKEND           <- the lane re-registered, no columns
+            #     04:57:29 cols=0  by=orchestrator      <- the status flip propagated it
+            # 26s later the skeleton regenerated and baked in `class MyList(Base): id`, the
+            # PK-only model behind #568's live cross-user leak. Its sibling `ratings` was never
+            # touched after 04:38 and kept all 4 columns — the difference is only WHO wrote last.
+            # Scanned across 56 runs: 2 wipes (r133 `my_list`, r119 `profiles` 5→0, both by the
+            # backend lane). r119 survived purely by luck — a later registration restored the
+            # columns 63s on; the wipe is fatal exactly when it is the LAST write before
+            # scaffolding. Column REDUCTIONS (45 seen) are left alone: those are real schema
+            # revisions, and the 23 spine `users` 6→4 shrinks provably never reach the model
+            # (the framework re-synthesises spine tables — verified in r103/r113/r115).
+            if not (stored_schema.get("columns") or []):
+                _known = ((existing or {}).get("schema") or {}).get("columns") or []
+                if _known:
+                    stored_schema = (existing or {}).get("schema")
+                    _wiped_by = actor
         else:
             stored_schema = (existing or {}).get("schema") or {}
         table = {
@@ -1193,6 +1221,9 @@ class RegistryHub:
             "metadata": {
                 **((existing or {}).get("metadata") or {}),
                 **(metadata or {}),
+                # #590: leave a breadcrumb in the artifact so the attempt is diagnosable
+                # offline — the event stream alone would show only the preserved columns.
+                **({"schema_wipe_prevented_by": _wiped_by} if _wiped_by else {}),
             },
             "_updated_by": agent,
             "_updated_at": now,
