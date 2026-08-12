@@ -1399,6 +1399,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         failed_checks.append("no_implemented_tables")
 
     # Build verification checklist from CodeHub.checks directly (hubs.get_verification_checklist removed)
+    by_component: dict = {}   # #585: bound BEFORE the try so the diagnostic below survives a fault
     try:
         build_checks = [
             c for c in hubs.codehub.list_checks()
@@ -1431,8 +1432,18 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             "all_required_passing": all_passing,
             "ready_for_delivery": all_passing,
         }
-    except Exception:
+    except Exception as _cl_exc:
+        # #585: never swallow this silently. The computation above has been patched four
+        # times (#120, #492, #511, #566q) for the same symptom — the checklist blocking a
+        # run whose build:* checks are all success — and each investigation had to start
+        # from zero because the gate never said what it saw.
         checklist = {"checklist": {}, "all_required_passing": False, "ready_for_delivery": False}
+        try:
+            logger.warning("verification checklist computation FAILED (%s: %s) — treating as "
+                           "not-ready; this is the swallow that hid #566q",
+                           type(_cl_exc).__name__, str(_cl_exc)[:160])
+        except Exception:
+            pass
     checklist_items = checklist.get("checklist", {})
     statuses = [
         item.get("status", "pending")
@@ -1442,6 +1453,21 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     any_recorded = any(s != "pending" for s in statuses)
     if any_recorded and not checklist.get("ready_for_delivery", False):
         failed_checks.append("verification_checklist_not_ready")
+        # #585: say WHICH component is not success, and when it was last written. Measured
+        # across the arc: of the runs whose last decline carried this blocker, r107 and r130
+        # were blocked at a moment when all four build:* records on disk were `success` with
+        # timestamps ~1 min EARLIER — so the gate saw something the artifacts do not explain.
+        # Without this line the next investigation starts from zero again, exactly as the
+        # previous four did.
+        try:
+            _seen = {k: (v or {}).get("status") for k, v in checklist_items.items()
+                     if isinstance(v, dict)}
+            _when = {c: (r or {}).get("updated_at")
+                     for c, r in (by_component or {}).items()}
+            logger.warning("verification_checklist_not_ready — observed %s | build:* "
+                           "updated_at %s", _seen, _when)
+        except Exception:
+            pass
 
     # Runtime validation matrix (if task suite exists):
     # require at least one API smoke pass and one UI smoke pass.
