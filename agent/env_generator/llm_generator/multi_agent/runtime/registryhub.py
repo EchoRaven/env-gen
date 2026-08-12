@@ -1685,13 +1685,31 @@ class RegistryHub:
                                "clean gate. To ADD coverage use a NEW chain name; the freeze "
                                "lifts automatically at the next milestone (new endpoints)."),
                 }
-        from .chain_executor import normalize_steps
+        from .chain_executor import normalize_steps, unsatisfiable_expectation_pairs
         norm, errors = normalize_steps(steps)
         if errors or not norm:
             return {"error": (
                 "chain rejected: " + ("; ".join(errors) or "no valid steps") +
                 ". Each step needs method+path (or endpoint='METHOD /path'), "
                 "optional body/expect/save/auth — see the chain spec.")}
+        # #586: reject a chain that asks ONE request to answer two ways. Measured across the
+        # arc: of the 23 broken-step instances in the runs that DIED on business_chain_failing,
+        # 11 were this shape — a step demanding a non-2xx on a request an earlier/later step in
+        # the SAME chain demands succeed (the app cannot do both, so the chain can never pass).
+        # It also actively MISTEACHES the lane: chasing the impossible 400 in r132, the backend
+        # made the endpoint require a header the harness cannot send, taking the failing-chain
+        # count from 1 to 5. Telling the verifier HERE lets it fix the chain; #570/#580 remain
+        # as the runtime net for chains registered by an older framework (#59c).
+        _bad = unsatisfiable_expectation_pairs(norm)
+        if _bad:
+            _d = "; ".join(f"step[{i}] expects success and step[{j}] expects only a non-2xx "
+                           f"for the SAME request ({p})" for i, j, p in _bad[:3])
+            return {"error": (
+                "chain rejected: unsatisfiable expectations — " + _d +
+                ". One request cannot return two different statuses. If you meant to test a "
+                "REJECTION, make it a genuinely different request: a different actor (auth), "
+                "a foreign id in the path/query, or a different body — a chain step carries no "
+                "headers, so 'the same call without a header' cannot be expressed.")}
         # PROPOSAL #42 (user): every chain step MUST exercise a REGISTERED endpoint. A
         # chain that references an endpoint which doesn't exist tests a phantom (404/422)
         # and fails business_chain forever (the verifier authors loose paths). All

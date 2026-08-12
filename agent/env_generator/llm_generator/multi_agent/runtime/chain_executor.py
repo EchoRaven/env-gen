@@ -290,6 +290,75 @@ def _request_identity(step: Mapping[str, Any], method: Any, path: Any, body: Any
             str(step.get("auth") or ""), _b)
 
 
+def unsatisfiable_expectation_pairs(steps: Sequence[Mapping[str, Any]]) -> List[tuple]:
+    """#586 — pairs of steps that ask ONE request to answer two different ways.
+
+    Same rule as #570's runtime waiver, applied at REGISTRATION so the verifier is told while
+    it can still fix the chain, instead of the framework silently waiving it on every run
+    forever. Runtime waivers stay as the net for chains registered by an older framework
+    (#59c) — and because a waiver can only ever be as safe as its evidence, the fewer that
+    have to fire, the better.
+
+    Returns ``[(i, j, "METHOD path")]`` where step ``i`` expects a 2xx and step ``j`` expects
+    ONLY non-2xx for the SAME request identity (verb + path INCLUDING query + auth ref + body).
+    A different actor, query string or body is a different identity and is never paired — that
+    is what keeps a genuine cross-user probe out of this.
+
+    ONLY non-mutating pairs with NO WRITE BETWEEN THEM count. Replaying this rule over all 1843
+    authored chains on disk showed why: without that condition it flags 17 chains, and 14 of
+    them PASS in practice — `DELETE /api/my-list/{id}` returning 204 then 404, `POST
+    /api/profiles` returning 201 then 409. Those are idempotency and duplicate-rejection tests,
+    and the SAME request legitimately answers differently because the state moved underneath
+    it. "One request cannot return two statuses" is only true when nothing could have changed:
+    both steps read, and nothing writes in between. That leaves exactly the r132/r135/r143
+    shape — consecutive GETs of the same collection demanding both 200 and 400.
+
+    Replaying the refined rule over the same 1843 chains rejects 5: r132 and r135 (both DIED on
+    it), r138 and r143 (which "pass" ONLY because #570 waives the impossible step — their
+    `autofilled` carries `unsatisfiable-duplicate-expectation-waived`), and r117.
+
+    KNOWN HOLE, stated rather than hidden: r117 passes with no waiver, because a GET here is not
+    always side-effect-free — `_fw_owner_val` AUTO-PROVISIONS the caller's owner row on read, so
+    the first read can change what the second one sees. Such a chain is still self-contradictory
+    and passes only by accident of ordering, and the rejection message tells the verifier how to
+    express what it meant, so the trade is deliberate: 5 rejections in 1843 authored chains
+    (0.3%), against a family that killed 2 runs outright and misled a lane into breaking 4 more
+    chains in r132."""
+    _writes = [i for i, st in enumerate(steps or [])
+               if isinstance(st, Mapping)
+               and str(st.get("method") or "GET").upper() not in ("GET", "HEAD", "OPTIONS")]
+    succ: Dict[tuple, int] = {}
+    deny: Dict[tuple, int] = {}
+    for i, st in enumerate(steps or []):
+        if not isinstance(st, Mapping):
+            continue
+        if str(st.get("method") or "GET").upper() not in ("GET", "HEAD"):
+            continue          # a mutating step changes what the next answer may be
+        _exp = st.get("expect")
+        if _exp is None:
+            codes: List[int] = []
+        elif not isinstance(_exp, (list, tuple, set)):
+            codes = [int(_exp)] if str(_exp).isdigit() else []
+        else:
+            codes = [int(x) for x in _exp if str(x).isdigit()]
+        key = _request_identity(st, st.get("method") or "GET",
+                                str(st.get("path") or ""), st.get("body"))
+        if not codes or any(200 <= c < 300 for c in codes):
+            succ.setdefault(key, i)
+        else:
+            deny.setdefault(key, i)
+    out: List[tuple] = []
+    for key, j in deny.items():
+        i = succ.get(key)
+        if i is None:
+            continue
+        lo, hi = (i, j) if i < j else (j, i)
+        if any(lo < w < hi for w in _writes):
+            continue          # something wrote in between — the answer may legitimately differ
+        out.append((i, j, f"{key[0]} {key[1]}"))
+    return sorted(out)
+
+
 def _authored_success_identities(steps: Sequence[Mapping[str, Any]]) -> set:
     """#570 — the request identities the chain ITSELF expects to SUCCEED somewhere.
 
