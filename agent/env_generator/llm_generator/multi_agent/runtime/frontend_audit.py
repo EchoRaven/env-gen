@@ -706,6 +706,75 @@ def _api_registered(api: str, registered: set) -> bool:
     return (m, pth) in registered
 
 
+# #631 — THE SOURCE IS THE LAST DECLARATION OF WHO CONSUMES WHAT.
+# #627/#629 registered consumers from what pages and components DECLARE (`apis_used`), taking
+# breaking-change delivery from 2.9% to 60.0%. The rest are endpoints nothing declares — and they
+# are not unused: of the still-unrouted breaking changes in runs whose frontend survives on disk,
+# **163 of 176 (93%)** name a path that IS present in the delivered `app/frontend/src`. They are
+# called from the shared api client and from files whose record never listed them.
+#
+# This audit already walks that source and already holds the registryhub, so the last step costs
+# no new machinery: for every REGISTERED endpoint (never a guessed one), if its literal path
+# occurs at a URL boundary in the source, the frontend lane is a consumer of it.
+#
+# The boundary is free precision: bare-substring matching and boundary matching both recover
+# 159 of the 176, so the stricter rule is taken — `/api/titles` must be followed by a quote,
+# backtick, `?`, `${`, `+`, whitespace, `)` or a digit, not merely by more path (which is how
+# `/api/titles` would otherwise claim every hit of `/api/titles/trending`).
+_API_URL_BOUNDARY_631 = re.compile(r"""["'`?\s)]|\$\{|\+|\d""")
+_MIN_LITERAL_631 = 6   # shorter than "/api/x" is not a path worth matching
+
+
+def register_source_api_consumers_631(src_cache: Mapping[str, str], registryhub: Any,
+                                      project_dir: Any = None) -> int:
+    """Register the frontend lane as a consumer of every registered endpoint its source calls.
+
+    Returns the number of consumer rows written. Best-effort: never raises into the audit, and
+    the consumer key is ``endpoint:file:agent`` so repeated audits overwrite instead of pile up.
+    """
+    if registryhub is None or not src_cache:
+        return 0
+    written = 0
+    try:
+        endpoints = registryhub.get_endpoints() or {}
+    except Exception:
+        return 0
+    root = Path(project_dir) if project_dir else None
+    for endpoint_id, ep in endpoints.items():
+        if not isinstance(endpoint_id, str) or " " not in endpoint_id:
+            continue
+        if str((ep or {}).get("status") or "").lower() == "deprecated":
+            continue
+        literal = endpoint_id.split(" ", 1)[1].split("{", 1)[0]
+        if len(literal) < _MIN_LITERAL_631:
+            continue
+        hit = None
+        for path, text in src_cache.items():
+            idx = text.find(literal)
+            while idx != -1:
+                nxt = text[idx + len(literal):idx + len(literal) + 2] or " "
+                if _API_URL_BOUNDARY_631.match(nxt):
+                    hit = path
+                    break
+                idx = text.find(literal, idx + 1)
+            if hit:
+                break
+        if not hit:
+            continue
+        try:
+            rel = str(Path(hit).relative_to(root)) if root else hit
+        except Exception:
+            rel = hit
+        try:
+            registryhub.register_consumer(
+                endpoint_id=endpoint_id, file_path=rel, agent="frontend",
+                metadata={"auto_registered_by": "frontend_audit#631"})
+            written += 1
+        except Exception:
+            continue
+    return written
+
+
 def sync_ui_page_statuses(project_dir: Any, workhub: Any,
                           registryhub: Any = None) -> Dict[str, Any]:
     """Audit every registered ui_page against the code; flip statuses through
@@ -727,6 +796,12 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
             except Exception:
                 continue
         registered = _registered_paths(registryhub)
+        # #631: the source cache is built; use it to close the last declaration gap.
+        try:
+            out["source_consumers"] = register_source_api_consumers_631(
+                cache, registryhub, project_dir)
+        except Exception:
+            pass
         def _contract_misses(item):
             if registered is None:
                 return []

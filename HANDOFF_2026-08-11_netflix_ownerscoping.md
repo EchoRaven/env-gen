@@ -1810,8 +1810,40 @@ lane a UI component belongs to by definition):
 | pages only (#627) | +324 → 357 (**31.6%**) |
 | + components (#629) | +320 → 677 (**60.0%**) |
 
-The two halves are near-equal. The remaining 40% are endpoints neither a page nor a component
-declares — reaching those needs parsing the frontend's own source, a different kind of change.
+The two halves are near-equal.
+
+**#631 closes the last 40%: the delivered SOURCE is the final declaration.** Those endpoints are
+not unused — of the still-unrouted breaking changes in runs whose frontend survives on disk,
+**163 of 176 (93%)** name a path that IS present in `app/frontend/src`; they are called from the
+shared api client, or from files whose registry record never listed them. `sync_ui_page_statuses`
+already walks that source and already holds the registryhub, so this needed no new machinery:
+for every **registered** endpoint (never a guessed one), if its literal path occurs at a URL
+boundary in the source, the frontend lane is registered as its consumer. The boundary rule is
+free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
+stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
+
+### §5.8 — two parked questions settled by measuring the blast radius (2026-08-12)
+
+Both had been sitting with the user. The same counterfactual that unblocked #630 answers one and
+closes the other.
+
+**#615 (duplicate-route content) must NOT block delivery — measured, not argued.** The detector
+fires in **31 of 45** runs and **all 31 released**; gating on it would defer **69%** of runs,
+including **r134**, the arc's only `*** MULTI-MILESTONE VALIDATED ***`. A gate that fires on two
+runs in three is not a gate. Same judgement rule as #630's 4-of-21 (ship it), applied in reverse.
+
+> *A near-miss worth recording:* the first pass reported **0 of 45** and I nearly wrote that up.
+> `duplicate_route_content_groups(frontend_src, ui_pages)` takes two arguments and needs
+> `src/pages` on disk; I called it with one, inside a `try/except` that swallowed the `TypeError`
+> into a confident zero. **Never wrap a measurement in a bare `except` — a swallowed error and a
+> real zero are indistinguishable.**
+
+**"Ship the run's best commit" (#613/#621) stays undone, and here is the difference.** #630's
+deferral was wrong because its counterfactual *was* computable from artifacts. This one is not:
+`code_state` exists in the code but in **0 of the 40** kept `verdict.json` files, because #621
+landed after the last run. The harm is measured (24 of 39 runs ship a state worse than their own
+best, up to +0.44); the remedy's effect is not, from anything on disk. That is a boundary of the
+evidence, not a preference — and the first run to write `code_state` removes it.
 
 Two details that matter:
 > * **The owner is the frontend lane, from the page's own path — never `created_by`.** That field
