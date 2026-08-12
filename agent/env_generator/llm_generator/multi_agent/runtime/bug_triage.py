@@ -14,14 +14,25 @@ from __future__ import annotations
 
 from typing import Optional
 
-# Path-prefix heuristic for files not covered by RegistryHub registrations.
-_FILE_PREFIX_OWNERS = (
-    ("backend/", "backend"),
-    ("frontend/", "frontend"),
-    ("database/", "database"),
-    ("migrations/", "database"),
-    ("db/", "database"),
-)
+# #626 — MATCH A PATH SEGMENT, NOT A PREFIX ANCHORED AT POSITION 0.
+# This was a tuple of ``startswith`` prefixes ("backend/", "frontend/", …). Every generated
+# project nests its code under ``app/``, so ``app/frontend/src/pages/TitleDetailPage.jsx`` does
+# not start with "frontend/" and the resolver returned None for a path that names its owner
+# plainly. Measured over 40 runs: of the 69 P0 bugs left UNASSIGNED, 55 carry usable
+# ``affected_files`` and the prefix rule routed **0** of them; segment matching routes **44**
+# (33 frontend, 11 backend).
+#
+# An unassigned bug is nobody's job by construction — those 69 sat a median of 46 minutes and
+# the run ended with them still open, in runs that released. Segment equality (not substring)
+# so a file named ``BackendStatus.jsx`` cannot masquerade as the backend lane, and first-match
+# so ``app/frontend/src/db/x.js`` belongs to the frontend, not the database.
+_LANE_BY_PATH_SEGMENT = {
+    "backend": "backend",
+    "frontend": "frontend",
+    "database": "database",
+    "migrations": "database",
+    "db": "database",
+}
 
 
 def _registryhub_endpoints(registry) -> dict:
@@ -58,9 +69,10 @@ def find_owning_agent_for_table(registry, table_name: str) -> Optional[str]:
 
 
 def find_owning_agent_for_file(file_path: str) -> Optional[str]:
-    fp = (file_path or "").lstrip("/")
-    for prefix, owner in _FILE_PREFIX_OWNERS:
-        if fp.startswith(prefix):
+    """#626: the owning lane is whichever lane NAMES a segment of the path, wherever it sits."""
+    for segment in (file_path or "").replace("\\", "/").split("/"):
+        owner = _LANE_BY_PATH_SEGMENT.get(segment.strip().lower())
+        if owner:
             return owner
     return None
 

@@ -1712,6 +1712,38 @@ merge-base against each lane's last pull, of the frontend files differing at run
 the lane's exact version land on integration, **5** were merely stale, and **0** never reached it.
 The merge pipeline is sound.
 
+### §5.5 — 69 P0 bugs had no owner, and the router had the answer all along (#626, 2026-08-12)
+
+Pulling the same thread: of the P0 bugs still open at run end, **59 of 73 have no `assignee`**.
+They sat a **median of 46 minutes** (max 117) and every affected run **released** with them open.
+The titles are not noise — *"Landing page (/) crashes with 'Cn is not a function' — blank render
+blocks entire landing"*, *"Multiple pages render EMPTY root div"*, *"My-List + Continue-Watching
+require X-Profile-Id despite the schema declaring it optional"*. An unassigned task is nobody's
+job by construction, and assignment is also what **wakes** a fixer (`assigned task_created →
+for-self wakeup`), so `None` is the one value guaranteed to wake no one.
+
+Two mechanical causes:
+
+1. **`find_owning_agent_for_file` matched a prefix anchored at position 0** (`"frontend/"`), but
+   every generated project nests code under `app/`. **55 of the 69 carry perfectly usable
+   `affected_files`** like `app/frontend/src/pages/TitleDetailPage.jsx` — and the prefix rule
+   routed **0** of them. Matching a path SEGMENT routes **44** (33 frontend, 11 backend).
+   Segment *equality*, so `BackendStatus.jsx` cannot masquerade as a lane; first-match, so
+   `app/frontend/src/db/x.js` stays with the frontend.
+2. **The keyword fallback treated ambiguity as unknown, and unknown as nobody.** It returns None
+   when NEITHER vocabulary matches (46 of 59 — the landing-page crash names no framework word)
+   and when BOTH do (13). Now the last resort is the `debugger` (present in **56 of 56** kept
+   trees, triage is its role, and it can reassign — an unassigned task cannot). Cost measured
+   before shipping: 114 bugs over 27 runs, **median 2 per run**.
+
+> **What was NOT done, and why.** The delivery gate is blind to these: `collect_test_user_bugs`
+> filters to `TEST_USER_SOURCES`, so the **207 verifier-filed P0s** (the largest source) never
+> reach it — 32 of 73 open P0s are invisible, and no other gate reads `list_open_bugs`. Making
+> the gate block on them is a **release-path behaviour change no artifact can validate**, the
+> same line drawn at #613 and #621, and blocking on a duplicate-heavy count (r120 filed one
+> landing-page crash **six** times) could defer delivery for the wrong reason. #626 gets the
+> bugs to a fixer, which is the half that is provable offline.
+
 ---
 
 ## 6. Other KNOWN-OPEN issues — ALL FOUR CLOSED 2026-08-12

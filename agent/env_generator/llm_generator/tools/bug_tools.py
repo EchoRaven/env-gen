@@ -29,6 +29,11 @@ from .hub_tools import HubTool, _finalize_hub_tools
 # the same constants so they cannot drift.
 _VALID_SEVERITY = bug_schema.VALID_SEVERITIES
 
+# #626: owner of last resort for a bug no artifact and no vocabulary can place. The debugger is
+# spawned in every run (56 of 56 kept trees have the worktree) and triage is its role; it can
+# reassign, which an unassigned task cannot do for itself.
+_TRIAGE_OWNER_626 = "debugger"
+
 
 class BugCreateTool(HubTool):
     NAME = "bug_create"
@@ -97,6 +102,19 @@ class BugCreateTool(HubTool):
                 _owner = "frontend"
             elif _be and not _fe:
                 _owner = "backend"
+        if not _owner:
+            # #626: AMBIGUOUS IS NOT UNKNOWN, AND UNKNOWN IS NOT NOBODY.
+            # Both branches above fall through to None — when NEITHER vocabulary matches (46 of
+            # the 59 unassigned P0s: "Landing page (/) crashes with 'Cn is not a function'"
+            # names no framework word at all) and when BOTH do (the other 13). The result was a
+            # P0 with no assignee, which is nobody's job by construction: they sat a median of
+            # 46 minutes and every affected run released with them still open.
+            #
+            # Assignment is also what WAKES a fixer — see the comment above: "assigned
+            # task_created → for-self wakeup". Leaving it None is the one choice guaranteed to
+            # wake no one. A triage owner may reassign; nobody cannot. Cost is small and
+            # measured: 114 bugs over 27 runs, median 2 per run.
+            _owner = _TRIAGE_OWNER_626
         task = self._hubs.workhub.create_task(
             title=title,
             description=description,
