@@ -93,6 +93,43 @@ PY
 '''
 
 
+def ensure_base_gitignore(output_dir: Path) -> list:
+    """Keep everything that is NOT deliverable code out of git. Returns the rel-paths to commit.
+
+    ``memory-bank/<lane>/`` is lane scratch (notes + the framework's auto-synced STATE);
+    committing it bloated the repo and every release snapshot, and forced a bespoke
+    "auto-commit memory-bank before integration pull" dance in auto_commit.py to keep
+    ``git stash -u`` from dropping it. Ignoring it is strictly better: ``git status`` stops
+    listing it (so that dance no-ops) AND ``stash -u`` SPARES ignored paths, so it survives
+    the per-tick merge for free — never committed, never in the deliverable.
+
+    #624: the framework's OWN scratch dirs need the identical treatment for the identical
+    reason. Injected skills, per-agent logs, nested worktrees, scratch memory — no lane
+    authored them and none can ship, yet git listed them as untracked, which is what makes a
+    worktree DIRTY: **42 of the 89 dirty worktrees across 15 runs are dirty for no other
+    reason**. A dirty worktree is what forces the step-start ``git stash -u`` whose failure
+    (187 times, "could not write index") used to be reported as a merge conflict — the false
+    label that ignited #623's 70.8x conflict storm. Removing the stash removes the ignition.
+
+    The list is imported from the prune-set that already treats these as non-content, so the
+    two cannot drift. Build artifacts are deliberately excluded — different category,
+    different delivery risk, and nothing measured points at them.
+    """
+    try:
+        from ...tools.file_tools import FRAMEWORK_SCRATCH_DIRS
+    except Exception:  # pragma: no cover — import-shape safety only
+        FRAMEWORK_SCRATCH_DIRS = (".agents", ".agent_logs", "worktrees", ".memory")
+    gi = Path(output_dir) / ".gitignore"
+    want = ["memory-bank/"] + [f"{d}/" for d in FRAMEWORK_SCRATCH_DIRS]
+    cur = gi.read_text(encoding="utf-8") if gi.exists() else ""
+    new = [p for p in want if p not in cur.split()]
+    if not new:
+        return []
+    gi.write_text((cur.rstrip() + "\n" if cur.strip() else "") + "\n".join(new) + "\n",
+                  encoding="utf-8")
+    return [".gitignore"]
+
+
 class Scaffolder:
     """Deterministic project scaffolding over the runtime/* modules. Borrows the
     orchestrator for output_dir / hubs / logger / context (read live)."""
@@ -424,23 +461,8 @@ volumes:
                 rel_paths.append("docker/docker-compose.yml")
         except Exception as _dc_err:
             orch._logger.warning("base-scaffold compose write failed: %s", _dc_err)
-        # Keep each lane's WORKING MEMORY out of git. memory-bank/<lane>/ is scratch
-        # (the lane's notes + the framework's auto-synced STATE) — NOT deliverable code;
-        # committing it bloated the repo + every release snapshot, and forced a bespoke
-        # "auto-commit memory-bank before integration pull" dance (auto_commit.py) to keep
-        # `git stash -u` from dropping it. Gitignoring it is strictly better: `git status`
-        # no longer lists it (so that dance no-ops) AND `stash -u` SPARES ignored paths, so
-        # it survives the per-tick merge for free — never committed, never in the deliverable.
         try:
-            _gi = orch.output_dir / ".gitignore"
-            _want = ["memory-bank/"]
-            _cur = _gi.read_text(encoding="utf-8") if _gi.exists() else ""
-            _new = [p for p in _want if p not in _cur.split()]
-            if _new:
-                _gi.write_text(
-                    (_cur.rstrip() + "\n" if _cur.strip() else "") + "\n".join(_new) + "\n",
-                    encoding="utf-8")
-                rel_paths.append(".gitignore")
+            rel_paths.extend(ensure_base_gitignore(orch.output_dir))
         except Exception as _gi_err:
             orch._logger.warning("base-scaffold .gitignore write failed: %s", _gi_err)
         sha = orch.hubs.codehub.commit_runtime_scaffold(

@@ -25,6 +25,24 @@ from utils.tool import BaseTool, ToolResult, create_tool_param, ToolCategory
 from workspace import Workspace
 
 
+# #624 — DIRECTORIES THE FRAMEWORK ITSELF CREATES INSIDE A WORKTREE.
+# Injected skills, per-agent logs, nested worktrees, scratch memory: never app content, never
+# deliverable, and no lane authored them. This module already pruned them from filename search;
+# git did not know, so they showed up as untracked and made the worktree DIRTY — 42 of the 89
+# dirty worktrees across 15 runs are dirty for no other reason.
+#
+# A dirty worktree forces `git stash -u` on every step-start pull, which is where "could not
+# write index" bites (187 times), and a failed stash used to be reported as a merge conflict —
+# the false label that ignited #623's 70.8x storm. Ignoring these removes the stash itself:
+# `git status` stops listing them AND `stash -u` SPARES ignored paths, exactly the reasoning
+# already written down for `memory-bank/` in scaffolder.py.
+#
+# Exported so scaffolder's .gitignore and this prune-set cannot drift apart. Build artifacts
+# (node_modules/dist/build/.next) are deliberately NOT in here: they are a different category
+# with different delivery risk, and nothing measured points at them.
+FRAMEWORK_SCRATCH_DIRS = (".agents", ".agent_logs", "worktrees", ".memory")
+
+
 # ===== Unified Path Gateway =====
 
 def _workspace_rel(workspace: Workspace, abs_path: Path) -> str:
@@ -51,7 +69,7 @@ def _workspace_filename_matches(workspace: Workspace, raw_path: str, limit: int 
             return []
         root = workspace.root
         _PRUNE = {".git", "node_modules", ".venv", "__pycache__", "dist", "build",
-                  ".next", ".agents", ".agent_logs", "worktrees", ".memory"}
+                  ".next", *FRAMEWORK_SCRATCH_DIRS}  # #624: one source of truth
         exact, fuzzy_ext, fuzzy = [], [], []
         scanned = 0
         for dirpath, dirnames, filenames in _os.walk(root):

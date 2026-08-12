@@ -1623,6 +1623,22 @@ lane learns instead of re-editing.
 > false cause created the real defect. A repair that a lane cannot see the consequences of is
 > indistinguishable from sabotage.
 
+**Root cause 3 — the framework's own scratch made the worktree dirty (#624).** Chasing why a stash
+was needed *at all*: `.agents/` (injected skills), `.agent_logs/`, nested `worktrees/`, `.memory/`
+are created by the framework, authored by no lane and deliverable in no run — and `file_tools`
+already prunes them from filename search. Git did not know: the generated `.gitignore` contained
+only `memory-bank/`. Across 15 runs, **89 worktrees are dirty and 42 of them (47%) for no other
+reason**. A dirty worktree is precisely what forces the step-start `git stash -u`. Ignoring them
+removes the stash, so root cause 2's ignition cannot occur — the same argument already written
+down for `memory-bank/` in `scaffolder.py`, applied to the rest of its category. The list is
+imported from the existing prune-set rather than copied, so the two cannot drift; build artifacts
+(`dist`/`build`/`node_modules`) are deliberately excluded as a different category with different
+delivery risk and no measurement behind them.
+
+> Three layers, one chain: **#624** stops the worktree being dirty → **#623** stops a failed stash
+> being called a conflict → **#622** stops a real conflict being permanent. Each is independently
+> useful, and each was found only by asking "why was that necessary?" one level further down.
+
 **Measured and deliberately NOT done** — each guards a case occurring **zero** times:
 > * *De-duplicating the urgent event* (the task already dedupes; the event does not, ~51k tokens
 >   worst case in r124). All 2091 file-mentions are inside a known territory, so #622 resolves
