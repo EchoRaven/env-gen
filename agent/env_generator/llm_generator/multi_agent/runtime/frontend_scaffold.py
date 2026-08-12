@@ -8360,6 +8360,45 @@ def _ensure_framework_auth_pages(ui_pages: List[Dict[str, Any]]) -> List[Dict[st
     return auth + kept
 
 
+# #583: structural element KINDS. A lane refining the projected floor changes visuals — it does
+# not delete whole categories of structure — so a fresh render carrying kinds the existing file
+# has NONE of means the existing one came from a POORER design, not from refinement.
+_STRUCT_KINDS_583 = ("<ul", "<li", "<table", "<h2", "<h3", "<form", "<video", "<img", "<section")
+
+
+def _stale_thin_projection_583(existing: str, cand: str) -> bool:
+    """#583 — is this marked page a STALE THIN projection rather than a refined floor?
+
+    A reference page emitted before `decompose_reference` landed carries the projector marker
+    but was rendered from a components-LESS screen. The #221 guard ("don't clobber a page that
+    already has the marker") then freezes it: the design later gains every component region,
+    this pass re-runs, sees the marker, and skips. netflix r142's `title_detail` shipped 61
+    lines with no `<ul>`/`<li>`/`<h2>`, while rendering the same screen with the 17 components
+    it now has produces 83 lines WITH them.
+
+    Two conditions, both conservative, because clobbering real lane work is the failure mode
+    this guard exists to prevent:
+      * the existing file imports NOTHING from ``../components/`` — a lane that refined a page
+        pulls its own components in; a bare projection does not;
+      * the fresh render carries at least TWO structural KINDS the existing file has ZERO of.
+        One difference could be incidental; two whole categories cannot come from visual
+        refinement of the same regions.
+    Either condition failing → leave the page alone."""
+    if not existing or not cand:
+        return False
+    if "../components/" in existing:
+        return False
+    # The page must still be UNMODIFIED machine output. The projector emits a distinctive
+    # helper preamble (`_url` / `_imgOf` / `_titleOf` …); a page a human or lane rewrote does
+    # not carry it. Without this the predicate fires on any marked-but-sparse page, including
+    # a genuine in-place refinement stripped down to a single div — which is exactly what the
+    # #221 guard exists to protect (its own regression test caught this).
+    if not all(h in existing for h in ("const _url", "const _imgOf", "const _titleOf")):
+        return False
+    missing = [k for k in _STRUCT_KINDS_583 if k in cand and k not in existing]
+    return len(missing) >= 2
+
+
 def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -> Dict[str, object]:
     """Project one page-component STUB per registered ui_page + wire React-Router
     routes in App.jsx — the frontend analogue of the deterministic backend
@@ -8521,14 +8560,25 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                             _existing = target.read_text(encoding="utf-8")
                         except Exception:
                             _existing = ""
-                        if (_STRUCTURED_MARKER not in _existing
-                                and 'data-projected="ref"' not in _existing):
-                            _cand = _project_page_component(
-                                comp, page, nav_routes=nav_routes, design=design,
-                                get_endpoints=_all_get_endpoints(ui_pages))
-                            if (_STRUCTURED_MARKER in _cand
-                                    or 'data-projected="ref"' in _cand):
-                                _body = _cand
+                        _marked = (_STRUCTURED_MARKER in _existing
+                                   or 'data-projected="ref"' in _existing)
+                        _cand = _project_page_component(
+                            comp, page, nav_routes=nav_routes, design=design,
+                            get_endpoints=_all_get_endpoints(ui_pages))
+                        _cand_ok = (_STRUCTURED_MARKER in _cand
+                                    or 'data-projected="ref"' in _cand)
+                        # #583: the marker alone is NOT evidence of refinement. A page
+                        # emitted BEFORE decompose_reference landed carries the marker too,
+                        # and this guard then froze it forever — the design later gained its
+                        # component regions, this pass re-ran, saw the marker and skipped.
+                        # netflix r142 `title_detail`: shipped 61 lines with no <ul>/<li>/<h2>
+                        # while rendering the SAME screen with its 17 now-present components
+                        # yields 83 lines WITH them (executed both ways). Six other
+                        # hypotheses were eliminated first — see HANDOFF 5.0r.
+                        if (_cand_ok and
+                                (not _marked
+                                 or _stale_thin_projection_583(_existing, _cand))):
+                            _body = _cand
             if _body is not None:
                 target.write_text(_body, encoding="utf-8")
                 scaffolded.append(str(target.relative_to(frontend_dir)))
