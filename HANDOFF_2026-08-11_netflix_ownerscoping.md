@@ -1224,6 +1224,50 @@ MISSING WRITE PATH — both of which are planning decisions, not regex decisions
 
 ---
 
+### §5.0x — the SEED audit: two tables ship EMPTY in a validated run (#599, 2026-08-12)
+
+`_seed_cell` omits any column it has no naming rule for, and the loader then drops the **entire
+row** on the NOT NULL. seed_data.py's own header already names the failure mode — *"a dropped
+seed row (FK to a missing parent, **uncovered NOT NULL**, wrong …) … `_seed_dbg` prints the
+dropped row's exception to stderr when FW_DEBUG is set"* — and mitigates it with a debug print.
+
+Over the **1196** seeded tables in the arc, **204** columns are NOT NULL with no default of any
+kind and are never set (`ratings.value` ×80, `episodes.season` ×34, `genres.slug` ×15; **4
+survive into r134+**). The damage is not a missing field, it is an **empty table** — and **r134,
+one of the three `*** MULTI-MILESTONE VALIDATED ***` runs**, ships two of them:
+
+```
+ratings   value  Text    NOT NULL   seed rows are {profile_id, title_id}   -> table EMPTY
+episodes  season Integer NOT NULL   never seeded                           -> table EMPTY
+```
+
+#599 fills a required column type-directedly (the seed analog of `_fw_fill_required_defaults`),
+only where the alternative is a dropped row. Rebuilt from all **1205** real contracts: the three
+whole-table killers are all filled (69 / 27 / 8).
+
+> **Residue, stated:** 108 required columns remain omitted and **every one is a timestamp**
+> (`created_at` 86, `updated_at` 18, …). The fallback declines them on purpose — the loader
+> coerces str/int/float but has **no datetime branch**, so an ISO string into a `DateTime` column
+> risks a driver failure. In the delivered models most timestamps carry
+> `default=datetime.utcnow` + `server_default=now()` or are nullable; only **5** are genuinely
+> `DateTime, nullable=False` with no default. Fixing those needs a datetime branch in the loader
+> first.
+
+**Two seed axes checked and CLEAN — denominators printed:**
+
+| axis | denominator | finding |
+|---|---|---|
+| seed keys that name no model column (silently dropped) | 1196 tables | **0** |
+| does #598's scoping empty the demo user's pages? | 526 owner tables | **No** — `_concentrate_demo_content` clones donors up to `_DEMO_FLOOR = 8` at boot, so scoping cannot starve the demo user. (The STATIC seed does give the demo user a median 17% of rows, ≤1 row in 330/526 tables — but the runtime backfill is what the pages see.) |
+
+**`density_seed_minimums` is written and never read** — the design analyst emits a measured block
+(`my_list_titles_min: 8`, `titles_per_rail_min: 12`, `continue_watching: {tiles: 5,
+with_progress: 3}`) and no code in the repo consumes it; the seeder uses the constant
+`_DEMO_FLOOR = 8`, which for `my_list` happens to match. **Present in only 1 of 144 runs**, so
+building a consumer would repeat the `games` overfitting trap. Recorded, not implemented.
+
+---
+
 ## 6. Other KNOWN-OPEN issues — ALL FOUR CLOSED 2026-08-12
 
 > **2026-08-12: every item below has a measured verdict. Nothing here is open.** Three were
