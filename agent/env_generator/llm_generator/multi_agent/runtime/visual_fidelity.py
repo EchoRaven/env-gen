@@ -2604,7 +2604,10 @@ def _spec_snippet(output_dir: Any, screen_name: str) -> str:
 
 
 def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
-                     latched: Optional[set] = None) -> str:
+                     latched: Optional[set] = None,
+                     prev_live: Optional[float] = None,
+                     this_live: Optional[float] = None,
+                     round_no: Optional[int] = None) -> str:
     """Actionable task body for the frontend lane from a failed gate result —
     per screen: missing components first, then the judge's per-dimension notes
     (weakest dimension first), then the ordered deviations.
@@ -2616,6 +2619,31 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
     still open (some OTHER screen never latched), so remediation must focus the
     lane's effort on the screens that have never hit the bar."""
     latched = latched or set()
+    # #619 — TELL THE LANE WHETHER ITS LAST CHANGE HELPED. #617 showed every round is labelled
+    # "attempt 1"; #618 showed the persisted score keeps the best-of-captures merge, so a
+    # regression never reaches the record. Between them the lane had no way to learn from its
+    # own previous round — and it shows: across the 29 runs with two or more scored rounds,
+    # 19 improved but **10 ended WORSE than they started** (r103 -0.40 over 12 rounds), at a
+    # mean of only +0.003 per round.
+    #
+    # The gate already knows both numbers by the time it writes this task. Leading with the
+    # delta costs nothing and is the one piece of feedback a blind retry loop lacks.
+    _head = ""
+    if isinstance(prev_live, (int, float)) and isinstance(this_live, (int, float)):
+        _d = this_live - prev_live
+        _r = f"Round {round_no}. " if round_no else ""
+        if _d < -0.01:
+            _head = (f"{_r}⚠ YOUR LAST ROUND MADE THIS WORSE: the blocking average went "
+                     f"{prev_live:.2f} → {this_live:.2f} ({_d:+.2f}). Before changing anything "
+                     f"else, look at what that round touched and consider reverting it — the "
+                     f"screens listed below are scored on the CURRENT code.\n\n")
+        elif _d > 0.01:
+            _head = (f"{_r}Your last round helped: blocking average {prev_live:.2f} → "
+                     f"{this_live:.2f} ({_d:+.2f}). Keep going in the same direction.\n\n")
+        else:
+            _head = (f"{_r}Your last round moved the blocking average by {_d:+.2f} — "
+                     f"effectively nothing. Repeating the same kind of change is unlikely to "
+                     f"help; try a different dimension from the list below.\n\n")
     # #565: screens the caller (a NON-FINAL milestone) demoted as out-of-milestone-scope —
     # never file frontend remediation for a LATER milestone's pages. Empty on the
     # final/single-milestone path, so that remediation body is byte-identical to before.
@@ -2697,7 +2725,7 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
             len(_audit.get("unused_mapped") or []), len(_emitted), _mandated_screens)
     lines.append("\nReference images: use list_reference_images / view_image. "
                  "Your screenshots from the last gate run are in design/visual_gate/.")
-    return "\n".join(lines)
+    return _head + "\n".join(lines)   # #619
 
 
 def _brand_asset_fix_enabled() -> bool:
@@ -3228,13 +3256,27 @@ class VisualFidelityGate:
             # any escalation keyed on the round can never fire. Count the dispatches separately;
             # `self.attempts` keeps its own meaning untouched.
             self._remediation_round = getattr(self, "_remediation_round", 0) + 1
+            # #619: what THIS capture scored, and what the previous round scored, so the task
+            # can lead with whether the lane's last change helped.
+            _this_live = None
+            try:
+                _lb = [x for x in (screens or []) if isinstance(x, Mapping)
+                       and not x.get("advisory") and x.get("blank") is not True]
+                _this_live = (round(sum(float(x.get("similarity") or 0.0) for x in _lb)
+                                    / len(_lb), 4) if _lb else None)
+            except Exception:
+                _this_live = None
+            _prev_live = getattr(self, "_prev_live_average", None)
+            self._prev_live_average = _this_live
             try:
                 _vt = orch.hubs.workhub.create_task(
                     title=(f"UI does not match reference designs (visual gate, "
                            f"round {self._remediation_round}; judge attempt "
                            f"{self.attempts}/3 on this source)"),
                     description=remediation_text(result, getattr(orch, "output_dir", None),
-                                                 latched=self._passed_screens),
+                                                 latched=self._passed_screens,
+                                                 prev_live=_prev_live, this_live=_this_live,
+                                                 round_no=self._remediation_round),
                     assignee="frontend",
                     agent="orchestrator",
                     priority="P1",

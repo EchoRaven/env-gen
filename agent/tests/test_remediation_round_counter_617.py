@@ -24,9 +24,12 @@ from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as v
 
 @pytest.fixture(scope="module")
 def src():
+    """Slice to a SEMANTIC boundary, not a character count — a fixed window breaks the
+    moment anything is inserted into the block (it did, when #619 landed)."""
     mod = inspect.getsource(vf)
-    i = mod.index("#617")
-    return mod[i:i + 2200]
+    i = mod.index("#617 — THE TASK TITLE BORROWED THE WRONG COUNTER")
+    j = mod.index("priority=\"P1\"", i)
+    return mod[i:j]
 
 
 def test_the_title_reports_a_ROUND(src):
