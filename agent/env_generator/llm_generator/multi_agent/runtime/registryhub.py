@@ -1334,19 +1334,67 @@ class RegistryHub:
             status = "defined"
         actor = agent or "registryhub"
         now = time.time()
-        existing = self._ui_pages.value().get(name) or {}
+        _pages_now = self._ui_pages.value() or {}
+        # #593 — A PAGE IS ITS ROUTE. The store is keyed by NAME, so the two seeding paths
+        # (`<name>_page` from the #225 design-screen seed, `<name>` from the contract) each
+        # created their OWN record for one route. Measured over 45 runs: 28 duplicate routes in
+        # 6 runs — and ALL 28 disagree on `apis_used` and/or `components`. r142 (a
+        # *** MULTI-MILESTONE VALIDATED *** run) carries 9, r133 carries 8. r142 `/games`:
+        #     page:ui:games_page  apis ['GET /api/profiles']  comps [TopNav, PosterRail]
+        #     page:ui:games       apis ['GET /api/titles']    comps [top_nav, category_header,
+        #                                                            hero_billboard, poster_rail]
+        # both `implemented`, 6 minutes apart, both from the orchestrator. The router dispatches
+        # on the ROUTE, so one page has two contracts and every consumer that iterates the store
+        # (frontend_audit, remediation_dispatcher, the delivery gate's ui_page_unwired) acts on
+        # whichever it reaches first — dict-insertion order.
+        #
+        # Honest scope: this is contract hygiene, NOT a fidelity fix. Duplicate-route screens
+        # score 0.641 against 0.624 for single-record screens, and the within-run paired deltas
+        # swing +0.183 to -0.252 — no effect. What it removes is the NON-DETERMINISM.
+        #
+        # Merging is strictly not-worse than the status quo: both records are already live and
+        # already audited, so the union of their apis_used is exactly the set the audit demands
+        # today — it just stops depending on which record a reader happens to hit first.
+        _alias = ""
+        if route and name not in _pages_now:
+            _r = str(route).strip()
+            for _k, _v in _pages_now.items():
+                if isinstance(_v, dict) and str(_v.get("route") or "").strip() == _r:
+                    _alias, name = name, _k       # keep the FIRST-registered key stable
+                    break
+        existing = _pages_now.get(name) or {}
+
+        def _union(old: Any, new: Any) -> list:
+            """Order-preserving union — the fuller contract, no duplicates."""
+            out: List[Any] = []
+            for _src in (old or [], new or []):
+                for _x in _src:
+                    if _x not in out:
+                        out.append(_x)
+            return out
+
         rec = {
             **existing,
             "id": f"page:ui:{name}", "name": name, "kind": "ui_page",
             "route": route or existing.get("route", ""),
             "component": component or existing.get("component", ""),
-            "apis_used": (apis_used if apis_used is not None
-                          else existing.get("apis_used", [])),
-            "components": (components if components is not None
-                           else existing.get("components", [])),
+            "apis_used": (_union(existing.get("apis_used"), apis_used) if _alias
+                          else (apis_used if apis_used is not None
+                                else existing.get("apis_used", []))),
+            "components": (_union(existing.get("components"), components) if _alias
+                           else (components if components is not None
+                                 else existing.get("components", []))),
             "path": path or existing.get("path", ""),
             "status": status or existing.get("status") or "defined",
-            "metadata": {**(existing.get("metadata") or {}), **(metadata or {})},
+            "metadata": {
+                **(existing.get("metadata") or {}),
+                **(metadata or {}),
+                # #593: the alias stays on the record — a reader looking for the name the
+                # other seeding path used must still be able to find this page.
+                **({"merged_route_aliases": _union(
+                    (existing.get("metadata") or {}).get("merged_route_aliases"),
+                    [_alias])} if _alias else {}),
+            },
             "_updated_by": agent, "_updated_at": now,
         }
         # PROPOSAL #47 (v2): a thin/placeholder ui_page (no route/component yet) is a
