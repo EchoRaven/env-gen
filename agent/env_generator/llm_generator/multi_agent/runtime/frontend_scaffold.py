@@ -5373,6 +5373,19 @@ def _screen_is_player_449(screen: Dict[str, Any]) -> bool:
     return len(_terms) >= 2
 
 
+def player_control_labels() -> frozenset:
+    """#588 — the aria-labels `_player_controls_jsx_449` emits: the framework's OWN definition
+    of a complete player chrome, parsed from the emitter so the requirement cannot drift from
+    what is actually built. Returns an empty set if the emitter is unreadable."""
+    try:
+        import inspect as _i
+        src = _i.getsource(_player_controls_jsx_449)
+    except Exception:
+        return frozenset()
+    return frozenset(m.group(1) for m in
+                     re.finditer(r'aria-label=\\"([A-Za-z0-9 ]+)\\"', src))
+
+
 def _player_controls_jsx_449(accent: str) -> str:
     """#449: a full player control cluster for video-player screens — a scrub bar
     with an accent-filled progress + playhead and a time-remaining readout, above a

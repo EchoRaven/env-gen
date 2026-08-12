@@ -577,6 +577,42 @@ _OVERLAY_NAME_RE = re.compile(
 # Kept SEPARATE from _OVERLAY_NAME_RE so frontend_scaffold's route-owner ranking (which imports
 # _OVERLAY_NAME_RE) is unaffected. Word-segment anchored (no 'ad' inside 'add'/'read'); no
 # product literals.
+# #588 — CONTENT-DOMINATED SCREENS. A full-bleed media surface (the player) is mostly VIDEO:
+# holistic similarity against one captured frame scores the CONTENT, not the build. r142's
+# reference happened to catch an AD state ("Ad 12", "All American begins after ads"), so the
+# judge charged the implementation for missing an ad system nothing asked it to build — copy
+# 0.50 was literally 'Ad 12' vs 'Disclosure Day', and even layout/components were compared
+# against an ad chrome carrying FEWER controls than the implementation shipped.
+#
+# What the generator actually controls on such a screen is the CHROME, and the framework
+# already defines it exactly: `_player_controls_jsx_449` emits a named control cluster. So the
+# honest, content-free test is whether that cluster is PRESENT. Complete chrome -> the residual
+# difference is content the app cannot reproduce -> advisory (the same mechanism #128/#542a
+# already use), never a silent pass: ANY missing control keeps the screen blocking and the
+# missing list is directly actionable.
+def player_chrome_missing(frontend_dir: Any, component: Any) -> Optional[List[str]]:
+    """Controls the framework's own player emitter defines that this page does NOT contain.
+
+    ``None`` when the question does not apply (no vocabulary, no readable page source) — the
+    caller then leaves the screen exactly as it was. ``[]`` means the chrome is complete."""
+    try:
+        from .frontend_scaffold import player_control_labels
+        required = player_control_labels()
+    except Exception:
+        return None
+    if not required:
+        return None
+    comp = str(component or "").replace(".jsx", "")
+    if not comp:
+        return None
+    try:
+        src = (Path(frontend_dir) / "src" / "pages" / f"{comp}.jsx").read_text(
+            encoding="utf-8", errors="ignore")
+    except Exception:
+        return None
+    return sorted(lbl for lbl in required if f'aria-label="{lbl}"' not in src)
+
+
 _TRANSIENT_STATE_RE = re.compile(r"(?:^|_)(?:hover|preview|ad|ad_?state)(?:_|$)")
 
 # #509 (netflix r84, 2026-08-05): MODAL/OVERLAY INTERACTION CAPTURE. #128 correctly marks
@@ -2119,6 +2155,34 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         for name, p in prior_by_name.items():
             if name not in _names_now:
                 merged.append(p)
+
+        # #588: a CONTENT-DOMINATED screen whose framework-defined chrome is provably COMPLETE
+        # is demoted to advisory — the residual difference is content the app cannot reproduce.
+        # Self-gating: the test is "every control the framework's own player emitter defines is
+        # present", so a non-player page (which has none of them) can never qualify. Measured on
+        # real trees: r139's PlayerPage carries all of them and scored 0.55, r142's carries only
+        # `Back` and scored 0.50 — holistic similarity could not tell those apart, this can, and
+        # r142 correctly keeps blocking with an actionable missing list.
+        try:
+            _fe = Path(project_dir) / "app" / "frontend"
+            for _s in merged:
+                if _s.get("advisory") or _sim(_s) >= min_similarity:
+                    continue
+                _nm = str(_s.get("name") or "")
+                _cands = ["".join(w.capitalize() for w in _nm.split("_")) + "Page",
+                          "".join(w.capitalize() for w in _nm.split("_"))]
+                for _c in _cands:
+                    _missing = player_chrome_missing(_fe, _c)
+                    if _missing == []:
+                        _s["advisory"] = True
+                        _s["advisory_reason"] = ("#588 content-dominated screen with complete "
+                                                 "framework chrome — scored on content, not build")
+                        break
+                    if _missing:
+                        _s["chrome_missing"] = _missing
+                        break
+        except Exception:
+            pass
 
         # recompute pass from the merged max scores (blocking, non-advisory, non-blank screens)
         _blocking_merged = [s for s in merged
