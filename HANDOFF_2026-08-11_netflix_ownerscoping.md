@@ -1000,13 +1000,41 @@ r103/r113/r115). Breadcrumb: `metadata.schema_wipe_prevented_by`.
 
 ---
 
-## 6. Other KNOWN-OPEN issues (documented, not yet fixed)
+## 6. Other KNOWN-OPEN issues — ALL FOUR CLOSED 2026-08-12
 
-> **2026-08-11 re-measurement:** items 1 and 3 look SUBSUMED by §5.0 (#566x). Item 1's *staleness*
-> premise is **disproved for r130** — every one of its 49 chains carried the same `last_run_at`, so
-> nothing was stale; the failures were live and all downstream of the reset. Item 3 (`my-list → 404`,
-> `${titleId}` unresolved) is the exact signature #566x fixes. Re-check both against r131 before
-> writing any code for them; the `run_chains` re-run rework in item 1 may be unnecessary.
+> **2026-08-12: every item below has a measured verdict. Nothing here is open.** Three were
+> disproved as stated; the fourth was real, its stated hypothesis was wrong, and the residue is
+> fixed by **#591**/**#592**. Items are kept (not deleted) so the next reader can see what was
+> ruled out and how — re-opening one needs new evidence, not a re-reading.
+>
+> | item | premise | verdict |
+> |---|---|---|
+> | 1 | `last_result` goes STALE between validation passes | **DISPROVED.** `last_run_at` spread within a run is **0–4 s** over 42–141 chains (r129 141, r130 42, r134 74, r139 81, r142 106) — every chain is re-run every pass. Only *never-run* chains exist (1–7 per run) and #510 already excludes those. The proposed `run_chains` rework is **unnecessary**; do not build it. |
+> | 2 | `rating → 422 "value is required"` | **GONE.** 0 failing 422 steps in r129 **and** r130. Arc-wide every persisted 422 has `ok=True` — the step's `expect` was a wide net, not a failure. (Chasing this is what surfaced **#591**.) |
+> | 3 | `my-list → 404`: `title_id` string-vs-int, seed ids like `titles-1` | **REAL, hypothesis WRONG.** r130's model is `title_id = Column(Integer, ForeignKey("titles.id"))` against `Title.id = Column(Integer)` — both ints. Actual chain: `GET /api/titles` returned `{"items": [], "total": 0}` (an EMPTY catalog — #566x's reset), `save {titleId: items.0.id}` captured nothing, the ladder filled `${titleId}` with an unrelated id, the FK 404'd. Cause fixed by #566x; the **misattribution** by **#592**. |
+> | 4 | profiles/continue-watching read-back advisory | **NOT REPRODUCED** in r134/r139/r142 (all three `*** MULTI-MILESTONE VALIDATED ***`, delivered-app audits clean). #566p's diagnostic is in place if it returns. |
+>
+> **#591 (LANDED), the mirror of #586.** #586 rejects an expectation nothing can *satisfy*; #591
+> rejects one nothing can *falsify*. A BUSINESS step accepting both a 2xx and 401/403 passes
+> whether the app served the data or refused the caller — it cannot detect a cross-user leak or a
+> wrongly-denied owner, and still counts toward the green chain total. Arc-wide: **56 such steps
+> in 16 runs**, on exactly the resources every owner-scoping leak lived on (`/api/my-list` ×26,
+> rating ×8, `/api/continue-watching` ×6, `/api/profiles` ×2) — **r133** (the #568 live leak) has
+> 12, **r142** (a VALIDATED run) has 13. Control-plane paths are exempt (654 of the 710 arc-wide
+> wide-expectation steps are `/auth`, `/oauth`, `/api/v1/*`, `/health`, `/.well-known`, where
+> "the surface answers sanely" is the real intent); 409 and 404 are not denial codes, so
+> `POST /auth/register [200,201,409]` — the arc's most common wide expectation — is untouched.
+> Replay over all 3533 authored chains: **139 rejected (3.9%)**, higher than #586's 0.3% and
+> stated plainly; every rejected shape is genuinely blind.
+>
+> **#592 (LANDED).** #188 explains a failure when a var stayed literal; it was silent when the
+> ladder DID produce a value, which is the worse case — the request looks well-formed and the
+> status lands on the endpoint. Now the consuming step carries
+> `SUBSTITUTED ${v} save failed at step '<upstream>' … fix that capture, not this endpoint` plus
+> `autofilled: ladder-filled-after-failed-save:<v>`. Annotation, not reclassification (#587
+> precedent). Discriminator is `v not in variables` — the ladder writes only into the outgoing
+> request, so a var present in `variables` was really captured by a later step and its stale
+> `save_failed_by_var` entry must not annotate.
 
 1. **verification_checklist / build:* STALENESS + FLAPPING (r124/r126/r129).** The delivery gate reads
    each chain's `last_result` and the four `build:*` checks; on slow draws these **flap** pass↔fail across
