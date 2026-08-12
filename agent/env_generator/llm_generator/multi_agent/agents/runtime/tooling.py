@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import difflib
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -260,6 +261,18 @@ def _coerce_one(declared: Any, value: Any) -> Any:
         return _UNCOERCED
     return _UNCOERCED
 
+
+# #611: the argument keys that identify WHAT a tool acted on, most specific first.
+# Ordered so a hub id wins over a generic `name`; at most three are logged.
+_TARGET_ARG_KEYS_611 = (
+    "task_id", "document_id", "meeting_id", "endpoint_id", "chain_id", "page_id",
+    "component_id", "table", "table_name", "bug_id", "pr_id", "run_id",
+    "method", "url", "path", "file_path", "action", "resource", "name", "id",
+    "status", "kind", "query", "pattern",
+)
+# credential-shaped keys are redacted — this log lands on disk
+_SECRETISH_ARG_RE_611 = re.compile(
+    r"pass|secret|token|auth|credential|api_?key|cookie", re.I)
 
 class AgentTooling:
     def _register_env_gen_tools(self):
@@ -1061,7 +1074,37 @@ class AgentTooling:
                 f"{tool_args.get('image_path', tool_args.get('path', '?'))}"
             )
         else:
-            self._logger.info(f"[{self.agent_id}] 🔧 {tool_name}: args={list(tool_args.keys())}")
+            # #611 — LOG *WHAT* WAS OPERATED ON, NOT JUST THE ARGUMENT NAMES. This fallback
+            # printed `args=['method','url']` — the KEYS only — so the log records that a
+            # call happened but never its target. Of the ten highest-volume tools in the arc,
+            # NINE land here: workhub_task, workhub_get_task, workhub_add_meeting_decision,
+            # list_generated_files, test_api, workhub_list_documents, workhub_get_document,
+            # workhub_cancel_task (only check_inbox and read have bespoke branches).
+            #
+            # It is not a cosmetic gap. It blocked two analyses in this very session: whether
+            # an agent re-fetches the SAME task (workhub_get_task, 5.80M tokens over 427
+            # calls) and whether it re-hits the SAME tokenless endpoint after being told not
+            # to (test_api — the "requires AUTH, a tokenless request is SUPPOSED to be
+            # rejected" hint fires 535 times arc-wide, and nothing records which endpoint).
+            # It is also, mechanically, part of why the framework's own agents cannot
+            # root-cause their runs: the artifact does not say what was touched.
+            #
+            # Costs nothing the model sees — this is a log line, not context. Values are
+            # truncated and credential-shaped keys are redacted, because the log is written
+            # to disk and read by humans and agents.
+            _t = []
+            for _k in _TARGET_ARG_KEYS_611:
+                if _k in tool_args and tool_args[_k] not in (None, "", [], {}):
+                    _v = tool_args[_k]
+                    if _SECRETISH_ARG_RE_611.search(_k):
+                        _v = "<redacted>"
+                    elif not isinstance(_v, (str, int, float, bool)):
+                        continue
+                    _t.append(f"{_k}={truncate(str(_v), 120)}")
+                if len(_t) >= 3:
+                    break
+            _tail = " ".join(_t) if _t else f"args={list(tool_args.keys())}"
+            self._logger.info(f"[{self.agent_id}] 🔧 {tool_name}: {_tail}")
 
     def _log_tool_result(self, tool_name: str, result: ToolResult, duration_ms: int) -> None:
         """Log tool execution result with appropriate detail level."""
