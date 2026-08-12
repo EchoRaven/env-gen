@@ -935,7 +935,14 @@ frame is not just a bad yardstick — it is the spec the design analyst reads, s
 toward building an ad overlay instead of a video player.** (`Report` is emitted by `#544`; `Ad 12`
 and "begins after ads" are ad-only.)
 
-**RECOMMENDED ASSET FIX (user's call — it breaks score comparability with the 32 runs of history):**
+> **2026-08-12 — SUPERSEDED for the GATE by #601.** The user's challenge was right: swapping one
+> image does not generalize, because the next product's capture lands on its own ad. #601 detects
+> the ad state from the MEASUREMENT instead — `state: "'Ad 12' — ad playing"` — so **no asset edit
+> is needed for the gate in any app**. Over 2880 screens it fires 142 times, every one `player`.
+> The swap below would still help GENERATION (the analyst reads the frame as SPEC: r107 built an
+> ad player and scored 0.92 for it), but that is a product-local benefit against a real cost.
+
+**OPTIONAL ASSET FIX (user's call — it breaks score comparability with the 32 runs of history):**
 `references/player_controls.jpg` is already staged into `design/references/` on **every run** and is
 never scored by any screen. It carries **all 8 controls** the framework's own
 `_player_controls_jsx_449` emits (pause / ±10s / volume / scrubber / next-episode / episodes /
@@ -1197,6 +1204,27 @@ recorded so they are not re-run:**
 |---|---|---|
 | BY-ID handlers on an owner-bearing model | GET 3, PUT 11, PATCH 4, **DELETE 121** | **0 unguarded** |
 | bare-collection GETs taking an owner column as a QUERY PARAM | 1036 GETs | **0** — `?profile_id=X` is simply ignored by FastAPI and cannot bypass scoping |
+
+### §5.0y — reference-frame defects are now DETECTED, never curated (#601, 2026-08-12)
+
+Two of the arc's three worst screens turned out not to be build failures at all but
+**unreproducible reference frames**, and both were first answered with something product-local
+(a bespoke checklist, a recommendation to swap an image). The user's challenge — *"even if you
+swap it, it won't generalize to other apps"* — is the right test, and both now pass it:
+
+| frame defect | screen | generalizable rule | fires |
+|---|---|---|---|
+| captured mid-INTERACTION | `browse_by_languages` (27/40 blocker, mean 0.424) | **#595** — ≥2 independent OPEN overlays; opening one closes the other, so the state cannot exist | 36/45 designs |
+| captured mid-INTERSTITIAL | `player` (20/40 blocker) | **#601** — measured `state` says an ad is PLAYING; no task asks the app to build an ad system | 142 of 2880 screens, all `player` |
+
+Both read the measurement the framework already produces, both name only GENERIC UI concepts
+(dropdown / popover / advertisement), and neither needs a human to touch an asset. #601's three
+refinements were each forced by a real false positive: match `state` not `role` (`player_controls`
+says *"No 'Ad NN' chip"*), skip negations, and require a live-playback word within 34 chars
+(`landing` ×60 carries *"…subtitle about ad-supported plan"* — copy the app SHOULD reproduce).
+
+**Gate replay over the 40 scored runs, #595+#601: blocking screen-instances 141 → 98;
+`player` 20 → 0, `browse_by_languages` 27 → 6, `my_list` 6 → 4, nothing else moved.**
 
 > ★ **METHOD WARNING, earned three times in one session.** This audit reported a clean, confident
 > **ZERO** twice before it worked: the first regex died on `\)\s*\ndef` (greedy `\s*` eats the
