@@ -356,10 +356,18 @@ def _resolve_conflict_by_ownership(repo: Path, *, lane: str,
     Ownership decides this without guessing: a path under a DIFFERENT lane's prefix is one
     this worktree cannot be authoritative about, so it takes the integration side —
     ``framework_side``, which is the shared side in both directions (merge: ``--ours``,
-    pull: ``--theirs``). Nothing is lost that would have shipped: those commits are
-    unmerged by definition, and at run end 0 of them had reached integration. Paths under
-    NO known prefix still abort, and an unidentifiable lane (``lane == ""``) still aborts —
-    if we cannot say whose worktree this is, we must not discard its work.
+    pull: ``--theirs``). Paths under NO known prefix still abort, and an unidentifiable lane
+    (``lane == ""``) still aborts — if we cannot say whose worktree this is, we must not
+    discard its work.
+
+    WHY DISCARDING IS SAFE, structurally: ``docker/docker-compose.yml`` builds ``../app/backend``
+    and ``../app/frontend`` — the ROOT tree, which is checked out on ``integration``. No lane
+    worktree is ever a build context, so resolving a conflict inside one cannot change what
+    ships. (An earlier draft of this comment argued it statistically, from "0 of those commits
+    had reached integration". That reasoning was WRONG and is recorded here as a trap: lane
+    merges are SQUASH merges, so ``integration..agent/<lane>`` lists commits whose CONTENT is
+    already in integration — it over-counted 84 branches where a content diff finds 54, and a
+    content diff in turn only proves the branch is stale. Ancestry cannot answer this question.)
     """
     try:
         spec = _OWNERSHIP.get(lane)

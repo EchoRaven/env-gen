@@ -216,5 +216,16 @@ def test_the_measurement_that_justifies_it_is_recorded():
     assert "70.8x" in flat
 
 
+def test_the_safety_argument_is_structural_not_statistical():
+    """Corrected after the fix shipped. Lane merges are SQUASH merges, so
+    `integration..agent/<lane>` lists commits whose content IS already in integration — the
+    ancestry argument this comment first used cannot answer the question. What makes discarding
+    safe is that no lane worktree is ever a docker build context."""
+    import inspect
+    flat = " ".join(inspect.getsource(ac._resolve_conflict_by_ownership).split())
+    assert "No lane worktree is ever a build context" in flat
+    assert "SQUASH merges" in flat
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

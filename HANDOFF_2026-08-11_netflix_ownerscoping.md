@@ -1590,10 +1590,20 @@ cross-territory** — a lane conflicting on a path it has no claim on — versus
 (all the old resolver could handle) and **0** outside every known territory. The frontend lane does
 it too (`app/backend/seed_data.json` ×8, `main.py` ×4), so the rule is uniform, not an orchestrator
 special case: *a path under another lane's prefix resolves to the shared side* — `framework_side`,
-which is integration in both directions (merge `--ours`, pull `--theirs`). Nothing that would have
-shipped is lost: those commits are unmerged by definition and **0** had reached integration at run
-end. An unidentifiable lane (`lane == ""`) still aborts — if we cannot say whose worktree it is, we
-must not discard its work.
+which is integration in both directions (merge `--ours`, pull `--theirs`). An unidentifiable lane
+(`lane == ""`) still aborts — if we cannot say whose worktree it is, we must not discard its work.
+
+Discarding is safe **structurally**, not statistically: `docker/docker-compose.yml` builds
+`../app/backend` and `../app/frontend` — the ROOT tree, checked out on `integration`. No lane
+worktree is ever a build context, so resolving a conflict inside one cannot change what ships.
+
+> **Lens error, caught after the fix was committed.** The first version of this argument was
+> statistical — "0 of those commits had reached integration at run end", from
+> `git log integration..agent/<lane>`. **Lane merges are SQUASH merges**, so that range lists
+> commits whose CONTENT is already in integration: it flags **84** of 90 lane-branches where a
+> content diff finds **54**, and a content diff in turn only proves the branch is *stale*, not
+> that work was lost. Ancestry cannot answer this question at all. The source comment now carries
+> the structural argument and records the trap.
 
 **Root cause 2 — the ignition was an agent repairing itself (#623).** A `git stash` failure was
 returned as `False`, which the caller publishes as a `merge_conflict` event *and* a P0 task titled
