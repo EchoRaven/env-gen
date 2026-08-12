@@ -800,7 +800,24 @@ Returns:
                     "eventhub": True,
                     # #302: carry the PRE-call read status (from the eventhub
                     # pointer) so the formatter can preview an already-read body.
-                    "read": bool(event.get("read")),
+                    # #604 — READ THE POINTER, NOT THE EVENT. `list_inbox` returns
+                    # `{**event, "inbox": item}`; the read flag lives on the per-agent
+                    # POINTER (`item`), and an event record has no top-level `read` at all
+                    # (12910 of 12910 stored events in the arc carry no such key). So this
+                    # was always False and #302's preview — the fix built for exactly this —
+                    # never once fired for a durable message.
+                    #
+                    # That is where the volume is. Over 45 runs, `check_inbox` accounts for
+                    # 68.9M of 108.6M tool-io tokens (63%), 3454 calls averaging 20k tokens,
+                    # a median of 218 calls per run (max 682). 69% of reads lead with a
+                    # message already delivered (median re-delivery 3.09x; r141 had ONE
+                    # message head 150 of 210 reads). Every durable event is stamped
+                    # `persist: True` here, so it is never cleared — and 81% of the arc's
+                    # 33130 inbox pointers ARE marked read, so the state to act on was
+                    # there all along. #302's own note called it: "r82: ~350KB of read
+                    # bodies per inbox per call — the #1 token sink".
+                    "read": bool((event.get("inbox") or {}).get("read")
+                                 or event.get("read")),
                 })
         
         if not all_messages:
