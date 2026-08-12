@@ -352,6 +352,20 @@ def _api_test_user(base: str, api_paths: set,
     additionally gets a generic contract-derived CRUD journey (``_api_crud_journey``)."""
     steps: List[Dict[str, Any]] = []
 
+    def _declared_endpoint(method: str, path: str) -> bool:
+        """#614 — is (method, path) in the CONTRACT? Param-name agnostic, so a recorded
+        `/api/x/{id}` matches a declared `/api/x/{item_id}`."""
+        want_m = str(method or "GET").upper()
+        want_p = re.sub(r"\{[^}]*\}", "{}", _norm(path))
+        for ep in (business_eps or []):
+            if not isinstance(ep, Mapping):
+                continue
+            if str(ep.get("method") or "GET").upper() != want_m:
+                continue
+            if re.sub(r"\{[^}]*\}", "{}", _norm(str(ep.get("path") or ""))) == want_p:
+                return True
+        return False
+
     def rec(action: str, method: str, path: str, res: Dict[str, Any],
             check=None) -> Dict[str, Any]:
         status = res.get("status")
@@ -365,6 +379,23 @@ def _api_test_user(base: str, api_paths: set,
         if not ok:
             note = (res.get("error") or res.get("body_text") or "")[:160]
             kind = "missing" if status in (404, 405) else "broken"
+            # #614 — A 405 ON A DECLARED ENDPOINT IS A TIMING VERDICT, NOT A GAP. The smoke
+            # runs against whatever the container is serving AT THAT MOMENT, and the projector
+            # may not have emitted the handler yet. Every one of the 8 runs that recorded
+            # `POST /api/continue-watching -> 405 missing` has a `main.py` written 8 to 108
+            # MINUTES AFTER the report — and in r131/r120/r114/r101 the verification chains
+            # later got 201 on the very same call. The verdict was correct when written and
+            # stale by the time anything read it, but it lands in the failure ledger as a
+            # missing feature and is never re-evaluated (the #597 staleness class).
+            #
+            # Say so in the note rather than silently reclassifying: `missing` still fails the
+            # step, and a genuinely absent endpoint reads exactly as before.
+            if status == 405 and _declared_endpoint(method, path):
+                note = ((note + " | ") if note else "") + (
+                    "NOTE: this endpoint IS in the contract — a 405 means it is not being "
+                    "served right now, most often because the projected handler had not been "
+                    "emitted when this smoke ran. Re-check against the CURRENT backend before "
+                    "dispatching it as a missing feature.")
         elif check:
             ok, note = check(_json(res))
             if not ok:

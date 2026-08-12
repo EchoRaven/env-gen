@@ -1404,21 +1404,26 @@ guard (#566s/#577); **0 of the 8 runs that HAVE the guard show the symptom**. Di
 conclusive — only 8 guarded runs exist — but it is the first validation of that fix against
 user-visible behaviour rather than unit tests.
 
-**3. OPEN, and it needs a running app: `POST /api/continue-watching` → 405 in 8 runs**, including
-the recent **r141 and r143**. What was ruled out statically, so nobody repeats it:
+**3. RESOLVED — and it was never a routing bug (#614, LANDED).** `POST /api/continue-watching`
+→ 405 in 8 runs, including the recent r141/r143. A long static hunt found the endpoint DECLARED
+in the contract AND EMITTED in `main.py` at column 0, top level, with no conflicting custom POST,
+no app rebinding, no circular import, and Starlette route order ruled out (a PARTIAL method match
+never blocks a later FULL one). An apparent impossibility.
 
-| checked | result |
-|---|---|
-| endpoint declared in the contract? | **yes, 8/8** |
-| projected handler emitted into `main.py`? | **yes, 8/8** (`@app.post` at column 0, top level) |
-| is it inside a conditional that might not run? | no — the last column-0 block opener closes well before it |
-| does `custom_routes.py` define a conflicting POST? | no — it defines **GET only** for that path |
-| Starlette route order (custom router included before the projected routes)? | not the cause — a PARTIAL method match does not stop a later FULL match |
-| `next(iter(route.methods))` in the override filter picking an arbitrary method? | real latent bug, but **inert: 0 multi-method routes in 2533** across the corpus |
+**The resolution was a timestamp, not a code path.** In every one of the 8 runs `main.py` was
+written **8 to 108 MINUTES AFTER the report** — the file being inspected was never the one that
+served the smoke. And in **r131 / r120 / r114 / r101** the verification chains later got **201**
+on the very same call.
 
-The body is FastAPI's own `{"detail":"Method Not Allowed"}`, so FastAPI is answering — the route
-table at runtime does not contain the POST that the source clearly registers. **Next step is to
-print `app.routes` on a live container**, which is an experiment.
+So the verdict was correct when written and stale by the time anything read it, yet it lands in
+the failure ledger as a MISSING FEATURE and is never re-evaluated — the #597 staleness class one
+layer up. #614 says so in the note (`missing` still fails the step; a genuinely undeclared
+endpoint reads exactly as before; 404 is untouched, since that IS the honest never-built case).
+
+> ★ **This was the session's ninth and costliest lens error, and the most instructive.** Every
+> static check was correct AND the conclusion was wrong, because the artifact on disk was not the
+> artifact under test. Add to the standing rule: before reasoning about a delivered file, compare
+> its mtime with the report you are explaining. A file can be right and still be the wrong file.
 
 > Two blind spots this audit hit, both now recorded: `POST /auth/login` is **never exercised in
 > the API section of any of the 66 reports** (so that section could not arbitrate the login
