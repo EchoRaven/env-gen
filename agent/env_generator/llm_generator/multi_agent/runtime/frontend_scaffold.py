@@ -3157,17 +3157,30 @@ def _design_screen_for_route(design, route, hints=()) -> Optional[Dict[str, Any]
     want = _norm_route_221(route)
     if not want:
         return None
-    best = None
-    for s in ((design or {}).get("screens") or []):
-        if not (isinstance(s, dict) and (s.get("components") or [])):
-            continue
-        if _norm_route_221(s.get("route")) != want:
-            continue
-        if str(s.get("kind") or "page").strip().lower() == "page":
-            return s
-        best = best or s
-    if best is not None:
-        return best
+    # #584: several screens routinely share one route (a detail modal, its rating dialog and
+    # its episode list are all classified `/title/:id`). Returning the first `kind == 'page'`
+    # made the winner depend on how the LLM happened to classify `kind` — measured on the real
+    # designs, the title-detail PAGE resolved to `rate_dialog` in r137 AND r142 (a rating
+    # dialog rendered as the title page), and to `title_detail` in r139 only because all three
+    # candidates there happened to be overlays so the first one won. `/browse` lost the same
+    # way (`card_hover_preview` over `browse_home`). Rank the exact-route candidates the way
+    # #571 already ranks fuzzy ones: how much of the SCREEN's own name the page accounts for
+    # first — `title_detail_page`/`TitleDetailPage` covers `title_detail` completely and
+    # `rate_dialog` not at all — then the documented page-over-overlay preference, then
+    # richness. With no name signal at all this degrades to exactly the old ordering.
+    _exact = [s for s in ((design or {}).get("screens") or [])
+              if isinstance(s, dict) and (s.get("components") or [])
+              and _norm_route_221(s.get("route")) == want]
+    if _exact:
+        _vocab = _semantic_tokens_226(want, *hints)
+
+        def _rank(s):
+            _nt = _semantic_tokens_226(s.get("name"))
+            _cov = (len(_nt & _vocab) / len(_nt)) if _nt else 0.0
+            _is_page = 1 if str(s.get("kind") or "page").strip().lower() == "page" else 0
+            return (_cov, _is_page, len(s.get("components") or []))
+
+        return max(_exact, key=_rank)
     rt = _semantic_tokens_226(want, *hints)
     if not rt:
         return None
