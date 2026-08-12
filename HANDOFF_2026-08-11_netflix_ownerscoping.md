@@ -1143,6 +1143,64 @@ line-count heuristic flags it and is simply wrong.
 
 ---
 
+### §5.0w — the delivered-backend audit: a LIVE leak survived the arc (#598, 2026-08-12)
+
+§5.0's own rule is "audit the delivered app even after a green gate". Doing that systematically
+over **all 144 delivered backends** — every projected bare-collection GET whose queried model
+carries an owner column, checked for any scoping — shows the arc working **and** what it missed:
+
+| era | owner-model collection reads | UNSCOPED |
+|---|---|---|
+| ≤r99 | 334 | 119 (36%) |
+| r100–r119 | 61 | 25 (41%) |
+| r120–r133 | 37 | 14 (38%) |
+| **r134+** | 23 | **2 (9%)** |
+
+The two survivors are r141's `GET /api/my-list` and `GET /api/continue-watching`, and the cause
+is not the resource — it is **which FK the draw happened to pick**:
+
+```
+r142  MyList.profile_id -> .filter(MyList.profile_id == _fw_owner_val(...))   scoped
+r141  MyList.user_id    -> db.query(MyList).limit(100).all()                  LEAKS
+```
+
+#566y widened read-scoping to sub-entity owners and left the direct-user case opt-in because
+*"a public feed is a list of rows each owned by some user"* — true for a row that IS the content
+(`posts(user_id, title, body)`), false for one that merely RELATES a user to someone else's
+content. **#598's discriminator is structural and needs no contract flag: a DIRECT users FK PLUS
+an FK to another non-user entity.** Over the 144 backends, 196 tables carry a users FK; the 63
+instances that also carry a content FK are exactly `MyList` / `Rating` / `ContinueWatching`,
+every one per-user private state, while the 133 with a user FK alone are `Profile`, correctly
+untouched. User-to-USER tables (`follows`) are excluded, and only bare COLLECTION reads are
+affected. Replay: **25 historically-unscoped reads in 13 runs become scoped, including both of
+r141's live leaks.**
+
+> ★ **METHOD WARNING, earned three times in one session.** This audit reported a clean, confident
+> **ZERO** twice before it worked: the first regex died on `\)\s*\ndef` (greedy `\s*` eats the
+> newline the `\n` then demands), the second on `\(([^)]*)\)` (handler args contain
+> `Depends(get_db)`). Earlier the same day, a scan for chain error text returned 0 because the
+> persisted step record has no body field, and a scan for the reCAPTCHA line returned 0/43
+> because the framework deliberately words it "not a bot". **An audit that finds nothing must
+> have its DENOMINATOR printed before the result is believed.**
+
+**#584 validated against outcomes, not just behaviour.** Splitting the 25 scored runs by whether
+#584 changes the screen pick: the **8** runs where it does score `title_detail` **0.569 mean /
+12% pass**; the 17 where the pick was already right score **0.635 / 41%**. The defect is
+concentrated exactly where the fix applies. (Correlation, not proof — re-measuring needs a run.)
+
+**`games`: the last hard fact, and why no code follows.** `design_system.json`'s `dataset`
+declares **one** entity — `titles` (60 records). There is no games entity anywhere in the design,
+yet 40/45 runs declare a Games page from `games.jpg`. The measured region roles do carry a
+distinct vocabulary ("featured **game**", "**Play Game**", "Game • Sports • 1-4 **Players**")
+against `browse_home`/`new_and_popular` which say title/rail — but encoding that means
+distinguishing an entity noun from an adjective on a corpus with **exactly one positive example**.
+That is overfitting, not a fix. The gap is upstream: the design analyst declares a page per
+reference image without checking the dataset can back it. Left as the two honest options already
+recorded — synthesize the read-only entity, or file the read analog of `test_user_squad`'s
+MISSING WRITE PATH — both of which are planning decisions, not regex decisions.
+
+---
+
 ## 6. Other KNOWN-OPEN issues — ALL FOUR CLOSED 2026-08-12
 
 > **2026-08-12: every item below has a measured verdict. Nothing here is open.** Three were
