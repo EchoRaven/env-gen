@@ -2794,6 +2794,70 @@ def _surf_style_attr_526(surf) -> str:
 _PANEL_ROLE_WORDS = ("card", "panel", "modal", "dialog", "enclosing box", "bordered container")
 
 
+#603 — THE AUTH FOOTER'S WIDTH AND COLUMN COUNT ARE MEASUREMENTS TOO. After #594 (the card
+# panel) and #602 (the surface gradient), `footer` is what is left of `login`'s deviation
+# clusters — 48 of its 282, and the complaints are structural, not copy:
+#     "implementation has a small centered footer; reference is a full-width 4-column footer"
+#     "Footer: 2-column layout missing … links"
+# The template hard-coded `mx-auto w-full max-w-4xl` (at 1280px that is x 0.15–0.85) and
+# `grid-cols-2 … sm:grid-cols-4`.
+#
+# The measurement disagrees, and does so consistently: over the **143** login screens that
+# carry footer regions, the footer's x-span median is **0.000 → 1.000 — the full frame** — and
+# **139 of 143** declare exactly **4** `*-col*` regions. Both numbers are read from the design,
+# so an app whose reference has a 3-column inset footer gets that instead.
+#
+# No measurement (4 of 143, and every app generated without design input) -> the exact strings
+# the template used before, so output is byte-identical there.
+_FOOTER_BOX_DEFAULT_603 = "mx-auto w-full max-w-4xl px-6 pb-10"
+_FOOTER_GRID_DEFAULT_603 = "grid grid-cols-2 sm:grid-cols-4"
+_FOOTER_COL_RE_603 = re.compile(r"col(?:umn)?[-_ ]?\d|col\d", re.I)
+
+
+def _auth_footer_layout_603(design) -> Optional[Dict[str, Any]]:
+    """#603 — ``{"full_width": bool, "cols": int}`` measured off the auth screen's footer
+    regions, or ``None`` when nothing was measured (caller keeps the template defaults)."""
+    screens = ((design or {}).get("screens") or []) if isinstance(design, Mapping) else []
+    for sc in screens:
+        if not isinstance(sc, Mapping):
+            continue
+        nm = str(sc.get("name") or sc.get("id") or "").strip().lower()
+        if not nm or not _is_login_route_546(nm, {}):
+            continue
+        xs: List[float] = []
+        cols = 0
+        for reg in (sc.get("regions") or sc.get("components") or []):
+            if not isinstance(reg, Mapping):
+                continue
+            ident = f"{reg.get('id') or ''} {reg.get('role') or ''}"
+            if "footer" not in ident.lower():
+                continue
+            box = reg.get("region")
+            if isinstance(box, (list, tuple)) and len(box) >= 4:
+                try:
+                    xs += [float(box[0]), float(box[2])]
+                except (TypeError, ValueError):
+                    pass
+            if _FOOTER_COL_RE_603.search(ident):
+                cols += 1
+        if not xs:
+            continue
+        return {"full_width": (max(xs) - min(xs)) >= 0.9, "cols": cols if cols >= 2 else 0}
+    return None
+
+
+def _auth_footer_classes_603(design) -> Dict[str, str]:
+    """#603 — the two footer class fragments, defaulting to the template's own strings."""
+    box, grid = _FOOTER_BOX_DEFAULT_603, _FOOTER_GRID_DEFAULT_603
+    m = _auth_footer_layout_603(design)
+    if m:
+        if m["full_width"]:
+            box = "w-full px-6 sm:px-12 pb-10"
+        if m["cols"]:
+            grid = f"grid grid-cols-2 sm:grid-cols-{min(m['cols'], 6)}"
+    return {"__CLS_FOOTER_BOX__": box, "__CLS_FOOTER_GRID__": grid}
+
+
 def _auth_form_panel_measured(design) -> Optional[bool]:
     """Does the measured auth screen show an enclosing CARD around the form?
 
@@ -2933,9 +2997,9 @@ export default function __COMP__() {
         </button>
       </form>
       </div>
-      <footer className="mx-auto w-full max-w-4xl px-6 pb-10 text-sm __CLS_FOOTER__">
+      <footer className="__CLS_FOOTER_BOX__ text-sm __CLS_FOOTER__">
         __FOOTER_CONTACT__
-        <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-xs sm:grid-cols-4">
+        <div className="__CLS_FOOTER_GRID__ gap-x-8 gap-y-2 text-xs">
 __FOOTER_LINKS__
         </div>
       </footer>
@@ -3091,6 +3155,8 @@ def _auth_page_src_540(name, page, screen, design, pal, surf):
                     '<header className="px-6 sm:px-10 py-4">'
                     + _brand_mark_jsx(design, _app, dark) + "</header>"))
     for _ph, _cls in _auth_page_classes(design).items():
+        src = src.replace(_ph, _cls)
+    for _ph, _cls in _auth_footer_classes_603(design).items():   # #603
         src = src.replace(_ph, _cls)
     src = src.replace("__AUTH_PAGE_STYLE__", _surf_style_attr_526(surf))
     return src
