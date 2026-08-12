@@ -1006,6 +1006,16 @@ class BaseLLMClient(ABC):
                 last_error = e
                 error_type = type(e).__name__
                 error_msg = str(e)[:200]  # Truncate long errors
+                if not error_msg.strip():
+                    # #582: a bare exception (classically `assert x` with no message) logged as
+                    # "[AssertionError] " and nothing else — 2313 such 3-attempt failure groups
+                    # across the netflix arc, every one undiagnosable: the type alone says
+                    # neither what asserted nor where. `agent/utils/llm.py` contains no assert,
+                    # so these originate in the SDK/transport and only the frame identifies
+                    # them. Attach the innermost frame so ONE failure names its own cause
+                    # instead of seeding another blind retry. Log-only; guarded so building a
+                    # log line can never itself raise.
+                    error_msg = _blank_error_origin(e)
 
                 # #326: a TERMINAL provider error (spend/budget/quota exhausted, hard auth) is
                 # unrecoverable — do NOT burn retries, and latch a reason the run loop can poll
@@ -1061,6 +1071,30 @@ class BaseLLMClient(ABC):
                 attempt += 1
         
         raise last_error
+
+
+def _blank_error_origin(error: BaseException) -> str:
+    """#582 — a one-line origin for an exception whose ``str()`` is EMPTY.
+
+    A bare ``assert x`` raises ``AssertionError('')``, so the retry log printed
+    ``[AssertionError] `` and nothing else — 2313 three-attempt failure groups across the
+    netflix arc, none of them diagnosable. This module has no ``assert``, so they originate in
+    the SDK/transport and only the frame identifies them.
+
+    Returns ``(no message) at <file>:<line> in <func>: <source>``, or ``(no message)`` when the
+    traceback is unavailable. Never raises — it runs while building a log line on an
+    already-failing path."""
+    try:
+        import traceback as _tb
+        frames = _tb.extract_tb(error.__traceback__)
+        if not frames:
+            return "(no message)"
+        f = frames[-1]
+        where = f"{str(f.filename).split('/')[-1]}:{f.lineno} in {f.name}"
+        src = (f.line or "").strip()[:120]
+        return f"(no message) at {where}" + (f": {src}" if src else "")
+    except Exception:
+        return "(no message)"
 
 
 def _gpt5_reasoning_effort(model_name, reasoning_effort) -> dict:
