@@ -431,7 +431,19 @@ def _mcp_test_user(project_dir: Path, business_eps: List[Mapping[str, Any]]) -> 
     try:
         srv_root = project_dir / "mcp_server"
         if not srv_root.exists():
-            out["note"] = "no mcp_server/ — MCP surface not built"
+            # #616 — "NOT BUILT" IS A TIMING VERDICT TOO. Same shape as #614's 405: the probe
+            # reports what exists AT THIS MOMENT, and the framework may not have scaffolded
+            # yet. Measured across the arc's reports, 9 runs recorded "MCP surface not built"
+            # while `mcp_server/` DOES exist on disk — written 3 to 10 minutes AFTER the
+            # report in every one (r115 +6, r118 +6, r121 +5, r125 +7, r127 +6, r128 +10,
+            # r133 +6, r134 +3, r142 +7). The scaffolder emits it (`write_mcp_server`); the
+            # probe simply ran first, and its verdict then sits in the ledger unrevisited.
+            #
+            # `server_found` stays False — the probe must not claim to have seen something it
+            # did not — but the note no longer reads as a permanent gap.
+            out["note"] = ("no mcp_server/ AT THIS MOMENT — the framework scaffolds it "
+                           "(write_mcp_server) and this probe may simply have run first; "
+                           "re-check the tree before treating the MCP surface as unbuilt")
             return out
         mains = list(srv_root.glob("*/main.py"))
         if not mains:

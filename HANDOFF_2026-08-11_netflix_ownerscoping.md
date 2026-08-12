@@ -1425,6 +1425,20 @@ endpoint reads exactly as before; 404 is untouched, since that IS the honest nev
 > artifact under test. Add to the standing rule: before reasoning about a delivered file, compare
 > its mtime with the report you are explaining. A file can be right and still be the wrong file.
 
+**4. THE PATTERN behind #614, found in the last unaudited section (#616, LANDED).** The `mcp`
+section: 41 of 66 reports say *"no mcp_server/ — MCP surface not built"*, and for **9 of them the
+directory EXISTS**, written **3–10 minutes AFTER the report** (r115 +6, r118 +6, r121 +5,
+r125 +7, r127 +6, r128 +10, r133 +6, r134 +3, r142 +7). The framework scaffolds it
+(`write_mcp_server`); the probe ran first.
+
+★ **Two independent instances make this a class, not a coincidence: the test user runs before the
+framework has finished scaffolding, and its "missing / not built" verdicts go stale in the
+failure ledger without ever being re-evaluated.** #614 (a 405 on a declared endpoint) and #616
+(no mcp_server/) are the same defect wearing different clothes, and both are fixed the same way —
+the verdict still fails, but the note says it is a point-in-time observation and names what to
+re-check. Anything else in the reports that reads "not built" or "missing" should be assumed to
+carry the same caveat until its timestamps are compared.
+
 > Two blind spots this audit hit, both now recorded: `POST /auth/login` is **never exercised in
 > the API section of any of the 66 reports** (so that section could not arbitrate the login
 > question — the chains had to), and the report's `flow` key is `flow`, not `name`, which cost a
