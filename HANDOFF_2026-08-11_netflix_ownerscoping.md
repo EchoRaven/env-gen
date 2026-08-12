@@ -1568,6 +1568,75 @@ outside a repo — the #611 move of recording what the next question will need.
 
 ---
 
+### §5.3 — the GIT-COORDINATION axis: a permanent stall in every run, ignited by a self-repair (#622/#623, 2026-08-12)
+
+An axis never audited in this arc. `merge_conflict` fires **1799 times across 15 runs** (median
+**95/run**); **1773** name the *orchestrator*. Every one is `phase=step_start_pull`.
+
+**It is a stall, not noise.** The same `(run, agent, file)` triple repeats **394** times in r124,
+306 in r129, 227 in r137 — and in **8 of 15 runs** the pull is still failing in the final minute.
+The lane never receives integration for the rest of the run. Ground truth, reproducible offline on
+the kept repos today:
+
+```
+$ git merge-tree --write-tree --name-only agent/orchestrator integration   # r124
+CONFLICT (content): Merge conflict in app/frontend/src/pages/BrowseHomePage.jsx
+```
+
+**Root cause 1 — ownership covers 2 of 19 lanes (#622).** `_OWNERSHIP` maps only `backend` and
+`frontend`; `_resolve_conflict_by_ownership` returns `"lane not in ownership map"` for everything
+else and the caller aborts. Of **2091** conflicted-file mentions, **1907 (91%) are
+cross-territory** — a lane conflicting on a path it has no claim on — versus **184** same-territory
+(all the old resolver could handle) and **0** outside every known territory. The frontend lane does
+it too (`app/backend/seed_data.json` ×8, `main.py` ×4), so the rule is uniform, not an orchestrator
+special case: *a path under another lane's prefix resolves to the shared side* — `framework_side`,
+which is integration in both directions (merge `--ours`, pull `--theirs`). Nothing that would have
+shipped is lost: those commits are unmerged by definition and **0** had reached integration at run
+end. An unidentifiable lane (`lane == ""`) still aborts — if we cannot say whose worktree it is, we
+must not discard its work.
+
+**Root cause 2 — the ignition was an agent repairing itself (#623).** A `git stash` failure was
+returned as `False`, which the caller publishes as a `merge_conflict` event *and* a P0 task titled
+"Resolve step-start merge conflict … resolve the conflicting files in your worktree". No merge was
+attempted; there were no conflicting files. In r124 the **first four** events — inside one minute,
+before any real conflict existed — were all this stash failure. The orchestrator then did the one
+thing that makes a dirty tree stashable:
+
+```
+codehub_commit("chore(orchestrator): clear worktree — commit stray BrowseHomePage.jsx …")
+```
+
+a sound response to the message it was handed, and the direct cause of everything after:
+
+| | conflicts | on that file |
+|---|---|---|
+| 50 min BEFORE the self-repair | 4 | **0** |
+| 70 min AFTER | **394** | **394** |
+
+a **70.8×** rate change. Nothing ever told it its repair was the cause. #623 relabels the skip
+(`stash_failed_no_conflict`, mirroring the `merge_failed_no_conflict` branch that already exists
+for exactly this reason) and #26 N2's supersede notice now covers cross-territory paths, so the
+lane learns instead of re-editing.
+
+> **This is §5.2's finding again, at its sharpest.** The binding constraint on self-healing is
+> signal quality: the framework named a false cause, and the agent's *correct* response to that
+> false cause created the real defect. A repair that a lane cannot see the consequences of is
+> indistinguishable from sabotage.
+
+**Measured and deliberately NOT done** — each guards a case occurring **zero** times:
+> * *De-duplicating the urgent event* (the task already dedupes; the event does not, ~51k tokens
+>   worst case in r124). All 2091 file-mentions are inside a known territory, so #622 resolves
+>   100% of them; dedup would guard nothing.
+> * *Opening the merge-path guard* (`if _lane in _OWNERSHIP`) to non-owner lanes. `conflict
+>   merging agent/…` appears **0** times in any run's logs, and #622 removes the divergence at the
+>   pull, so the merge no longer has anything to conflict over.
+> * *A concurrency fix for `could not write index`* — **tested and rejected**: stash failures
+>   within ±2s of another agent's commit are **2.1%**, against a **2.1%** random-time control.
+>   #623 fixes the LABEL, which is what the evidence supports; git's underlying cause stays
+>   unexplained and is still reported verbatim in the message.
+
+---
+
 ## 6. Other KNOWN-OPEN issues — ALL FOUR CLOSED 2026-08-12
 
 > **2026-08-12: every item below has a measured verdict. Nothing here is open.** Three were

@@ -357,6 +357,15 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                                     worktree_dir=wt, main_branch="integration",
                                     superseded_out=_superseded,
                                 )
+                                if pulled_ok and "_no_conflict" in (pulled_info or ""):
+                                    # #623: the pull was skipped, not conflicted — so no
+                                    # merge_conflict event and no P0 task. It must still be
+                                    # visible: trading a false alarm for silence would hide
+                                    # the 187 measured stash failures completely.
+                                    self._logger.warning(
+                                        f"[{self.agent_id}] step-start pull did not run: "
+                                        f"{pulled_info}"
+                                    )
                                 if pulled_ok and _superseded:
                                     # PROPOSAL #26 N2: the framework superseded the
                                     # lane's edit(s) to framework-owned file(s) while

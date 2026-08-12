@@ -285,6 +285,28 @@ _OWNERSHIP = {
     "frontend": ("app/frontend/", _FRONTEND_FRAMEWORK_OWNED, _FRONTEND_LANE_OWNED),
 }
 
+# #623 — A STASH FAILURE IS NOT A MERGE CONFLICT.
+# When `git stash` cannot save a dirty worktree the pull is simply skipped: nothing merged,
+# nothing conflicted, the agent's files untouched. It used to return False, and the caller
+# publishes False as a `merge_conflict` event plus a P0 task titled "Resolve step-start merge
+# conflict … resolve the conflicting files in your worktree".
+#
+# That false label is the ignition of the #622 storm. In r124 the FIRST FOUR events, all inside
+# one minute and all BEFORE any real conflict existed, were this stash failure. The orchestrator
+# did the one thing that makes a dirty tree stashable — it committed it:
+#
+#     codehub_commit("chore(orchestrator): clear worktree — commit stray BrowseHomePage.jsx …")
+#
+# a sound response to the message it was given, and the direct cause of 394 real conflicts over
+# the next 70 minutes. Measured 187 times across 6+ runs; a concurrency cause was tested and
+# REJECTED (within ±2s of another commit: 2.1% vs a 2.1% random-time control).
+#
+# This mirrors the `merge_failed_no_conflict` branch below, which already returns
+# success-with-skip for exactly this reason. The caller logs it; the next step retries.
+_STASH_SKIP_623 = ("stash_failed_no_conflict: worktree could not be stashed so the pull was "
+                   "SKIPPED (nothing merged, no conflict, your files are untouched; retries "
+                   "next step — do NOT commit files your lane does not own to clear it): {err}")
+
 
 def _lane_of_worktree(wt: Path) -> str:
     """The lane name from a worktree's checked-out ``agent/<lane>`` branch, or ''."""
@@ -308,12 +330,45 @@ def _resolve_conflict_by_ownership(repo: Path, *, lane: str,
     OUTSIDE the known owned-set, returns ``(False, ...)`` so the caller aborts (never
     guess on a path a lane legitimately owns). Best-effort; never raises. (Index carries
     the unmerged stages, so ``git checkout --ours/--theirs -- <path>`` + ``git add`` is
-    the standard resolution; add/add resolves the same way.)"""
+    the standard resolution; add/add resolves the same way.)
+
+    #622 — A LANE HAS NO CLAIM ON ANOTHER LANE'S TERRITORY.
+    The rule above only ever fired for a lane that is IN the ownership map, and only for
+    paths under ITS OWN prefix. Everything else aborted. Measured over 15 runs that is the
+    minority case: of 2091 conflicted-file mentions, 1907 (91%) are CROSS-TERRITORY — a
+    lane conflicting on a path belonging to a different lane — and only 184 are the
+    same-territory case this resolver was written for.
+
+    The consequence was a permanent stall, not a slowdown. `agent/orchestrator` is not in
+    the map, so every step-start pull aborted and re-hit the identical conflict: 394 times
+    in r124, 306 in r129, 227 in r137, still failing at the final second of the run in 8 of
+    15 runs. Ground truth (`git merge-tree agent/orchestrator integration` on the kept
+    repo) still reproduces it today.
+
+    The trigger is the interesting part, because it was an agent REPAIRING itself. Handed a
+    P0 "resolve the conflicting files in your worktree", the orchestrator ran
+    `codehub_commit("clear worktree — commit stray BrowseHomePage.jsx … so step_start_pull
+    can succeed")`. That turned a stashable dirty file into a divergent commit on a branch
+    that never merges. In the 50 min before it: 4 conflicts, none on that file. In the 70
+    min after: 394, ALL on that file — a 70.8x rate change. Its repair CAUSED the storm,
+    and nothing ever told it so.
+
+    Ownership decides this without guessing: a path under a DIFFERENT lane's prefix is one
+    this worktree cannot be authoritative about, so it takes the integration side —
+    ``framework_side``, which is the shared side in both directions (merge: ``--ours``,
+    pull: ``--theirs``). Nothing is lost that would have shipped: those commits are
+    unmerged by definition, and at run end 0 of them had reached integration. Paths under
+    NO known prefix still abort, and an unidentifiable lane (``lane == ""``) still aborts —
+    if we cannot say whose worktree this is, we must not discard its work.
+    """
     try:
         spec = _OWNERSHIP.get(lane)
-        if not spec:
-            return False, f"lane {lane!r} not in ownership map"
-        prefix, framework_owned, lane_owned = spec
+        if not spec and not lane:
+            # #622: an unnamed lane could BE the owner — never discard on a guess.
+            return False, "lane could not be identified; not resolving by ownership"
+        prefix, framework_owned, lane_owned = spec if spec else ("", (), ())
+        # #622: territory belonging to some lane OTHER than this one.
+        others = tuple(pre for _l, (pre, _f, _o) in _OWNERSHIP.items() if _l != lane)
         lane_side = "--theirs" if framework_side == "--ours" else "--ours"
         rc, out, _e = _run_git(
             ["diff", "--name-only", "--diff-filter=U"], cwd=repo)
@@ -323,14 +378,17 @@ def _resolve_conflict_by_ownership(repo: Path, *, lane: str,
         resolved: List[str] = []
         for p in paths:
             base = p.rsplit("/", 1)[-1]
-            rel = p[len(prefix):] if p.startswith(prefix) else ""
-            if p.startswith(prefix) and base in framework_owned:
+            rel = p[len(prefix):] if prefix and p.startswith(prefix) else ""
+            if prefix and p.startswith(prefix) and base in framework_owned:
                 side, who = framework_side, "framework"
-            elif p.startswith(prefix) and (
+            elif prefix and p.startswith(prefix) and (
                     base in lane_owned
                     or (lane == "frontend"
                         and rel.startswith(_FRONTEND_LANE_OWNED_DIRS))):
                 side, who = lane_side, "lane"
+            elif p.startswith(others):
+                # #622: another lane's territory → the shared side wins, always.
+                side, who = framework_side, "other-lane-territory"
             else:
                 return False, f"conflict path outside {lane}-owned set: {p}"
             rcc, _o, ec = _run_git(["checkout", side, "--", p], cwd=repo)
@@ -343,7 +401,10 @@ def _resolve_conflict_by_ownership(repo: Path, *, lane: str,
             # the hub-holding caller can notify the lane (it would otherwise re-edit
             # these → re-conflict). Lane-owned paths kept the lane's version → not a
             # supersede. auto_commit stays hub-free: we only populate the caller's list.
-            if who == "framework" and superseded_out is not None:
+            # #622: cross-territory paths are superseded for the SAME reason and need the
+            # notice MORE — the orchestrator that committed a stray page had no other way
+            # to learn its repair was the thing generating the conflict.
+            if who in ("framework", "other-lane-territory") and superseded_out is not None:
                 superseded_out.append(p)
         return True, "resolved by ownership: " + ", ".join(resolved)
     except Exception as exc:  # never raise into the merge/coordination loop
@@ -936,7 +997,7 @@ def pull_main_into_worktree(
                     cwd=wt,
                 )
                 if rc_sp != 0:
-                    return False, f"stash failed (cannot safely pull): {se_sp.strip()}"
+                    return True, _STASH_SKIP_623.format(err=se_sp.strip())
                 stashed = True
         else:
             # Mixed dirty or no memory-bank — use stash for safety.
@@ -945,7 +1006,7 @@ def pull_main_into_worktree(
                 cwd=wt,
             )
             if rc_sp != 0:
-                return False, f"stash failed (cannot safely pull): {se_sp.strip()}"
+                return True, _STASH_SKIP_623.format(err=se_sp.strip())
             stashed = True
 
     mc, _mo, me = _run_git(
