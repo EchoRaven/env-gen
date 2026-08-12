@@ -1245,13 +1245,20 @@ episodes  season Integer NOT NULL   never seeded                           -> ta
 only where the alternative is a dropped row. Rebuilt from all **1205** real contracts: the three
 whole-table killers are all filled (69 / 27 / 8).
 
-> **Residue, stated:** 108 required columns remain omitted and **every one is a timestamp**
-> (`created_at` 86, `updated_at` 18, …). The fallback declines them on purpose — the loader
-> coerces str/int/float but has **no datetime branch**, so an ISO string into a `DateTime` column
-> risks a driver failure. In the delivered models most timestamps carry
-> `default=datetime.utcnow` + `server_default=now()` or are nullable; only **5** are genuinely
-> `DateTime, nullable=False` with no default. Fixing those needs a datetime branch in the loader
-> first.
+**#600 closes #599's residue.** #599 left 108 required columns unfilled, **every one a
+timestamp**, because the emitted `_coerce_row` handled String/Integer/Numeric and nothing else —
+an ISO string into a `DateTime` column risked a driver bind failure. Five of those are genuinely
+`DateTime, nullable=False` with no default in the delivered models, i.e. **5 more silently-empty
+tables**. Fixed in two halves, in order: the loader learns ISO-8601 (accepting `Z`) and **drops
+the KEY, never the row**, on anything unparseable — the very failure mode #599 exists to stop —
+and only then may the fallback fill a required timestamp (deterministic and **monotonic** in the
+row index, so ordering by the column stays meaningful). A test pins the halves together: whatever
+the fallback emits, the loader must parse. Nullable timestamps and `server_default` timestamps
+stay untouched.
+
+> **Rebuilt from all 1205 real contracts: required columns still absent 204 → 0.** value 69,
+> season 27, slug 8, created_at 86, updated_at 18 — all filled; the emitted `seed_data.py`
+> compiles.
 
 **Two seed axes checked and CLEAN — denominators printed:**
 
