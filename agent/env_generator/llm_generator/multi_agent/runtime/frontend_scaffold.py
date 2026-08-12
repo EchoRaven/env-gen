@@ -4612,6 +4612,42 @@ def _project_nav_component_src(frontend_dir, design, comp_name: str) -> Optional
 _PROJECTED_ROOT_RE = re.compile(
     r'(?P<open><div\s+data-projected="[a-z]+"[^>]*>)[ \t]*\n', re.M)
 
+_REL_IMPORT_RE = re.compile(r"""^\s*import\s[^'"]*from\s+['"](\.[^'"]+)['"]""", re.M)
+
+
+def _component_resolves(comp_path: Path) -> bool:
+    """#578 — does this component's own relative-import graph exist on disk?
+
+    netflix r142, live: `src/components/TopNav.jsx` imported `./SearchOverlay.jsx` while that
+    file was momentarily absent, so `vite build` failed — and #440 was busy MOUNTING TopNav
+    into more pages ("recovered agent nav 'TopNav' into 2 page(s)"). Every page carrying it
+    then failed to render: games, genre_category, movies, my_list, new_and_popular and shows
+    all scored **0.0**, dragging the blocking average from 0.555 to 0.2773 and burning judging
+    cycles. The app recovered on its own, but nothing in the framework stopped a
+    KNOWN-UNBUILDABLE component from being spread further first.
+
+    So: before any pass mounts or rewires a shared component into pages, require its own
+    relative imports to resolve. Extension-tolerant (``./X`` may be ``X.jsx``/``X.js``/…) and
+    directory-import aware, so it can only reject a genuinely missing file. Unreadable file →
+    False (do not spread what cannot be checked); no relative imports → True."""
+    try:
+        src = comp_path.read_text(encoding="utf-8")
+    except Exception:
+        return False
+    base = comp_path.parent
+    for rel in _REL_IMPORT_RE.findall(src):
+        target = (base / rel).resolve()
+        if target.exists():
+            continue
+        if any(target.with_suffix(ext).exists()
+               for ext in (".jsx", ".js", ".tsx", ".ts", ".mjs", ".json")):
+            continue
+        if any((target / f"index{ext}").exists()
+               for ext in (".jsx", ".js", ".tsx", ".ts")):
+            continue
+        return False
+    return True
+
 
 def mount_shared_nav_on_projected_pages(frontend_dir) -> Dict[str, object]:
     """#576 — give a projected page the app's OWN shared nav when its siblings have one.
@@ -4678,6 +4714,10 @@ def mount_shared_nav_on_projected_pages(frontend_dir) -> Dict[str, object]:
             return {"mounted": [], "nav": None}
         if not (comp_dir / f"{comp}.jsx").is_file():
             return {"mounted": [], "nav": None}
+        # #578: never spread a component that cannot build — doing so takes every page that
+        # receives it down with it (r142: six screens to 0.0).
+        if not _component_resolves(comp_dir / f"{comp}.jsx"):
+            return {"mounted": [], "nav": None, "skipped": f"{comp}: unresolved imports"}
         mounted = []
         for p, txt in texts.items():
             if 'data-projected="' not in txt or f"components/{comp}.jsx" in txt:
@@ -4747,6 +4787,13 @@ def recover_agent_nav(frontend_dir) -> Dict[str, object]:
         if not nav:
             return {"rewired": [], "nav": None}
         comp_name, comp_path = nav
+        # #578: the same precondition as the #576 mount — a nav whose own relative imports do
+        # not resolve is UNBUILDABLE, and rewiring pages onto it takes each of them down
+        # (r142: TopNav -> missing ./SearchOverlay.jsx while this pass mounted it into 2 more
+        # pages; six screens scored 0.0). Leave the pages as they are; a later cycle re-runs
+        # this pass once the lane has repaired the component.
+        if not _component_resolves(comp_path):
+            return {"rewired": [], "nav": None, "skipped": f"{comp_name}: unresolved imports"}
         # #520: OVERWRITE the discovered lane nav with the framework-PROJECTED nav. The
         # lane nav does not converge on the reference across runs (r91/r92: red-underline
         # active state, missing search/bell/profile cluster — the visual gate flagged nav
