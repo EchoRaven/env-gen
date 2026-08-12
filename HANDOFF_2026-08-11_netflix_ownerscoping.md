@@ -1746,6 +1746,45 @@ Two mechanical causes:
 
 ---
 
+### §5.6 — the breaking-change notifier was complete, and wired to nobody (#627, 2026-08-12)
+
+`breaking_change_detected` fires **1129 times across 42 runs** (median **27/run**). The detector
+is sound — the records carry real evidence (`response_key_changed` 583, `auth_added` 492,
+`removed_response_fields` 345, `type_changed_fields` 249) — and `_record_breaking_change` is a
+complete mechanism: find the endpoint's registered consumers, send each an urgent event, and
+**auto-create a fix task per consumer agent**.
+
+It reaches almost nobody:
+
+| | |
+|---|---|
+| breaking changes over 45 runs | **1196** |
+| reaching at least one registered consumer | **299 (25%)** |
+| runs whose consumer store holds only `_meta` | **30 of 45** |
+
+The split is bimodal, not gradual. In those 30 runs *every* breaking change is emitted to an
+empty recipient list and no fix task is ever made — because `register_consumer` is an **LLM
+tool**, so the whole chain depends on a lane thinking to call it. `response_key_changed` alone is
+583 of the 1196, which is precisely the shape of the crashes the verifier then files as the
+unowned P0s of §5.5 ("Landing page renders blank", "default-imported `listTitles` is an object,
+not a function").
+
+The link already exists in the framework's own records: **435 of 738** registered pages carry a
+non-empty `apis_used`, and all **754** entries are already in the canonical `METHOD /path` form
+that matches `endpoint_id`. Registering the page as a consumer at `register_ui_page` takes
+routing from **25% → 58%** on the same corpus, with no new source of truth and no LLM discretion.
+
+Two details that matter:
+> * **The owner is the frontend lane, from the page's own path — never `created_by`.** That field
+>   is the orchestrator for **417 of the 754** entries, and assigning it would repeat exactly the
+>   #626 failure: a fix task handed to someone who cannot fix it.
+> * **`pending=True`.** A page often declares an endpoint before the backend publishes it; the
+>   pending branch only triggers when the endpoint is absent, and the entry is auto-promoted when
+>   it arrives. With the endpoint already present the normal path runs, and the schema subset
+>   gate is skipped because no `expected_schema` is claimed on the lane's behalf.
+
+---
+
 ## 6. Other KNOWN-OPEN issues — ALL FOUR CLOSED 2026-08-12
 
 > **2026-08-12: every item below has a measured verdict. Nothing here is open.** Three were

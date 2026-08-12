@@ -1278,6 +1278,65 @@ class RegistryHub:
                 return snake
         return str(name or "")
 
+    def _autoregister_page_consumers_627(self, rec: dict, actor: str) -> None:
+        """#627 — A PAGE THAT DECLARES `apis_used` IS A CONSUMER OF THOSE ENDPOINTS.
+
+        `_record_breaking_change` is a complete mechanism: it finds the endpoint's registered
+        consumers, sends each an urgent event, and auto-creates a fix task per consumer agent.
+        It is dead in most runs because nothing registers consumers — `register_consumer` is an
+        LLM TOOL, so it fires only when a lane thinks to call it.
+
+        Measured over 45 runs: **1196 breaking changes, only 299 (25%) reach anybody**. The
+        split is bimodal, not gradual — **30 of 45 runs have ZERO consumer rows** (the store
+        holds `_meta` and nothing else), so in those runs every single breaking change is
+        broadcast to an empty recipient list and no fix task is ever made. `response_key_changed`
+        alone accounts for 583 of them, which is exactly the shape of the crashes the verifier
+        then files as unowned P0s ("Landing page renders blank", "default-imported listTitles is
+        an object, not a function").
+
+        The link already exists in the framework's own records: 435 of 738 registered pages
+        carry a non-empty `apis_used`, and all 754 entries are already in the canonical
+        ``METHOD /path`` form that matches `endpoint_id`. Registering it here takes routing from
+        **25% to 58%** on the same corpus — no new source of truth, no LLM discretion.
+
+        The owner is the FRONTEND lane, from the page's own path, falling back to the lane a UI
+        page belongs to by definition — never `created_by`, which is the orchestrator for 417 of
+        those 754 entries and would repeat #626's "assigned to someone who cannot fix it".
+
+        ``pending=True`` so a page declaring an endpoint before it is published is queued and
+        auto-promoted rather than rejected by the L1 gate. Best-effort throughout: a page
+        registration must never fail because of a consumer row.
+        """
+        try:
+            apis = rec.get("apis_used") or []
+            if not apis:
+                return
+            path = str(rec.get("path") or "")
+            owner = None
+            try:
+                from .bug_triage import find_owning_agent_for_file
+                owner = find_owning_agent_for_file(path)
+            except Exception:
+                owner = None
+            # A ui_page IS frontend territory; `created_by` is the registrar, not the fixer.
+            owner = owner if owner in ("frontend", "backend") else "frontend"
+            for endpoint_id in apis:
+                if not isinstance(endpoint_id, str) or " " not in endpoint_id:
+                    continue
+                try:
+                    self.register_consumer(
+                        endpoint_id=endpoint_id,
+                        file_path=path or f"ui_page:{rec.get('name')}",
+                        agent=owner,
+                        pending=True,
+                        metadata={"auto_registered_by": "register_ui_page#627",
+                                  "ui_page": rec.get("name")},
+                    )
+                except Exception:
+                    continue
+        except Exception:
+            return
+
     def register_ui_page(self, name: str, route: str = "", component: str = "",
                          apis_used: list = None, components: list = None,
                          path: str = "", status: str = "defined",
@@ -1443,6 +1502,7 @@ class RegistryHub:
         self._ui_pages.update(lambda m: m.set(name, rec, actor),
                               change_info={"agent": actor})
         self._emit("ui_page_registered", rec, recipients=[])
+        self._autoregister_page_consumers_627(rec, actor)
         if str(rec.get("status") or "").lower() == "implemented":
             self._emit("ui_page_implemented", rec, recipients=[], priority="normal")
             # A3 (2026-06-12): RegistryHub now OWNS the impl.page.<name> task
