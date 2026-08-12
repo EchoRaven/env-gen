@@ -2282,6 +2282,36 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         _auth_ref = str(step.get("auth") or "")
         if _auth_ref and _auth_ref not in variables:
             _unres_vars.add(_auth_ref)
+        # #592 — ATTRIBUTE A LADDER SUBSTITUTION TO THE CAPTURE THAT FAILED. #188 explains a
+        # failure when the variable stayed literal; it is silent in the worse case, where the
+        # ladder DID produce a value. r130's `my_list_add_and_readback` is the shape:
+        #
+        #   [2] GET  /api/titles   save {titleId: items.0.id}  -> 200 ok, note "save FAILED"
+        #   [3] POST /api/my-list  {"title_id": "${titleId}"}  -> 404 "referenced resource
+        #                                                          not found"
+        #
+        # The catalog was empty (r130's #566x reset), so `items.0.id` captured nothing, the
+        # ladder filled ${titleId} with an unrelated id, and the 404 named the FK. Step [2] is
+        # recorded ok=True, so every reader — the gate, the dispatcher, and the lane — chases a
+        # foreign-key bug two steps away from the real cause. #566x removed ONE producer of the
+        # empty collection; the misattribution survives every other producer.
+        #
+        # Annotation only, deliberately NOT reclassification (the #587 precedent): turning this
+        # into a framework defect would move genuine app bugs off the lane and leave them
+        # unowned. The step still fails; it just says whose fault it is.
+        _authored_vars = set(re.findall(r"\$\{(\w+)\}", str(step.get("path") or "")))
+        try:
+            if step.get("body") is not None:
+                _authored_vars |= set(
+                    re.findall(r"\$\{(\w+)\}", json.dumps(step.get("body"))))
+        except Exception:
+            pass
+        # `v not in variables` is the discriminator, not an extra safety net: the ladder
+        # substitutes into the outgoing path/body WITHOUT writing to `variables`. So a var
+        # present there was really captured — by a LATER step that succeeded where an earlier
+        # one failed — and its stale `save_failed_by_var` entry must not annotate this step.
+        _ladder_filled = sorted(v for v in (_authored_vars - _unres_vars)
+                                if save_failed_by_var.get(v) and v not in variables)
         # #566x (netflix r130, live — 10/10 failing chains were AFTER the reset chain,
         # 0 before it): a bare POST to the control-plane reset takes its FACTORY branch
         # and DELETEs every business row, including the seeded catalog. The step passes
@@ -2321,6 +2351,8 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             autofilled.append(_scope_note)  # #566x: SAY it in the record, never silently
         for _dk in _dropped_owner_fks:      # #575: likewise — never a silent body edit
             autofilled.append(f"owner-fk-omitted:{_dk}")
+        for _lv in _ladder_filled:          # #592: likewise — the substitution is on the record
+            autofilled.append(f"ladder-filled-after-failed-save:{_lv}")
         # #301+#316: a /oauth/authorize step lacking the PKCE code_challenge (bare OR
         # params-bearing) correctly 400/422s on a working AS and can never pass —
         # tolerate it so a synthesized probe doesn't wedge business_chain (r82 M2 +
@@ -2658,6 +2690,14 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                         f"${{{_v}}} save failed at step '{_src}'" if _src
                         else f"${{{_v}}} never captured by any prior step")
                 note = "unresolved " + "; ".join(_hints) + " — " + note
+            # #592: the var WAS filled — by the ladder, standing in for a save that failed
+            # upstream. Name that step, or this status gets blamed on the endpoint.
+            if _ladder_filled:
+                note = ("SUBSTITUTED " + "; ".join(
+                    f"${{{_v}}} save failed at step '{save_failed_by_var[_v]}' (response "
+                    f"lacked the save path) — the ladder sent an UNRELATED id"
+                    for _v in _ladder_filled) +
+                    " — fix that capture, not this endpoint. " + note)
             if status in (404, 405):
                 # 404/405 is normally 'missing' (endpoint not built yet → soft, so the
                 # whole chain isn't failed on a not-yet-implemented endpoint). BUT a 404
