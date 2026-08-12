@@ -526,13 +526,54 @@ async def run_browser_test_user(
                         "button[type=submit], form button, button").count() > 0
                     step("login form has a submit control", has_submit,
                          "" if has_submit else "no clickable submit — the auth form is not usable")
+                    # #612 — REPORT THE OBSERVATION, NOT A GUESS AT ITS CAUSE. This note said
+                    # "the form is not wired to the API" unconditionally. Checked against the
+                    # verification chains of every run whose UI login flow failed, that claim
+                    # is FALSE IN ALL 12: `POST /auth/login` answered 200 in each of them (r142
+                    # alone logged 54 successful logins). The observable facts — no token, no
+                    # navigation — are real; the causal clause was an inference the harness had
+                    # no basis for, and it is load-bearing: it lands in the failure ledger and
+                    # sends the frontend lane to re-wire a form that is already wired.
+                    #
+                    # `test_user_validation` already discriminates correctly (#566o) from the
+                    # /auth response statuses; this second code path simply never got it. Same
+                    # three-way split here, plus the DIRECT-API corroboration this function
+                    # already computes a few lines below (#504) as a fourth signal.
+                    _auth_status: List[int] = []
+
+                    def _on_auth_resp(_r):
+                        try:
+                            if "/auth/" in _r.url:
+                                _auth_status.append(int(_r.status))
+                        except Exception:
+                            pass
+                    try:
+                        page.on("response", _on_auth_resp)
+                    except Exception:
+                        pass
                     token = await _drive_auth_form(page, creds)
+                    try:
+                        page.remove_listener("response", _on_auth_resp)
+                    except Exception:
+                        pass
                     url = page.url
                     path = url.split("?", 1)[0]
                     navigated = not any(seg in path for seg in _AUTH_ROUTE_SEGS)
                     ok_auth = bool(token) and navigated
-                    step("auth flow stores a token + navigates into the app", ok_auth,
-                         "" if ok_auth else f"login did nothing: token={bool(token)} url={url} — the form is not wired to the API")
+                    if ok_auth:
+                        _auth_note = ""
+                    elif not _auth_status:
+                        _auth_note = (f"submit sent NO /auth request (token={bool(token)} "
+                                      f"url={url}) — the form is not wired to the API")
+                    elif all(s >= 400 for s in _auth_status):
+                        _auth_note = (f"the form IS wired but /auth returned "
+                                      f"{sorted(set(_auth_status))} — credentials / backend, "
+                                      f"NOT a wiring bug")
+                    else:
+                        _auth_note = (f"/auth returned {sorted(set(_auth_status))} but "
+                                      f"token={bool(token)} and navigated={navigated} — "
+                                      f"response shape or post-login handling")
+                    step("auth flow stores a token + navigates into the app", ok_auth, _auth_note)
                 except Exception as exc:
                     step("auth flow", False, f"exception: {exc}")
 
@@ -548,6 +589,21 @@ async def run_browser_test_user(
                         bool(api_base_url) and _api_login(api_base_url, creds))
                 except Exception:
                     report["api_login_ok"] = bool(token)
+                # #612: fourth signal — the direct-API login the line above already ran. If the
+                # SAME credentials authenticate over the API, a form-drive failure cannot be a
+                # backend or credential fault, which narrows the note the lane acts on.
+                try:
+                    if (not ok_auth) and report.get("api_login_ok") and _auth_status:
+                        for _s in report.get("steps") or []:
+                            if isinstance(_s, dict) and str(_s.get("name", "")).startswith(
+                                    "auth flow stores a token"):
+                                _s["note"] = (str(_s.get("note") or "").rstrip(". ")
+                                              + " — and the SAME creds DO authenticate over "
+                                                "the API (#504), so this is neither a backend "
+                                                "nor a credential fault")
+                                break
+                except Exception:
+                    pass
 
                 # #491 (netflix r63) — POST-LOGIN PROFILE GATE. Catalog pages are
                 # routed as <RequireProfile>: logged in but with NO active profile
