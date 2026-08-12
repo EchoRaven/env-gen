@@ -39,7 +39,7 @@ def _run(docs):
     tool = ht.WorkHubListDocumentsTool.__new__(ht.WorkHubListDocumentsTool)
     tool._hubs = _Hubs(docs)
     tool._agent_id = "orchestrator"
-    return asyncio.get_event_loop().run_until_complete(tool._run()).data["documents"]
+    return asyncio.run(tool._run()).data["documents"]
 
 
 _BIG = {"id": "doc_1", "kind": "meeting", "status": "closed", "title": "M1 kickoff",
