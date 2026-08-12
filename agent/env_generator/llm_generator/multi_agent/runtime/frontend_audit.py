@@ -1448,3 +1448,64 @@ def repair_fabricated_fallbacks(frontend_src: Any) -> Dict[str, Any]:
             except Exception:
                 continue
     return {"repaired": repaired, "sites": sites}
+
+
+# #615 — N NAV DESTINATIONS, ONE UNFILTERED COLLECTION. The generic form of "click Games, see
+# Movies": distinct routes whose delivered pages fetch an IDENTICAL, unparameterised endpoint
+# set therefore render identical content. No product vocabulary is involved — the finding is
+# "these k routes are the same page".
+#
+# Measured over the arc: **32 of 45** runs have at least one such group in the DELIVERED code
+# (not merely in the declared `apis_used`). r100 is the worst: `/browse`, `/browse/languages`,
+# `/games`, `/movies`, `/new`, `/shows` — SIX routes, each fetching only `/api/titles` with no
+# filter.
+#
+# Deliberately NOT wired as a delivery blocker. At 32/45 it would wedge nearly every run, and
+# whether "six identical pages" should block or merely be reported is a calibration decision,
+# not a measurement — the same call as the 0.65 fidelity bar. Also worth knowing before anyone
+# "fixes" it by inventing filters: the seed gives every title `kind='standard'`, so a
+# route-derived filter would return everything or nothing.
+# capture the char AFTER the path too: a fetch that continues into `{`, `?`, `$` or `+` is
+# PARAMETERISED and therefore differentiates the page. Matching only the literal prefix would
+# make `/api/titles/{id}` and `/api/titles?kind=movie` both look like a bare `/api/titles`.
+_PAGE_FETCH_RE_615 = re.compile(r"""['"`](/api/[A-Za-z0-9_\-/]+)([^'"`]?)""")
+
+
+def duplicate_route_content_groups(frontend_src: Any, ui_pages: Any) -> List[Dict[str, Any]]:
+    """#615 — groups of DISTINCT routes whose page components fetch the same unfiltered
+    endpoint set. ``[]`` when nothing can be resolved, so a caller can always iterate."""
+    out: List[Dict[str, Any]] = []
+    try:
+        pages_dir = Path(str(frontend_src)) / "src" / "pages"
+        if not pages_dir.is_dir():
+            return out
+        by: Dict[frozenset, List[str]] = {}
+        seen_routes: Dict[frozenset, set] = {}
+        items = (ui_pages or {}).items() if isinstance(ui_pages, Mapping) else [
+            (None, p) for p in (ui_pages or [])]
+        for _k, page in items:
+            if not isinstance(page, Mapping):
+                continue
+            comp = str(page.get("component") or "").strip()
+            route = str(page.get("route") or "").strip()
+            if not comp or not route:
+                continue
+            f = pages_dir / f"{comp}.jsx"
+            if not f.is_file():
+                continue
+            eps = frozenset(
+                _e for _e, _next in _PAGE_FETCH_RE_615.findall(
+                    f.read_text(encoding="utf-8", errors="ignore"))
+                if _next not in ("{", "?", "$", "+") and "{" not in _e and "?" not in _e)
+            if not eps:
+                continue
+            by.setdefault(eps, []).append(comp)
+            seen_routes.setdefault(eps, set()).add(route)
+        for eps, comps in by.items():
+            routes = sorted(seen_routes.get(eps) or ())
+            if len(routes) > 1:
+                out.append({"routes": routes, "endpoints": sorted(eps),
+                            "components": sorted(set(comps))})
+    except Exception:
+        return out
+    return sorted(out, key=lambda g: -len(g["routes"]))
