@@ -833,8 +833,22 @@ def _seed_demo_login(project_dir: Any) -> Optional[Dict[str, str]]:
     backend = Path(project_dir) / "app" / "backend"
 
     def _creds_from_users(users) -> Optional[Dict[str, str]]:
+        # #574 (netflix r138, live): the EMAIL came from the row but the PASSWORD was
+        # hardcoded to the framework default, so any seed row carrying its OWN plaintext
+        # password produced credentials that cannot log in. The loader's rule is
+        # ``pw = row.pop('password', None) or 'password'`` (seed_data.py) — mirror it
+        # EXACTLY, or the QA tooling authenticates as nobody.
+        #
+        # r138: seed_data.json's first user is ``demo@netflix.test`` / ``Demo!2345``; the DB
+        # therefore holds sha256('Demo!2345'+salt) while the walk sent 'password' → 401. Both
+        # the form drive (auth_ok) and #504's direct-API corroboration (api_login_ok) failed,
+        # so the browser gate hard-deferred delivery 11 times over 54 minutes on an app whose
+        # auth was fine — and, exactly as this function's docstring warns, the walk then
+        # browsed as a non-populated user so every data page looked blank.
         if users and isinstance(users[0], dict) and users[0].get("email"):
-            return {"email": str(users[0]["email"]), "password": "password",  # backend_skeleton._SEED_PASSWORD
+            _pw = users[0].get("password")
+            _pw = str(_pw) if _pw not in (None, "") else "password"  # backend_skeleton._SEED_PASSWORD
+            return {"email": str(users[0]["email"]), "password": _pw,
                     "name": str(users[0].get("name") or "Demo")}
         return None
 
