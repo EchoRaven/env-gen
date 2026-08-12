@@ -627,6 +627,45 @@ def gather_squad_inputs(orch: Any) -> Dict[str, Any]:
 # previously-failing goal is RE-TESTED FIRST next cycle.
 # --------------------------------------------------------------------------------------
 
+def collect_open_p0_by_source(orch: Any) -> Dict[str, int]:
+    """#630 — every OPEN P0 bug, by the source that filed it.
+
+    The delivery gate consumed only `collect_test_user_bugs`, which skips any bug whose source is
+    not one of the three test-user profiles. That is the minority of them: across 40 runs the
+    **verifier files 207 of the 314 P0 bugs**, and 32 of the 73 P0s still open at run end are
+    invisible to the gate. No other gate reads `list_open_bugs` at all, so a run could — and did —
+    release while carrying "Landing page (/) crashes … blank render blocks entire landing".
+
+    This was deferred twice as "a release-path change no artifact can validate". That reasoning
+    was wrong, and the counterfactual is cheap: replay each released run and count the open
+    non-test-user P0s at the moment of its first release.
+
+        21 runs released
+        17 carried ZERO — the gate is invisible to them
+         4 would have deferred, with 1–4 open P0s
+           r127 (1 of 1) and r128 (3 of 4) had them RESOLVED later in the same run
+           r109 (2) and r133 (1) never did -> they ride the existing escape budget
+
+    So the blast radius is 4 of 21 runs, the deferral is what the standing goal asks for, and it
+    cannot wedge: `squad_gate_outcome`'s `defect` branch burns an escape attempt and
+    `squad_release_decision`'s wall-clock remains the backstop. Best-effort; {} on any hub error.
+    """
+    out: Dict[str, int] = {}
+    try:
+        workhub = getattr(getattr(orch, "hubs", None), "workhub", None)
+        if workhub is None or not hasattr(workhub, "list_open_bugs"):
+            return out
+        for b in workhub.list_open_bugs() or []:
+            meta = (b.get("metadata") or {}) if isinstance(b, Mapping) else {}
+            if str(meta.get("severity") or "").upper() != "P0":
+                continue
+            src = str(meta.get("source") or "unknown")
+            out[src] = out.get(src, 0) + 1
+    except Exception:
+        pass
+    return out
+
+
 def collect_test_user_bugs(orch: Any) -> Dict[str, Any]:
     """Read the OPEN bugs filed by the test-user agents (source in TEST_USER_SOURCES).
 
@@ -843,11 +882,23 @@ async def run_squad_for_delivery(orch: Any, version: str = "",
                                   "passed": bool(completed and mod_p0 == 0),
                                   "defects": mod_p0})
         ledger.record_cycle(cycle_results)
+        # #630: the gate reads `bugs["p0"]` and nothing else, so widening it HERE is the whole
+        # change — the orchestrator is untouched. `p0` becomes every open P0 regardless of who
+        # filed it (the verifier files 207 of 314 across the corpus and was invisible); the
+        # test-user-only figure is kept under `p0_test_user` so the per-modality ledger and the
+        # reporting above keep meaning what they meant.
+        by_source = collect_open_p0_by_source(orch)
+        bugs["p0_test_user"] = bugs.get("p0", 0)
+        bugs["p0_by_source"] = by_source
+        # explicit, not `sum(...) or old`: a genuine zero must stay zero, and only a FAILED
+        # reading (empty dict from a hub error) may fall back to the narrower count.
+        bugs["p0"] = sum(by_source.values()) if by_source else bugs.get("p0", 0)
         verdict = "PASS" if bugs.get("p0", 0) == 0 else "DEFECTS"
         if logger:
-            logger.warning("TEST-USER SQUAD (v%s) verdict=%s: %d P0 / %d P1 defects filed %s",
-                           version, verdict, bugs.get("p0", 0), bugs.get("p1", 0),
-                           bugs.get("by_modality") or "")
+            logger.warning("TEST-USER SQUAD (v%s) verdict=%s: %d open P0 (%d from test-users) / "
+                           "%d P1 %s by-source=%s",
+                           version, verdict, bugs.get("p0", 0), bugs.get("p0_test_user", 0),
+                           bugs.get("p1", 0), bugs.get("by_modality") or "", by_source or {})
         return {"ran": True, "report": report, "goals": goals, "modalities": modalities,
                 "bugs": bugs, "verdict": verdict}
     except Exception as exc:  # never break delivery

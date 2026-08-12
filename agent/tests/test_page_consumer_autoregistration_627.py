@@ -9,8 +9,11 @@ Measured at EMIT TIME, from each event's own `recipients` field — the only rea
 
     1129 breaking changes across 42 runs
       33 (2.9%) reached anybody
-    +324 would have, replaying in timestamp order with only pages registered BEFORE each event
-         -> 357 (31.6%)
+
+Replaying in timestamp order, counting only records that existed BEFORE each event:
+
+    pages only (#627)      +324  ->  357 (31.6%)
+    + components (#629)    +320  ->  677 (60.0%)
 
 That number took three attempts, and both wrong ones are worth keeping:
 
@@ -28,8 +31,8 @@ object, not a function").
 
 The link already exists in the framework's own records: 435 of 738 registered pages carry a
 non-empty `apis_used`, and all 754 entries are already in the canonical ``METHOD /path`` form
-that matches `endpoint_id`. The residual 75% are endpoints no page declares; widening that source
-is a separate question, deliberately not attempted here.
+that matches `endpoint_id`. Components carry the rest: 192 of 901 declare `apis_used`, and they
+hold exactly what pages miss (`GET /api/search` was 40 of the unrouted, trending 29) — hence #629.
 
 The owner is the FRONTEND lane, from the page's own path — never `created_by`, which is the
 orchestrator for 417 of those 754 entries and would repeat #626's "assigned to someone who
@@ -219,7 +222,7 @@ def test_the_measurement_that_justifies_it_is_recorded():
     import inspect
     from env_generator.llm_generator.multi_agent.runtime import registryhub
     flat = " ".join(inspect.getsource(
-        registryhub.RegistryHub._autoregister_page_consumers_627).split())
+        registryhub.RegistryHub._autoregister_ui_consumers_627).split())
     assert "(2.9%)" in flat and "357" in flat and "(31.6%)" in flat
     assert "A final-state store is not a timeline" in flat
     assert "Do not reimplement the code's normalization in a measurement" in flat, (
@@ -228,3 +231,76 @@ def test_the_measurement_that_justifies_it_is_recorded():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #629: components declare APIs too, and cover what pages do not -------------------------------
+
+def test_a_component_declaring_an_api_becomes_its_consumer(tmp_path):
+    """192 of 901 registered components carry apis_used, and they hold exactly the endpoints the
+    page-only version missed — GET /api/search was 40 of the unrouted, trending 29."""
+    rh = _rh(tmp_path)
+    rh.register_endpoint("GET", "/api/search", status="implemented", agent="backend")
+    rh.register_ui_component(name="search_bar", component="SearchBar",
+                             apis_used=["GET /api/search"], agent="orchestrator")
+    assert any(c["endpoint_id"] == "GET /api/search" for c in _consumers(rh).values())
+
+
+def test_a_component_is_owned_by_the_frontend_lane(tmp_path):
+    """A component record has no `path`; a UI component is frontend territory by definition."""
+    rh = _rh(tmp_path)
+    rh.register_endpoint("GET", "/api/search", status="implemented", agent="backend")
+    rh.register_ui_component(name="search_bar", apis_used=["GET /api/search"],
+                             agent="orchestrator")
+    assert {c["agent"] for c in _consumers(rh).values()} == {"frontend"}
+
+
+def test_the_component_is_named_in_the_consumer_row(tmp_path):
+    """With no path, the row must still say WHICH component, so a fix task can name it."""
+    rh = _rh(tmp_path)
+    rh.register_endpoint("GET", "/api/search", status="implemented", agent="backend")
+    rh.register_ui_component(name="search_bar", apis_used=["GET /api/search"])
+    c = next(iter(_consumers(rh).values()))
+    assert c["file_path"] == "ui_component:search_bar"
+
+
+def test_a_component_with_no_apis_registers_nothing(tmp_path):
+    rh = _rh(tmp_path)
+    rh.register_ui_component(name="spacer", component="Spacer")
+    assert _consumers(rh) == {}
+
+
+def test_a_component_never_breaks_its_own_registration(tmp_path, monkeypatch):
+    rh = _rh(tmp_path)
+    monkeypatch.setattr(rh, "register_consumer",
+                        lambda **kw: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert rh.register_ui_component(name="search_bar",
+                                    apis_used=["GET /api/search"])["name"] == "search_bar"
+
+
+def test_a_breaking_change_reaches_a_component_consumer(tmp_path):
+    """End to end for #629, mirroring the page case."""
+    rh = _rh(tmp_path)
+    rh.register_endpoint("GET", "/api/search", status="implemented",
+                         schema={"response": {"hits": "list"}}, agent="backend")
+    rh.register_ui_component(name="search_bar", apis_used=["GET /api/search"])
+    sent = []
+    orig = rh._emit
+
+    def spy(event, payload, recipients=None, **kw):
+        sent.append((event, list(recipients or [])))
+        return orig(event, payload, recipients=recipients, **kw)
+
+    rh._emit = spy
+    rh.register_endpoint("GET", "/api/search", status="implemented",
+                         schema={"response": {"results": "list"}}, agent="backend")
+    breaking = [r for e, r in sent if e == "breaking_change_detected"]
+    assert breaking and "frontend" in breaking[0]
+
+
+def test_both_sources_are_recorded():
+    import inspect
+    from env_generator.llm_generator.multi_agent.runtime import registryhub
+    flat = " ".join(inspect.getsource(
+        registryhub.RegistryHub._autoregister_ui_consumers_627).split())
+    assert "pages only (#627) +324 -> 357 (31.6%)" in flat
+    assert "+ components (#629) +320 -> 677 (60.0%)" in flat

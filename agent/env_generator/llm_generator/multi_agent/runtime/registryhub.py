@@ -1278,8 +1278,8 @@ class RegistryHub:
                 return snake
         return str(name or "")
 
-    def _autoregister_page_consumers_627(self, rec: dict, actor: str) -> None:
-        """#627 — A PAGE THAT DECLARES `apis_used` IS A CONSUMER OF THOSE ENDPOINTS.
+    def _autoregister_ui_consumers_627(self, rec: dict, actor: str) -> None:
+        """#627/#629 — A PAGE OR COMPONENT THAT DECLARES `apis_used` IS A CONSUMER OF THEM.
 
         `_record_breaking_change` is a complete mechanism: it finds the endpoint's registered
         consumers, sends each an urgent event, and auto-creates a fix task per consumer agent.
@@ -1288,9 +1288,14 @@ class RegistryHub:
 
         Measured at EMIT TIME, from each event's own `recipients` field — the only reading that
         answers "was anyone actually told": of **1129** breaking changes across 42 runs, **33
-        (2.9%)** reached anybody. Replaying the corpus in timestamp order, registering consumers
-        from pages that existed BEFORE each event would have added **+324**, taking it to **357
-        (31.6%)**. `response_key_changed` alone accounts for 583 of the total, which is exactly
+        (2.9%)** reached anybody. Replaying the corpus in timestamp order and registering
+        consumers from records that existed BEFORE each event:
+
+            pages only (#627)        +324  ->  357 (31.6%)
+            + components (#629)      +320  ->  677 (60.0%)
+
+        The two halves are near-equal because components carry the endpoints pages do not:
+        `GET /api/search` was 40 of the unrouted, `GET /api/titles/trending` 29. `response_key_changed` alone accounts for 583 of the total, which is exactly
         the shape of the crashes the verifier then files as unowned P0s ("Landing page renders
         blank", "default-imported listTitles is an object, not a function").
 
@@ -1336,7 +1341,7 @@ class RegistryHub:
                 try:
                     self.register_consumer(
                         endpoint_id=endpoint_id,
-                        file_path=path or f"ui_page:{rec.get('name')}",
+                        file_path=path or f"{rec.get('kind') or 'ui'}:{rec.get('name')}",
                         agent=owner,
                         pending=True,
                         metadata={"auto_registered_by": "register_ui_page#627",
@@ -1512,7 +1517,7 @@ class RegistryHub:
         self._ui_pages.update(lambda m: m.set(name, rec, actor),
                               change_info={"agent": actor})
         self._emit("ui_page_registered", rec, recipients=[])
-        self._autoregister_page_consumers_627(rec, actor)
+        self._autoregister_ui_consumers_627(rec, actor)
         if str(rec.get("status") or "").lower() == "implemented":
             self._emit("ui_page_implemented", rec, recipients=[], priority="normal")
             # A3 (2026-06-12): RegistryHub now OWNS the impl.page.<name> task
@@ -1553,6 +1558,14 @@ class RegistryHub:
         self._ui_components.update(lambda m: m.set(name, rec, actor),
                                    change_info={"agent": actor})
         self._emit("ui_component_registered", rec, recipients=[])
+        # #629: a COMPONENT that declares `apis_used` is a consumer too — same argument as #627
+        # and the same field. 192 of 901 registered components carry one, and they cover exactly
+        # what the page-only version could not: `GET /api/search` (40 of the unrouted),
+        # `GET /api/titles/trending` (29), `GET /api/profiles`. Measured on the same
+        # timestamp-ordered replay, pages alone take routing 2.9% -> 31.6%; adding components
+        # takes it to **60.0%**. A component record has no `path`, so the owner falls back to
+        # the lane a UI component belongs to by definition.
+        self._autoregister_ui_consumers_627(rec, actor)
         # A3 (2026-06-12): RegistryHub now OWNS the impl.component.<name> task
         # cascade (moved out of workhub when workhub became a thin delegate).
         if str(rec.get("status") or "").lower() == "implemented" and getattr(self, "_workhub", None) is not None:

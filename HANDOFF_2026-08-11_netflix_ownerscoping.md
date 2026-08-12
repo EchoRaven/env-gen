@@ -1736,13 +1736,26 @@ Two mechanical causes:
    trees, triage is its role, and it can reassign — an unassigned task cannot). Cost measured
    before shipping: 114 bugs over 27 runs, **median 2 per run**.
 
-> **What was NOT done, and why.** The delivery gate is blind to these: `collect_test_user_bugs`
-> filters to `TEST_USER_SOURCES`, so the **207 verifier-filed P0s** (the largest source) never
-> reach it — 32 of 73 open P0s are invisible, and no other gate reads `list_open_bugs`. Making
-> the gate block on them is a **release-path behaviour change no artifact can validate**, the
-> same line drawn at #613 and #621, and blocking on a duplicate-heavy count (r120 filed one
-> landing-page crash **six** times) could defer delivery for the wrong reason. #626 gets the
-> bugs to a fixer, which is the half that is provable offline.
+> **The gate was blind to these — now fixed (#630), after the deferral turned out to be wrong.**
+> `collect_test_user_bugs` filters to `TEST_USER_SOURCES`, so the **207 verifier-filed P0s** (the
+> largest source) never reached it — 32 of 73 open P0s invisible, and no other gate reads
+> `list_open_bugs`. I deferred this twice as "a release-path change no artifact can validate".
+> That reasoning was wrong: the counterfactual is cheap to compute, and it is small.
+>
+> | | |
+> |---|---|
+> | runs that released | **21** |
+> | carrying ZERO open non-test-user P0 at release — unaffected | **17** |
+> | would have deferred | **4** (1–4 bugs each) |
+> | of those, resolved later in the same run | r127 (1 of 1), r128 (3 of 4) |
+> | never resolved → ride the existing escape budget | r109 (2), r133 (1) |
+>
+> Blast radius 4 of 21, the deferral is exactly what "bug-free" asks for, and it cannot wedge:
+> the widened count feeds the SAME `squad_gate_outcome`, whose `defect` branch burns an escape
+> attempt with `squad_release_decision`'s wall clock as backstop. The duplicate worry (r120 filed
+> one crash six times) does not materialise — r120 is not among the four. The gate reads
+> `bugs["p0"]` and nothing else, so widening it in `run_squad_for_delivery` is the entire change;
+> `orchestrator.py` is untouched and `p0_test_user` keeps the narrower figure for reporting.
 
 ---
 
@@ -1783,9 +1796,22 @@ verifier then files as the unowned P0s of §5.5 ("Landing page renders blank", "
 
 The link already exists in the framework's own records: **435 of 738** registered pages carry a
 non-empty `apis_used`, and all **754** entries are already in the canonical `METHOD /path` form
-that matches `endpoint_id` — no new source of truth, no LLM discretion. The residual **75%** are
-endpoints that no registered page declares; widening that source is a separate question and was
-deliberately not attempted.
+that matches `endpoint_id` — no new source of truth, no LLM discretion.
+
+**#629 closes the residual that #627 left open.** The endpoints no page declares are declared by
+COMPONENTS: **192 of 901** registered `ui_component` records carry `apis_used`, and they hold
+exactly what pages miss — `GET /api/search` was 40 of the unrouted, `GET /api/titles/trending` 29.
+Same field, same argument, same helper (a component has no `path`, so the owner falls back to the
+lane a UI component belongs to by definition):
+
+| | routed |
+|---|---|
+| today | 33 (2.9%) |
+| pages only (#627) | +324 → 357 (**31.6%**) |
+| + components (#629) | +320 → 677 (**60.0%**) |
+
+The two halves are near-equal. The remaining 40% are endpoints neither a page nor a component
+declares — reaching those needs parsing the frontend's own source, a different kind of change.
 
 Two details that matter:
 > * **The owner is the frontend lane, from the page's own path — never `created_by`.** That field
