@@ -2437,11 +2437,40 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         _blocking_average = (round(sum(_sim(s) for s in _blocking_merged) / len(_blocking_merged), 4)
                              if _blocking_merged else 0.0)
 
-        (vdir / "verdict.json").write_text(json.dumps({
+        # #618 — THE RECORD CAN BE BETTER THAN THE CODE. #500 merges the BEST per-screen score
+        # across captures, to stop a transient capture (env mid-rebuild → every page 0.00) from
+        # clobbering a good verdict. That guard is right, but it does not distinguish a
+        # transient zero from a REAL regression, so a lane that makes the frontend worse keeps
+        # its historical best on the record.
+        #
+        # Measured over the arc, comparing `blocking_average` against the LAST live judgement
+        # in the run log: the record is better than the live code in **24 of 39 runs**, mean
+        # +0.056 and up to **+0.44** (r103: recorded 0.58, last live 0.14). Related: across the
+        # 29 runs with two or more scored rounds, 19 improved but **10 ended WORSE than they
+        # started** — the regressions are real, and this merge is what hides them.
+        #
+        # Deliberately NOT changing the merge or the gate: keeping the best is still the right
+        # defence against a transient, and flipping it would newly fail runs on a capture
+        # artefact. Record the live number ALONGSIDE it so the divergence stops being invisible.
+        _live_blocking = [s for s in (results or []) if isinstance(s, Mapping)
+                          and not s.get("advisory") and s.get("blank") is not True]
+        _live_average = (round(sum(_sim(s) for s in _live_blocking) / len(_live_blocking), 4)
+                         if _live_blocking else None)
+        _verdict = {
             "passed": bool(passed) or _merged_passed, "min_similarity": min_similarity,
             "blocking_average": _blocking_average,  # #542a: Part-A over BLOCKING screens only
+            # #618: what THIS capture scored, before the best-of merge
+            "blocking_average_live": _live_average,
             "summary": summary, "coverage": coverage, "screens": merged,
-        }, indent=2, default=str), encoding="utf-8")
+        }
+        if (_live_average is not None
+                and _blocking_average - _live_average > 0.01):
+            _verdict["record_exceeds_live_by"] = round(_blocking_average - _live_average, 4)
+            _verdict["record_exceeds_live_note"] = (
+                "the persisted score is the best-of-captures merge (#500); THIS capture scored "
+                "lower, so the delivered frontend is currently worse than the recorded number")
+        (vdir / "verdict.json").write_text(json.dumps(_verdict, indent=2, default=str),
+                                           encoding="utf-8")
     except Exception:
         pass
 

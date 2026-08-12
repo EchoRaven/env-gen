@@ -1501,6 +1501,33 @@ signal handed to it was false or unactionable, in five independent instances:
 None of those is a model-capability failure. And determinism is not self-maintaining either:
 #604 and #612 are both "the fix already existed, a second code path bypassed it".
 
+**The fix RATE is answerable after all — the gate logs it (#618).** I had recorded this as
+needing a live run. It does not: the gate writes
+`Visual fidelity attempt N/3 FAILED — … (blocking avg X)` on every round, **372 lines across 40
+runs**, so the whole trajectory is reconstructable.
+
+| across the 29 runs with ≥2 scored rounds | |
+|---|---|
+| improved | **19** |
+| ended **WORSE** than they started | **10** |
+| unchanged | 0 |
+| mean delta over a median of 13 rounds | **+0.044** |
+
+So the agents genuinely do fix things (r107 **+0.34** over 19 rounds, r118 +0.30 over 16) — and a
+third of the time they end up worse (r103 **−0.40** over 12). At ~+0.003 per round the loop is
+real but very weak.
+
+**And the regressions never reach the record.** #500 merges the BEST per-screen score across
+captures. Comparing the persisted `blocking_average` with the LAST live judgement: **the record
+beats the live code in 24 of 39 runs**, mean +0.056, up to **+0.44** (r103: recorded 0.58, last
+live 0.14). A lane can make the frontend worse and the number on file keeps the historical best —
+a false-green of exactly the class §5.0 warns about.
+
+#618 does **not** change the merge (keeping the best is still the right defence against the
+transient capture #500 was built for, and flipping it would newly fail runs on a capture
+artefact) and does not touch the gate decision. It records `blocking_average_live` beside it and
+flags `record_exceeds_live_by` when they diverge, so the divergence stops being invisible.
+
 > **Conclusion for the roadmap:** the highest-leverage work sits between the two — making the
 > agent's inputs TRUE (#587/#592/#611/#612/#614/#616/#617). What remains genuinely unanswerable
 > from artifacts is the fix RATE once the signal is correct: "completed" is not "fixed", and with
