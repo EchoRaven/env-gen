@@ -3187,9 +3187,23 @@ class VisualFidelityGate:
             orch._logger.warning(
                 "Visual fidelity attempt %s/3 FAILED — %s",
                 self.attempts, result.get("summary"))
+            # #617 — THE TASK TITLE BORROWED THE WRONG COUNTER. `self.attempts` is the JUDGING
+            # budget for the CURRENT source (reset to 0 on line ~3038 whenever the frontend
+            # changes, cap 3) — and a remediation always changes the frontend, so it is 1 again
+            # on every re-dispatch. Measured across the arc: **280 visual-gate remediation tasks
+            # in 40 runs, every single one titled "attempt 1"**, median 6 per run and up to 21.
+            #
+            # The loop itself is healthy — 7 capture rounds per run (max 26), 6 dispatches, 182
+            # completions — so the failure is not that nothing re-measures. It is that every
+            # iteration is AMNESIC: the lane cannot tell it is being asked the 21st time, and
+            # any escalation keyed on the round can never fire. Count the dispatches separately;
+            # `self.attempts` keeps its own meaning untouched.
+            self._remediation_round = getattr(self, "_remediation_round", 0) + 1
             try:
                 _vt = orch.hubs.workhub.create_task(
-                    title=f"UI does not match reference designs (visual gate, attempt {self.attempts})",
+                    title=(f"UI does not match reference designs (visual gate, "
+                           f"round {self._remediation_round}; judge attempt "
+                           f"{self.attempts}/3 on this source)"),
                     description=remediation_text(result, getattr(orch, "output_dir", None),
                                                  latched=self._passed_screens),
                     assignee="frontend",

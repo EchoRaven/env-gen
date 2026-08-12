@@ -1471,6 +1471,44 @@ re-check.
 
 ---
 
+### §5.2 — is agent SELF-HEALING the bottleneck? The loop is alive; every round is amnesic (#617)
+
+Prompted by the user's question — "we keep hardening the deterministic framework; shouldn't we
+also raise the agents' ability to fix code?" — measured rather than argued.
+
+**The remediation loop is not dead.** Per run: **7 capture rounds** (max 26), **6** visual-gate
+tasks dispatched (max 21), **182 of 280** completed. It re-measures and it re-dispatches.
+
+**It is AMNESIC.** All **280** of those tasks, across all 40 runs, are titled *"attempt 1"*.
+`self.attempts` is the JUDGING budget for the CURRENT frontend source — reset to 0 whenever the
+source changes, capped at 3 — and a remediation always changes the source. The title borrowed a
+variable that means something else, so the lane cannot tell it is being asked the twenty-first
+time, and any escalation keyed on the round can never fire. #617 counts dispatches separately and
+shows both numbers.
+
+**What the arc's evidence says about the framework-vs-agent question.** In this corpus the
+binding constraint on self-healing was not the model's ability to write a fix — it was that the
+signal handed to it was false or unactionable, in five independent instances:
+
+| fix | the lane was told | the truth |
+|---|---|---|
+| #612 | "the form is not wired to the API" | false in **12/12** — the chains got 200 |
+| #614 | endpoint "missing" (405) | it existed; the chains got 201 later |
+| #616 | "MCP surface not built" | the directory exists in **9/9** |
+| #592 | a 404 on a foreign key | the real cause was a failed capture two steps earlier |
+| #587 | fix a projected handler | the lane **cannot edit `main.py`** |
+
+None of those is a model-capability failure. And determinism is not self-maintaining either:
+#604 and #612 are both "the fix already existed, a second code path bypassed it".
+
+> **Conclusion for the roadmap:** the highest-leverage work sits between the two — making the
+> agent's inputs TRUE (#587/#592/#611/#612/#614/#616/#617). What remains genuinely unanswerable
+> from artifacts is the fix RATE once the signal is correct: "completed" is not "fixed", and with
+> every round labelled attempt 1 there was no way to tell a one-shot success from an amnesic
+> retry. #617 makes that measurable on the next run.
+
+---
+
 ## 6. Other KNOWN-OPEN issues — ALL FOUR CLOSED 2026-08-12
 
 > **2026-08-12: every item below has a measured verdict. Nothing here is open.** Three were
