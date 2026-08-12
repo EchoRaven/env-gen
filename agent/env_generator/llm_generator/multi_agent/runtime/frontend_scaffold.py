@@ -2712,6 +2712,45 @@ def _surf_style_attr_526(surf) -> str:
     return " style={{ " + prop + ": '" + str(surf.get("value")) + "' }}"
 
 
+#594 — THE AUTH FORM'S PANEL IS A MEASUREMENT, NOT A CONSTANT. The template wrapped the form in
+# `rounded-md border-white/10 bg-black/20 p-8 sm:p-12` unconditionally. `login` is the single
+# most frequent per-screen fidelity blocker in the arc — below 0.65 in 29 of 40 scored runs,
+# mean 0.593 — and clustering its 282 judge deviations puts `card/border` third at 42 mentions
+# ("card border/panel not present in reference", "form floats directly on the background").
+#
+# The measurement already answers it: of 45 `login` screens in design_system.json, **39 declare
+# no card/panel region at all** — their region roles are header bar / heading / secondary line /
+# labeled input / CTA button / help link, with nothing enclosing them. The reference form sits
+# straight on the page surface.
+#
+# Deliberately NOT a styling guess: `None` (no design, or no login screen measured) keeps the
+# panel, so an env generated without design input is byte-identical — the same convention
+# `_auth_page_classes` already follows for the palette.
+_PANEL_ROLE_WORDS = ("card", "panel", "modal", "dialog", "enclosing box", "bordered container")
+
+
+def _auth_form_panel_measured(design) -> Optional[bool]:
+    """Does the measured auth screen show an enclosing CARD around the form?
+
+    ``None`` when nothing was measured — the caller then keeps the template default."""
+    screens = ((design or {}).get("screens") or []) if isinstance(design, Mapping) else []
+    _seen = False
+    for sc in screens:
+        if not isinstance(sc, Mapping):
+            continue
+        _nm = str(sc.get("name") or sc.get("id") or "").strip().lower()
+        if not _nm or not _is_login_route_546(_nm, {}):
+            continue
+        _seen = True
+        for reg in (sc.get("regions") or sc.get("components") or []):
+            if not isinstance(reg, Mapping):
+                continue
+            _role = f"{reg.get('role') or ''} {reg.get('id') or ''}".lower()
+            if any(w in _role for w in _PANEL_ROLE_WORDS):
+                return True
+    return False if _seen else None
+
+
 def _auth_page_classes(design) -> Dict[str, str]:
     """Class fragments for the projected auth page.
 
@@ -2748,10 +2787,13 @@ def _auth_page_classes(design) -> Dict[str, str]:
         accent_bg, accent_text = "bg-neutral-700", "text-neutral-300"
     dark = _is_dark_hex(bg) if has_bg else (_theme_default(design) != "light")
     page_bg = "bg-bg" if has_bg else ("bg-black" if dark else "bg-neutral-100")
+    # #594: no measured card region -> the form sits on the page surface, as measured.
+    _card = ("border-white/10 bg-black/20" if dark else "border-black/10 bg-neutral-50")
+    if _auth_form_panel_measured(design) is False:
+        _card = ""
     return {
         "__CLS_PAGE__": page_bg,
-        "__CLS_CARD__": ("border-white/10 bg-black/20" if dark
-                         else "border-black/10 bg-neutral-50"),
+        "__CLS_CARD__": _card,
         "__CLS_TITLE__": "text-white" if dark else "text-black",
         "__CLS_INPUT__": ("border-white/15 bg-transparent text-white placeholder-white/40"
                           if dark else "border-black/15 bg-transparent text-black"),
