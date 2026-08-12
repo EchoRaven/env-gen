@@ -4802,12 +4802,19 @@ def mount_shared_nav_on_projected_pages(frontend_dir) -> Dict[str, object]:
                 new_open = open_tag.replace(
                     f'className="{_cm.group(1)}"', f'className="{_cm.group(1)} flex-col"', 1)
             body = txt[:m.start()] + new_open + "\n      <" + comp + " />\n" + txt[m.end():]
-            # import goes after the LAST existing import line, keeping module order valid
-            _imports = list(re.finditer(r"^import .*$", body, re.M))
-            if not _imports:
+            # Insert BEFORE the first import, not after the last one. Imports have no order
+            # dependency, and anchoring to the LAST `^import .*$` splits a multi-line
+            # statement down the middle:
+            #     import {
+            #       a, b
+            #     } from '../components/X.jsx';
+            # `^import .*$` matches only `import {`, so the new line would land inside the
+            # braces and break the module. Anchoring to the FIRST import cannot do that.
+            _first = re.search(r"^import\s", body, re.M)
+            if not _first:
                 continue
-            at = _imports[-1].end()
-            body = body[:at] + f"\nimport {comp} from '../components/{comp}.jsx';" + body[at:]
+            at = _first.start()
+            body = body[:at] + f"import {comp} from '../components/{comp}.jsx';\n" + body[at:]
             try:
                 p.write_text(body, encoding="utf-8")
                 mounted.append(p.stem)
