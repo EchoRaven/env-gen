@@ -711,6 +711,36 @@ def _is_per_user_sub_entity_fk(child_meta: Dict[str, Any], owner_fk: str,
     return any(t == "users" for t in (parent.get("fks") or {}).values())
 
 
+def _is_user_content_relation(meta: Dict[str, Any], owner_fk: str) -> bool:
+    """#598 — True iff the row is a per-user record ABOUT SHARED CONTENT: it carries a
+    DIRECT users FK *and* an FK to some other, non-user entity
+    (``my_list.user_id`` + ``my_list.title_id``).
+
+    #566y widened read-scoping to SUB-ENTITY owners (``profile_id → profiles → users``)
+    and deliberately left the direct-user case opt-in, because "a public feed is a list
+    of rows each owned by some user". That reasoning holds for a table whose row IS the
+    content — ``posts(user_id, title, body)`` has no second entity FK — but not for a
+    table that only RELATES a user to content someone else owns. Scoping then depends on
+    which FK the draw happened to pick, which is exactly what leaked:
+
+        r142  my_list.profile_id  -> sub-entity  -> #566y scopes it
+        r141  my_list.user_id     -> direct      -> NOT scoped, and the delivered
+              `GET /api/my-list` served EVERY user's rows to any authenticated caller.
+              `GET /api/continue-watching` in the same tree, same shape, same leak.
+
+    Measured over the arc's 144 delivered backends: 196 tables carry a users FK; the 63
+    instances that ALSO carry a content FK are exactly ``MyList`` / ``Rating`` /
+    ``ContinueWatching`` — every one a per-user private record — while the 133 with a
+    user FK alone are ``Profile``, correctly untouched. A `posts`-shaped public feed is
+    untouched by construction.
+
+    Only bare COLLECTION reads are affected; a by-id read keeps its own path."""
+    fks = meta.get("fks") or {}
+    if fks.get(owner_fk) != "users":
+        return False                                  # not a DIRECT user FK
+    return any(col != owner_fk and tgt and tgt != "users" for col, tgt in fks.items())
+
+
 def _scope_fk(child_meta: Dict[str, Any], parent_table: str, parent_singular: str) -> Optional[str]:
     """The child column linking it to a parent — used to LIST/scope by the parent."""
     cols = child_meta.get("cols", [])
@@ -932,6 +962,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
     table = ""
     owner_fk = None
     owner_sub_entity = False  # #566y
+    owner_user_content = False  # #598
     if res:
         table, meta = res
         cls, cols = meta["cls"], meta["cols"]
@@ -948,9 +979,17 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         # GET /api/continue-watching served EVERY profile's rows to any authenticated
         # caller while its own POST 403'd a foreign profile_id).
         owner_sub_entity = bool(owner_fk) and _is_per_user_sub_entity_fk(meta, owner_fk, models)
+        # #598: …and the mirror shape — a DIRECT user FK on a row that also points at
+        # shared content (my_list.user_id + my_list.title_id). r141 shipped
+        # GET /api/my-list and GET /api/continue-watching unscoped for exactly this
+        # reason, while r142 was safe only because its draw happened to pick profile_id.
+        owner_user_content = bool(owner_fk) and _is_user_content_relation(meta, owner_fk)
     # A read is owner-scoped when the CONTRACT says so, or when the owner FK's shape
-    # already settles it. Direct-user-owned resources keep the opt-in (public feed).
-    read_scoped = bool(owner_fk) and (bool(owner_scoped_reads) or owner_sub_entity)
+    # already settles it. A row whose OWN content is the payload (posts(user_id, body) —
+    # a public feed) keeps the opt-in; a row that merely RELATES a user to someone
+    # else's content does not.
+    read_scoped = bool(owner_fk) and (bool(owner_scoped_reads) or owner_sub_entity
+                                      or owner_user_content)
 
     # Nested parent: /api/users/{username}/posts → parent users(User) via {username}.
     parent_ctx = _parent_context(path, models, table) if cls else None
