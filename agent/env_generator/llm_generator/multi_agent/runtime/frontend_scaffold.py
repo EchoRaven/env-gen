@@ -3242,6 +3242,76 @@ def backfill_page_apis(ui_pages, endpoints):
                 if score > best_score:
                     best, best_score = path, score
             out.append({**p, "apis_used": [f"GET {best}"]} if best else p)
+        return _backfill_route_implied_apis(out, endpoints)
+    except Exception:
+        return ui_pages
+
+
+def _backfill_route_implied_apis(ui_pages, endpoints):
+    """#579 — add the endpoints a page's ROUTE plainly implies, even when it already declares
+    some. The rung above only rescues an EMPTY ``apis_used``; a page with a WRONG-but-non-empty
+    list gets no help at all, and the projector faithfully builds a data-less page from it.
+
+    netflix r142, live: kickoff filled nearly every page with the same placeholder —
+    ``title_detail_page`` (route ``/title/:id``) declared ``['GET /api/profiles']``, and NO page
+    in the whole draw declared ``/api/titles/{id}/episodes``. The projected detail page
+    therefore fetched no title and rendered no episodes list: components 0.35, copy 0.60,
+    similarity **0.50** — against 0.70 on r137, whose kickoff declared all six relevant APIs.
+    Same placeholder on games/shows/movies/my_list/browse_home.
+
+    Rule, shape-derived from the route + the endpoint registry, and STRICTLY ADDITIVE:
+      * ``/x/:id``  -> ``GET /api/x/{…}`` and every ``GET /api/x/{…}/<child>``
+      * ``/x``      -> ``GET /api/x``
+    matched singular/plural and kebab->snake, and ONLY when such an endpoint is actually
+    registered — an unmatched segment (``/browse``, ``/watch/:titleId``) is left untouched
+    rather than guessed at. A correctly-authored page is unchanged because nothing is removed
+    and anything already declared is skipped."""
+    try:
+        eps = []
+        for ep in (endpoints or []):
+            if isinstance(ep, dict) and str(ep.get("method") or "GET").upper() == "GET":
+                _p = str(ep.get("path") or "")
+                if _p.startswith("/api/"):
+                    eps.append(_p)
+        if not eps:
+            return ui_pages
+
+        def _norm(seg):
+            return str(seg or "").strip().lower().replace("-", "_")
+
+        def _variants(tok):
+            tok = _norm(tok)
+            return {tok, tok + "s", tok[:-1] if tok.endswith("s") and len(tok) > 3 else tok}
+
+        def _is_param(seg):
+            return seg.startswith(":") or seg.startswith("{")
+
+        out = []
+        for p in (ui_pages or []):
+            if not isinstance(p, dict):
+                out.append(p)
+                continue
+            segs = [s for s in str(p.get("route") or "").strip("/").split("/") if s]
+            res = next((s for s in segs if not _is_param(s)), None)
+            if not res:
+                out.append(p)
+                continue
+            want, has_param = _variants(res), any(_is_param(s) for s in segs)
+            declared = {str(a).split(" ", 1)[-1].strip()
+                        for a in (p.get("apis_used") or [])}
+            add = []
+            for path in eps:
+                psegs = [s for s in path.strip("/").split("/") if s][1:]  # drop 'api'
+                if not psegs or _norm(psegs[0]) not in want:
+                    continue
+                nparams = sum(1 for s in psegs if _is_param(s))
+                if has_param:
+                    ok = nparams == 1 and len(psegs) in (2, 3)      # /x/{id}[, /child]
+                else:
+                    ok = nparams == 0 and len(psegs) == 1           # /x
+                if ok and path not in declared:
+                    add.append(f"GET {path}")
+            out.append({**p, "apis_used": list(p.get("apis_used") or []) + add} if add else p)
         return out
     except Exception:
         return ui_pages
