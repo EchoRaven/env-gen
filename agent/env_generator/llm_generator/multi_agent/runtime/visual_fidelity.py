@@ -2456,8 +2456,26 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                           and not s.get("advisory") and s.get("blank") is not True]
         _live_average = (round(sum(_sim(s) for s in _live_blocking) / len(_live_blocking), 4)
                          if _live_blocking else None)
+        # #621 — RECORD WHICH CODE STATE THIS SCORE BELONGS TO. #618 showed the persisted
+        # number can beat the live one in 24 of 39 runs (up to +0.44), and that delivery almost
+        # never comes from a PASS — only 1 of 40 verdicts ever passed, the rest release through
+        # the bounded escape at whatever the last round left behind. Shipping the run's own BEST
+        # state instead would need one thing the artifacts do not have: a join key. The commits
+        # exist (codehub records 36 in r142, with sha/branch/author) and the scores exist; only
+        # the link between a capture and the tree it scored is missing.
+        #
+        # Stamping HEAD costs a `rev-parse` and makes that selection possible later — the same
+        # move as #611 (record what a future question will need). It changes no decision here.
+        _head_sha = None
+        try:
+            import subprocess as _sp
+            _head_sha = _sp.run(["git", "-C", str(project_dir), "rev-parse", "HEAD"],
+                                capture_output=True, text=True, timeout=10).stdout.strip() or None
+        except Exception:
+            _head_sha = None
         _verdict = {
             "passed": bool(passed) or _merged_passed, "min_similarity": min_similarity,
+            "code_state": _head_sha,   # #621: the tree `blocking_average_live` scored
             "blocking_average": _blocking_average,  # #542a: Part-A over BLOCKING screens only
             # #618: what THIS capture scored, before the best-of merge
             "blocking_average_live": _live_average,

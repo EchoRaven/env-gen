@@ -1544,6 +1544,22 @@ of the first two only made a blindness visible, and the third acts on it.
 > re-work a passed screen, not from breaking it through a shared component — which is why naming
 > it is the fix rather than widening the exclusion.
 
+**What still ships worse than its own best — and the one thing that was missing to fix it
+(#621).** Delivery almost never comes from a PASS: only **1 of 40** verdicts ever passed (and
+that one has no below-bar screen, so making the gate fail on a live regression would solve a
+problem that occurs **zero** times — measured, not assumed). The rest release through the bounded
+escape, and at that moment **24 of 39** runs ship a state worse than their own best.
+
+The obvious repair — release the run's BEST state rather than whatever the last round left — was
+blocked by a missing join key, not by capability. Both halves already existed: codehub records
+the commits (36 in r142, with sha/branch/author) and the gate records the scores; nothing linked
+a capture to the tree it scored. **#621 stamps `code_state` (HEAD) into the verdict beside
+`blocking_average_live`.** It changes no decision, costs a bounded `rev-parse`, and yields `None`
+outside a repo — the #611 move of recording what the next question will need.
+
+> **Still NOT done, and deliberately:** auto-selecting or reverting to that best commit at release
+> time. That is a behaviour change no artifact can validate — the same line drawn at #613.
+
 > **Conclusion for the roadmap:** the highest-leverage work sits between the two — making the
 > agent's inputs TRUE (#587/#592/#611/#612/#614/#616/#617). What remains genuinely unanswerable
 > from artifacts is the fix RATE once the signal is correct: "completed" is not "fixed", and with
