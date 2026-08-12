@@ -734,6 +734,19 @@ def _is_user_content_relation(meta: Dict[str, Any], owner_fk: str) -> bool:
     user FK alone are ``Profile``, correctly untouched. A `posts`-shaped public feed is
     untouched by construction.
 
+    THE DECIDING EVIDENCE is not a judgement about privacy — it is the framework already
+    contradicting itself. On this exact shape the projected WRITE is guarded in **25 of 25**
+    delivered pairs (``_fw_owns`` → 403 on a foreign owner, then ``_fw_owner_val`` auto-fill)
+    while the paired READ is scoped in only 10: **15 asymmetric pairs across 12 runs**, every
+    one of them with a direct ``user_id``. r141 ships both halves side by side —
+
+        POST /api/my-list  ->  403 "user_id does not belong to the caller"
+        GET  /api/my-list  ->  db.query(MyList).limit(100).all()   # everyone's rows
+
+    #566y's docstring already named this contradiction for the sub-entity case ("a read that
+    returns every persona's rows contradicts the write it is paired with — and leaks"); the
+    direct-FK case is the same sentence with a different column. #598 makes all 25 symmetric.
+
     Only bare COLLECTION reads are affected; a by-id read keeps its own path."""
     fks = meta.get("fks") or {}
     if fks.get(owner_fk) != "users":

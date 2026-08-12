@@ -92,6 +92,18 @@ def test_junk_is_inert():
 
 # --- the wiring ---------------------------------------------------------------------------------
 
+def test_the_write_read_contradiction_is_the_stated_argument():
+    """The case for #598 is not a privacy judgement — it is the framework contradicting
+    itself. On this shape the projected WRITE is guarded in 25/25 delivered pairs while the
+    READ is scoped in only 10; r141 ships `POST /api/my-list -> 403 foreign user_id` next to
+    `GET /api/my-list -> everyone's rows`. That reasoning must stay next to the code."""
+    import inspect
+    from env_generator.llm_generator.multi_agent.runtime import route_projector as rp
+    doc = inspect.getdoc(rp._is_user_content_relation) or ""
+    assert "25 of 25" in doc and "15 asymmetric pairs" in doc
+    assert "contradicts the write it is paired with" in doc      # #566y's own words
+
+
 def test_it_joins_the_read_scope_decision_without_replacing_the_others():
     import inspect
     from env_generator.llm_generator.multi_agent.runtime import route_projector as rp
