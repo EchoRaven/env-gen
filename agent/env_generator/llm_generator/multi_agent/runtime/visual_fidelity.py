@@ -590,6 +590,29 @@ _OVERLAY_NAME_RE = re.compile(
 # difference is content the app cannot reproduce -> advisory (the same mechanism #128/#542a
 # already use), never a silent pass: ANY missing control keeps the screen blocking and the
 # missing list is directly actionable.
+#
+# #589 — THE CHECKLIST HAS TO CUT BOTH WAYS. #588 only DEMOTED, so it could not see the worse
+# half of the same defect: a screen ABOVE the bar was skipped before the chrome was ever
+# examined. Measured over 31 runs with a player page, holistic similarity is not merely noisy
+# there, it is INVERTED — all 26 complete players scored below all 3 passing shells:
+#
+#     chrome COMPLETE  n=26  mean 0.605  max 0.72   (every one of them BLOCKED)
+#     chrome SHELL     r107 0.92 (7 of 8 controls missing)   <- PASSED
+#                      r106 0.85 (5 missing)                 <- PASSED
+#                      r138 0.80 (2 missing)                 <- PASSED
+#
+# The mechanism is visible in r107's own verdict: "Player chrome closely matches the reference"
+# with fixes "group the flag icon and Ad counter into one dark rounded chip" — the reference is
+# an AD frame, so a page that reproduces the AD chrome (Back/Report/Fullscreen and nothing else)
+# outscores a working player. Similarity was rewarding the absence of the control cluster.
+#
+# Blocking cannot key on `missing != []` alone: every non-player page is "missing" all of them
+# (that asymmetry is exactly why #588 was demotion-only). The applicability test has to be the
+# framework's OWN — `_screen_is_player_449`, the same predicate that decided to EMIT the cluster
+# for this screen. If the framework emitted the controls and the delivered page does not carry
+# them, some later pass overwrote them (r142: a reprojected 118-line shell); that is a build
+# regression and no similarity score should be able to buy it a pass. Recorded as a separate
+# blocking reason so `_blocking_average` — reporting-only since #542a — stays untouched.
 def player_chrome_missing(frontend_dir: Any, component: Any) -> Optional[List[str]]:
     """Controls the framework's own player emitter defines that this page does NOT contain.
 
@@ -2164,22 +2187,37 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         # `Back` and scored 0.50 — holistic similarity could not tell those apart, this can, and
         # r142 correctly keeps blocking with an actionable missing list.
         try:
+            from .frontend_scaffold import _screen_is_player_449
             _fe = Path(project_dir) / "app" / "frontend"
             for _s in merged:
-                if _s.get("advisory") or _sim(_s) >= min_similarity:
+                if _s.get("advisory"):
+                    continue
+                # #589: above the bar, only a screen the framework itself treats as a player is
+                # still worth inspecting — for everyone else the checklist does not apply.
+                _is_player = bool(_screen_is_player_449(_s))
+                if _sim(_s) >= min_similarity and not _is_player:
                     continue
                 _nm = str(_s.get("name") or "")
-                _cands = ["".join(w.capitalize() for w in _nm.split("_")) + "Page",
+                _cands = [_s.get("component"),
+                          "".join(w.capitalize() for w in _nm.split("_")) + "Page",
                           "".join(w.capitalize() for w in _nm.split("_"))]
                 for _c in _cands:
+                    if not _c:
+                        continue
                     _missing = player_chrome_missing(_fe, _c)
                     if _missing == []:
-                        _s["advisory"] = True
-                        _s["advisory_reason"] = ("#588 content-dominated screen with complete "
-                                                 "framework chrome — scored on content, not build")
+                        if _sim(_s) < min_similarity:
+                            _s["advisory"] = True
+                            _s["advisory_reason"] = (
+                                "#588 content-dominated screen with complete "
+                                "framework chrome — scored on content, not build")
                         break
                     if _missing:
                         _s["chrome_missing"] = _missing
+                        # #589: the framework emitted this cluster for this screen and the
+                        # delivered page lost it — a build regression similarity cannot excuse.
+                        if _is_player:
+                            _s["chrome_incomplete"] = True
                         break
         except Exception:
             pass
@@ -2187,7 +2225,10 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         # recompute pass from the merged max scores (blocking, non-advisory, non-blank screens)
         _blocking_merged = [s for s in merged
                             if not s.get("advisory") and s.get("blank") is not True]
-        _merged_passed = (all(_sim(s) >= min_similarity for s in _blocking_merged)
+        # #589: a player screen that lost its framework-emitted control cluster fails the gate
+        # regardless of its similarity score — see the inversion measured above the helper.
+        _merged_passed = (all(_sim(s) >= min_similarity and not s.get("chrome_incomplete")
+                              for s in _blocking_merged)
                           if _blocking_merged else bool(passed))
         # #542a: the recorded Part-A metric — the average over BLOCKING screens ONLY, so a
         # transient/advisory or duplicate-route screen never drags the persisted fidelity.
