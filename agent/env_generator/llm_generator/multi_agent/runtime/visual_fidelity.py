@@ -2628,6 +2628,27 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
     #
     # The gate already knows both numbers by the time it writes this task. Leading with the
     # delta costs nothing and is the one piece of feedback a blind retry loop lacks.
+    # #620 — NAME THE SCREENS THE LAST ROUND BROKE. #129 keeps a latched (already-passed)
+    # screen OUT of the fix list so the lane is not told to re-work it — but that cannot stop
+    # the lane BREAKING it while fixing another screen, because they share components (a nav
+    # bar, a card). Tracking every screen that left the below-bar list and later came back:
+    # **113 real fall-backs across 12 runs** (scores like 0.03 / 0.05 / 0.42), against only 32
+    # that are the 0.00 env-down captures #500's merge exists to absorb. #619 tells the lane
+    # the average moved; it never said WHICH screen it lost, and a latched screen is exactly
+    # the one nothing else in the task body mentions.
+    _broken = sorted(
+        f"{r.get('name')} ({float(r.get('similarity') or 0.0):.2f})"
+        for r in (result.get("screens") or [])
+        if isinstance(r, Mapping) and r.get("name") in latched
+        and isinstance(r.get("similarity"), (int, float))
+        and float(r["similarity"]) < float(result.get("min_similarity") or 0.65))
+    _regressed = ""
+    if _broken:
+        _regressed = ("⚠ COLLATERAL DAMAGE — these screens had already cleared the bar and are "
+                      "below it again: " + ", ".join(_broken) + ". They are NOT in the fix list "
+                      "below (#129 keeps a passed screen out of it), so whatever broke them was "
+                      "a side effect — most often a shared component. Check that first.\n\n")
+
     _head = ""
     if isinstance(prev_live, (int, float)) and isinstance(this_live, (int, float)):
         _d = this_live - prev_live
@@ -2725,7 +2746,7 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
             len(_audit.get("unused_mapped") or []), len(_emitted), _mandated_screens)
     lines.append("\nReference images: use list_reference_images / view_image. "
                  "Your screenshots from the last gate run are in design/visual_gate/.")
-    return _head + "\n".join(lines)   # #619
+    return _regressed + _head + "\n".join(lines)   # #619/#620
 
 
 def _brand_asset_fix_enabled() -> bool:

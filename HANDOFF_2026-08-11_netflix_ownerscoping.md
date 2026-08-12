@@ -1528,6 +1528,22 @@ transient capture #500 was built for, and flipping it would newly fail runs on a
 artefact) and does not touch the gate decision. It records `blocking_average_live` beside it and
 flags `record_exceeds_live_by` when they diverge, so the divergence stops being invisible.
 
+**The loop is now closed, in three steps (#617 → #619 → #620).** Measuring is not fixing; each
+of the first two only made a blindness visible, and the third acts on it.
+
+| | what it found | what it does |
+|---|---|---|
+| **#617** | 280 of 280 remediation tasks titled "attempt 1" — `self.attempts` is the per-source JUDGING budget, reset by the very edit the lane just made | counts dispatches separately; shows round AND judge budget |
+| **#618** | the persisted score is the best-of-captures merge, so the record beats the live code in **24 of 39** runs (up to **+0.44**) | records `blocking_average_live` and flags the divergence; merge and gate untouched |
+| **#619** | 19 runs improved, **10 ended worse**, +0.003 per round — the lane never learned from its own last round | leads the task with the delta: worse → *consider reverting that round first*; better → keep going; flat → change dimension |
+| **#620** | tracking screens that left the below-bar list and returned: **113 real fall-backs in 12 runs** (vs 32 that are the 0.00 env-down captures #500 absorbs) | names the latched screens that fell back — #129 removed them from the fix list, so nothing else in the task mentions them |
+
+> The 113-vs-32 split matters as much as the number: treating the 0.00 captures as regressions
+> would have repeated this session's own mistake of believing a correlation without a control.
+> #129's exclusion cannot prevent collateral damage — it only stops the lane being *told* to
+> re-work a passed screen, not from breaking it through a shared component — which is why naming
+> it is the fix rather than widening the exclusion.
+
 > **Conclusion for the roadmap:** the highest-leverage work sits between the two — making the
 > agent's inputs TRUE (#587/#592/#611/#612/#614/#616/#617). What remains genuinely unanswerable
 > from artifacts is the fix RATE once the signal is correct: "completed" is not "fixed", and with
