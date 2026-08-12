@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+import json
+from typing import Any, Mapping, Optional
 
 from ._base import BaseTool, ToolResult, create_tool_param
 from multi_agent.hub_tool_surface import HUB_NAMES, known_hub, writes_for_hub
@@ -84,6 +85,9 @@ def _finalize_hub_tools(tool_classes):
             setattr(tool_class, "execute", _default_execute)
         if hasattr(tool_class, "__abstractmethods__"):
             tool_class.__abstractmethods__ = frozenset()
+
+
+_TERMINAL_ACK_FIELD_LIMIT = 600   # #605: per-field size above which a terminal ack elides
 
 
 class HubTool(BaseTool):
@@ -655,6 +659,7 @@ class WorkHubUpdatePageTool(HubTool):
 
 class WorkHubTaskTool(HubTool):
     NAME = "workhub_task"
+
     DESCRIPTION = "Create, claim, claim_all, complete, fail, or cancel a WorkHub task."
     PARAMETERS = {"type": "object", "properties": {"action": {"type": "string", "enum": ["create", "claim", "claim_all", "complete", "fail", "cancel"], "description": "claim_all = claim EVERY pending unclaimed task assigned to you in one call (dep-blocked tasks are skipped automatically); no task_id needed."}, "task_id": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"}, "assignee": {"type": "string"}, "result": {"type": "object"}, "evidence": {"type": "object"}, "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"], "default": "P2", "description": "Task priority (P0=urgent, P3=nice-to-have); used only when action=create"}, "reason": {"type": "string", "description": "Why the task failed/was cancelled (action=fail|cancel)"}}, "required": ["action"]}
 
@@ -674,6 +679,35 @@ class WorkHubTaskTool(HubTool):
             return ToolResult(data=hub_result)
         if action == "claim_all":
             return self._claim_all()
+        def _ack(rec):
+            """#605 — a TERMINAL action echoes back the task the caller already holds.
+
+            `complete`/`fail`/`cancel` returned the whole record, and a WorkHub task record
+            is not small: over the arc's 4736 stored tasks `description` alone is 17.07 MB of
+            ~22 MB, with single descriptions up to 102,615 chars (~25k tokens) — the visual
+            gate's remediation order inlines all ten screens' fixes into one task. Measured on
+            the run logs, `workhub_task` returned 20.76 MB over 379 calls at an average of
+            54k chars REGARDLESS of action, and 11.91 MB of that (57%) is complete/fail
+            echoing a work order back to the lane that just executed it.
+
+            `claim` keeps the full record — that IS the work order being delivered. Only the
+            terminal actions are trimmed, and only field-by-field above a threshold, so every
+            small field a downstream reader might want survives untouched. An error result is
+            passed through verbatim.
+            """
+            if not isinstance(rec, Mapping) or rec.get("error"):
+                return rec
+            out = {}
+            for k, v in rec.items():
+                try:
+                    n = len(v) if isinstance(v, str) else len(json.dumps(v, default=str))
+                except Exception:
+                    n = 0
+                out[k] = v if n <= _TERMINAL_ACK_FIELD_LIMIT else (
+                    f"[{n} chars omitted — unchanged by this call; "
+                    f"re-read with workhub_get_task(task_id='{rec.get('id', task_id)}')]")
+            return out
+
         if action == "complete":
             # CODE-TRUTH GUARD (2026-06-24): a lane may NOT manually 'complete' an
             # impl.* task whose registry artifact is still 'defined' (NOT
@@ -722,15 +756,15 @@ class WorkHubTaskTool(HubTool):
                     "queue so you're never re-woken to finish it)."))
             hub_result = self._hubs.workhub.complete_task(task_id, self._agent_id, result=result or {}, evidence=evidence or {})
             _detach_plantool_on_terminal(self._agent_id, hub_result)
-            return ToolResult(data=hub_result)
+            return ToolResult(data=_ack(hub_result))   # #605
         if action in ("fail", "failed"):
             hub_result = self._hubs.workhub.fail_task(task_id, self._agent_id, reason=reason or "")
             _detach_plantool_on_terminal(self._agent_id, hub_result)
-            return ToolResult(data=hub_result)
+            return ToolResult(data=_ack(hub_result))   # #605
         if action in ("cancel", "cancelled", "canceled"):
             hub_result = self._hubs.workhub.cancel_task(task_id, self._agent_id, reason=reason or "")
             _detach_plantool_on_terminal(self._agent_id, hub_result)
-            return ToolResult(data=hub_result)
+            return ToolResult(data=_ack(hub_result))   # #605
         return ToolResult(success=False, error_message=f"Unknown workhub_task action: {action!r}. Valid: create|claim|claim_all|complete|fail|cancel")
 
     def _claim_all(self) -> ToolResult:
