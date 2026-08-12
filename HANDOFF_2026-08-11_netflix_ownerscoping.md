@@ -1262,6 +1262,30 @@ experiment.
 | the missing "More Like This" grid | declared in **0 of 144** measured title_detail screens (it is below the reference's fold) | **not a defect** |
 | the browse page behind the modal (6 of 14 measured regions are `background-*`) | present 18/26, delta **+0.025** | **negligible** |
 
+**`genre_category` closed the same way — no measurable structural cause.** 18 screens, worst
+dimension `components` 0.594, deviation clusters hero/billboard 45, nav 25, top-10 ribbon 16. The
+one repeated, concrete complaint is *"missing breadcrumb / category title overlay that identifies
+the genre category page"*, and the measurement backs it hard — **143 of 144** measured screens
+declare a `breadcrumb`/`breadcrumb-title` region. But the delivered pages already render the genre
+identity in **14 of 14** routed pages, and the breadcrumb FORM specifically correlates at
+**+0.006** (3/14) while an `<h1>` correlates at **−0.059**. On 14 samples every structural feature
+sits at noise level. **Do not build a breadcrumb projector on this evidence.**
+
+**The §5.0v queue is now complete.** Every top per-screen blocker is either fixed by a
+measurement-driven change or measured to have no further cause in the artifacts:
+
+| screen | blocks | outcome |
+|---|---|---|
+| login | 29/40 | **#594** panel + **#602** gradient + **#603** footer; get-help measured a NON-cause |
+| browse_by_languages | 27/40 | **#595** — the frame holds ≥2 open overlays |
+| player | 20/40 | **#588/#589** chrome checklist + **#601** ad-state detection |
+| title_detail | 20/40 | **#584**; then closed — 23/26 pages structurally complete, 3 hypotheses killed |
+| genre_category | 9/40 | closed — no feature correlates above noise |
+| games | 8/40 | explained — the design's `dataset` declares ONE entity (`titles`); encoding the gap would overfit a single example |
+
+**What is left on this axis genuinely needs a run.** Every remaining question — does #584 lift
+`title_detail`? do #602/#603 lift `login`? — is a post-fix re-measurement, i.e. an experiment.
+
 > ★★ **METHOD, now earned SIX times in one session — and it cuts BOTH ways.**
 >
 > *Zero findings* were produced three times by looking in the wrong place: chain error text (the
