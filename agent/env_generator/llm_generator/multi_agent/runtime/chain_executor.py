@@ -1998,7 +1998,8 @@ def _reverify_denial_via_fresh_intruder(base, method, path, body, expect) -> boo
 
 def execute_chain(base: str, chain: Mapping[str, Any],
                   seed_ids: Optional[Mapping[str, Any]] = None,
-                  endpoints: Optional[List[Mapping[str, Any]]] = None) -> Dict[str, Any]:
+                  endpoints: Optional[List[Mapping[str, Any]]] = None,
+                  projected: Optional[set] = None) -> Dict[str, Any]:
     """Run one chain; returns {name, steps: [...], broken: [...]}.
     Deterministic wiring; never raises. ``seed_ids`` (#144): {resource →
     known-present id from seed_data.json}, a recovery rung for literal-id
@@ -2787,7 +2788,8 @@ def execute_chain(base: str, chain: Mapping[str, Any],
     def _fmt(s):
         return (f"{s['method']} {s['path']} → {s['status']} "
                 + (f"(expected {s['expect']}; {s['note']})" if s.get("expect")
-                   else f"({s['note']})"))
+                   else f"({s['note']})")
+                + _projected_owner_note(projected, s.get("method"), s.get("path")))
     broken = [_fmt(s) for s in recorded if s["kind"] == "broken"]
     # #272: framework-projected defects are reported SEPARATELY so the gate can surface them
     # as framework work, not fold them into `broken` where a lane would be dispatched to fix
@@ -2806,6 +2808,57 @@ AUTHORING_INSTRUCTIONS = (
     "Cover at minimum: an auth round-trip and each critical user flow.")
 
 
+_PROJECTED_ROUTE_RE = re.compile(
+    r'@app\.(get|post|put|patch|delete)\(\s*"([^"]+)"[^)]*\)\s*\n\s*def\s+_projected_', re.I)
+
+
+def projected_routes(project_dir: Any) -> set:
+    """#587 — ``{(METHOD, path)}`` served by a FRAMEWORK-projected handler, read from the
+    generated ``main.py``.
+
+    `classify_endpoint_failure` can only call a failure a framework defect when it sees a 5xx
+    WITH a ``_projected_`` traceback ("narrow on purpose", #272). Three real defects this arc
+    were 2xx and carried no traceback at all — `GET /api/my-list` and
+    `GET /api/continue-watching` returning ANOTHER account's rows from an unscoped projected
+    read (#566y, #568). Each failed as "DENIAL-PROBE got success", was classified `broken`, and
+    was dispatched to the lane — whose own correct handler was shadowed and who cannot edit
+    `main.py`. `backend_audit` already states the principle (FIX #201: a projected stub "the
+    lane CANNOT edit", so telling it to replace the handler is non-actionable); the chain
+    executor simply had no way to know which routes those are. It does now: `run_chains`
+    receives `project_dir`.
+
+    Used ONLY to annotate the failure message — deliberately not to reclassify. Reclassifying a
+    4xx/2xx as a framework defect would route genuine app bugs on projected routes away from the
+    lane and leave them unowned; naming the owner costs nothing and is what the dispatcher and
+    the reader actually lacked. Best-effort: any fault returns an empty set."""
+    try:
+        main = Path(project_dir) / "app" / "backend" / "main.py"
+        src = main.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return set()
+    return {(m.group(1).upper(), m.group(2)) for m in _PROJECTED_ROUTE_RE.finditer(src)}
+
+
+def _projected_owner_note(proj: set, method: Any, path: Any) -> str:
+    """#587 — ' [framework-projected route: …]' when this route is served by projected code."""
+    if not proj:
+        return ""
+    p = str(path or "").split("?", 1)[0]
+    m = str(method or "GET").upper()
+    if (m, p) in proj:
+        return (" [FRAMEWORK-PROJECTED route — served by a _projected_ handler in main.py; "
+                "the lane cannot edit it, fix the projector/contract]")
+    # a by-id shape: /api/x/7 vs the emitted /api/x/{id}
+    for (pm, pp) in proj:
+        if pm != m or "{" not in pp:
+            continue
+        rx = "^" + re.escape(pp).replace(r"\{", "{").replace("{", "{").split("{")[0]
+        if p.startswith(rx.lstrip("^")) and p.count("/") == pp.count("/"):
+            return (" [FRAMEWORK-PROJECTED route — served by a _projected_ handler in main.py; "
+                    "the lane cannot edit it, fix the projector/contract]")
+    return ""
+
+
 def run_chains(base: str, project_dir: Any,
                business_endpoints: List[Mapping[str, Any]]) -> Dict[str, Any]:
     """Execute the verifier's chains. No chains → the gate FAILS with the
@@ -2815,8 +2868,10 @@ def run_chains(base: str, project_dir: Any,
         return {"source": "missing", "chains": [],
                 "broken": [AUTHORING_INSTRUCTIONS], "total_steps": 0}
     _seed_ids = load_seed_ids(project_dir)  # #144: literal-id recovery rung
+    _projected = projected_routes(project_dir)      # #587
     results = [execute_chain(base, ch, seed_ids=_seed_ids,
-                          endpoints=list(business_endpoints or []))
+                          endpoints=list(business_endpoints or []),
+                          projected=_projected)
                for ch in chains]
     broken = [b for r in results for b in r["broken"]]
     framework_defects = [b for r in results for b in r.get("framework_defects", [])]
