@@ -1060,11 +1060,36 @@ consumer that iterates the store acted on whichever it hit first. Now merged by 
 vs 0.624 and the within-run paired deltas swing +0.183 to −0.252. Merging is strictly not-worse:
 both records were already live and already audited. Replay: 28 → 0, no route lost.
 
-> **Next lever if this is picked up again: `browse_by_languages`, mean 0.424 across 40 runs** —
-> by far the worst screen in the set and never investigated. Its dimensions are components
-> 0.445 / layout 0.547 / copy 0.590, and its deviations name a dual dropdown vs a single one, a
-> 6-col flat grid with captions vs 5-col category rows with TOP-10 ribbons, and a missing hover
-> preview card.
+**`browse_by_languages` — INVESTIGATED, and it was #542a's hole again (#595, LANDED).** The
+reference frame was captured with the Original-Language dropdown open, the language list open
+(Arabic→Vietnamese, occluding the entire right column) **and** a hover preview card over row 2.
+Three overlays at once — mean 0.424 is not a build problem, it is an unreproducible frame.
+
+This is the **second independent instance** of the class §5.0t named on `player.jpg`: #128/#542a
+demote by the screen's NAME, and both times the transient-ness was in the IMAGE. With one
+instance a bespoke check (#588) was right; with two, the general one is. The measurement already
+carried it per region — `state: "open, showing options"`, `"expanded, long list visible"`,
+`role: "hover/preview popover…"`. The rule is **physical, not aesthetic**: opening a second
+dropdown closes the first, so a frame with two INDEPENDENT open overlays is not a state any
+implementation can be in. Clusters link by PROXIMITY (a dropdown and its list are adjacent —
+intersection area exactly zero) and merge transitively.
+
+`title_detail` is what a naive AREA threshold gets wrong: its modal occludes **0.504** of the
+frame, most in the set, but it is ONE overlay and it IS the subject — counting clusters keeps it
+blocking (where #584 belongs). `my_list` (21/45) is genuinely the same disease: r100's frame
+carries a hovered tile, an "I like this" tooltip, and a `status-url-tooltip` that is **the
+browser's own link-hover status bar** — not app UI at all.
+
+Gate replay over the 40 scored runs: blocking screen-instances **141 → 118**;
+`browse_by_languages` 27 → 6, `my_list` 6 → 4, everything else unchanged. **No run's last
+blocker is removed, so this flips no gate by itself.**
+
+> **Next levers, in order.** (1) `login` 29/40 — after #594 the residue is background-gradient
+> and footer detail; the gradient is measured but only in 1 of 45 design systems, so
+> screen-level gradient capture is the prerequisite. (2) `title_detail` 20/40 — #584 fixed the
+> screen-selection root cause but the score was never re-measured on a post-#584 tree. (3)
+> `genre_category` 9/40, mean 0.607, untouched. **Three of the original top four are now
+> attributed** (player #588/#589, browse_by_languages #595, title_detail #584).
 
 ---
 
