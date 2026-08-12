@@ -2121,7 +2121,13 @@ def _seed_required_fallback(sa_type: Any, i: int) -> Any:
     if "int" in t or "numeric" in t or "float" in t or "decimal" in t:
         return i + 1
     if "date" in t or "time" in t:
-        return _SEED_OMIT           # the loader's datetime coercion path stays untouched
+        # #600: the emitted loader now HAS a datetime branch (it parses ISO-8601 and drops
+        # the key on anything unparseable), so a required timestamp can be filled without
+        # risking a driver-level bind failure. #599 had to decline these: 108 of its residue
+        # were timestamps, and 5 of those are genuinely `DateTime, nullable=False` with no
+        # default in the delivered models — i.e. 5 more silently-emptied tables.
+        # Deterministic and monotonic per row, so ordering by the column is stable.
+        return f"2024-01-{(i % 28) + 1:02d}T{(i % 24):02d}:00:00"
     if "json" in t:
         return {}
     if "text" in t or "string" in t or "char" in t or "unicode" in t or "uuid" in t:
@@ -2375,7 +2381,8 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "    # already-correct values are untouched).\n"
         "    try:\n"
         "        from sqlalchemy import (String as _SAStr, Integer as _SAInt,\n"
-        "                                Numeric as _SANum, Float as _SAFloat)\n"
+        "                                Numeric as _SANum, Float as _SAFloat,\n"
+        "                                DateTime as _SADT, Date as _SADate)\n"
         "        cols = cls.__table__.columns\n"
         "    except Exception:\n"
         "        return vals\n"
@@ -2400,8 +2407,9 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "            _is_int = isinstance(ctype, _SAInt)\n"
         "            _is_num = isinstance(ctype, (_SANum, _SAFloat))\n"
         "            _is_str = isinstance(ctype, _SAStr)\n"
+        "            _is_dt = isinstance(ctype, (_SADT, _SADate))\n"
         "        except Exception:\n"
-        "            _is_int = _is_num = _is_str = False\n"
+        "            _is_int = _is_num = _is_str = _is_dt = False\n"
         "        if _is_str and not isinstance(v, str):\n"
         "            # FIX #388 (netflix r13: maturity_rating is TEXT but the seed carried\n"
         "            # an INT 1..5): postgres rejects an int bound to a text column ('type\n"
@@ -2420,6 +2428,17 @@ def render_seed_data(tables: Dict[str, Any], bootstrap_spec: Optional[List[Dict[
         "                out[k] = float(str(v).strip())\n"
         "            except (ValueError, TypeError):\n"
         "                out[k] = 0.0\n"
+        "        elif _is_dt and isinstance(v, str):\n"
+        "            # #600: the coercion table had str/int/float and NO datetime\n"
+        "            # branch, so #599 could not fill a NOT NULL timestamp without\n"
+        "            # risking a driver-level bind failure. Parse ISO-8601 here (Z\n"
+        "            # accepted) and DROP the key on anything unparseable, so a bad\n"
+        "            # value can never take the whole row down with it.\n"
+        "            try:\n"
+        "                from datetime import datetime as _dtc\n"
+        "                out[k] = _dtc.fromisoformat(v.strip().replace('Z', '+00:00'))\n"
+        "            except Exception:\n"
+        "                out.pop(k, None)\n"
         "    return out\n\n\n"
         "def _ensure_canonical_rows():\n"
         "    # FIX #72: every user (seeded OR freshly-registered) must have the canonical\n"

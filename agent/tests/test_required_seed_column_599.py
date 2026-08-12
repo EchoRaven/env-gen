@@ -53,9 +53,8 @@ def test_it_fills_the_types_it_can():
 
 
 def test_it_declines_the_types_it_cannot_fill_safely():
-    """A timestamp goes through the loader's own coercion path — leave it alone."""
-    assert fallback("DateTime", 0) is _SEED_OMIT
-    assert fallback("Date", 0) is _SEED_OMIT
+    """Timestamps were declined here too until #600 taught the loader to parse ISO-8601;
+    see test_seed_datetime_coercion_600 for that pair."""
     assert fallback(None, 0) is _SEED_OMIT
     assert fallback("SomeCustomType", 0) is _SEED_OMIT
 
