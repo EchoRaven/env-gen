@@ -4,20 +4,27 @@ r"""#627: the breaking-change notifier was complete, and wired to nobody.
 and auto-creates a fix task per consumer agent. It is dead in most runs because nothing registers
 consumers — `register_consumer` is an LLM TOOL, so it fires only when a lane thinks to call it.
 
-Measured over 45 runs:
+Measured at EMIT TIME, from each event's own `recipients` field — the only reading that answers
+"was anyone actually told":
 
-    1196 breaking changes detected
-     299 (25%) reach anybody
-      30 of 45 runs have ZERO consumer rows — the store holds `_meta` and nothing else
+    1129 breaking changes across 42 runs
+      33 (2.9%) reached anybody
+    +249 would have, replaying in timestamp order with only pages registered BEFORE each event
+         -> 282 (25.0%)
 
-In those 30 runs every breaking change is broadcast to an empty recipient list and no fix task is
-ever created. `response_key_changed` alone is 583 of the 1196 — exactly the shape of the crashes
-the verifier later files as unowned P0s ("Landing page renders blank", "default-imported
-listTitles is an object, not a function").
+Do NOT read this off the final consumer store. That gave "25% -> 58%" and both ends were wrong:
+the store accumulates all run long, so it counts consumers that did not exist when the event
+fired. A final-state store is not a timeline — the same trap as the squash-merge reading in #622.
+(30 of 45 runs do end with a consumer store holding only `_meta`.)
+
+`response_key_changed` alone is 583 of the total — exactly the shape of the crashes the verifier
+later files as unowned P0s ("Landing page renders blank", "default-imported listTitles is an
+object, not a function").
 
 The link already exists in the framework's own records: 435 of 738 registered pages carry a
 non-empty `apis_used`, and all 754 entries are already in the canonical ``METHOD /path`` form
-that matches `endpoint_id`. Using it takes routing from **25% to 58%** on the same corpus.
+that matches `endpoint_id`. The residual 75% are endpoints no page declares; widening that source
+is a separate question, deliberately not attempted here.
 
 The owner is the FRONTEND lane, from the page's own path — never `created_by`, which is the
 orchestrator for 417 of those 754 entries and would repeat #626's "assigned to someone who
@@ -158,9 +165,9 @@ def test_the_measurement_that_justifies_it_is_recorded():
     from env_generator.llm_generator.multi_agent.runtime import registryhub
     flat = " ".join(inspect.getsource(
         registryhub.RegistryHub._autoregister_page_consumers_627).split())
-    assert "only 299 (25%) reach anybody" in flat
-    assert "30 of 45 runs have ZERO consumer rows" in flat
-    assert "25% to 58%" in flat
+    assert "(2.9%)" in flat and "282" in flat and "(25.0%)" in flat
+    assert "A final-state store is not a timeline" in flat, (
+        "the correction must stay recorded — reading a final store as a timeline is the trap")
 
 
 if __name__ == "__main__":  # pragma: no cover

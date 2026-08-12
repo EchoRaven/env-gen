@@ -1286,18 +1286,25 @@ class RegistryHub:
         It is dead in most runs because nothing registers consumers — `register_consumer` is an
         LLM TOOL, so it fires only when a lane thinks to call it.
 
-        Measured over 45 runs: **1196 breaking changes, only 299 (25%) reach anybody**. The
-        split is bimodal, not gradual — **30 of 45 runs have ZERO consumer rows** (the store
-        holds `_meta` and nothing else), so in those runs every single breaking change is
-        broadcast to an empty recipient list and no fix task is ever made. `response_key_changed`
-        alone accounts for 583 of them, which is exactly the shape of the crashes the verifier
-        then files as unowned P0s ("Landing page renders blank", "default-imported listTitles is
-        an object, not a function").
+        Measured at EMIT TIME, from each event's own `recipients` field — the only reading that
+        answers "was anyone actually told": of **1129** breaking changes across 42 runs, **33
+        (2.9%)** reached anybody. Replaying the corpus in timestamp order, registering consumers
+        from pages that existed BEFORE each event would have added **+249**, taking it to **282
+        (25.0%)**. `response_key_changed` alone accounts for 583 of the total, which is exactly
+        the shape of the crashes the verifier then files as unowned P0s ("Landing page renders
+        blank", "default-imported listTitles is an object, not a function").
+
+        (Do not read those numbers off the final consumer store. Doing that gave 25% → 58% and
+        both ends were wrong: the store accumulates all run long, so it counts consumers that did
+        not exist when the event fired. A final-state store is not a timeline — the same mistake
+        the squash-merge reading made in #622. 25%/58% are the *upper bounds*; 2.9%/25.0% are
+        what happened.)
 
         The link already exists in the framework's own records: 435 of 738 registered pages
         carry a non-empty `apis_used`, and all 754 entries are already in the canonical
-        ``METHOD /path`` form that matches `endpoint_id`. Registering it here takes routing from
-        **25% to 58%** on the same corpus — no new source of truth, no LLM discretion.
+        ``METHOD /path`` form that matches `endpoint_id` — no new source of truth, no LLM
+        discretion. The residual 75% are endpoints no page declares; widening that source is a
+        separate question and is NOT attempted here.
 
         The owner is the FRONTEND lane, from the page's own path, falling back to the lane a UI
         page belongs to by definition — never `created_by`, which is the orchestrator for 417 of
