@@ -14,7 +14,6 @@ trimmed, field-by-field above a threshold, so every small field a downstream rea
 survives untouched, and an error result passes through verbatim.
 """
 import inspect
-import json
 
 import pytest
 
@@ -28,57 +27,47 @@ def src():
     return inspect.getsource(cls)
 
 
-def _ack_of(src_text):
-    """Extract and exec the nested `_ack` so it can be exercised directly."""
-    import textwrap
-    body = src_text[src_text.index("        def _ack(rec):"):]
-    body = textwrap.dedent(body[:body.index("\n        if action ==")])
-    ns = {"Mapping": __import__("typing").Mapping, "json": json,
-          "_TERMINAL_ACK_FIELD_LIMIT": ht._TERMINAL_ACK_FIELD_LIMIT, "task_id": "T1"}
-    exec(body, ns)
-    return ns["_ack"]
+# --- the shared eliding helper (#605/#606) ------------------------------------------------
+
+ack = ht._elide_large_fields
 
 
-# --- the trim itself ------------------------------------------------------------------------
-
-def test_a_huge_description_is_elided_with_a_pointer_back(src):
-    ack = _ack_of(src)
-    out = ack({"id": "T1", "status": "completed", "description": "x" * 97849})
+def test_a_huge_description_is_elided_with_a_pointer_back():
+    out = ack({"id": "T1", "status": "completed", "description": "x" * 97849},
+              "unchanged by this call; re-read with workhub_get_task(task_id='T1')")
     assert out["status"] == "completed" and out["id"] == "T1"
     assert "97849 chars omitted" in out["description"]
     assert "workhub_get_task(task_id='T1')" in out["description"]
 
 
-def test_every_small_field_survives_untouched(src):
-    ack = _ack_of(src)
+def test_every_small_field_survives_untouched():
     rec = {"id": "T1", "title": "fix the gate", "status": "completed",
            "assignee": "frontend", "priority": "P1", "completed_at": 123.4,
            "result": {"ok": True}, "evidence": {"files": ["a.jsx"]}}
-    assert ack(dict(rec)) == rec
+    assert ack(dict(rec), "h") == rec
 
 
-def test_a_field_exactly_at_the_limit_is_kept(src):
-    ack = _ack_of(src)
+def test_a_field_exactly_at_the_limit_is_kept():
     body = "y" * ht._TERMINAL_ACK_FIELD_LIMIT
-    assert ack({"id": "T1", "description": body})["description"] == body
+    assert ack({"id": "T1", "description": body}, "h")["description"] == body
 
 
-def test_an_error_result_passes_through_verbatim(src):
-    ack = _ack_of(src)
+def test_an_error_result_passes_through_verbatim():
     err = {"error": "Task not found", "description": "z" * 5000}
-    assert ack(err) == err
+    assert ack(err, "h") == err
 
 
-def test_a_non_mapping_is_returned_as_is(src):
-    ack = _ack_of(src)
+def test_a_non_mapping_is_returned_as_is():
     for v in (None, "oops", 7, ["a"]):
-        assert ack(v) is v
+        assert ack(v, "h") is v
 
 
-def test_an_unserializable_field_does_not_crash(src):
-    ack = _ack_of(src)
-    out = ack({"id": "T1", "weird": object()})
-    assert "weird" in out
+def test_an_unserializable_field_does_not_crash():
+    assert "weird" in ack({"id": "T1", "weird": object()}, "h")
+
+
+def test_the_nested_ack_delegates_to_the_shared_helper(src):
+    assert "_elide_large_fields(" in src
 
 
 # --- where it is applied, and where it must NOT be ---------------------------------------------

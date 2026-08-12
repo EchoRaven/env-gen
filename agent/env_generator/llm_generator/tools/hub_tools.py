@@ -90,6 +90,25 @@ def _finalize_hub_tools(tool_classes):
 _TERMINAL_ACK_FIELD_LIMIT = 600   # #605: per-field size above which a terminal ack elides
 
 
+def _elide_large_fields(rec, hint, limit=_TERMINAL_ACK_FIELD_LIMIT):
+    """Return ``rec`` with any oversized field replaced by a size + how-to-fetch marker.
+
+    Shared by #605 (a terminal task ack) and #606 (a document LISTING). Field-by-field on
+    purpose: every small field a downstream reader might want survives untouched, an error
+    result passes through verbatim, and an unserializable value can never crash the caller.
+    """
+    if not isinstance(rec, Mapping) or rec.get("error"):
+        return rec
+    out = {}
+    for k, v in rec.items():
+        try:
+            n = len(v) if isinstance(v, str) else len(json.dumps(v, default=str))
+        except Exception:
+            n = 0
+        out[k] = v if n <= limit else f"[{n} chars omitted — {hint}]"
+    return out
+
+
 class HubTool(BaseTool):
     def __init__(self, agent_id: str = "", hub_workspace: Any = None):
         super().__init__(name=getattr(self, "NAME", self.__class__.__name__.lower()), category="hub")
@@ -695,18 +714,10 @@ class WorkHubTaskTool(HubTool):
             small field a downstream reader might want survives untouched. An error result is
             passed through verbatim.
             """
-            if not isinstance(rec, Mapping) or rec.get("error"):
-                return rec
-            out = {}
-            for k, v in rec.items():
-                try:
-                    n = len(v) if isinstance(v, str) else len(json.dumps(v, default=str))
-                except Exception:
-                    n = 0
-                out[k] = v if n <= _TERMINAL_ACK_FIELD_LIMIT else (
-                    f"[{n} chars omitted — unchanged by this call; "
-                    f"re-read with workhub_get_task(task_id='{rec.get('id', task_id)}')]")
-            return out
+            return _elide_large_fields(
+                rec, f"unchanged by this call; re-read with "
+                     f"workhub_get_task(task_id='{(rec or {}).get('id', task_id)}')"
+                if isinstance(rec, Mapping) else "")
 
         if action == "complete":
             # CODE-TRUTH GUARD (2026-06-24): a lane may NOT manually 'complete' an
@@ -1038,7 +1049,30 @@ class WorkHubListDocumentsTool(HubTool):
     PARAMETERS = {"type": "object", "properties": {"kind": {"type": "string"}, "status": {"type": "string"}}}
 
     async def _run(self, kind: str = None, status: str = None) -> ToolResult:
-        return ToolResult(data={"documents": self._hubs.workhub.list_documents(kind=kind, status=status)})
+        # #606 — A LIST TOOL SHOULD RETURN A LISTING. This returned every document's FULL
+        # record: `workhub_list_documents` was logged at up to 204,469 chars (~51k tokens) in
+        # ONE call, averaging 22.6k. Over the arc's 227 stored documents the `metadata` field
+        # alone is 4.60 MB of the 4.69 MB total — the meeting decisions, data models and
+        # contracts live there — and a single document reaches 102,405 chars.
+        #
+        # The content path already exists and is the right one: `workhub_get_document(id)`.
+        # Elided field-by-field (the #605 helper), so id/kind/status/title and every other
+        # small field are byte-identical and only the bulk is replaced by a size + how to
+        # fetch it. Measured on the real store, an id/kind/status/title listing is 99%
+        # smaller (4.69 MB -> 0.05 MB).
+        docs = self._hubs.workhub.list_documents(kind=kind, status=status)
+        if docs is None:            # preserve the store's own container type
+            docs = []
+        if isinstance(docs, Mapping):
+            docs = {k: _elide_large_fields(
+                v, f"listing only; fetch with workhub_get_document(document_id='{k}')")
+                for k, v in docs.items()}
+        elif isinstance(docs, list):
+            docs = [_elide_large_fields(
+                d, "listing only; fetch with workhub_get_document(document_id="
+                   f"'{(d or {}).get('id', '?') if isinstance(d, Mapping) else '?'}')")
+                for d in docs]
+        return ToolResult(data={"documents": docs})
 
 
 class WorkHubLinkTaskToPrTool(HubTool):

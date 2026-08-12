@@ -15,6 +15,14 @@ from utils.tool import BaseTool, ToolResult, ToolCategory, create_tool_param
 from workspace import Workspace
 
 
+# #607: binary/asset suffixes — never opened to count lines, collapsed to one row per dir
+_ASSET_SUFFIXES_607 = frozenset({
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico", ".bmp", ".svg",
+    ".mp4", ".webm", ".mov", ".m4v", ".mp3", ".wav", ".ogg",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
+    ".pdf", ".zip", ".gz", ".tar", ".jar", ".wasm",
+})
+
 class ProjectStructureTool(BaseTool):
     """
     Show the current project structure as a tree.
@@ -271,29 +279,65 @@ Use this to check what already exists before generating new files.
             'other': []
         }
         
+        # #607 — A CODE LISTING SHOULD LIST CODE. This tool exists to answer "what already
+        # exists before generating new files", and it was logged at 93,396 chars (~23k tokens)
+        # per call. On a real delivered tree that is 589 files under `app/`, of which **503
+        # are staged binary ASSETS** in `public/` — 330 .png, 119 .jpg, 38 .svg, 10 .woff2,
+        # 6 .mp4 — none of which any agent will ever author or edit. They are collapsed to ONE
+        # aggregate row per directory, which keeps everything a caller actually needs from
+        # them (they exist, where, how many, how big) at ~1/100th the size.
+        #
+        # It also called `read_text()` on every one of those binaries just to count lines. The
+        # decode raised and a bare `except` swallowed it — after the megabytes had already
+        # been read off disk, on every call. Extension is checked FIRST now, so a binary is
+        # never opened.
+        _asset_dirs: Dict[str, Dict[str, Any]] = {}
+
         for file_path in self.workspace.code_root.rglob('*'):
             if file_path.is_file() and not file_path.name.startswith('.'):
                 # Skip common ignore patterns
                 path_str = str(file_path)
                 if any(p in path_str for p in ['node_modules', '__pycache__', '.git', 'venv']):
                     continue
-                
+
                 relative_path = self.workspace.relative(file_path)
                 cat = categorize_file(str(relative_path))
-                
+
+                if file_path.suffix.lower() in _ASSET_SUFFIXES_607:
+                    _key = str(Path(relative_path).parent)
+                    _agg = _asset_dirs.setdefault(
+                        _key, {'category': cat, 'count': 0, 'size': 0, 'kinds': set()})
+                    _agg['count'] += 1
+                    _agg['kinds'].add(file_path.suffix.lower())
+                    try:
+                        _agg['size'] += file_path.stat().st_size
+                    except OSError:
+                        pass
+                    continue
+
                 try:
                     size = file_path.stat().st_size
                     lines = len(file_path.read_text(encoding='utf-8').splitlines())
-                except:
+                except Exception:
                     size = 0
                     lines = 0
-                
+
                 files_by_category[cat].append({
                     'path': str(relative_path),
                     'size': size,
                     'lines': lines
                 })
-        
+
+        for _key, _agg in sorted(_asset_dirs.items()):
+            files_by_category.setdefault(_agg['category'], []).append({
+                'path': f"{_key}/ [{_agg['count']} asset files: "
+                        f"{', '.join(sorted(_agg['kinds']))}]",
+                'size': _agg['size'],
+                'lines': 0,
+                'asset_dir': True,
+                'asset_count': _agg['count'],
+            })
+
         # Filter by category if specified
         if category != "all":
             result = {category: files_by_category.get(category, [])}
