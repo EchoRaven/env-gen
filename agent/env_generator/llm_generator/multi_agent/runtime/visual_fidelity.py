@@ -24,7 +24,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Set
 
 from .validation_runner import _service_host_port
 
@@ -703,6 +703,68 @@ def open_overlay_clusters(screen_design: Any) -> int:
                 if ri != rj:
                     parent[ri] = rj
     return len({_find(i) for i in range(n)})
+
+
+#601 — THE OTHER UNREPRODUCIBLE FRAME: AN AD WAS PLAYING WHEN THE REFERENCE WAS CAPTURED.
+# #595 handles a frame caught mid-INTERACTION. This handles a frame caught mid-INTERSTITIAL, the
+# case §5.0t found on `player.jpg` ("Ad 12", "All American begins after ads") and could then only
+# answer with #588's bespoke chrome checklist plus a recommendation that a human swap the asset.
+# Swapping an image does not generalize — the next product's capture will land on its own ad —
+# so the rule has to come from the measurement, exactly as #595's does.
+#
+# An advertisement is a GENERIC UI concept (like a dropdown or a popover), not a product literal,
+# and no generation task ever asks the app to build an ad system. So a reference whose measured
+# STATE says an ad is playing is scoring the implementation against something it was never asked
+# to produce.
+#
+# Three refinements, each forced by a false positive in the real corpus (2880 screens):
+#   * read `state`, not `role`/`id` — `player_controls`'s role text literally says "No 'Ad NN'
+#     chip", and a keyword match on role flagged it;
+#   * skip a NEGATED mention, for the same reason;
+#   * require a live-playback word within 34 chars — `landing` carries
+#     "'The Netflix you love for just $8.99.' with subtitle about ad-supported plan" in its
+#     state, which is marketing COPY the app SHOULD reproduce, not an ad on screen.
+# With all three: 142 hits, every one `player`, and 2738 of 2880 screens untouched.
+_AD_TOKEN_RE = re.compile(
+    r"(?:^|[^a-z-])(ad|ads|advert|advertisement|interstitial|commercial|pre-?roll|mid-?roll)"
+    r"(?:[^a-z-]|$)", re.I)
+_AD_LIVE_RE = re.compile(
+    r"\b(play|playing|plays|showing|shown|running|countdown|remaining|break|skip|left|active)\b",
+    re.I)
+_AD_NEGATED_RE = re.compile(r"\b(no|without|non|not|never|hidden|absent)\b[^.]{0,24}$", re.I)
+
+
+def reference_shows_an_ad(screen_design: Any) -> bool:
+    """#601 — was an advertisement ON SCREEN when this reference frame was captured?"""
+    if not isinstance(screen_design, Mapping):
+        return False
+    for reg in (screen_design.get("regions") or screen_design.get("components") or []):
+        if not isinstance(reg, Mapping):
+            continue
+        st = str(reg.get("state") or "")
+        m = _AD_TOKEN_RE.search(st)
+        if not m or _AD_NEGATED_RE.search(st[:m.start()]):
+            continue
+        if _AD_LIVE_RE.search(st[max(0, m.start() - 34):m.end() + 34]):
+            return True
+    return False
+
+
+def screens_captured_showing_an_ad(project_dir: Any) -> Set[str]:
+    """#601 — screen names whose reference frame was captured with an ad playing."""
+    out: Set[str] = set()
+    try:
+        ds = json.loads((Path(project_dir) / "design" / "design_system.json")
+                        .read_text(encoding="utf-8"))
+    except Exception:
+        return out
+    for sc in ((ds or {}).get("screens") or []):
+        if not isinstance(sc, Mapping):
+            continue
+        nm = str(sc.get("name") or sc.get("id") or "").strip()
+        if nm and reference_shows_an_ad(sc):
+            out.add(nm)
+    return out
 
 
 def screens_captured_mid_interaction(project_dir: Any) -> Dict[str, int]:
@@ -2297,10 +2359,19 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         # name. Runs BEFORE #588/#589 so a screen already excused here is not re-examined.
         try:
             _midint = screens_captured_mid_interaction(project_dir)
+            _admid = screens_captured_showing_an_ad(project_dir)
             for _s in merged:
                 if _s.get("advisory"):
                     continue
-                _n = _midint.get(str(_s.get("name") or ""))
+                _nm595 = str(_s.get("name") or "")
+                if _nm595 in _admid:
+                    _s["advisory"] = True
+                    _s["advisory_reason"] = (
+                        "#601 reference frame was captured with an ADVERTISEMENT playing — "
+                        "no generation task asks the app to build an ad system, so the "
+                        "difference is not the build")
+                    continue
+                _n = _midint.get(_nm595)
                 if _n:
                     _s["advisory"] = True
                     _s["advisory_reason"] = (
