@@ -109,6 +109,13 @@ def _elide_large_fields(rec, hint, limit=_TERMINAL_ACK_FIELD_LIMIT):
     return out
 
 
+def _meeting_hint_608(page, meeting_id):
+    """#608 — the elision hint for a meeting page: how many decisions it now holds and
+    where to read them."""
+    n = len((((page or {}).get("metadata") or {}).get("decisions")) or [])
+    return (f"the meeting page now holds {n} decisions — read them with "
+            f"workhub_get_document(document_id='{(page or {}).get('id', meeting_id)}')")
+
 class HubTool(BaseTool):
     def __init__(self, agent_id: str = "", hub_workspace: Any = None):
         super().__init__(name=getattr(self, "NAME", self.__class__.__name__.lower()), category="hub")
@@ -1424,7 +1431,17 @@ class WorkhubAddMeetingDecisionTool(HubTool):
             return ToolResult.fail(str(exc))
         if isinstance(page, dict) and page.get("error"):
             return ToolResult.fail(page["error"])
-        return ToolResult.ok(data=page)
+        # #608 — AN APPEND RETURNED THE WHOLE ACCUMULATED PAGE. Every call handed back the
+        # meeting page including `metadata['decisions']`, which this very call had just
+        # grown: the Nth append re-serialises all N decisions, so the cost grows with the
+        # square of the meeting's length. Over the arc's 58 meeting pages the median ends at
+        # 72,879 chars with 62 decisions (max 103 / 102,405 chars). Measured from the run
+        # logs, this tool returned 4.80M tokens over 350 calls (avg 13.7k) — for an append
+        # whose useful answer is "stored, that's now N".
+        #
+        # Same #605 helper: meeting_id/title/status and every other small field stay
+        # byte-identical; only the accumulated bulk becomes a size + how to read it back.
+        return ToolResult.ok(data=_elide_large_fields(page, _meeting_hint_608(page, meeting_id)))
 
 
 class WorkhubCloseMeetingTool(HubTool):
@@ -1485,7 +1502,8 @@ class WorkhubCloseMeetingTool(HubTool):
             return ToolResult.fail(str(exc))
         if isinstance(page, dict) and page.get("error"):
             return ToolResult.fail(page["error"])
-        return ToolResult.ok(data=page)
+        # #608: closing echoed the whole accumulated page too — same trim, same reason.
+        return ToolResult.ok(data=_elide_large_fields(page, _meeting_hint_608(page, meeting_id)))
 
 
 class RegistryHubRegisterEndpointTool(HubTool):
