@@ -1332,13 +1332,29 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 ]
             if m == "POST" and auth:
                 ofk = _owner_fk(meta, exclude=tuple(bound))
-                if ofk:
-                    # #566s: REJECT a cross-user create — a body owner-FK the caller does NOT own
-                    # → 403 (IDOR: userB POSTing body profile_id=userA's). An OWNED value is kept
-                    # (multi-profile); absent → resolve the caller's own via _fw_owner_val.
+                # #566s: REJECT a cross-user create — a body owner-FK the caller does NOT own
+                # → 403 (IDOR: userB POSTing body profile_id=userA's). An OWNED value is kept
+                # (multi-profile); absent → resolve the caller's own via _fw_owner_val.
+                #
+                # #577 (netflix r141, live cross-user WRITE): the guard was emitted for the ONE
+                # column `_owner_fk` returns, but a table can carry SEVERAL owner columns. r141's
+                # `my_list` has BOTH `user_id` and `profile_id`; `_owner_fk` prefers the
+                # user-level one (deliberately — see _OWNER_FK_NAMES), so `profile_id` went
+                # UNCHECKED and `POST /api/my-list` as userB with body profile_id=<userA's
+                # profile> returned 201: the row landed in A's profile while `user_id`
+                # auto-filled to B. The lane's own handler DID verify it
+                # (`_verify_profile_owned`), but writes stay projected, so the safer handler
+                # never ran — the same displacement as #566y/#568, on the write path.
+                # Guard EVERY owner-shaped column the model has; auto-fill only the primary one.
+                _own_cols = [c for c in _OWNER_FK_NAMES
+                             if c in (meta.get("cols") or []) and c not in tuple(bound)]
+                for _oc in _own_cols:
                     body_lines += [
-                        f'    if valid.get("{ofk}") is not None and not _fw_owns({cls}, "{ofk}", valid.get("{ofk}"), user):',
-                        f'        raise HTTPException(status_code=403, detail="{ofk} does not belong to the caller")',
+                        f'    if valid.get("{_oc}") is not None and not _fw_owns({cls}, "{_oc}", valid.get("{_oc}"), user):',
+                        f'        raise HTTPException(status_code=403, detail="{_oc} does not belong to the caller")',
+                    ]
+                if ofk:
+                    body_lines += [
                         f'    valid.setdefault("{ofk}", _fw_owner_val({cls}, "{ofk}", user))',
                     ]
             if m == "POST":
