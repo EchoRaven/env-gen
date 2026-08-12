@@ -118,6 +118,55 @@ def status_meets_expectation(status, expect) -> bool:
         return False
 
 
+
+# #610 — AN API TEST RESULT WAS UNBOUNDED, AND PRETTY-PRINTED ON TOP. `test_api` returned the
+# whole response body, re-serialised with `indent=2`. Measured over the arc's run logs it
+# returned a MEDIAN of 44,783 chars and a MAX of 274,327 (2.34M tokens over 209 calls) — for a
+# call whose question is "did this endpoint answer correctly".
+#
+# Two separate costs, fixed separately:
+#   * `indent=2` is pure inflation for a machine reader. Modelled over 346 real seeded
+#     collection responses, pretty-printing costs 34% more than compact JSON for identical
+#     information. Dropped.
+#   * the body itself is unbounded. Truncating raw text would hide the very field the agent is
+#     checking and leave invalid JSON, so a LIST-shaped envelope keeps its shape instead: the
+#     first _API_BODY_ITEMS_610 items survive intact and the rest become a count. The agent
+#     still sees the envelope, a representative sample, and the true total. A body that is not
+#     list-shaped is left ALONE unless it exceeds _API_BODY_CHARS_610, and then the marker
+#     states the real length so nothing is silently lost.
+_API_BODY_ITEMS_610 = 5
+_API_BODY_CHARS_610 = 8000
+
+
+def _bound_api_body_610(text):
+    """Compact + bound an API response body for agent consumption."""
+    import json as _json
+    raw = text if isinstance(text, str) else str(text)
+    try:
+        parsed = _json.loads(raw)
+    except Exception:
+        if len(raw) > _API_BODY_CHARS_610:
+            return (raw[:_API_BODY_CHARS_610]
+                    + f"\n… [truncated — {len(raw)} chars total]")
+        return raw
+    if isinstance(parsed, dict):
+        for key, val in list(parsed.items()):
+            if isinstance(val, list) and len(val) > _API_BODY_ITEMS_610:
+                parsed[key] = val[:_API_BODY_ITEMS_610] + [
+                    f"… [{len(val) - _API_BODY_ITEMS_610} more items omitted; "
+                    f"{len(val)} total]"]
+    elif isinstance(parsed, list) and len(parsed) > _API_BODY_ITEMS_610:
+        parsed = parsed[:_API_BODY_ITEMS_610] + [
+            f"… [{len(parsed) - _API_BODY_ITEMS_610} more items omitted; "
+            f"{len(parsed)} total]"]
+    try:
+        out = _json.dumps(parsed)
+    except Exception:
+        return raw[:_API_BODY_CHARS_610]
+    if len(out) > _API_BODY_CHARS_610:
+        return out[:_API_BODY_CHARS_610] + f"… [truncated — {len(out)} chars total]"
+    return out
+
 class EnvironmentStateCache:
     """
     Caches environment state to avoid repeated failed checks.
@@ -2263,10 +2312,7 @@ To test them, get a token first, then pass it as a header:
                     status = response.status
                     content = response.read().decode()
                     
-                    try:
-                        content = json.dumps(json.loads(content), indent=2)
-                    except:
-                        pass
+                    content = _bound_api_body_610(content)
                     
                     return ToolResult(
                         success=True,
@@ -2274,7 +2320,7 @@ To test them, get a token first, then pass it as a header:
                     )
                     
             except urllib.error.HTTPError as e:
-                content = e.read().decode()
+                content = _bound_api_body_610(e.read().decode())
                 hint = ""
                 if e.code in (401, 403) and not (headers and any(
                         str(k).lower() == "authorization" for k in headers)):
