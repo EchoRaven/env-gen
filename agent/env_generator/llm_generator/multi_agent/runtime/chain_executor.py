@@ -241,6 +241,42 @@ _OAUTH_AUTHORIZE_RE = re.compile(r"/oauth/authorize\b")
 _OAUTH_CODE_CHALLENGE_RE = re.compile(r"code_challenge", re.I)
 
 
+try:  # the owner-column vocabulary the projector fills from _fw_owner_val
+    from .route_projector import _OWNER_FK_NAMES as _OWNER_FK_NAMES
+except Exception:  # pragma: no cover — keep chain_executor importable in isolation
+    _OWNER_FK_NAMES = ("user_id", "author_id", "owner_id", "creator_id", "created_by",
+                       "account_id", "profile_id")
+
+_WHOLE_PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
+
+
+def _drop_unresolved_owner_fks(body: Any) -> tuple:
+    """#575 — a body OWNER-FK whose ``${var}`` never resolved must be OMITTED, not guessed.
+
+    netflix r139, live: `m2_continue_watching_state` does `GET /api/profiles` → save
+    `profileA<-items.0.id`, but the chain user registered seconds earlier and OWNS NOTHING, so
+    the (correctly) owner-scoped read returns `{"items": []}` and the save starves. The body
+    fallback then filled `${profileA}` from the global last-id pool with **another user's**
+    profile (17), so a legitimate own-scope write went out as a cross-user one and #566s
+    answered 403 "profile_id does not belong to the caller" — a FAKE IDOR manufactured by the
+    harness, on three M2 chains at once.
+
+    Omitting is strictly better than guessing: the projected create already fills an ABSENT
+    owner FK with the caller's own value (`valid.setdefault(ofk, _fw_owner_val(...))`, #566s),
+    which is exactly what the step meant. The path-side ladder has had this rung since #32
+    ("a fresh chain user owns nothing → create a row"); the body side never did.
+
+    Returns ``(body, [dropped keys])``; non-mapping bodies pass through untouched."""
+    if not isinstance(body, Mapping):
+        return body, []
+    dropped = [k for k, v in body.items()
+               if str(k) in _OWNER_FK_NAMES and isinstance(v, str)
+               and _WHOLE_PLACEHOLDER_RE.fullmatch(v.strip())]
+    if not dropped:
+        return body, []
+    return {k: v for k, v in body.items() if k not in dropped}, dropped
+
+
 def _request_identity(step: Mapping[str, Any], method: Any, path: Any, body: Any) -> tuple:
     """#566z — what makes two chain steps THE SAME REQUEST: verb, full path INCLUDING the
     query string, the actor's auth ref, and the body. Query string and auth ref are part of
@@ -2049,6 +2085,9 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         # the literal "${calendar_id}" to an int column → 500 → business_chain wedges
         # forever on a correct app. Resolve a surviving ${...} to the most recent
         # captured resource id (untouched when the chain is wired correctly).
+        # #575: strip an unresolved OWNER FK BEFORE the generic fallback can guess one — a
+        # foreign owner id turns the caller's own write into a fake cross-user attempt (403).
+        body, _dropped_owner_fks = _drop_unresolved_owner_fks(body)
         if body is not None and last_id is not None:
             body = _resolve_unresolved_dollar_vars(body, last_id, last_id_by_resource)
         # (``token`` resolved above, before the path fallback that may need it for recovery.)
@@ -2111,6 +2150,8 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         autofilled: List[str] = []
         if _scope_note:
             autofilled.append(_scope_note)  # #566x: SAY it in the record, never silently
+        for _dk in _dropped_owner_fks:      # #575: likewise — never a silent body edit
+            autofilled.append(f"owner-fk-omitted:{_dk}")
         # #301+#316: a /oauth/authorize step lacking the PKCE code_challenge (bare OR
         # params-bearing) correctly 400/422s on a working AS and can never pass —
         # tolerate it so a synthesized probe doesn't wedge business_chain (r82 M2 +
