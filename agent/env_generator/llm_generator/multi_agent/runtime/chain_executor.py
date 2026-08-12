@@ -321,6 +321,46 @@ def _authored_success_identities(steps: Sequence[Mapping[str, Any]]) -> set:
     return out
 
 
+def _is_bare_self_scoped_read(step: Mapping[str, Any], method: Any, path: Any,
+                              body: Any) -> bool:
+    """#580 — an AUTHENTICATED read that names no foreign identifier can only ever return the
+    caller's OWN scope, so demanding that it be REJECTED is unsatisfiable by construction.
+
+    Seen in r132, r135, r139, r141 and r143 — the recurring shape is a chain asserting that a
+    bare collection read must 400/403:
+
+        [5] GET /api/continue-watching  auth=tokenA  expect=[400]   -> 200 {"items":[]}
+        [6] GET /api/continue-watching  auth=tokenB  expect=[403]   -> 200 {"items":[]}
+
+    The verifier means "no profile selected -> reject", but the framework's own contract does
+    the opposite: `_fw_owner_val` resolves (and provisions) the caller's own scope, so the read
+    succeeds with the caller's own — possibly empty — data. #566z/#570 cannot help here: no
+    sibling step claims this request should succeed, so there is nothing to contradict.
+
+    The proof that no cross-user access is being probed is in the REQUEST, not a heuristic: a
+    GET with an auth ref, no query string, no path parameter and no body addresses exactly one
+    scope — the caller's. Any of those carriers present (``?profile_id=10``,
+    ``/api/x/{other}``, a body owner FK) means a foreign id COULD be named, and this returns
+    False so the probe keeps every tooth."""
+    if str(method or "").upper() != "GET":
+        return False
+    if not str(step.get("auth") or "").strip():
+        return False            # unauthenticated -> a genuine 401 probe
+    if body:
+        return False
+    raw = str(path or "")
+    if "?" in raw or "#" in raw:
+        return False            # a query string can carry a foreign id
+    segs = [s for s in raw.split("/") if s]
+    if not segs:
+        return False
+    # a trailing/embedded identifier segment (numeric, uuid-ish, or a leftover placeholder)
+    for s in segs[1:]:
+        if s.isdigit() or "${" in s or "{" in s or re.fullmatch(r"[0-9a-fA-F-]{8,}", s):
+            return False
+    return True
+
+
 def _oauth_authorize_lacks_pkce(path, body) -> bool:
     """#301+#316 — a /oauth/authorize step that carries NO ``code_challenge`` cannot
     complete on a PKCE-enforced AS: it correctly 400/422s ("code_challenge with S256
@@ -2187,6 +2227,23 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                                           step.get("body")) in _authored_success)):
             ok = True
             autofilled.append("unsatisfiable-duplicate-expectation-waived")
+        # #580: the same class without a sibling to contradict — a bare AUTHENTICATED read
+        # naming no foreign identifier addresses only the caller's own scope, so a non-2xx
+        # expectation on it can never be met by an owner-scoping framework. Proven from the
+        # request itself (no query, no id segment, no body), so a probe that COULD name a
+        # foreign id is untouched.
+        # …and ONLY when the response carries NO ROWS. The request shape proves no foreign id
+        # was NAMED; it cannot prove none was RETURNED. An unscoped collection read hands every
+        # actor the same rows, and that is exactly how the r131/r133 leaks were caught — by a
+        # bare read (`GET /api/my-list` as tokenB returned user A's row). Waiving on shape
+        # alone would have hidden the very defect #568 fixed; this project's own test suite
+        # caught that before it shipped. Rows present -> keep the leak verdict (§5 hard rule).
+        if (not ok and isinstance(status, int) and 200 <= status < 300
+                and expect and not any(200 <= e < 300 for e in expect)
+                and _is_bare_self_scoped_read(step, method, path, body)
+                and not _response_has_rows(res.get("body_text"))):
+            ok = True
+            autofilled.append("bare-self-scoped-empty-read-waived")
         # netflix r11: a verifier-authored DENIAL probe (expect has no 2xx, e.g.
         # [401,403]) against a CONTROL-PLANE public infra endpoint (control_plane.py:
         # /api/v1/tenants etc., auth_required=False) is MIS-AUTHORED — that endpoint is
