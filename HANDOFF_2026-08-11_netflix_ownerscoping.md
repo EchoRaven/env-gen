@@ -1085,12 +1085,15 @@ Gate replay over the 40 scored runs: blocking screen-instances **141 → 118**;
 blocker is removed, so this flips no gate by itself.**
 
 **#584 VERIFIED on the real designs (it had only been asserted).** `/title/:id` → `title_detail`
-in **44/45**, `/browse` → `browse_home` in **45/45**. One residual, **left documented not fixed**:
-r131, where `title_detail` is not a candidate at all and `rate_dialog` wins with **zero** name
-coverage. The exact-route path does not apply the fuzzy path's own stated rule — *"no shared
-token → no match (a wrong graft is worse than the generic floor)"* — so it grafts a rating
-dialog's structure onto the title page. Applying that rule to the exact path is a one-line change
-whose blast radius was not measured; do that first if r131's shape recurs.
+in **44/45**, `/browse` → `browse_home` in **45/45**.
+
+**The "r131 residual" DOES NOT EXIST — retracted.** r131 has no title-related ui_page record at
+all, so nothing is grafted; my earlier probe used hand-made hints matching no real call. (What
+r131 really shows is design-side route misclassification: `title_detail` was classified
+`/browse/genre/sports`.) And the proposed one-line fix was **measured and rejected**: applying
+the fuzzy path's zero-coverage rule to the exact-route path, over all **1404** routed pairs,
+finds 2 zero-coverage winners — `/` → `landing` (r118) and `/watch/:titleId` → `player` (r144) —
+**both correct**. The rule would break 2 and fix 0. Do not implement it.
 
 **Duplicated page COMPONENTS in the delivered tree (#596, LANDED partially).** 24 forked
 `X.jsx`/`XPage.jsx` pairs across 8 of 45 runs, **every pair differing**. One source found and
@@ -1100,10 +1103,29 @@ ROUTE in `path`). 14 are unambiguous junk → dropped; **2 are deliberately not 
 because the corrupted field differs between them (r115's `component` looks right, r139's looks
 wrong — its `title_detail` claims `BrowseHomePage`), and guessing would make r139 worse.
 
-> **The cost of that decision, stated:** r115 keeps shipping the framework's 72-line
-> `LoginPage.jsx` while the lane's own **162-line `Login.jsx`** — router navigation, a real auth
-> service, a logo component — sits unrouted. An arbiter (which file does App.jsx import? which
-> is newer? which is richer?) would settle it; none was defensible on 2 samples.
+**The arbiter question #596 left open is now CLOSED by #597 (LANDED), with the real cause.** The
+fork is not a tie to be broken — it is **router STALENESS**. App.jsx is projected from the
+ui_pages contract at one moment, the contract's `component` changes afterwards, and the router is
+never re-projected:
+
+```
+r134  ui_page `login` updated 07:34:51 -> component `Login`, path .../Login.jsx
+      App.jsx last written    07:09:15   (25 MINUTES earlier, still importing LoginPage)
+r115  ui_page `login` updated 00:50:23 -> component `Login`
+      App.jsx last written    00:49:39   (44 s earlier)
+```
+
+`project_missing_ui_routes` cannot see it: `_route_is_wired('/login', app_jsx)` is satisfied by
+the STALE import, so the pass skips the one route that needs help. #597 repairs it — only when
+the contract's component file EXISTS on disk, and only when the routed name is the `Page`-suffix
+twin. Replayed over all **136** delivered trees: exactly **2** rewrites, both `LoginPage → Login`.
+
+> **How the arbiter was validated, since #596 had refused to guess on 2 samples:** a STRUCTURAL
+> score (imported project components ×2 + a services import + react-router usage) run over all
+> **23** forked pairs agrees with the router on **21** and disagrees on exactly these 2 — and on
+> both it is right. **Line count is not the arbiter and would be wrong twice:** r134's orphan is
+> 17 lines (it delegates to AuthShell+AuthForm and its own comment cites the contract) and
+> r134's `Landing.jsx` is a 3-line re-export shim.
 
 **Two more NEGATIVE results from that audit — do not re-chase:** (a) `_norm_route_221("")`
 returns `"/"`, so a route-less ui_page resolves to the LANDING screen and 17 of r103's 25 records
