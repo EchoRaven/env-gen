@@ -958,6 +958,48 @@ history: 23 verdict changes, all on `player`, 3 false greens caught + 20 false r
 
 ---
 
+### §5.0u — #568's root cause found; three more axes closed by measurement (2026-08-12)
+
+**#590 (LANDED) — the cause behind #568.** #568 blocked the *consequence* of a PK-only projected
+model. The cause is in `registryhub.register_table`: an incoming schema that normalizes to zero
+columns was written as authoritative, DESTROYING a schema already on record. r133's event stream
+for `my_list` (`event_type: table_registered`, the artifact to read is
+`shared/hubs/eventhub_events.json`):
+
+```
+03:17:05  cols=4  by=orchestrator      registered at kickoff, with columns
+04:37:21  cols=3  by=orchestrator
+04:57:03  cols=0  by=BACKEND           <- the lane re-registered without columns
+04:57:29  cols=0  by=orchestrator      <- the status flip propagated the empty schema
+```
+
+26s later the skeleton regenerated and baked in `class MyList(Base): id`. Sibling `ratings` was
+never written again after 04:38 and kept all 4 columns — **the only difference between them is
+who wrote LAST.** FIX #90 made an empty registration legal for a table nobody has described yet;
+it must not also license destroying one. A table with zero columns cannot exist (database_scaffold
+synthesises an `id` PK rather than raising), so empty carries no information and now behaves
+exactly like `schema=None`. Over 56 runs: 2 wipes (r133 `my_list` 3→0, r119 `profiles` 5→0, both
+by the backend lane); **r119 survived only by luck** — a later registration restored the columns
+63s on. The wipe is fatal precisely when it is the LAST write before scaffolding. Column
+REDUCTIONS (45 seen) are deliberately untouched — real revisions — and the 23 spine `users` 6→4
+shrinks provably never reach the model (framework re-synthesises spine tables; checked
+r103/r113/r115). Breadcrumb: `metadata.schema_wipe_prevented_by`.
+
+**Three axes closed as NEGATIVE results — do not spend on them again:**
+
+| axis | measurement | verdict |
+|---|---|---|
+| "`games` 0.62 because it has no backing API" | pages with a resolvable `apis_used` mean **0.619**, dangling **0.574** (n=10), none declared **0.674** | **unsupported** — an unbacked page does not predict low fidelity (the none-declared group is mostly login/landing, which correctly have none) |
+| dangling `apis_used` (10 found) | every one is a path-PARAM-NAME mismatch (`/api/titles/{id}` vs registered `{title_id}`, `{item_id}`, `{genre_id}`), and `frontend_audit.audit_ui_page` already matches each `{param}`/`:param` as a **path-segment wildcard** against source | **no harm** — only `registryhub`'s endpoint-deprecation cascade rewrites `apis_used` by exact string and would miss these; downstream is param-agnostic and prompt text is unaffected |
+| "make the generic #10/#263 body fallback denial-aware" (the #575b hazard, on the id path) | 9435 chain steps, **577** true cross-user denial steps via the repo's own `_is_cross_user_denial`; only **10** carry a `${var}` no step saved, and all 10 are `${rand}` — a documented BUILTIN random suffix, not the id fallback (r135: `DELETE /api/v1/tenants/${rand}` → `.../616508006` → 404, correct) | **0 of 577 exposed** — the hazard is real in principle but absent in every trajectory; no speculative code |
+
+> The `DELETE /api/v1/tenants/${rand}` case is worth remembering as the shape to watch: had the
+> id fallback reached it, the step would have deleted a REAL tenant listed two steps earlier and
+> still been recorded as a coverage pass — the #566x failure mode exactly (a step that PASSES is
+> the bug). `${rand}` is what prevents it today.
+
+---
+
 ## 6. Other KNOWN-OPEN issues (documented, not yet fixed)
 
 > **2026-08-11 re-measurement:** items 1 and 3 look SUBSUMED by §5.0 (#566x). Item 1's *staleness*
