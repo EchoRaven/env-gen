@@ -1175,6 +1175,29 @@ untouched. User-to-USER tables (`follows`) are excluded, and only bare COLLECTIO
 affected. Replay: **25 historically-unscoped reads in 13 runs become scoped, including both of
 r141's live leaks.**
 
+**The deciding evidence is not a privacy judgement — the framework already contradicts itself.**
+On this exact shape the projected WRITE is guarded in **25 of 25** delivered pairs (`_fw_owns` →
+403 on a foreign owner, then `_fw_owner_val` auto-fill) while the paired READ is scoped in only
+**10**: *15 asymmetric pairs across 12 runs*, every one with a direct `user_id`. r141 ships both
+halves side by side:
+
+```
+POST /api/my-list  ->  403 "user_id does not belong to the caller"
+GET  /api/my-list  ->  db.query(MyList).limit(100).all()      # everyone's rows
+```
+
+#566y's own docstring already named this for the sub-entity case — *"a read that returns every
+persona's rows contradicts the write it is paired with — and leaks"*. The direct-FK case is the
+same sentence with a different column. #598 makes all 25 symmetric.
+
+**Two adjacent audits over the same 144 backends came back CLEAN — denominators printed first,
+recorded so they are not re-run:**
+
+| audit | denominator | finding |
+|---|---|---|
+| BY-ID handlers on an owner-bearing model | GET 3, PUT 11, PATCH 4, **DELETE 121** | **0 unguarded** |
+| bare-collection GETs taking an owner column as a QUERY PARAM | 1036 GETs | **0** — `?profile_id=X` is simply ignored by FastAPI and cannot bypass scoping |
+
 > ★ **METHOD WARNING, earned three times in one session.** This audit reported a clean, confident
 > **ZERO** twice before it worked: the first regex died on `\)\s*\ndef` (greedy `\s*` eats the
 > newline the `\n` then demands), the second on `\(([^)]*)\)` (handler args contain
