@@ -1754,25 +1754,32 @@ is sound — the records carry real evidence (`response_key_changed` 583, `auth_
 complete mechanism: find the endpoint's registered consumers, send each an urgent event, and
 **auto-create a fix task per consumer agent**.
 
-It reaches almost nobody:
+It reaches almost nobody. Measured **at emit time**, from each event's own `recipients` field:
 
 | | |
 |---|---|
-| breaking changes over 45 runs | **1196** |
-| reaching at least one registered consumer | **299 (25%)** |
-| runs whose consumer store holds only `_meta` | **30 of 45** |
+| breaking changes across 42 runs | **1129** |
+| **actually reached anybody** | **33 (2.9%)** |
+| would have, with #627 (timestamp-ordered replay) | **282 (25.0%)** |
+| runs whose consumer store ends holding only `_meta` | 30 of 45 |
 
-The split is bimodal, not gradual. In those 30 runs *every* breaking change is emitted to an
-empty recipient list and no fix task is ever made — because `register_consumer` is an **LLM
-tool**, so the whole chain depends on a lane thinking to call it. `response_key_changed` alone is
-583 of the 1196, which is precisely the shape of the crashes the verifier then files as the
-unowned P0s of §5.5 ("Landing page renders blank", "default-imported `listTitles` is an object,
-not a function").
+> **Measurement correction, made after #627 shipped.** The first version of these numbers came
+> from the FINAL consumer store — "25% → 58%". Both ends were wrong: the store accumulates all
+> run long, so it credits consumers that did not exist when the event fired. **A final-state
+> store is not a timeline** — the same trap as the squash-merge reading in §5.3. 25%/58% are the
+> upper bounds; 2.9% → 25.0% is what happened. The status quo is far worse than first stated and
+> the fix's reach is smaller; the fix itself is unchanged.
+
+`register_consumer` is an **LLM tool**, so the whole chain depends on a lane thinking to call it.
+`response_key_changed` alone is 583 of the total, which is precisely the shape of the crashes the
+verifier then files as the unowned P0s of §5.5 ("Landing page renders blank", "default-imported
+`listTitles` is an object, not a function").
 
 The link already exists in the framework's own records: **435 of 738** registered pages carry a
 non-empty `apis_used`, and all **754** entries are already in the canonical `METHOD /path` form
-that matches `endpoint_id`. Registering the page as a consumer at `register_ui_page` takes
-routing from **25% → 58%** on the same corpus, with no new source of truth and no LLM discretion.
+that matches `endpoint_id` — no new source of truth, no LLM discretion. The residual **75%** are
+endpoints that no registered page declares; widening that source is a separate question and was
+deliberately not attempted.
 
 Two details that matter:
 > * **The owner is the frontend lane, from the page's own path — never `created_by`.** That field
@@ -1782,6 +1789,47 @@ Two details that matter:
 >   pending branch only triggers when the endpoint is absent, and the entry is auto-promoted when
 >   it arrives. With the endpoint already present the normal path runs, and the schema subset
 >   gate is skipped because no `expected_schema` is claimed on the lane's behalf.
+
+---
+
+### §5.7 — the sweep: stop finding this class one axis at a time (#628, 2026-08-12)
+
+Four fixes in a row were the same shape — a complete mechanism wired to nothing (#623 a false
+label, #625 a missing guard, #626 an owner that resolved to nobody, #627 a notifier with no
+subscribers). Rather than open a fifth axis by guesswork, enumerate the class directly: **every
+event whose `recipients` the code COMPUTES, measured against how often that list came out empty.**
+
+```
+   total   empty    sent   event_type
+   72671   72671       0   agent_status              <- literal recipients=[] in code: by design
+    4315    4315       0   task_claimed              <- by design
+    1129    1096      33   breaking_change_detected  <- MIXED
+     555     443     112   bug_found                 <- MIXED
+    1186     164    1022   table_registered          <- MIXED
+    4652     131    4521   task_created              <- MIXED
+```
+
+The always-empty rows are broadcasts and are fine. The **mixed** rows are the class: the code
+intends to reach someone and sometimes reaches no one.
+
+**`bug_found`: 443 of 555 (80%) reached nobody.** The cause is exact and it is *timing*, not
+routing — of the 16 runs that ever record a `bug_found` subscription, **144** undelivered events
+were filed BEFORE the subscription existed and **0** after; the other **29 runs never subscribe at
+all**. #628 names the triage owner explicitly, the shape `_record_breaking_change` already uses.
+`publish_event` UNIONS explicit recipients with subscription matches, so it can only add. The
+assignee is excluded on purpose — `create_task(assignee=…)` already wakes the fixer, and #626 now
+guarantees there is one.
+
+> **A hypothesis the code itself asserted, and the data refutes.** An older note in `bug_create`
+> blames a `source_hub` mismatch with the debugger's `('verifier','bug_found')` subscription.
+> Verifier-sourced events go undelivered **312 of 408** times and `browser_test_user` ones do get
+> through **15** times, so source is not the discriminator. The rejected hypothesis is now
+> recorded in the source and pinned by a test, because it reads plausible enough to be
+> re-derived.
+
+Also swept and **not** acted on: `table_breaking_change_detected` has **never fired** in any run —
+zero occurrences, so there is nothing measured to fix, and the table-side consumer store is left
+exactly as it is.
 
 ---
 

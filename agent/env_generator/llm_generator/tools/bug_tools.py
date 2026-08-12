@@ -129,11 +129,30 @@ class BugCreateTool(HubTool):
             bug_artifacts=bug_artifacts or {},
             triage_history=[],
         )
+        # #628 — NAME THE TRIAGE OWNER; DO NOT WAIT TO BE SUBSCRIBED TO.
+        # This call passed no `recipients`, so delivery depended entirely on a matching
+        # subscription existing AT THAT MOMENT. Measured over 45 runs: 443 of 555 bug_found
+        # events reached nobody, and the model is exact — of the 16 runs that ever record a
+        # bug_found subscription, 144 undelivered events were filed BEFORE it existed and **0**
+        # after. The other 29 runs never subscribe at all, so every bug is broadcast into the
+        # void. (The code's own older note blamed a source_hub mismatch; that is NOT the cause —
+        # verifier-sourced events go undelivered 312 of 408 times, and browser_test_user ones do
+        # get through 15 times. It is timing, not source.)
+        #
+        # `_record_breaking_change` already shows the right shape: name the recipients, do not
+        # hope a subscription exists. publish_event UNIONS explicit recipients with subscription
+        # matches, so this can only add.
+        #
+        # The ASSIGNEE is deliberately excluded — create_task(assignee=...) already wakes them
+        # ("assigned task_created → for-self wakeup"), and waking the same agent twice for one
+        # bug is noise. This informs the triage role about bugs it would otherwise never see.
+        _notify = [a for a in (_TRIAGE_OWNER_626,) if a and a != _owner]
         try:
             self._hubs.eventhub.publish_event(
                 source_hub=source or "verifier",
                 event_type="bug_found",
                 payload={"task_id": task["id"], "severity": severity, "title": title},
+                recipients=_notify,
                 priority="high" if severity in ("P0", "P1") else "normal",
             )
         except Exception:
