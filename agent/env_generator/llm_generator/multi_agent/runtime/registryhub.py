@@ -1289,16 +1289,19 @@ class RegistryHub:
         Measured at EMIT TIME, from each event's own `recipients` field — the only reading that
         answers "was anyone actually told": of **1129** breaking changes across 42 runs, **33
         (2.9%)** reached anybody. Replaying the corpus in timestamp order, registering consumers
-        from pages that existed BEFORE each event would have added **+249**, taking it to **282
-        (25.0%)**. `response_key_changed` alone accounts for 583 of the total, which is exactly
+        from pages that existed BEFORE each event would have added **+324**, taking it to **357
+        (31.6%)**. `response_key_changed` alone accounts for 583 of the total, which is exactly
         the shape of the crashes the verifier then files as unowned P0s ("Landing page renders
         blank", "default-imported listTitles is an object, not a function").
 
-        (Do not read those numbers off the final consumer store. Doing that gave 25% → 58% and
-        both ends were wrong: the store accumulates all run long, so it counts consumers that did
-        not exist when the event fired. A final-state store is not a timeline — the same mistake
-        the squash-merge reading made in #622. 25%/58% are the *upper bounds*; 2.9%/25.0% are
-        what happened.)
+        That figure took three attempts and both wrong ones are recorded on purpose:
+          * "25% → 58%" read the FINAL consumer store, which accumulates all run long and so
+            credits consumers that did not exist when the event fired. A final-state store is
+            not a timeline — the same mistake the squash-merge reading made in #622.
+          * "2.9% → 25.0%" fixed the timeline but compared endpoint ids with a hand-rolled
+            string match, missing that `endpoint_id()` already collapses `{param}` → `{}`
+            (PROPOSAL #39). Do not reimplement the code's normalization in a measurement —
+            call it. (A "fix" for that non-problem was written and reverted.)
 
         The link already exists in the framework's own records: 435 of 738 registered pages
         carry a non-empty `apis_used`, and all 754 entries are already in the canonical

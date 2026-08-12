@@ -1760,15 +1760,21 @@ It reaches almost nobody. Measured **at emit time**, from each event's own `reci
 |---|---|
 | breaking changes across 42 runs | **1129** |
 | **actually reached anybody** | **33 (2.9%)** |
-| would have, with #627 (timestamp-ordered replay) | **282 (25.0%)** |
+| would have, with #627 (timestamp-ordered replay) | **357 (31.6%)** |
 | runs whose consumer store ends holding only `_meta` | 30 of 45 |
 
-> **Measurement correction, made after #627 shipped.** The first version of these numbers came
-> from the FINAL consumer store — "25% → 58%". Both ends were wrong: the store accumulates all
-> run long, so it credits consumers that did not exist when the event fired. **A final-state
-> store is not a timeline** — the same trap as the squash-merge reading in §5.3. 25%/58% are the
-> upper bounds; 2.9% → 25.0% is what happened. The status quo is far worse than first stated and
-> the fix's reach is smaller; the fix itself is unchanged.
+> **That number took three attempts. Both wrong ones are kept, because each is a distinct trap.**
+> 1. **"25% → 58%"** read the FINAL consumer store, which accumulates all run long and credits
+>    consumers that did not exist when the event fired. *A final-state store is not a timeline* —
+>    the same trap as the squash-merge reading in §5.3.
+> 2. **"2.9% → 25.0%"** fixed the timeline but compared endpoint ids with a hand-rolled string
+>    match, missing that `endpoint_id()` already collapses `{param}` → `{}` (PROPOSAL #39). *Do
+>    not reimplement the code's normalization in a measurement — call it.* I wrote a "fix" for
+>    that non-problem, discovered from a failing test that the behaviour was already there, and
+>    reverted it.
+>
+> The fix itself never changed; only its stated impact did. Both errors were in the same
+> direction — measuring the code from the outside instead of running it.
 
 `register_consumer` is an **LLM tool**, so the whole chain depends on a lane thinking to call it.
 `response_key_changed` alone is 583 of the total, which is precisely the shape of the crashes the
@@ -1826,6 +1832,19 @@ guarantees there is one.
 > through **15** times, so source is not the discriminator. The rejected hypothesis is now
 > recorded in the source and pinned by a test, because it reads plausible enough to be
 > re-derived.
+
+**The other two MIXED rows, closed:**
+> * **`table_registered` / `table_implemented` (164 empty each) — benign, no action.** The 328
+>   events are exactly 4 framework spine tables (`tenants`, `users`, `oauth_clients`,
+>   `oauth_authorization_codes`, all `kind: spine`) × 2 events × 41 runs, registered at bootstrap
+>   when no consumer can exist yet.
+> * **`task_created` (131 empty) — the same defect as #626, already fixed.** Every one had
+>   `assignee=None` **at creation time**, and their sources are exactly the bug filers
+>   (browser_test_user 63, verifier 48, api_test_user 18). `create_task` emits
+>   `recipients=[assignee] if assignee else []`, so #626's guarantee of an owner closes this row
+>   too — and confirms #628's premise that the assignee is already woken.
+>   *(First reading said 21 of them DID have an assignee. That came from the final task record;
+>   those 21 were reassigned later. Same trap, caught before it reached a fix.)*
 
 Also swept and **not** acted on: `table_breaking_change_detected` has **never fired** in any run —
 zero occurrences, so there is nothing measured to fix, and the table-side consumer store is left
