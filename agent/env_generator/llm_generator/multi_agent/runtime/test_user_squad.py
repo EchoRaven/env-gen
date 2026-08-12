@@ -31,6 +31,67 @@ MODALITY_PROFILE = {
 # bug_create `source` values the three test-user forms file under.
 TEST_USER_SOURCES = frozenset(MODALITY_PROFILE.values())
 
+# #625 — NEVER DRIVE A TARGET THAT ISN'T LISTENING.
+# The squad spawns one agent per goal and each files its own bugs. When the stack is down every
+# agent independently discovers "connection refused" and files it as a product defect: 47 of the
+# 555 bugs across 40 runs are connectivity-shaped and 46 of those are P0 — 19 in r121, 15 in
+# r137, 8 in r125. They are one environment event reported N times, and the lanes then spend
+# real turns triaging them ("False-positive: test-user targeted wrong ports", "Root cause
+# resolved: docker stack was not up when test-users ran", "Duplicate: same stack-down root
+# cause").
+#
+# test_user_validation already got this guard in Round 32 — it waits for /health and reports
+# ENV_UNAVAILABLE "instead of misdiagnosing the app". The SQUAD, which is what actually files
+# the bugs, never did. Same guard, per modality, so a half-up stack only silences the half that
+# cannot run.
+#
+# Deliberately a SOCKET probe, not a filter on bug text: "unreachable" appears in real product
+# bugs too (r119's P2 "POST /api/continue-watching returns 404 — endpoint unreachable / route
+# not mounted" is genuine), and classifying findings after the fact would suppress those.
+_PROBE_DEADLINE_625 = 60.0
+_PROBE_INTERVAL_625 = 5.0
+
+
+def _probe_http_625(url: str, timeout: float = 4.0):
+    """ANY status proves the socket serves (404 from a bare root is still 'up'). None = down.
+    Module-level so tests can monkeypatch it instead of opening real sockets."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310
+            return getattr(resp, "status", None) or resp.getcode()
+    except Exception as exc:
+        return getattr(exc, "code", None)  # an HTTPError still means something answered
+
+
+def targets_reachable_625(ui_base: str, api_base: str, *,
+                          deadline: Optional[float] = None) -> Dict[str, bool]:
+    """{'ui': bool, 'api': bool} — retried until `deadline` so a slow-starting stack is not
+    misreported as down. Returns as soon as both answer; the healthy case costs two probes.
+
+    `deadline` resolves at CALL time, not at def time: a module-level default would bind 60.0
+    into the signature, leaving the constant unadjustable and every caller stuck with it."""
+    import time as _time
+    out = {"ui": False, "api": False}
+    end = _time.time() + max(_PROBE_DEADLINE_625 if deadline is None else deadline, 0.0)
+    while True:
+        if not out["api"] and api_base:
+            out["api"] = _probe_http_625(api_base.rstrip("/") + "/health") is not None
+        if not out["ui"] and ui_base:
+            out["ui"] = _probe_http_625(ui_base) is not None
+        if (out["api"] or not api_base) and (out["ui"] or not ui_base):
+            return out
+        if _time.time() >= end:
+            return out
+        _time.sleep(min(_PROBE_INTERVAL_625, max(end - _time.time(), 0.0)))
+
+
+def _runnable_goals_625(goals: Sequence[Mapping[str, Any]],
+                        reach: Mapping[str, bool]) -> List[Dict[str, Any]]:
+    """Drop the goals whose modality has no listening target. `mcp` talks to the API."""
+    need = {"browser": "ui", "api": "api", "mcp": "api"}
+    return [dict(g) for g in goals
+            if reach.get(need.get(str(g.get("modality") or "browser"), "api"), False)]
+
 
 def _collection_groups(business_eps: Sequence[Mapping[str, Any]]) -> Dict[str, Dict[str, Any]]:
     """Group business endpoints into resource collections (base path -> verbs present).
@@ -389,6 +450,25 @@ async def run_test_user_squad(
     logger = getattr(orch, "_logger", None)
     goals = list(goals)
 
+    # #625: probe before spawning. An agent that cannot reach the app files the environment's
+    # state as a product defect, once per goal.
+    _reach = targets_reachable_625(ui_base, api_base)
+    report["reachable"] = dict(_reach)
+    if not (_reach["ui"] and _reach["api"]):
+        _kept = _runnable_goals_625(goals, _reach)
+        _skipped = len(goals) - len(_kept)
+        report["skipped_env_unavailable"] = _skipped
+        report["error"] = (
+            f"env_unavailable: ui={ui_base} {'up' if _reach['ui'] else 'DOWN'}, "
+            f"api={api_base} {'up' if _reach['api'] else 'DOWN'} — "
+            f"{_skipped} goal(s) not dispatched (their findings would be the stack's state, "
+            f"not the app's)")
+        if logger is not None:
+            logger.warning("[test-user squad] %s", report["error"])
+        goals = _kept
+        if not goals:
+            return report
+
     async def _run_one(idx: int, goal: Mapping[str, Any]) -> Dict[str, Any]:
         name = str(goal.get("name") or f"goal_{idx+1}")
         modality = str(goal.get("modality") or "browser")
@@ -735,6 +815,17 @@ async def run_squad_for_delivery(orch: Any, version: str = "",
             ui_base=inp["ui_base"] or inp["api_base"],
             api_base=inp["api_base"] or inp["ui_base"],
             identity=inp["identity"], max_concurrent=max_concurrent)
+        # #625: if the target was down, some or all goals were never dispatched. That must NOT
+        # read as a pass — with no agent running, no P0 is filed, and `ran=True, p0=0` is
+        # exactly the input that sets _tu_squad_passed and releases the milestone UNTESTED.
+        # `squad_gate_outcome` already models this as `retry` (defer without burning an
+        # attempt), which is what "could not run" deserves. Returning before the ledger also
+        # keeps a stack-down cycle from recording every goal as a fresh failure.
+        if report.get("skipped_env_unavailable"):
+            if logger:
+                logger.warning("TEST-USER SQUAD (v%s): %s", version, report.get("error"))
+            return {"ran": False, "reason": report.get("error"), "report": report,
+                    "goals": goals, "modalities": modalities, "verdict": "ENV_UNAVAILABLE"}
         # Collect the defects the agents filed and record per-goal pass/fail in the ledger.
         bugs = collect_test_user_bugs(orch)
         agent_by_mod = {}

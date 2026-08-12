@@ -1663,6 +1663,57 @@ delivery risk and no measurement behind them.
 
 ---
 
+### §5.4 — the BUG RECORD: an artifact class never audited, and 46 P0s that were the stack, not the app (#625, 2026-08-12)
+
+`bug_found` fires **555 times across 40 runs** (median **13/run**), **314 of them P0**. Joining
+each bug's `task_id` to workhub gives the outcome:
+
+| | completed | pending | cancelled | in_progress | failed |
+|---|---|---|---|---|---|
+| **P0** | 192 | **65** | **46** | 8 | 3 |
+| P1 | 143 | 24 | 9 | 1 | 3 |
+
+**111 of 314 P0 bugs (35%) are never fixed** — including 11 still open in r134, the run that
+printed `MULTI-MILESTONE VALIDATED`.
+
+Reading the 46 P0 **cancellations** is what pays. Most carry sound reasons (duplicates,
+out-of-milestone-scope), but three recur and are all one thing: *"False-positive: test-user
+targeted wrong ports"*, *"Root cause resolved: docker stack was not up when test-users ran"*,
+*"Duplicate: same stack-down root cause"*. Counting the whole corpus, **47 of the 555 bugs are
+connectivity-shaped and 46 of those are P0** — 19 in r121, 15 in r137, 8 in r125. The squad
+spawns one agent per goal and each files its own bug, so a single environment event becomes a
+dozen P0s, and the lanes then spend real turns triaging them.
+
+`test_user_validation` already had this guard from Round 32 — wait for `/health`, report
+`ENV_UNAVAILABLE` "instead of misdiagnosing the app". The **squad**, which is what actually files
+the bugs, never did. #625 probes both targets before spawning and drops only the goals whose
+target is down (`browser`→ui, `api`/`mcp`→api). A **socket probe, not a text filter**: r119's P2
+*"POST /api/continue-watching returns 404 — endpoint unreachable / route not mounted"* is a real
+defect that any keyword rule would have suppressed.
+
+> **The hazard the fix itself introduced, and how it is closed.** Skipping the dispatch means no
+> agent runs, so no P0 is filed — and `ran=True, p0=0` is exactly the input that sets
+> `_tu_squad_passed` and releases the milestone. Silently *worse* than the false alarms, which at
+> least blocked release. `squad_gate_outcome` already models "could not run" as **`retry`**
+> (defer without burning an escape attempt), so `run_squad_for_delivery` now returns `ran=False`
+> — before the failure ledger records every undispatched goal as a fresh regression.
+
+**Two hypotheses tested here and REJECTED** — neither shipped:
+> * *That the stale-worktree P0 ("Frontend lane produced ZERO files") was downstream of #622.* The
+>   run it occurs in (r100) has **0** merge_conflict events.
+> * *That agents edit the compose host ports, colliding between runs.* Every run's compose is
+>   byte-identical on ports (`5432:5432`, `3000:8082`, `8081:3000`) — the framework writes them
+>   and no lane changed them. r121's cancel reason cites `:8082`, which is the backend's
+>   **container** port; the test-user's `:8081`/`:3000` were the correct host ports, so that
+>   agent's stated justification was wrong even though its conclusion (stale infra) was right.
+
+**Also measured, no defect found:** whether lane work is stranded out of `integration`. Using
+merge-base against each lane's last pull, of the frontend files differing at run end **25** had
+the lane's exact version land on integration, **5** were merely stale, and **0** never reached it.
+The merge pipeline is sound.
+
+---
+
 ## 6. Other KNOWN-OPEN issues — ALL FOUR CLOSED 2026-08-12
 
 > **2026-08-12: every item below has a measured verdict. Nothing here is open.** Three were
