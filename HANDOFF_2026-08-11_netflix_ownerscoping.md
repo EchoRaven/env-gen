@@ -1380,6 +1380,53 @@ building a consumer would repeat the `games` overfitting trap. Recorded, not imp
 
 ---
 
+### §5.1 — the TEST-USER REPORTS: an artifact class never audited (2026-08-12)
+
+99 report files across 70 runs, never examined in this arc. Three results.
+
+**1. The only failing UI flow in the corpus is `login` — and its diagnosis was wrong (#612,
+LANDED).** 12 of 66 flow runs fail, every one saying *"the form is not wired to the API"*.
+Arbitrated against the verification chains of those same runs, that is **false in all 12**:
+`POST /auth/login` answered **200** in every one (r142 alone logged 54 successful logins). The
+observation (no token, no navigation) is real; the causal clause was invented, and it is
+load-bearing — it lands in the failure ledger and sends the frontend lane to re-wire a form that
+already works. `test_user_validation` had discriminated correctly since #566o; this second path
+never got the fix. Now four signals: no /auth request → not wired; all ≥400 → credentials or
+backend, explicitly NOT wiring; 2xx without a token → response shape; plus the direct-API login
+(#504) the same function already computes.
+
+**2. The API section fails 18.2% of steps (62 of 340), and the biggest family is ALREADY FIXED.**
+`create → 201` followed by `list → 0 rows` and `delete → 404` appears in **7 of 143** create+list
+pairs. Cause, read off the delivered handlers: the projected POST used `valid.setdefault(owner)`,
+so a body carrying a FOREIGN owner value won — the row was created under someone else's owner,
+invisible to its own writer, and undeletable by them. Every one of the 7 lacks the `_fw_owns`
+guard (#566s/#577); **0 of the 8 runs that HAVE the guard show the symptom**. Directional, not
+conclusive — only 8 guarded runs exist — but it is the first validation of that fix against
+user-visible behaviour rather than unit tests.
+
+**3. OPEN, and it needs a running app: `POST /api/continue-watching` → 405 in 8 runs**, including
+the recent **r141 and r143**. What was ruled out statically, so nobody repeats it:
+
+| checked | result |
+|---|---|
+| endpoint declared in the contract? | **yes, 8/8** |
+| projected handler emitted into `main.py`? | **yes, 8/8** (`@app.post` at column 0, top level) |
+| is it inside a conditional that might not run? | no — the last column-0 block opener closes well before it |
+| does `custom_routes.py` define a conflicting POST? | no — it defines **GET only** for that path |
+| Starlette route order (custom router included before the projected routes)? | not the cause — a PARTIAL method match does not stop a later FULL match |
+| `next(iter(route.methods))` in the override filter picking an arbitrary method? | real latent bug, but **inert: 0 multi-method routes in 2533** across the corpus |
+
+The body is FastAPI's own `{"detail":"Method Not Allowed"}`, so FastAPI is answering — the route
+table at runtime does not contain the POST that the source clearly registers. **Next step is to
+print `app.routes` on a live container**, which is an experiment.
+
+> Two blind spots this audit hit, both now recorded: `POST /auth/login` is **never exercised in
+> the API section of any of the 66 reports** (so that section could not arbitrate the login
+> question — the chains had to), and the report's `flow` key is `flow`, not `name`, which cost a
+> false "0 failing flows" reading before the denominator was checked.
+
+---
+
 ## 6. Other KNOWN-OPEN issues — ALL FOUR CLOSED 2026-08-12
 
 > **2026-08-12: every item below has a measured verdict. Nothing here is open.** Three were
