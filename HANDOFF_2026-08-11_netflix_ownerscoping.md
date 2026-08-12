@@ -1036,13 +1036,7 @@ Ruled out on `login` — **do not re-chase**: the chrome slots ARE filled (reCAP
 with no product literal; `<footer>` 43/43; brand header 43/43; footer links median 6). `Get Help`
 is missing in 15/43 but scores 0.592 with vs 0.596 without — **nothing**.
 
-**Documented, not fixed — the discarded gradient.** `design_system.json` measures it
-(`login: {"background": "#161616", "gradient_note": "top-left radial #3A1010 → transparent →
-#000 bottom"}`, `player_controls: {"gradient": "bottom rgba(0,0,0,0.85) → transparent (top
-40%)"}`) and `_screen_surface_bg` keeps only the flat hex — exactly the judge's "implementation
-is flat black; reference uses a dark red gradient". But only **1 of 45** design systems records a
-screen-level gradient (7 record one at `palette` level), so there is no basis for a projector
-change yet. If screen-level gradient capture becomes reliable, this is the next lever.
+**The discarded gradient — FIXED (#602), and my earlier dismissal was wrong.** §5.0v said "evidence too thin" because `palette.gradient_note` appears in **1 of 45** design systems. **That was the wrong field.** The REGION text carries it in **141** runs — `top-bar` state *"dark reddish gradient background"* — and every full-bleed band carries its own measured `colors.bg`, so both stops are derivable (`#3b1717` → `#321213` → `#161616`). `_screen_surface_bg` already emitted a `linear-gradient` for an analyst-authored `surfaces` entry; it just could not reach that shape from region measurements, so branch (b) flattened the screen to its largest band. Two narrowings, each forced by a real false positive over 2880 screens: a luminance-spread heuristic fires on **1759** (a hero band's `colors.bg` is the PHOTO's colour — `shows` spread 235, one band `#ffffff`); requiring a band whose own `state` says "gradient" cuts it to 276; excluding imagery-named bands gives **128 — 126 `login`, 2 `player`**. Replay: 128 screens become a gradient, 379 stay flat, an authored `surfaces` entry still wins.
 
 **`games` — explained, not fixed.** Every dimension is 0.82–0.89 except `components` 0.610; the
 deviations say "section titled 'New' with movie posters instead of 'Party Games' with game
