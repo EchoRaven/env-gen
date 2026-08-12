@@ -1234,6 +1234,51 @@ says *"No 'Ad NN' chip"*), skip negations, and require a live-playback word with
 **Gate replay over the 40 scored runs, #595+#601: blocking screen-instances 141 → 98;
 `player` 20 → 0, `browse_by_languages` 27 → 6, `my_list` 6 → 4, nothing else moved.**
 
+### §5.0z — `title_detail` closed with NO further fix, and the lens discipline that got there
+
+After #584 the artifacts show **no remaining structural cause** for `title_detail` (mean 0.580,
+20/40 blocker). Following the router to the component that actually renders — through guard
+wrappers AND through #534's delegation into `../components/TitleDetailModal.jsx` — **23 of 26**
+routed title pages carry every declared section:
+
+| section | present | with | without |
+|---|---|---|---|
+| synopsis | 25/26 | 0.598 | 0.100 |
+| modal shell | 23/26 | 0.610 | 0.343 |
+| metadata row | 23/26 | 0.620 | 0.260 |
+| cast/genres | 23/26 | 0.620 | 0.260 |
+| episodes | 23/26 | 0.604 | 0.383 |
+| seasons | 21/26 | 0.627 | 0.376 |
+
+The 3 that lack everything score 0.26–0.38 — individual broken pages, not a pattern. **Do not
+manufacture a fix here**; the next lever on this screen needs a post-#584 run, which is an
+experiment.
+
+**Three hypotheses tested and KILLED on the way — recorded so nobody re-runs them:**
+
+| hypothesis | measurement | verdict |
+|---|---|---|
+| `episodes` shipping EMPTY (#599) starves the episode list | empty-table runs score **0.594 / 56% pass**, loading-table runs **0.574 / 20%** | **backwards** — #599 is a real functional bug but not this |
+| the missing "More Like This" grid | declared in **0 of 144** measured title_detail screens (it is below the reference's fold) | **not a defect** |
+| the browse page behind the modal (6 of 14 measured regions are `background-*`) | present 18/26, delta **+0.025** | **negligible** |
+
+> ★★ **METHOD, now earned SIX times in one session — and it cuts BOTH ways.**
+>
+> *Zero findings* were produced three times by looking in the wrong place: chain error text (the
+> persisted step record has no body field), the reCAPTCHA line (the framework words it "not a
+> bot"), the handler regex (`\)\s*\ndef` — the greedy `\s*` eats the newline the `\n` then
+> demands; and `\(([^)]*)\)` — args contain `Depends(get_db)`).
+>
+> *Dramatic findings* were produced three more times the same way: "the gradient evidence is too
+> thin" (read `palette.gradient_note`, 1/45 — the REGION text has it in 141 runs); "the routed
+> title page is a 12-line stub" (the route regex matched `/watch/:titleId` because it contains
+> "title", and `<RequireAuth>` was taken for the page); "8 pages are missing their metadata row"
+> (6 of them delegate to `../components/`, which the reader never followed).
+>
+> **Rule: print the DENOMINATOR before believing a zero, and resolve the full chain — route →
+> guard → delegate → component — before believing a dramatic one.** A partial lens is as good at
+> inventing a defect as at hiding one.
+
 > ★ **METHOD WARNING, earned three times in one session.** This audit reported a clean, confident
 > **ZERO** twice before it worked: the first regex died on `\)\s*\ndef` (greedy `\s*` eats the
 > newline the `\n` then demands), the second on `\(([^)]*)\)` (handler args contain
