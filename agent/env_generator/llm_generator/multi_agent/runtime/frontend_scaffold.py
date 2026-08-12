@@ -2569,6 +2569,12 @@ def _screen_surface_bg(design, screen, pal=None):
                 if entry is not None:
                     break
         if isinstance(entry, Mapping):
+            # #602: the measurement may say this surface is a GRADIENT — reach the
+            # `linear-gradient` shape branch (a) already supports, instead of flattening
+            # the screen to its largest band's colour.
+            _grad = _measured_vertical_gradient_602(entry)
+            if _grad:
+                return {"prop": "background", "value": _grad}
             best_hex, best_score = None, 0.0
             for c in (entry.get("components") or []):
                 if not isinstance(c, dict):
@@ -2700,6 +2706,65 @@ def _layout_metrics_527(design):
         for k in _LAYOUT_FALLBACKS_527:
             out[k + "_measured"] = False
     return out
+
+
+#602 — THE MEASURED GRADIENT THE PROJECTOR THREW AWAY. `login` is the arc's #1 per-screen
+# fidelity blocker (below 0.65 in 29 of 40 scored runs, mean 0.593) and clustering its 282 judge
+# deviations puts background/gradient FIRST at 49 mentions — "implementation is flat black;
+# reference uses a dark red gradient". §5.0v recorded this as "evidence too thin, documented not
+# fixed" on the strength of `palette.gradient_note` appearing in 1 of 45 design systems. That was
+# THE WRONG FIELD: the region text carries it in **141** runs —
+#     top-bar   role "header bar …"  state "dark reddish gradient background, single logo mark"
+# — and each full-bleed band also carries its own measured `colors.bg`, so both stops are
+# derivable: top-bar #3b1717 -> page-background #321213 -> footer #161616.
+#
+# `_screen_surface_bg` ALREADY emits a `linear-gradient` when the analyst authored
+# `surfaces[<screen>].top_color`/`bottom_color`; it simply had no way to reach that shape from
+# region measurements, so branch (b) flattened the screen to the single largest band's colour.
+#
+# Two narrowings, each forced by a false positive over the corpus's 2880 screens:
+#   * a luminance-spread heuristic over full-bleed bands fires on **1759** of them — the measured
+#     `colors.bg` of a hero band is the PHOTO's dominant colour, not the page (`shows` spread 235
+#     because one band is #ffffff). Require a band whose own `state` SAYS "gradient": 276.
+#   * that still keeps hero bands (`movies` #504f4d, `shows` #ffffff). Exclude bands whose
+#     id/role names imagery: **128 — 126 `login`, 2 `player`** (the player's own control scrim,
+#     and #601 has already demoted that screen anyway).
+_GRADIENT_STATE_RE_602 = re.compile(r"gradient", re.I)
+_IMAGERY_BAND_RE_602 = re.compile(
+    r"hero|billboard|backdrop|artwork|collage|poster|still|video|carousel|rail|thumbnail"
+    r"|banner|image|photo", re.I)
+
+
+def _measured_vertical_gradient_602(entry: Mapping) -> Optional[str]:
+    """#602 — a CSS ``linear-gradient`` derived from the screen's measured full-bleed bands,
+    or ``None`` when the measurement does not say the surface is one."""
+    bands: List[tuple] = []
+    says_gradient = False
+    for c in (entry.get("components") or entry.get("regions") or []):
+        if not isinstance(c, Mapping):
+            continue
+        region = c.get("region")
+        if not (isinstance(region, (list, tuple)) and len(region) >= 4):
+            continue
+        try:
+            x0, y0, x1 = float(region[0]), float(region[1]), float(region[2])
+        except (TypeError, ValueError):
+            continue
+        if (x1 - x0) < 0.8:
+            continue                                   # not a full-bleed band
+        if _IMAGERY_BAND_RE_602.search(f"{c.get('id') or ''} {c.get('role') or ''}"):
+            continue                                   # a photo's colour, not the surface
+        cols = c.get("colors")
+        cbg = cols.get("bg") if isinstance(cols, Mapping) else None
+        if not _is_hex(cbg):
+            continue
+        if _GRADIENT_STATE_RE_602.search(str(c.get("state") or "")):
+            says_gradient = True
+        bands.append((y0, str(cbg).strip()))
+    if not says_gradient or len({c for _, c in bands}) < 2:
+        return None
+    bands.sort()
+    return f"linear-gradient(180deg, {bands[0][1]} 0%, {bands[-1][1]} 100%)"
 
 
 def _surf_style_attr_526(surf) -> str:
