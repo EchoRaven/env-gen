@@ -7,6 +7,29 @@ from utils.tool import BaseTool, ToolResult, ToolCategory
 from ._manager import BrowserManager, PLAYWRIGHT_AVAILABLE
 
 
+def _unescape_model_selector(selector: str) -> str:
+    """#581 — a model composing a CSS selector inside a JSON tool argument naturally writes
+    ``input[placeholder=\\"Email or phone number\\"]``. JSON decoding already removed one level,
+    so what reaches the browser still carries the backslashes and the engine rejects it
+    outright:
+
+        SyntaxError: Failed to execute 'querySelectorAll' on 'Document':
+        'input[placeholder=\\"Email or phone number\\"]' is not a valid selector.
+
+    24 occurrences across the netflix arc (also ``input[aria-label=\\"…\\"]``, ``input[
+    placeholder=\\"Full name\\"]``), each one a wasted browser step whose error teaches the
+    model nothing about the page. Drop the stray escapes before the selector is used.
+
+    Deliberately narrow: only ``\\"`` and ``\\'`` are unescaped, and only when the result still
+    contains the quote character they were escaping — so a selector that legitimately needs a
+    CSS escape (``.foo\\:bar``, an escaped ``\\\\``) is untouched."""
+    s = str(selector or "")
+    for esc, raw in (('\\"', '"'), ("\\'", "'")):
+        if esc in s:
+            s = s.replace(esc, raw)
+    return s
+
+
 _CANDIDATE_SELECTOR = "input, textarea, select, button, a[href], [role='button'], [contenteditable]"
 _CANDIDATE_ATTRS = ("name", "id", "placeholder", "aria-label", "type", "data-testid")
 
@@ -159,8 +182,8 @@ Features:
                 final_selector += f'[name="{name}"]'
             selector_type = f"role={role}" + (f" name={name}" if name else "")
         elif selector:
-            final_selector = selector
-            selector_type = f"selector={selector}"
+            final_selector = _unescape_model_selector(selector)
+            selector_type = f"selector={final_selector}"
         elif text:
             final_selector = f"text={text}"
             selector_type = f"text={text}"
@@ -266,6 +289,7 @@ class BrowserFillTool(BaseTool):
         if not self.browser.state.page:
             return ToolResult.fail("No page open. Use browser_navigate first.")
         
+        selector = _unescape_model_selector(selector)   # #581
         try:
             await self.browser.state.page.fill(selector, value, timeout=5000)
             return ToolResult.ok(f"Filled {selector} with '{value}'")
