@@ -88,10 +88,19 @@ def test_the_note_tells_the_reader_what_to_do(src):
 
 # --- the evidence ----------------------------------------------------------------------------------
 
-def test_the_timestamp_evidence_is_recorded(src):
+def test_the_CHAINS_are_named_as_the_evidence_not_the_timestamps(src):
+    """A later control showed `main.py` is newer than the report in 96% of runs regardless of
+    verdict, so the timestamp gap proves nothing on its own — the 201s do."""
     flat = " ".join(src.replace("#", " ").split())
-    assert "8 to 108 MINUTES AFTER the report" in flat
+    assert "THE EVIDENCE IS THE CHAINS" in flat
     assert "r131/r120/r114/r101" in flat and "201" in flat
+    assert "96% of runs REGARDLESS of verdict" in flat
+
+
+def test_the_scope_is_405_only_and_says_why(src):
+    flat = " ".join(src.replace("#", " ").split())
+    assert "NOT extended to 404" in flat
+    assert "no chain evidence" in flat
 
 
 if __name__ == "__main__":  # pragma: no cover

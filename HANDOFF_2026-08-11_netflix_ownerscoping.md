@@ -1431,13 +1431,32 @@ directory EXISTS**, written **3–10 minutes AFTER the report** (r115 +6, r118 +
 r125 +7, r127 +6, r128 +10, r133 +6, r134 +3, r142 +7). The framework scaffolds it
 (`write_mcp_server`); the probe ran first.
 
-★ **Two independent instances make this a class, not a coincidence: the test user runs before the
-framework has finished scaffolding, and its "missing / not built" verdicts go stale in the
+★ **Two independent instances make this a class, not a coincidence: the test user runs before
+the framework has finished scaffolding, and its "missing / not built" verdicts go stale in the
 failure ledger without ever being re-evaluated.** #614 (a 405 on a declared endpoint) and #616
 (no mcp_server/) are the same defect wearing different clothes, and both are fixed the same way —
 the verdict still fails, but the note says it is a point-in-time observation and names what to
-re-check. Anything else in the reports that reads "not built" or "missing" should be assumed to
-carry the same caveat until its timestamps are compared.
+re-check.
+
+> ★★ **THE CONTROL THAT NEARLY DIDN'T GET RUN — and corrected one of my own claims.** The
+> obvious next step was "compare timestamps for EVERY `missing` verdict". Doing it gave a
+> perfect-looking 27/27 (19 of them 404s) written before a backend rebuild — and the control
+> killed it: **`main.py` is newer than the report in 96% of runs regardless of verdict** (260 of
+> 278 `ok` steps too), because the backend is re-projected on every heal tick. The 27/27 was
+> vacuous.
+>
+> So #614 does NOT rest on its timestamps — it rests on the chains getting **201** on the same
+> call in r131/r120/r114/r101. The shipped comment led with the timestamp gap; that has been
+> corrected in place. And the caveat stays scoped to **405**, NOT extended to 404, precisely
+> because 404s have no chain evidence behind them.
+>
+> #616 survives the same control and is *strengthened* by it: among trees that HAVE an
+> `mcp_server/`, the directory is newer than the report in **9/9** of the "missing" cases and
+> only **1/10** where the probe found it. That separation is exactly what `main.py` lacks.
+>
+> **Rule: a correlation that holds for the failures must be checked against the successes before
+> it is believed.** Both of this session's near-misses (the 872-vs-6234 undercount in #609, the
+> 27/27 here) came from skipping that step.
 
 > Two blind spots this audit hit, both now recorded: `POST /auth/login` is **never exercised in
 > the API section of any of the 66 reports** (so that section could not arbitrate the login

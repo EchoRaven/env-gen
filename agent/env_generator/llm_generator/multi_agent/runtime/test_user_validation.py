@@ -381,12 +381,21 @@ def _api_test_user(base: str, api_paths: set,
             kind = "missing" if status in (404, 405) else "broken"
             # #614 — A 405 ON A DECLARED ENDPOINT IS A TIMING VERDICT, NOT A GAP. The smoke
             # runs against whatever the container is serving AT THAT MOMENT, and the projector
-            # may not have emitted the handler yet. Every one of the 8 runs that recorded
-            # `POST /api/continue-watching -> 405 missing` has a `main.py` written 8 to 108
-            # MINUTES AFTER the report — and in r131/r120/r114/r101 the verification chains
-            # later got 201 on the very same call. The verdict was correct when written and
-            # stale by the time anything read it, but it lands in the failure ledger as a
-            # missing feature and is never re-evaluated (the #597 staleness class).
+            # may not have emitted the handler yet.
+            #
+            # THE EVIDENCE IS THE CHAINS, not the timestamps. In r131/r120/r114/r101 the
+            # verification chains later got 201 on the very same `POST /api/continue-watching`
+            # the smoke had recorded as 405/missing — the endpoint demonstrably existed later.
+            # A control run afterwards showed why the timestamps alone prove nothing: `main.py`
+            # is newer than the report in 96% of runs REGARDLESS of verdict (260 of 278 `ok`
+            # steps too), because the backend is re-projected on every heal tick. The original
+            # note for this fix leaned on that 8-to-108-minute gap; it is context, not proof.
+            #
+            # This is why the caveat is scoped to 405 and NOT extended to 404: for 404s there
+            # is no chain evidence, and the timestamp on its own cannot carry the claim.
+            # The verdict was correct when written and stale by the time anything read it, but
+            # it lands in the failure ledger as a missing feature and is never re-evaluated
+            # (the #597 staleness class).
             #
             # Say so in the note rather than silently reclassifying: `missing` still fails the
             # step, and a genuinely absent endpoint reads exactly as before.
@@ -433,11 +442,15 @@ def _mcp_test_user(project_dir: Path, business_eps: List[Mapping[str, Any]]) -> 
         if not srv_root.exists():
             # #616 — "NOT BUILT" IS A TIMING VERDICT TOO. Same shape as #614's 405: the probe
             # reports what exists AT THIS MOMENT, and the framework may not have scaffolded
-            # yet. Measured across the arc's reports, 9 runs recorded "MCP surface not built"
-            # while `mcp_server/` DOES exist on disk — written 3 to 10 minutes AFTER the
-            # report in every one (r115 +6, r118 +6, r121 +5, r125 +7, r127 +6, r128 +10,
-            # r133 +6, r134 +3, r142 +7). The scaffolder emits it (`write_mcp_server`); the
-            # probe simply ran first, and its verdict then sits in the ledger unrevisited.
+            # yet. 9 runs recorded "MCP surface not built" while `mcp_server/` DOES exist on
+            # disk, written 3 to 10 minutes AFTER the report in every one (r115 +6, r118 +6,
+            # r121 +5, r125 +7, r127 +6, r128 +10, r133 +6, r134 +3, r142 +7).
+            #
+            # Here the timestamp DOES carry the claim, and a control says so: among reports
+            # whose tree has an `mcp_server/`, the directory is newer than the report in 9/9
+            # of the "missing" cases and only 1/10 of the cases where the probe FOUND it. That
+            # separation is what `main.py` lacks (newer in 96% of runs regardless of verdict),
+            # which is why #614 rests on chain evidence instead.
             #
             # `server_found` stays False — the probe must not claim to have seen something it
             # did not — but the note no longer reads as a permanent gap.

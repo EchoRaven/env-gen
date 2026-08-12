@@ -72,5 +72,13 @@ def test_it_cites_the_sibling_finding(src):
     assert "#614" in src
 
 
+def test_the_timestamp_claim_is_backed_by_a_CONTROL(src):
+    """Unlike `main.py`, the mcp_server mtime separates: newer in 9/9 of the "missing"
+    cases and only 1/10 where the probe found it."""
+    flat = " ".join(src.replace("#", " ").split())
+    assert "9/9" in flat and "1/10" in flat
+    assert "96% of runs regardless of verdict" in flat
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
