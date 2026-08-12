@@ -1314,7 +1314,7 @@ measurement-driven change or measured to have no further cause in the artifacts:
 **#584 validated against outcomes, not just behaviour.** Splitting the 25 scored runs by whether
 #584 changes the screen pick: the **8** runs where it does score `title_detail` **0.569 mean /
 12% pass**; the 17 where the pick was already right score **0.635 / 41%**. The defect is
-concentrated exactly where the fix applies. (Correlation, not proof — re-measuring needs a run.)
+concentrated exactly where the fix applies. (Correlation, not proof — re-measuring needs a run.) A permutation test run later under the same control rule confirms it: mean gap 0.094, **p = 0.009** over 8 vs 17 runs — this one holds up.
 
 **`games`: the last hard fact, and why no code follows.** `design_system.json`'s `dataset`
 declares **one** entity — `titles` (60 records). There is no games entity anywhere in the design,
@@ -1395,14 +1395,20 @@ never got the fix. Now four signals: no /auth request → not wired; all ≥400 
 backend, explicitly NOT wiring; 2xx without a token → response shape; plus the direct-API login
 (#504) the same function already computes.
 
-**2. The API section fails 18.2% of steps (62 of 340), and the biggest family is ALREADY FIXED.**
-`create → 201` followed by `list → 0 rows` and `delete → 404` appears in **7 of 143** create+list
-pairs. Cause, read off the delivered handlers: the projected POST used `valid.setdefault(owner)`,
-so a body carrying a FOREIGN owner value won — the row was created under someone else's owner,
-invisible to its own writer, and undeletable by them. Every one of the 7 lacks the `_fw_owns`
-guard (#566s/#577); **0 of the 8 runs that HAVE the guard show the symptom**. Directional, not
-conclusive — only 8 guarded runs exist — but it is the first validation of that fix against
-user-visible behaviour rather than unit tests.
+**2. The API section fails 18.2% of steps (62 of 340). The biggest family has a MECHANISM but
+NOT the statistic I first claimed.** `create → 201` then `list → 0 rows` then `delete → 404`
+appears in **7 of 143** create+list pairs. Reading the delivered handlers gives the mechanism
+plainly: the projected POST used `valid.setdefault(owner)`, so a body carrying a FOREIGN owner
+value wins — the row is created under someone else's owner, invisible to its own writer and
+undeletable by them. `_fw_owns` (#566s/#577) rejects that body with 403 instead.
+
+> ★ **Correction, under this section's own control rule.** I first wrote that all 7 affected runs
+> lack the guard and **0 of the 8 guarded runs** show the symptom, calling it directional
+> evidence. Run the base rate: the symptom appears in 7 of 112 guardless runs (6.2%), so if the
+> guard did nothing you would expect **0.5** symptomatic runs among 8 — and
+> **P(0 of 8 | guard has no effect) = 0.60**. Zero is the single most likely outcome either way.
+> That statistic is **no evidence at all**. What supports the fix is the CODE PATH — `setdefault`
+> versus a `_fw_owns` 403 — which needs no sample size. The claim now rests where it belongs.
 
 **3. RESOLVED — and it was never a routing bug (#614, LANDED).** `POST /api/continue-watching`
 → 405 in 8 runs, including the recent r141/r143. A long static hunt found the endpoint DECLARED
