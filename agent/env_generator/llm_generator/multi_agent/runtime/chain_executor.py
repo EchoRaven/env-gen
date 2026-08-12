@@ -2127,7 +2127,15 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         # captured resource id (untouched when the chain is wired correctly).
         # #575: strip an unresolved OWNER FK BEFORE the generic fallback can guess one — a
         # foreign owner id turns the caller's own write into a fake cross-user attempt (403).
-        body, _dropped_owner_fks = _drop_unresolved_owner_fks(body)
+        # …but NEVER on a cross-user DENIAL step (#575b, self-review). There the unresolved
+        # owner FK IS the probe: dropping it sends the write into the CALLER's own scope, the
+        # app correctly answers 201, and the probe reports a leak that never happened. Leaving
+        # the literal makes the backend reject it, which is what the denial expectation wants —
+        # the same convention the path-side ladder has followed since #59b.
+        if _is_cross_user_denial(step):
+            _dropped_owner_fks = []
+        else:
+            body, _dropped_owner_fks = _drop_unresolved_owner_fks(body)
         if body is not None and last_id is not None:
             body = _resolve_unresolved_dollar_vars(body, last_id, last_id_by_resource)
         # (``token`` resolved above, before the path fallback that may need it for recovery.)
