@@ -65,6 +65,13 @@ def _auto_stage(agent, file_path: str, *, action: str) -> None:
             pass
 
 
+# #609: pure reads whose result cannot change WITHIN one tool batch, so a repeat of the
+# identical call in that batch is provably redundant. Deliberately conservative —
+# only `read` was measured (6234 redundant calls, 50% of all reads); anything with a
+# side effect or a time/queue-dependent answer (check_inbox, get_time) is excluded.
+_IDEMPOTENT_READ_TOOLS_609 = frozenset({"read"})
+
+
 class AgentStepToolingMixin:
     def _scrub_workspace_paths(self, text: Any) -> Any:
         """Relativize absolute env/worktree roots in agent-facing tool output
@@ -376,10 +383,40 @@ class AgentStepToolingMixin:
                 summary.append(f"{tool_name}({','.join(list(tool_args.keys())[:4])})")
         self._logger.info(f"[{self.agent_id}] [{stage_name}] Tool calls: {', '.join(summary)}")
 
+        # #609 — THE SAME READ, TWICE, IN ONE BATCH. Measured over the arc's 133694 logged
+        # tool batches: 5562 of them issue the SAME (agent, path) `read` more than once,
+        # 6234 redundant calls in total — HALF of all 12469 reads. Two identical reads in one
+        # batch cannot inform anything: the model receives both results in the same turn, so
+        # the second is the first, re-serialised at ~8.2k tokens.
+        #
+        # Scope is the unambiguously-safe subset ONLY. The bigger number — 72% of reads
+        # (9015) re-read a file NOBODY changed since that agent last read it, r134's backend
+        # reading `custom_routes.py` 135 times — is deliberately NOT touched here: a
+        # cross-turn cache cannot know whether the agent still HOLDS the earlier content
+        # after a context trim, and answering "unchanged" to an agent that has lost it would
+        # wedge the lane. Doing that safely needs a `force=` escape hatch and a live run to
+        # validate the behaviour change.
+        _batch_seen: Dict[tuple, str] = {}
+
         for tool_call in calls:
             tool_name, tool_args, tool_call_id = self._normalize_tool_call(tool_call, step_idx)
             if not tool_name:
                 continue
+
+            if tool_name in _IDEMPOTENT_READ_TOOLS_609:
+                try:
+                    _sig = (tool_name, json.dumps(tool_args, sort_keys=True, default=str))
+                except Exception:
+                    _sig = None
+                if _sig is not None:
+                    _first = _batch_seen.get(_sig)
+                    if _first is not None:
+                        messages.append(Message.assistant(tool_calls=[tool_call]))
+                        messages.append(Message.tool(
+                            f"[duplicate call in this same batch — identical to tool_call "
+                            f"{_first}; its result above is this result]", tool_call_id))
+                        continue
+                    _batch_seen[_sig] = tool_call_id
 
             self._log_tool_details(tool_name, tool_args)
             self.record_action(f"{tool_name}({list(tool_args.keys())})")
