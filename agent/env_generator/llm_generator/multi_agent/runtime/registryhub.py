@@ -10,6 +10,7 @@ store filenames, events all use the ``registryhub`` prefix; no back-compat).
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -1355,6 +1356,38 @@ class RegistryHub:
         # Merging is strictly not-worse than the status quo: both records are already live and
         # already audited, so the union of their apis_used is exactly the set the audit demands
         # today — it just stops depending on which record a reader happens to hit first.
+        # #596 — A PAGE'S `path` MUST BE ABLE TO BE ITS COMPONENT'S FILE. frontend_audit states
+        # the canonical layout ("a page's root component lives in src/pages/, name == filename")
+        # but nothing enforced it at the write boundary, so a record could name two different
+        # files at once. Measured over 623 records carrying BOTH fields, 16 disagree (2.6%, 4
+        # runs), in two distinct shapes:
+        #     r54  every page      component=<X>Page      path stem=App      <- the ROUTER file
+        #     r27  browse_home_page component=BrowseHomePage path stem=browse <- a ROUTE, not a file
+        #          genre_category_page                       path stem=:slug
+        #     r115 login           component=Login        path stem=LoginPage
+        #     r139 title_detail    component=BrowseHomePage path stem=TitleDetailPage
+        # The first two shapes are unambiguously junk — a route or the framework's own entry
+        # point is never a page component file — so the path is dropped and the audit's
+        # canonical `src/pages/<Component>.jsx` lookup takes over.
+        #
+        # The last two are NOT arbitrated here, deliberately: both stems are plausible page
+        # components and the corrupted field differs between them (r115's `component` looks
+        # right, r139's looks wrong — its title_detail page claims BrowseHomePage). Guessing
+        # would have made r139 worse. They get a `path_component_mismatch` breadcrumb and are
+        # left exactly as written. r115 is what this costs: its lane-authored 162-line
+        # `Login.jsx` stays orphaned behind the framework's 72-line `LoginPage.jsx` until an
+        # arbiter exists.
+        if path and component:
+            _stem = str(path).replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0]
+            if _stem != str(component).strip():
+                if (not re.fullmatch(r"[A-Z][A-Za-z0-9]*", _stem or "")
+                        or _stem in _RESERVED_FRONTEND_IDENTS):
+                    metadata = {**(metadata or {}), "path_rejected_596": str(path)}
+                    path = ""
+                else:
+                    metadata = {**(metadata or {}),
+                                "path_component_mismatch": f"{component} vs {_stem}"}
+
         _alias = ""
         if route and name not in _pages_now:
             _r = str(route).strip()
