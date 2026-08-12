@@ -1084,6 +1084,34 @@ Gate replay over the 40 scored runs: blocking screen-instances **141 → 118**;
 `browse_by_languages` 27 → 6, `my_list` 6 → 4, everything else unchanged. **No run's last
 blocker is removed, so this flips no gate by itself.**
 
+**#584 VERIFIED on the real designs (it had only been asserted).** `/title/:id` → `title_detail`
+in **44/45**, `/browse` → `browse_home` in **45/45**. One residual, **left documented not fixed**:
+r131, where `title_detail` is not a candidate at all and `rate_dialog` wins with **zero** name
+coverage. The exact-route path does not apply the fuzzy path's own stated rule — *"no shared
+token → no match (a wrong graft is worse than the generic floor)"* — so it grafts a rating
+dialog's structure onto the title page. Applying that rule to the exact path is a one-line change
+whose blast radius was not measured; do that first if r131's shape recurs.
+
+**Duplicated page COMPONENTS in the delivered tree (#596, LANDED partially).** 24 forked
+`X.jsx`/`XPage.jsx` pairs across 8 of 45 runs, **every pair differing**. One source found and
+fixed at the write boundary: 16 of 623 ui_page records name two different files at once
+(`component=Login` + `path=LoginPage.jsx`; r54's 8 pages all claiming `App.jsx`; r27 putting a
+ROUTE in `path`). 14 are unambiguous junk → dropped; **2 are deliberately not arbitrated**
+because the corrupted field differs between them (r115's `component` looks right, r139's looks
+wrong — its `title_detail` claims `BrowseHomePage`), and guessing would make r139 worse.
+
+> **The cost of that decision, stated:** r115 keeps shipping the framework's 72-line
+> `LoginPage.jsx` while the lane's own **162-line `Login.jsx`** — router navigation, a real auth
+> service, a logo component — sits unrouted. An arbiter (which file does App.jsx import? which
+> is newer? which is richer?) would settle it; none was defensible on 2 samples.
+
+**Two more NEGATIVE results from that audit — do not re-chase:** (a) `_norm_route_221("")`
+returns `"/"`, so a route-less ui_page resolves to the LANDING screen and 17 of r103's 25 records
+are route-less — but the delivered trees **disprove any landing graft** (jaccard 0.00 vs
+`LandingPage` for all 18 of r103's pages), so the projector does not build from those records;
+(b) r134's 3-line `Landing.jsx` is a lane-written **re-export shim**, not a thin regression — a
+line-count heuristic flags it and is simply wrong.
+
 > **Next levers, in order.** (1) `login` 29/40 — after #594 the residue is background-gradient
 > and footer detail; the gradient is measured but only in 1 of 45 design systems, so
 > screen-level gradient capture is the prerequisite. (2) `title_detail` 20/40 — #584 fixed the
