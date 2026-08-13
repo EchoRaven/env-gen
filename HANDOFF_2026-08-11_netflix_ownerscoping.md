@@ -1822,6 +1822,23 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.14 — the remaining artifact classes: a clean negative (2026-08-12)
+
+Sweeping the four hub classes still unexamined after §5.13. **No actionable finding** — the first
+sweep this session to come back empty, recorded so the next reader does not re-walk it.
+
+| class | reading | verdict |
+|---|---|---|
+| `codehub_pull_requests` / `code_reviews` / `review_threads` | **0 rows in 0 of 45 runs** | By design. #35 made this a commit-only pipeline — work auto-integrates and "ahead-of-main with no PR is the NORMAL state". The `_run_premerge_verifier_gate` beneath it is therefore dead code in this configuration, not a broken gate. |
+| `codehub_checks` | 2354 rows; **three spellings** for success — `success` 541, `passed` 194, `recorded` 1578 | Not a defect. `recorded` belongs only to `artifact:*` (a marker, not a verdict); `passed` only to `validation:*`; and **both readers already canonicalise** — `framework_validation` uses `_passok = ("success","passed","pass","ok")`, `hub_registry` uses `_canon_validation_status`. The delivery gate's stricter `== "success"` reads only `build:*`, which never carries anything but success/failure. |
+| `workhub_blocks` | 139 rows across 45 runs | The name misled me: these are `project_phase` PAGE blocks (`init`, `implement`, …), not blocked work. Nothing to resolve. |
+| `meeting_decision_added` | 3322 events | Uniform payload, all non-empty, **0 exact duplicates within a run**. |
+
+> Worth saying plainly, because three of these four looked like findings at first glance: a
+> vocabulary drift with a canonicaliser already in place, a subsystem at zero because it is
+> switched off by design, and a store whose NAME implied a problem its contents do not contain.
+> Each was one query away from becoming a fix nobody needed.
+
 ### §5.13 — `integrity_check`: a flag that is true 65% of the time (#642, 2026-08-12)
 
 An artifact class never audited — 1961 events across 42 runs, median 38 per run. The loose ends
