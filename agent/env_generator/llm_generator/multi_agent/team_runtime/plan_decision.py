@@ -137,8 +137,21 @@ class PlanDecisionProtocol:
             )
         except asyncio.TimeoutError:
             self._logger.warning(f"Plan {plan_id} decision timed out")
+            # #659b: this path went LIVE for the first time with #658 — before that, any plan
+            # big enough to need a decision crashed in submit_plan, so nothing ever waited here.
+            # A bare "decision timeout" would leave the agent five minutes poorer and none the
+            # wiser, so say what did not happen and who was supposed to make it happen. No
+            # subscriber exists for the `plan_decision_request` notification; the lead's real
+            # route to a pending plan is the `list_pending_plan_decisions` tool, and the
+            # decision itself lands via `accept_plan` / `request_plan_changes`, which set this
+            # event. If those are never called, this is what it looks like.
             self._plans[plan_id].status = PlanStatus.REJECTED
-            self._plans[plan_id].feedback = "Rejected: decision timeout"
+            self._plans[plan_id].feedback = (
+                f"Rejected: no decision within {timeout:.0f}s. The plan was announced to "
+                f"'{self._lead_id}' and is listed by `list_pending_plan_decisions`, but no "
+                "`accept_plan` or `request_plan_changes` call arrived for it. Either the lead "
+                "never polled, or re-submit with <= "
+                f"{self._auto_approve_threshold} steps to take the auto-approve path.")
             self._plans[plan_id].decided_at = datetime.now()
 
         return self._plans[plan_id]
