@@ -1565,6 +1565,56 @@ def _truthy(v: Any) -> bool:
     return bool(v)
 
 
+def _structurally_private_resource_633(method: str, path: str,
+                                       models: Dict[str, Dict[str, Any]]) -> bool:
+    """#633 — is the resource this endpoint reads per-user-private BY CONSTRUCTION?
+
+    #566y and #598 established that a table's SHAPE can settle privacy without the contract
+    saying so — a sub-entity owner (``profile_id → profiles → users``) or a direct user FK
+    alongside a content FK (``my_list.user_id`` + ``my_list.title_id``). Both signals were
+    computed INSIDE ``_generate_handler``, but the force-auth decision is made by the CALLER,
+    before it. So they could never fire on an endpoint the contract left unauthenticated:
+
+        auth  = resolve_endpoint_auth(...) or _owner_scoped   # _owner_scoped: CONTRACT only
+        ...
+        owner_fk = _owner_fk(meta) if auth else None          # auth False -> no owner column
+        read_scoped = bool(owner_fk) and (...)                # -> False -> no filter
+
+    A private table therefore became a PUBLIC DUMP whenever the draw forgot ``auth_required``.
+    Found by auditing the 45 delivered backends: 4 of them ship
+
+        @app.get("/api/search")
+        def _projected_get_api_search_9(q: str = "", db=Depends(get_db)):   # no actor
+            query = db.query(ContinueWatching)                              # no filter
+            ... returns user_id, title_id, progress_seconds for EVERY user, unauthenticated
+
+    and today's projector still emits exactly that — this is a LIVE defect, not a historical
+    artifact. It is #569's shape (which had to be worked around with import-time
+    ``app.routes`` mutation) surviving one level up: #569 fixed WHICH table search resolves to,
+    not whether that table's privacy is honoured.
+
+    Asked at the caller so the same structural facts reach the auth decision. Deliberately
+    overrides an explicit ``auth_required=False``, on the precedent already stated there:
+    "per-user-private reads and public are contradictory, and a private read is unscopable
+    without an actor". A public feed (``posts(user_id, title, body)`` — user FK, no content FK)
+    is untouched, which is the whole point of #598's discriminator.
+    """
+    try:
+        res = _resource_model(path, models)
+        if res is None and str(method).upper() == "GET" and "search" in str(path).lower():
+            res = _search_target_model(models) or _primary_content_model(models)
+        if not res:
+            return False
+        _table, meta = res
+        fk = _owner_fk(meta)
+        if not fk:
+            return False
+        return bool(_is_per_user_sub_entity_fk(meta, fk, models)
+                    or _is_user_content_relation(meta, fk))
+    except Exception:
+        return False
+
+
 def project_missing_routes(
     backend_dir: Any,
     declared_endpoints: List[Mapping[str, Any]],
@@ -1637,6 +1687,13 @@ def project_missing_routes(
             isinstance(meta, Mapping) and meta.get("auth_required") is False)
         if _explicit_public and _owner_scoped:
             _owner_scoped = False   # deliberate public read → all rows, no owner filter
+        # #633: …but a table that is per-user-private BY CONSTRUCTION is private whatever the
+        # contract says or forgets. Without this the two structural signals (#566y, #598) are
+        # unreachable on an unauthenticated endpoint, because they are computed after the auth
+        # decision that they should be informing. 4 of 45 delivered backends ship an
+        # UNAUTHENTICATED `GET /api/search` over `continue_watching` for exactly this reason.
+        if _structurally_private_resource_633(method, path, models):
+            _owner_scoped = True
         # An owner-scoped resource is per-user PRIVATE (notes/email/drafts): its reads
         # can only be scoped to ``owner_fk == the caller``, which REQUIRES an actor. #271
         # made an unstated read default to PUBLIC — so a private resource whose contract

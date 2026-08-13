@@ -1822,6 +1822,48 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.10 — the delivered BACKENDS: a live, UNAUTHENTICATED cross-user leak (#633, 2026-08-12)
+
+Continuing the delivered-app review into `app/backend`. The lane-authored side is clean —
+**0 of 64** GET handlers in `custom_routes.py` that touch an owner-scoped model lack a scoping
+token. The projected side is not. Four of the 45 runs ship this, verbatim:
+
+```python
+@app.get("/api/search")
+def _projected_get_api_search_9(q: str = "", db=Depends(get_db)):    # no actor
+    query = db.query(ContinueWatching)                                # no filter
+    rows = query.limit(50).all()
+    return {"items": [... "user_id" ... "progress_seconds" ... for r in rows]}
+```
+
+Unauthenticated, unfiltered, 50 rows of **every account's** watch progress (r101, r106, r109,
+r119). Hand-read from the shipped `main.py`, not inferred.
+
+**It is live.** Projecting that shape with today's code reproduces it exactly. #569 fixed WHICH
+table a bare `/api/search` resolves to; it never made that table's privacy hold.
+
+**The cause is ordering.** #566y and #598 established that a table's SHAPE settles privacy
+without the contract's help. Both signals are computed *inside* `_generate_handler` — but the
+force-auth decision is made by its CALLER, before it:
+
+```python
+auth  = resolve_endpoint_auth(...) or _owner_scoped   # _owner_scoped: CONTRACT only
+...
+owner_fk = _owner_fk(meta) if auth else None          # auth False -> no owner column
+read_scoped = bool(owner_fk) and (...)                # -> False -> no filter at all
+```
+
+The two signals whose whole purpose is "do not wait for the contract" could never fire on an
+endpoint the contract left unauthenticated. #633 asks the same structural question at the caller.
+Verified both ways on generated output: the private shape (user FK **+** content FK) now gets an
+actor and an owner filter *even when the contract says `auth_required=False`*, and a public feed
+(`posts(user_id, body)` — user FK alone) is byte-identical to before. That is #598's
+discriminator doing its job one level up.
+
+> **The transferable shape:** when a by-construction safety rule keeps failing to fire, check
+> **where** it is evaluated relative to the decision it is meant to inform. #566y and #598 were
+> both correct and both unreachable.
+
 ### §5.9 — auditing the DELIVERED APPS: the crash the P0 records kept describing (#632, 2026-08-12)
 
 Not the logs, not the hubs — the shipped `app/frontend/src` of all 45 kept runs. The bug corpus
