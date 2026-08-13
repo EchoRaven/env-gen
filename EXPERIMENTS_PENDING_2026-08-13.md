@@ -367,7 +367,40 @@ endpoints do occur, the pending path is dead and the pulse should stop reading i
 
 ---
 
-## 17. Older, still unresolved
+## 17. The breaking-change machinery is gated on an input that is usually absent
+
+**Not changed.** `_record_breaking_change` notifies only the agents registered as consumers of
+the endpoint, and auto-creates a fix task per consumer agent. That gating is correct. The input
+is what is missing:
+
+    runs registering ANY consumer     36 of 144 (25%)
+    consumers registered per run      median 0, max 24
+    endpoints registered per run      median 30
+    /api paths the delivered api.js actually calls   median 7
+
+So the frontend really does consume around 7 endpoints per run while registering a consumer in a
+quarter of runs. Consistent with the other end of the same measurement: of the 3924 stored
+breaking changes, **3897 (99.3%) had no consumer registered at the time** — only 27 ever reached
+anybody. The largest signal combination is `('auth_added','response_key_changed')` x1220, the
+signature of a stub endpoint being re-registered as its real implementation.
+
+This matters because #627/#629/#631 spent an arc raising breaking-change DELIVERY from 2.9% to
+60% — measured over whatever consumers existed. With median 0 consumers, that path is dark in
+most runs.
+
+**Only a run can settle.** Whether consumers should be registered automatically. The framework
+already reverse-engineers endpoints from source in `contract_extract`, so deriving frontend
+consumers from `app/frontend/src/services/api.js` is a natural extension — but it is a behaviour
+ADDITION (it would start firing urgent events and auto-creating fix tasks where none fire today),
+and its blast radius cannot be judged from disk.
+
+**Cheapest observation.** One run: count `register_consumer` tool calls, and compare against the
+`/api` paths in the delivered api.js. If the lane never calls it, the tool is the gap; if it
+calls it and the registration is rejected, the gate is.
+
+---
+
+## 18. Older, still unresolved
 
 - **#644 viewport.** Two measured targets conflict: 796px matches the reference image aspect,
   981px matches its content fraction. Changing to 796px took `_measured_deviations` error from
