@@ -799,6 +799,35 @@ class AgentTooling:
                         "`export default { colors: { 'ig-bg': '#000000' } }`. Never @apply a "
                         "class you haven't defined there (it fails the build)."
                     )
+                # #678: THE MESSAGE IS GOOD; THE AGENT WAS NOT LISTENING.
+                # Unlike the other entries in the wasted-STEPS ranking (#674-#677) this text
+                # already names the cause AND the authoring surface — so the fix is not new
+                # wording, it is noticing the repeat. Measured over the 249 run logs: 1546
+                # framework-owned denials across 133 runs, and 61 (run, file) pairs hit the SAME
+                # file 5+ times — worst case 52 attempts on one Dockerfile in a single run. Per
+                # #257 each is a whole step re-sending the prompt.
+                #
+                # #664's lesson applies with one difference worth stating: there the counter had
+                # to accumulate across calls to reach its threshold, so instance churn reset it
+                # to zero permanently and the escalation fired 4 times in 4928. Here a single
+                # surviving instance and two attempts is enough, and if a lane IS respawned the
+                # worst case is the base message — exactly today's behaviour. So instance state
+                # is sufficient and no store is needed.
+                _fw_seen = getattr(self, "_fw_denied_678", None)
+                if _fw_seen is None:
+                    _fw_seen = {}
+                    self._fw_denied_678 = _fw_seen
+                _repeat_n = 0
+                for _p in fw_owned:
+                    _fw_seen[str(_p)] = _fw_seen.get(str(_p), 0) + 1
+                    _repeat_n = max(_repeat_n, _fw_seen[str(_p)])
+                _escalate_678 = "" if _repeat_n < 2 else (
+                    f" ⚠ You have now tried to write {fw_owned} {_repeat_n} times. The answer "
+                    "will not change — this path is framework-owned for the whole run and no "
+                    "retry, rewording or different tool will make it writable. Stop attempting "
+                    "it and make the change through the authoring surface named above, or "
+                    "register the contract so the framework regenerates the file."
+                )
                 return ToolResult(
                     success=False,
                     error_message=(
@@ -808,7 +837,8 @@ class AgentTooling:
                         f"causes merge conflicts. Author your business logic in "
                         f"custom_routes.py (backend) or src/pages/*.jsx + App.jsx (frontend); "
                         f"to change models/schemas/main, register the contract via the "
-                        f"registryhub_* tools and the framework regenerates them." + _tw_hint
+                        f"registryhub_* tools and the framework regenerates them."
+                        + _tw_hint + _escalate_678
                     ),
                 )
             # LANE-OWNED application code (app/backend|frontend|database/*) is authored
