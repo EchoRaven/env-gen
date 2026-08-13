@@ -1822,6 +1822,35 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.15 — the VERIFICATION CHAINS across all 45 runs: healthy, and a second negative (2026-08-12)
+
+The largest structured record of what the app actually did — 1682 chains, 9194 executed steps.
+Previous work (§5.0u) read three runs; this reads all of them. **No fix shipped**, and the reason
+is worth as much as a fix would have been.
+
+| | |
+|---|---|
+| chains | 1682 — **passing 1572**, failing 44, registered 38, coverage 28 |
+| steps whose status ≠ their declared `expect` | **282 of 9194 (3%)** |
+| top mismatch | `DELETE expected [200,204] got 404` ×73 in 28 runs |
+
+**The denial-probe machinery works.** Of 19 `passing` chains containing a denial probe that
+returned 2xx, **13 are legitimately waived** by the fresh-intruder re-verification (#566v/#566z):
+the step note reads *"cross-user denial re-verified with a FRESH intruder → DENIED; the original
+was a stale/owner-…"*. The remaining 6 are authored-expectation quirks — `[400]` and `[409]` are
+validation and conflict codes, not denials — not leaks.
+
+**Two heuristics of mine over-matched here within ten minutes, both caught before shipping:**
+> * *"status not in (ok/passed)"* — `status` is the **HTTP code**, so that matched every 200 and
+>   201 and produced a headline "8706 failing steps with no note". They are successful steps.
+> * *"expects only 4xx on a control-plane path ⇒ unsatisfiable"* — `POST /auth/login` expecting
+>   `[401]` is a perfectly good wrong-credentials negative test. Narrowing to public READS
+>   (`GET /api/v1/*`) leaves **4 steps in 3 runs**, 3 of whose chains pass anyway.
+
+Those 4 are **deliberately not gated**. Nothing is blocked by them, and a new registration gate
+would sit directly on top of a heuristic I had just got wrong twice. The #615 judgement (blast
+radius decides) with a much smaller n.
+
 ### §5.14 — the remaining artifact classes: a clean negative (2026-08-12)
 
 Sweeping the four hub classes still unexamined after §5.13. **No actionable finding** — the first
