@@ -1822,6 +1822,46 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.24 — ★ the holistic score is a MIN, not a mean — and that closes a parked question (2026-08-12)
+
+Chasing §5.23's residual led to the clearest answer of the session about the gate itself. Over the
+**412** screen records carrying both a holistic `similarity` and a full `dimensions` breakdown:
+
+| | |
+|---|---|
+| holistic mean | **0.597** |
+| unweighted dimension mean | **0.731** |
+| correlation | 0.927 |
+
+That looks like a systematic **−0.134** pessimism, and on the blocking subset it bites:
+
+| of 299 BLOCKING screen records | |
+|---|---|
+| pass on the holistic score | 158 (53%) |
+| pass on their own dimension mean | 243 (81%) |
+| **would pass on dimensions, fail on holistic** | **85 (28%)** |
+| reverse (pass holistic, fail dimensions) | **0** |
+
+**But the mean was the wrong baseline.** The holistic tracks the **minimum** dimension at
+**r = 0.942** — higher than any single dimension (components 0.924, layout 0.910) and higher than
+the mean (0.927) — with an offset of only **+0.047**. The score behaves as *"the weakest dimension
+plus a small allowance"*, which is the right semantics for visual similarity: a screen with
+perfect colour and broken layout does not look like its reference.
+
+> **So there is no defect, and the parked calibration question is answered.** Switching the gate
+> from the holistic score to the dimension mean would flip **85 of 299** blocking instances to
+> passing with **zero** reverse cases — that is not a re-calibration, it is a one-directional
+> loosening of the bar by 28%. **Do not switch.** This supersedes the earlier recommendation,
+> which rested on a much weaker signal (agreement 12 vs 6).
+
+Two of my own errors on the way, both caught by re-measuring:
+> * the "browse family scores 0.393 vs 0.633" figure came from an incomplete join — only the 59 of
+>   107 browse records whose name resolved in some run's classification. On the full set the browse
+>   residual is −0.160 against −0.125 for everything else: **0.035 apart, not 0.24. Browse is not
+>   special.**
+> * "systematically 0.134 below its own dimensions" was a framing error, not a scan bug — comparing
+>   a min-like aggregate against a mean and calling the difference pessimism.
+
 ### §5.23 — ★ the design compile saw the same six screens in all 45 runs (#648, 2026-08-12)
 
 Testing the remaining six "unmeasurable" constants one at a time, rather than as a group. Four
