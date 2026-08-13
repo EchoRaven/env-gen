@@ -1822,6 +1822,41 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.22 — testing the "unmeasurable" seven: one is UNREACHABLE (2026-08-12)
+
+§5.21 declared seven constants unmeasurable. That kind of claim has been wrong four times this
+session, so it was tested rather than left. `_PLACEHOLDER_THRESHOLD = 0.5` turns out not to be
+hard to measure — it is **unreachable**, which is a better answer than "no artifact":
+
+```python
+reg = seed_regs.get(name)
+if reg is None:           # <- always, in all 45 runs
+    flagged.append(... "missing_seed" ...); continue
+...
+score = detect_placeholder_score(reg.get("sample_excerpt") or [])
+if score >= _PLACEHOLDER_THRESHOLD:      # never evaluated
+```
+
+| | |
+|---|---|
+| `register_seed_data` | an **LLM tool**, called **0 times in 45 runs** |
+| `registryhub_seed_registrations` | **0 rows**, every run |
+| tables registered `defined` at some point | **535** (so the audit loop does reach them) |
+| what the audit can therefore conclude | `missing_seed`, for every defined table, always |
+| seeds actually on disk | median **119 rows/run** — the flag is false in fact |
+
+**And yet: no harm. The blocker fired in 0 of 56 runs.** The author already recognised the class —
+the comment reads *"the same bookkeeping-the-LLM-never-does class as ui_flow/visual"* — and
+degraded it to a warning whenever the app is functionally validated. That guard absorbs it
+completely.
+
+**So this is deliberately NOT fixed.** Auto-registering seed data from `seed_data.json` would be
+the #627 move and would work, but it would be effort spent on a path that never blocks: the same
+judgement as #615 (31/45 → do not gate) and §5.14 (three of four things that look like findings
+are not). What is worth recording is the shape — *a threshold with no rationale, sitting behind an
+early return that is always taken* — because that is a cheaper explanation for a missing rationale
+than "nobody measured it".
+
 ### §5.21 — finishing the constant sweep: calibrated, unrecorded, and now enforced (#647, 2026-08-12)
 
 §5.20 counted **17 of 37** tuned constants without a rationale and then fixed only the three
