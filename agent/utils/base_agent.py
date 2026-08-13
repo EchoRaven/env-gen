@@ -207,8 +207,32 @@ class BaseAgent(ABC):
     # ===== Stuck Detection =====
     
     def _setup_stuck_detector(self) -> None:
-        """Initialize stuck detector."""
-        from .stuck_detector import StuckDetector
+        """Initialize the stuck detector, if the optional module is present.
+
+        `utils/stuck_detector.py` has NEVER existed — not in the tree and not anywhere in git
+        history. This hook was written against a module that was never added, so the import
+        raised `ModuleNotFoundError: No module named 'utils.stuck_detector'` and took the whole
+        constructor with it. `enable_stuck_detection` DEFAULTS TO TRUE, so constructing a
+        BaseAgent the documented way crashed; the system only worked because the single
+        production subclass (multi_agent/agents/base.py) passes False explicitly.
+
+        Every one of the six consumers below already guards with `if self._stuck_detector:` —
+        the surface was written to tolerate its absence, and only this one line did not. It now
+        degrades the same way, and says so once instead of failing silently (#634's lesson:
+        never swallow without leaving the reader a trail).
+
+        Surfaced by the type checker once it could resolve imports at all — see the
+        [tool.pyrefly] block in pyproject.toml.
+        """
+        try:
+            from .stuck_detector import StuckDetector
+        except ImportError:
+            self._stuck_detector = None
+            self._logger.debug(
+                "[BaseAgent] stuck detection requested but utils.stuck_detector is not "
+                "installed — the feature is inert (every consumer guards on None). The "
+                "orchestrator's own liveness watchdogs (#147/#149) are unaffected.")
+            return
         self._stuck_detector = StuckDetector(
             max_history=50,
             min_loop_detection=3,

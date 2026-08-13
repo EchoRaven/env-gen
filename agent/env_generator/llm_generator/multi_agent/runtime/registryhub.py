@@ -13,10 +13,24 @@ import json
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from .eventhub import EventHub
 from .json_store import JsonStore
+
+if TYPE_CHECKING:                       # annotation-only: no runtime import, no cycle
+    # `RegistryHub.__init__` annotates `workhub: "WorkHub | None"`, but the name was never
+    # brought into this module — `EventHub` beside it resolves only because it is imported for
+    # real above. The annotation was unresolvable to any reader and to the type checker.
+    #
+    # Scope, honestly: this does NOT make `typing.get_type_hints(RegistryHub.__init__)` work.
+    # The module carries `from __future__ import annotations`, so hints are strings evaluated
+    # against runtime globals, where a TYPE_CHECKING name does not exist. That call still
+    # raises NameError — and nothing reaches it: nothing in this repo calls get_type_hints, and
+    # RegistryHub is neither a pydantic model nor a FastAPI dependency. A real import would fix
+    # that too (verified: no cycle — workhub never references registryhub), but paying
+    # import-time coupling for a path nobody walks is the wrong trade.
+    from .workhub import WorkHub
 
 
 def _schema_subset_check(expected: dict, actual: dict, path: str = "") -> "dict | None":

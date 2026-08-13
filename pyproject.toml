@@ -58,7 +58,12 @@ include = ["app*"]
 #
 # 84 files import `utils.*` and 242 import `env_generator.*`, so essentially the whole codebase
 # was flagged and any REAL diagnostic was buried. Runtime was never affected.
-search-path = ["agent"]
+#
+# BOTH roots, exactly the two that main.py puts on sys.path at startup:
+#     _agents_dir        = <repo>/agent                            -> `utils.*`, `env_generator.*`
+#     _llm_generator_dir = <repo>/agent/env_generator/llm_generator -> `multi_agent.*`, `tools.*`,
+#                                                                     `workspace`, `memory.*`
+search-path = ["agent", "agent/env_generator/llm_generator"]
 
 # The generated apps are throwaway output, not source: 15987 .py files against 557 real ones
 # (29x), and the whole tree is gitignored.
