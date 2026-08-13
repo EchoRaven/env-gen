@@ -4046,6 +4046,11 @@ def _ref_nav_labels(design) -> List[str]:
     return best
 
 
+# #651b: the segments a root route actually uses, across the corpus and the common web
+# vocabulary — the fallback below relabels a route as "Home" ONLY if it is one of these.
+_HOME_SEGMENTS_651 = {"", "home", "browse", "index", "dashboard", "feed", "discover", "main"}
+
+
 def _assign_ref_labels(routes, design):
     """#422: relabel each (segment_label, route) with the best UNIQUE reference nav
     label (design-measured), keeping the ROUTE/href UNCHANGED so navigation still
@@ -4058,8 +4063,44 @@ def _assign_ref_labels(routes, design):
     ref = _ref_nav_labels(design)
     if not ref:
         return routes
-    rtoks = [_semantic_tokens_226(lbl, rt) for (lbl, rt) in routes]
-    reftoks = {rl: _semantic_tokens_226(rl) for rl in ref}
+    # #651 — A LABEL THAT TOKENIZES TO NOTHING CAN NEVER MATCH ITS OWN ROUTE.
+    # `_semantic_tokens_226` strips 'my' and 'list' as layout words, so BOTH sides of the
+    # only pairing that matters here collapse to the empty set:
+    #
+    #     _semantic_tokens_226("My List") -> set()      _semantic_tokens_226("", "/my-list") -> set()
+    #
+    # "My List" therefore never scores against `/my-list`, stays in `leftover`, and `/my-list`
+    # stays unassigned — where the Home-type fallback below picks it as the shortest unassigned
+    # route. The delivered nav then ships `<a href="/my-list">Home</a>`: the label is gone and
+    # the remaining one points at the wrong page.
+    #
+    # Measured over the 112 verdict files / 1325 judged screen records: `my list nav item` is
+    # the 3rd most-reported missing component (125 mentions, behind `search icon` 192 and
+    # `notifications bell` 184), on the dimension that is the FLOOR for 800 of 1254 scored
+    # records (`components`, 63.8% — 4.6x the next one). In the delivered navs it is not a
+    # near-miss but a hard defect, byte-identical across independent runs because this is the
+    # framework's own projected nav (#520), not lane authorship.
+    #
+    # #474 hit this same trap in `_filter_nav_to_ref` and switched to raw content words there,
+    # documenting it verbatim: "NOT _semantic_tokens_226, which strips 'list'/'my' as layout
+    # words → 'My List' would tokenize to {}". The sibling function was never given the same
+    # treatment. Raw tokens are used ONLY when the semantic set is empty, so every pairing that
+    # works today is untouched.
+    _NAV_STOP_651 = {"by", "and", "the", "of", "or", "to", "in", "on", "for", "with"}
+
+    def _toks_651(*xs):
+        sem = _semantic_tokens_226(*xs)
+        if sem:
+            return sem
+        out: Set[str] = set()
+        for x in xs:
+            for w in re.split(r"[^a-z0-9]+", str(x).lower()):
+                if len(w) >= 2 and w not in _NAV_STOP_651:
+                    out.add(w)
+        return out
+
+    rtoks = [_toks_651(lbl, rt) for (lbl, rt) in routes]
+    reftoks = {rl: _toks_651(rl) for rl in ref}
     scored = []
     for ri in range(len(routes)):
         for rl in ref:
@@ -4081,11 +4122,23 @@ def _assign_ref_labels(routes, design):
                       if reftoks[rl] & {"home", "browse", "for", "you", "discover"}),
                      None)
     if home_like:
-        unassigned = [ri for ri in range(len(routes)) if ri not in out_label]
-        if unassigned:
-            prim = min(unassigned,
-                       key=lambda ri: (routes[ri][1] not in ("/", "/browse", "/home"),
-                                       len(routes[ri][1])))
+        # #651b — THE FALLBACK MUST NOT INVENT A HOME ROUTE.
+        # This used to `min()` over ALL unassigned routes, merely PREFERRING a real root; with
+        # nothing root-like left it relabelled the shortest survivor, whatever it was. That is
+        # what turned an unmatched "My List" into `<a href="/my-list">Home</a>` — a link with the
+        # wrong text pointing at the wrong page, in 7 of 28 delivered navs. #651 stops that
+        # particular pair from going unmatched; this stops the MECHANISM, which would otherwise
+        # just find the next label the tokenizer happens to erase.
+        #
+        # Measured over the delivered navs: 0 of 28 lack a root/browse/home route, so requiring
+        # one costs nothing on the whole corpus — the permissiveness only ever bought misroutes.
+        # When no route is genuinely home-like the honest outcome is to leave the label off: a
+        # missing nav item is a components deduction, a mislabelled one is a broken link.
+        rooty = [ri for ri in range(len(routes)) if ri not in out_label
+                 and (routes[ri][1] in ("/", "/home", "/browse")
+                      or routes[ri][1].rsplit("/", 1)[-1] in _HOME_SEGMENTS_651)]
+        if rooty:
+            prim = min(rooty, key=lambda ri: (routes[ri][1] != "/", len(routes[ri][1])))
             out_label[prim] = home_like
     return [(out_label.get(ri, lbl), rt) for ri, (lbl, rt) in enumerate(routes)]
 
