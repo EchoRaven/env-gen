@@ -2489,6 +2489,47 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                 "lower, so the delivered frontend is currently worse than the recorded number")
         (vdir / "verdict.json").write_text(json.dumps(_verdict, indent=2, default=str),
                                            encoding="utf-8")
+        _append_round_record_640(vdir, _verdict, results)
+    except Exception:
+        pass
+
+
+def _append_round_record_640(vdir: Any, verdict: Dict[str, Any],
+                             results: List[Dict[str, Any]]) -> None:
+    """#640 — one line per capture round, so "which tree scored best" becomes answerable.
+
+    #618 measured that **24 of 39 runs ship a state worse than their own best** (up to +0.44),
+    and #621 stamped `code_state` on the verdict so a score could be tied to a commit. Neither
+    is enough, and testing the claim rather than restating it is what showed why:
+
+      * `round -> commit` IS recoverable for past runs — the capture history is written as
+        `design/visual_gate/history/HHMMSS_<screen>.png`, and codehub records every commit with
+        `created_at`. That join was never the missing piece.
+      * `round -> score` is recorded NOWHERE. `verdict.json` is a single file OVERWRITTEN each
+        round and it holds the #500 best-of merge, not this capture; the history holds images
+        only; the run log prints coverage and milestone-scope but no similarity. So of 40 kept
+        verdicts, the per-round series exists for zero of them.
+
+    `code_state` alone therefore could not have made the selection decidable on the next run
+    either — the score it needs to be compared against would still be gone by the time the run
+    ended. This appends the pair, plus the per-screen live scores, before anything overwrites it.
+
+    Append-only JSONL, best-effort, never raises: a corrupt or unwritable record must not fail
+    the gate that produced it.
+    """
+    try:
+        row = {
+            "at": time.time(),
+            "code_state": verdict.get("code_state"),
+            "blocking_average": verdict.get("blocking_average"),
+            "blocking_average_live": verdict.get("blocking_average_live"),
+            "passed": verdict.get("passed"),
+            "min_similarity": verdict.get("min_similarity"),
+            "live": {str(s.get("name")): s.get("similarity")
+                     for s in (results or []) if isinstance(s, dict) and s.get("name")},
+        }
+        with open(Path(vdir) / "rounds.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, default=str) + "\n")
     except Exception:
         pass
 

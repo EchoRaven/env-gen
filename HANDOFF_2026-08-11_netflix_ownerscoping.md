@@ -2063,12 +2063,26 @@ runs in three is not a gate. Same judgement rule as #630's 4-of-21 (ship it), ap
 > into a confident zero. **Never wrap a measurement in a bare `except` — a swallowed error and a
 > real zero are indistinguishable.**
 
-**"Ship the run's best commit" (#613/#621) stays undone, and here is the difference.** #630's
-deferral was wrong because its counterfactual *was* computable from artifacts. This one is not:
-`code_state` exists in the code but in **0 of the 40** kept `verdict.json` files, because #621
-landed after the last run. The harm is measured (24 of 39 runs ship a state worse than their own
-best, up to +0.44); the remedy's effect is not, from anything on disk. That is a boundary of the
-evidence, not a preference — and the first run to write `code_state` removes it.
+**"Ship the run's best commit" — the deferral was half wrong, and the half that held had a
+different cause (#640).** I had written that its counterfactual is not computable because
+`code_state` exists in 0 of the 40 kept verdicts. Applying the rule from §5.12 — *test the claim* —
+splits it in two:
+
+> * **`round → commit` IS recoverable for past runs.** Captures are written as
+>   `design/visual_gate/history/HHMMSS_<screen>.png` and codehub records every commit with
+>   `created_at`. That join was never the missing piece, so #621's stated premise was wrong.
+> * **`round → score` is recorded nowhere.** `verdict.json` is ONE file, overwritten each round,
+>   and it holds the #500 best-of merge rather than that capture. The history holds images. The
+>   run log prints coverage and milestone scope and no similarity at all — grepping 45 logs for a
+>   per-round score returns nothing.
+
+So `code_state` alone could not have made the decision possible on the next run either: the score
+to compare against would still be gone by the time the run ended. #640 appends
+`design/visual_gate/rounds.jsonl` — timestamp, `code_state`, merged and live averages, the bar,
+and the per-screen live scores — one line per round, before anything overwrites it. #618's
+finding (**24 of 39 runs ship a state worse than their own best**, up to +0.44) becomes actionable
+the first time a run writes that file; selecting on it still needs one run's data, which is a
+statement about evidence, now with the gap actually closed rather than merely named.
 
 Two details that matter:
 > * **The owner is the frontend lane, from the page's own path — never `created_by`.** That field
