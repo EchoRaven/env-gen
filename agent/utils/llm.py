@@ -1070,6 +1070,18 @@ class BaseLLMClient(ABC):
                 
                 attempt += 1
         
+        # #659: `raise last_error` with NOTHING to raise. `last_error` starts as None and is
+        # only assigned inside the retry loop, so when the loop body never runs the bare
+        # `raise None` becomes "TypeError: exceptions must derive from BaseException" — a
+        # message that names neither the call nor the reason. The loop is skipped whenever the
+        # attempt budget resolves to 0, and `retry_attempts: 0` is a natural thing to put in a
+        # config file meaning "do not retry" (`utils/config.py` defaults it to 3 but reads it
+        # straight from the LLM config block). Same #634 lesson: an error that misdescribes the
+        # condition costs a whole debugging round.
+        if last_error is None:
+            raise RuntimeError(
+                f"LLM call made no attempts: the retry budget resolved to {total_attempts}. "
+                "Set `retry_attempts` to at least 1 in the LLM config.")
         raise last_error
 
 

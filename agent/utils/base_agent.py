@@ -474,6 +474,18 @@ class BaseAgent(ABC):
                     )
                     await asyncio.sleep(wait_time)
         
+        # #659: `raise last_error` with NOTHING to raise. `last_error` starts as None and is
+        # only assigned inside the retry loop, so when the loop body never runs the bare
+        # `raise None` becomes "TypeError: exceptions must derive from BaseException" — a
+        # message that names neither the call nor the reason. The loop is skipped whenever the
+        # attempt budget resolves to 0, and `retry_attempts: 0` is a natural thing to put in a
+        # config file meaning "do not retry" (`utils/config.py` defaults it to 3 but reads it
+        # straight from the agent config block). Same #634 lesson: an error that misdescribes the
+        # condition costs a whole debugging round.
+        if last_error is None:
+            raise RuntimeError(
+                f"retry helper made no attempts: the budget resolved to {max_tries}. "
+                "Set the retry count to at least 1.")
         raise last_error
     
     async def call_tool_with_retry(
