@@ -10,6 +10,23 @@ process, and let the caller retry. Env-agnostic, pure infra.
 """
 from __future__ import annotations
 
+# #646 — ONE VIEWPORT. The pipeline had three, and no two agreed:
+#
+#     visual_fidelity._VIEWPORT     1380x900  (1.533)  <- the one that DECIDES the score
+#     test_user_runner._VIEWPORT    1280x800  (1.600)
+#     browser/_manager (agent tool) 1280x720  (1.778)  <- what a lane SEES when it checks its work
+#
+# Measured across the corpus, agents drive that third one **9420 times** — 3347 navigates and
+# **1332 explicit screenshots**, i.e. "let me look at what I just built". They were looking at a
+# viewport 180px shorter and 100px narrower than the one being scored. This is the session's
+# recurring shape once more: the actor's view is not the measurement's view.
+#
+# Aligned on the gate's value because the gate is what decides. Whether 900 is the RIGHT height
+# is a separate, open question (#644 measured the capture at 1.533 against a reference set whose
+# median aspect is 1.7344, and parked the change because the two consumers of that number want
+# opposite corrections). Making it one constant is what lets that question be answered ONCE.
+CANONICAL_VIEWPORT_646 = {"width": 1380, "height": 900}
+
 import logging
 import subprocess
 import sys

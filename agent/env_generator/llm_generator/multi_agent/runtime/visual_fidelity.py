@@ -183,7 +183,11 @@ def design_premises_text() -> str:
     return "\n".join(lines)
 
 
-_VIEWPORT = {"width": 1380, "height": 900}
+try:   # #646: one viewport for the whole pipeline (see _bootstrap for why)
+    from ...tools.browser._bootstrap import CANONICAL_VIEWPORT_646 as _CV646
+except Exception:  # pragma: no cover — import-shape safety only
+    _CV646 = {"width": 1380, "height": 900}
+_VIEWPORT = dict(_CV646)
 
 # #644 — THE CAPTURE AND THE REFERENCE ARE DIFFERENT SHAPES. MEASURED, NOT ACTED ON.
 # `_VIEWPORT` is the one constant in this module carrying no measured rationale. Against the

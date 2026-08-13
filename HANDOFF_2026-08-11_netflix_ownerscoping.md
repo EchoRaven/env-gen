@@ -1822,6 +1822,36 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.20 — the CODE axis: three viewports, none agreeing (#646, 2026-08-12)
+
+Sweeping the code itself rather than following an artifact into it. This codebase's convention is
+that every tuned constant carries a measured rationale; checking that claim over `runtime/` and
+`agents/runtime/` finds **17 of 37 without one** — so my §5.17 line about `_VIEWPORT` being *the*
+one was wrong. Most of the 17 are harmless vocabulary sets. Three are viewports, and they disagree:
+
+| where | viewport | aspect |
+|---|---|---|
+| `visual_fidelity._VIEWPORT` — **decides the score** | 1380×900 | 1.533 |
+| `test_user_runner._VIEWPORT` | 1280×800 | 1.600 |
+| `tools/browser/_manager` — **what a lane SEES when it checks its work** | 1280×720 | 1.778 |
+| *(reference set, for scale)* | | *1.7344* |
+
+Agents drive the third **9420 times** across the corpus — 3347 `browser_navigate` and **1332
+`browser_screenshot`**, which is literally *"let me look at what I just built"*. They were looking
+at a viewport **180px shorter and 100px narrower** than the one being scored.
+
+That is this session's recurring shape one more time — **the actor's view is not the
+measurement's view**, after #623's label, #634's error text, #642's flag and #637's counter.
+
+#646 makes it one constant, in `tools/browser/_bootstrap` (already imported by all three, so no
+new dependency edge), aligned on the gate's value because the gate is what decides. Each site
+takes its own `dict()` copy, and a guard test fails if a fourth literal creeps back in.
+
+> Whether **900** is the right height is deliberately still open: §5.17 measured the capture at
+> 1.533 against references at 1.7344 and parked the change because the judge and the spec sampler
+> want opposite corrections. Making it one constant is exactly what lets that be answered **once**
+> rather than three times.
+
 ### §5.19 — coverage: every hub store swept, and what each one gave (2026-08-12)
 
 The remaining **22** stores, swept in one pass so "what is left" has an answer instead of an

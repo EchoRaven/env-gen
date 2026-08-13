@@ -31,7 +31,11 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
-_VIEWPORT = {"width": 1280, "height": 800}
+try:   # #646: one viewport for the whole pipeline (see _bootstrap for why)
+    from ...tools.browser._bootstrap import CANONICAL_VIEWPORT_646 as _CV646
+except Exception:  # pragma: no cover — import-shape safety only
+    _CV646 = {"width": 1380, "height": 900}
+_VIEWPORT = dict(_CV646)
 # A page that rendered almost nothing (a stub heading) — used to flag "blank page".
 _MIN_TEXT = 12
 # DOM probe: real interactive control? console errors? AND does the page actually look

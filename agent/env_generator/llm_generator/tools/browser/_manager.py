@@ -103,8 +103,9 @@ class BrowserManager:
                         headless=True,
                         args=['--no-sandbox', '--disable-setuid-sandbox']
                     )
+                from ._bootstrap import CANONICAL_VIEWPORT_646  # #646: one viewport
                 self.state.context = await self.state.browser.new_context(
-                    viewport={'width': 1280, 'height': 720}
+                    viewport=dict(CANONICAL_VIEWPORT_646)
                 )
                 self.state.page = await self.state.context.new_page()
                 
