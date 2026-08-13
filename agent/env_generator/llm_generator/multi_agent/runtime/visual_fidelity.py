@@ -1687,6 +1687,8 @@ async def capture_route_screenshots(
     out_dir: Path,
     auth_redirected: Optional[List[str]] = None,
     blank_screens: Optional[List[str]] = None,
+    picker_screens: Optional[List[str]] = None,   # #657
+
 ) -> Dict[str, str]:
     """Screenshot each screen's route; returns {screen name → png path}. A
     failed navigation skips that screen (reported upstream as missing). An
@@ -1808,6 +1810,14 @@ async def capture_route_screenshots(
                         if _still_picker:
                             # exhausted retries — do NOT feed a picker to the judge as a
                             # real screen (a false ~0.05). Skip the shot (reported blank).
+                            # #657: record WHICH cause this was. Both this branch and the
+                            # un-hydrated-shell branch below feed `blank_screens`, and the
+                            # deviation built from it names only the shell — so a screen the
+                            # capture could not get past the profile picker was reported as
+                            # "the SPA never hydrated", sending the lane to fix a mount/data
+                            # load that works fine.
+                            if picker_screens is not None:
+                                picker_screens.append(screen["name"])
                             if blank_screens is not None:
                                 blank_screens.append(screen["name"])
                             continue
@@ -2256,15 +2266,17 @@ async def run_visual_fidelity(
 
         _auth_bounced: List[str] = []
         _blank_screens: List[str] = []
+        _picker_screens: List[str] = []          # #657
 
         async def capture(scr):  # noqa: F811 — default capture closes over the boot
             return await capture_route_screenshots(
                 base_url, scr, token, shots_dir, auth_redirected=_auth_bounced,
-                blank_screens=_blank_screens)
+                blank_screens=_blank_screens, picker_screens=_picker_screens)
 
     else:
         _auth_bounced = []
         _blank_screens = []
+        _picker_screens = []
 
     shots = await capture(judged_screens)
     if _auth_wipeout_655(judged_screens, _auth_bounced):        # #655: by ROUTE, not by screen
@@ -2281,6 +2293,7 @@ async def run_visual_fidelity(
             token = token2          # `capture` late-binds `token` — no redefinition needed
             _auth_bounced.clear()
             _blank_screens.clear()
+            _picker_screens.clear()
             shots = await capture(judged_screens)
     if _auth_wipeout_655(judged_screens, _auth_bounced):        # #655
         # The minted token was rejected wholesale (e.g. the validation cycle
@@ -2302,7 +2315,17 @@ async def run_visual_fidelity(
     for screen in judged_screens:
         shot = shots.get(screen["name"])
         if not shot:
-            if screen["name"] in _blank_screens:
+            if screen["name"] in _picker_screens:
+                # #657: the SPA hydrated perfectly — it rendered the profile picker, and the
+                # capture could not get past it within _PROFILE_RESELECT_MAX reselect attempts.
+                # Telling the lane to fix the page's mount/data load would send it after a bug
+                # that does not exist; the real ask is that profile selection persist.
+                _dev = (f"route {screen['route']} never got past the PROFILE PICKER — the SPA "
+                        "hydrated and rendered the who's-watching chooser instead of the route, "
+                        "through every reselect retry. The page's mount and data load are fine; "
+                        "make profile selection persist (store it and honour it on load) so a "
+                        "direct navigation to this route renders the route")
+            elif screen["name"] in _blank_screens:
                 _dev = (f"route {screen['route']} rendered BLANK — navigated + reached "
                         "networkidle but the SPA never hydrated after ~5s re-poll (a bare "
                         "<div id=root> shell). If transient (mid-rebuild) it is refunded a "
