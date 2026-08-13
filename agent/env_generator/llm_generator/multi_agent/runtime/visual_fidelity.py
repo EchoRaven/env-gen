@@ -185,26 +185,32 @@ def design_premises_text() -> str:
 
 _VIEWPORT = {"width": 1380, "height": 900}
 
-# #644 — CAPTURE AT THE REFERENCE'S PROPORTIONS.
-# `_VIEWPORT` is the one constant in this module carrying no measured rationale, and measuring it
-# against the reference set says why that matters. Over all 900 reference images in the 45 kept
-# runs the aspect ratio is 1.7297–1.7391 (median **1.7344**, tighter than half a percent). The
-# gate captures at 1380x900 — aspect **1.5333**. At width 1380 the matching height is **796px**,
-# so every judged pair is **13.1%** out of proportion, on every screen of every run.
+# #644 — THE CAPTURE AND THE REFERENCE ARE DIFFERENT SHAPES. MEASURED, NOT ACTED ON.
+# `_VIEWPORT` is the one constant in this module carrying no measured rationale. Against the
+# corpus (all 900 reference images in the 45 kept runs):
 #
-# Two things ride on it, and both are silent:
-#   * the judge compares a 1.533 image against a 1.736 one, so the app looks vertically stretched
-#     against the reference before any lane has done anything wrong;
-#   * `_measured_deviations` samples "the SAME fractional regions" from a spec measured on the
-#     reference. Fractions are resolution-independent but NOT aspect-independent: at 13% the
-#     sample drifts further from its intended content the lower down the page it sits.
+#     reference aspect  1.7297-1.7391, median 1.7344   capture 1380x900 = 1.5333   (13.1% apart)
 #
-# The height is therefore derived from the references actually present, not fixed. Width is kept
-# (it is a real desktop breakpoint and the app's layout responds to width, not to aspect), and
-# 900 remains the fallback when a run has no references to measure — the pre-#644 behaviour.
+# and, measured on 389 screens where a top edge is detectable in BOTH images:
 #
-# This DOES move every score, which is the point; it costs comparability with the 32 historical
-# runs. Comparing differently-proportioned images was wrong independently of that.
+#     reference top edge   97px of 1107  -> fraction 0.0876
+#     capture   top edge   86px of  900  -> fraction 0.0956
+#
+# I changed the viewport to 796px (width / median aspect) and then measured the consequence
+# instead of assuming it. The two objectives point in OPPOSITE directions:
+#
+#     make the two IMAGES the same shape (what the judge compares)  -> 796px
+#     make CONTENT land at the same FRACTION (what the spec sampler
+#     assumes, `_measured_deviations` -> spec_color_deviations)     -> 981px
+#
+# because web layout is absolute from the top and scales with WIDTH, so a shorter viewport makes
+# a fixed-height nav bar occupy a LARGER fraction, not a smaller one. 796px would have taken the
+# sampler's error from +9.1% to +23%. The change is therefore REVERTED, and only the measurement
+# is kept: I have no offline evidence that the judge scores a same-shaped pair any better, and
+# the one half I could measure moved the wrong way.
+#
+# `capture_viewport_644` is retained as the aspect calculation, unused by the capture path, so
+# whichever direction a future run's data supports can be wired without re-deriving this.
 _VIEWPORT_FALLBACK_H_644 = 900
 
 
@@ -1701,8 +1707,7 @@ async def capture_route_screenshots(
                 raise
             browser = await pw.chromium.launch(args=["--no-sandbox"])
         try:
-            # #644: proportions taken from this run's references, not a fixed 900px.
-            ctx = await browser.new_context(viewport=capture_viewport_644(out_dir))
+            ctx = await browser.new_context(viewport=_VIEWPORT)
             if token:
                 # FIX #103 (runs 9+21, live): the app's storage KEY is pure lane variance
                 # ('token' vs 'access_token' vs camelCase …) — a mismatch bounced every

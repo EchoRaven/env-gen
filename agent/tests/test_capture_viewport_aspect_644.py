@@ -1,4 +1,4 @@
-r"""#644: every screen was judged against a reference 13% out of proportion.
+r"""#644: the capture and the reference are different shapes — measured, then NOT acted on.
 
 `_VIEWPORT` is the one constant in visual_fidelity carrying no measured rationale. Measuring it
 against the reference corpus says why that matters — over all **900** reference images in the 45
@@ -6,22 +6,27 @@ kept runs:
 
     reference aspect   1.7297 – 1.7391   median 1.7344   (tighter than half a percent)
     capture aspect     1380 x 900 = 1.5333
-    matching height at width 1380 = 796px, not 900
-    => +13.1% relative vertical error, on every screen of every run
+    matching height at width 1380 = 796px, not 900   => 13.1% apart
 
-Two things ride on it, both silent:
+I changed the viewport to 796 and then measured the consequence instead of assuming it. On 389
+screens where a top edge is detectable in BOTH images:
 
-  * the judge compares a 1.533 image against a 1.736 one, so the app looks vertically stretched
-    against its reference before any lane has done anything wrong;
-  * `_measured_deviations` samples "the SAME fractional regions" from a spec measured on the
-    reference. Fractions are resolution-independent but NOT aspect-independent — at 13% the
-    sample drifts further from its intended content the lower down the page it sits.
+    reference top edge   97px of 1107  -> fraction 0.0876
+    capture   top edge   86px of  900  -> fraction 0.0956
 
-Width is kept: it is a real desktop breakpoint and the layout responds to width, not to aspect.
-900 stays as the fallback for a run with no references, which is the pre-#644 behaviour.
+The two objectives point in OPPOSITE directions:
 
-This moves every score — that is the point — and costs comparability with the 32 historical runs.
-Comparing differently-proportioned images was wrong independently of that.
+    same IMAGE SHAPE (what the judge compares)                 -> 796px
+    same CONTENT FRACTION (what the spec sampler assumes)      -> 981px
+
+because web layout is absolute from the top and scales with WIDTH — a shorter viewport makes a
+fixed-height nav bar occupy a LARGER fraction, not a smaller one. 796px would have taken the
+sampler's error from +9.1% to +23%.
+
+So the change is REVERTED and only the measurement is kept. I have no offline evidence that the
+judge scores a same-shaped pair any better, and the one half I could measure moved the wrong way.
+The calculation is retained, unused by the capture path, so whichever direction a run's data
+supports can be wired without re-deriving it. Same call as #628b.
 
 Finding it took three wrong instruments, all caught: `screenshots/*.png` (1280x720) is the browser
 test-users' output, not the gate's; the gate writes `design/visual_gate/**` at 1380x900. Measuring
@@ -119,20 +124,32 @@ def test_it_resolves_from_the_out_dir_not_the_project_root(tmp_path):
     assert viewport(out)["height"] == 796
 
 
-def test_the_capture_call_uses_it():
+def test_the_capture_path_is_UNCHANGED():
+    """The behaviour change was reverted: 796px fixes the judge's picture-shape and breaks the
+    spec sampler, and only the second half is measurable offline. The calculation stays; the
+    capture keeps the fixed viewport until a run says which direction pays."""
     import inspect
     from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as vf
     src = inspect.getsource(vf.capture_route_screenshots)
-    assert "capture_viewport_644(out_dir)" in src
-    assert "viewport=_VIEWPORT" not in src
+    assert "viewport=_VIEWPORT" in src
+    assert "capture_viewport_644(out_dir)" not in src
+
+
+def test_both_targets_and_the_conflict_are_recorded():
+    import inspect
+    from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as vf
+    flat = " ".join(inspect.getsource(vf).replace("#", " ").split())
+    assert "OPPOSITE directions" in flat
+    assert "-> 796px" in flat and "-> 981px" in flat
+    assert "+9.1% to +23%" in flat
 
 
 def test_the_measurement_is_recorded():
     import inspect
     from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as vf
     flat = " ".join(inspect.getsource(vf).replace("#", " ").split())
-    assert "median **1.7344**" in flat and "**13.1%**" in flat
-    assert "costs comparability with the 32 historical runs" in flat
+    assert "median 1.7344" in flat and "13.1% apart" in flat
+    assert "fraction 0.0876" in flat and "fraction 0.0956" in flat
 
 
 if __name__ == "__main__":  # pragma: no cover

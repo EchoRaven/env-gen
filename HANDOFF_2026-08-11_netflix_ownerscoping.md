@@ -1822,38 +1822,49 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
-### §5.17 — ★ every screen was judged against a reference 13% out of proportion (#644, 2026-08-12)
+### §5.17 — the capture and the reference are different shapes — measured, then NOT acted on (#644, 2026-08-12)
 
 The measured (non-judge) screenshot signals, swept last. `_VIEWPORT` is the **one constant in
-`visual_fidelity` carrying no measured rationale**, and measuring it against the corpus says why
-that matters. Over all **900** reference images in the 45 kept runs:
+`visual_fidelity` with no measured rationale**. Against all **900** reference images in the 45
+kept runs:
 
 | | |
 |---|---|
-| reference aspect | 1.7297 – 1.7391, **median 1.7344** (tighter than half a percent) |
+| reference aspect | 1.7297 – 1.7391, **median 1.7344** |
 | capture | 1380 × 900 = **1.5333** |
-| matching height at width 1380 | **796px**, not 900 |
-| **relative vertical error** | **+13.1%, on every screen of every run** |
+| | **13.1% apart** |
 
-Two things ride on it, both silent:
+I changed the viewport to 796px (width ÷ median aspect), then measured the consequence instead of
+assuming it. On **389** screens where a top edge is detectable in BOTH images:
 
-> * the **judge** compares a 1.533 image against a 1.736 one, so the app looks vertically
->   stretched against its reference before any lane has done anything wrong;
-> * **`_measured_deviations`** samples *"the SAME fractional regions"* from a spec measured on the
->   reference. Fractions are resolution-independent but **not aspect-independent** — at 13% the
->   sample drifts further from its intended content the lower down the page it sits.
+| | |
+|---|---|
+| reference top edge | 97px of 1107 → fraction **0.0876** |
+| capture top edge | 86px of 900 → fraction **0.0956** |
 
-#644 derives the height from the references actually present. Width is kept (a real desktop
-breakpoint; the layout responds to width, not aspect) and 900 remains the fallback for a run with
-no references — the pre-#644 behaviour. This **moves every score**, which is the point, and costs
-comparability with the 32 historical runs. Comparing differently-proportioned images was wrong
-independently of that.
+**The two objectives point in opposite directions:**
+
+> * same **image shape** — what the judge compares → **796px**
+> * same **content fraction** — what `_measured_deviations` → `spec_color_deviations` assumes
+>   → **981px**
+>
+> because web layout is absolute from the top and scales with **width**: a shorter viewport makes
+> a fixed-height nav bar occupy a **larger** fraction, not a smaller one. 796px would have taken
+> the sampler's error from **+9.1% to +23%**.
+
+**So the change is reverted and only the measurement is kept.** I have no offline evidence that
+the judge scores a same-shaped pair better, and the one half I could measure moved the wrong way.
+`capture_viewport_644` remains as the calculation, unused by the capture path, so whichever
+direction a run's data supports can be wired without re-deriving this. Same call as #628b — build,
+measure, discover the premise is wrong, revert, keep the finding.
 
 > **Three wrong instruments on the way in, all caught.** `screenshots/*.png` (1280×720) is the
 > browser test-users' output, not the gate's — the gate writes `design/visual_gate/**` at
-> 1380×900. A whole-image "dominant colour ≥98%" test for the `blank` flag found nothing because
-> a blank capture's shot is *skipped*, so the file on disk is a stale earlier round. Measuring the
-> wrong directory produced a confident aspect comparison about images the judge never sees.
+> 1380×900; measuring the wrong directory produced a confident aspect claim about images the judge
+> never sees. A whole-image "dominant colour ≥98%" test for the `blank` flag found nothing,
+> because a blank capture's shot is *skipped* and the file on disk is a stale earlier round. And
+> my first alignment arithmetic inverted the direction (824px) before the pixel measurement
+> corrected it to 981px.
 >
 > Also checked and clean: the `blank` mechanism behaves as documented, and **nothing downstream
 > globs `screenshots/`**, so the stale file misleads no one.
