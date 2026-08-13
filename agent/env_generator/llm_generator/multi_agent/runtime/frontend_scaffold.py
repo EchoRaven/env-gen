@@ -4137,9 +4137,14 @@ def _assign_ref_labels(routes, design):
     # Measured over the 112 verdict files / 1325 judged screen records: `my list nav item` is
     # the 3rd most-reported missing component (125 mentions, behind `search icon` 192 and
     # `notifications bell` 184), on the dimension that is the FLOOR for 800 of 1254 scored
-    # records (`components`, 63.8% — 4.6x the next one). In the delivered navs it is not a
-    # near-miss but a hard defect, byte-identical across independent runs because this is the
-    # framework's own projected nav (#520), not lane authorship.
+    # records (`components`, 63.8% — 4.6x the next one).
+    #
+    # It is INTERMITTENT, which is why it survived: of the 28 delivered `TopNav.jsx` files,
+    # 11 render `My List -> /my-list` correctly and 7 render it as `Home -> /my-list` (the
+    # rest have no such route). Across the wider set of 134 runs that render a primary nav
+    # anywhere, 24 ship a `Home` label pointing at a non-home route. Whether it breaks turns
+    # on the lane's incoming label: when that label happens to carry a token the semantic
+    # tokenizer keeps, the pairing survives; when it does not, both sides go empty.
     #
     # #474 hit this same trap in `_filter_nav_to_ref` and switched to raw content words there,
     # documenting it verbatim: "NOT _semantic_tokens_226, which strips 'list'/'my' as layout

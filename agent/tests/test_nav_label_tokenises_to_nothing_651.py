@@ -9,8 +9,11 @@ the 112 verdict files / 1325 judged screen records:
 
 Following it: the label IS measured (`_ref_nav_labels` returns it in 44 of 45 runs) and the route
 IS registered (`/my-list` as a ui_page), yet 7 of the 28 delivered `TopNav.jsx` files carry
-`Home -> /my-list` and NONE carry a correct My List link — byte-identical across independent runs,
-because this is the framework's OWN projected nav (#520), not lane authorship.
+`Home -> /my-list`. It is INTERMITTENT — 11 of those 28 get it right — which is exactly why it
+survived this long; across the 134 runs that render a primary nav anywhere, 24 ship a `Home`
+label on a non-home route. Whether it breaks turns on the lane's incoming label: when that label
+carries a token the semantic tokenizer keeps, the pairing survives; when it does not, both sides
+go empty and the route falls to the Home fallback.
 
 The cause is a tokenizer that erases exactly the pairing that matters:
 
@@ -185,6 +188,8 @@ def test_the_measurement_is_recorded():
     flat = " ".join(inspect.getsource(fs._assign_ref_labels).replace("#", " ").split())
     assert "125 mentions" in flat
     assert "800 of 1254" in flat and "1325 judged screen records" in flat
+    assert "11 render" in flat and "24 ship a `Home` label" in flat, (
+        "the defect is intermittent — a comment that implies it always breaks misleads")
 
 
 if __name__ == "__main__":  # pragma: no cover
