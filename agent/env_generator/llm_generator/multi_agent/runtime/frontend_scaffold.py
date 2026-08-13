@@ -4349,12 +4349,41 @@ def _ref_nav_jsx(nav_routes, accent: str, vertical: bool,
     # screen) for "extraneous items (Profiles, Log out) noticeably break fidelity" — so
     # the raw "Log out" text button is removed and the avatar chip carries the logout
     # onClick, preserving the FUNCTION while dropping the un-reference chrome.
+    # #653: THE CARET PROMISED A MENU THAT DID NOT EXIST, AND CLICKING IT LOGGED YOU OUT.
+    # #457 moved logout onto this chip because "streaming/media apps put logout in the avatar
+    # menu, not a top-bar text button" — correct, but the menu was never built. What shipped is
+    # a disclosure affordance (\u25BE) whose only behaviour is an immediate
+    # `localStorage.clear()` + redirect to /login.
+    #
+    # Measured over the 144 delivered frontends: 61 carry this chip, 61 of those 61 render the
+    # caret, and 44 of them contain NO menu state anywhere in the frontend. So a user-agent that
+    # clicks the account chip to reach account actions — the obvious thing to do, and what the
+    # caret invites — is silently signed out instead. `profile avatar dropdown` is also the
+    # judge's 4th most-reported missing component (75).
+    #
+    # The disclosure is CSS-only: `group-hover` + `group-focus-within`, so it opens on hover AND
+    # on click/keyboard focus, and needs no useState (the projected TopNav imports no hooks).
+    # The logout FUNCTION is preserved exactly — it just lives on a menu item now, which is what
+    # #457 intended. The surface uses the design's MEASURED page background, because the nav
+    # itself sets none and a transparent dropdown would paint over the page content.
+    _menu_bg = (((design or {}).get("design_system") or {}).get("palette") or {})
+    _menu_bg = _menu_bg.get("bg") or _menu_bg.get("background") or "#141414"
     _avatar_jsx = (
-        "            <button onClick={() => { localStorage.clear(); window.location.href = '/login'; }} "
-        'className="flex items-center gap-1" title="Profile" aria-label="Profile">\n'
-        f'              <span className="h-8 w-8 rounded" style={{{{ backgroundColor: \'{accent}\' }}}} aria-hidden="true"></span>\n'
-        "              <span className=\"text-xs opacity-80\" aria-hidden=\"true\">{'\\u25BE'}</span>\n"
-        "            </button>\n")
+        '            <div className="relative group">\n'
+        '              <button className="flex items-center gap-1" title="Profile" '
+        'aria-label="Profile" aria-haspopup="menu">\n'
+        f'                <span className="h-8 w-8 rounded" style={{{{ backgroundColor: \'{accent}\' }}}} aria-hidden="true"></span>\n'
+        "                <span className=\"text-xs opacity-80\" aria-hidden=\"true\">{'\\u25BE'}</span>\n"
+        "              </button>\n"
+        '              <div role="menu" className="absolute right-0 top-full z-50 hidden '
+        'min-w-[10rem] rounded border py-1 text-sm group-hover:block group-focus-within:block" '
+        f"style={{{{ backgroundColor: '{_menu_bg}', borderColor: 'rgba(128,128,128,0.35)' }}}}>\n"
+        '                <button role="menuitem" className="block w-full px-3 py-1.5 text-left '
+        'hover:opacity-80" '
+        "onClick={() => { localStorage.clear(); window.location.href = '/login'; }}>"
+        "Sign out</button>\n"
+        "              </div>\n"
+        "            </div>\n")
     # #454: rest-visible search / notifications / Kids chrome (inline SVG), gated on
     # the design's nav-role tokens; skip any utility the asset channel already covered.
     # #551: a search/bell asset the design STAGED (but which we no longer emit as an
