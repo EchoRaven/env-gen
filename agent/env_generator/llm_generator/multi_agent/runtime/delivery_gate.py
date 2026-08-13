@@ -1497,6 +1497,27 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         for r in validation_results
         if isinstance(r, dict) and r.get("status") in {"failed", "error"}
     ][:5]
+    # #671: SAY SO WHEN THE MATRIX IS SKIPPED. `tasks/tasks.yaml` has NEVER existed —
+    # 0 of 144 runs have it, `tasks.yaml` appears nowhere in any run tree, and the gate logged
+    # `task_suite=False` 41 times and `task_suite=True` never. So the runtime validation matrix
+    # below (require at least one API smoke pass and one UI smoke pass before delivery) has not
+    # run once, and the report gave no sign of it: `task_suite_exists: False` sits in the
+    # payload as a fact, not as a caveat on the verdict.
+    #
+    # The evidence those checks want IS present in most runs — read through
+    # `get_validation_results`' normalisation (#193/#236: 'success' -> 'passed', evidence.check
+    # lifted into metadata.check), api_smoke passes in 90 of 144 and ui_smoke in 116 of 144.
+    # So 54 runs delivered with no API smoke pass and 28 with no UI smoke pass, and the gate
+    # never asked. (Measuring the raw codehub_checks store instead of going through that
+    # normalisation says 0 of 144 for both — an artifact of skipping the normaliser, not a
+    # finding.)
+    #
+    # ENFORCING them is a real gate-tightening that needs a live run to validate, so it is
+    # recorded in EXPERIMENTS_PENDING rather than switched on blind. What is safe now is to
+    # stop the skip being silent: an unchecked matrix must not read like a passed one.
+    matrix_skipped_reason = "" if task_suite_exists else (
+        "no tasks/tasks.yaml — the API-smoke and UI-smoke requirements were NOT evaluated; "
+        "api_smoke_pass/ui_smoke_pass below are REPORTED, not enforced")
     if task_suite_exists:
         if retry_pending_count > 0:
             # Soft-fail: auto-retry loop is still in progress.
@@ -1643,6 +1664,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         ),
         "validation_runtime": {
             "task_suite_exists": task_suite_exists,
+            "matrix_skipped_reason": matrix_skipped_reason,     # #671
             "total_results": validation_summary.get("total", 0),
             "all_passed": validation_summary.get("all_passed", False),
             "api_smoke_pass": api_smoke_pass,
