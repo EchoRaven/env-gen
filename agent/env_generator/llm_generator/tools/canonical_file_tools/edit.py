@@ -10,6 +10,54 @@ from .shared import (
     _check_file_region_claim,
 )
 
+def _anchor_miss_reason_676(content: str, anchor: str, path) -> str:
+    """#676: WHY the anchor did not match, from what the tool already holds.
+
+    `edit: old_string not found in file` was the entire message — nine words, naming neither the
+    file, nor the anchor, nor which of three quite different things went wrong. Continuing the
+    wasted-STEPS ranking (#674, #675): `edit` fails 1694 times across the 249 run logs at a
+    median of 12 per run, and 418 of those are this line. Per #257 each retry is a whole step.
+
+    Three causes, and the remedy differs for each:
+
+      * whitespace drift — the block IS there but the indentation or spacing differs. The agent
+        should re-read and copy the exact text, not rewrite the anchor.
+      * partial match — the anchor's first line exists but the block diverges after it. The
+        agent is close and needs the real continuation, so the line number is the answer.
+      * nothing present — the anchor is from a stale read or the wrong file entirely.
+
+    Everything needed is in hand. Best-effort: any fault falls back to the original wording, so
+    the message is never worse than before.
+    """
+    base = "edit: old_string not found in file"
+    try:
+        name = getattr(path, "name", None) or str(path)
+        lines = anchor.splitlines() or [anchor]
+        where = f" ({name}; the anchor is {len(lines)} line(s))"
+
+        def _flat(t):
+            return "\n".join(" ".join(l.split()) for l in t.splitlines())
+
+        if _flat(anchor) and _flat(anchor) in _flat(content):
+            return (base + where + " — but the SAME text IS present with different whitespace. "
+                    "Re-read the file and copy the block exactly as it appears (indentation "
+                    "included) rather than retyping it.")
+
+        first = next((l for l in lines if l.strip()), "")
+        if first and first in content:
+            n = content[:content.index(first)].count("\n") + 1
+            return (base + where + f" — its FIRST line is at line {n}, but the block diverges "
+                    "after that. Re-read from there and anchor on the text that is actually "
+                    "in the file.")
+        if first.strip() and first.strip() in content:
+            return (base + where + " — its first line appears only with different surrounding "
+                    "whitespace. Re-read and copy the exact text.")
+        return (base + where + " — no part of the anchor is present. The file has changed since "
+                "you read it, or this is not the file you meant; read it again before editing.")
+    except Exception:
+        return base
+
+
 class EditTool(BaseTool):
     """Canonical exact-string edit tool."""
 
@@ -105,7 +153,8 @@ If `old_string` is empty and the file does not exist, a new file is created.
         else:
             matches = current_content.count(old_string)
             if matches == 0:
-                return ToolResult(success=False, error_message="edit: old_string not found in file")
+                return ToolResult(success=False, error_message=_anchor_miss_reason_676(
+                    current_content, old_string, file_path))
             if matches > 1 and not replace_all:
                 return ToolResult(
                     success=False,
