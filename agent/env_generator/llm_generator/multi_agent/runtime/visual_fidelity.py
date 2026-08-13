@@ -2060,6 +2060,44 @@ def _auth_wipeout_655(judged_screens, auth_bounced) -> bool:
     return covered >= auth_names
 
 
+def _blank_wipeout_656(results, blank_screens, shots) -> bool:
+    """#656: is a blank capture wholesale enough to refund the ATTEMPT rather than the SCORE?
+
+    Same defect shape as #655, in the blank path: `capture_transient` was
+    ``bool(_blank_screens) and not shots`` — TOTAL blankness, nothing less. A capture that
+    blanked 9 of 13 screens produced one shot, so it was "partial", so the bounded refund never
+    applied. Measured over the run logs: 58 blank events across 20 runs, and **18 of them (31%)
+    name 8 or more screens** — near-total, never total.
+
+    That mattered because `_blocking_average` (#542a) drops every ``blank is True`` screen from
+    its denominator as "a transient env glitch". The drop has no bound and no persistence check,
+    so a near-total blackout does not refund the attempt AND does not count — the gate is simply
+    decided by whatever few screens survived:
+
+        r60   9 blank -> the average was taken over 4 screens
+        r43   7 blank -> over 5
+        r121  4 blank -> over 4, giving blocking_average 0.6125
+
+    The rule needs no tuned constant: the gate must not be decided by FEWER screens than it
+    refunded. When the blanks are at least as many as the screens that scored, the capture as a
+    whole is not credible and it is the same condition #75a already refunds — bounded by the
+    same `_TRANSIENT_REFUND_CAP`, so a genuinely blank app still flows to a real verdict after
+    three tries.
+
+    A true minority blank is unchanged and still returns False: #75a's reason for that
+    ("a partial-blank must not discard a fixable sibling's 0.55 and suppress its remediation")
+    holds precisely while the siblings are the majority.
+    """
+    if not blank_screens:
+        return False
+    if not shots:
+        return True                       # the original total-blackout case, unchanged
+    blocking = [r for r in (results or [])
+                if isinstance(r, dict) and not r.get("advisory")]
+    blanked = [r for r in blocking if r.get("blank") is True]
+    return bool(blocking) and len(blanked) * 2 >= len(blocking)
+
+
 async def run_visual_fidelity(
     project_dir: Any,
     reference_images: List[Any],
@@ -2386,7 +2424,8 @@ async def run_visual_fidelity(
     return {"passed": passed, "summary": summary, "screens": results, "skipped": skipped,
             "coverage": _coverage,  # #351: reporting only — does not gate
             "blocking_average": _blk_avg,  # #542a: gating avg over BLOCKING screens only
-            "capture_transient": bool(_blank_screens) and not shots,
+            # #656: a NEAR-total blackout is the same condition as a total one.
+            "capture_transient": _blank_wipeout_656(results, _blank_screens, shots),
             # #565: screens demoted for THIS (non-final) milestone — excluded from
             # remediation_text so an intermediate milestone never files frontend work for a
             # later milestone's pages. Empty on the final/single-milestone path.
