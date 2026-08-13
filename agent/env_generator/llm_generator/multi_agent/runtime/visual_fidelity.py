@@ -185,6 +185,69 @@ def design_premises_text() -> str:
 
 _VIEWPORT = {"width": 1380, "height": 900}
 
+# #644 — CAPTURE AT THE REFERENCE'S PROPORTIONS.
+# `_VIEWPORT` is the one constant in this module carrying no measured rationale, and measuring it
+# against the reference set says why that matters. Over all 900 reference images in the 45 kept
+# runs the aspect ratio is 1.7297–1.7391 (median **1.7344**, tighter than half a percent). The
+# gate captures at 1380x900 — aspect **1.5333**. At width 1380 the matching height is **796px**,
+# so every judged pair is **13.1%** out of proportion, on every screen of every run.
+#
+# Two things ride on it, and both are silent:
+#   * the judge compares a 1.533 image against a 1.736 one, so the app looks vertically stretched
+#     against the reference before any lane has done anything wrong;
+#   * `_measured_deviations` samples "the SAME fractional regions" from a spec measured on the
+#     reference. Fractions are resolution-independent but NOT aspect-independent: at 13% the
+#     sample drifts further from its intended content the lower down the page it sits.
+#
+# The height is therefore derived from the references actually present, not fixed. Width is kept
+# (it is a real desktop breakpoint and the app's layout responds to width, not to aspect), and
+# 900 remains the fallback when a run has no references to measure — the pre-#644 behaviour.
+#
+# This DOES move every score, which is the point; it costs comparability with the 32 historical
+# runs. Comparing differently-proportioned images was wrong independently of that.
+_VIEWPORT_FALLBACK_H_644 = 900
+
+
+def _references_dir_644(anywhere: Any) -> Optional[Path]:
+    """`design/references` found from any path inside the project tree (the capture helper is
+    handed an out_dir, not the project root)."""
+    try:
+        here = Path(str(anywhere)).resolve()
+        for base in (here, *here.parents):
+            cand = base / "design" / "references"
+            if cand.is_dir():
+                return cand
+    except Exception:
+        pass
+    return None
+
+
+def capture_viewport_644(project_dir: Any) -> Dict[str, int]:
+    """The capture viewport, with its height matched to the reference aspect. Never raises."""
+    width = int(_VIEWPORT["width"])
+    try:
+        from PIL import Image
+        refs = _references_dir_644(project_dir)
+        ratios = []
+        for p in sorted(refs.glob("*")) if refs else []:
+            if p.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+                continue
+            try:
+                with Image.open(p) as im:
+                    w, h = im.size
+                if w > 0 and h > 0:
+                    ratios.append(w / h)
+            except Exception:
+                continue
+        if ratios:
+            ratios.sort()
+            median = ratios[len(ratios) // 2]
+            if 0.2 < median < 10:          # a sane aspect; never trust a corrupt read
+                return {"width": width, "height": max(320, round(width / median))}
+    except Exception:
+        pass
+    return {"width": width, "height": _VIEWPORT_FALLBACK_H_644}
+
 
 def load_screen_classifications(project_dir: Any) -> Dict[str, Dict[str, Any]]:
     """FIX #132 — the AUTHORITATIVE reference->screen classification from
@@ -1638,7 +1701,8 @@ async def capture_route_screenshots(
                 raise
             browser = await pw.chromium.launch(args=["--no-sandbox"])
         try:
-            ctx = await browser.new_context(viewport=_VIEWPORT)
+            # #644: proportions taken from this run's references, not a fixed 900px.
+            ctx = await browser.new_context(viewport=capture_viewport_644(out_dir))
             if token:
                 # FIX #103 (runs 9+21, live): the app's storage KEY is pure lane variance
                 # ('token' vs 'access_token' vs camelCase …) — a mismatch bounced every

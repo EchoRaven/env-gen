@@ -1822,6 +1822,42 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.17 — ★ every screen was judged against a reference 13% out of proportion (#644, 2026-08-12)
+
+The measured (non-judge) screenshot signals, swept last. `_VIEWPORT` is the **one constant in
+`visual_fidelity` carrying no measured rationale**, and measuring it against the corpus says why
+that matters. Over all **900** reference images in the 45 kept runs:
+
+| | |
+|---|---|
+| reference aspect | 1.7297 – 1.7391, **median 1.7344** (tighter than half a percent) |
+| capture | 1380 × 900 = **1.5333** |
+| matching height at width 1380 | **796px**, not 900 |
+| **relative vertical error** | **+13.1%, on every screen of every run** |
+
+Two things ride on it, both silent:
+
+> * the **judge** compares a 1.533 image against a 1.736 one, so the app looks vertically
+>   stretched against its reference before any lane has done anything wrong;
+> * **`_measured_deviations`** samples *"the SAME fractional regions"* from a spec measured on the
+>   reference. Fractions are resolution-independent but **not aspect-independent** — at 13% the
+>   sample drifts further from its intended content the lower down the page it sits.
+
+#644 derives the height from the references actually present. Width is kept (a real desktop
+breakpoint; the layout responds to width, not aspect) and 900 remains the fallback for a run with
+no references — the pre-#644 behaviour. This **moves every score**, which is the point, and costs
+comparability with the 32 historical runs. Comparing differently-proportioned images was wrong
+independently of that.
+
+> **Three wrong instruments on the way in, all caught.** `screenshots/*.png` (1280×720) is the
+> browser test-users' output, not the gate's — the gate writes `design/visual_gate/**` at
+> 1380×900. A whole-image "dominant colour ≥98%" test for the `blank` flag found nothing because
+> a blank capture's shot is *skipped*, so the file on disk is a stale earlier round. Measuring the
+> wrong directory produced a confident aspect comparison about images the judge never sees.
+>
+> Also checked and clean: the `blank` mechanism behaves as documented, and **nothing downstream
+> globs `screenshots/`**, so the stale file misleads no one.
+
 ### §5.16 — the DESIGN SYSTEM: 74% of it is written into a void (#643, 2026-08-12)
 
 The design axis, swept for the first time. Across the 45 delivered `design/design_system.json`:
