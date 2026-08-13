@@ -413,8 +413,45 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                                     self._logger.warning(
                                         f"[{self.agent_id}] step-start pull conflict: {pulled_info}"
                                     )
+                                    # #667: DEDUPE THE EVENT THE WAY THE TASK BELOW IS ALREADY
+                                    # DEDUPED. The remediation task is created once per
+                                    # unresolved conflict (`_dup` below); the urgent event was
+                                    # republished on EVERY step, carrying identical content the
+                                    # orchestrator can do nothing new with.
+                                    #
+                                    # Measured over the 249 run logs: 4320 conflicts across 31
+                                    # runs, median 50 per run, 796 in r124 alone — and the
+                                    # orchestrator's bounded dispatch queue is saturated in
+                                    # lockstep. Runs WITH pull conflicts show a median of 396
+                                    # "dispatch queue FULL" warnings against 202 for runs
+                                    # without, r = 0.78 over 128 runs, and the three worst
+                                    # conflict runs (796/612/454) are the three worst saturation
+                                    # runs (2498/2814/2176). #150 drops the ordinary-dispatch
+                                    # copy when that queue fills, so this repeat is buying
+                                    # nothing and crowding the channel that carries everything
+                                    # else.
+                                    #
+                                    # The first event still fires, and fires again after each
+                                    # resolution (the task auto-completes, so the next conflict
+                                    # sees no open task). The task remains the durable record —
+                                    # exactly the split the code below already chose.
+                                    _open_conflict_task = False
                                     try:
-                                        if self._hubs is not None and hasattr(self._hubs, "eventhub"):
+                                        _wh = getattr(self._hubs, "workhub", None)
+                                        if _wh is not None and hasattr(_wh, "stores"):
+                                            _open_conflict_task = any(
+                                                isinstance(_t, dict)
+                                                and _t.get("status") in ("pending", "in_progress")
+                                                and (_t.get("metadata") or {}).get("source")
+                                                == "step_runner_merge_conflict"
+                                                and _t.get("assignee") == self.agent_id
+                                                for _t in (_wh.stores.tasks.value() or {}).values())
+                                    except Exception:
+                                        _open_conflict_task = False
+                                    try:
+                                        if (not _open_conflict_task
+                                                and self._hubs is not None
+                                                and hasattr(self._hubs, "eventhub")):
                                             self._hubs.eventhub.publish_event(
                                                 source_hub=self.agent_id,
                                                 event_type="merge_conflict",
