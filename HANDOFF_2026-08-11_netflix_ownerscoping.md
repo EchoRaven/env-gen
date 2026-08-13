@@ -1837,17 +1837,36 @@ dormant code.
 Largest: `parallel_execute` (4 432 chars), `report_issue` (1 233), `spawn_worker` (1 127),
 `store_knowledge` (896), `milestone_add` (883).
 
-**Deliberately not cut**, for two reasons that the number itself cannot settle:
-> * 24% is an **upper bound on the per-call waste**, not the actual figure — an agent pays only
->   for the bundles it holds, and no artifact records which tools were offered to whom (the
->   `prompt` events truncate at 2000 chars and carry no schema).
-> * *"unused in 45 runs"* is not *"removable"*. The biggest entry, `parallel_execute`, is a
->   capability that may be rare and valuable; cutting on non-use silently disables it. The one
->   provably inert family — the PR/review tools, whose subsystem holds **0 rows in 0 of 45 runs**
->   (§5.14) — is inert only under the *current* commit-only configuration, not permanently.
+**I first wrote that no artifact records which tools were offered to whom.** Wrong — the sixth
+time that class of claim has failed this session. `agents_config.yaml` maps every role to its
+bundles and `tool_bundles.py` maps every bundle to its tools; the offered set is fully
+determinable. Computed per role (after validating the extraction — a naive quoted-string scan of a
+bundle body also swallows `'implemented'`, `'ui_page'`, `'hub'`, so it must be intersected with the
+real `NAME` set):
 
-What is worth having is the number and the list, which is what a future surface-trim needs and
-what nobody had. The same call as §5.28's 371 dead lines: measured, recorded, not churned.
+| role | offered | never called | unused schema | share of ITS surface |
+|---|---|---|---|---|
+| debugger | 62 | 32 | 10 103 | **42%** |
+| orchestrator | 75 | 37 | 12 238 | 33% |
+| backend / frontend | 71 | 33 | 10 656 | 30% |
+| verifier | 73 | 33 | 10 656 | 29% |
+| test users | 58 | 26 | 7 459 | 28% |
+
+So the real per-role figure is **28–42%**, *higher* than the 24% corpus-wide estimate, which had
+divided by all 290 tools rather than by what each role actually carries.
+
+> **And that reverses the conclusion for a better reason than caution.** The tool schema is a
+> STATIC PREFIX. `#257` already measured where the money goes: *"r51 measured 456.7M prompt vs
+> 0.9M completion tokens — the run's whole cost is prompt — and the uncached share was ~0.8× the
+> per-step GROWTH, i.e. the prompt cache is already near-optimal and the spend is simply how much
+> NEW text each step appends."* An unused tool's schema sits in the cached prefix: it costs cache
+> footprint, not per-call tokens. **Trimming it would buy almost nothing**, while "unused in 45
+> runs" is not "removable" — the largest entry, `parallel_execute`, is a rare-but-real capability,
+> and the one provably inert family (PR/review tools, **0 rows in 0 of 45 runs**) is inert only
+> under the *current* commit-only configuration.
+
+This axis is therefore closed, not parked: the number is large, and it is large in the part of the
+prompt that is already near-free.
 
 ### §5.28 — the same reachability question, asked of the WHOLE codebase (2026-08-12)
 
