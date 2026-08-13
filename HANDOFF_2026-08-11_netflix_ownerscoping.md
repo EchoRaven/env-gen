@@ -1822,6 +1822,36 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.19 — coverage: every hub store swept, and what each one gave (2026-08-12)
+
+The remaining **22** stores, swept in one pass so "what is left" has an answer instead of an
+estimate. **No defect.** Third consecutive clean negative after §5.14 and §5.15.
+
+| | |
+|---|---|
+| empty in all 45 runs — declared storage nothing writes | **12** (`codehub_repos`, `registryhub_examples/mocks/projects/providers/reviews/schemas/seed_registrations`, `workhub_acceptance_criteria/databases/reactions/workspaces`) |
+| populated and read | `eventhub_threads` 50 586 · `workhub_comments` 1 316 · `runhub_runs` 765 · `registryhub_mcp_registry` 611 · `registryhub_contract_tests` 582 · `workhub_documents` 227 · `workhub_attendees` 178 · `codehub_branches` 117 · `milestones` 87 |
+
+The one that looked like a finding: **`workhub_decisions` is empty in all 45 runs yet the word
+appears in 11 runtime files**, while `meeting_decision_added` fires **3322** times — decisions are
+clearly being made and clearly not landing there. Following it: `add_meeting_decision` writes
+`documents[meeting_id].metadata.decisions`, which is exactly where `flow_coverage` and the live
+monitor read from, and the corpus holds **3413** decisions across 58 meeting documents. The
+`decisions` store file is unused declaration; nothing is lost.
+
+> **A seventh instrument artifact, caught.** My first count said *"0 of 227 documents carry
+> decisions"* — I read `doc["decisions"]` when the field is `doc["metadata"]["decisions"]`. One
+> nesting level, and the conclusion inverts from "3413 decisions recorded correctly" to "the
+> decision system is dead". Seven times this session a scan's confident zero was the scan's own
+> bug; not once was it the pipeline's.
+
+**Sweep coverage is now complete for offline-detectable classes:** run logs by error class
+(§5.11), agent trajectories (§5.12), delivered frontends (§5.9) and backends (§5.10), git
+coordination (§5.3), bug records (§5.5), breaking-change routing (§5.6), verification chains
+(§5.15), design system (§5.16), measured screenshot signals (§5.17), every hub store (§5.14 +
+§5.19), and the fixes against each other (§5.18). What remains needs a run, and §5.12/§5.17/#641
+name exactly which measurement each one is waiting for.
+
 ### §5.18 — auditing this session's fixes AGAINST EACH OTHER (#645, 2026-08-12)
 
 Twenty-three fixes, each tested alone. Eight source files carry two or more of them, so the last
