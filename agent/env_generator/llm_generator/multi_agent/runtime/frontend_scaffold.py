@@ -3936,11 +3936,13 @@ def _nav_utility_icons(design) -> List[Tuple[str, str]]:
 _NAV_CHROME_SEARCH_454 = re.compile(r"\bsearch\b", re.I)
 _NAV_CHROME_BELL_454 = re.compile(r"\b(notifications?|bell|alerts?)\b", re.I)
 _NAV_CHROME_KIDS_454 = re.compile(r"\bkids?\b", re.I)
+# #654: the route segments a kids/family view actually uses, beside _NAV_CHROME_KIDS_454.
+_KIDS_SEG_654 = re.compile(r"(?i)\b(children|family|junior)\b")
 _NAV_CHROME_CTX_454 = re.compile(
     r"\b(nav|navigation|top ?bar|topbar|header|masthead|utility|cluster)\b", re.I)
 
 
-def _nav_chrome_454(design, skip=None, force=None) -> str:
+def _nav_chrome_454(design, skip=None, force=None, routes=None) -> str:
     """#454: rest-visible top-nav UTILITY CHROME (search icon / notifications bell /
     Kids link) as inline SVGs+text, gated on the design's own nav component-role
     tokens. The judge's recurring 'header/profile chrome incomplete' across browse/
@@ -3992,10 +3994,33 @@ def _nav_chrome_454(design, skip=None, force=None) -> str:
             '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />'
             '<path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg></button>\n')
     if "kids" not in skip and _NAV_CHROME_KIDS_454.search(text):
-        parts.append(
-            '            <a href="/browse" aria-label="Kids" className="rounded border px-2 '
-            'py-0.5 text-xs font-semibold opacity-90" '
-            "style={{ borderColor: 'rgba(255,255,255,0.4)' }}>Kids</a>\n")
+        # #654 — A HARDCODED `/browse` MADE THIS CHIP A DUPLICATE OF ANOTHER NAV ITEM.
+        # The emitter shipped `<a href="/browse">Kids</a>`: a product route literal inside a
+        # generalizable emitter (the docstring above promises "no product literals"), and a
+        # destination it does not own. Measured over the 28 delivered navs: 17 contain two nav
+        # items pointing at ONE page, and 16 of those 17 are this chip colliding —
+        #
+        #     x8  /browse <- ['Home', 'Kids']       x7  /browse <- ['Browse by Languages', 'Kids']
+        #
+        # so "Kids" lands on exactly the page the item beside it already goes to, and a
+        # user-agent asked to open Kids cannot tell it apart from Browse. Same class as #653:
+        # an affordance that says one thing and does another.
+        #
+        # The target is now resolved from the app's OWN registered nav routes. When none is a
+        # kids/family route the chip renders as what the design actually enumerates — a "kids
+        # profile chip"/"badge" — rather than a link to somewhere else. A badge under-delivers
+        # a component; a mislabelled link is a broken one.
+        _kids_href = next(
+            (rt for _lbl, rt in (routes or [])
+             if _NAV_CHROME_KIDS_454.search(str(rt).rsplit("/", 1)[-1])
+             or _KIDS_SEG_654.search(str(rt).rsplit("/", 1)[-1])), None)
+        _kids_cls = ('className="rounded border px-2 py-0.5 text-xs font-semibold opacity-90" '
+                     "style={{ borderColor: 'rgba(255,255,255,0.4)' }}")
+        if _kids_href:
+            parts.append('            <a href="%s" aria-label="Kids" %s>Kids</a>\n'
+                         % (_kids_href, _kids_cls))
+        else:
+            parts.append('            <span aria-label="Kids" %s>Kids</span>\n' % _kids_cls)
     return "".join(parts)
 
 
@@ -4390,7 +4415,7 @@ def _ref_nav_jsx(nav_routes, accent: str, vertical: bool,
     # invisible <img>) is force-rendered inline by _nav_chrome_454, preserving #421's
     # staged-asset signal while making the icon visible.
     _chrome_jsx = _nav_chrome_454(
-        design, skip={lbl.lower() for lbl, _ in _util_icons_551},
+        design, routes=nav_routes, skip={lbl.lower() for lbl, _ in _util_icons_551},
         force={lbl.lower() for lbl, _ in _nav_utility_icons(design)
                if lbl.lower() in ("search", "notifications")})
     _right = (
