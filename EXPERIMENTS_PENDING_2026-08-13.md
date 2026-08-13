@@ -233,7 +233,40 @@ the honest fix is upstream in reference classification, not in the transient voc
 
 ---
 
-## 12. Older, still unresolved
+## 12. The persistent notebook is unused by the roles that most need it
+
+**Not changed — this is behaviour, and I verified it is NOT a wiring block.**
+
+`memory-bank/<agent>/notebook.md` is the only agent-WRITABLE memory file. Its own template says
+"THIS FILE IS YOURS … record here what your NEXT wake should not have to re-derive". Across
+1715 agent memory banks (144 runs), 1191 are still the untouched template — median content
+lines: 0. Split by role:
+
+    verifier        136/144  94%      frontend        66/144  46%
+    orchestrator    120/144  83%      design_analyst  60/144  42%
+    backend         120/144  83%      debugger        13/144   9%
+    test_user         9/706   1%      knowledge        0/144   0%
+
+test_user at 1% is right — those lanes are ephemeral. The rest is not obviously right, and the
+`knowledge` role never once used it in 144 runs.
+
+Checked for a wiring cause and found none: no profile denies a memory tool, `UpdateMemoryBankTool`
+IS instantiated (multi_agent/tools.py:247), and the debugger's action-stage allowlist omits the
+write-side tools but its `knowledge_sync` stage uses `KNOWLEDGE_STORE_TOOL_NAMES` independently
+— which is exactly why the debugger is 9% and not 0%. So the gap is prompt/behaviour.
+
+**Only a run can settle.** Whether a lane that writes its notebook re-derives less on its next
+wake — i.e. whether the 94% roles are cheaper or faster per step than the 0-46% ones. The corpus
+has the notebooks but not a per-wake cost attribution, so the two cannot be joined offline.
+
+**Cheapest observation.** One run with `knowledge` and `frontend` prompted to record a decision
+before finishing: compare their step counts and re-read volume against a control run. If there
+is no difference, the notebook is ceremony and the template's claim should be softened rather
+than the lanes pushed to fill it.
+
+---
+
+## 13. Older, still unresolved
 
 - **#644 viewport.** Two measured targets conflict: 796px matches the reference image aspect,
   981px matches its content fraction. Changing to 796px took `_measured_deviations` error from
