@@ -332,7 +332,42 @@ mostly-unread PNGs is worth revisiting separately.
 
 ---
 
-## 16. Older, still unresolved
+## 16. 19 of the 43 hub stores are created every run and never written
+
+**Not changed.** Counting non-`_meta` records across all 144 runs, these stores are empty in
+every one:
+
+    codehub_code_reviews, codehub_pull_requests, codehub_repos, codehub_review_threads,
+    registryhub_examples, registryhub_mocks, registryhub_pending_consumers,
+    registryhub_projects, registryhub_providers, registryhub_reviews, registryhub_schemas,
+    registryhub_seed_registrations, registryhub_table_breaking_changes,
+    registryhub_table_consumers, workhub_acceptance_criteria, workhub_databases,
+    workhub_decisions, workhub_reactions, workhub_workspaces
+
+That includes most of what RegistryHub's own docstring advertises ("endpoints, database tables,
+consumers, contract tests, examples, breaking changes" — examples, mocks and schemas are dead)
+and the entire CodeHub PR/review surface. For contrast the live ones: eventhub_events 288562,
+eventhub_threads 132822, workhub_tasks 12836, codehub_checks 6242, registryhub_endpoints 3983,
+registryhub_breaking_changes 3924, registryhub_verification_chains 3442.
+
+**Sharpest single case.** `registryhub_pending_consumers` has BOTH a writer
+(`register_consumer(..., pending=True)` queues a consumer whose endpoint does not exist yet) and
+readers (`list_stale_pending_consumers`, whose result drives `my_stale_pending_consumers` in
+every hub pulse and gates three branches there). An internal caller at registryhub.py:1365 does
+pass `pending=True`. Yet the store is empty in 144 of 144 runs, so the pulse field is always
+empty and those branches never fire.
+
+**Only a run can settle.** Whether the queue is empty because pages always declare endpoints
+that already exist (benign, and the mechanism is simply idle) or because the 1365 call site is
+unreachable. Both produce an identical empty store on disk.
+
+**Cheapest observation.** One run: log at registryhub.py:1365 whether the branch is entered, and
+count `register_consumer` calls whose endpoint is absent. If the branch never runs while absent
+endpoints do occur, the pending path is dead and the pulse should stop reading it.
+
+---
+
+## 17. Older, still unresolved
 
 - **#644 viewport.** Two measured targets conflict: 796px matches the reference image aspect,
   981px matches its content fraction. Changing to 796px took `_measured_deviations` error from
