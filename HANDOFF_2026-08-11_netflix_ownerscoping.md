@@ -1854,12 +1854,29 @@ the model during a long streak, and the data says where that would be safe:
 | k=2 | 40% | 90M |
 | **k=6+** | **8%** | **199M** |
 
-But that is a scheduling change in the coordination loop, it can only POSTPONE work rather than
-drop it, and its cost is not measurable from any artifact on disk — unlike #630, whose
-counterfactual was. Recording the streak makes it decidable on the next run instead of guessed at
-now (#621's move), and a line of prompt cannot delay anything. This is #617 in a second place:
-there every remediation round announced itself as "attempt 1"; here the twelfth no-op step looks
-exactly like the first.
+**#639 — and then that deferral turned out to be wrong too.** I wrote that the cost of pacing "is
+not measurable from any artifact on disk". The artifacts carry **timestamps**:
+
+| | |
+|---|---|
+| transitions a k≥6 backoff would postpone | 110 total = **1.8 per run** |
+| median step gap (one tick) | **10.3s** |
+| median run wall-clock | 68 min |
+| **added latency** | 0.3 min/run = **0.5% of the run** |
+
+0.5% of the clock against **199M tokens**, and nothing is ever dropped — work arriving during the
+wait is picked up by the very next step. So the backoff ships: it engages only from the 6th
+consecutive idle finish, doubles per further idle step, and is capped at 60s (the cap is <2% of a
+median run). Any step that does real work resets the streak, so a busy agent never waits.
+
+> **Third time this session a "not computable" claim dissolved on contact with the data** — after
+> #630 (the delivery gate) and #638 (the duplicate api modules). The pattern is now explicit
+> enough to state as a rule: *"no artifact can settle this" is itself a claim, and it is usually
+> cheaper to test than to defend.* #637's counter was still worth having — it is what makes the
+> backoff possible — but it should not have been the whole answer.
+
+This is also #617 in a second place: there every remediation round announced itself as "attempt
+1"; here the twelfth no-op step looked exactly like the first.
 
 ### §5.11 — the RUN LOGS, swept by error class (#634/#635, 2026-08-12)
 

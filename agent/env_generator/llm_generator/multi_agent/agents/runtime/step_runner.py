@@ -320,6 +320,7 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                         payload["metadata"] = metadata
                     step_trace["stages"][stage_name] = payload
 
+                await _idle_backoff_639(self)
                 self._logger.info(f"[{self.agent_id}] Step {step + 1}/{max_steps} (mode={self._execution_mode})")
                 _mark_stage(
                     "step_reminders",
@@ -799,6 +800,47 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                     mem.sync_to_memory_bank()
             except Exception:
                 pass
+
+
+_IDLE_BACKOFF_AFTER_639 = 6      # streak length at which P(next step does work) collapses to 8%
+_IDLE_BACKOFF_MAX_S_639 = 60.0   # ceiling; the measured median step gap is 10.3s
+
+
+async def _idle_backoff_639(agent: Any) -> float:
+    """#639 — pace an agent that has finished N steps in a row with nothing to do.
+
+    #637 measured the cost: **952M of the orchestrator's 2.76B tokens (35%)** go to steps that
+    conclude "Idle.", a median of 63 such steps per run. It added the counter only, because the
+    cost of pacing "is not measurable from any artifact on disk". That was wrong — the artifacts
+    carry timestamps, and the counterfactual is small and one-sided:
+
+        P(next step does real work)     after 1 idle 53% · after 2 40% · after 6+ **8%**
+        tokens in the k>=6 idle bucket  **199M**
+        transitions a backoff postpones 110 total = **1.8 per run**
+        median step gap (one tick)      10.3s      median run 68 min
+        => added latency                0.3 min/run = **0.5% of wall clock**
+
+    So: 0.5% of the clock against 199M tokens, and nothing is ever dropped — work that arrives
+    during the wait is picked up by the very next step, at most one backoff later.
+
+    Engages only from the 6th consecutive idle finish, doubles per additional idle step, and is
+    capped. Any step that does real work resets the streak (see `note_finish_637`), so a busy
+    agent never waits. Returns the seconds slept, for the caller's trace; never raises.
+    """
+    try:
+        streak = int(getattr(agent, "_idle_streak_637", 0) or 0)
+        if streak < _IDLE_BACKOFF_AFTER_639:
+            return 0.0
+        delay = min(_IDLE_BACKOFF_MAX_S_639,
+                    10.0 * (2 ** min(streak - _IDLE_BACKOFF_AFTER_639, 4)))
+        log = getattr(agent, "_logger", None)
+        if log is not None:
+            log.info("[%s] idle backoff: %d consecutive no-op steps — waiting %.0fs before the "
+                     "next model call (#639)", getattr(agent, "agent_id", "?"), streak, delay)
+        await asyncio.sleep(delay)
+        return delay
+    except Exception:
+        return 0.0
 
 
 def _mask_old_observations(messages, model: str = None,
