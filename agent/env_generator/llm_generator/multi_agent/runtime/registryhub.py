@@ -2011,13 +2011,37 @@ class RegistryHub:
                             "register the endpoint FIRST." % (", ".join(_repeat), _worst))
                 except Exception:
                     _escalate = ""
+                # #636 — LEAD WITH THE INSTRUCTION, NOT THE CONTRACT DUMP.
+                # The escalation above is correct and it fires; it was simply LAST, behind a
+                # dump of every registered endpoint — median 669 chars, max 825 across 45 runs.
+                # Measured over the 56 run logs, this rejection is the single largest error
+                # class in the corpus: 514 occurrences in 50 of 50 runs, median 18 per run for
+                # a median of just 2 distinct causes (r129: 81 rejections, 5 causes). The
+                # verifier re-submits the same unsatisfiable chain ~9x per cause.
+                #
+                # (What the logs CANNOT show: whether the agent read the warning. They truncate
+                # at 300 chars, so the escalation appears 0 times in 55 files — an artifact of
+                # the log, not evidence about the agent. What is provable is the ORDERING, and
+                # #619/#620 already settled that: put what to DO first, the data after.)
+                #
+                # The dump is also narrowed to the resource actually referenced. "Every endpoint
+                # in the contract" is not an answer to "this one is missing"; the sibling
+                # endpoints on the same path prefix are.
+                _pref = {e.split(" ", 1)[1].rsplit("/", 1)[0] for e in unregistered
+                         if " " in e} - {""}
+                _kin = sorted(e for e in registered_ids
+                              if any(e.split(" ", 1)[-1].startswith(p) for p in _pref))
+                _rest = len(registered_ids) - len(_kin)
+                _catalog = (", ".join(_kin) if _kin else "(none on that path)")
+                if _rest > 0:
+                    _catalog += f" — plus {_rest} endpoint(s) on other paths"
                 return {"error": (
-                    "chain rejected: these steps reference endpoints NOT registered in "
+                    (_escalate.strip() + " " if _escalate else "")
+                    + "chain rejected: these steps reference endpoints NOT registered in "
                     "RegistryHub: " + ", ".join(unregistered) + ". A verification chain may "
-                    "only exercise endpoints that exist — register the endpoint first "
-                    "(registryhub_register_endpoint) or fix the chain to use a registered "
-                    "one. Registered endpoints: " + ", ".join(sorted(registered_ids)) + "."
-                    + _escalate)}
+                    "only exercise endpoints that exist. The BACKEND lane registers endpoints "
+                    "(registryhub_register_endpoint) — as the verifier, fix the chain to use "
+                    "one that exists. Registered on the same path: " + _catalog + ".")}
         now = time.time()
         actor = agent or "registryhub"
         # #478: IDEMPOTENT re-registration (r52 convergence churn — never delivered). The

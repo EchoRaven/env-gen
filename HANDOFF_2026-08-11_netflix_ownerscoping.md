@@ -1865,10 +1865,26 @@ is never mistaken for a full lint, and it tells the agent not to chase the insta
 > Neither agent was failing to think — one was answering a question it had not been asked, the
 > other was being handed a Python traceback where the framework had a written answer ready.
 
-Still open on this axis, measured but not acted on: `registryhub_register_verification_chain
-FAILED … chain rejected` is the single largest class at **514 in 50 runs**. §5.0u already traced
-one root (an unsatisfiable authored expectation, #566z/#591); whether the residual is the same
-cause needs the rejection reasons joined per chain, which is the next thing to do here.
+**#636 — the largest class in the corpus, and its instruction was last.** Joining the rejection
+reasons per chain, as §5.11 said to: `chain rejected: these steps reference endpoints NOT
+registered` is **514 occurrences in 50 of 50 runs**, median **18 per run for a median of 2
+distinct causes** (r129: 81 rejections, 5 causes). **71%** are one endpoint, `PUT
+/api/profiles/{}` — and the verifier is not hallucinating: **41 of 45 runs register NO item-level
+`/api/profiles/{…}` endpoint at all**, so the chain is unsatisfiable by construction and the
+rejection is right.
+
+An escalation for exactly this already existed and is correct — from the second rejection it says
+"⚠ … rejected N times … DROP those steps". It was simply **last**, appended after a dump of every
+registered endpoint (median **669** chars, max 825 across 45 runs). #636 moves it to the front
+and narrows the catalogue to the path actually referenced; it also stops telling the *verifier* to
+register the endpoint, which only the backend lane can do.
+
+> **A zero that was an instrument artifact — the fourth this session, caught before acting.** The
+> escalation appears **0 times in 55 log files**, which looks like "it never fires". Logs truncate
+> the error at 300 chars, so a warning beginning ~669 chars in could never appear there. What the
+> logs cannot show, the code can: the counter is per-endpoint, persists on the hub, and fires from
+> the second rejection. So the provable defect is the ORDERING, not the mechanism — and I did not
+> rewrite a mechanism that already worked.
 
 ### §5.10 — the delivered BACKENDS: a live, UNAUTHENTICATED cross-user leak (#633, 2026-08-12)
 
