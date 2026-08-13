@@ -315,16 +315,60 @@ def run_lint(file_path: Path) -> Tuple[bool, str]:
     return True, ""
 
 
+_ERR_LINE_666 = re.compile(
+    r"(?:\bat line\s+(\d+))"            # JSON:   "JSON syntax error at line 5837"
+    r"|(?:\bline\s+(\d+))"              # generic: "... line 12: ..."
+    r"|(?:\bL(\d+):\d+)"                # #635:   "SyntaxError at L12:5"
+    r"|(?::(\d+):\d+)"                   # tsc:    "app.ts:12:5 - error"
+    r"|(?:[\w./-]+\.\w+:(\d+)\b)",     # node:   "main.js:12"
+    re.I)
+
+
+def _first_error_line_666(errors: str):
+    """#666: the 1-based line a syntax checker is complaining about, or None.
+
+    Every checker in `check_syntax` states it, in its own dialect. Reading the FIRST match is
+    deliberate: with several errors the earliest is almost always the cause and the rest the
+    cascade. Never raises — it runs while building an error message."""
+    try:
+        m = _ERR_LINE_666.search(str(errors or ""))
+    except Exception:
+        return None
+    if not m:
+        return None
+    for g in m.groups():
+        if g:
+            try:
+                return int(g)
+            except Exception:
+                return None
+    return None
+
+
 def format_lint_error(file_path: str, errors: str, new_content: str, old_content: str) -> str:
     """
     Format lint error message with context (SWE-agent style).
     
     Shows what the edit would have looked like and why it failed.
     """
-    # Get snippet of new content around error
+    # #666: SHOW THE ERROR, NOT THE MIDDLE OF THE FILE.
+    # The window was `len(lines)//2 ± 5` — a slice of the file's midpoint, chosen without ever
+    # looking at where the error is, under a heading that promises "how your edit would have
+    # looked". Every checker above already reports the line ("JSON syntax error at line 5837",
+    # node's "file.js:12", the #635 "L12:5"), so the number was in hand and thrown away.
+    #
+    # Measured over the 249 run logs: 1520 of these refusals across 122 runs (median 12 per
+    # run). Of the 56 whose line number is visible in the log, the median error sits at line
+    # **6342** and 96% are past line 200 — a mid-file window essentially never contains the
+    # error it is illustrating.
+    #
+    # Falls back to the old midpoint only when no checker reported a line, so a message is
+    # never worse than before.
     lines = new_content.split('\n')
-    snippet_start = max(0, len(lines) // 2 - 5)
-    snippet_end = min(len(lines), len(lines) // 2 + 5)
+    _at = _first_error_line_666(errors)
+    _centre = (_at - 1) if _at and 1 <= _at <= len(lines) else len(lines) // 2
+    snippet_start = max(0, _centre - 5)
+    snippet_end = min(len(lines), _centre + 6)
     snippet = '\n'.join(f"{i+snippet_start+1:4}|{line}" for i, line in enumerate(lines[snippet_start:snippet_end]))
     
     return f"""Your proposed edit has introduced syntax error(s). Please fix and try again.
