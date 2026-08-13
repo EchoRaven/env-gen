@@ -125,3 +125,70 @@ def test_the_measurement_is_recorded():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- composed with #632/#645, in the order the scaffolder actually runs them ----------------------
+
+def _api_bag():
+    return ("export function listTitles() {}\n"
+            "export function getGenres() {}\n"
+            "export default { listTitles, getGenres };\n")
+
+
+def _tree_638(tmp_path):
+    src = tmp_path / "src"
+    for d in ("services", "pages", "components"):
+        (src / d).mkdir(parents=True, exist_ok=True)
+    (src / "services" / "api.jsx").write_text(_api_bag(), encoding="utf-8")
+    (src / "pages" / "Browse.jsx").write_text(
+        "import listTitles from '../services/api';\n", encoding="utf-8")
+    (src / "components" / "Nav.jsx").write_text(
+        "import getGenres from '../services/api.jsx';\n", encoding="utf-8")
+    return src
+
+
+def _gap_fill_and_repair(src):
+    """The real order: the baseline gap-fill writes the shim, then the whole-tree repair runs."""
+    from env_generator.llm_generator.multi_agent.runtime.frontend_scaffold import (
+        repair_default_import_of_named_export_632 as repair,
+    )
+    api_js = src / "services" / "api.js"
+    if not (api_js.exists() and api_js.read_text(encoding="utf-8").strip()):
+        s = shim(api_js)
+        if s is not None:
+            api_js.write_text(s, encoding="utf-8")
+    return sorted(repair(src))
+
+
+def test_the_shim_and_the_bag_repair_compose(tmp_path):
+    """#645's reason for existing, pinned as a PAIR: a per-fix test proves a fix, only a
+    per-pair test proves the set. The suite was green with this regression in it."""
+    src = _tree_638(tmp_path)
+    assert _gap_fill_and_repair(src) == ["components/Nav.jsx: getGenres",
+                                         "pages/Browse.jsx: listTitles"]
+
+
+def test_a_second_scaffold_pass_changes_nothing(tmp_path):
+    """The scaffolder runs repeatedly; the pair must settle."""
+    src = _tree_638(tmp_path)
+    _gap_fill_and_repair(src)
+    before = {p.name: p.read_text(encoding="utf-8") for p in src.rglob("*.jsx")}
+    assert _gap_fill_and_repair(src) == []
+    assert {p.name: p.read_text(encoding="utf-8") for p in src.rglob("*.jsx")} == before
+
+
+def test_the_shim_survives_the_repair_pass(tmp_path):
+    """The repair walks every file including the shim — it must not rewrite it."""
+    src = _tree_638(tmp_path)
+    _gap_fill_and_repair(src)
+    body = (src / "services" / "api.js").read_text(encoding="utf-8")
+    assert "export * from './api.jsx';" in body
+
+
+def test_the_named_import_the_repair_writes_actually_resolves(tmp_path):
+    """`import { listTitles }` from the SHIM only works because the shim re-exports *."""
+    src = _tree_638(tmp_path)
+    _gap_fill_and_repair(src)
+    assert "import { listTitles } from '../services/api';" in \
+        (src / "pages" / "Browse.jsx").read_text(encoding="utf-8")
+    assert "export *" in (src / "services" / "api.js").read_text(encoding="utf-8")

@@ -1847,6 +1847,24 @@ increment the idle streak, because #634 returns before the call and #637 hooks a
 "nothing ran" cannot read as "nothing found"), #622+#623 in `auto_commit` (a stash failure now
 returns success-with-skip, so the ownership resolver is not reached at all).
 
+**#645 audited against the set it joined**, since a fix added by an audit is not exempt from it.
+Running the real order — gap-fill writes the shim, then the whole-tree repair — twice:
+
+| | |
+|---|---|
+| pass 1 | both crash sites repaired (`pages/Browse.jsx`, `components/Nav.jsx`) |
+| pass 2 | **no change**, byte-for-byte — the pair settles |
+| the shim itself | untouched by the repair that walks it |
+| the named import written | resolves, because the shim re-exports `*` |
+
+One thing surfaced and is **not** a defect: `_reexport_shim_638` returns a shim even when
+`api.js` already has content. The caller's `if p.exists() and …strip(): continue` runs first and
+that ordering is already pinned by a test, so the real flow cannot reach it. §5.14's lesson,
+applied to my own code: three of four things that look like findings are not.
+
+The composed sequence is now a TEST rather than a one-off run, so the pair cannot silently come
+apart again.
+
 > **Why this was worth a pass of its own:** every one of those fixes was green in isolation, and
 > the suite stayed green with the regression in it — because no test crossed two fixes. A
 > per-fix test proves a fix; only a per-*pair* question proves the set.
