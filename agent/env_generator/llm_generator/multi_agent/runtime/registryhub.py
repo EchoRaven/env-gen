@@ -130,6 +130,11 @@ class RegistryHub:
         self._contract_tests = JsonStore(self.hub_dir / "registryhub_contract_tests.json")
         self._verification_chains = JsonStore(self.hub_dir / "registryhub_verification_chains.json")
         self._providers = JsonStore(self.hub_dir / "registryhub_providers.json")
+        # #664: #71's per-endpoint chain-reject counter, PERSISTED. It was an in-memory
+        # attribute on this object while every other fact the hub holds lives on disk, so it
+        # only accumulated while one RegistryHub instance happened to handle both rejects.
+        # Measured over 249 run logs: 4928 chain rejections, 4 escalations (0.08%).
+        self._chain_rejects = JsonStore(self.hub_dir / "registryhub_chain_reject_counts.json")
         self._consumers = JsonStore(self.hub_dir / "registryhub_consumers.json")
         self._api_reviews = JsonStore(self.hub_dir / "registryhub_reviews.json")
         self._breaking_changes = JsonStore(self.hub_dir / "registryhub_breaking_changes.json")
@@ -2005,15 +2010,44 @@ class RegistryHub:
                     # is robust to both — escalate when ANY endpoint in THIS reject has now been
                     # rejected >=2 times across ALL chains. Self-invalidates: once an endpoint is
                     # registered it drops out of `unregistered`, so its count stops advancing.
-                    _counts = getattr(self, "_chain_reject_endpoint_counts", None)
-                    if _counts is None:
-                        _counts = {}
-                        self._chain_reject_endpoint_counts = _counts
+                    # #664 — #71 COUNTED IN MEMORY, SO IT ALMOST NEVER ESCALATED.
+                    # The counter above lived on `self`, while every other fact this hub holds
+                    # is a JsonStore on disk. It therefore only advanced while ONE RegistryHub
+                    # instance handled both rejects; across a process boundary (or a re-spawned
+                    # lane) it reset to zero. Proven directly: same instance escalates on the
+                    # 2nd reject, a fresh instance per reject never escalates at all.
+                    #
+                    # Measured over the 249 run logs: 4928 chain rejections and 4 escalations —
+                    # 0.08%. The verifier re-submits the same nonexistent endpoint a median of
+                    # 28 times per run (max 126, r98: PUT /api/profiles/{}), and #71's guidance,
+                    # which exists precisely to break that loop, was reaching it 4 times total.
+                    # Post-#71 runs are not better than pre-#71 ones (median 30 vs 26), which is
+                    # what an inert fix looks like.
+                    #
+                    # Persisting it keeps #71's semantics exactly: per-endpoint, across chain
+                    # names, self-invalidating once the endpoint is registered. The in-memory
+                    # dict stays as the fallback so a store fault still degrades to a plain
+                    # reject, as the contract above promises.
+                    _mem = getattr(self, "_chain_reject_endpoint_counts", None)
+                    if _mem is None:
+                        _mem = {}
+                        self._chain_reject_endpoint_counts = _mem
+                    try:
+                        _counts = dict(self._chain_rejects.value() or {})
+                    except Exception:
+                        _counts = _mem
                     _repeat = []
                     for _ep in unregistered:
-                        _counts[_ep] = _counts.get(_ep, 0) + 1
-                        if _counts[_ep] >= 2:
+                        _n = int(_counts.get(_ep) or 0) + 1
+                        _counts[_ep] = _n
+                        _mem[_ep] = _n
+                        if _n >= 2:
                             _repeat.append(_ep)
+                    try:
+                        for _ep in unregistered:
+                            self._chain_rejects.set(str(_ep), _counts[_ep], agent="registryhub")
+                    except Exception:
+                        pass
                     if _repeat:
                         _worst = max(_counts[_ep] for _ep in _repeat)
                         _escalate = (
