@@ -208,6 +208,14 @@ def _readback_persisted(payload: Any, res_label: str,
     return True, f"state persisted for {res_label} ({', '.join(state_fields or {})})"
 
 
+# #670: HTML input types Playwright's `fill()` refuses ("Input of type X cannot be filled")
+# or that take a different API entirely (file). Generic HTML, no product literals.
+_UNFILLABLE_INPUT_TYPES_670 = frozenset({
+    "checkbox", "radio", "submit", "button", "reset", "image", "file", "hidden",
+    "range", "color",
+})
+
+
 def _register_or_login(base: str, email: str, name: str) -> Optional[str]:
     """Register a test user (or log in if they already exist) → access token."""
     pw = "TestUser!2024"
@@ -513,6 +521,25 @@ async def _ui_auth_flow(frontend_base: str) -> Dict[str, Any]:
                                 pass
                             ph = ((await inp.get_attribute("placeholder")) or "").lower()
                             typ = ((await inp.get_attribute("type")) or "").lower()
+                            # #670: NEVER fill an input that cannot BE filled. The `else` below
+                            # fills every unrecognised visible input with a text string, so a
+                            # "Remember me" checkbox raised
+                            #   Locator.fill: Input of type "checkbox" cannot be filled
+                            # and — because only `is_visible()` is guarded, not the fill — the
+                            # exception aborted the whole flow and the run was reported as
+                            # "UI login: the form is not wired to the API". The app was fine.
+                            #
+                            # Measured: 12 of 66 test-user reports fail the login flow, and r128
+                            # is exactly this. 10 of the 208 delivered login pages carry a
+                            # checkbox, so every one of those is a false negative waiting to
+                            # happen. Signup passes 66/66, which is why the asymmetry looked
+                            # like a login-wiring bug rather than a probe bug.
+                            #
+                            # These are the standard HTML input types `fill()` rejects; skipping
+                            # them cannot hide a real defect, because a form whose EMAIL or
+                            # PASSWORD field is unfillable still fails exactly as before.
+                            if typ in _UNFILLABLE_INPUT_TYPES_670:
+                                continue
                             if "email" in ph or typ == "email" or "mobile" in ph:
                                 await inp.fill(f"uiflow{sfx}@t.io")
                             elif "pass" in ph or typ == "password":
