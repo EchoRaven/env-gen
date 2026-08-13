@@ -1822,6 +1822,34 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.16 — the DESIGN SYSTEM: 74% of it is written into a void (#643, 2026-08-12)
+
+The design axis, swept for the first time. Across the 45 delivered `design/design_system.json`:
+
+| | |
+|---|---|
+| distinct keys written under `design_system` | **82** |
+| read by NO runtime code | **61 (74%)** |
+| share of every key-instance written | **28%** |
+
+They are not typos — they are whole specifications that land nowhere: `motion` in **27 of 45
+runs**, `collapse_checklist` in 24, `brand_boundary` in 8. The tail is free-form synonym
+invention, the same shape as #360's rejected tool arguments: `spacing` / `spacing_scale` /
+`spacing_scale_px`, `font_stack` / `font_family` / `font_families`, `grid` / `grids`, and one
+`collapse_checklist_塌缩点`. Only the first of each group is read.
+
+Consuming the extras is feature work and is NOT attempted. What is wrong is that the analyst
+cannot tell: it spends a section on `motion` in three runs out of five and receives no signal.
+#360 solved the identical problem for tool arguments by dropping them loudly; #643 reports at the
+write boundary, and the consumed list is pinned by a test that greps each name in runtime source
+so it cannot rot into a second fiction.
+
+> **Two measurement errors, both caught before shipping** — the file is NESTED, so a top-level
+> scan reported *"palette present in 0 of 45 runs"* when it is in all 45; and a reader-grep for
+> `"key"` alone misses `'key'`, which would have declared four consumed keys dead. That is the
+> fifth and sixth instrument artifact this session. **A scan that returns a suspiciously round
+> zero is a bug in the scan until proven otherwise.**
+
 ### §5.15 — the VERIFICATION CHAINS across all 45 runs: healthy, and a second negative (2026-08-12)
 
 The largest structured record of what the app actually did — 1682 chains, 9194 executed steps.

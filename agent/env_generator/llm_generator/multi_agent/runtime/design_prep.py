@@ -600,9 +600,65 @@ def _render_design_md(ds: Dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+# #643 — THE KEYS THE FRAMEWORK ACTUALLY CONSUMES.
+# Measured over the 45 delivered `design/design_system.json` files: the analyst writes **82
+# distinct keys** under `design_system` and **61 of them (74%) are read by no runtime code** —
+# 28% of every key-instance written. The biggest are not typos, they are whole specifications
+# that land nowhere: `motion` in **27 of 45 runs**, `collapse_checklist` in 24, `brand_boundary`
+# in 8.
+#
+# The tail is free-form synonym invention, the same shape as #360's rejected tool arguments:
+# `spacing` / `spacing_scale` / `spacing_scale_px`, `font_stack` / `font_family` /
+# `font_families`, `grid` / `grids`, and one `collapse_checklist_塌缩点`. Only the first of each
+# group is read.
+#
+# Nothing here consumes the extras — that would be feature work. What is wrong is that the
+# analyst cannot tell: it spends a section of its output on `motion` in 3 runs out of 5 and
+# receives no signal that the framework never looks at it. #360 solved the identical problem for
+# tool arguments by DROPPING loudly; this reports at the write boundary.
+#
+# Derived from the artifacts, and pinned by a test that every name below is genuinely referenced
+# in runtime code, so the list cannot rot into a second fiction.
+_CONSUMED_DESIGN_KEYS_643 = frozenset({
+    "brand", "buttons", "font_stack", "fonts", "geometry", "grid", "header", "hero",
+    "iconography", "layout", "layout_metrics", "material", "notes", "palette", "player",
+    "radius_scale", "screens", "shadow_scale", "spacing", "theme", "type_scale",
+})
+
+
+def unconsumed_design_keys_643(ds: Dict) -> list:
+    """Keys under `design_system` that no runtime code reads. Sorted; [] when all land."""
+    try:
+        if not isinstance(ds, dict):
+            return []
+        if "design_system" in ds:
+            # Present but malformed is NOT a reason to scan the wrapper: doing that reports
+            # `design_system` itself as an unconsumed section.
+            inner = ds.get("design_system")
+            if not isinstance(inner, dict):
+                return []
+        else:
+            inner = ds          # a flat document (the pre-nesting shape)
+        return sorted(k for k in inner if k not in _CONSUMED_DESIGN_KEYS_643)
+    except Exception:
+        return []
+
+
 def _write_design_system(design_dir: Path, ds: Dict) -> None:
     try:
         design_dir.mkdir(parents=True, exist_ok=True)
+        # #643: say which sections will be ignored, at the moment they are written.
+        _ignored = unconsumed_design_keys_643(ds)
+        if _ignored:
+            try:
+                import logging
+                logging.getLogger("design_prep").warning(
+                    "[design_system] %d section(s) written that NO framework code reads: %s — "
+                    "the framework consumes %s. Effort spent on the others does not reach the "
+                    "app (#643).", len(_ignored), ", ".join(_ignored[:8]),
+                    ", ".join(sorted(_CONSUMED_DESIGN_KEYS_643)))
+            except Exception:
+                pass
         (design_dir / "design_system.json").write_text(
             json.dumps(ds, indent=2) + "\n", encoding="utf-8")
         # FIX #85c (run-6 live): a design_system.md WITHOUT the render marker is AGENT
