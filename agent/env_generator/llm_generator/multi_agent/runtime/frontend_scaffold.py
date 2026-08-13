@@ -16,6 +16,7 @@ app that won't build at all).
 """
 
 import json
+import os
 import re
 import shutil
 from pathlib import Path
@@ -8464,6 +8465,91 @@ def _dominant_route_wrapper(app_jsx: str) -> Optional[str]:
     return name if cnt >= 2 and in_scope else None
 
 
+_DEFAULT_IMPORT_632 = re.compile(
+    r'^([ \t]*import[ \t]+)([A-Za-z_$][\w$]*)([ \t]+from[ \t]+[\'"](\.[^\'"]+)[\'"])', re.M)
+_DEFAULT_OBJ_632 = re.compile(r'export\s+default\s*\{([^}]*)\}', re.S)
+_NAMED_EXPORT_632 = re.compile(
+    r'export\s+(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)')
+_JS_EXT_632 = ('.js', '.jsx', '.mjs', '.ts', '.tsx')
+
+
+def repair_default_import_of_named_export_632(src_dir: Any) -> List[str]:
+    """#632 — `import listTitles from './api'` when `./api` default-exports a BAG.
+
+    A page binds a name with a DEFAULT import, but the module's default export is an object
+    literal listing every function. The binding is therefore the whole object, and the first
+    call throws — which is verbatim what the P0 records say: *"default-imported listTitles is
+    an object, not a function"*, *"Landing page (/) crashes with 'Cn is not a function' — blank
+    render blocks entire landing"*.
+
+    Measured on the DELIVERED apps of all 45 kept runs: **21 crash sites in 21 files across 6
+    runs**, and they are pages — r105 alone ships 8 (`BrowseHomePage`, `MoviesPage`, `ShowsPage`,
+    `GamesPage`, `MyListPage`, `NewAndPopularPage`, `BrowseByLanguagesPage`). Every one is a page
+    that throws on load.
+
+    The rewrite is provable, not a guess: in **21 of 21** the symbol is ALSO a named export of
+    the same module, so `import { X } from …` is valid by construction. All five conditions must
+    hold or the file is left exactly as written —
+
+        1. a BARE default import (`import X from`), never `X, {…}` and never a namespace import
+        2. a RELATIVE specifier that resolves to a file in this tree
+        3. the target's default export is an object LITERAL (not a function/class/identifier)
+        4. `X` is a key of that literal
+        5. `X` is also a named export of the target
+
+    Returns the list of ``file: name`` repairs. Never raises.
+    """
+    out: List[str] = []
+    try:
+        root = Path(str(src_dir))
+        if not root.is_dir():
+            return out
+        files: Dict[str, str] = {}
+        for p in root.rglob("*"):
+            if p.is_file() and p.suffix in _JS_EXT_632:
+                try:
+                    files[str(p)] = p.read_text(encoding="utf-8", errors="ignore")
+                except Exception:
+                    continue
+
+        def _resolve(frm: str, spec: str):
+            base = os.path.normpath(os.path.join(os.path.dirname(frm), spec))
+            for cand in ([base] + [base + e for e in _JS_EXT_632]
+                         + [os.path.join(base, "index" + e) for e in (".js", ".jsx")]):
+                if cand in files:
+                    return cand
+            return None
+
+        for path, text in list(files.items()):
+            changed = text
+
+            def _sub(m):
+                nonlocal changed
+                name, spec = m.group(2), m.group(4)
+                tgt = _resolve(path, spec)
+                if not tgt:
+                    return m.group(0)
+                obj = _DEFAULT_OBJ_632.search(files[tgt])
+                if not obj:
+                    return m.group(0)
+                keys = {k.strip().split(":")[0].strip()
+                        for k in obj.group(1).split(",") if k.strip()}
+                if name not in keys:
+                    return m.group(0)
+                if name not in set(_NAMED_EXPORT_632.findall(files[tgt])):
+                    return m.group(0)
+                out.append(f"{os.path.relpath(path, str(root))}: {name}")
+                return f"{m.group(1)}{{ {name} }}{m.group(3)}"
+
+            new_text = _DEFAULT_IMPORT_632.sub(_sub, text)
+            if new_text != text:
+                Path(path).write_text(new_text, encoding="utf-8")
+                files[path] = new_text
+    except Exception:
+        return out
+    return out
+
+
 def repair_stale_route_components_597(app_jsx: str, ui_pages: List[Dict[str, Any]],
                                       pages_dir: Any) -> tuple:
     """#597 — a route that IS wired, but to the component the contract used to name.
@@ -8895,8 +8981,13 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                     new_text, ui_pages, app.parent / "pages")
                 if injected_routes or _recomped:
                     app.write_text(new_text, encoding="utf-8")
+        # #632: whole-tree pass — a default import of a key of the module's default-exported
+        # object binds the OBJECT, so the first call throws and the page renders blank. 21 such
+        # sites ship across 6 of 45 runs, all of them pages.
+        _fixed_632 = repair_default_import_of_named_export_632(app.parent)
         return {"scaffolded": sorted(scaffolded), "routes": len(entries),
-                "app_wired": app_wired, "injected_routes": injected_routes}
+                "app_wired": app_wired, "injected_routes": injected_routes,
+                "default_import_repairs": _fixed_632}
     except Exception as exc:  # never raise into the orchestrator
         return {"scaffolded": [], "routes": 0, "app_wired": False,
                 "error": str(exc)}

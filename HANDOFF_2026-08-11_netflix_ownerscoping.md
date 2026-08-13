@@ -1822,6 +1822,53 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.9 — auditing the DELIVERED APPS: the crash the P0 records kept describing (#632, 2026-08-12)
+
+Not the logs, not the hubs — the shipped `app/frontend/src` of all 45 kept runs. The bug corpus
+kept saying the same thing in different words:
+
+> *"default-imported `listTitles` is an object, not a function"*
+> *"Landing page (/) crashes with 'Cn is not a function' — blank render blocks entire landing"*
+
+It is statically detectable and it is still on disk. A page binds a name with a **default**
+import while the module's default export is an object **literal** listing every function, so the
+binding is the whole object and the first call throws:
+
+```js
+// services/api.jsx
+export function listTitles() {…}
+export default { addToMyList, …, listTitles, … };   // a bag
+
+// pages/BrowseHomePage.jsx
+import listTitles from '../services/api.jsx';        // -> the OBJECT. listTitles() throws.
+```
+
+**21 crash sites in 21 files across 6 of 45 runs**, every one a page: r105 ships 8
+(`BrowseHomePage`, `MoviesPage`, `ShowsPage`, `GamesPage`, `MyListPage`, `NewAndPopularPage`,
+`BrowseByLanguagesPage`), r120 5, r115/r117 2 each, r108/r127 1.
+
+The repair is provable, not a guess: in **21 of 21** the symbol is ALSO a named export of the
+same module, so `import { X } from …` is valid by construction. Five conditions must all hold
+(bare default import · relative specifier that resolves · default export is an object literal ·
+the name is a key of it · the name is also a named export) or the file is left byte-identical.
+Validated by running it over **copies** of the six real delivered trees: 21 of 21 repaired,
+second pass a no-op.
+
+> **Three wrong scans came first, and they are the lesson.** (1) A resolver that only collected
+> `.js`/`.jsx` reported 18 "missing modules" for a real `services/api.mjs` — the file filter
+> invented the defect. (2) A `duplicate_route_content_groups(pages)` call missing its second
+> argument, wrapped in a bare `except`, returned a confident **0 of 45** for a detector that
+> actually fires in 31. (3) This very check, in its first form, asked *"does the target have a
+> default export?"* — it does; that is the entire point — instead of *"is the imported name a
+> KEY of it?"*, and reported zero. **Verify the scanner against one hand-checked case before
+> believing its denominator.**
+
+A related structural hazard, measured and deliberately **not** acted on: **21 of 45 runs ship two
+or more `services/api.*` modules with different content** (r103 has three: 27 B, 74 B and 5035 B).
+Callers use explicit extensions, so there is no bundler ambiguity to fix and no defect that
+follows from the duplication alone — #632 addresses the crash it actually produces. Collapsing
+the duplicates is a content decision no artifact settles.
+
 ### §5.8 — two parked questions settled by measuring the blast radius (2026-08-12)
 
 Both had been sitting with the user. The same counterfactual that unblocked #630 answers one and
