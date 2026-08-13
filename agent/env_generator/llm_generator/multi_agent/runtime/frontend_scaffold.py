@@ -3999,6 +3999,66 @@ def _nav_chrome_454(design, skip=None, force=None) -> str:
     return "".join(parts)
 
 
+# #652: the design's own words for a rail/carousel position indicator. Measured over the 144
+# `design/design_system.json` files: **141** enumerate one, in these shapes — "hero carousel page
+# indicator dots", "…indicator dashes", "thin progress/pagination bar for hero carousel",
+# "pagination bar for top 10 movies rail", "section title 'top searches' with pagination
+# indicator". No product literals: these are the design's measured role tokens.
+_PAGINATION_ROLE_652 = re.compile(
+    r"(?i)(\bpagination\b|\b(page|scroll|position|progress)[ \-_]indicator\b|"
+    r"\bindicator[ \-_](dots?|dashes|bars?)\b)")
+# the same enumeration decides the SHAPE the design measured: dashes/bars/progress vs dots.
+_PAGINATION_BAR_652 = re.compile(r"(?i)\b(bar|bars|dash|dashes|progress)\b")
+
+
+def _rail_pagination_652(design) -> str:
+    """#652: the rail/carousel POSITION INDICATOR — the corpus's most persistent missing
+    component, and one no channel ever emitted.
+
+    Ranking the judge's `missing` items by raw count is misleading: it ranks by how often a
+    screen was judged, so a defect that the lane fixes by round 3 outranks one that ships. Ranked
+    instead by "reported missing AND still absent from the DELIVERED frontend", the top of the
+    list changes completely, and this component owns it under five different wordings:
+
+        carousel pagination dots        45/45      row pagination indicator dots   25/26
+        carousel pagination indicator   24/24      row pagination indicator        23/23
+        row pagination dots             23/24      -> ~140 reports, ~100% persistent
+
+    Confirmed by SHAPE rather than by wording, so it is not a vocabulary artifact: only **7 of
+    144** delivered frontends contain any dot-shaped element at all. The framework had no
+    emitter — #432b's control projector explicitly excludes `pagination` so it never eats a nav
+    utility, and nothing else picked it up. Meanwhile 141 of 144 designs enumerate one.
+
+    `components` is the FLOOR dimension on 800 of 1254 scored records (63.8%), so this is on the
+    axis that actually moves the gate.
+
+    Same construction as #454/#443/#445: gated on the design's OWN enumeration (an app whose
+    design has no indicator gets nothing), deterministic markup, no data dependency, and
+    `currentColor` so it themes with the rail instead of painting invisibly (#551's lesson).
+    """
+    # The shape is read from the MATCHING COMPONENT's own role/id, never from a joined blob:
+    # concatenating every component lets an unrelated "upload progress bar" two components away
+    # turn the carousel's dots into dashes.
+    hit = next((t for t in (
+        str((c or {}).get("role") or "") + " " + str((c or {}).get("id") or "")
+        for s in ((design or {}).get("screens") or [])
+        for c in (s.get("components") or []))
+        if _PAGINATION_ROLE_652.search(t)), None)
+    if hit is None:
+        return ""
+    bar = bool(_PAGINATION_BAR_652.search(hit))
+    seg = ("h-0.5 w-4" if bar else "h-1 w-1 rounded-full")
+    # one segment per rail page slot — the SAME 6 the rail already pads to (`_padN(..., 6)`),
+    # not a new tuned number.
+    return (
+        '          <div className="mt-1 flex justify-end gap-1" aria-hidden="true">\n'
+        "            {[0, 1, 2, 3, 4, 5].map((_d) => (\n"
+        f'              <span key={{_d}} className="{seg}" '
+        "style={{ backgroundColor: 'currentColor', opacity: _d === 0 ? 0.9 : 0.3 }} />\n"
+        "            ))}\n"
+        "          </div>\n")
+
+
 def _ref_nav_labels(design) -> List[str]:
     """#422: the reference's measured primary-nav labels IN ORDER, parsed from the
     design_system's primary-nav-links component role (e.g. role='horizontal primary
@@ -6508,6 +6568,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
                 + _card
                 + "            ))}\n"
                 + "          </div>\n"
+                + _rail_pagination_652(design)      # #652
                 + "        </div>\n")
 
         # #531(b): a catalog page that renders only ONE rail but has plenty of live
