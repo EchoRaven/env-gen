@@ -1031,6 +1031,15 @@ class AgentTooling:
                     if tool_name in {"terminate_agent_team", "parallel_execute", "finish"}:
                         self._exit_team_mode(reason=f"tool={tool_name}")
 
+                if tool_name == "finish":
+                    # #637: count consecutive no-op steps so the twelfth does not look like
+                    # the first. Counter only — see note_finish_637 for why not a backoff.
+                    try:
+                        from .hub_pulse import note_finish_637
+                        note_finish_637(self, str(tool_args.get("reason")
+                                                  or tool_args.get("summary") or ""))
+                    except Exception:
+                        pass
                 self.log_tool_call(tool_name, tool_args, result)
                 _record_tool_io(self, tool_name, result)
                 from .skill_consult import record_skill_consult

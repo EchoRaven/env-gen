@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 
@@ -163,6 +164,7 @@ def _pulse_phase(hubs: Any, agent_id: str, agent: Any) -> Dict[str, Any]:
 
 def collect_hub_pulse(hubs: Any, agent_id: str, step_num: int = 0, agent: Any = None) -> Dict[str, Any]:
     """Collect the agent's view across 4 hubs. Top-K bounded to control token usage."""
+    _idle_streak = int(getattr(agent, "_idle_streak_637", 0) or 0)   # #637
     # Cutover 12: install default subscriptions for this agent (idempotent).
     try:
         from ...runtime.agent_subscriptions import ensure_default_subscriptions
@@ -193,6 +195,7 @@ def collect_hub_pulse(hubs: Any, agent_id: str, step_num: int = 0, agent: Any = 
     report["self_audit"] = _pulse_self_audit(hubs, agent_id)
     report["stale_tasks"] = _pulse_stale_tasks(hubs, agent_id)
     report["phase"] = _pulse_phase(hubs, agent_id, agent)  # PROPOSAL #25 A2/A3
+    report["idle_streak"] = _idle_streak                   # #637
     return report
 
 
@@ -658,6 +661,51 @@ def should_render(pulse: Dict[str, Any]) -> bool:
     return False
 
 
+_IDLE_STREAK_RE_637 = re.compile(
+    r'\bidle\b|cold start|awaiting|no (?:new )?(?:work|tasks?)|nothing to do|still in flight',
+    re.I)
+
+
+def note_finish_637(agent: Any, reason: str) -> None:
+    """#637 — count CONSECUTIVE steps that ended with nothing done.
+
+    Measured over the 565 agent trajectories: **40% of all `finish()` calls report idleness**
+    (3810 of 9602), and **95% of those are the orchestrator** — a median of 63 idle steps per
+    run, max 295. Each one is a full model call: idle steps consume **952M of the
+    orchestrator's 2.76B total tokens (35%)**, median 121 793 per step.
+
+    The agent has no idea it is repeating itself. This is #617's finding in a second place —
+    there, every remediation round announced itself as "attempt 1"; here, the twelfth
+    consecutive no-op step looks exactly like the first.
+
+    Only the COUNTER is added, deliberately. The obvious next move is to stop calling the model
+    during a long idle streak, and the data says where that would be safe — P(next step does
+    real work) falls from 53% after one idle to **8% after six**, and those k>=6 steps alone are
+    **199M tokens**. But that is a scheduling change in the coordination loop, it can only
+    POSTPONE work rather than drop it, and its cost is not measurable from any artifact on disk.
+    Recording the streak makes it decidable on the next run instead of guessed at now — the #621
+    move. A line of prompt cannot delay anything.
+    """
+    try:
+        if _IDLE_STREAK_RE_637.search(str(reason or "")):
+            agent._idle_streak_637 = int(getattr(agent, "_idle_streak_637", 0)) + 1
+        else:
+            agent._idle_streak_637 = 0
+    except Exception:
+        pass
+
+
+def _idle_streak_lines_637(pulse: Dict[str, Any]) -> List[str]:
+    """Always-render: a no-op step must not look like the first one."""
+    n = pulse.get("idle_streak") or 0
+    if not isinstance(n, int) or n < 3:
+        return []
+    tail = (" Nothing has changed across any of them. Before finishing idle again, either take "
+            "an action that changes state, or state plainly what you are blocked on and who "
+            "owns it." if n >= 6 else "")
+    return [f"⏸ You have finished {n} consecutive steps with no action taken.{tail}", ""]
+
+
 def _build_phase_lines(pulse: Dict[str, Any]) -> List[str]:
     """PROPOSAL #25 A2/A3 — the phase block: a once-per-transition banner (if the
     phase just changed) + the always-on current phase + this lane's role NOW."""
@@ -698,7 +746,8 @@ def build_hub_pulse_prompt(pulse: Dict[str, Any]) -> Optional[str]:
     step still orients the agent — it is prepended ahead of the should_render gate."""
     # Always-render prefix (#25 A2/A3 phase + #26 N2 framework notices): these must
     # surface even on an otherwise-empty pulse, so they precede the should_render gate.
-    prefix = _build_phase_lines(pulse) + _framework_notice_lines(pulse)
+    prefix = (_idle_streak_lines_637(pulse) + _build_phase_lines(pulse)
+              + _framework_notice_lines(pulse))
     if not should_render(pulse):
         return "\n".join(prefix).rstrip() if prefix else None
     lines: List[str] = list(prefix)

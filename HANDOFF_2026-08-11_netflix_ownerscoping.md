@@ -1822,6 +1822,45 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.12 — the TRAJECTORIES: 35% of the orchestrator's tokens end in "Idle." (#637, 2026-08-12)
+
+The last of the four axes. The 565 `.agent_logs/*/*.jsonl` files record every call **with its
+arguments** — I had wrongly noted that repetition analysis needed a future run; it did not.
+
+A raw "identical call repeated" count says 30.6% of all 93 020 tool calls, but that number is
+worthless: `check_inbox` polling, `run_validation` after a fix and `registryhub_list_*` (which
+other agents change) are all legitimately repeated. Narrowed to **back-to-back** identical calls
+with nothing in between, it is **2.1%** — and **57% of those are `finish`**.
+
+Following that thread: every first `finish` of a duplicate pair had **succeeded**. The agent was
+not retrying; it was idle again, and the reasons say so — *"Idle."*, *"Cold start persists."*,
+*"Idle; kickoff still in flight."*
+
+| | |
+|---|---|
+| `finish()` calls | 9602 |
+| reporting idleness | **3810 (40%)** |
+| of those, the orchestrator | **3614 (95%)** |
+| idle steps per run | median **63**, max 295 |
+| **idle-step tokens** (usage.total_tokens) | **952.1M — 35% of the orchestrator's 2.76B** |
+| median tokens per idle step | **121 793** |
+
+**#637 adds the counter only**, and the reason is measurable. The obvious move is to stop calling
+the model during a long streak, and the data says where that would be safe:
+
+| after k consecutive idles | P(next step does real work) | tokens in those idles |
+|---|---|---|
+| k=1 | 53% | 168M |
+| k=2 | 40% | 90M |
+| **k=6+** | **8%** | **199M** |
+
+But that is a scheduling change in the coordination loop, it can only POSTPONE work rather than
+drop it, and its cost is not measurable from any artifact on disk — unlike #630, whose
+counterfactual was. Recording the streak makes it decidable on the next run instead of guessed at
+now (#621's move), and a line of prompt cannot delay anything. This is #617 in a second place:
+there every remediation round announced itself as "attempt 1"; here the twelfth no-op step looks
+exactly like the first.
+
 ### §5.11 — the RUN LOGS, swept by error class (#634/#635, 2026-08-12)
 
 The fourth axis, and the same method as §5.7: rank the 56 `gm_<run>.log` files by normalised
