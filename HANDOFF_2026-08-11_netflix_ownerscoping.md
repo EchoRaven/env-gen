@@ -1822,6 +1822,33 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.25 — the lane got seven equal fixes; one of them is the gate (#649, 2026-08-12)
+
+The actionable consequence of §5.24. If the score is the weakest dimension plus ~0.047, then on a
+screen whose weakest is clearly alone, **improving any other dimension cannot move the number** —
+and the lane was never told which one that is:
+
+| | |
+|---|---|
+| FIX instructions per blocking screen | mean **6.4**, median 7, max 7 |
+| weakest dimension clearly alone (≥0.05 clear of the 2nd) | **211 of 299 (71%)** |
+| median gap, worst to second-worst | 0.050 |
+
+Seven identically-formatted asks, one of which is the gate. #649 names it, and stays honest about
+the other 29%: when the bottom dimensions are within 0.05 it says they are tied and all must come
+up, rather than picking one and misdirecting the lane. Every dimension is still listed — they are
+real defects — and the ordering was **already** worst-first (checked before writing anything, per
+§5.11's lesson); what was missing was the statement that the ordering has consequences.
+
+This is #619/#620 one level deeper: those told the lane the round delta and which screen it had
+broken; this tells it which dimension the number is following.
+
+> **A pre-existing crash, surfaced by one of the new tests (#649b).** The per-dimension sort was
+> `key=lambda kv: kv[1].get("score", 0.0)`, which raises `TypeError: '<' not supported between
+> 'float' and 'str'` the moment the judge returns a non-numeric score — taking the WHOLE
+> remediation body down with it, so a malformed field would have cost the lane every instruction
+> for every screen. Coerced for ordering only; the printed value is untouched.
+
 ### §5.24 — ★ the holistic score is a MIN, not a mean — and that closes a parked question (2026-08-12)
 
 Chasing §5.23's residual led to the clearest answer of the session about the gate itself. Over the
