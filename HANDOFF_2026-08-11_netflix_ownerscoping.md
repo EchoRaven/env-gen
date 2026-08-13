@@ -1822,6 +1822,34 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.28 — the same reachability question, asked of the WHOLE codebase (2026-08-12)
+
+§5.27 audited my own 28 changes; the natural completion is the other 1879 private functions.
+
+| | |
+|---|---|
+| private functions defined | 1879 |
+| never mentioned outside their own `def` | **28 (371 lines)** |
+
+> **A twelfth instrument artifact, and the largest number of the session.** The first pass matched
+> `name(` — call syntax — and reported **150 functions / 1959 lines**. Three spot-checks killed it:
+> `"workhub_tools": _bundle_workhub_tools` (registered in a dict), `a._visual_defer_check =
+> self._visual_delivery_defer_active` (bound as an attribute), `json.dumps = _safe_json_dumps`
+> (monkey-patching stdlib). **Every one is referenced without parentheses.** Counting any mention
+> instead collapses 150 to 28. A dead-code number from a call-syntax scan is five parts noise.
+
+The one that looked load-bearing: **`_run_hub_sync_stage` — 80 lines, a whole pipeline stage, and
+the only stage in its file with zero references** (its siblings `retrieve_context`,
+`knowledge_sync`, `action`, `hub_commit_gate` are all wired in `step_runner`). It is **not** a
+missing feature: `step_runner` calls `_auto_sync_hub_state(...)` every step, and the same file
+carries the note *"the forced per-step knowledge_sync stage that used to flush is now removed"* —
+the same evolution. An LLM-gated stage superseded by a deterministic one, left in place.
+
+**Not deleted.** 371 lines across 12 files is churn whose only failure mode is invisible to me — a
+`getattr` with a computed name — for no measured benefit. Recorded instead, because dead code's
+real cost showed up in this very session: §5.22 spent effort calibrating `_PLACEHOLDER_THRESHOLD`
+before discovering it sits behind an always-taken early return.
+
 ### §5.27 — is any of THIS session's work dead? (2026-08-12)
 
 `_PLACEHOLDER_THRESHOLD` (§5.22) was a threshold sitting behind an always-taken early return —
