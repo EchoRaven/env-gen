@@ -138,6 +138,55 @@ _API_BODY_ITEMS_610 = 5
 _API_BODY_CHARS_610 = 8000
 
 
+def _request_failure_reason_677(exc: BaseException, url: str) -> str:
+    """#677: a transport failure that says what to DO, not just what errno came back.
+
+    `test_api` reported the raw urllib text — "Request failed: <urlopen error [Errno 111]
+    Connection refused>" — which names an errno and nothing else. Continuing the wasted-STEPS
+    ranking (#674/#675/#676): test_api is the largest single source of failed tool calls at 5248
+    across 123 runs, and 1778 of those are this one, over 100 runs at a median of 8 per run and
+    a maximum of 220. Per #257 each retry is a whole step re-sending the prompt, and retrying a
+    connection to a process that is not running cannot succeed however many times it is tried.
+
+    The remedy differs by cause and the exception already distinguishes them, so the message
+    now does too. Best-effort: anything unrecognised keeps the original wording.
+    """
+    # the base line is built INSIDE the guard: this runs on an already-failing path, and an
+    # exception whose own __str__ raises must not take the error report with it (#665's rule).
+    try:
+        base = f"Request failed: {exc}"
+    except Exception:
+        return f"Request failed: <unprintable {type(exc).__name__}>"
+    try:
+        text = str(exc).lower()
+        target = ""
+        try:
+            from urllib.parse import urlparse
+            u = urlparse(str(url))
+            if u.hostname:
+                target = f" at {u.hostname}:{u.port or (443 if u.scheme == 'https' else 80)}"
+        except Exception:
+            target = ""
+        if "connection refused" in text:
+            return (base + f" — NOTHING IS LISTENING{target}. The service is not running, so "
+                    "retrying this call cannot succeed. Bring the stack up (docker compose) or "
+                    "wait for the build to finish, and check the port matches the one the "
+                    "backend actually binds.")
+        if "name or service not known" in text or "nodename nor servname" in text:
+            return (base + f" — the HOST does not resolve{target}. Inside compose use the "
+                    "SERVICE name, not localhost; from the host use the published port.")
+        if "connection reset by peer" in text:
+            return (base + f" — the peer accepted then RESET the connection{target}: the "
+                    "process is starting, crashing on this request, or behind a proxy that "
+                    "closed it. Check the container log before retrying.")
+        if "timed out" in text or "timeout" in text:
+            return (base + f" — no response{target} before the timeout. The endpoint may be "
+                    "blocking on a dependency (DB not ready) rather than missing.")
+        return base
+    except Exception:
+        return base
+
+
 def _bound_api_body_610(text):
     """Compact + bound an API response body for agent consumption."""
     import json as _json
@@ -2351,7 +2400,8 @@ To test them, get a token first, then pass it as a header:
                 )
                 
         except Exception as e:
-            return ToolResult(success=False, error_message=f"Request failed: {e}")
+            return ToolResult(success=False,
+                              error_message=_request_failure_reason_677(e, url))
 
 
 # ===== Legacy Compatibility =====
