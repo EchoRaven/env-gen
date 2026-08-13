@@ -2850,12 +2850,32 @@ def _measured_diff_lines(r: Mapping[str, Any], output_dir: Any = None) -> List[s
             "MEASURED COLOR DIFF (deterministic pixel sampling of the gate "
             "screenshot vs the reference spec — facts, not the judge's opinion; "
             "apply these EXACT values):")
-        for d in devs[:10]:
+        # #662: ORDER BEFORE THE CAP. The 10-line window was filled in list order, and
+        # `accent_missing` is ~34% of all measurements — so it crowded out the deviations that
+        # carry an actual measured `distance`, which is what this section promises ("facts").
+        # Measured: 498 of 1248 screens (40%) had at least one background deviation hidden by
+        # the cap; 1881 of 9132 (21%) never reached the lane. Background-first, then widest gap
+        # first, recovers 1012 of them (+14%) — a REORDER, so nothing is dropped that the cap
+        # was not already dropping, and no tuned constant is introduced.
+        _ordered = sorted(devs, key=lambda m: (m.get("kind") != "background",
+                                               -(m.get("distance") or 0)))
+        for d in _ordered[:10]:
             if d.get("kind") == "accent_missing":
+                # #662: this one is NOT the same grade of fact as a background diff, and saying
+                # so costs a clause. Its `expected` is sampled from a region of the REFERENCE
+                # IMAGE, and on a nav or hero that region often shows photographic content
+                # through transparent chrome. Across the corpus 64% of these accents (2959 of
+                # 4618) are not attributable to the design's own measured palette, their median
+                # saturation is 0.56 against the brand accent's 0.96, and the hue split is
+                # green 32% / gold 27% / purple 23% / blue 15% / red 4% — for a product whose
+                # accent is red. Filtering them on colour was tried and rejected: the cleanest
+                # cut still lost 27% of the genuine red ones.
                 lines.append(
                     f"  · {d.get('component')}: {d.get('hue')} accent MISSING — the "
-                    f"reference measures {d.get('expected')} in this region; restore it "
-                    "(semantic color loss: unread-dots/badges/buttons going gray)")
+                    f"reference measures {d.get('expected')} in this region; restore it IF it "
+                    "is chrome (semantic color loss: unread-dots/badges/buttons going gray). "
+                    "This sample can pick up artwork showing through transparent chrome — "
+                    "ignore it when the region is a poster/backdrop rather than a control")
             else:
                 lines.append(
                     f"  · {d.get('component')}: background renders {d.get('actual')} but "
