@@ -266,7 +266,73 @@ than the lanes pushed to fill it.
 
 ---
 
-## 13. Older, still unresolved
+## 13. #671 — should the runtime-validation matrix be enforced?
+
+**Changed (visibility only).** The gate now reports `matrix_skipped_reason` when there is no task
+suite, so an unevaluated matrix stops reading like a passed one.
+
+**Proven offline.** `tasks/tasks.yaml` exists in 0 of 144 runs; `tasks.yaml` and
+`action_space.yaml` appear nowhere in any run tree; the gate logged `task_suite=False` 41 times
+and `True` never. Through `get_validation_results`' normalisation, api_smoke passes in 90 of 144
+runs and ui_smoke in 116 of 144 — so 54 runs delivered with no API smoke pass and 28 with no UI
+smoke pass, and the gate never asked.
+
+**Only a run can settle.** Whether to drop the `if task_suite_exists:` guard. On this corpus 54
+runs would gain `validation_api_smoke_missing` and 28 the UI equivalent. Two things are not
+decidable from disk: whether those runs genuinely lacked a working API, and whether anything
+still intends to write `tasks/tasks.yaml` at all.
+
+**Cheapest observation.** One run: does `tasks/tasks.yaml` ever appear?
+`task_definition_tools.py` targets it and `tasks/action_space.yaml`; if the writer is
+unreachable, the matrix should key on something that exists.
+
+**Trap for the next reader.** Measuring `codehub_checks.json` directly says api_smoke and
+ui_smoke pass in 0 of 144 — the records carry `status: "success"` and the kind under `evidence`,
+not `metadata`. #193/#236 normalise both in `get_validation_results`. Measure through the
+normaliser or the number is meaningless.
+
+---
+
+## 14. max_ticks is a cap that cannot bind
+
+**Not changed.** All 134 `run_budget.json` files carry `max_ticks: 240`; observed usage is min 0,
+median 1, p90 3, **max 6**. No run has ever reached it; 3 reached the 7200s wall cap. At the
+observed rate a run needs roughly 120 hours to spend 240 ticks against a 2-hour wall budget, so
+the tick cap cannot fire before wall-clock — anyone relying on it for protection has none.
+Lowering it needs evidence of a correct value the corpus does not supply.
+
+(`tick_count` in run_budget and `idle_tick_count` in the coordination loop are the same counter
+family — incremented on adjacent lines in orchestrator.py — so `stalled = idle_tick_count >= 3`
+also sits above p90.)
+
+---
+
+## 15. 847 component crops are single-colour blanks
+
+**Not changed.** `design_prep` writes "every component with a region gets a physical crop at
+design/crops/<screen>__<id>.png … so lanes/gates can view each component in isolation" (133 of
+144 runs have the directory; 43,928 PNGs, 4.9 GB).
+
+**Proven offline.** Decoding every crop under 1.5 KB: **847 are single-colour**, across 91
+component names, and the top eight are all player controls — `volume-button` x73,
+`next-episode-button` x72, `subtitles-button` x72, `fullscreen-button` x72, `rewind-10-button`
+x66, `forward-10-button` x66, `pause-button` x62, `episode-title-center` x40. Consistent: the
+player's controls auto-hide, so the reference frame had nothing at those regions. A lane shown
+one of these is being told the component is an empty rectangle.
+
+**Only a run can settle.** Who reads a crop and what a missing one costs. r139 has NO crops
+directory yet has full component_specs, so crops are not required — but skipping a blank one
+could surprise a consumer expecting a file per component. The naming also differs between the
+two artifacts (specs `pause_button`, crops `pause-button`), so any consumer joining them by name
+already normalises.
+
+**Cheapest observation.** One run: grep for reads of `design/crops/`. If only the design analyst
+writes them and nothing reads them, stop writing a crop for an empty region — and 4.9 GB of
+mostly-unread PNGs is worth revisiting separately.
+
+---
+
+## 16. Older, still unresolved
 
 - **#644 viewport.** Two measured targets conflict: 796px matches the reference image aspect,
   981px matches its content fraction. Changing to 796px took `_measured_deviations` error from
