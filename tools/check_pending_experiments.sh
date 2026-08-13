@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+# Check every open question from EXPERIMENTS_PENDING_2026-08-13.md against ONE finished run.
+#
+# The 2026-08-12/13 review was entirely offline: no generation runs. Each fix is proven at the
+# unit level and each premise is measured against the kept corpus, but a corpus cannot show a
+# fix's EFFECT, and nine findings could not be resolved from disk at all. This script is the
+# "cheapest observation" column of that document, made executable, so the next run settles them
+# without anyone re-deriving the queries.
+#
+#   usage:  tools/check_pending_experiments.sh <run-dir> [<run-log>]
+#   e.g.    tools/check_pending_experiments.sh agent/generated/netflix-web-r145 \
+#                                              gm_netflix-web-r145.log
+#
+# Every check prints one of:
+#   LIVE     — a fix's signature appeared, so the new code ran
+#   NOT SEEN — the signature did not appear. NOT the same as "broken": the branch may simply
+#              not have been reached this run. Say which before concluding anything.
+#   DATA     — a measurement, for comparison against the corpus baseline quoted beside it
+#   n/a      — the artifact this check needs does not exist in this run
+#
+# Exit status is always 0: this reports, it does not gate.
+
+set -uo pipefail
+RUN="${1:-}"
+LOG="${2:-}"
+if [[ -z "$RUN" || ! -d "$RUN" ]]; then
+    echo "usage: $0 <run-dir> [<run-log>]" >&2
+    exit 2
+fi
+HUBS="$RUN/shared/hubs"
+
+say() { printf '%-9s %-46s %s\n' "$1" "$2" "${3:-}"; }
+
+grep_log() {   # grep_log <label> <pattern> <note>
+    if [[ -z "$LOG" || ! -f "$LOG" ]]; then say "n/a" "$1" "no run log given"; return; fi
+    local n; n=$(grep -c -- "$2" "$LOG" 2>/dev/null || true)
+    if [[ "${n:-0}" -gt 0 ]]; then say "LIVE" "$1" "x$n  ${3:-}"
+    else say "NOT SEEN" "$1" "${3:-}"; fi
+}
+
+echo "=== run: $RUN"
+echo
+echo "--- A. did this session's fixes actually execute? (signature greps) ---"
+grep_log "#677 transport diagnosis"      "NOTHING IS LISTENING"            "was: 1778 bare 'Connection refused'"
+grep_log "#678 framework-owned escalate" "The answer will not change"      "was: 61 run/file pairs hit 5+ times"
+grep_log "#676 edit anchor diagnosis"    "the anchor is"                   "was: 418 bare 'old_string not found'"
+grep_log "#675 list validator"           "entries; got"                    "was: 1128 'must be a list of length'"
+# #674 has NO unique signature — its change is that `data` now FOLLOWS the error line, and
+# "HTTP Error" appears in the old wording too. Grepping for it would report LIVE on a pre-fix
+# log (it did, on r139, x66). Print the line instead and let the reader see whether a body
+# follows it.
+if [[ -n "$LOG" && -f "$LOG" ]]; then
+    _l=$(grep -m1 -- "HTTP Error:" "$LOG" 2>/dev/null || true)
+    if [[ -n "$_l" ]]; then
+        say "MANUAL" "#674 failed ToolResult data" "does a body follow the status? ->"
+        printf '          %s\n' "${_l:0:200}"
+    else
+        say "n/a" "#674 failed ToolResult data" "no HTTP Error line this run"
+    fi
+else say "n/a" "#674 failed ToolResult data" "no run log given"; fi
+grep_log "#664 chain-reject escalation"  "have now been rejected"          "was: 4 escalations in 4928 rejects"
+grep_log "#663 denial-probe class"       "BOUNDARY CROSSED"                "P0 if present; SUBSTITUTED = status bug"
+grep_log "#671 matrix skipped"           "matrix_skipped_reason"           "reported when no tasks/tasks.yaml"
+echo
+echo "--- B. the nine findings that disk could not settle ---"
+
+# 18. MCP surface: registered implemented, shipped in 23% of deliveries
+if [[ -d "$RUN/mcp_server" ]]; then
+    say "DATA" "18 mcp_server/ at run root" "PRESENT — the scaffold reached the root"
+else
+    wt=$(ls -d "$RUN"/worktrees/*/mcp_server 2>/dev/null | head -1 || true)
+    if [[ -n "$wt" ]]; then say "DATA" "18 mcp_server/" "ONLY in a worktree -> merge gap: $wt"
+    else say "DATA" "18 mcp_server/" "ABSENT everywhere (corpus: 125/144). Grep the log for \
+write_mcp_server + orch.output_dir to see where it wrote"; fi
+fi
+
+# 13. runtime-validation matrix: does tasks/tasks.yaml ever appear?
+if [[ -f "$RUN/tasks/tasks.yaml" ]]; then
+    say "DATA" "13 tasks/tasks.yaml" "PRESENT — the matrix can finally be enforced"
+else
+    say "DATA" "13 tasks/tasks.yaml" "absent (corpus: 0/144). If never written, the writer \
+(task_definition_tools.py) is unreachable and the matrix should key on something else"
+fi
+
+# 10. chains registered but never run
+if [[ -f "$HUBS/registryhub_verification_chains.json" ]]; then
+    python3 - "$HUBS/registryhub_verification_chains.json" <<'PY'
+import json,sys,collections
+d=json.load(open(sys.argv[1]))
+ch=d if isinstance(d,list) else list(d.values())
+c=collections.Counter(str(x.get('status')) for x in ch if isinstance(x,dict))
+reg=c.get('registered',0); tot=sum(c.values())
+print(f"{'DATA':<9} {'10 chains never run':<46} {reg} registered / {tot} total "
+      f"(corpus: 267 across 26 runs). If >0 at run end, find out whether the executor "
+      f"skipped them or never reached them")
+PY
+else say "n/a" "10 chains never run" "no chain store"; fi
+
+# 17. consumer registration — the input the breaking-change machinery needs
+if [[ -f "$HUBS/registryhub_consumers.json" ]]; then
+    python3 - "$HUBS/registryhub_consumers.json" "$RUN" <<'PY'
+import json,sys,os,re
+d=json.load(open(sys.argv[1]))
+n=len([k for k in d if not k.startswith('_')])
+api=os.path.join(sys.argv[2],'app/frontend/src/services/api.js')
+calls=len(set(re.findall(r'["\'`](/api/[^"\'`?]+)', open(api,encoding='utf-8',errors='ignore').read()))) if os.path.isfile(api) else -1
+print(f"{'DATA':<9} {'17 consumers registered':<46} {n} registered vs {calls} /api paths in "
+      f"api.js (corpus: median 0 vs 7; only 36/144 runs registered any)")
+PY
+else say "n/a" "17 consumers registered" "no consumer store"; fi
+
+# 16. hub stores created and never written
+python3 - "$HUBS" <<'PY'
+import json,glob,os,sys
+empty=[]
+for f in sorted(glob.glob(os.path.join(sys.argv[1],'*.json'))):
+    try: d=json.load(open(f))
+    except Exception: continue
+    if isinstance(d,dict) and not [k for k in d if not k.startswith('_')]:
+        empty.append(os.path.basename(f)[:-5])
+print(f"{'DATA':<9} {'16 hub stores never written':<46} {len(empty)} empty "
+      f"(corpus: 19 of 43). {', '.join(empty[:6])}{' …' if len(empty)>6 else ''}")
+PY
+
+# 15. blank component crops
+if [[ -d "$RUN/design/crops" ]]; then
+    python3 - "$RUN/design/crops" <<'PY'
+import glob,os,sys
+try:
+    from PIL import Image
+except Exception:
+    print(f"{'n/a':<9} {'15 blank crops':<46} PIL unavailable"); raise SystemExit
+blank=0; tot=0
+for p in glob.glob(os.path.join(sys.argv[1],'**','*.png'), recursive=True):
+    tot+=1
+    if os.path.getsize(p) >= 1500: continue
+    try:
+        c=Image.open(p).convert('RGB').getcolors(maxcolors=200000)
+        if c and len(c)<=1: blank+=1
+    except Exception: pass
+print(f"{'DATA':<9} {'15 blank crops':<46} {blank} single-colour of {tot} "
+      f"(corpus: 847, mostly player_controls). Also grep the log for reads of design/crops/")
+PY
+else say "n/a" "15 blank crops" "no crops dir"; fi
+
+# 14. max_ticks cannot bind
+if [[ -f "$RUN/run_budget.json" ]]; then
+    python3 - "$RUN/run_budget.json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1])); c=d.get('caps') or {}; u=d.get('usage') or {}
+print(f"{'DATA':<9} {'14 max_ticks':<46} ticks {u.get('ticks')} / cap {c.get('max_ticks')}, "
+      f"elapsed {u.get('elapsed_sec')} / {c.get('max_wall_sec')} (corpus: max 6 ticks ever)")
+PY
+else say "n/a" "14 max_ticks" "no run_budget.json"; fi
+
+# 11. player_controls / title_episodes never judged
+python3 - "$RUN" <<'PY'
+import json,glob,sys,os
+un=set()
+for f in glob.glob(os.path.join(sys.argv[1],'design/visual_gate/**/*.json'), recursive=True):
+    try: d=json.load(open(f))
+    except Exception: continue
+    for x in ((d.get('coverage') or {}).get('unjudged') or []): un.add(str(x))
+hit=[x for x in ('player_controls','title_episodes') if x in un]
+print(f"{'DATA':<9} {'11 never-judged screens':<46} "
+      f"{'still unjudged: '+', '.join(hit) if hit else 'both judged this run'} "
+      f"(corpus: both unjudged in 40/40)")
+PY
+
+# 12. the persistent notebook
+python3 - "$RUN" <<'PY'
+import glob,os,sys
+rows=[]
+for d in sorted(glob.glob(os.path.join(sys.argv[1],'memory-bank','*'))):
+    p=os.path.join(d,'notebook.md')
+    if os.path.isfile(p): rows.append((os.path.basename(d), os.path.getsize(p)))
+big=[r for r in rows if r[1]>800]
+print(f"{'DATA':<9} {'12 notebook use':<46} {len(big)}/{len(rows)} agents wrote a "
+      f"non-trivial notebook (corpus median 730 B = template only)")
+PY
+
+# 8. r135's nav order
+python3 - "$RUN" <<'PY'
+import re,glob,sys,os
+f=glob.glob(os.path.join(sys.argv[1],'app/frontend/src/components/TopNav.jsx'))
+if not f:
+    print(f"{'n/a':<9} {'8 nav order':<46} no TopNav.jsx"); raise SystemExit
+s=open(f[0],encoding='utf-8',errors='ignore').read()
+pairs=re.findall(r'(?:href|to)=["\']([^"\']+)["\'][^>]*>\s*([^<{][^<]*?)\s*<', s)
+labels=[l.strip() for _,l in pairs if l.strip()]
+hrefs=[h for h,l in pairs if l.strip()]
+dup_h=len(hrefs)!=len(set(hrefs))
+note=""
+if len(labels)<3:
+    note=" (few plain-text labels matched — the nav may render labels from an array; read it)"
+print(f"{'DATA':<9} {'8 nav order + duplicate destinations':<46} {labels[:7]}"
+      f"{'  DUPLICATE HREFS' if dup_h else ''}{note}")
+PY
+
+echo
+echo "--- C. the wasted-step ranking, re-measured ---"
+if [[ -n "$LOG" && -f "$LOG" ]]; then
+    python3 - "$LOG" <<'PY'
+import re,sys,collections
+c=collections.Counter()
+for l in open(sys.argv[1],encoding='utf-8',errors='ignore'):
+    m=re.search(r'\] ❌ (\w+) FAILED \(', l)
+    if m: c[m.group(1)]+=1
+tot=sum(c.values())
+print(f"{'DATA':<9} {'failed tool calls (each ~1 wasted step)':<46} {tot}")
+for k,v in c.most_common(6):
+    print(f"{'':<9} {'  '+k:<46} {v}")
+print(f"{'':<9} {'  corpus baseline, per run':<46} "
+      f"test_api 22, chain-register 28, write 18, workhub_task 20 (medians)")
+PY
+else say "n/a" "wasted-step ranking" "no run log given"; fi
+echo
+echo "Read EXPERIMENTS_PENDING_2026-08-13.md for what each number means and what to conclude."

@@ -10,6 +10,37 @@ the cheapest observation that settles it.
 
 ---
 
+## NEXT RUN — run this first
+
+    tools/check_pending_experiments.sh <run-dir> [<run-log>]
+    e.g.  tools/check_pending_experiments.sh agent/generated/netflix-web-r145 gm_netflix-web-r145.log
+
+It is the "cheapest observation" column of this file, executable. Three sections:
+
+  A. **Did this session's fixes actually execute?** Signature greps for #663/#664/#671/#675/
+     #676/#677/#678. `NOT SEEN` is NOT the same as broken — the branch may simply not have been
+     reached. Check which before concluding. #674 has no unique signature (its change is that
+     the body now FOLLOWS the error line, and "HTTP Error" appears in the old wording too), so
+     it prints the first such line for a human to read; grepping it reported a false LIVE on a
+     pre-fix log while this script was being written.
+  B. **The nine findings disk could not settle** — items 8, 10–18 below, each printed beside its
+     corpus baseline so the comparison needs no lookup.
+  C. **The wasted-step ranking re-measured** — failed tool calls by tool, against the corpus
+     medians (test_api 22/run, chain-register 28, write 18, workhub_task 20). Per #257 each
+     failed call is a whole step re-sending the prompt, so this is the number that says whether
+     #674–#678 paid.
+
+Two things to hold onto while reading it, both learned the hard way this session:
+
+  * **A zero is a claim about the instrument until proven otherwise.** Five probe results were
+    retracted for reading the wrong field or the wrong path. Dump one real record before
+    believing any count.
+  * **"The fix's message never appears" only means something if runs exist AFTER the fix
+    landed.** #634 and #635 were reported inert on exactly this mistake; every run in the corpus
+    predates them.
+
+---
+
 ## 1. #652 — rail/carousel position indicator
 
 **Changed.** `_rail_pagination_652` emits a dots/bar indicator inside each rail block, gated on
