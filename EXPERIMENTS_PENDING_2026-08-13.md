@@ -178,7 +178,62 @@ Low priority — 1 of 27.
 
 ---
 
-## 9. Older, still unresolved
+## 9. #663 — are the 20 denial-probe successes leaks or rebinds?
+
+**Changed.** A denial probe that succeeds now compares the id the prober SENT against the id the
+server STORED, and says "BOUNDARY CROSSED" (P0) or "SUBSTITUTED, wrong status not a leak".
+
+**Proven offline.** 20 denial-probe successes in the r100+ era across 8 runs
+(r117/127/130/131/133/135/141/143), on my-list, continue-watching, rating and profiles. r127's
+`rating_upsert_and_isolation` step 5 is a correctly-authored probe (`auth: tokenB` carrying A's
+profile_id) that returned 201 instead of 403.
+
+**Only a run can settle.** Which class those 20 actually are. The artifact records
+`last_result.steps` as method/path/status/ok/note only — the saved variables and response
+bodies of the successful steps are discarded — so `profileA_id` is unrecoverable and the class
+cannot be determined from what is on disk. That gap is exactly what this fix closes going
+forward, but it cannot be applied retroactively.
+
+**Cheapest observation.** One run with any isolation chain. Grep for "BOUNDARY CROSSED": each
+hit is a live cross-user write and should be triaged as P0; each "SUBSTITUTED" is a status-code
+defect in the projected handler. If they are all SUBSTITUTED, the owner-scoping is sound and the
+fix belongs in the handler's validation, not its query.
+
+---
+
+## 10. Chain coverage — 267 registered chains that never ran
+
+**Not changed.** 267 chains across 26 runs sit at `status: registered` with `last_run_at: None`
+and `last_result: None` — authored, stored, never executed. The names are exactly the ones that
+matter: `auth_round_trip` x8, `rating_and_continue_watching` x6,
+`my_list_ownership_isolation` x5, `auth_and_profile_isolation` x4.
+
+An ownership-isolation chain that never runs is the check that would have caught #566y / #598 /
+#569. Whether these were never scheduled, or ran after the store's last flush, is not decidable
+offline — the store records no attempt.
+
+**Cheapest observation.** One run: count chains still at `registered` when the run ends. If it
+is non-zero, find out whether the executor skipped them or never reached them.
+
+---
+
+## 11. player_controls / title_episodes are never judged
+
+**Not changed, deliberately.** In all 40 r100+ verdicts, `player_controls` and `title_episodes`
+appear in `coverage.unjudged` — never judged, never failed, and classified as REAL pages (not
+transient), so they count against coverage as self-exempted pages.
+
+`player_controls` is plainly an interaction state (controls auto-hide; a static route capture
+cannot reproduce them), but adding `controls` to `_TRANSIENT_STATE_RE` is NOT safe: "parental
+controls" legitimately names a navigable page, which is the exact trap that vocabulary's own
+comment warns about for `menu`/`sheet`. A name-based fix would misclassify a real settings page.
+
+**Cheapest observation.** One run: does either screen ever resolve to a served route? If never,
+the honest fix is upstream in reference classification, not in the transient vocabulary.
+
+---
+
+## 12. Older, still unresolved
 
 - **#644 viewport.** Two measured targets conflict: 796px matches the reference image aspect,
   981px matches its content fraction. Changing to 796px took `_measured_deviations` error from

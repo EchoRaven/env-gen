@@ -1486,6 +1486,60 @@ def _notnull_missing_cols(body_text: "Optional[str]", method: str) -> "List[str]
 _PROJECTED_TRACEBACK_RE = re.compile(r"backend traceback:[^\n]*\b_projected_[a-z0-9_]+", re.I)
 
 
+def _denial_scope_verdict_663(sent_body, body_text) -> str:
+    """#663: a denial probe that SUCCEEDED — did the write cross an ownership boundary?
+
+    "DENIAL-PROBE got success" is 20 of the current era's broken assertions (8 of the 13 most
+    recent runs with a failing chain: r117/127/130/131/133/135/141/143), concentrated on
+    GET /api/my-list, GET /api/continue-watching, POST /api/my-list and POST rating. #188 made
+    the note honest about the ambiguity — "an auth/isolation hole, OR a mis-authored probe" —
+    but left it unresolved, and the two ends of that OR are a P0 and a cosmetic:
+
+        the server STORED the id the caller named        -> a cross-user write. P0.
+        the server SUBSTITUTED the caller's own id       -> no data crossed; the request should
+                                                            have been refused, not rebound.
+
+    The evidence is already in hand and was being discarded: the resolved request body carries
+    the id the prober sent, and the response carries the id that was stored. Comparing them
+    decides it. Verified against r127's `rating_upsert_and_isolation`, whose step 5 is a
+    correctly-authored `auth: tokenB` probe carrying A's profile_id — from the stored artifact
+    alone the class could not be determined, which is precisely the gap.
+
+    Returns "" when the comparison is not possible, so the note is never worse than before.
+    """
+    if not isinstance(sent_body, dict) or not body_text:
+        return ""
+    try:
+        got = json.loads(body_text)
+    except Exception:
+        return ""
+    for _k in ("item", "data", "result", "record"):
+        if isinstance(got, dict) and isinstance(got.get(_k), dict):
+            got = got[_k]
+            break
+    if not isinstance(got, dict):
+        return ""
+    echoed, swapped = [], []
+    for k, v in sent_body.items():
+        if k not in got or isinstance(v, (dict, list)) or v is None:
+            continue
+        try:
+            same = str(v).strip() == str(got[k]).strip()
+        except Exception:
+            continue
+        (echoed if same else swapped).append((k, v, got[k]))
+    if echoed:
+        return ("BOUNDARY CROSSED — the stored row kept the value the caller sent: "
+                + "; ".join(f"{k}={v!r}" for k, v, _ in echoed)
+                + ". Treat as a data-isolation hole, not a status-code nit. ")
+    if swapped:
+        return ("no data crossed — the server SUBSTITUTED its own value ("
+                + "; ".join(f"{k}: sent {v!r}, stored {g!r}" for k, v, g in swapped)
+                + "), so this is a WRONG STATUS, not a leak: a request naming another "
+                  "owner's id must be refused, not silently rebound. ")
+    return ""
+
+
 def classify_endpoint_failure(status, body_text):
     """``"ok"`` | ``"framework_defect"`` | ``"broken"`` for one endpoint probe result."""
     try:
@@ -2678,7 +2732,9 @@ def execute_chain(base: str, chain: Mapping[str, Any],
             if (expect and isinstance(status, int) and 200 <= status < 300
                     and not any(200 <= e < 300 for e in expect)):
                 note = ("DENIAL-PROBE got success — the request was NOT rejected "
-                        f"(expected denial {expect}). " + note)
+                        f"(expected denial {expect}). "                       # #663
+                        + _denial_scope_verdict_663(body, res.get("body_text"))
+                        + note)
             # FIX #188 causality: the request went out with unresolved variables —
             # name each one and (when known) the upstream step whose save failed,
             # so the reader chases the CAPTURE bug, not this step's status.
