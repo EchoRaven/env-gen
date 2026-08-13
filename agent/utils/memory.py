@@ -11,7 +11,7 @@ Inspired by OpenHands, this module provides:
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Optional, Callable
+from typing import Any, Awaitable, Callable, Optional
 from uuid import uuid4
 from collections import deque
 import json
@@ -354,7 +354,11 @@ class LLMSummarizingCondenser:
     
     def __init__(
         self,
-        llm_func: Callable[[str], str],  # Async function that calls LLM
+        # The comment beside this said "Async function" while the annotation said it returns a
+        # str, and the two call sites below `await` it. The only caller in the tree passes an
+        # `async def` (generator_memory.py:1084), so the runtime was always correct and the
+        # annotation simply lied — which is why the checker read `await <str>`.
+        llm_func: Callable[[str], Awaitable[str]],
         max_size: int = 100,
         keep_first: int = 2,
         max_event_length: int = 5000,

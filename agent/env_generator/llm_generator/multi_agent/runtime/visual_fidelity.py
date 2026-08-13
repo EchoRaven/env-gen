@@ -2910,6 +2910,33 @@ def _spec_snippet(output_dir: Any, screen_name: str) -> str:
         return ""
 
 
+# #660: a judge "fix" that says nothing to do.
+#
+# Three conditions, and the last two exist because the first one alone was WRONG. Anchoring on
+# "none|no" and allowing word characters to the end matched 309 strings — but 14 of them carry
+# a real instruction after a continuation word, and dropping those would have silenced actual
+# remediation:
+#
+#     'No changes needed BEYOND adding missing labels.'
+#     'No change needed BEYOND removing the amber hero image dominating the top.'
+#     'No major change needed ONCE hero image renders correctly.'
+#     'None major BEYOND adding Kids gradient tile.'
+#
+# So: starts with none/no, carries no continuation marker, and is short. Verified by listing
+# every string the filter drops across the corpus and reading all 27 distinct shapes — 295
+# instructions, none of them actionable.
+_NOOP_FIX_CONT_660 = re.compile(r"\b(beyond|once|except|apart|aside|besides|other than|but)\b",
+                                re.I)
+_NOOP_FIX_HEAD_660 = re.compile(r"^(none|no)\b[\w\s,]*\.?$", re.I)
+
+
+def _is_noop_fix_660(text: str) -> bool:
+    t = (text or "").strip()
+    return (bool(_NOOP_FIX_HEAD_660.match(t))
+            and not _NOOP_FIX_CONT_660.search(t)
+            and len(t) <= 40)
+
+
 def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
                      latched: Optional[set] = None,
                      prev_live: Optional[float] = None,
@@ -3060,7 +3087,15 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
         for key, rec in sorted(dims.items(), key=_score_key):
             if rec.get("notes"):
                 lines.append(f"- [{dim_titles.get(key, key)} {rec.get('score', 0):.2f}] {rec['notes']}")
-            if rec.get("fix"):
+            # #660: the judge writes "None.", "No change needed.", "None significant." into
+            # `fix` when a dimension needs nothing — 309 of 8094 fix instructions across the
+            # corpus, 295 after excluding the 14 that hide a real instruction behind
+            # "beyond"/"once". Emitted verbatim they read as instructions ("FIX: None
+            # significant.") and dilute the real ones; #649 measured the lane already receiving
+            # a mean of 6.4 per blocking screen. Dropping them is safe rather than blinding: no
+            # screen has ALL of its fixes in this shape, and no BLOCKING screen does either
+            # (0 of 299) — so nothing is ever left without an actionable line.
+            if rec.get("fix") and not _is_noop_fix_660(str(rec["fix"])):
                 lines.append(f"  FIX: {rec['fix']}")
         devs = r.get("deviations") or []
         if devs:
