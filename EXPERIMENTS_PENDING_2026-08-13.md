@@ -400,7 +400,44 @@ calls it and the registration is rejected, the gate is.
 
 ---
 
-## 18. Older, still unresolved
+## 18. The MCP surface is registered as implemented and shipped in 23% of deliveries
+
+**Not changed.** `registryhub_mcp_registry` holds 2079 records across 134 runs and **every one is
+`status="implemented"`** — 1945 tools, 134 servers, median 15 tools per run. The registration API
+defaults to `"defined"`; `scaffolder.py` passes `"implemented"` explicitly, immediately after
+`write_mcp_server(orch.output_dir, ...)` returns, so at that moment the files existed.
+
+They are not there at the end:
+
+    runs registering MCP tools                     144
+      mcp_server/ at the run root                   18
+      only inside a surviving worktree               1
+      nowhere at all                               125
+
+    DELIVERED runs                                  35
+      shipping an mcp_server/                        8  (23%)
+
+Where the directory does exist the registry is accurate — median 16 tool definitions on disk
+against 15 registered — so the scaffold is right when it runs. The 18 are spread across every era
+(r2, r17, r34 … r139, r142) and the newest runs are among those without, so this is intermittent,
+not historical.
+
+**Only a run can settle.** Whether the scaffold writes into a worktree that never reaches the run
+root, or writes to the root and something later removes it. A removed worktree leaves no trace,
+so the artifacts cannot separate the two — and the registry's `implemented` is written from the
+write's own return value, so it cannot witness the loss either.
+
+**Cheapest observation.** One run: log `orch.output_dir` at the `write_mcp_server` call and stat
+`mcp_server/` again at delivery. If the path differs, it is a worktree-merge gap; if it matches
+and the directory is gone, something deletes it.
+
+**Related, deferred with it.** The delivery gate has `deliverability_failed_mcp_probes` but does
+not require the surface to exist. Requiring it would have failed 27 of the 35 delivered runs, so
+it is a tightening of the same class as item 13, not a blind switch.
+
+---
+
+## 19. Older, still unresolved
 
 - **#644 viewport.** Two measured targets conflict: 796px matches the reference image aspect,
   981px matches its content fraction. Changing to 796px took `_measured_deviations` error from
