@@ -3446,6 +3446,7 @@ class VisualFidelityGate:
         self.deferred_since = None     # wall-clock anchor of the milestone's FIRST defer
         self.total_judgments = 0       # per-milestone real-verdict count (backstop)
         self.transient_refunds = 0     # per-milestone bounded blank-capture refunds (#75a)
+        self.unreachable_refunds = 0   # #655b: same bound for capture/auth-unavailable
         self.last_result = None
         self.last_judged_sig = None
         self._passed_screens: set = set()  # #129: milestone-anchored sticky per-screen pass latch
@@ -3473,6 +3474,7 @@ class VisualFidelityGate:
         self.deferred_since = None
         self.total_judgments = 0
         self.transient_refunds = 0     # #75a: milestone-anchored, not reset by sig churn
+        self.unreachable_refunds = 0   # #655b: milestone-anchored, same reason
         self._passed_screens = set()   # #129: latch cleared per milestone, not by sig churn
         self._seed_reminder_sent = False  # #133: re-armed per milestone
         self._best_by_screen = {}      # #138: plateau tracking is per milestone
@@ -3600,10 +3602,33 @@ class VisualFidelityGate:
                 # / every auth route bounced to /login — round 31 judged the
                 # LOGIN PAGE against feed/profile references, 0.2s across the
                 # board). Refund so the budget only counts REAL verdicts.
-                self.attempts = max(0, self.attempts - 1)
-                orch._logger.warning(
-                    "Visual fidelity: %s — attempt refunded, will retry next tick.",
-                    result.get("summary") or "capture/auth unavailable")
+                #
+                # #655b — BOUNDED, for the same reason #75a bounds the blank refund three lines
+                # below: "a GENUINELY blank app can't defer forever". This branch was the one
+                # asymmetry — unbounded — and #655 widened its entry by relaxing the auth
+                # wipeout from "every auth SCREEN bounced" to "every auth ROUTE bounced". A
+                # transient race clears on the re-mint and never reaches the cap; an app whose
+                # auth guard is actually broken satisfies the condition EVERY round, so without
+                # a bound it refunds every round, the fidelity gate never counts an attempt, and
+                # the run spins to wall-clock. Past the cap the result flows to a real verdict
+                # and its remediation, exactly as the blank path does.
+                #
+                # Found by cross-auditing this session's fixes against each other (the #645
+                # method); the asymmetry predates #655, which only made it easier to reach.
+                if self.unreachable_refunds < _TRANSIENT_REFUND_CAP:
+                    self.unreachable_refunds += 1
+                    self.attempts = max(0, self.attempts - 1)
+                    orch._logger.warning(
+                        "Visual fidelity: %s — attempt refunded, will retry next tick "
+                        "(unreachable %s/%s).",
+                        result.get("summary") or "capture/auth unavailable",
+                        self.unreachable_refunds, _TRANSIENT_REFUND_CAP)
+                else:
+                    orch._logger.warning(
+                        "Visual fidelity: %s — refund cap reached (%s), NOT refunding; the "
+                        "condition is persistent, not transient.",
+                        result.get("summary") or "capture/auth unavailable",
+                        _TRANSIENT_REFUND_CAP)
                 return
             # FIX #75a: EVERY judged screen was an un-hydrated blank shell (capture_transient
             # ⇒ no real verdict obtained) — a mid-rebuild snapshot, not a design failure.
