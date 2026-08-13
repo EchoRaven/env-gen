@@ -2325,6 +2325,22 @@ async def run_visual_fidelity(
                         "through every reselect retry. The page's mount and data load are fine; "
                         "make profile selection persist (store it and honour it on load) so a "
                         "direct navigation to this route renders the route")
+                # #657b — AND IT SCORES, WHICH #657 CHANGED WITHOUT SAYING SO.
+                # Splitting picker screens out of `_blank_screens` also moved them across the
+                # `blank` flag below, and #542a's `_blocking_average` refunds ONLY `blank is
+                # True`. So before #657 a picker screen was excluded from the gating average as
+                # a transient env glitch; after it, the same screen counts as a hard 0.0.
+                #
+                # Caught by cross-auditing this session's own fixes against each other — the
+                # #645 shape, where one of my fixes silently shadowed another. The suite stayed
+                # green through it because no test crossed #657 and #542a.
+                #
+                # The new behaviour is the RIGHT one and is kept deliberately: #657's own
+                # diagnosis is that profile selection does not persist, which is an application
+                # defect, not a capture glitch. An app whose every route lands on the
+                # who's-watching chooser is unusable, so it must score and block; refunding it
+                # would ship exactly that. What was missing is that anyone could see the choice
+                # was made — hence this note and the test that pins it.
             elif screen["name"] in _blank_screens:
                 _dev = (f"route {screen['route']} rendered BLANK — navigated + reached "
                         "networkidle but the SPA never hydrated after ~5s re-poll (a bare "
