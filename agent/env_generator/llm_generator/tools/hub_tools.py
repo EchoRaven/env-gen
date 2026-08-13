@@ -49,11 +49,23 @@ def _coerce_dict_param(value, name: str = "value"):
             import json as _json
             parsed = _json.loads(s)
         except Exception:
-            return ToolResult(error=f"{name} must be a JSON object (dict). Got an unparseable string: {s[:120]}")
+            # #658: `ToolResult(error=...)` — `error` IS NOT A FIELD. ToolResult carries
+            # success/data/error_message/execution_time/metadata, so every one of these three
+            # raised `TypeError: ToolResult.__init__() got an unexpected keyword argument
+            # 'error'`. The callers are written correctly ("if isinstance(coerced, ToolResult):
+            # return coerced") — the object they check for could simply never be built, so the
+            # whole validation-error path was dead and an agent that passed a malformed
+            # `decision`/`schema` got a raw TypeError instead of this message.
+            # `.fail()` also fixes a second bug hiding behind the first: `success` DEFAULTS TO
+            # TRUE, so even had `error=` existed the caller would have returned a SUCCESS result
+            # carrying an error string.
+            return ToolResult.fail(
+                f"{name} must be a JSON object (dict). Got an unparseable string: {s[:120]}")
         if not isinstance(parsed, dict):
-            return ToolResult(error=f"{name} must be a JSON object (dict). Got JSON-{type(parsed).__name__}.")
+            return ToolResult.fail(
+                f"{name} must be a JSON object (dict). Got JSON-{type(parsed).__name__}.")
         return parsed
-    return ToolResult(error=f"{name} must be a JSON object (dict). Got {type(value).__name__}.")
+    return ToolResult.fail(f"{name} must be a JSON object (dict). Got {type(value).__name__}.")
 
 
 def _finalize_hub_tools(tool_classes):

@@ -96,7 +96,12 @@ class PlanDecisionProtocol:
                 source_agent_id=agent_id,
                 target_agent_id=self._lead_id,
             ),
-            content={
+            # #658: BaseMessage's field is `payload`; `content=` raised
+            # `TypeError: BaseMessage.__init__() got an unexpected keyword argument 'content'`.
+            # Gated behind the auto-approve branch above, so it only fired for plans with MORE
+            # steps than `_auto_approve_threshold` (3) — every smaller plan short-circuits and
+            # never builds a message, which is why an agent-callable tool could ship broken.
+            payload={
                 "type": "plan_decision_request",
                 "plan": plan.to_dict(),
                 "criteria": self._criteria,
@@ -256,7 +261,7 @@ class PlanDecisionProtocol:
                 source_agent_id=plan.agent_id,
                 target_agent_id=self._lead_id,
             ),
-            content={
+            payload={                      # #658: `content` is not a BaseMessage field
                 "type": "plan_revision",
                 "plan": plan.to_dict(),
                 "revision_notes": revision_notes,
