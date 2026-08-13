@@ -843,7 +843,7 @@ async def _idle_backoff_639(agent: Any) -> float:
         return 0.0
 
 
-def _mask_old_observations(messages, model: str = None,
+def _mask_old_observations(messages, model: Optional[str] = None,
                            keep_last: int = 8, head_chars: int = 300):
     """OBSERVATION MASKING (harness-engineering): keep the call record but
     truncate the BODIES of old tool outputs — only the most recent

@@ -46,3 +46,25 @@ dev = [
 # Only the web-service package is importable/installable; the generation engine
 # runs as a script:  cd agent && python -m env_generator.llm_generator.main
 include = ["app*"]
+
+[tool.pyrefly]
+# The engine is rooted at `agent/`, NOT at this file's directory. Every engine module imports
+# `utils.*` / `env_generator.*`, and the processes that run them (main.py, `cd agent && pytest
+# tests/`) put `agent/` on sys.path, so those imports resolve at runtime. Without this setting
+# Pyrefly infers its import root from THIS file and reports `missing-import` on every one:
+#
+#     Cannot find module `utils.model_limits`
+#       Import root (inferred from project layout): "/home/haibotong/forgingground-gen"
+#
+# 84 files import `utils.*` and 242 import `env_generator.*`, so essentially the whole codebase
+# was flagged and any REAL diagnostic was buried. Runtime was never affected.
+search-path = ["agent"]
+
+# The generated apps are throwaway output, not source: 15987 .py files against 557 real ones
+# (29x), and the whole tree is gitignored.
+project-excludes = [
+    "**/agent/generated/**",
+    "**/.venv/**",
+    "**/node_modules/**",
+    "**/__pycache__/**",
+]
