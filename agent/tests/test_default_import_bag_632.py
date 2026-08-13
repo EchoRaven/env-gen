@@ -169,3 +169,54 @@ def test_the_measurement_is_recorded():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #645: the shim #638 writes must not hide the bag behind it -----------------------------------
+
+_SHIM = ("export * from './api.jsx';\n"
+         "export { default } from './api.jsx';\n")
+
+
+def test_a_bag_one_re_export_hop_away_is_still_repaired(tmp_path):
+    """#638 writes `services/api.js` as a shim when the lane authored `api.jsx`. An extensionless
+    import then resolves to the SHIM, whose default is not an object LITERAL — so this repair
+    stopped seeing the bag one hop behind it and silently lost the 21 crash sites it exists for.
+    Found by auditing this session's fixes against each other instead of one at a time."""
+    src = _tree(tmp_path, {"services/api.jsx": _BAG,
+                           "services/api.js": _SHIM,
+                           "pages/Browse.jsx": "import listTitles from '../services/api';\n"})
+    assert repair(src) == ["pages/Browse.jsx: listTitles"]
+    assert "import { listTitles } from '../services/api';" in \
+        (src / "pages/Browse.jsx").read_text(encoding="utf-8")
+
+
+def test_the_hop_also_supplies_the_named_export_check(tmp_path):
+    """`import { X }` is only valid if X is a named export — which lives in the hopped-to file,
+    re-exported by the shim's `export *`."""
+    src = _tree(tmp_path, {"services/api.jsx": _BAG,
+                           "services/api.js": _SHIM,
+                           "pages/B.jsx": "import getGenres from '../services/api';\n"})
+    assert repair(src) == ["pages/B.jsx: getGenres"]
+
+
+def test_only_ONE_hop_is_followed(tmp_path):
+    """A shim pointing at another shim is not chased — no cycles, no surprises."""
+    src = _tree(tmp_path, {"services/api.jsx": "export * from './core.js';\n"
+                                               "export { default } from './core.js';\n",
+                           "services/core.js": _BAG,
+                           "services/api.js": _SHIM,
+                           "pages/C.jsx": "import listTitles from '../services/api';\n"})
+    assert repair(src) == []
+
+
+def test_a_shim_whose_target_has_no_bag_is_left_alone(tmp_path):
+    src = _tree(tmp_path, {"services/api.jsx": "const api = {};\nexport default api;\n",
+                           "services/api.js": _SHIM,
+                           "pages/D.jsx": "import api from '../services/api';\n"})
+    assert repair(src) == []
+
+
+def test_a_self_referential_shim_cannot_loop(tmp_path):
+    src = _tree(tmp_path, {"services/api.js": "export { default } from './api.js';\n",
+                           "pages/E.jsx": "import x from '../services/api';\n"})
+    assert repair(src) == []

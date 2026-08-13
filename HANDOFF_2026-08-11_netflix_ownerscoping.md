@@ -1822,6 +1822,35 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.18 — auditing this session's fixes AGAINST EACH OTHER (#645, 2026-08-12)
+
+Twenty-three fixes, each tested alone. Eight source files carry two or more of them, so the last
+offline question is whether they compose. Ranked by overlap: `registryhub.py` (5), `visual_fidelity.py`
+(4), then `bug_tools`, `test_user_squad`, `frontend_scaffold`, `tooling`, `step_runner`,
+`auto_commit` (2 each).
+
+**One real interaction, and it is a regression I created:**
+
+> **#638 shadowed #632.** #638 writes `services/api.js` as a re-export shim
+> (`export * from './api.jsx'; export { default } from './api.jsx';`) when the lane authored the
+> module under another extension. An extensionless `import listTitles from '../services/api'` then
+> resolves to the **shim**, whose default is not an object *literal* — so #632's bag detector
+> stopped seeing the bag one hop behind it and **silently lost the 21 crash sites it exists for**.
+> Reproduced end to end before fixing. #645 follows exactly ONE hop (no cycles, no chains), and
+> takes the named-export check from the hopped-to file too, since that is where `export *` sends it.
+
+The other overlaps were checked and compose correctly: #626+#628 on `bug_create` (the triage owner
+is not double-woken), #640+#641 on `_persist_verdict` (the recommendation is computed before the
+round joins the ledger), #634+#637 in `tooling` (a `finish` rejected for missing arguments does not
+increment the idle streak, because #634 returns before the call and #637 hooks after it),
+#625+#630 in `test_user_squad` (an env-unavailable cycle returns before the P0 widening, so
+"nothing ran" cannot read as "nothing found"), #622+#623 in `auto_commit` (a stash failure now
+returns success-with-skip, so the ownership resolver is not reached at all).
+
+> **Why this was worth a pass of its own:** every one of those fixes was green in isolation, and
+> the suite stayed green with the regression in it — because no test crossed two fixes. A
+> per-fix test proves a fix; only a per-*pair* question proves the set.
+
 ### §5.17 — the capture and the reference are different shapes — measured, then NOT acted on (#644, 2026-08-12)
 
 The measured (non-judge) screenshot signals, swept last. `_VIEWPORT` is the **one constant in

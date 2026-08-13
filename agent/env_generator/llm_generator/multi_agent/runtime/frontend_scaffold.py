@@ -8471,6 +8471,9 @@ _DEFAULT_OBJ_632 = re.compile(r'export\s+default\s*\{([^}]*)\}', re.S)
 _NAMED_EXPORT_632 = re.compile(
     r'export\s+(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)')
 _JS_EXT_632 = ('.js', '.jsx', '.mjs', '.ts', '.tsx')
+# #645: `export { default } from './x'` — the shape #638's shim writes.
+_DEFAULT_REEXPORT_645 = re.compile(
+    r"export\s*\{[^}]*\bdefault\b[^}]*\}\s*from\s*['\"](\.[^'\"]+)['\"]")
 
 
 _SHIM_EXT_638 = (".jsx", ".mjs", ".ts", ".tsx", ".js")
@@ -8570,14 +8573,28 @@ def repair_default_import_of_named_export_632(src_dir: Any) -> List[str]:
                 tgt = _resolve(path, spec)
                 if not tgt:
                     return m.group(0)
+                # #645: follow ONE re-export hop. #638 writes `services/api.js` as a shim
+                # (`export * from './api.jsx'; export { default } from './api.jsx';`) when the
+                # lane authored the module under another extension. An extensionless import
+                # then resolves to the SHIM, whose default is not an object LITERAL — so this
+                # repair stopped seeing the bag that is one hop behind it, and silently lost
+                # the 21 crash sites it exists for. Found by auditing this session's fixes
+                # against each other rather than one at a time: #638 shadowed #632.
                 obj = _DEFAULT_OBJ_632.search(files[tgt])
+                named = set(_NAMED_EXPORT_632.findall(files[tgt]))
+                if not obj:
+                    _hop = _DEFAULT_REEXPORT_645.search(files[tgt])
+                    _via = _resolve(tgt, _hop.group(1)) if _hop else None
+                    if _via and _via != tgt:
+                        obj = _DEFAULT_OBJ_632.search(files[_via])
+                        named |= set(_NAMED_EXPORT_632.findall(files[_via]))
                 if not obj:
                     return m.group(0)
                 keys = {k.strip().split(":")[0].strip()
                         for k in obj.group(1).split(",") if k.strip()}
                 if name not in keys:
                     return m.group(0)
-                if name not in set(_NAMED_EXPORT_632.findall(files[tgt])):
+                if name not in named:
                     return m.group(0)
                 out.append(f"{os.path.relpath(path, str(root))}: {name}")
                 return f"{m.group(1)}{{ {name} }}{m.group(3)}"
