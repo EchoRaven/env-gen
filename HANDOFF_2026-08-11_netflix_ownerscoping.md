@@ -1822,6 +1822,33 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.29 — the TOOL SURFACE: 24% of it has never been exercised (2026-08-12)
+
+Reachability again, but on the surface that costs tokens on **every** LLM call rather than on
+dormant code.
+
+| | |
+|---|---|
+| tool classes registered | **290** |
+| distinct tools ever called across 45 runs | **117** |
+| never called | 173 — of which **102 are in no bundle at all** (never offered, zero cost) |
+| **never called yet OFFERED** | **71 — 30 392 schema chars ≈ 7 600 tokens, 24% of the surface** |
+
+Largest: `parallel_execute` (4 432 chars), `report_issue` (1 233), `spawn_worker` (1 127),
+`store_knowledge` (896), `milestone_add` (883).
+
+**Deliberately not cut**, for two reasons that the number itself cannot settle:
+> * 24% is an **upper bound on the per-call waste**, not the actual figure — an agent pays only
+>   for the bundles it holds, and no artifact records which tools were offered to whom (the
+>   `prompt` events truncate at 2000 chars and carry no schema).
+> * *"unused in 45 runs"* is not *"removable"*. The biggest entry, `parallel_execute`, is a
+>   capability that may be rare and valuable; cutting on non-use silently disables it. The one
+>   provably inert family — the PR/review tools, whose subsystem holds **0 rows in 0 of 45 runs**
+>   (§5.14) — is inert only under the *current* commit-only configuration, not permanently.
+
+What is worth having is the number and the list, which is what a future surface-trim needs and
+what nobody had. The same call as §5.28's 371 dead lines: measured, recorded, not churned.
+
 ### §5.28 — the same reachability question, asked of the WHOLE codebase (2026-08-12)
 
 §5.27 audited my own 28 changes; the natural completion is the other 1879 private functions.
