@@ -38,6 +38,11 @@ def _events_retention_cap() -> int:
 # coordination window needs, yet bounds the O(n^2) full-file rewrite.
 EVENTHUB_DEFAULT_MAX_EVENTS = 5000
 
+# #673: event types that are pure liveness signal — they carry no coordination state, so
+# the retention budget should spend itself on anchors first. `agent_status` is 55% of every
+# event ever published in the corpus (158383 of 288562).
+_LOW_VALUE_EVENT_TYPES_673 = frozenset({"agent_status"})
+
 
 def _normalize_actor(value: Optional[str]) -> str:
     """O14 / Phase 4.1 — canonical actor-name normalization used by both
@@ -360,8 +365,34 @@ class EventHub:
         evictable = [
             (eid, ev) for eid, ev in data.items() if not _is_pinned(ev)
         ]
-        # Oldest first; fall back to id for stable ordering on ties.
-        evictable.sort(key=lambda kv: (kv[1].get("created_at", 0) if isinstance(kv[1], dict) else 0, kv[0]))
+        # #673: EVICT HEARTBEATS BEFORE COORDINATION ANCHORS.
+        # Eviction was oldest-first across the whole stream, and the stream is dominated by
+        # `agent_status` liveness pings: 158383 of the corpus's 288562 events (55%), a median
+        # of 53% per run and up to 97%. So the ring buffer spent most of its budget on
+        # heartbeats and evicted real events in proportion. Comparing the 5 runs that reached
+        # the 5000 cap against the 139 that did not, every substantive type is scarcer among
+        # the survivors while agent_status is denser:
+        #
+        #     agent_status  63.7% vs 54.1%     breaking_change_detected  0.7% vs 1.4%
+        #     task_created   3.0% vs  4.6%     meeting_decision_added    1.7% vs 3.7%
+        #     ui_page_registered 1.6% vs 2.8%  task_completed            3.3% vs 4.5%
+        #
+        # (n=5 at the cap, and capped runs are also longer, so treat the sizes as indicative;
+        # the DIRECTION is what a FIFO over a heartbeat-dominated stream must produce.)
+        #
+        # The docstring's own justification for the cap is that "recent events / unread inbox
+        # items are what agents actually read" — a stale heartbeat is neither. This is a
+        # REORDER within the existing eviction: the same number of events is removed, and the
+        # newest heartbeats still survive because ordering stays oldest-first WITHIN each
+        # class. `pinned` remains the explicit escape hatch, though nothing has ever used it
+        # (0 of 288562 events carry the flag).
+        #
+        # No tuned constant: the class split is the event_type the publisher already sets.
+        evictable.sort(key=lambda kv: (
+            0 if (isinstance(kv[1], dict)
+                  and str(kv[1].get("event_type")) in _LOW_VALUE_EVENT_TYPES_673) else 1,
+            kv[1].get("created_at", 0) if isinstance(kv[1], dict) else 0,
+            kv[0]))
         overflow = len(data) - cap
         for eid, _ev in evictable[:overflow]:
             if eid == event_id:
