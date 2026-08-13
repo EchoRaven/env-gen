@@ -64,8 +64,23 @@ def _validate_nonempty_str(value: Any, name: str) -> Optional[str]:
 
 
 def _validate_str_list_min(value: Any, name: str, min_len: int) -> Optional[str]:
-    if not isinstance(value, list) or len(value) < min_len:
-        return f"{name} must be a list of length >= {min_len}"
+    """#675: say what arrived — see retro_tools._validate_list_min for the measurement.
+
+    Same two-mistakes-one-message shape as its twin: a value that is not a list and a list that
+    is too short returned identical text, naming neither. This copy guards `alternatives`,
+    `steps`, `timeline` and `action_items`; the retro copy guards `plan_vs_reality`, `lessons`
+    and `proposed_prompt_changes`, where the loop was measured at 1128 repeats over 23 runs.
+    """
+    if not isinstance(value, list):
+        got = type(value).__name__
+        extra = ""
+        if isinstance(value, str):
+            extra = (" — it looks like the JSON was passed as TEXT; send a real list, "
+                     "not a string containing one")
+        return f"{name} must be a list of >= {min_len} entries; got {got}{extra}"
+    if len(value) < min_len:
+        return (f"{name} must be a list of >= {min_len} entries; got {len(value)}. "
+                f"Add {min_len - len(value)} more and call again.")
     bad = [i for i, v in enumerate(value) if not isinstance(v, str) or not v.strip()]
     if bad:
         return f"{name} entries at index {bad} are empty or non-string"

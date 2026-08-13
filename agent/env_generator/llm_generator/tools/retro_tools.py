@@ -22,8 +22,30 @@ from multi_agent.runtime.retro_aggregator import compute_retro_stats
 
 
 def _validate_list_min(value: Any, name: str, min_len: int) -> Optional[str]:
-    if not isinstance(value, list) or len(value) < min_len:
-        return f"{name} must be a list of length >= {min_len}"
+    """#675: SAY WHAT ARRIVED. Two different mistakes produced ONE message — a value that is not
+    a list at all, and a list that is too short — and neither named the value received. The
+    agent could only guess which it had done.
+
+    Measured over the 249 run logs: `submit_retro` fails 1348 times, and 1128 of those (84%)
+    are this one line for `plan_vs_reality`, concentrated in 23 runs at a median of 40 per run.
+    That is the tightest retry loop in the corpus after the chain-reject one (#664). Per #257
+    each retry is a whole step re-sending the prompt.
+
+    The per-ITEM errors here were already good ("plan_vs_reality[0].drift_reason must be a
+    non-empty string" names the index and the key); only the length/type gate was mute. A
+    string is called out specifically because passing the JSON as text is the mistake this
+    shape invites, and the fix for it is different from adding entries.
+    """
+    if not isinstance(value, list):
+        got = type(value).__name__
+        extra = ""
+        if isinstance(value, str):
+            extra = (" — it looks like the JSON was passed as TEXT; send a real list, "
+                     "not a string containing one")
+        return (f"{name} must be a list of >= {min_len} entries; got {got}{extra}")
+    if len(value) < min_len:
+        return (f"{name} must be a list of >= {min_len} entries; got {len(value)}. "
+                f"Add {min_len - len(value)} more and call again.")
     return None
 
 
