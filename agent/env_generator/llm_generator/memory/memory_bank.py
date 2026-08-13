@@ -179,13 +179,14 @@ class MemoryBank:
 - Backend: {backend_tech}
 - Database: {database_tech}
 
-## Dependencies (adjust per package.json)
-- Frontend: router/build tooling, lint tooling as applicable
-- Backend: Express, JWT auth, PostgreSQL client, dotenv
+## Dependencies
+- Frontend: router/build tooling, lint tooling as applicable (see app/frontend/package.json)
+- Backend: FastAPI + Uvicorn, SQLAlchemy, psycopg, PyJWT
+  (see app/backend/pyproject.toml — the backend is PYTHON and has NO package.json)
 
 ## Development Setup
 - Prefer docker compose when available
-- Otherwise run backend + frontend locally with node + postgres
+- Otherwise run the backend with uvicorn and the frontend with the node dev server
 
 ## Technical Constraints
 - Keep paths within workspace root; no writes outside generated project
@@ -343,7 +344,14 @@ Working on: initialization
                     project_name=project_info.get("name", "Project"),
                     description=project_info.get("description", ""),
                     frontend_tech=project_info.get("frontend", "React"),
-                    backend_tech=project_info.get("backend", "Node.js"),
+                    # #669: the default is what the scaffolder ACTUALLY emits. It was
+                    # "Node.js", and nothing ever supplies a "backend" key, so every memory
+                    # bank in the corpus said Node.js/Express while `scaffolder.py` writes a
+                    # FastAPI app. Measured: `tech_context.md` is BYTE-IDENTICAL across all
+                    # 1715 agent memory banks (144 runs x ~12 agents) — one md5, no variation —
+                    # and 144 of 144 generated backends are Python/FastAPI with no
+                    # package.json anywhere. Every lane was told the wrong stack, uniformly.
+                    backend_tech=project_info.get("backend", "FastAPI (Python)"),
                     database_tech=project_info.get("database", "PostgreSQL"),
                     requirements_block=requirements_block,
                     timestamp=datetime.now().isoformat(),
