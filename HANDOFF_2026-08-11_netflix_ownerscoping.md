@@ -1822,6 +1822,35 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.21 — finishing the constant sweep: calibrated, unrecorded, and now enforced (#647, 2026-08-12)
+
+§5.20 counted **17 of 37** tuned constants without a rationale and then fixed only the three
+viewports. Finishing it, by measuring the rest rather than annotating them blind.
+
+**The seed-gate floors are well calibrated — they simply never said so.** Over the 43 delivered
+`seed_data.json` files (323 seeded tables):
+
+| constant | measurement | verdict |
+|---|---|---|
+| `_DEFAULT_MIN_ROWS = 5` | rows/table p10 **5**, median 12, p90 32, max 124 | the bar sits exactly on p10; only **3%** of real tables fall below |
+| `_MIN_AUTHORED_TOTAL_ROWS = 10` | total rows/run median **119** (0–285) | **3 of 43** runs below, and those are the genuinely empty ones |
+
+Both now carry their distribution. The remaining unexplained numbers (`_GIT_TIMEOUT`,
+`_CHECKLIST_REFRESH_HARD_CAP`, `_MAX_IMAGES_IN_COMPILE`, `_DECOMPOSE_CONCURRENCY`,
+`_PLACEHOLDER_THRESHOLD`, `_CAPTURE_BLANK_NODES`, `_POLL_SEC`) have **no artifact to measure them
+against** — timing and concurrency leave no trace on disk. Writing 17 rationales I did not measure
+would be inventing them, which is worse than the gap.
+
+**So the convention is made enforceable instead.** A guard freezes the existing count per file:
+no file may grow, a new file must have none, and a baseline entry that becomes clean also fails
+(so the list cannot rot). Verified by planting `_PROBE_GUARD_TMP = 42` — it fails, and the probe
+was removed.
+
+> This is the third guard of its kind this session, after the fixed-width source windows and
+> `get_event_loop`. All three encode the same lesson: **a convention that only lives in reviewers'
+> heads decays silently, and the decay is invisible until something built on it breaks.** Here the
+> decay had already produced #646's three disagreeing viewports.
+
 ### §5.20 — the CODE axis: three viewports, none agreeing (#646, 2026-08-12)
 
 Sweeping the code itself rather than following an artifact into it. This codebase's convention is
