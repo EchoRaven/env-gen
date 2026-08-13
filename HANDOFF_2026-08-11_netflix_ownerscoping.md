@@ -1855,9 +1855,25 @@ An alphabetical cut is not a neutral one:
 
 More than half the global design-token budget went on modals and hover cards. #648 spreads the
 sample across the set instead of taking its head: deterministic, order-preserving, no product
-vocabulary, same budget — and it reaches `player` and `games`, two of the screens the gate keeps
-failing. **Striding rather than classifying** because `load_screen_classifications` reads
-design_system.json, which is this compile's own output and does not exist yet at that point.
+vocabulary, same budget. **Striding rather than classifying** because `load_screen_classifications`
+reads design_system.json, which is this compile's own output and does not exist yet at that point.
+
+> **#648 is justified by representativeness, NOT by a predicted score gain — I checked, and the
+> data cannot support the stronger claim.** The commit implied that reaching `player` and `games`
+> would help the screens the gate fails. Testing that:
+>
+> | | n | mean similarity |
+> |---|---|---|
+> | screens that fed the compile | 149 | **0.488** |
+> | screens that never did | 276 | **0.627** |
+>
+> The compile-fed screens score **0.139 LOWER** — the opposite direction. Overlay difficulty does
+> not explain it (overlays trail pages by only 0.028 overall); the split is *within pages*, where
+> compile-fed pages average **0.393** against **0.633**. Those pages are `browse_home`,
+> `browse_home_rows` and `browse_by_languages` — the densest screens in the set. The alphabet
+> happened to select the hardest screens, so this correlation says nothing about compile
+> membership in either direction. A biased subsample is wrong on its own terms; that is the whole
+> case for #648, and no more.
 
 > **A ninth instrument artifact, caught.** My first pass computed the selected six with `sorted()`
 > while the code uses `glob()`. The conclusion happened to survive — measuring the real glob order
