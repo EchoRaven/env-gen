@@ -2079,10 +2079,25 @@ splits it in two:
 So `code_state` alone could not have made the decision possible on the next run either: the score
 to compare against would still be gone by the time the run ended. #640 appends
 `design/visual_gate/rounds.jsonl` — timestamp, `code_state`, merged and live averages, the bar,
-and the per-screen live scores — one line per round, before anything overwrites it. #618's
-finding (**24 of 39 runs ship a state worse than their own best**, up to +0.44) becomes actionable
-the first time a run writes that file; selecting on it still needs one run's data, which is a
-statement about evidence, now with the gap actually closed rather than merely named.
+and the per-screen live scores — one line per round, before anything overwrites it.
+
+**#641 writes the SELECTION too, because it is a pure function.** Having said choosing on the
+ledger "needs one run's data", the same test applies: that is true of the data and false of the
+logic. `best_recorded_round_641` ranks the ledger and `better_state_available_641` emits the
+recommendation onto the verdict, both fully unit-tested now. Three rules, each forced by what the
+ledger means:
+
+> * rank on **`blocking_average_live`**, this capture's score — `blocking_average` is #500's
+>   best-of-captures merge, so ranking rounds by it compares each round to a mixture that already
+>   contains the others;
+> * a round with no `code_state` is unusable (no tree to return to);
+> * ties go to the **earlier** round, which has survived longer.
+
+It is computed BEFORE the round joins the ledger, so a round can never recommend itself, and it
+changes no decision — the verdict's `passed` and averages are untouched. What still waits is
+acting on it at release: unlike #630, that blast radius cannot be computed, because the ledger it
+would read exists in **no kept run**. That is now a statement about one missing input rather than
+about the idea, and the input starts accruing on the next run.
 
 Two details that matter:
 > * **The owner is the frontend lane, from the page's own path — never `created_by`.** That field

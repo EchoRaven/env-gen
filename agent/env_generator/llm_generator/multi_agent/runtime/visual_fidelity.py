@@ -2487,11 +2487,91 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
             _verdict["record_exceeds_live_note"] = (
                 "the persisted score is the best-of-captures merge (#500); THIS capture scored "
                 "lower, so the delivered frontend is currently worse than the recorded number")
+        # #641: computed BEFORE this round joins the ledger, so the comparison is against
+        # earlier rounds only. Recommendation only — it changes no decision taken here.
+        _better = better_state_available_641(vdir, _verdict.get("blocking_average_live"))
+        if _better:
+            _verdict["better_state_available"] = _better
+            _verdict["better_state_note"] = (
+                "an earlier capture of this run scored %.3f (+%.3f) at commit %s — the bounded "
+                "escape ships the LAST round, not the best one (#618: 24 of 39 runs deliver "
+                "worse than their own best)" % (_better["score"], _better["delta"],
+                                                str(_better["code_state"])[:12]))
         (vdir / "verdict.json").write_text(json.dumps(_verdict, indent=2, default=str),
                                            encoding="utf-8")
         _append_round_record_640(vdir, _verdict, results)
     except Exception:
         pass
+
+
+def best_recorded_round_641(vdir: Any) -> Optional[Dict[str, Any]]:
+    """#641 — the round that scored best, from #640's ledger. None until one exists.
+
+    #640 started recording (code_state, live score) per round; this is the SELECTION on top of
+    it, and it is a pure function over the ledger, so it is written and tested now rather than
+    deferred with the data. Only the data needs a run — the logic does not, and saying "this
+    needs a run" about a pure function was the last hiding place of a deferral I have now been
+    wrong about four times (#630, #638, #639, #640).
+
+    Rules, all of them consequences of what the ledger means:
+      * rank on `blocking_average_live` — THIS capture's score. `blocking_average` is #500's
+        best-of-captures merge across rounds, so ranking rounds by it compares each round to a
+        mixture that includes the others.
+      * a round with no `code_state` is unusable: there is no tree to go back to.
+      * ties go to the EARLIER round — it has survived longer and later rounds may carry
+        unrelated regressions.
+    """
+    try:
+        p = Path(vdir) / "rounds.jsonl"
+        if not p.is_file():
+            return None
+        best = None
+        for line in p.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(row, dict) or not row.get("code_state"):
+                continue
+            score = row.get("blocking_average_live")
+            if not isinstance(score, (int, float)):
+                continue
+            if best is None or score > best.get("blocking_average_live", float("-inf")):
+                best = row
+        return best
+    except Exception:
+        return None
+
+
+def better_state_available_641(vdir: Any, this_live: Any,
+                               margin: float = 0.02) -> Optional[Dict[str, Any]]:
+    """The recommendation: a recorded round beat what is about to ship, by more than `margin`.
+
+    #618 measured that **24 of 39 runs deliver a state worse than their own best**, by up to
+    +0.44 — the bounded escape releases whatever the last round happened to leave. Returns
+    ``{code_state, score, delta}`` when going back is justified, else None.
+
+    `margin` exists because the judge is not exactly repeatable: a hair's-breadth difference is
+    noise, and reverting on noise would churn the tree for nothing. It is a RECOMMENDATION —
+    computing it changes no decision here; whether the release acts on it is a separate call
+    that wants one run's ledger behind it.
+    """
+    try:
+        if not isinstance(this_live, (int, float)):
+            return None
+        best = best_recorded_round_641(vdir)
+        if not best:
+            return None
+        score = best.get("blocking_average_live")
+        if not isinstance(score, (int, float)) or score - this_live <= margin:
+            return None
+        return {"code_state": best.get("code_state"), "score": score,
+                "delta": round(score - this_live, 4)}
+    except Exception:
+        return None
 
 
 def _append_round_record_640(vdir: Any, verdict: Dict[str, Any],
