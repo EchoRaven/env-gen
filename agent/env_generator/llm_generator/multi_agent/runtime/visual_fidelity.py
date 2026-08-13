@@ -3713,6 +3713,44 @@ class VisualFidelityGate:
                                  if r.get("empty_state") and not r.get("passed")})
                 if _empty and not self._seed_reminder_sent:
                     self._seed_reminder_sent = True
+                    # #661: NAME THE TABLES, AND DO NOT ASSERT A CAUSE THE FRAMEWORK CAN CHECK.
+                    # This task told the backend "add seed rows" unconditionally and listed only
+                    # SCREEN names, leaving the lane to map screen -> table itself — information
+                    # the framework already holds. Worse, when the tables are in fact seeded the
+                    # advice is simply wrong: a page that renders empty over a populated table is
+                    # a QUERY/filter/owner-scoping bug (the #566y/#598 family), and sending the
+                    # backend to add rows burns a round on the wrong lane.
+                    # `audit_seed_data` is the existing checker that tells the two apart, and it
+                    # is reachable here (`orch.hubs.schema_hub` is the registryhub).
+                    # Measured: 99 empty-state screens across 48 runs, 19 of them blocking, and
+                    # NOT ONE ever cleared the bar — similarity min 0.03, median 0.35, max 0.60.
+                    # Best-effort: a diagnosis that fails must never cost the reminder.
+                    _thin: List[str] = []
+                    _seed_checked = False
+                    try:
+                        from .seed_audit import audit_seed_data as _asd
+                        _rep = _asd(orch.hubs)
+                        _seed_checked = True
+                        _thin = sorted({str(t.get("table")) for t in _rep.flagged_tables
+                                        if isinstance(t, dict) and t.get("table")})
+                    except Exception:
+                        pass
+                    if not _seed_checked:
+                        _diag = ("Add realistic seed rows (>=3) for each screen's backing "
+                                 "table(s) to app/backend/seed_data.json.")
+                    elif _thin:
+                        _diag = ("The seed audit flags these registered tables as under-seeded: "
+                                 + ", ".join(_thin) + ". Seed them first — that is very likely "
+                                 "the whole cause. Add realistic rows to "
+                                 "app/backend/seed_data.json.")
+                    else:
+                        _diag = ("NOTE: the seed audit flags NO table as under-seeded, so this "
+                                 "is probably NOT a seeding problem. A page that renders empty "
+                                 "over a populated table is a read-path bug — check the query's "
+                                 "filters and owner-scoping (does the browsing user own the "
+                                 "rows?), the route's handler precedence, and whether the "
+                                 "endpoint returns [] for a valid session. Only add seed rows "
+                                 "if you first confirm the backing table is genuinely empty.")
                     _bt = orch.hubs.workhub.create_task(
                         title="Visual gate: screen(s) render an EMPTY state — seed the missing rows",
                         description=(
@@ -3720,9 +3758,8 @@ class VisualFidelityGate:
                             + ", ".join(_empty) + ". Their reference design only renders when "
                             "the backing table has rows (e.g. a reels page needs video posts), "
                             "so the screen can never match the reference no matter what the "
-                            "frontend does. Add realistic seed rows (>=3) for each screen's "
-                            "backing table(s) to app/backend/seed_data.json — keep FK "
-                            "references consistent with the existing seed users/posts."),
+                            "frontend does. " + _diag + " Keep FK references consistent with "
+                            "the existing seed users/posts."),
                         assignee="backend",
                         agent="orchestrator",
                         priority="P1",
@@ -3736,8 +3773,7 @@ class VisualFidelityGate:
                                 "Seed-data task assigned "
                                 f"(task_id={(_bt or {}).get('id')}): the visual gate found "
                                 f"EMPTY-state screen(s) [{', '.join(_empty)}] whose design "
-                                "cannot render without data. Add seed rows for their backing "
-                                "tables to app/backend/seed_data.json NOW."),
+                                "cannot render without data. " + _diag),
                             msg_type="task_ready",
                             priority="urgent",
                             persist=True,

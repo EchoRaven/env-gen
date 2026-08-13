@@ -140,7 +140,45 @@ the notification, not a shorter timeout.
 
 ---
 
-## 7. Older, still unresolved
+## 7. #661 — the empty-state diagnosis
+
+**Changed.** The P1 backend task raised for an empty-state screen now runs `audit_seed_data`
+and either names the under-seeded tables or says plainly that seeding is NOT the cause and
+points at the read path (filters, owner-scoping, route precedence).
+
+**Proven offline.** 99 empty-state screens across 48 runs, 19 blocking, similarity min 0.03 /
+median 0.35 / max 0.60 — not one ever cleared the bar. The checker exists and is reachable.
+
+**Only a run can settle.** Which branch actually fires. If the tables are genuinely under-seeded
+most of the time, the old wording was right by luck and the change is cosmetic; if they are
+seeded, every one of those 99 screens was a misrouted round. The corpus records the screens but
+NOT the seed-audit result at that moment, so the split cannot be recovered offline.
+
+**Cheapest observation.** One run with an empty-state screen: read the P1 task text. "flags
+these registered tables as under-seeded" vs "probably NOT a seeding problem" is the answer.
+
+---
+
+## 8. r135's nav order
+
+**Not changed.** `_order_nav_by_ref` (#458) runs after `_assign_ref_labels` (#651) at
+frontend_scaffold.py:4308-4309, which is the correct order, and 26 of 27 delivered navs are
+ordered correctly. r135 is the exception: it shipped `Home, My List, Shows, …` with a CORRECT
+"My List" label but the wrong position, from a framework-projected nav.
+
+That combination should be impossible — ordering keys on the label, and the label was right.
+Replaying r135's design against both the old and new labelling produces the correct order in
+both cases, so #651 is not the fix and #458 alone would have sufficed. **I could not determine
+offline why it shipped mis-ordered**: the projector's real input is the contract route list at
+build time, which the kept artifacts do not preserve in the form the projector saw.
+
+**Cheapest observation.** One run: log `nav_routes` as `_ref_nav_jsx` receives it, alongside
+`_ref_nav_labels(design)`. If they disagree with the shipped order, the bug is between them.
+Low priority — 1 of 27.
+
+---
+
+## 9. Older, still unresolved
 
 - **#644 viewport.** Two measured targets conflict: 796px matches the reference image aspect,
   981px matches its content fraction. Changing to 796px took `_measured_deviations` error from
