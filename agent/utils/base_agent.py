@@ -468,8 +468,27 @@ class BaseAgent(ABC):
                         self._retry_config["max_wait"],
                         self._retry_config["min_wait"] * (self._retry_config["multiplier"] ** attempt)
                     )
+                    # #665 — THIS LINE PRINTED NOTHING 3150 TIMES.
+                    # `{e}` alone renders "" for any exception whose str() is empty (a bare
+                    # `assert x`, and most SDK/transport errors), so the log read
+                    # "Retry 1/3 after error: . Waiting 1.0s". Measured over the 249 run logs:
+                    # 3150 such lines against 60 that carried any text at all — 98% of every
+                    # retry warning this agent emits was undiagnosable.
+                    #
+                    # #582 already solved exactly this, in the OTHER retry loop: utils/llm.py
+                    # logs "[{error_type}] {error_msg}" and ships `_blank_error_origin` to name
+                    # the frame when the message is empty. This twin never got the treatment.
+                    # Imported locally because it is only needed on an already-failing path.
+                    _msg = str(e)
+                    if not _msg.strip():
+                        try:
+                            from utils.llm import _blank_error_origin
+                            _msg = _blank_error_origin(e)
+                        except Exception:
+                            _msg = "(no message)"
                     self._logger.warning(
-                        f"Retry {attempt + 1}/{max_tries} after error: {e}. "
+                        f"Retry {attempt + 1}/{max_tries} after error: "
+                        f"[{type(e).__name__}] {_msg}. "
                         f"Waiting {wait_time:.1f}s"
                     )
                     await asyncio.sleep(wait_time)
