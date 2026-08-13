@@ -1822,6 +1822,28 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.26 — sweeping #649b's class: the rest of the judge-input handling is sound (2026-08-12)
+
+#649b was a crash on untrusted judge output. That is a CLASS — the judge is an LLM and every field
+it returns is untyped — so the module was swept for it rather than left at one instance.
+
+| | |
+|---|---|
+| arithmetic/sort on `score`/`similarity` without a type guard | **0 remaining** |
+| where the top-level score is made safe | `sim = _clamp01(data.get("similarity"))` at parse time |
+| the one gap | the per-dimension sort — #649b, fixed |
+| #620's collateral-damage block | already guarded (`isinstance` in the comprehension filter, which Python evaluates before the `float()` in the output) |
+
+> **The detector was validated before its zero was believed** — the first regex missed both common
+> shapes (a value bound to a variable first, and `(... or 0)` wrapping), so a second pass scanned
+> by binding instead. Both agree on zero. After ten instrument artifacts this session, a zero from
+> an unvalidated scan is not evidence.
+
+**A test-quality gap of my own, closed.** `test_a_missing_or_non_numeric_score_cannot_trigger_it`
+(#620) exercised only the MISSING case despite its name. The non-numeric path is genuinely safe,
+but nothing proved it — and #649b was that exact shape one function away. Split into two tests
+that each do what they say, plus a non-numeric *bar*.
+
 ### §5.25 — the lane got seven equal fixes; one of them is the gate (#649, 2026-08-12)
 
 The actionable consequence of §5.24. If the score is the weakest dimension plus ~0.047, then on a

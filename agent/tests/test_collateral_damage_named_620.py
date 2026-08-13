@@ -70,10 +70,29 @@ def test_nothing_latched_means_no_header():
     assert rt(_result(login=0.50), None, set()).startswith("Visual fidelity below threshold")
 
 
-def test_a_missing_or_non_numeric_score_cannot_trigger_it():
+def test_a_missing_score_cannot_trigger_it():
     r = _result(login=0.50)
     r["screens"].append({"name": "shows", "route": "/shows", "dimensions": {}})
     assert "COLLATERAL DAMAGE" not in rt(r, None, {"shows"})
+
+
+def test_a_NON_NUMERIC_score_cannot_trigger_it_or_crash():
+    """The judge is an LLM and its fields are untrusted. The comprehension guards this with an
+    `isinstance` in the filter, which Python evaluates before the `float()` in the output — but
+    the test that claimed to cover this only ever exercised the MISSING case. #649b was exactly
+    this shape one function away, and it took the whole remediation body down."""
+    r = _result(login=0.50)
+    r["screens"].append({"name": "shows", "route": "/shows",
+                         "similarity": "n/a", "dimensions": {}})
+    body = rt(r, None, {"shows"})
+    assert "COLLATERAL DAMAGE" not in body
+    assert body.startswith("Visual fidelity below threshold")
+
+
+def test_a_non_numeric_BAR_cannot_crash_it():
+    r = _result(login=0.50, shows=0.03)
+    r["min_similarity"] = None
+    assert "shows (0.03)" in rt(r, None, {"shows"})
 
 
 def test_the_bar_comes_from_the_result_not_a_constant():
