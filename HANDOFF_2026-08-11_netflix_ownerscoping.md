@@ -1822,6 +1822,30 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.27 — is any of THIS session's work dead? (2026-08-12)
+
+`_PLACEHOLDER_THRESHOLD` (§5.22) was a threshold sitting behind an always-taken early return —
+nobody noticed for the life of the project. With 28 production changes landed in one session, the
+same question has to be asked of my own work, and it has a definite answer.
+
+**20 of 21 new symbols have a real call site. The one that does not is `capture_viewport_644` —
+exactly the function §5.17 deliberately disconnected**, stated in the source and pinned by
+`test_the_capture_path_is_UNCHANGED`. No accidental dead code.
+
+> **An eleventh instrument correction, and this one attacked the audit itself.** The first pass
+> counted `capture_viewport_644` as having a caller — the "call site" was a **comment mentioning
+> its name**. An audit whose whole purpose is finding unreachable code cannot count prose as
+> reachability. Re-run with comments stripped and `def` lines excluded; only then did the single
+> intended gap appear.
+
+Two further sweeps of #649b's class also came back clean, each verified before its zero was
+believed:
+
+| sweep | result |
+|---|---|
+| arithmetic/sort on judge fields across `visual_fidelity` | 0 remaining (detector re-written after it missed two shapes) |
+| numeric use of LLM-authored artifact fields across `runtime/` | 2 candidates, **both false positives** — `isinstance` guards plus a `try/except` the detector's window did not reach |
+
 ### §5.26 — sweeping #649b's class: the rest of the judge-input handling is sound (2026-08-12)
 
 #649b was a crash on untrusted judge output. That is a CLASS — the judge is an LLM and every field
