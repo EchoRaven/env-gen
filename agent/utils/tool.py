@@ -58,10 +58,36 @@ class ToolResult:
         """Create failure result."""
         return cls(success=False, error_message=error_message, metadata=metadata)
     
+    # #674: on FAILURE this returned the error line ALONE and dropped `data` on the floor —
+    # and `data` is where tools put what actually went wrong. `test_api` reads the HTTP response
+    # body, bounds it (#610) and stores it as data["response"], then reports
+    # `error_message="HTTP Error: 500"`. The agent saw the status code and nothing else.
+    #
+    # Measured over the 249 run logs: 25788 failed tool calls, each roughly one wasted agent
+    # step (per #257 a run's cost is prompt, re-sent every step). `test_api` is the largest
+    # single source at 5248 across 123 runs, median 22 per run, and 1750 of those are a bare
+    # "HTTP Error: N" with no body. 22 construction sites across 6 files build a failed
+    # ToolResult carrying data the model never sees — code_tools alone has 10, including the
+    # #635 syntax check whose data={"errors": [...]} held the line and column.
+    #
+    # The ceiling is #610's already-justified agent-facing body limit rather than a new number,
+    # and producers that bound their own payloads (_bound_api_body_610, output[:2000]) are
+    # unaffected because they are already under it.
+    _FAILED_DATA_CHARS_674 = 8000
+
     def __str__(self) -> str:
         if self.success:
             return str(self.data) if self.data is not None else "OK"
-        return f"Error: {self.error_message}"
+        base = f"Error: {self.error_message}"
+        if self.data is None:
+            return base
+        detail = str(self.data)
+        if not detail or detail in ("{}", "[]", "None"):
+            return base
+        if len(detail) > self._FAILED_DATA_CHARS_674:
+            detail = (detail[:self._FAILED_DATA_CHARS_674]
+                      + f"\n… [truncated — {len(detail)} chars total]")
+        return f"{base}\n{detail}"
 
 
 def create_tool_param(
