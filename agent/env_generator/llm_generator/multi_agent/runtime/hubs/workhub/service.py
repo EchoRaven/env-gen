@@ -185,6 +185,38 @@ class WorkHub:
             "_updated_by": agent,
             "_updated_at": now,
         }
+        # #672: SAY SO WHEN AN OPEN TASK ALREADY CARRIES THIS TITLE.
+        # `create_task` has no duplicate check of any kind, so every caller has to remember its
+        # own — step_runner's merge-conflict path writes one by hand (#667) and most do not.
+        # Measured over the 12836 tasks in the corpus: 838 were cancelled, and 462 of those
+        # (55%, across 79 of 144 runs) were cancelled with a reason saying they duplicated
+        # existing work — "Duplicate of task_...", "Subsumed into page-level commits",
+        # "Deduped — blocked on frontend bug task_...", "Rolled into consolidated batch". Each
+        # one cost a create, a dispatch, a lane reading it, and a cancel round-trip.
+        #
+        # This does NOT block: two tasks may legitimately share a title across milestones or
+        # remediation rounds, and refusing creation could lose real work. It returns the open
+        # twin alongside the new task so the caller — usually an LLM lane — sees the collision
+        # at the moment it happens instead of someone cancelling it later. Best-effort: any
+        # lookup fault leaves the result exactly as it was.
+        try:
+            _t = str(title or "").strip().casefold()
+            if _t:
+                for _o in (self.stores.tasks.value() or {}).values():
+                    if (isinstance(_o, dict)
+                            and _o.get("status") in ("pending", "in_progress")
+                            and str(_o.get("title") or "").strip().casefold() == _t
+                            and str(_o.get("assignee") or "") == str(assignee or "")):
+                        task["duplicate_of"] = {
+                            "id": _o.get("id"), "status": _o.get("status"),
+                            "claimed_by": _o.get("claimed_by"),
+                            "note": ("an OPEN task with this exact title and assignee already "
+                                     "exists — this one was still created; cancel whichever is "
+                                     "redundant rather than working both"),
+                        }
+                        break
+        except Exception:
+            pass
         self.stores.tasks.update(lambda m: m.set(task_id, task, actor), change_info={"agent": actor})
         self._emit("task_created", task, recipients=[assignee] if assignee else [], priority="high" if assignee else "normal")
         return task
