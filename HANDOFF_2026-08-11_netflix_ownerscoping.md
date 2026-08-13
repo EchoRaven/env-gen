@@ -1822,6 +1822,38 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.13 — `integrity_check`: a flag that is true 65% of the time (#642, 2026-08-12)
+
+An artifact class never audited — 1961 events across 42 runs, median 38 per run. The loose ends
+it reports:
+
+| | fires in | runs | worst single run |
+|---|---|---|---|
+| `stale_claimed_tasks` | **65%** of checks | 41 | 70 |
+| `dirty_worktree` | 58% | 42 | 68 |
+| `unhandled_breaking_changes` | 32% | 15 | 89 |
+
+65% is the tell, and the condition explains it — **it never looked at the task**:
+
+```python
+if step_num >= stale_threshold:        # the AGENT's step number
+    details["stale_claimed_tasks"].append(...)
+```
+
+From an agent's 5th step onward, EVERY in-progress task it held was reported stale, including one
+claimed a second earlier. The comment justified it as an approximation *"since we don't have
+step_num at claim time"* — but **`claimed_at` is recorded, and is read two lines below into the
+payload**. The real signal was in hand the whole time.
+
+A flag that is almost always true carries no information, and it teaches the agent to ignore a
+category that also holds the genuine cases — the same failure as #623's mislabel and #634's
+Python-shaped error.
+
+The replacement threshold comes from the data: over **3992 completed tasks** the claim→finish time
+is p50 **2.7 min**, p90 17.5, p95 29.1, max 81.9. Thirty minutes flags **4.4%** of tasks that did
+complete, against 100% before. Where `claimed_at` is genuinely absent the old step heuristic still
+applies, so nothing regresses.
+
 ### §5.12 — the TRAJECTORIES: 35% of the orchestrator's tokens end in "Idle." (#637, 2026-08-12)
 
 The last of the four axes. The 565 `.agent_logs/*/*.jsonl` files record every call **with its

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List, Optional
 
 
@@ -9,6 +10,11 @@ DEFAULT_THRESHOLDS = {
     "stale_task_steps": 5,
     "stale_review_steps": 3,
     "stale_pr_steps": 10,
+    # #642: how long a CLAIMED task may be held before it is genuinely stale. Set from the
+    # data, not by feel: across 3992 completed tasks the claim→finish time is p50 2.7 min,
+    # p90 17.5, p95 29.1, max 81.9. A 30-minute line flags 4.4% of tasks that DID complete —
+    # just above p95 — where the step-number rule it replaces flagged 100% of them.
+    "stale_task_seconds": 1800,
 }
 
 
@@ -59,9 +65,28 @@ def collect_loose_ends_details(hubs: Any, agent_id: str, step_num: int,
         stale_threshold = thresholds.get("stale_task_steps", 5)
         in_progress = wh.list_tasks(assignee=agent_id, status="in_progress") or []
         for t in in_progress:
-            # We approximate step age - if claimed_at recorded, fall back to step_num
-            # threshold comparison since we don't have step_num at claim time
-            if step_num >= stale_threshold:
+            # #642 — AGE THE TASK, NOT THE AGENT.
+            # This read `if step_num >= stale_threshold`, which does not look at the task at
+            # all: from an agent's 5th step onward EVERY in-progress task it held was reported
+            # stale, including one claimed a second earlier. The old comment justified it with
+            # "if claimed_at recorded, fall back to step_num ... since we don't have step_num at
+            # claim time" — but `claimed_at` IS recorded, and is read two lines below into the
+            # payload. The real signal was already in hand.
+            #
+            # Measured cost of the approximation: `stale_claimed_tasks` fires in **65% of the
+            # 1961 integrity checks across 41 runs**, up to 70 times in a single run — a flag
+            # that is almost always true carries no information, and the agent learns to ignore
+            # a category that also contains the genuine cases.
+            #
+            # Threshold from the data: over 3992 completed tasks, claim→finish is p50 2.7 min,
+            # p90 17.5, p95 29.1. 30 minutes flags 4.4% of tasks that DID complete.
+            _claimed = t.get("claimed_at")
+            if isinstance(_claimed, (int, float)) and _claimed > 0:
+                _stale = (time.time() - _claimed) >= thresholds.get(
+                    "stale_task_seconds", DEFAULT_THRESHOLDS["stale_task_seconds"])
+            else:
+                _stale = step_num >= stale_threshold   # no timestamp: the old heuristic
+            if _stale:
                 details["stale_claimed_tasks"].append({
                     "id": t.get("id"), "title": t.get("title"),
                     "claimed_at": t.get("claimed_at"),
