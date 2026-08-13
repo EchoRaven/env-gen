@@ -133,6 +133,61 @@ def drop_unaccepted_kwargs(fn: Any, tool_args: Dict) -> tuple:
     return {k: v for k, v in tool_args.items() if k in accepted}, dropped
 
 
+def missing_required_args_634(fn: Any, tool_args: Dict) -> list:
+    """The declared parameters this call omits — the mirror of #360's surplus (list, sorted).
+
+    #360 handles the argument the callee cannot accept. This is the other half: an argument the
+    callee REQUIRES. `exec_fn(**tool_args)` then raises before any of the tool's own code runs,
+    and the raw Python text is what the agent gets back:
+
+        submit_retro FAILED (0ms): SubmitRetroTool.execute() missing 3 required
+        keyword-only arguments: 'systematic_failures', 'lessons' and ...
+
+    Measured over the 56 run logs: **124 such failures across 5 tools and 19+ runs**
+    (submit_retro 106, send_message 8, broadcast 5, ask_agent 1, lint 1). It is pure waste,
+    because the tools already carry the answer — `SubmitRetroTool` validates that
+    `plan_vs_reality` holds >= 2 dicts with specific keys and returns a teaching message saying
+    so. Python rejects the call first, so that message is unreachable exactly when it is needed.
+
+    A signature with **kwargs, or one that cannot be inspected, yields [] — never guess.
+    """
+    try:
+        import inspect
+        sig = inspect.signature(fn)
+    except Exception:
+        return []
+    args = tool_args if isinstance(tool_args, dict) else {}
+    return sorted(
+        p.name for p in sig.parameters.values()
+        if p.default is inspect.Parameter.empty
+        and p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+        and p.name not in ("self", "cls")
+        and p.name not in args)
+
+
+def missing_args_message_634(tool_name: str, missing: list, tool: Any) -> str:
+    """Name each missing parameter WITH its declared type and description.
+
+    The point of #634: "missing 3 required keyword-only arguments" names them but says nothing
+    about their shape, which is what the caller got wrong. Every tool already publishes that in
+    its `PARAMETERS` JSON schema — the same text the model was shown — so quote it back.
+    """
+    props = {}
+    try:
+        props = ((getattr(tool, "PARAMETERS", None) or {}).get("properties") or {})
+    except Exception:
+        props = {}
+    lines = []
+    for name in missing:
+        spec = props.get(name) or {}
+        kind = str(spec.get("type") or "").strip()
+        desc = str(spec.get("description") or "").strip()
+        detail = " — ".join(x for x in (kind, desc) if x)
+        lines.append(f"  {name}{': ' + detail if detail else ''}")
+    return (f"{tool_name}: missing required argument(s). Supply them and call again:\n"
+            + "\n".join(lines))
+
+
 def _effective_write_identity(agent: Any) -> Optional[str]:
     """The identity a role-write gate must be evaluated against.
 
@@ -957,6 +1012,16 @@ class AgentTooling:
                         "signature does not declare them; check the tool schema "
                         "the model was shown.",
                         self.agent_id, tool_name, _dropped_args)
+                # #634: the mirror case. A REQUIRED arg the call omits raises TypeError from
+                # Python before the tool's own validator runs, so the agent is told the
+                # parameter NAMES and nothing about their shape — 124 times across the corpus,
+                # 106 of them one tool retrying. Answer with the schema it was already shown.
+                _missing_634 = missing_required_args_634(exec_fn, tool_args)
+                if _missing_634:
+                    _err_634 = ToolResult(success=False, error_message=missing_args_message_634(
+                        tool_name, _missing_634, self._tool_instances[tool_name]))
+                    self.log_tool_call(tool_name, tool_args, _err_634)
+                    return _err_634
                 if asyncio.iscoroutinefunction(exec_fn):
                     result = await exec_fn(**tool_args)
                 else:

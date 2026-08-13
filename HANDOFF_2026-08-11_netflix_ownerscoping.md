@@ -1822,6 +1822,54 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.11 — the RUN LOGS, swept by error class (#634/#635, 2026-08-12)
+
+The fourth axis, and the same method as §5.7: rank the 56 `gm_<run>.log` files by normalised
+error line instead of reading them. 13 462 error-shaped lines, 901 distinct shapes (each logged
+twice, in two formats — halve the counts). The top of the list is not app defects; it is **agents
+being told things by Python instead of by the framework**.
+
+**#634 — the tool's own teaching error was unreachable exactly when it was needed.**
+
+```
+submit_retro FAILED (0ms): SubmitRetroTool.execute() missing 3 required
+keyword-only arguments: 'systematic_failures', 'lessons' and ...
+```
+
+**124 such failures across 5 tools and 19+ runs** — submit_retro 106, send_message 8, broadcast
+5, ask_agent 1, lint 1. `exec_fn(**tool_args)` raises before any of the tool's code runs, and
+`SubmitRetroTool` already validates that `plan_vs_reality` holds ≥2 dicts with named keys and
+returns a message saying exactly that. Unreachable, because the call never gets that far. The
+agent learns the parameter NAMES — which it usually knew — and nothing about the SHAPE, which is
+what it got wrong. So it retries, 106 times on one tool.
+
+This is **#360's mirror**: that fix drops an argument the callee cannot accept, this one answers
+for an argument the callee requires, quoting the `PARAMETERS` schema the model was already shown.
+A `**kwargs` or uninspectable signature demands nothing — never guess.
+
+**#635 — `lint` refused to answer in every single run.**
+
+```
+lint FAILED: ruff is not available; install ruff to lint Python files.
+125 occurrences — in 50 of 50 runs
+```
+
+Advice the agent cannot act on, in an environment where ruff is not installed. `ast.parse` needs
+no dependency and answers what was actually asked — *is this file valid?* — and a syntax error is
+precisely the failure that matters here: the same corpus carries 157 `write FAILED: your proposed
+edit has introduced syntax…` and P0s like "Frontend build fails — syntax error in
+GenreCategoryPage.jsx:35". The fallback states that style rules did not run, so a green verdict
+is never mistaken for a full lint, and it tells the agent not to chase the install.
+
+> Both are the §5.2 finding again: **the binding constraint is signal quality, not capability.**
+> Neither agent was failing to think — one was answering a question it had not been asked, the
+> other was being handed a Python traceback where the framework had a written answer ready.
+
+Still open on this axis, measured but not acted on: `registryhub_register_verification_chain
+FAILED … chain rejected` is the single largest class at **514 in 50 runs**. §5.0u already traced
+one root (an unsatisfiable authored expectation, #566z/#591); whether the residual is the same
+cause needs the rejection reasons joined per chain, which is the next thing to do here.
+
 ### §5.10 — the delivered BACKENDS: a live, UNAUTHENTICATED cross-user leak (#633, 2026-08-12)
 
 Continuing the delivered-app review into `app/backend`. The lane-authored side is clean —

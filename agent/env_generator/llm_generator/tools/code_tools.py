@@ -370,14 +370,47 @@ Returns errors with line numbers and suggestions.
                 data=f"No lint rules for {ext} files"
             )
     
-    def _lint_python(self, file_path: Path) -> ToolResult:
-        """Lint Python using ruff."""
-        if not self._check_tool_available('ruff'):
+    def _syntax_check_python_635(self, file_path: Path) -> ToolResult:
+        """#635 — answer the question when ruff is absent, instead of refusing.
+
+        `lint` on a Python file returned `success=False, "ruff is not available; install ruff to
+        lint Python files."` — advice the agent cannot act on, in an environment where ruff is
+        simply not installed. Sweeping the 56 run logs by error class, this fires **125 times in
+        50 of 50 runs**: every run, every time, a turn spent learning nothing about the file.
+
+        `ast.parse` needs no dependency and answers what the caller actually asked — *is this
+        file valid?* — and a syntax error is exactly the failure that matters here: the corpus
+        also carries 157 `write FAILED: your proposed edit has introduced syntax…` and P0s like
+        "Frontend build fails — syntax error in GenreCategoryPage.jsx:35".
+
+        Honest about its scope: the result says the style pass did not run, so a green verdict is
+        never mistaken for a full lint.
+        """
+        import ast
+        try:
+            source = file_path.read_text(encoding="utf-8", errors="replace")
+        except Exception as exc:
+            return ToolResult(success=False, data={"errors": [], "tool": "syntax"},
+                              error_message=f"could not read {file_path.name}: {exc}")
+        try:
+            ast.parse(source, filename=str(file_path))
+        except SyntaxError as exc:
+            err = {"line": exc.lineno or 0, "column": exc.offset or 0,
+                   "code": "SyntaxError", "msg": exc.msg or "invalid syntax", "fix": None}
             return ToolResult(
-                success=False,
-                data={"errors": [], "tool": "ruff"},
-                error_message="ruff is not available; install ruff to lint Python files."
-            )
+                success=False, data={"errors": [err], "tool": "syntax"},
+                error_message=(f"SyntaxError at L{err['line']}:{err['column']}: {err['msg']} "
+                               f"(ruff unavailable — syntax checked only, no style rules)"))
+        return ToolResult(success=True, data={
+            "errors": [], "tool": "syntax",
+            "message": (f"Python syntax OK: {file_path.name}. ruff is not installed in this "
+                        f"environment, so STYLE rules were not run — do not read this as a "
+                        f"full lint, and do not try to install ruff.")})
+
+    def _lint_python(self, file_path: Path) -> ToolResult:
+        """Lint Python using ruff, or fall back to a dependency-free syntax check (#635)."""
+        if not self._check_tool_available('ruff'):
+            return self._syntax_check_python_635(file_path)
         try:
             result = subprocess.run(
                 [self._get_tool_path('ruff'), 'check', '--output-format=json', str(file_path)],
