@@ -276,6 +276,25 @@ class DecomposeReferenceTool(BaseTool):
         # call on a fixed image → the repeats only waste time + vision tokens (~5-8 min/
         # run). Key by the resolved image path; reuse the first result on repeats (still
         # runs the cheap write/gate below). Generalizable to any app; 防止浪费token.
+        # #650 — CHECK THE PERMISSION BEFORE SPENDING THE VISION CALL.
+        # The role gate below used to run AFTER the decomposition. Measured over the 56 run logs:
+        # 12 denials in 6 runs, every one from `design_analyst_1`, each logged as
+        # `decompose_reference FAILED (12405ms)` — i.e. ~12s and a full vision call's tokens were
+        # spent and then thrown away. The destination is knowable before any of that: `save_as`
+        # defaults from the image name. Same shape as #634 (validate the call before making it);
+        # the allowed path is byte-identical, only the denied path gets cheaper.
+        out_rel = save_as or f"design/component_specs/{Path(image).stem}.json"
+        dest = self.workspace.resolve(out_rel)
+        # #453: prefer the WRITE identity (_write_agent_id, the resolved profile e.g.
+        # 'design_analyst') over _agent_id, which set_team_protocols clobbers to the raw
+        # instance id ('design_analyst_1') and which is then NOT in the design/ writers set.
+        _gate_id = getattr(self, "_write_agent_id", None) or getattr(self, "_agent_id", None)
+        if hasattr(self.workspace, "is_write_allowed") and not self.workspace.is_write_allowed(
+                dest, _gate_id):
+            return ToolResult.fail(
+                f"write denied by role gate: {out_rel} — checked BEFORE the vision call, so "
+                f"nothing was spent. design/component_specs/ is written by the framework's own "
+                f"decomposition pass for every reference; you do not need to produce it.")
         _ck = str(p)
         res = _DECOMPOSE_MEM_CACHE.get(_ck)
         if res is None:
@@ -284,25 +303,6 @@ class DecomposeReferenceTool(BaseTool):
                 return ToolResult.fail(f"decompose_reference failed: {res['error']}")
             _DECOMPOSE_MEM_CACHE[_ck] = res
         import json as _json
-        out_rel = save_as or f"design/component_specs/{Path(image).stem}.json"
-        dest = self.workspace.resolve(out_rel)
-        # Route the write through the per-agent role write-gate. ``save_as`` is
-        # agent-controllable, so without this a caller could drop a JSON spec into
-        # another role's tree (e.g. ``app/backend/main.py``) — a cross-role write
-        # that bypasses ROUTING_TABLE. At runtime ``self.workspace`` is the
-        # ``PathRoutedWorkspace`` (which enforces the gate) and ``_agent_id`` is
-        # injected by ``AgentTooling.attach``; a plain ``Workspace`` (early-init /
-        # tests, pre-worktree) returns True by design. Gate on ``dest`` (the same
-        # path we write) so the write-gate invariant is satisfied by construction.
-        # #453: prefer the WRITE identity (_write_agent_id, the resolved profile e.g.
-        # 'design_analyst') over _agent_id, which set_team_protocols clobbers to the raw
-        # instance id ('design_analyst_1') ∉ the design/ writers set → false 'write
-        # denied'. Fall back to _agent_id when the write attr isn't set (plain Workspace/
-        # tests). Generalizable to any dynamic-suffixed self-gating agent.
-        _gate_id = getattr(self, "_write_agent_id", None) or getattr(self, "_agent_id", None)
-        if hasattr(self.workspace, "is_write_allowed") and not self.workspace.is_write_allowed(
-                dest, _gate_id):
-            return ToolResult.fail(f"write denied by role gate: {out_rel}")
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(_json.dumps(res, indent=2, ensure_ascii=False), encoding="utf-8")

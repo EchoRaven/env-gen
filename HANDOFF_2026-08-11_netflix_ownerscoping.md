@@ -1822,6 +1822,39 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.30 — the constant sweep, finished 8/8 — and a denial that cost a vision call (#650, 2026-08-12)
+
+The last two constants I had called "genuinely unmeasurable". Both were measurable; that claim
+class has now failed **seven** times this session.
+
+| constant | how it turned out to be measurable | verdict |
+|---|---|---|
+| `_CAPTURE_BLANK_NODES = 8` | the un-hydrated shell it must catch **is** the delivered `index.html`, which is on disk — all **43** have exactly **1** body element (a lone React-root `<div>`) | correctly placed: 7 nodes of margin, 0 of 43 missed |
+| `_DECOMPOSE_CONCURRENCY = 6` | it guards against provider throttling — greppable | **0** rate-limit responses in 56 runs (the 811 "429" hits are UUID fragments like `ff61d2429fd0`) |
+
+Also settled: `_MAX_DECOMPOSE_IMAGES = 24` does not bind — 20 references per run, and §5.16's 900
+component_specs / 45 runs = 20 confirms every screen is decomposed.
+
+**The same pass surfaced a real defect (#650).**
+
+```
+decompose_reference FAILED (12405ms): write denied by role gate: design/component_specs/landing.json
+12 denials across 6 of 56 runs, every one from `design_analyst_1`
+```
+
+The order was: resolve image → **run the vision decomposition** → compute the destination → check
+the write gate → deny. So ~12 s and a full vision call's tokens were spent on work never allowed
+to land, when the destination is knowable beforehand (`save_as` defaults from the image name).
+#650 computes the destination and gates **once**, before the call — same shape as #634, validate
+before you spend — and the message now says what the analyst could not know: the framework
+decomposes every reference itself.
+
+> **The first cut of this broke two pre-existing tests, which is the point of running the suite.**
+> I added a pre-check and left the original post-check, so the gate fired **twice** and #453's
+> tests (`gate_calls == ["design_analyst"]`) failed on the duplicate. The right shape is one
+> computation and one check whose `dest` is the very path written — which also preserves #453's
+> invariant instead of merely coexisting with it.
+
 ### §5.29 — the TOOL SURFACE: 24% of it has never been exercised (2026-08-12)
 
 Reachability again, but on the surface that costs tokens on **every** LLM call rather than on
