@@ -1822,6 +1822,37 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.32 — mining the judge's own FIX text: the breadcrumb thread, closed (2026-08-12)
+
+An unexploited corpus: **2630 `fix` strings** across 412 screen records. Ranking the imperative
+phrases surfaces one concrete, framework-projectable item well above the rest — **`breadcrumb`,
+111 mentions across 28 of 45 runs**, concentrated in two screens (`genre_category` 61,
+`card_hover_preview` 50, whose reference is itself a category page). `genre_category` is one of
+the screens the gate keeps failing.
+
+The lane ships a breadcrumb in only **9 of 45** runs. The obvious move is to project it — a
+breadcrumb for a nested route is derivable from the registered `ui_pages` with no product
+vocabulary. Two measurements stopped that:
+
+| | |
+|---|---|
+| `genre_category` similarity **with** a breadcrumb | 0.653 (n=7) |
+| **without** | 0.577 (n=11) |
+| gap | +0.076, **permutation p = 0.111** — not distinguishable from noise |
+
+**And the reason it does not pay is measurable.** Of the 111 mentions, only **30 (27%)** sit on
+the screen's WEAKEST dimension — 26 `components`, 4 `copy`. The other **73%** land on layout,
+copy or typography *while some other dimension is the floor*, and §5.24 established that the
+holistic score tracks the minimum at r=0.942. So the ask usually cannot move the number, and a
+lane that skips it 80% of the time is not misbehaving.
+
+> This is the first concrete case that **validates #649**: the lane needed to be told which of its
+> seven fixes is the gate, and on this screen the loudest, most-repeated ask is usually not it.
+
+Fourth time this session a plausible correlation failed a proper test (after `_fw_owns` 0/8, the
+27/27 timestamp control, and the compile-fed screens). The gap looked real; 20 000 shuffles said
+otherwise.
+
 ### §5.31 — four hypotheses tested, four ruled out (2026-08-12)
 
 No fix this turn. Four plausible causes were tested against the corpus and each is closed, which
