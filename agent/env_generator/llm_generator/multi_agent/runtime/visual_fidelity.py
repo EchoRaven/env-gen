@@ -2026,6 +2026,40 @@ async def judge_screen_pair(llm: Any, screen: Mapping[str, Any], screenshot_path
 # ---------------------------------------------------------------------------
 # The gate
 # ---------------------------------------------------------------------------
+def _auth_wipeout_655(judged_screens, auth_bounced) -> bool:
+    """#655: did the authenticated session fail WHOLESALE? Judged per ROUTE, not per screen.
+
+    The re-mint retry below exists because a wholesale rejection is usually a race (#105) — a
+    parallel validation cycle reset the DB or rotated the JWT keys between the mint and the
+    capture. It only fired when EVERY auth screen bounced, but `_auth_bounced` is keyed by
+    screen NAME while bouncing is a property of the ROUTE. Several screens routinely share one
+    route and the bounce is flaky per capture, so ONE lucky screen vetoed the retry for all the
+    rest. r30 is the shape; r49 and r68 are the same:
+
+        scored   sim=0.30   browse_by_languages   /browse
+        BOUNCED  sim=0.00   browse_home           /browse     <- same route, same token,
+        BOUNCED  sim=0.00   card_hover_preview    /browse     <- same capture pass
+        BOUNCED  sim=0.00   ... 8 more, covering every remaining auth route
+
+    10 of 12 screens scored 0.0, `auth_unavailable` stayed False and no re-mint was attempted,
+    because one screen on an already-bouncing route happened to come back. Those three runs are
+    30 of the 43 auth-bounce records in the corpus.
+
+    Counting by route: a route that bounced for any screen is a bounced route, so a run where
+    every auth route bounced somewhere is a wipeout and earns its one retry. A genuinely partial
+    failure (r43: 4 routes, the rest fine) still does not — that is a real per-route auth bug,
+    and the deviation text already tells the lane exactly that.
+    """
+    auth_names = {s["name"] for s in judged_screens if s.get("auth")}
+    if not auth_names:
+        return False
+    bounced = set(auth_bounced or ())
+    bounced_routes = {s.get("route") for s in judged_screens if s["name"] in bounced}
+    covered = {s["name"] for s in judged_screens
+               if s["name"] in auth_names and s.get("route") in bounced_routes}
+    return covered >= auth_names
+
+
 async def run_visual_fidelity(
     project_dir: Any,
     reference_images: List[Any],
@@ -2195,8 +2229,7 @@ async def run_visual_fidelity(
         _blank_screens = []
 
     shots = await capture(judged_screens)
-    _auth_routes = [s["name"] for s in judged_screens if s.get("auth")]
-    if _auth_routes and set(_auth_bounced) >= set(_auth_routes):
+    if _auth_wipeout_655(judged_screens, _auth_bounced):        # #655: by ROUTE, not by screen
         # FIX #105 (run-22 live, recurring): the wholesale rejection is usually a RACE —
         # a parallel validation cycle reset the DB (down -v → reseed → the token's sub
         # points at a user that no longer exists) or rotated the JWT keys between the
@@ -2211,7 +2244,7 @@ async def run_visual_fidelity(
             _auth_bounced.clear()
             _blank_screens.clear()
             shots = await capture(judged_screens)
-    if _auth_routes and set(_auth_bounced) >= set(_auth_routes):
+    if _auth_wipeout_655(judged_screens, _auth_bounced):        # #655
         # The minted token was rejected wholesale (e.g. the validation cycle
         # rebuilt the app between mint and capture, rotating the JWT keys).
         return {"passed": False, "auth_unavailable": True,
