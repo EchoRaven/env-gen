@@ -1822,6 +1822,48 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.23 — ★ the design compile saw the same six screens in all 45 runs (#648, 2026-08-12)
+
+Testing the remaining six "unmeasurable" constants one at a time, rather than as a group. Four
+answer immediately and cleanly; the fifth is the largest finding of the sweep.
+
+| constant | tested against | verdict |
+|---|---|---|
+| `_GIT_TIMEOUT = 30` | 19 "timed out" lines in 56 logs, **none git** | never binds |
+| `_POLL_SEC = 2.0` | the approval gate appears in **0** of 56 logs | never active |
+| `_CHECKLIST_REFRESH_HARD_CAP = 10` | refresh depth 1/10 (15 runs) … 9/10 (2), **10/10 (1)** | well placed — a runaway guard firing once in 56 |
+| `_DECOMPOSE_CONCURRENCY = 6` | no artifact records concurrency | genuinely unmeasurable |
+| `_CAPTURE_BLANK_NODES = 8` | needs a live DOM | genuinely unmeasurable |
+| **`_MAX_IMAGES_IN_COMPILE = 6`** | **20 references per run, in 45 of 45** | **binds every run — see below** |
+
+The compile takes `reference_images[:6]`, and the list arrives in `Path.glob` order, which equals
+alphabetical order on every kept run (verified: real first six == sorted first six, **45 of 45**).
+So the same six screens have informed the global design system in every run ever recorded:
+
+> **reaching it:** `account_menu`, `browse_by_languages`, `browse_home`, `browse_home_rows`,
+> `card_hover_preview`, `card_preview`
+> **never reaching it, in any run:** `login`, `player`, `title_detail`, `games`,
+> `genre_category`, `movies`, `shows`, `my_list`, `new_and_popular`, `landing`
+
+An alphabetical cut is not a neutral one:
+
+| | page | overlay | overlay share |
+|---|---|---|---|
+| all references | 532 | 328 | **36%** |
+| the six the compile saw | 111 | 147 | **54%** |
+| a strided sample | 180 | 90 | **33%** — matches the corpus |
+
+More than half the global design-token budget went on modals and hover cards. #648 spreads the
+sample across the set instead of taking its head: deterministic, order-preserving, no product
+vocabulary, same budget — and it reaches `player` and `games`, two of the screens the gate keeps
+failing. **Striding rather than classifying** because `load_screen_classifications` reads
+design_system.json, which is this compile's own output and does not exist yet at that point.
+
+> **A ninth instrument artifact, caught.** My first pass computed the selected six with `sorted()`
+> while the code uses `glob()`. The conclusion happened to survive — measuring the real glob order
+> gave the same six in 45 of 45 — but it survived by luck, not by method, and I only know that
+> because I re-measured rather than shipping the first number.
+
 ### §5.22 — testing the "unmeasurable" seven: one is UNREACHABLE (2026-08-12)
 
 §5.21 declared seven constants unmeasurable. That kind of claim has been wrong four times this

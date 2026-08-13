@@ -86,6 +86,40 @@ _MAX_DECOMPOSE_IMAGES = 24
 _DECOMPOSE_CONCURRENCY = 6
 
 
+def _spread_sample_648(seq, k):
+    """#648 — spend the compile's image budget ACROSS the reference set, not on its head.
+
+    This was `reference_images[:6]`, and the list arrives in `Path.glob` order, which on every
+    kept run equals alphabetical order (verified: the real first six match the sorted first six
+    in 45 of 45). Every run ships **20** references, so the cap binds every time and always cuts
+    at the same place — the same six screens reach the design-system compile in all 45 runs:
+    account_menu, browse_by_languages, browse_home, browse_home_rows, card_hover_preview,
+    card_preview. The other fourteen — login, player, title_detail, games, genre_category,
+    movies, shows, my_list, new_and_popular, landing — have never informed the global tokens in
+    any run.
+
+    An alphabetical cut is not a neutral one. Classified against the corpus:
+
+        all references            532 page / 328 overlay      -> overlay 36%
+        the six the compile saw   111 page / 147 overlay      -> overlay 54%
+
+    i.e. more than half the global design-token budget was spent on modals and hover cards. A
+    strided sample inverts it to 180 page / 90 overlay — 33% overlay, matching the corpus — and
+    reaches `player` and `games`, two of the screens the visual gate keeps failing.
+
+    Striding rather than classifying because the classification (`load_screen_classifications`)
+    reads design_system.json, which is this compile's OUTPUT: it does not exist yet here.
+    Deterministic, order-preserving, and free of any product vocabulary.
+    """
+    seq = list(seq)
+    if k <= 0:
+        return []
+    if len(seq) <= k:
+        return seq
+    step = len(seq) / k
+    return [seq[min(int(i * step), len(seq) - 1)] for i in range(k)]
+
+
 def classify_references(paths: List[Any]) -> Dict[str, List[str]]:
     """Split a mixed reference list into {"images": [...], "docs": [...]}.
     Unknown extensions and missing files are dropped (reported by caller)."""
@@ -282,7 +316,7 @@ async def compile_reference_spec(
 
     # Per-image part pairs (label + image), built once.
     image_parts: List[List[Dict[str, Any]]] = []
-    for img in (reference_images or [])[:_MAX_IMAGES_IN_COMPILE]:
+    for img in _spread_sample_648(reference_images or [], _MAX_IMAGES_IN_COMPILE):
         try:
             b64 = base64.b64encode(Path(img).read_bytes()).decode()
         except Exception:
