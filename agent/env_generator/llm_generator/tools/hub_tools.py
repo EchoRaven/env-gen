@@ -68,6 +68,69 @@ def _coerce_dict_param(value, name: str = "value"):
     return ToolResult.fail(f"{name} must be a JSON object (dict). Got {type(value).__name__}.")
 
 
+def _impl_artifact_expectation_668(rec) -> str:
+    """#668: what the code-truth audit is actually looking for, from the record already in hand.
+
+    The denial above told the lane to "BUILD the real page/component/table" and stopped there —
+    generic advice for a check with entirely specific criteria. The registry record it had
+    ALREADY fetched to read `status` carries them: a ui_page knows its `path`, `component`,
+    `route`, `apis_used` and required child `components`; a ui_component knows its `component`
+    name and APIs; a table knows its columns.
+
+    Measured over the 249 run logs: 2576 denials across 80 runs, median 20 per run, 456 in the
+    worst, and the SAME task refused up to 146 times (impl.component.title_detail_modal x146,
+    impl.component.hero_billboard x120, impl.page.browse_home x120). A lane retrying one task
+    146 times against a correct message is a lane that believes it is finished and cannot see
+    what the audit disagrees about.
+
+    Additive and best-effort: returns "" when the record says nothing, so the message is never
+    worse than before. No product literals — every key here is framework schema.
+    """
+    if not isinstance(rec, dict):
+        return ""
+    bits = []
+    try:
+        path = str(rec.get("path") or "").strip()
+        comp = str(rec.get("component") or "").strip()
+        route = str(rec.get("route") or "").strip()
+        if path:
+            bits.append(f"file `{path}`")
+        if comp:
+            bits.append(f"a component named `{comp}`")
+        if route:
+            bits.append(f"reachable at route `{route}`")
+        for key, label in (("apis_used", "calling"), ("components", "containing")):
+            val = rec.get(key)
+            if isinstance(val, str):
+                val = val.strip()
+                if val.startswith("["):
+                    try:
+                        import ast as _ast
+                        val = _ast.literal_eval(val)
+                    except Exception:
+                        val = [val]
+                else:
+                    val = [val] if val else []
+            if isinstance(val, (list, tuple)) and val:
+                items = ", ".join(f"`{x}`" for x in list(val)[:6] if str(x).strip())
+                if items:
+                    bits.append(f"{label} {items}")
+        cols = ((rec.get("schema") or {}) if isinstance(rec.get("schema"), dict) else {})
+        names = [str((c or {}).get("name")) for c in (cols.get("columns") or [])
+                 if isinstance(c, dict) and c.get("name")]
+        if names:
+            bits.append("with columns " + ", ".join(f"`{n}`" for n in names[:8]))
+    except Exception:
+        return ""
+    if not bits:
+        return ""
+    return (" WHAT THE AUDIT IS LOOKING FOR (from the registry record): "
+            + "; ".join(bits)
+            + ". If you believe this already exists, the audit disagrees about one of those "
+              "specifics — check the exact name/path/route before retrying, because retrying "
+              "the completion cannot change the artifact's status.")
+
+
 def _finalize_hub_tools(tool_classes):
     """Backfill abstract members for HubTool subclasses that define _run only."""
     import asyncio as _asyncio
@@ -751,6 +814,7 @@ class WorkHubTaskTool(HubTool):
             # tool), so this only catches the lane path. Best-effort + fail-open:
             # blocks ONLY when the artifact is resolvable AND not implemented.
             _blocked_status = None
+            _blocked_rec = None
             try:
                 _tid = str(task_id or "")
                 _rh = getattr(self._hubs, "registryhub", None)
@@ -770,6 +834,7 @@ class WorkHubTaskTool(HubTool):
                     _s = _rec.get("status") if isinstance(_rec, dict) else None
                     if _s and _s != "implemented":
                         _blocked_status = _s
+                        _blocked_rec = _rec if isinstance(_rec, dict) else None
             except Exception:
                 _blocked_status = None
             if _blocked_status:
@@ -783,7 +848,8 @@ class WorkHubTaskTool(HubTool):
                     "completes ITSELF when the artifact flips to 'implemented'. Manually "
                     "completing an unbuilt artifact is a false-complete that wedges the "
                     "run (status diverges from code-truth + the task drops off your "
-                    "queue so you're never re-woken to finish it)."))
+                    "queue so you're never re-woken to finish it)."
+                    + _impl_artifact_expectation_668(_blocked_rec)))
             hub_result = self._hubs.workhub.complete_task(task_id, self._agent_id, result=result or {}, evidence=evidence or {})
             _detach_plantool_on_terminal(self._agent_id, hub_result)
             return ToolResult(data=_ack(hub_result))   # #605
