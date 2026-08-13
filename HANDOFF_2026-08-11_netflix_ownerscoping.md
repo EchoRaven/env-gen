@@ -1822,6 +1822,34 @@ boundary in the source, the frontend lane is registered as its consumer. The bou
 free precision — bare-substring and boundary matching both recover **159 of the 176**, so the
 stricter one is taken, and `/api/titles` can no longer claim every hit of `/api/titles/trending`.
 
+### §5.31 — four hypotheses tested, four ruled out (2026-08-12)
+
+No fix this turn. Four plausible causes were tested against the corpus and each is closed, which
+is worth as much as a fix — it stops the next reader re-walking them.
+
+**1. Is #650's shape ("expensive work before a cheap check") anywhere else?** No. Sweeping every
+tool's `execute` for an LLM/subprocess/browser call followed by an input-only failure leaves one
+hit, and it is benign (`if self._llm is None:` is a cheap null-check my heuristic mis-classified).
+The detector was validated first: it *would* have caught #650's original shape.
+
+**2. `eventhub_threads` — 50 586 rows, read by one code path.** Measured: **49 967 (98.8%) hold
+exactly one event**; only 619 are real conversations, and 18 585 have zero participants. Both
+thread tools (`eventhub_get_thread`, `eventhub_reply_in_thread`) are in the never-called set, so
+the subsystem is write-only. **Not changed** — 14 MB total across 45 runs and negligible I/O; the
+blast radius does not justify touching the event hub. Recorded because "50 586 rows, 98.8%
+singletons" looks alarming to any future audit.
+
+**3. Is the UI failing on placeholder seed data?** No. Across **11 510** string cells in the
+delivered seeds, **0.00%** are generic `Item 3`-shaped values. My regex flagged 7.12%, and every
+one is a correct engineering choice: `users.email` = `@example.com` (the RFC-reserved domain) and
+`titles.video_url` = Google's public sample-video host.
+
+**4. Is it failing on seed *density*?** Also no, and this one was the most plausible: `titles`
+carries a median of **19** rows (min 12), which intuitively cannot fill a Netflix browse page's
+rails. But the judge does not say so — sparsity vocabulary appears in **15 of 412** layout notes
+(**4%**), 1% of components notes, and the hits are about layout *structure* ("wraps the form in a
+visible card", "hero content is a movie"), not data volume.
+
 ### §5.30 — the constant sweep, finished 8/8 — and a denial that cost a vision call (#650, 2026-08-12)
 
 The last two constants I had called "genuinely unmeasurable". Both were measurable; that claim
