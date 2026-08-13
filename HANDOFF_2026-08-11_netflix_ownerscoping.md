@@ -2008,11 +2008,27 @@ second pass a no-op.
 > KEY of it?"*, and reported zero. **Verify the scanner against one hand-checked case before
 > believing its denominator.**
 
-A related structural hazard, measured and deliberately **not** acted on: **21 of 45 runs ship two
-or more `services/api.*` modules with different content** (r103 has three: 27 B, 74 B and 5035 B).
-Callers use explicit extensions, so there is no bundler ambiguity to fix and no defect that
-follows from the duplication alone — #632 addresses the crash it actually produces. Collapsing
-the duplicates is a content decision no artifact settles.
+**The duplicate `services/api.*` modules — I called this "a content decision no artifact
+settles"; that was wrong (#638).** Checking instead of asserting showed it is entirely
+mechanical. Across the 45 delivered frontends every same-stem collision is `services/api`, and
+the framework's OWN baseline is one side of every single one:
+
+| | |
+|---|---|
+| `api.js` + `api.jsx` | 13 runs |
+| `api.js` + `api.mjs` | 6 runs |
+| all three | 2 runs (r103: 27 B, 74 B, 5035 B of one module) |
+
+The gap-fill asks *"does THIS FILENAME exist"* — `if p.exists() and p.read_text().strip():
+continue` — but the unit JS resolves is the **module**. A lane that writes `services/api.jsx`
+leaves `services/api.js` missing, so the baseline lands beside it. This is also how §5.9's crash
+class arises: half the pages import one client, half the other.
+
+> Skipping the write is NOT safe — projected code imports `../services/api.js` by exact filename
+> (r120 does). #638 writes a **re-export shim** instead, so every such import keeps resolving
+> while the lane's file is the only implementation. `export { default }` is forwarded only when
+> the sibling actually has one: re-exporting a default that does not exist is a build error, and
+> trading a duplicate module for a dead app is not a fix.
 
 ### §5.8 — two parked questions settled by measuring the blast radius (2026-08-12)
 

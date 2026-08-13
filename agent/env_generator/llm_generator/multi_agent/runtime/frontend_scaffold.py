@@ -8473,6 +8473,47 @@ _NAMED_EXPORT_632 = re.compile(
 _JS_EXT_632 = ('.js', '.jsx', '.mjs', '.ts', '.tsx')
 
 
+_SHIM_EXT_638 = (".jsx", ".mjs", ".ts", ".tsx", ".js")
+
+
+def _reexport_shim_638(target: Any) -> Optional[str]:
+    """#638 — source text for a baseline module the lane already wrote under another extension.
+
+    Returns None when there is no same-stem sibling with content (the ordinary gap-fill case,
+    untouched). Otherwise returns a shim that re-exports the sibling, so an import naming the
+    baseline path by exact filename keeps resolving while the lane's file stays the only
+    implementation.
+
+    `export { default }` is emitted ONLY when the sibling actually has a default export —
+    re-exporting one that does not exist is a build error, which would trade a duplicate module
+    for a dead app.
+    """
+    try:
+        p = Path(str(target))
+        if p.suffix not in _SHIM_EXT_638:
+            return None                      # not a JS module: no resolution, no collision
+        for ext in _SHIM_EXT_638:
+            if ext == p.suffix:
+                continue
+            sib = p.with_suffix(ext)
+            try:
+                body = sib.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            if not body.strip():
+                continue
+            spec = "./" + sib.name
+            lines = [f"// #638: the {p.name} baseline is not written when the lane already",
+                     f"// authored {sib.name}; this re-export keeps `{p.stem}` a single module.",
+                     f"export * from '{spec}';"]
+            if re.search(r"export\s+default\b", body):
+                lines.append(f"export {{ default }} from '{spec}';")
+            return "\n".join(lines) + "\n"
+        return None
+    except Exception:
+        return None
+
+
 def repair_default_import_of_named_export_632(src_dir: Any) -> List[str]:
     """#632 — `import listTitles from './api'` when `./api` default-exports a BAG.
 
@@ -10478,6 +10519,24 @@ def scaffold_frontend_baseline(frontend_dir) -> Dict[str, object]:
                     continue
             except Exception:
                 pass
+            # #638: the gap-fill asks "does THIS FILENAME exist", but the unit JS resolves is
+            # the MODULE. A lane that wrote `services/api.jsx` leaves `services/api.js`
+            # missing, so the baseline lands beside it and the app ships two different API
+            # clients. Measured across the 45 delivered frontends: 21 runs carry a
+            # `services/api` collision — 13 `.js`+`.jsx`, 6 `.js`+`.mjs`, 2 with all three —
+            # and the framework's own `api.js` is one side of EVERY one. r103 ships 27 B,
+            # 74 B and 5035 B versions of the same module. It is also how #632's crash class
+            # arises: half the pages import one client, half the other.
+            #
+            # Skipping the write is NOT safe — projected code imports `../services/api.js` by
+            # exact name. A re-export shim keeps every such import resolving while leaving ONE
+            # source of truth: the lane's module.
+            _shim = _reexport_shim_638(p)
+            if _shim is not None:
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(_shim, encoding="utf-8")
+                written.append(rel + " (re-export shim → lane module)")
+                continue
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content, encoding="utf-8")
             written.append(rel)
