@@ -175,7 +175,41 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
         # about.
         from .frontend_audit import duplicate_route_content_groups
         _pages_700 = workhub.get_ui_pages() or {}
+        # #708b: name the filters the CONTRACT already declares for the shared endpoint, so the
+        # report says what to do and not just what is wrong. #615 declined to fix the cause partly
+        # because "the seed gives every title kind='standard'" — retired in #708: the shipped
+        # seed_dataset.json carries kind movie/series and real genres, and the endpoint's own
+        # `schema.request` records its optional query params. Reading them here costs one lookup
+        # and turns "these 5 routes are the same page" into "…and /api/titles takes kind, genre,
+        # language". Purely contract-derived; no product vocabulary.
+        def _filters_708b(endpoints):
+            try:
+                _rh = getattr(hub_registry, "registryhub", None)
+                _all = (_rh.get_endpoints() or {}) if _rh is not None else {}
+            except Exception:
+                return {}
+            out = {}
+            for _ep in endpoints or []:
+                for _rec in _all.values():
+                    if not isinstance(_rec, dict):
+                        continue
+                    if str(_rec.get("path") or "") != str(_ep):
+                        continue
+                    _req = ((_rec.get("schema") or {}).get("request") or {})
+                    _opt = [k for k, v in _req.items()
+                            if isinstance(v, str) and v.endswith("?")
+                            and k not in ("limit", "offset", "page", "per_page")]
+                    if _opt:
+                        out[_ep] = sorted(_opt)
+                    break
+            return out
         for _g in duplicate_route_content_groups(Path(app_root) / "frontend", _pages_700) or []:
+            _f708 = _filters_708b(_g.get("endpoints"))
+            if _f708:
+                _LOG_700.warning(
+                    "#615 the shared endpoint(s) already accept filters the contract declares: "
+                    "%s — a route-derived filter is available, the pages just do not pass one.",
+                    "; ".join(f"{k} takes {', '.join(v)}" for k, v in sorted(_f708.items())))
             _LOG_700.warning(
                 "#615 %d routes render identical content: %s — all fetch only %s (components: "
                 "%s). Not a blocker; a nav destination that shows the same list as its siblings "
