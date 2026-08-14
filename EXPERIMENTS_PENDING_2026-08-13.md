@@ -1733,6 +1733,48 @@ right one needed a distribution.
 
 ---
 
+## 51. The same shape twice, and only one of them should be folded
+
+#730 folded `schema.query` into `schema.request` because the lane declared query parameters under
+its own word and nothing read them. Sweeping for the same shape found a second instance
+immediately — and it must NOT be folded, which is the part worth recording.
+
+    key              declared           read by anything   fold?
+    schema.query     r148 x3            no                 YES — #730
+    schema.headers   r148 x6            no                 NO
+
+`schema.headers` is `{"X-Profile-Id": "integer?"}` on six endpoints, and three facts from the
+code say leave it alone:
+
+  * the `?` marks it OPTIONAL;
+  * the backend has a correct default — `_resolve_profile_id`'s own docstring: "(a) If
+    X-Profile-Id header is set AND belongs to this user → use it", falling back to the caller's
+    first profile otherwise;
+  * `chain_executor` already refuses to take `Authorization` from a step, on the stated grounds
+    that "a step-supplied one would quietly change actor and defeat the ownership probes
+    (#591/#663)". **`X-Profile-Id` is also an identity.** Auto-injecting it would have the
+    framework decide who the caller is on the probe's behalf.
+
+So the two cases differ on what the data DOES: **query parameters are inert and folding one back
+only makes a filter visible; a header selects an actor.** Same symptom, opposite disposition —
+and the default reaction to "declared but unread" is to wire it up, which here would be wrong.
+
+**A trend worth noting under it.** Both keys appear in r148 and in neither earlier run. The lane
+is getting BETTER at declaring its contract, and the framework's reading surface has not kept up.
+#730 closed one gap; the other is closed deliberately.
+
+**Not built, and the reason is the exemption list.** A standing check for "declared keys nothing
+reads" would flag `headers` every run unless it carries an exemption list — and every entry on
+that list needs the judgement made above, per key. Worth doing when a third instance appears;
+premature at two, since a check that cries wolf on a correct decision trains a reader to ignore
+it (#726's lesson, on a different surface).
+
+**Cheapest observation.** None; settled by reading. What a run adds is whether the lane keeps
+inventing keys — a third synonym would change the calculus from "fold the one that matters" to
+"the read surface needs a general answer".
+
+---
+
 ## 50. #728 — pages calling each other's endpoints, and why every audit passed
 
 Chasing a line in r148's #700 report that I had noticed and not followed: `/browse/genre/:genreId`
