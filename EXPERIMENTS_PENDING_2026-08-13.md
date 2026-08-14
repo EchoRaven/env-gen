@@ -1129,6 +1129,29 @@ wedges more runs than the 71% the decision was made on — and it raises the val
 report, because this is not a rare defect but the normal state of a delivered app. The original
 figure is kept beside the new one; a premise that moved is more useful than a premise replaced.
 
+**The other 12 "N of M runs" claims, worked through rather than left as a list.** Five are now
+resolved; the rest need probes matching their original definitions and are listed for whoever
+writes them.
+
+| claim | where | re-measured | verdict |
+|---|---|---|---|
+| 32 of 45 | deliverability #615 | **112 of 136** | moved, premise STRENGTHENED → #705 |
+| 0 of 144 `tasks.yaml` | delivery_gate | **0 of 146** | holds |
+| 125 of 144 no `mcp_server/` | heal_pipeline ×2 | **128 of 146** | holds, same rate |
+| 125× in 50 of 50 `ruff` | code_tools #635 | **1042 in 145 logs; 0 in r145+r146** | premise bigger than recorded, and the FIX WORKS → #705b |
+| 24 of 39 record>live | visual_fidelity ×6 | **not re-verifiable** | only 2 kept runs carry both `blocking_average` and `blocking_average_live`; the rest predate the fields entirely (r100's verdict.json has five keys and neither of them) |
+
+Still unchecked, each needing a probe written to its own definition: `27 of 45` motion tokens
+(design_prep), `6 of 45` shipped sites (frontend_scaffold), `79 of 144` duplicate-reason
+cancellations (workhub — a loose `grep duplicat` gives 107 of 146 but counts any mention, so it
+is not comparable), `4 of 21` blast radius (test_user_squad), `514 in 50 of 50` (registryhub),
+and the two `146 of 146` figures, which are mine and current.
+
+**The lesson from the two that resolved cleanly.** #615's premise moved UP and strengthened the
+decision resting on it; #635's premise moved up too but its fix had already erased the symptom.
+Neither could be known without re-measuring, and a fix whose premise is never re-checked is
+indistinguishable from one that quietly stopped mattering.
+
 **Nine sweeps, nine axes; five yielded, four did not** — A→#698, B→#699+#700, C→#701, D→#702,
 E→nothing, F→nothing, G→#703 (a guard), H→nothing. Three of the last four came back empty, which
 is the first real evidence that this family is thinning rather than that I keep finding new places

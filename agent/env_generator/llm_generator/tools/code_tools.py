@@ -379,6 +379,14 @@ Returns errors with line numbers and suggestions.
         simply not installed. Sweeping the 56 run logs by error class, this fires **125 times in
         50 of 50 runs**: every run, every time, a turn spent learning nothing about the file.
 
+        #705b VERIFIED 2026-08-14 against the full 253-log corpus. The premise was bigger than
+        recorded — 1042 occurrences across 145 logs, not 125 across 50 — and, more usefully, the
+        fix WORKS: era-split gives 496 in 90 logs before r100 and 456 in 42 after, and both
+        post-fix runs are **0** (r145: 0, r146: 0). The string now survives in this file only as
+        this docstring and the comment at :299; it is no longer a message anyone can receive.
+        Recorded because a fix whose premise was never re-checked is indistinguishable from one
+        that quietly stopped mattering.
+
         `ast.parse` needs no dependency and answers what the caller actually asked — *is this
         file valid?* — and a syntax error is exactly the failure that matters here: the corpus
         also carries 157 `write FAILED: your proposed edit has introduced syntax…` and P0s like
