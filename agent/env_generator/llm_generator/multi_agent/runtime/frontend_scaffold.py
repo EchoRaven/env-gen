@@ -10618,7 +10618,24 @@ def stage_missing_seed_photos(output_dir) -> List[str]:
 # UI. A generic neutral SVG placeholder ALWAYS resolves the 404; when egress is available
 # (the design-input prep fetched icons the same way), fetch the REAL Material Symbol by name
 # for correct fidelity. Best-effort — a fetch failure degrades to the placeholder.
-_FE_ASSET_RE = re.compile(r"/assets/((?:icons|placeholders)/[\w./-]+\.(?:svg|png))", re.I)
+# #707: was `(?:icons|placeholders)` — ANY /assets/<dir>/ now, because the directory the lane
+# invents is precisely the one nobody staged. Measured over the delivered corpus: 20 broken local
+# image references across 8 of 27 released runs, and 19 of them are `/assets/avatars/…` — a
+# profile picker needing avatars that were never in `assets[]`, each run inventing its own naming
+# (`avatar-1.png`, `av_blue.svg`, `kid.png`, `profile-red.svg`). The old scope could not see them.
+#
+# This is the BACKSTOP, not the fix. The fix is the ladder now in frontend_agent.j2 rule 5b:
+# staged asset -> search_icons/search_logos/search_photos + save_image -> construct it in code.
+# A placeholder here is the last rung, and every one it writes is LOGGED, because silently
+# filling a hole is how a seeding bug would hide behind a grey square.
+_FE_ASSET_RE = re.compile(r"/assets/([\w-]+/[\w./-]+\.(?:svg|png|jpg|jpeg|webp))", re.I)
+
+# A 1x1 transparent PNG. The old code skipped every non-svg reference ("can't synthesize
+# cheaply") — 11 of the 19 broken avatar refs were .png, so the skip WAS the gap for most of them.
+_PLACEHOLDER_PNG_707 = bytes.fromhex(
+    "89504e470d0a1a0a0000000d494844520000000100000001080600000"
+    "01f15c4890000000a49444154789c6360000002000100ffff03000006"
+    "0005574bd8b40000000049454e44ae426082")
 _MS_URL = ("https://fonts.gstatic.com/s/i/short-term/release/"
            "materialsymbolsoutlined/{name}/default/24px.svg")
 _PLACEHOLDER_ICON_SVG = (
@@ -10680,16 +10697,33 @@ def stage_missing_frontend_assets(output_dir) -> List[str]:
                 stem = Path(rel).stem
                 sym = re.sub(r"_\d+$", "", stem)
                 body = _fetch_material_symbol(sym)
-            if body is None:
-                body = _PLACEHOLDER_ICON_SVG if dest.suffix.lower() == ".svg" else None
-            if body is None:
-                continue  # a non-svg placeholder we can't synthesize cheaply — skip
+            if body is None and dest.suffix.lower() == ".svg":
+                body = _PLACEHOLDER_ICON_SVG
             try:
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_text(body, encoding="utf-8")
+                if body is not None:
+                    dest.write_text(body, encoding="utf-8")
+                else:
+                    # #707: raster fallback. Anything that is not an SVG gets the 1x1 PNG —
+                    # a transparent pixel resolves the request, so no broken-image glyph, and
+                    # it is visibly nothing rather than a wrong picture.
+                    dest.write_bytes(_PLACEHOLDER_PNG_707)
                 staged.append(rel)
             except Exception:
                 continue
+        if staged:
+            # #707: never silent. Each line is an asset the FRONTEND referenced and nobody
+            # staged — rule 5b's ladder should have sourced or constructed it, so a hit here
+            # says the lane took the forbidden fourth option and the backstop caught it.
+            try:
+                _LOG_707 = __import__("logging").getLogger(__name__)
+                _LOG_707.warning(
+                    "#707 staged %d placeholder asset(s) the frontend referenced but nobody "
+                    "provided: %s. Each is a path the lane invented instead of using "
+                    "search_icons/search_photos/save_image or drawing it in code.",
+                    len(staged), ", ".join(staged[:8]))
+            except Exception:
+                pass
         return staged
     except Exception:
         return []
