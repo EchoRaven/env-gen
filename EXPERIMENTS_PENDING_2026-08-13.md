@@ -870,18 +870,28 @@ they are not an injection surface.
   the real judge, not by pixel arithmetic.
 - **#641 round-ledger recommendation at release.** Needs one run's `rounds.jsonl` to validate
   the "a better state was available" selection.
-- **`_auto_approve_threshold = 3`.** An unmeasured tuned constant, now newly relevant because
-  #658 made the path above it live for the first time. No corpus data exists on plan step
-  counts (the path never ran). One run's plans would give the distribution.
+- **`_auto_approve_threshold = 3`.** ~~One run's plans would give the distribution.~~ **Two runs
+  happened and gave zero.** `submit_plan` appears in **0 of 253 run logs** — r145 and r146
+  included, and r146 had #658 in the build. It is not unreachable: `tool_bundles.py:661` bundles
+  it and the orchestrator's `tool_categories` includes `team_planning`
+  (agents_config.yaml:91). So the whole submit_plan → approval → threshold path, including
+  `plan_decision.py`, has never executed once in the kept history. The question is therefore not
+  "run once more for the distribution" — no run of this workload produces one. It is whether this
+  subsystem is supposed to run at all for a single-team app build, and #658 correspondingly has
+  no run that can validate it. Same probe as item 13, opposite answer: there the tool is reachable
+  and optional, here it is reachable and simply never invoked by anything.
 
 ---
 
 ## Next actions that are still offline-checkable
 
 1. ~~**#658 follow-up.**~~ Done — no subscriber exists; see item 6 and #659b.
-2. **`llm_func` annotation.** `utils/memory.py:357` declares `Callable[[str], str]` with the
-   comment "Async function" beside it and `await` at the call site; the only caller passes
-   `async def`. One-line annotation fix, no behaviour change.
+2. ~~**`llm_func` annotation.**~~ **Already done** — `utils/memory.py:361` now reads
+   `Callable[[str], Awaitable[str]]`, with `Awaitable` imported at line 14 and a comment
+   recording why. Stale entry, found by re-checking my own list rather than by trusting it.
+   Its twin was NOT done and is now fixed with it: `condenser_llm_func: Callable = None` at
+   line 503 is forwarded verbatim as `llm_func=` at 514, so it carries the same type and the
+   same `= None`-without-`Optional` defect that item 3 below is about.
 3. **The 363 `bad-function-definition` reports** are overwhelmingly `X: SomeType = None` where
    the annotation should be `Optional[...]`. Mechanical, zero-risk, and each one currently hides
    real `bad-argument-type` findings downstream.

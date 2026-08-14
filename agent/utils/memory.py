@@ -500,7 +500,11 @@ class AgentMemory:
         self,
         short_term_size: int = 50,
         long_term_size: int = 1000,
-        condenser_llm_func: Callable = None,
+        # Same lie as `llm_func` above, twice over: bare `Callable` says nothing about the
+        # await at line 420, and `= None` on a non-Optional annotation is the pattern behind
+        # most of the tree's `bad-function-definition` reports. This value is forwarded
+        # verbatim as `llm_func=` at line 514, so it must carry that parameter's exact type.
+        condenser_llm_func: Optional[Callable[[str], Awaitable[str]]] = None,
         condenser_max_size: int = 100,
     ):
         self.short_term = ShortTermMemory(max_size=short_term_size)
