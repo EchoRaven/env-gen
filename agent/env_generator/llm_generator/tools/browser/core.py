@@ -70,7 +70,20 @@ class BrowserNavigateTool(BaseTool):
             
             # Get page info
             title = await self.browser.state.page.title()
-            content = await self.browser.state.page.content()
+            # #689: the page can still be moving when we read it — "Unable to retrieve content
+            # because the page is navigating" is 58 of the corpus's navigate failures, 26 of
+            # them live. The navigation itself succeeded; only this read lost the race, so
+            # settling once and re-reading is the whole fix. An SPA that redirects on mount
+            # (login -> browse) hits this every time.
+            try:
+                content = await self.browser.state.page.content()
+            except Exception as _ce:
+                from tools.browser.inspection import (is_navigation_race_error,
+                                                      settle_after_navigation_689)
+                if not is_navigation_race_error(_ce):
+                    raise
+                await settle_after_navigation_689(self.browser.state.page)
+                content = await self.browser.state.page.content()
             
             # Filter console errors (ignore browser extension errors)
             console_errors = [

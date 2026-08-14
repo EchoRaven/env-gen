@@ -14,6 +14,46 @@ _ASYNC_FRAMING_ERRORS = (
 )
 
 
+def is_navigation_race_error(message) -> bool:
+    """True when the page moved UNDER the read — a transient, not a bad request (#689).
+
+    Two engine messages, one condition:
+
+        Page.evaluate: Execution context was destroyed, most likely because of a navigation
+        Page.content:  Unable to retrieve content because the page is navigating
+
+    The caller did nothing wrong and there is nothing for it to change; the page settles a
+    moment later. `browser_click` already retries transients three times by default, but
+    `browser_eval` retries only #364's framing rejection and the content read not at all, so
+    these surfaced as plain failures.
+
+    Measured over the 249 run logs: 132 of them, 50 in the LIVE era (r100+) — 74 destroyed
+    contexts and 58 content reads. Same shape as #665 and #687: one member of a pair was
+    treated and its twin was not.
+
+    Follows #364's rule of letting the ENGINE's own error decide, so a genuine runtime error is
+    never retried.
+    """
+    t = str(getattr(message, "message", message) or "").lower()
+    return ("execution context was destroyed" in t
+            or "page is navigating and changing the content" in t)
+
+
+async def settle_after_navigation_689(page, timeout_ms: int = 3000) -> None:
+    """Best-effort wait for the navigation that destroyed the context to finish.
+
+    Never raises: this runs on an already-failing path, and a settle that times out must leave
+    the caller free to report the ORIGINAL error rather than a new one about waiting.
+    """
+    if page is None:
+        return
+    for _state in ("domcontentloaded", "networkidle"):
+        try:
+            await page.wait_for_load_state(_state, timeout=timeout_ms)
+        except Exception:
+            return
+
+
 def is_async_framing_error(message) -> bool:
     """True when the engine rejected the snippet's FRAMING, not its logic (#364).
 
@@ -136,6 +176,21 @@ class BrowserEvaluateTool(BaseTool):
             # return/await with a regex would misfire on a nested function or a
             # string literal. Letting the engine's own error decide has no false
             # positives: a script that works today is never touched.
+            # #689: the page moved under the read. Settle once and re-run — the script is
+            # fine and the agent has nothing to change, so failing here just burns a round.
+            if is_navigation_race_error(e):
+                await settle_after_navigation_689(self.browser.state.page)
+                try:
+                    result = await self.browser.state.page.evaluate(script)
+                    return ToolResult.ok({
+                        "script": script[:100] + "..." if len(script) > 100 else script,
+                        "result": str(result)[:500] if result else None,
+                    })
+                except Exception as _e2:
+                    return ToolResult.fail(
+                        f"Eval failed: {str(e)}. Retried once after the navigation settled and "
+                        f"it failed again ({str(_e2)[:120]}) — the page may be reloading in a "
+                        "loop, or the script depends on state the navigation cleared.")
             if not is_async_framing_error(e):
                 return ToolResult.fail(f"Eval failed: {str(e)}")
             _ran = wrap_in_async_iife(script)
