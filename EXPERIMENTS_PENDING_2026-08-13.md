@@ -2228,6 +2228,29 @@ fetch `?kind=movie`. Every prerequisite is confirmed:
     contract   schema.request = {kind: string?, genre: string?, language: string?, …}
     seed       seed_dataset.json: 60 titles, kind movie 28 / series 32, real genres
 
+**The contract line is FALSE for the two newest runs, and that changes the shape of this item.**
+It was verified on r146. Checking all three:
+
+    run    contract request for GET /api/titles                    backend kind-filter sites
+    r146   {kind, genre, language, limit, offset}                              1
+    r147   (empty)                                                             1
+    r148   (empty)                                                             2
+
+r147 and r148 IMPLEMENT filtering and DECLARE nothing. The implementation kept the capability —
+r148 even extended it, its `custom_routes.py` carrying `WHERE kind = :kind` against a
+module-level `_TITLE_COLS` constant with every user value bound — while the registered schema
+lost its query params entirely.
+
+The consequence is visible in the same run: #708b, which exists to name the filters the contract
+declares, correctly found the endpoint record, correctly extracted ZERO optional params, and
+correctly said nothing. I spent a while treating that silence as a dead branch of my own before
+checking the data. It is not the branch; it is the contract.
+
+And it explains the六-route group r148 reports: with nothing declared, the frontend has no
+contract basis for passing a filter, so every catalogue page fetches bare `/api/titles`. The
+route-derived fix is therefore blocked one step earlier than item 32 assumed — not on the
+fidelity trade-off, but on a contract that no longer describes its own endpoint.
+
 **It is not implemented, and the reason is a trade I cannot settle offline.** Filtering by route
 changes how much each page renders:
 
