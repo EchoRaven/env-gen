@@ -2626,9 +2626,34 @@ from these artifacts.
 contract for `GET /api/titles` carries the query params in r146 and carries none in r147 or r148,
 while all three backends implement filtering. That mismatch is the finding; its origin is open.
 
-**Cheapest observation.** Log the `schema` argument of `registryhub_register_endpoint` for one
-run. If the lane sends query params and the store lacks them, something between the two is
-dropping them; if the lane sends none, r146's came from a path that no longer runs.
+**CAUSE FOUND — it is convergence toward the instruction, not a regression.** The decline is
+monotonic and measurable:
+
+    r146   16 GET endpoints,  3 declare query params
+    r147   17 GET endpoints,  1
+    r148   16 GET endpoints,  0
+
+and the backend prompt's ONLY guidance on endpoint schemas was `schema with response_key`. It
+asks for `response_key` and says nothing about request parameters, so a lane declaring exactly
+that is following instructions correctly — r146's richer `/api/titles` declaration was the lane
+EXCEEDING them. 3 → 1 → 0 is drift toward what was actually asked.
+
+**That distinction decides whether a prompt change can work.** #664 measured that repeating an
+ignored instruction does nothing: 30 mentions plus 76 escalations moved no behaviour. This is the
+opposite — the instruction is not ignored, it is incomplete, and the lane already does what it
+says. Completing it is not the move #664 ruled out.
+
+**Fixed: #729.** The prompt now asks for `schema.request` naming every query parameter a GET
+accepts, with the shape and the `?`-optional marker, plus why it matters: a filter implemented and
+not declared does not exist to the frontend, the contract audit, or #708b's remediation hint. The
+backend already implements them — r148's `list_titles` takes kind/genre/language and its SQL
+carries `WHERE kind = :kind` — so the contract was the only broken link.
+
+**Cheapest observation.** Next run: count GET endpoints with a non-empty `schema.request`. Above
+zero means the completed instruction landed and item 32's route-derived filtering is unblocked;
+still zero means declaration needs enforcement rather than wording, and #664's finding extends to
+this case after all. #725's dispatch logging now shows the `schema` argument's shape, so the same
+run also says whether the lane SENT them and something dropped them.
 
 The consequence is visible in the same run: #708b, which exists to name the filters the contract
 declares, correctly found the endpoint record, correctly extracted ZERO optional params, and
