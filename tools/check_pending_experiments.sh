@@ -67,12 +67,16 @@ grep_log "#689 navigation-race retry"    "Retried once after the navigation" "wa
 grep_log "#690 empty route parameter"    "EMPTY parameter"                 "was: 3 branches all mis-diagnosed it"
 grep_log "#682 unknown id named"         "no such row exists"              "was: bare 'title not found'"
 grep_log "#682b ownership 403"           "The refusal is CORRECT"          "was: bare 'does not belong to the caller'"
-# #691 is the one line here whose PRESENCE is the expected outcome, not a regression. The branch
-# topology it reports (writer commits mcp_server/ on `main`, delivery cuts from `integration`) is
-# NOT fixed — only made audible. Seeing it means the diagnosis reproduced a third time and the
-# remaining decision (write on the delivery branch vs merge the path in) has its input. Its
-# ABSENCE is the interesting result: either the topology changed, or the subtree finally shipped.
+# #691 is the one line here whose PRESENCE is the expected outcome, not a regression. The ordering
+# it reports is unrepaired BY DESIGN: integration is forked while HEAD is still on main, and the
+# framework's first delivery commit lands on main. #691 detects that; #691b (next line) recovers
+# the subtree rather than shipping without it. Its ABSENCE means either the fork order changed or
+# the subtree was already present — check which before reading it as good news.
 grep_log "#691 absent delivery subtree"  "is not in the working tree at commit time" "EXPECTED to fire; r145+r146 both silently shipped without mcp_server/"
+# #691b is the repair. Seeing BOTH lines is the healthy outcome: #691 detects, #691b recovers.
+# #691 alone means the restore did not find a commit to take the subtree from — a different
+# defect from the one diagnosed, and worth reading the reflog for.
+grep_log "#691b subtree recovered"       "recovered delivery subtree" "pairs with #691; alone-#691 means no source commit was found"
 
 # --- fixes whose signature is the DEFECT DISAPPEARING, not a new message -------------------------
 # These cannot be confirmed by presence. A zero here is the goal, but a zero also happens when the
@@ -105,8 +109,22 @@ if [[ -d "$RUN/mcp_server" ]]; then
 else
     wt=$(ls -d "$RUN"/worktrees/*/mcp_server 2>/dev/null | head -1 || true)
     if [[ -n "$wt" ]]; then say "DATA" "18 mcp_server/" "ONLY in a worktree -> merge gap: $wt"
-    else say "DATA" "18 mcp_server/" "ABSENT everywhere (corpus: 125/144). Grep the log for \
-write_mcp_server + orch.output_dir to see where it wrote"; fi
+    else say "DATA" "18 mcp_server/" "ABSENT everywhere (corpus: 125/144) — with #691b in the \
+build this now means the RESTORE failed too; read the A-section #691/#691b pair"; fi
+fi
+# The mechanism is settled, so ask the settled question directly: is the subtree on a branch the
+# release was not cut from? Costs one git call and answers item 18 without reading any log.
+if git -C "$RUN" rev-parse --git-dir >/dev/null 2>&1; then
+    _mcp_sha=$(git -C "$RUN" log --all -1 --format=%h --diff-filter=AM -- mcp_server 2>/dev/null || true)
+    _head=$(git -C "$RUN" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')
+    if [[ -z "$_mcp_sha" ]]; then
+        say "DATA" "18 mcp_server/ in git" "no commit ever added it — the WRITER did not run"
+    elif git -C "$RUN" merge-base --is-ancestor "$_mcp_sha" HEAD 2>/dev/null; then
+        say "DATA" "18 mcp_server/ in git" "$_mcp_sha is an ancestor of $_head — on the delivery line"
+    else
+        say "DATA" "18 mcp_server/ in git" "$_mcp_sha is NOT an ancestor of $_head — stranded off \
+the delivery branch, exactly the r145/r146 shape"
+    fi
 fi
 
 # 13. runtime-validation matrix: does tasks/tasks.yaml ever appear?

@@ -141,9 +141,14 @@ be asked any more. Anything further has to be posed against the new behaviour.
     14  max_ticks          5/240 and 1/240      -> CLOSED 2026-08-14, no action: delivered runs
                                                   spend MORE ticks than aborted ones (median 2
                                                   vs 1), so no reachable cap discriminates.
-    18  mcp_server/        absent in both       -> SOLVED 2026-08-14: written on `main`, delivered
-                                                  from `integration`; not lost, not deleted. #691
-                                                  makes the silent skip audible.
+    18  mcp_server/        absent in both       -> SOLVED + FIXED 2026-08-14. The reflog dates it:
+                                                  integration was forked at 23:10:47 with HEAD left
+                                                  on main, and the framework's first delivery
+                                                  commit landed there at 23:12:41. Blast radius is
+                                                  exactly the 3-file subtree, because the MCP
+                                                  writer runs once while app/ and docker/ are
+                                                  rewritten every round. #691 makes the skip
+                                                  audible, #691b restores the subtree.
 
 **Item 15 — still open, and the checker cannot help.** 330 and 339 crops exist in the two runs,
 but PIL is unavailable in this environment so the blank-detection line reports `n/a`. It needs an
@@ -641,9 +646,39 @@ from `repo`) rather than a getattr chain into the hub graph: `MCPRegistry` is it
 registryhub mixin, so a guessed accessor would evaluate to 0 forever and the warning would never
 fire — a dead branch guarding a silent skip.
 
-**Still open, and now the only open half:** which side to repair — write the subtree on the
-delivery branch, or merge that path into `integration` before the cut. That is a branch-topology
-decision, #691 deliberately does not make it, and the next run's WARNING is the input for it.
+**And then CLOSED too, by the reflog — it is an ordering defect, not a topology preference.**
+I filed the repair as an open branch-topology decision and that was one measurement short. The run
+repository keeps a reflog, which dates every ref operation:
+
+    22:53:11  bootstrap                              26067f8   on main
+    23:10:47  "branch: Created from agent/backend"  integration PLANTED at 26067f8
+    23:12:41  first framework delivery commits ON MAIN         60c738f  <- the mcp_server write
+    23:44 / 23:46 / 23:47 / 23:48   four more deliveries, all on integration, all find it absent
+
+`create_branch_at` plants a ref and, by its own docstring, deliberately does NOT move HEAD. So
+`integration` was forked at 23:10:47 while HEAD stayed on `main`, and the framework's first
+delivery commit two minutes later landed on the wrong side of a fork that already existed. When
+HEAD later moved to `integration`, git removed the now-untracked subtree from the working tree.
+
+`git diff --name-status integration main` bounds the damage at **exactly three files — the
+mcp_server subtree and nothing else**. That also answers the "intermittent, not historical" note
+above without appealing to chance: `app/` and `docker/` survive because the projector rewrites
+them every round, while **the MCP writer runs once per run and so has no second chance**. One
+writer, one shot, one fork in the wrong place.
+
+**Fixed: #691b** restores it — `git log --all -1 --diff-filter=AM -- <sub>` then `git checkout
+<sha> -- <sub>`, best-effort, with three separate fall-throughs to the original skip. The repair
+path carries no product literal; only the registry count is MCP-specific. `--diff-filter=AM`
+matters: a commit that only deleted the subtree is not a source to restore from.
+
+Verified against r146's actual repository (copied out, original untouched): on `integration` the
+directory is absent, the search finds 60c738f, the checkout restores all three files into working
+tree and index, and what comes back is a real server — 270 lines of fastmcp over httpx.
+
+**What a run still adds:** confirmation that the restored subtree survives into the release cut,
+and whether `deliverability_failed_mcp_probes` then has something to probe. The related tightening
+below is unchanged — requiring the surface would still have failed 27 of 35 delivered runs, though
+#691b should move that number.
 
 **Related, deferred with it.** The delivery gate has `deliverability_failed_mcp_probes` but does
 not require the surface to exist. Requiring it would have failed 27 of the 35 delivered runs, so

@@ -1833,10 +1833,10 @@ class HealPipeline:
                     # surface (registryhub_mcp_registry: 16 entries in r146), so the run ships a
                     # contract it does not contain and nothing says so.
                     #
-                    # Which side to fix — write it on the delivery branch, or merge that path in
-                    # — is a branch-topology decision, and I am not guessing it here. What is
-                    # unambiguous is that a silently absent delivery subtree should not be
-                    # silent. WARNING when a hub still claims the surface, INFO otherwise.
+                    # A silently absent delivery subtree must not be silent: WARNING when a hub
+                    # still claims the surface, INFO otherwise. #691b below then RESTORES it —
+                    # the reflog turned what looked like a branch-topology preference into an
+                    # ordering defect with one correct repair. See its comment for the timeline.
                     try:
                         _claimed = 0
                         if sub == "mcp_server":
@@ -1870,7 +1870,48 @@ class HealPipeline:
                             orch._logger.info(_msg, sub)
                     except Exception:
                         pass
-                    continue
+                    # #691b: RESTORE IT RATHER THAN SHIP WITHOUT IT.
+                    # Warning alone leaves the run shipping a registry it does not honour, and
+                    # the reflog says this is an ORDERING defect with a correct repair, not a
+                    # topology preference. r146, to the second:
+                    #
+                    #   22:53:11  bootstrap                        26067f8   on main
+                    #   23:10:47  "branch: Created from agent/backend"  -> integration planted
+                    #             at 26067f8. `create_branch_at` plants a REF and deliberately
+                    #             does not move HEAD, so HEAD stays on main.
+                    #   23:12:41  first framework delivery commits ON MAIN  60c738f  <- the
+                    #             mcp_server/ write lands here, on the wrong side of the fork
+                    #   later     HEAD switches to integration; git removes the now-untracked
+                    #             subtree from the working tree, and every later delivery
+                    #             (23:44, 23:46, 23:47, 23:48) finds it absent
+                    #
+                    # `git diff --name-status integration main` gives the whole blast radius as
+                    # exactly three files — the mcp_server subtree and nothing else. app/ and
+                    # docker/ escape because the projector rewrites them every round; the MCP
+                    # writer runs ONCE per run, so it alone has no second chance. That is why
+                    # this subtree, and only this subtree, is missing from 125 of 144 runs.
+                    #
+                    # So: if some commit in this repo has the subtree and the working tree does
+                    # not, take it. Best-effort throughout — a failed restore must fall through
+                    # to the original skip, never break the delivery commit.
+                    try:
+                        rc_f, sha, _e = _run_git(
+                            ["log", "--all", "-1", "--format=%H",
+                             "--diff-filter=AM", "--", sub], cwd=repo)
+                        sha = (sha or "").strip()
+                        if rc_f == 0 and sha:
+                            rc_r, _o2, _e2 = _run_git(["checkout", sha, "--", sub], cwd=repo)
+                            if rc_r == 0 and (repo / sub).exists():
+                                orch._logger.warning(
+                                    "recovered delivery subtree %r from %s — it was committed "
+                                    "on a branch the release is not cut from. Shipping it.",
+                                    sub, sha[:9])
+                            else:
+                                continue
+                        else:
+                            continue
+                    except Exception:
+                        continue
                 rc, _o, _e = _run_git(
                     ["add", "-A", "--", sub,
                      ":(exclude)**/__pycache__/**", ":(exclude)**/*.py[cod]"],
