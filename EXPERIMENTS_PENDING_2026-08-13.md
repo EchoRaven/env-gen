@@ -597,6 +597,9 @@ every one:
     registryhub_table_consumers, workhub_acceptance_criteria, workhub_databases,
     workhub_decisions, workhub_reactions, workhub_workspaces
 
+(The WorkHub half of this is **#697**, the same docstring correction #693 made for RegistryHub:
+five nouns advertised, one of which — `reactions` — has never held a record in 146 runs.)
+
 That includes most of what RegistryHub's own docstring advertises ("endpoints, database tables,
 consumers, contract tests, examples, breaking changes" — examples, mocks and schemas are dead)
 and the entire CodeHub PR/review surface. For contrast the live ones: eventhub_events 288562,
@@ -649,7 +652,7 @@ so "unreachable" is wrong. Counting real invocations by the `🔧 <tool>:` call 
 
 Thirteen of the nineteen declared codehub tools have never been invoked, `codehub_open_pr` among
 them. **No pull request has ever been opened in 146 runs**, so the four PR/review stores are empty
-for the plainest possible reason, and `codehub_list_prs`' 18 calls all read an empty collection.
+for the plainest possible reason, and `codehub_list_prs`' 18 calls all read an empty collection. **Fixed: #695** (`tool_bundles.py`).
 
 One structural oddity worth recording rather than fixing blind: the grants are inverted around
 that workflow. `codehub_force_merge` — the override — is granted in **11** config places, while
@@ -1629,6 +1632,11 @@ confidence and specificity as the real quarter.
 
 That also reframes the "frozen score" observations elsewhere in this file: a lane that fixes
 everything it is told and sees no movement may be fixing a page the gate is not looking at.
+
+**Fixed: #714** (`visual_fidelity.py`, "and STOP THE PHANTOM REMEDIATION") — the cross-reference
+was missing, which is its own small instance of the problem this file keeps recording. The
+finding was written up here in full and the fix carries its own number in the code, and nothing
+connected the two, so a reader arriving at either end could not reach the other.
 
 **SETTLED — it is the SERVE side, and r147 proves it by timeline.** I said this needed a run;
 the evidence was already on disk and I had not gone looking for it. The chain:
