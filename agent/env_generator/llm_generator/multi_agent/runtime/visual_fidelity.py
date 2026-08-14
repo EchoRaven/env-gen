@@ -2136,12 +2136,93 @@ async def run_visual_fidelity(
         except Exception:
             min_similarity = 0.65
     known_routes: set = set()
+    _stale_serve_715 = None
     try:
         _app = project_dir / "app" / "frontend" / "src" / "App.jsx"
         if _app.exists():
             known_routes = set(re.findall(
                 r'<Route\s+path=["\']([^"\']+)["\']',
                 _app.read_text(encoding="utf-8", errors="ignore")))
+            # #715: IS THE APP WE ARE ABOUT TO PHOTOGRAPH BUILT FROM THIS FILE?
+            # #713 settled that the r147 collapse was the SERVE side: the rename landed at
+            # 04:02:44, nothing rebuilt, and the 04:03:54 capture hit a bundle that knew only
+            # the old paths, so four screens fell to the catch-all and scored 0.03-0.08. The
+            # route list above is re-parsed from SOURCE every call and is never stale — the
+            # gap is between it and what the container serves, and nothing anywhere checked
+            # that. It is not rare: 103 of 127 runs (81%) contain screens scored against a
+            # page some older bundle produced.
+            #
+            # The instrument for this already existed and had never been wired:
+            # DockerInspectImageTool ("useful for debugging when containers show stale content")
+            # is exported, in no bundle, and absent from all 253 run logs. Rather than grant a
+            # tool, the gate does the same two commands itself — it already has project_dir,
+            # and this is a framework check, not an agent capability.
+            #
+            # Reports only. A mismatch does not mean the app is broken; it means THIS
+            # MEASUREMENT IS VOID, which is the distinction the framework could not previously
+            # make — and the reason a phantom 0.05 was indistinguishable from a real one.
+            try:
+                import subprocess as _sp715
+                _cf715 = None
+                for _c715 in ("docker-compose.yml", "compose.yml", "docker-compose.yaml"):
+                    if (project_dir / _c715).exists():
+                        _cf715 = project_dir / _c715
+                        break
+                if _cf715 is not None:
+                    _cid715 = _sp715.run(
+                        ["docker", "compose", "-f", str(_cf715), "ps", "-q", "frontend"],
+                        capture_output=True, text=True, timeout=20).stdout.strip().split("\n")[0]
+                    if _cid715:
+                        # The container is nginx serving the BUILD, not the source: the
+                        # Dockerfile is multi-stage and ends
+                        # `COPY --from=builder /app/dist /usr/share/nginx/html`, so
+                        # `src/App.jsx` does not exist in it. My first draft read that path and
+                        # would have silently never fired. What DOES survive the build is the
+                        # route strings themselves, as literals inside the bundle — so grep the
+                        # served JS for each route the source declares. `src/` is still tried
+                        # first for a dev-server layout.
+                        _served715 = _sp715.run(
+                            ["docker", "exec", _cid715, "sh", "-c",
+                             "cat /app/src/App.jsx 2>/dev/null || "
+                             "cat /usr/share/nginx/html/assets/*.js 2>/dev/null"],
+                            capture_output=True, text=True, timeout=30).stdout
+                        if _served715:
+                            # A param route ships as its literal prefix; compare on the static
+                            # head so `/browse/genre/:genreId` is not reported missing merely
+                            # because the bundle stores the pattern differently.
+                            def _head715(_r: str) -> str:
+                                return _r.split(":", 1)[0].rstrip("/") or "/"
+                            _missing715 = {
+                                _r for _r in known_routes
+                                if len(_head715(_r)) > 1 and _head715(_r) not in _served715}
+                            # UNVERIFIED ASSUMPTION, guarded. That route paths survive into the
+                            # bundle as literals is near-certain for Vite but could not be
+                            # checked offline — the delivered tree has no `dist/` (it is built
+                            # inside the container). If the assumption is wrong this fires on
+                            # EVERY route of EVERY run, which is worse than silence. So a
+                            # near-total miss is reported as a suspect PROBE, not a stale build:
+                            # a real staleness moves a few routes, not all of them.
+                            if known_routes and len(_missing715) >= max(3, len(known_routes) - 1):
+                                _LOG.warning(
+                                    "#715 probe inconclusive: %d of %d source routes are absent "
+                                    "from the served bundle. A stale build moves a few routes, "
+                                    "not nearly all — this more likely means route literals do "
+                                    "not survive the build the way this check assumes. Treating "
+                                    "it as no signal.",
+                                    len(_missing715), len(known_routes))
+                                _missing715 = set()
+                            if _missing715:
+                                _stale_serve_715 = sorted(_missing715)
+                                _LOG.warning(
+                                    "#715 the SERVED frontend does not know %d route(s) the "
+                                    "source declares: %s. The capture is about to navigate to "
+                                    "them and the container will fall through to its catch-all, "
+                                    "so those screens will photograph another page and score "
+                                    "near zero. That is a STALE BUILD, not a bad page — the "
+                                    "scores and deviations from this pass are void for them.",
+                                    len(_stale_serve_715), ", ".join(_stale_serve_715[:6]))
+            except Exception:
+                pass
     except Exception:
         pass
     screens = map_reference_screens(
