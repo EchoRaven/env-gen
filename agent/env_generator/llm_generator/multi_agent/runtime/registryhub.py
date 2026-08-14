@@ -697,6 +697,37 @@ class RegistryHub:
             )
 
         self._emit("endpoint_registered", endpoint, recipients=[], priority="normal")
+        # #735: TELL THE CALLER, NOT JUST THE LOG.
+        # #731 warns about a schema key nothing reads — into the run log, which a human reads
+        # afterwards. The agent's tool result says success, so it never learns, and the loop
+        # stays "run once, a human notices, fix one word". That is exactly the cadence the user
+        # objected to, and publishing the vocabulary (#732/#733) does not close it on its own:
+        # it removes the NEED to guess, while an invention is still dropped silently from the
+        # caller's point of view.
+        #
+        # Built AFTER the store write and the event, deliberately: an earlier version sat above
+        # `_endpoints.update(...)` and the note went INTO the contract and into
+        # `endpoint_registered`. Framework chatter does not belong in a record other agents read.
+        #
+        # A note on the RETURN closes it inside one tool call. Not a rejection: the registration
+        # stands, the key is kept, and #730's `query` fold shows an invented word can be the
+        # better one. What changes is that the agent finds out while it can still act — the
+        # difference between self-correcting in the same turn and losing a run.
+        try:
+            _sch735 = endpoint.get("schema")
+            _sch735 = _sch735 if isinstance(_sch735, dict) else {}   # a str would iterate CHARS
+            _unread = sorted(k for k in _sch735
+                             if str(k) not in _KNOWN_SCHEMA_KEYS_731
+                             and not str(k).startswith("_"))
+            if _unread:
+                endpoint = {**endpoint, "_unread_schema_keys": _unread,
+                            "_note": ("schema key(s) %s are stored but READ BY NOTHING. The "
+                                      "framework reads: %s. Re-register with the value under "
+                                      "one of those names if it should take effect."
+                                      % (", ".join(_unread),
+                                         ", ".join(sorted(_KNOWN_SCHEMA_KEYS_731))))}
+        except Exception:
+            pass
         return endpoint
 
     def update_schema(self, endpoint_id: str, request: Optional[dict] = None, response: Optional[dict] = None, agent: str = "") -> dict:

@@ -1733,6 +1733,44 @@ right one needed a distribution.
 
 ---
 
+## 53. #735 — "can it declare freely now?" The honest answer was no, until the caller was told
+
+The user asked whether the agent can now declare freely instead of us fixing one possible problem
+per run. Tracing it: **no**, and the gap was one step past where I had stopped.
+
+    #731's warning            -> the run LOG, which a human reads afterwards
+    register_endpoint returns -> the stored record, which says success
+
+So an invented key was still dropped **silently from the caller's point of view**. Publishing the
+vocabulary (#732/#733) removes the NEED to guess, but a lane that invents anyway learns nothing,
+and the cadence stays "run once, a human reads the log, fix one word" — exactly what was objected
+to.
+
+**Fixed: #735.** The return now carries `_unread_schema_keys` and a `_note` naming what the
+framework does read. Not a rejection: the registration stands and the key is KEPT, because #730's
+`query` proved an invented word can be the better one. What changes is WHEN the caller finds out —
+the same tool call instead of the next run.
+
+**The accurate scope, which is narrower than the question.** This is not "declare anything and it
+works" — that needs the framework to map arbitrary words semantically, which is the thing that
+cannot be built. It is "declare anything and find out immediately what actually takes effect."
+The loop closes inside a turn; it does not disappear.
+
+**Two defects in the first version, both caught by its own tests:**
+
+  * `for k in (schema or {})` iterated a STRING's characters when schema was `"junk"` — though
+    the real contract turned out to be that `register_endpoint` rejects a non-dict schema
+    upstream, so my degenerate case was asserting the wrong thing too;
+  * the block sat ABOVE `_endpoints.update(...)`, so the note went into the stored contract and
+    into the `endpoint_registered` event. Framework chatter has no place in a record other agents
+    read. Moved below the write.
+
+**Cheapest observation.** Next run: `_unread_schema_keys` in a tool result means a lane invented
+a key AND was told within the turn. Whether it then re-registers under the published name is the
+real measure of whether this closes the loop — and it is visible in the same log.
+
+---
+
 ## 52. Auditing my own guards: which are proven, and which only look it
 
 Two guards this session shipped able to report a clean pass while blind — #716 let #727's dead
