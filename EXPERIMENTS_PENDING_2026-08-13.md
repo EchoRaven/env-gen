@@ -1419,10 +1419,13 @@ merged with the union of their evidence, because the duplicate itself cost a rea
 
 Mining r147's own log by tool-failure class puts chain registration on top by a wide margin:
 
-    registryhub_register_verification_chain   160 attempts, 80 FAILED (50%)
+    registryhub_register_verification_chain   178 attempts, 84 FAILED (47%)
     write 24 · edit 6 · test_api 4 · register_endpoint 4 · apply_patch 4
 
-62 of those 80 are ONE endpoint, `PUT /api/profiles/{}`, which the contract genuinely lacks — the
+(The first write-up said 160/80 — read while r147 was still running. Corrected against the
+finished log; every count below is the final one.)
+
+64 of those 84 are ONE endpoint, `PUT /api/profiles/{}`, which the contract genuinely lacks — the
 requirements declare `GET`/`POST /api/profiles` and no `PUT`. Worth noting WHY the verifier wants
 it: `PUT /api/profiles/{id}` is a perfectly reasonable endpoint for a profile picker with "Manage
 Profiles". The verifier is not hallucinating so much as completing a familiar product shape.
@@ -1431,13 +1434,23 @@ Profiles". The verifier is not hallucinating so much as completing a familiar pr
 open ("what the logs CANNOT show: whether the agent read the warning"):
 
     first attempt        line 2705
-    first escalation     line 2711     six lines later
-    last attempt         line 8994     6,283 lines later
-    escalations emitted  72
+    first escalation     line 2711      six lines later
+    last attempt         line 10083     7,372 lines later
+    escalations emitted  76
 
-and for that endpoint the rate ACCELERATES after the escalation rather than tapering:
+and for that endpoint the rate CLIMBS for most of the run before finally stopping:
 
-    rejections per 1000 log lines:   2000s: 8    5000s: 14    6000s: 18    7000s: 22
+    rejections per 1000 log lines:
+      2000s: 8    3000s-4000s: 0    5000s: 14    6000s: 18    7000s: 22
+      8000s: 0    9000s: 2    (last rejection line 9122)
+
+**A correction to the first write-up, which said the rate "accelerates rather than tapering".**
+It climbs 8 → 14 → 18 → 22 across 5000-7000, which is the substance of the finding, but it does
+stop: the 8000s bucket is empty and the 9000s has two. So the escalation is not defied to the very
+end — the behaviour runs for ~6,400 log lines past the first warning and then ceases. Whether it
+ceased BECAUSE of the escalation cannot be read from this: 76 escalations were emitted across the
+whole span, so there is no before/after to compare. What stands is that the warning does not stop
+it promptly, not that it never stops.
 
 **The message is not the problem, and that is the finding.** It already gives both exits verbatim
 — "DROP those steps (or the chain). If delivery genuinely needs this coverage, ask the backend
