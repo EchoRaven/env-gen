@@ -974,9 +974,35 @@ answer. It is recorded here so the next reader inherits the number rather than t
    Its twin was NOT done and is now fixed with it: `condenser_llm_func: Callable = None` at
    line 503 is forwarded verbatim as `llm_func=` at 514, so it carries the same type and the
    same `= None`-without-`Optional` defect that item 3 below is about.
-3. **The 363 `bad-function-definition` reports** are overwhelmingly `X: SomeType = None` where
-   the annotation should be `Optional[...]`. Mechanical, zero-risk, and each one currently hides
-   real `bad-argument-type` findings downstream.
+3. **The 363 `bad-function-definition` reports.** Count independently confirmed 2026-08-14 with
+   an ast scan that needs no checker: **361 parameters** of the form `X: T = None` where `T` is
+   not Optional, across **56 files** — `str` 164, `dict` 36, `list` 30, `List` 28, `Dict` 17,
+   `Workspace` 17, `'EnvGenAgent'` 17, `int` 14. Close enough to 363 to call it the same set.
+
+   **NOT swept, deliberately, and the reason is about this environment rather than the change.**
+   `pyrefly` is gone — `[tool.pyrefly]` is still in pyproject.toml but no binary exists on PATH
+   or in the venv — so the claimed payoff ("each one hides real `bad-argument-type` findings
+   downstream") cannot be observed here. A 361-site sweep would therefore deliver churn with no
+   visible benefit, and it is not free of risk: these modules do not use
+   `from __future__ import annotations`, so annotations evaluate at def time and any file that
+   gains `Optional[...]` without gaining the import fails at IMPORT, not at type-check.
+
+   Worth doing the moment a checker is available again, in one commit, verified by the diff in
+   `bad-argument-type` count before and after — that number is the whole point and is the one
+   thing this environment cannot produce.
+
+4. **The rating enum — MEASURED AND DROPPED 2026-08-14.** The 400-decomposition table above
+   lists "1 rating enum (r145, single instance)": `custom_routes.py` enforces
+   `['down','up','love']` while the contract declares `value: str`. Two measurements close it:
+   `value must be one of` appears in **1 of 253 run logs**, and **no hub store anywhere holds
+   that assertion** — it never persisted. The general form is real but unused in both
+   directions: of **4043 endpoint schemas with a schema at all, 0 declare an enum**, so the
+   contract language for value sets exists and nobody, in any run, has ever used it.
+
+   n=1 with no persisted artifact and no recurrence does not justify a framework change, and
+   the plausible fix (require or infer enums in contracts) is large. Recorded as a rejection so
+   it is not re-raised — same disposition as the FK-literal rule, the accent-colour filter and
+   the blank-crop content check.
 
    **Not checkable here as of 2026-08-14: pyrefly is NOT installed in the repo venv** (`import
    pyrefly` → ModuleNotFoundError; the `pyrefly.toml` files on this box belong to unrelated
