@@ -793,6 +793,40 @@ def _fw_owner_val(cls, col, user):
                         _p = None
                 if _p is not None and getattr(_p, _tgt_col, None) is not None:
                     _v = getattr(_p, _tgt_col)
+                else:
+                    # #692: WHEN THE SUB-ENTITY CANNOT BE RESOLVED, READS MUST MATCH NOTHING.
+                    # Reaching here means the SHAPE said this column owns via a per-user
+                    # sub-entity (profiles / characters / members), the caller has no row in
+                    # it, and #390's auto-create could not make one. `_v` is then still the
+                    # user id from the top of this function — an id from a DIFFERENT
+                    # namespace — and the two call sites diverge sharply:
+                    #
+                    #   WRITE  binds owner=user_id  -> FK violation -> 404. Loud. This is the
+                    #          only consequence #390/#391/#393/#394 ever discuss, and it is
+                    #          why those four fixes exist.
+                    #   READ   filters `owner_col == user_id` -> silently returns the rows of
+                    #          the SUB-ENTITY whose id happens to equal the caller's user id,
+                    #          which generally belongs to somebody else. No FK protects a
+                    #          read. Nothing fails. The caller is served another user's data.
+                    #
+                    # route_projector emits that filter at four sites (list, scoped list,
+                    # parent-scoped and single-row reads), so every projected scoped read in
+                    # every generated app inherits it. The asymmetry, not the frequency, is
+                    # the defect: an unresolvable owner is not "fall back to something", it is
+                    # "this caller owns nothing yet".
+                    #
+                    # -1 is chosen because it cannot collide with an autoincrement PK, and it
+                    # keeps the WRITE behaviour intact — an FK violation either way, still a
+                    # 404, just no longer pointing at a real other-user row. Only this branch
+                    # changes: a shape that never matched (apps scoping directly by user_id)
+                    # and a detection that raised both keep the old fallback below, because
+                    # there the user id is either correct or the best guess available.
+                    _fw_dbg("fw_owner_val.unresolved_sub_entity", {
+                        "table": getattr(getattr(cls, "__table__", None), "name", None),
+                        "col": col, "uid": _fw_uid(user),
+                        "note": "no sub-entity row and auto-create failed; scoping to no rows "
+                                "rather than to the sub-entity whose id equals the user id"})
+                    _v = -1
     except Exception as _e:
         _fw_dbg("fw_owner_val.resolve", _e)
         _v = _fw_uid(user)

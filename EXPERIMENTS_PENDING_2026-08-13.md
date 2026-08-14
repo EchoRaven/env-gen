@@ -686,6 +686,48 @@ it is a tightening of the same class as item 13, not a blind switch.
 
 ---
 
+## 20. #692 — how often does the owner fall back? (frequency only; the fix is already in)
+
+**Changed: #692.** Found by auditing what r146 actually SHIPPED after the gate went green — the
+habit #569 left behind. `_fw_owner_val` resolves a per-user sub-entity owner (netflix `profiles`),
+and when the shape matches but the caller has no row and #390's auto-create fails, it returned the
+caller's USER id. The two call sites diverge and only one was ever considered:
+
+    WRITE  owner = user_id -> FK violation -> 404. Loud, and the entire subject of #390/#391/
+           #393/#394 — four fixes, all about this one consequence.
+    READ   `owner_col == user_id` -> silently returns the rows of the sub-entity whose id equals
+           the caller's user id. Profile ids and user ids are independent sequences, so that is
+           generally another user's data. No foreign key protects a read. Nothing fails.
+
+route_projector emits that filter at four sites (route_projector.py:1038, 1125, 1197, 1244), so
+every projected owner-scoped read in every generated app inherits it. #692 returns -1 from that
+one branch instead: reads match nothing, writes still FK-violate to a 404 exactly as before, and
+the two branches where the user id is right — a shape that never matched (apps scoping directly by
+user_id) and a detection that raised — are untouched. Fourteen tests EXECUTE the helper extracted
+from the generated-main template rather than grepping it.
+
+**Only a run can settle: the RATE.** `_fw_dbg` writes to the backend container log under
+FW_DEBUG, not to the generation log — `grep autocreate_sub_entity` over all 253 run logs returns
+nothing for that reason alone, so the corpus cannot say how often the branch is taken. The fix
+stands on the asymmetry, not on a frequency; the frequency is still worth knowing.
+
+**Cheapest observation.** Run with FW_DEBUG on and grep the backend container log for
+`fw_owner_val.unresolved_sub_entity`. Zero means #393/#394 closed the auto-create failures for
+good and this is now belt-and-braces; non-zero means projected reads were being scoped to the
+wrong owner every time it appeared, and each line names the table and the uid it refused to use.
+
+**Worth pairing with it.** r146 shipped ELEVEN duplicate route definitions — every user-facing
+path is declared once in the lane's `custom_routes.py` and again as a projection in `main.py`
+(`/api/titles/{title_id}` vs `/api/titles/{id}`, etc). `include_router(_custom_router)` runs at
+main.py:849 and the projections at 990+, so first-match-wins hands every one to the lane. Both
+sides are owner-safe today — the lane's `_resolve_profile_id` scopes with `WHERE id = :pid AND
+user_id = :uid` and 404s otherwise; the projections use `_fw_owner_val`/`_fw_owns` — so this is
+not a live leak. It is a standing hazard of exactly the #566y/#568 class: a registration-order
+change silently swaps which implementation serves every endpoint, and that is a safety change
+wearing the clothes of a refactor.
+
+---
+
 ## 19. Older, still unresolved
 
 - **#644 viewport.** Two measured targets conflict: 796px matches the reference image aspect,

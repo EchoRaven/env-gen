@@ -100,6 +100,9 @@ gone_log "#684 notebook readable"        "Unknown file 'notebook'"         "was:
 gone_log "#685 endpoint lookup"          "Endpoint not found: POST /api/titles" "was: 10 in r145, 10 in r146"
 gone_log "#686 step headers sent"        "X-Profile-Id header is required" "was: 11 live-era, all r132"
 gone_log "#687 browser transport"        "Navigation failed: Page.goto: net::ERR_CONNECTION_REFUSED$" "was: 161 live-era with no diagnosis"
+# #692's signature is in the BACKEND CONTAINER log under FW_DEBUG, not here — see item 20. This
+# line only catches it if the container log was folded into the run log.
+grep_log "#692 owner unresolved"         "fw_owner_val.unresolved_sub_entity" "needs FW_DEBUG + the CONTAINER log; absence here proves nothing"
 echo
 echo "--- B. the nine findings that disk could not settle ---"
 
