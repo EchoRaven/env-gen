@@ -1332,6 +1332,34 @@ against a matched run. If the stage fires on most steps, the cost is the whole q
 
 ---
 
+## 28. Sweep J and the per-profile privacy audit — both clean, recorded so they are not re-mined
+
+**Sweep J — gates or pulses reading a store nothing writes.** The never-written stores from item
+16 have readers; the question was whether any is a CHECK whose branch therefore cannot fire.
+Almost all reads are one serialise-everything snapshot at `registryhub.py:2190-2208`. The one real
+candidate is `hub_pulse.py:499`, which builds `api_reviews_pending_my_decision` by iterating
+`_api_reviews` — a store at version 1 in 146 of 146 runs, whose two tools appear in 0 of 253 logs.
+So the field is permanently empty. **Not a defect:** both consumers gate on it with `or` chains
+(`hub_pulse.py:638` and `:783`), an empty list is falsy, and nothing renders. A dead field that
+costs no tokens is not worth removing.
+
+**Per-profile privacy in r146's DELIVERED app — holds on every surface.** The run description
+requires "Each profile sees only its own My List, ratings and Continue Watching". Reading the
+shipped `custom_routes.py`:
+
+    GET/DELETE /api/my-list        _resolve_profile_id -> WHERE id = :pid AND user_id = :uid
+    GET  /api/continue-watching    same
+    POST /api/titles/{id}/rating   same
+    POST /api/continue-watching    "body wins" — and the body path does its OWN ownership
+                                   query, 403 "profile does not belong to the authenticated
+                                   user" when it fails
+
+The POST body path is the one worth having checked: a `profile_id` in the request body overrides
+the header, so if it skipped the check it would let any caller write another user's progress. It
+does not.
+
+---
+
 ## 19. Older, still unresolved
 
 - **#644 viewport.** Two measured targets conflict: 796px matches the reference image aspect,
