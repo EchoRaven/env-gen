@@ -1091,12 +1091,30 @@ restricted by YAML flag" with the tool in its hands. Eight tests pin the invaria
 directions, the current restricted set, and the premise itself (that no code reads the flag and
 the prompts still claim it) so the guard deletes itself honestly if either changes.
 
-**Seven sweeps, seven axes; four yielded defects, three did not.** A, B, C and D are individually
+**Sweep H — prompt fragments assembled but never included.** Two probes, **no defect**, and the
+first probe was entirely my own false positives.
+
+  * *Unreferenced `.j2` templates.* 5 of 18 looked dead until I noticed my scan read Python and
+    other templates but not the YAML: prompts are named in `agents_config.yaml` under
+    `template: "v3/..."`. All five are referenced there. Of the 7 not named in the YAML, 2 are
+    shared fragments included by other templates and 5 are loaded from Python (the `vision/` and
+    `v4/` sets). **No dead template.**
+  * *The v4 prompt set.* `v4/backend_agent.j2` and `v4/frontend_agent.j2` exist while every
+    config entry says v3. `resolve_prompt_version` switches on `ENVGEN_PROMPT_VERSION`, which is
+    read in exactly one place — the resolver itself — set nowhere in the tree, and absent from
+    all 253 run logs. So the v4 rewrite has never been exercised. **Not a defect:** the
+    docstring describes a deliberate per-file opt-in ("v4 can be introduced" gradually), the
+    fallback is correct, and an unset feature flag is an unset feature flag. Worth knowing only
+    so nobody assumes v4 is what runs.
+
+**Eight sweeps, eight axes; four yielded, four did not** — A→#698, B→#699+#700, C→#701, D→#702,
+E→nothing, F→nothing, G→#703 (a guard), H→nothing. Three of the last four came back empty, which
+is the first real evidence that this family is thinning rather than that I keep finding new places
+to look. The named axes are now all run. A, B, C and D are individually
 exhausted, but the honest summary is not "the search is finished" — it is that this FAMILY of
 defect (a correct computation whose result nothing observes) is dense enough that every new way of
 looking finds more: A→#698, B→#699+#700, C→#701, D→#702. A→#698, B→#699+#700, C→#701, D→#702,
-E→nothing, F→nothing, G→#703 (a guard, not a defect). One axis still untried: prompt fragments
-assembled but never included.
+E→nothing, F→nothing, G→#703 (a guard, not a defect), H→nothing. All named axes are run.
 
 ---
 
