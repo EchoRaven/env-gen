@@ -2739,6 +2739,65 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                     _g711, _l711, _g711 - _l711)
         except Exception:
             pass
+        # #713: TWO SCREENS THAT CAPTURED THE SAME IMAGE DID NOT BOTH RENDER.
+        # r147 is the worked example and it cost 0.26 of live fidelity in one round. Its final
+        # round renamed four routes in App.jsx (/new-and-popular -> /new, /genre/:id ->
+        # /browse/genre/:genreId, /browse-by-languages -> /browse/languages, plus a new
+        # /watch/:titleId). The capture still navigated to the OLD paths, React Router matched
+        # nothing, and all four fell through to the landing page:
+        #
+        #     browse_by_languages.png, genre_category.png, new_and_popular.png, player.png
+        #     and landing.png are ONE file, md5 02a3e3577bf5
+        #
+        #     browse_by_languages 0.45 -> 0.05    new_and_popular  -> 0.05
+        #     genre_category      0.60 -> 0.08    player      0.55 -> 0.03
+        #     blocking_average_live 0.6400 -> 0.3817, and #500's merge ROSE 0.688 -> 0.70
+        #
+        # so the run shipped its worst capture while the recorded number climbed. #641/#698
+        # flagged the symptom (delta 0.2583, the largest in the corpus) but nothing named the
+        # CAUSE, and a near-zero score is indistinguishable from a page that is merely bad.
+        #
+        # The trigger to look for: routes RENAMED AFTER THE CAPTURE LIST WAS BUILT, so
+        # the list still holds the old paths while the app only answers the new ones.
+        #
+        # Byte-identical captures are the cheap tell: distinct screens cannot legitimately
+        # produce the same PNG. Hashing what is already on disk costs one read per screen and
+        # turns an invisible cliff into "these routes did not resolve".
+        # Every similarity computed from a shared capture measures that page, not those
+        # screens.
+        #
+        # Corpus scale, and NOT solved history: 103 of the 127 runs with gate screenshots
+        # contain a byte-identical group — 71 of 84 before r100, 32 of 43 after. The
+        # extremes are total: r37 captured ONE image for 12 of its 13 screens, r48 11 of
+        # 13, r6 11 of 12.
+        #
+        # Ruled out first: `_concrete_capture_route` DOES substitute params
+        # (`/browse/genre/:genreId` -> `/browse/genre/1`), so this is not a
+        # literal-placeholder navigation. Checked and refuted before this was written.
+        try:
+            import hashlib as _hl713
+            _by713: Dict[str, List[str]] = {}
+            for _r713 in (results or []):
+                _n713 = str((_r713 or {}).get("name") or "")
+                _f713 = vdir / f"{_n713}.png"
+                if not _n713 or not _f713.is_file():
+                    continue
+                _h713 = _hl713.md5(_f713.read_bytes()).hexdigest()
+                _by713.setdefault(_h713, []).append(_n713)
+            for _h713, _names713 in _by713.items():
+                if len(_names713) < 2:
+                    continue
+                _LOG.warning(
+                    "#713 %d screens captured the SAME image (md5 %s): %s. Distinct screens "
+                    "cannot render identically — their routes did not resolve and the browser "
+                    "fell through to a common page. Their similarity scores measure that page, "
+                    "not those screens; check whether a route was renamed after the capture "
+                    "list was built.",
+                    len(_names713), _h713[:12], ", ".join(sorted(_names713)))
+                _verdict.setdefault("identical_captures_713", []).append(
+                    {"md5": _h713, "screens": sorted(_names713)})
+        except Exception:
+            pass
         (vdir / "verdict.json").write_text(json.dumps(_verdict, indent=2, default=str),
                                            encoding="utf-8")
         _append_round_record_640(vdir, _verdict, results)
