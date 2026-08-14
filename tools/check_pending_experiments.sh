@@ -168,6 +168,7 @@ grep_log "#739 UI evidence is thin"      "ui_smoke_pass=True rests on" "the pass
 grep_log "#740 console error captured"   "distinct uncaught/console error(s) during this capture" "the browser's OWN error text, grouped by message. A blank capture with NO hit here is the interesting case: empty shell, nothing raised"
 grep_log "#743 FAILED task at the cut"   "in status FAILED at the delivery cut" "an authorised 'attempted and did not work' at release. 20 of 148 corpus runs end with one and all 20 shipped; the narrowest gate candidate on the table"
 grep_log "#743 open P0 bug at the cut"   "P0 BUG task(s) are still open at the delivery cut" "kind=bug only, so stale structural tasks cannot inflate it. Corpus: 90 of 129 runs, 90 of 90 released"
+grep_log "#254 downgrade refused"       "refused to downgrade" "was UNREACHABLE for 255 runs (#746) — first sighting tells us whether the r51 guard is load-bearing or historical"
 grep_log "#707 invented asset staged"    "staged .* placeholder asset(s) the frontend referenced" "each hit = a path the lane invented instead of search_icons/save_image or drawing it"
 grep_log "#706 integration promoted"     "promoted integration -> main" "should appear once per delivered run; then rev-list --count main..integration should be 0"
 grep_log "#706 promotion refused"        "promotion did not happen" "the callee declined and names why — read it, do not assume the topology"

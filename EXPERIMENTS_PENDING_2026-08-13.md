@@ -1733,6 +1733,57 @@ right one needed a distribution.
 
 ---
 
+## 66. #746 — a guard that has been taking a decision silently for 255 runs
+
+A different sweep, aimed at the class this session keeps producing: **a detector that cannot
+fire** (#712's dead branch, #716's unmatchable pattern, #734's vacuous guard, #715's wrong
+shape). Method: every numbered log call in `runtime/`, grepped against every run log, keeping the
+ones with no hit whose fix PREDATES the oldest run.
+
+**The first version of the sweep was wrong and is worth recording as such.** A regex over
+double-quoted strings beginning `#NNN` matched docstrings as well as log calls: 93 "warnings",
+88 of them "never fired" — meaningless for text that is not a log line. Re-done over the AST,
+taking only the first string argument of a `.warning`/`.error`/`.info` call: **18 calls, 10 with
+no hit.** Seven are mine from today and postdate every run. Dating the other three against the
+corpus window (oldest log 07-30, newest 08-14 11:37):
+
+    #254  hub_registry.py    introduced 07-21   ALL 255 logs    0 hits
+    #576  scaffolder.py      introduced 08-11   ~14 runs        0 hits
+    #615  deliverability.py  introduced 08-14   3 runs          0 hits   (item 54's finding)
+
+#254 is the one youth cannot explain, and reading it explains the zero:
+
+    _log = getattr(self, "_logger", None)
+    if _log is not None:
+        _log.warning("#254: refused to downgrade …")
+
+**`_logger` is set nowhere.** The name appeared exactly once in the module — in that read — and
+the module had no `logging` import at all. The line was unreachable from the day it was written.
+
+This is not a missing log line. `record_validation_result` REFUSES the write and returns
+`downgrade_rejected: True`, discarding an LLM agent's evidence-free `failure` so it cannot erase
+the framework's measured pass — the r51 incident #254 exists to prevent, where the verifier
+overwrote 7 deterministic rows within 33 seconds and the run aborted 117 minutes later on a
+WORKING app. That guard has been making its decision invisibly ever since. Nobody could tell
+whether it fires, how often, or whether it is protecting a real pass or masking a real failure.
+Same shape as #691's silent skip, #696's invisible load failure, #722's silence-means-three-things.
+
+**Two of my own test errors this time, both instructive.** The fixture built its "deterministic"
+standing record as `{"execution_mode": "deterministic"}` — which reads like the right thing and
+is not: `_is_deterministic_evidence` keys on `deterministic_runtime_evidence`, so no refusal
+happened and the test failed for the wrong reason. And the premise-check counted occurrences of
+`_logger`, which measured **my own new comment** (6 == 1) and then the warning TEXT. Counting a
+word was never the right instrument; the claim is that nothing BINDS the name, so it is now an
+AST assignment check, with a planted-assignment probe proving it is not vacuous.
+
+**Cheapest observation.** Next run, does `#254` appear? Either answer is informative and neither
+was available before: a hit means the guard is load-bearing and we can finally see how often; no
+hit across a run that had evidence-free verifier failures means the r51 path no longer occurs and
+the guard is now historical. `#576` and `#615` stay on the list — both are too young to call, and
+`#615`'s silence is exactly item 54's open question.
+
+---
+
 ## 65. Sweeping #745's pattern across every hub store — two inert, one falsified, none live
 
 #745 named a shape worth sweeping for: **a field written once at creation, advanced only by a

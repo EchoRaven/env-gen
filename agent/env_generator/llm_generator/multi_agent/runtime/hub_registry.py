@@ -16,9 +16,15 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+# #746: this module had no logger at all. `#254`'s refusal read `getattr(self, "_logger", None)`
+# and `_logger` is set NOWHERE — the attribute appears exactly once in the file, in that read —
+# so the warning was unreachable by construction from the day it was written. See the call site.
+_LOG_746 = logging.getLogger(__name__)
 
 from .project import (
     ProjectMetadata,
@@ -363,13 +369,24 @@ class HubRegistry:
                         continue
                     if (_canon_validation_status(_c.get("status")) == "passed"
                             and _is_deterministic_evidence(_c.get("evidence"))):
-                        _log = getattr(self, "_logger", None)
-                        if _log is not None:
-                            _log.warning(
-                                "#254: refused to downgrade %s to '%s' from %s — the standing "
-                                "record is DETERMINISTIC runtime evidence and the incoming one "
-                                "is not; only another measured result may supersede it.",
-                                _name, _canon, agent)
+                        # #746: WAS UNREACHABLE. This read `getattr(self, "_logger", None)` and
+                        # nothing ever sets `_logger` — the name appears exactly once in this
+                        # module, in that read — so `_log` was always None and the warning could
+                        # not be emitted. Introduced 07-21; the whole 255-log corpus contains
+                        # zero occurrences of this text, which is what a structurally dead line
+                        # looks like from the outside and is indistinguishable from "the guard
+                        # never had to fire". The refusal itself is not cosmetic: it DISCARDS an
+                        # incoming write and returns `downgrade_rejected`, so a decision was
+                        # being taken silently ~255 runs in a row. Found by sweeping every
+                        # numbered log call in `runtime/` against every run log and keeping the
+                        # ones with no hit whose fix predates the oldest run.
+                        (getattr(self, "_logger", None) or _LOG_746).warning(
+                            "#254: refused to downgrade %s to '%s' from %s — the standing "
+                            "record is DETERMINISTIC runtime evidence and the incoming one "
+                            "is not; only another measured result may supersede it. "
+                            "(#746: this line was unreachable until now — `_logger` is set "
+                            "nowhere — so every prior refusal was silent.)",
+                            _name, _canon, agent)
                         return {"task_id": task_id, "status": "passed",
                                 "summary": summary, "downgrade_rejected": True}
                     break
