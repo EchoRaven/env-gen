@@ -1725,6 +1725,56 @@ right one needed a distribution.
 
 ---
 
+## 40. #718 — the gate blocks on a screen it cannot photograph, and has 36 times
+
+Following "r147's four screens were never actually photographed" out to the corpus. Hashing every
+run's gate screenshots and grouping by image, then reading each group's ROUTE, splits #713's
+detection cleanly in two — and the larger half is not a defect at all.
+
+**Four reference screens map to ONE route:**
+
+    browse_home   browse_home_rows   card_hover_preview   account_menu   ->  /browse
+
+so an identical capture is EXPECTED. The rates say so: `browse_home_rows` shares its image in
+**53 of 53** runs, `card_hover_preview` 53 of 57, `account_menu` 19 of 23. These are INTERACTION
+STATES — a scrolled view, a hovered card, an opened menu — reachable only by ACTING on `/browse`,
+and the capture only navigates. The gate photographs the base page and scores it against a
+reference showing the overlay.
+
+**And they block.** `card_hover_preview` is a BLOCKING screen in 36 of its 54 appearances, and
+across those 36:
+
+    maximum 0.40    median 0.30    times it cleared the 0.65 bar: ZERO
+
+`account_menu` is advisory in all 22 of its appearances — correct handling, and proof the
+framework can classify these when it recognises them. `browse_home_rows` blocks in 22 of 52.
+Removing all three lifts the mean run's average by +0.0208 and the extreme by +0.1785.
+
+**Why #595 missed them.** It demotes reference frames holding TWO OR MORE open overlays ("not a
+state the app can be in"). One overlay is below the threshold, so a single hover or a single open
+menu sails through as an ordinary page.
+
+**This reframes #711 and #712 rather than adding to them.** #500's high-water merge, #558's
+fast-release and the plateau escapes are not simply leniency — they are what lets a run finish
+when part of the measurement is structurally broken. Strip every escape and those 36 runs could
+never release on the gate's own terms.
+
+**Fixed: #718**, and only the reporting. The two cases now get different messages (`#713b` for
+the shared-route case, saying plainly that a low score there is the GATE's limitation and not the
+app's). Nothing is demoted: an overlay screen is real product and dropping it loses coverage.
+
+**Only a decision can settle the rest, and it is now coupled.** Whether the gate should read the
+live mean (#711/#712) cannot be answered without also deciding what to do with screens that can
+never pass — demote them to advisory like `account_menu`, teach the capture to perform the
+interaction, or accept that the escapes are load-bearing. Picking one changes what the other
+means.
+
+**Cheapest observation.** Mark `card_hover_preview` advisory for one run and compare
+`blocking_average_live` and the release path against a matched run. If the run releases on the
+ordinary path instead of an escape, the escapes were carrying this screen.
+
+---
+
 ## 36. The recurring shape, swept: 137 of 290 tools have never been called
 
 Three times this session I stumbled on the same thing — an instrument built for a problem,
