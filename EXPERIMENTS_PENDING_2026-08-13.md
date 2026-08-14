@@ -1332,6 +1332,30 @@ against a matched run. If the stage fires on most steps, the cost is the whole q
 
 ---
 
+## 29. Sweep K — every declared business endpoint IS served, in every delivered run
+
+**Clean, and the two ways I nearly got it wrong are the useful part.** The probe compares the
+endpoints in `registryhub_endpoints.json` against the routes actually decorated in the delivered
+`app/backend`, path-normalised so `{id}` and `{title_id}` compare equal.
+
+    delivered runs with a backend            27
+    declared BUSINESS endpoints across them  654
+    declared but not served                  **0**
+
+The first two drafts said otherwise and both were my error, not the framework's:
+
+  * scanning only `app/backend/*.py` instead of walking subdirectories reported **126 missing
+    across 32 runs**; recursing cut it to 3 runs;
+  * the 8 that survived were all `/api/v1/*` — the control plane, which `is_control_surface_path`
+    exempts by design and which no lane backend is supposed to serve. Excluding `/health` and
+    `/api/v1/*` takes it to zero.
+
+So the contract→implementation link holds across the whole delivered corpus. Recorded as a
+verified positive, and as a reminder that a probe reporting a large number is more likely to be
+wrong than the tree is.
+
+---
+
 ## 28. Sweep J and the per-profile privacy audit — both clean, recorded so they are not re-mined
 
 **Sweep J — gates or pulses reading a store nothing writes.** The never-written stores from item
