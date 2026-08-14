@@ -74,6 +74,53 @@ handler that inserts caller-supplied ids without checking them, and reports a cl
 
 ---
 
+## ★ OPEN AND PROVEN — the projector overwrites the lane's finished pages (r146, live)
+
+The most consequential thing found this session, and the one I did NOT fix, because the fix turns
+on a design question I should not guess: is the page projector SUPPOSED to re-run at every
+delivery?
+
+**How it surfaced.** r146's visual score froze after round 5 while `code_state` kept changing:
+
+    blocking_average_live  0.578 → 0.545 → 0.563 → 0.598 → 0.665 → 0.641 → 0.641 → 0.641 → 0.641
+    9 rounds, 9 DIFFERENT commit hashes
+
+**What it is not.** Not the #142 verdict cache: 11 of 12 screens have 2-4 distinct pixel states
+across the 9 captures, and pixel-change indices match score-change indices EXACTLY for 11 of 12.
+The judge is behaving correctly — the rendering genuinely stopped changing after round 5.
+
+**What it is.** The page files oscillate between two states:
+
+    MyListPage.jsx    a80b55e7  59 lines  (framework projection)
+                      f75b1621 241 lines  (lane's authored page)   <- merge agent/frontend
+                      a80b55e7  59 lines  (framework projection)   <- next framework delivery
+    PlayerPage.jsx    87 lines ↔ 214 lines, same pattern
+
+The 59-line version opens `// framework-projected page (reference-structured) — refine visuals in
+place; keep the data wiring` and is generic: `_imgOf`/`_titleOf`/`_metaOf` try every plausible
+field name. The 241-line version is the lane's work — Netflix reference structure, the REAL
+staged icons, a hover-preview modal, real `/api/my-list` wiring.
+
+So the framework replaces a finished, reference-matched page with the stub that was meant to be
+its STARTING POINT, every delivery cycle. The log shows the projector running each cycle and
+reporting a DIFFERENT stub count each time (2, 3, 4, 5, 6) — that variation is the fight itself.
+
+**Why the visual gate then cannot pass.** What gets captured and judged is whichever state is on
+disk at capture time, and the projection keeps winning. The lane's work is graded only when a
+capture lands inside the brief window after its merge.
+
+**What a run must settle.** Whether re-projection at delivery is intended (in which case the
+guard belongs in the projector: never replace a page that is larger / carries no projection
+marker) or whether the lane's merge is supposed to be terminal for that file. Both are one-line
+changes; choosing wrongly silently discards either the lane's work or the framework's floor.
+
+**Cheapest observation.** In any run, for each `app/frontend/src/pages/*.jsx`, hash the file at
+every `code_state` in `design/visual_gate/rounds.jsonl`. Two alternating hashes with a large line
+delta is this defect. `grep -c "framework-projected page (reference-structured)"` over the
+delivered pages at the end gives the count that shipped as stubs.
+
+---
+
 ## NEXT RUN — run this first
 
     tools/check_pending_experiments.sh <run-dir> [<run-log>]
