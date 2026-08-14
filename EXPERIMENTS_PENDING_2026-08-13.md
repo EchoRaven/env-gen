@@ -1846,6 +1846,24 @@ paths. #706 was wired on the premise that promoting after the cut is safe becaus
 follows; a conflict means the two have diverged in content, not just position. Whether that is
 the stranded `mcp_server` subtree (#691's territory) or something broader is unknown.
 
+**An offline attempt to shortcut this, and why it does not count.** The repository is still on
+disk, so I copied it, checked out `main`, and ran the same merge: **rc=0, zero conflicts**. That
+looks like a refutation and is not one. The promotion runs mid-run, and `integration` kept
+receiving commits afterwards — so my merge tested the FINAL pair of commits, not the pair that
+existed when the promotion fired. Same error class as reading a store mid-run (item 34): the
+measurement was clean, the object was wrong. Recorded because "I reproduced it and it merged
+fine" would have closed this item on nothing.
+
+What the sequence DOES rule out: `promote_integration_to_main` checks out `main` first and
+returns `checkout main failed: …` when that fails (auto_commit.py:1204-1206). r148's message was
+the merge branch, not the checkout branch, so the checkout succeeded and a real merge was
+attempted.
+
+**Also worth recording: #706 has never once completed.** Three runs, three outcomes — r147 took
+the other release path (fixed by #706b), r148 reached the right hook and refused on this
+conflict, and `main..integration` still reads 31 there. The hook works; the merge has never
+landed.
+
 **Cheapest observation.** The next run with #721 in the build prints the paths. If they are
 `mcp_server/*` the two findings are one; if they are app files, `main` has content
 `integration` does not and the promotion needs a strategy, not just a hook.
