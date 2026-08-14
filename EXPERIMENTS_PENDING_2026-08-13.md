@@ -1141,11 +1141,32 @@ writes them.
 | 125× in 50 of 50 `ruff` | code_tools #635 | **1042 in 145 logs; 0 in r145+r146** | premise bigger than recorded, and the FIX WORKS → #705b |
 | 24 of 39 record>live | visual_fidelity ×6 | **not re-verifiable** | only 2 kept runs carry both `blocking_average` and `blocking_average_live`; the rest predate the fields entirely (r100's verdict.json has five keys and neither of them) |
 
-Still unchecked, each needing a probe written to its own definition: `27 of 45` motion tokens
-(design_prep), `6 of 45` shipped sites (frontend_scaffold), `79 of 144` duplicate-reason
-cancellations (workhub — a loose `grep duplicat` gives 107 of 146 but counts any mention, so it
-is not comparable), `4 of 21` blast radius (test_user_squad), `514 in 50 of 50` (registryhub),
-and the two `146 of 146` figures, which are mine and current.
+**The rest, probed to their own definitions.** Two more re-verify, one is a fix-verification, one
+is bespoke and left alone:
+
+| claim | where | re-measured | verdict |
+|---|---|---|---|
+| 27 of 45 `motion` | design_prep | **77 of 146** (53% vs 60%) | holds in substance |
+| 79 of 144 dup-cancels | workhub | **79 runs**, 474 of 867 cancels = **55%** | holds PRECISELY |
+| 514 in 50 of 50 rejects | registryhub | not directly comparable | see below |
+| 4 of 21 blast radius | test_user_squad | not re-run | bespoke over 21 named runs (r109/r127/r128/r133); rebuilding the criteria costs more than the answer is worth |
+| 6 of 45 default-import sites | frontend_scaffold | not re-run | needs #632's detector over every delivered tree |
+| 146 of 146 ×2 | seed_audit, tool_bundles | current | mine, measured this session |
+
+The duplicate-cancellation one is the strongest verification in the set: same run count (79), same
+percentage (55%), on a corpus that grew from 12,836 tasks to 13,047. It also shows what a probe
+written to the ORIGINAL definition buys — my first loose `grep duplicat` returned 107 of 146 by
+counting any mention; keying on `status == cancelled` and matching `cancel_reason` (a TOP-LEVEL
+field, not under `metadata`) reproduces the figure exactly.
+
+The registryhub 514 cannot be matched by string, because #664 rewrote the message. What its new
+escalation text shows instead is a fix-verification in the #705b mould: `have now been rejected`
+fires **68 times in r145 and 0 in r146**, and the underlying "NOT in the registered contract"
+rejection is absent from r146 entirely.
+
+**Seven of thirteen measured claims are now re-verified**, none was found stale in DIRECTION, one
+moved up and strengthened its decision (#615/#705), and two turned into evidence that their fix
+works (#635/#705b, #664).
 
 **The lesson from the two that resolved cleanly.** #615's premise moved UP and strengthened the
 decision resting on it; #635's premise moved up too but its fix had already erased the symptom.
