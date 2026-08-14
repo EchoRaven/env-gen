@@ -2798,8 +2798,12 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         #         live   0.6333 0.5975 0.5558 0.5858 0.6400 0.3817
         #
         # r146 DELIVERED at gating 0.67 while its screens sat at 0.6409 — under the 0.65 bar.
-        # r147's sixth round reads 0.700 against a live 0.3817, with genre_category at 0.08 and
-        # player at 0.03. This is also the mechanism behind #618's unexplained corpus pattern
+        # r147 is the extreme case and it ALSO delivered: its sixth and final round reads 0.700
+        # against a live 0.3817, with genre_category at 0.08 and player at 0.03, and
+        # `codehub_releases.json` carries `1.0.0` — "Final delivery: delivery gate fully clear."
+        # The release branch is cut at 93d1a3d, exactly ONE commit past round 6's 9e606251d and
+        # differing only by four one-line frontend edits, so 0.3817 is what shipped. No round
+        # ever judged the released commit itself. This is also the mechanism behind #618's unexplained corpus pattern
         # (24 of 39 runs deliver worse than their own best round): the gate's number IS the best
         # round, per screen, so release happens when the high-water mark crosses the bar.
         #

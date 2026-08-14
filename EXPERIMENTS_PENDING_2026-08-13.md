@@ -1484,6 +1484,16 @@ yet". The run had not even exited when I called it.
 What IS true from the same evidence: `fast_release` never appears, so the release came through
 the ordinary path, and the run did end on the shutdown watchdog afterwards.
 
+**And correcting it upgrades #711 from a near-miss to a delivered one.** r147's six rounds are
+final — no judgement followed my mid-run read — so round 6 stands as the last:
+
+    gating 0.700   live 0.3817   genre_category 0.08   player 0.03
+
+and the run released on it. `release-v1.0.0` is cut at `93d1a3d`, exactly ONE commit past round
+6's `9e606251d`, differing by four one-line frontend edits — so 0.3817 is what shipped, and **no
+round ever judged the released commit at all**. #711 previously rested on r146's milder 0.67
+against 0.6409; the delivered r147 case is 0.700 against 0.3817.
+
 **Build cutoff — read this before any NOT SEEN.** r147 launched 03:10:56. Commits at or before
 03:02 are in it; everything from 03:18 on is not.
 
