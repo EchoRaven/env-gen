@@ -127,6 +127,7 @@ gone_log "#687 browser transport"        "Navigation failed: Page.goto: net::ERR
 # NO BACKTICKS in these note strings: bash runs them as command substitution. The first draft
 # of this line embedded `rev-list ...` and the script printed "rev-list: command not found" on
 # every invocation — a checker that misreports itself is worse than one that is absent.
+grep_log "#713b shared-route sharing"    "share ONE route" "EXPECTED, not a defect: interaction states of one page. browse_home_rows shares in 53 of 53 runs"
 grep_log "#713 identical captures"       "screens captured the SAME image" "103 of 127 runs, 32 of 43 live; every score from a shared capture is of the wrong page"
 grep_log "#712 count advanced on a latch" "on a LATCHED average" "the stable-rounds precondition cannot reset; r146 fast-released this way at live 0.6409"
 grep_log "#711 gate left the app behind" "the gating average has left the app behind" "gating avg is #500 best-ever-per-screen; live is THIS capture. r147 r6: 0.700 vs 0.3817"

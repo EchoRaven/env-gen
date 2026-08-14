@@ -2881,8 +2881,46 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                     continue
                 _h713 = _hl713.md5(_f713.read_bytes()).hexdigest()
                 _by713.setdefault(_h713, []).append(_n713)
+            # #718: SPLIT THE EXPECTED SHARING FROM THE DEFECT, using the route already in hand.
+            # #713's message says "their routes did not resolve", and for the most common group
+            # in the corpus that is simply false. Four reference screens map to ONE route:
+            #
+            #     browse_home  browse_home_rows  card_hover_preview  account_menu   -> /browse
+            #
+            # so identical captures are EXPECTED there — it is one page — and the sharing rate
+            # shows it: browse_home_rows 53 of 53 runs, card_hover_preview 53 of 57,
+            # account_menu 19 of 23. They are INTERACTION STATES (a scrolled view, a hovered
+            # card, an opened menu), reachable only by acting on /browse, and the capture only
+            # navigates. So the gate photographs the base page and scores it against a reference
+            # showing the overlay: card_hover_preview's median is 0.300 and its MAXIMUM across 54
+            # appearances is 0.55, never once reaching the 0.65 bar, and it structurally cannot.
+            #
+            # #595 already demotes reference frames with TWO OR MORE open overlays ("not a state
+            # the app can be in"); a single overlay falls under that threshold, which is why
+            # these were never caught. Removing all three from the average is worth +0.0208 on
+            # the mean run and +0.1785 at the extreme.
+            #
+            # Not demoted here — an overlay screen is real product and dropping it loses
+            # coverage, the same trade #713 declined to make. What changes is that the two cases
+            # stop sharing one wrong sentence.
+            _routes713 = {}
+            for _r713 in (results or []):
+                _rn = str((_r713 or {}).get("name") or "")
+                if _rn:
+                    _routes713[_rn] = str((_r713 or {}).get("route") or "")
             for _h713, _names713 in _by713.items():
                 if len(_names713) < 2:
+                    continue
+                _rs713 = {_routes713.get(n, "") for n in _names713}
+                if len(_rs713) == 1 and next(iter(_rs713)):
+                    _LOG.warning(
+                        "#713b %d screens share ONE route (%s) and therefore one capture: %s. "
+                        "This is expected — they are interaction states of a single page (a "
+                        "scroll, a hover, an opened menu), reachable only by acting on it, and "
+                        "the capture only navigates. Their scores measure the base page against "
+                        "a reference showing the interaction, so a low number here is the "
+                        "GATE's limitation, not the app's.",
+                        len(_names713), next(iter(_rs713)), ", ".join(sorted(_names713)))
                     continue
                 _LOG.warning(
                     "#713 %d screens captured the SAME image (md5 %s): %s. Distinct screens "
