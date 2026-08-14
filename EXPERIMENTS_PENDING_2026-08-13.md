@@ -1107,14 +1107,36 @@ first probe was entirely my own false positives.
     fallback is correct, and an unset feature flag is an unset feature flag. Worth knowing only
     so nobody assumes v4 is what runs.
 
-**Eight sweeps, eight axes; four yielded, four did not** — A→#698, B→#699+#700, C→#701, D→#702,
+**Sweep I — a NEW family: code whose own comments contradict the tree.** Two sub-probes.
+
+  * *Docstrings claiming "Called by X".* 15 objects make the claim; 14 have real callers. The
+    one that does not is `promote_integration_to_main`, already #699. Clean — and it confirms
+    #699 was the only instance of its kind rather than the first of many.
+  * *Measured claims of the form "N of M runs" in comments.* 18 of them, and the denominators
+    give the game away: 39, 45, 50, 21 — all measured when the corpus was a third of its
+    current size. Most cannot be re-verified offline (#618's 24/39 needs per-round scores, and
+    only r145/r146 have a `rounds.jsonl` at all). **One can, and it was: #615's "32 of 45".**
+
+**Re-measured, and the premise moved: #705.** Running the #615 detector over every kept run with
+both a frontend and ui_pages gives **112 of 136 (82%)** against the recorded 32/45 (71%), with a
+size distribution the comment never had:
+
+    max group size   2:10   3:19   4:27   5:28   6:23   7:4   8:1   runs
+
+The median affected run has FIVE routes rendering the same list; the worst has eight. This
+reinforces the "deliberately not a blocker" call rather than overturning it — at 82% a blocker
+wedges more runs than the 71% the decision was made on — and it raises the value of #700's
+report, because this is not a rare defect but the normal state of a delivered app. The original
+figure is kept beside the new one; a premise that moved is more useful than a premise replaced.
+
+**Nine sweeps, nine axes; five yielded, four did not** — A→#698, B→#699+#700, C→#701, D→#702,
 E→nothing, F→nothing, G→#703 (a guard), H→nothing. Three of the last four came back empty, which
 is the first real evidence that this family is thinning rather than that I keep finding new places
 to look. The named axes are now all run. A, B, C and D are individually
 exhausted, but the honest summary is not "the search is finished" — it is that this FAMILY of
 defect (a correct computation whose result nothing observes) is dense enough that every new way of
 looking finds more: A→#698, B→#699+#700, C→#701, D→#702. A→#698, B→#699+#700, C→#701, D→#702,
-E→nothing, F→nothing, G→#703 (a guard, not a defect), H→nothing. All named axes are run.
+E→nothing, F→nothing, G→#703 (a guard, not a defect), H→nothing, I→#705 (a refreshed premise). All named axes are run.
 
 ---
 

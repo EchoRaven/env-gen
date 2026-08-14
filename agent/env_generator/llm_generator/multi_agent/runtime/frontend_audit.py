@@ -1570,6 +1570,17 @@ def repair_fabricated_fallbacks(frontend_src: Any) -> Dict[str, Any]:
 # `/games`, `/movies`, `/new`, `/shows` — SIX routes, each fetching only `/api/titles` with no
 # filter.
 #
+# #705 RE-MEASURED 2026-08-14 at full corpus scale, by running this detector over every kept run
+# that has both a frontend and ui_pages: **112 of 136 (82%)**, against the 32/45 (71%) above.
+# The premise has not gone stale in direction — it got stronger — and the distribution is new:
+#
+#     max group size   2:10  3:19  4:27  5:28  6:23  7:4  8:1   runs
+#
+# so the MEDIAN affected run has five routes rendering the same list, and the worst has eight.
+# That reinforces the calibration call below rather than overturning it: at 82% a blocker would
+# wedge more runs than the 71% this decision was made on, not fewer. It also raises the value of
+# reporting it (#700) — this is not a rare defect, it is the normal state of a delivered app.
+#
 # Deliberately NOT wired as a delivery blocker. At 32/45 it would wedge nearly every run, and
 # whether "six identical pages" should block or merely be reported is a calibration decision,
 # not a measurement — the same call as the 0.65 fidelity bar. Also worth knowing before anyone
