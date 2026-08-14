@@ -107,6 +107,45 @@ def collapse_last_literal_segment(path: str) -> str:
     return "/" + "/".join(segs[:-1] + ["{x}"])
 
 
+# #731: the sub-keys anything in the framework actually reads. `schema` is declared to the tool
+# layer as a bare `{"type": "object"}` — no `properties`, no `required` — while every sibling
+# parameter (method, path, provider, status) is a typed, named field. That asymmetry is why
+# synonyms accumulate HERE and nowhere else: a sweep of registryhub_tables, registryhub_ui_pages
+# and registryhub_consumers found zero declared-but-unread fields, because their names are pinned
+# by the tool's PARAMETERS. Only `schema` is free.
+#
+# r148 declared `query` (recovered by #730) and `headers` (deliberately not folded — see item 51,
+# a header selects an actor). Both were correct information, invisible for a run.
+#
+# WARN, never reject. The lane's inventions have been reasonable — `query` describes query
+# parameters better than `request` does — so refusing an unknown sub-key would discard good
+# information to enforce a vocabulary. Making it visible costs one line and is what #730 needed
+# in order to be noticed at all.
+_KNOWN_SCHEMA_KEYS_731 = frozenset({
+    "request", "response", "response_key", "auth_required", "query", "headers",
+})
+
+
+def _warn_unknown_schema_keys_731(method: Any, path: Any, schema: Any, logger: Any) -> None:
+    """Say when a schema carries sub-keys nothing reads. Best-effort; never raises."""
+    try:
+        if not isinstance(schema, dict) or logger is None:
+            return
+        unknown = sorted(k for k in schema
+                         if str(k) not in _KNOWN_SCHEMA_KEYS_731 and not str(k).startswith("_"))
+        if not unknown:
+            return
+        logger.warning(
+            "#731 %s %s declares schema key(s) nothing in the framework reads: %s. The "
+            "information is KEPT, not dropped — but no consumer will act on it until a reader "
+            "or an alias exists (see #730, which folded `query` into `request` for exactly this "
+            "reason). If the name is better than the one we read, the fold belongs in "
+            "_merge_query_alias_730; if it is a typo, this line is where it shows up.",
+            str(method or "?").upper(), path, ", ".join(unknown))
+    except Exception:
+        pass
+
+
 def _merge_query_alias_730(schema: Any) -> Any:
     """Fold ``schema.query`` into ``schema.request`` — see #730 at the call site.
 
@@ -434,6 +473,10 @@ class RegistryHub:
             "_updated_by": agent,
             "_updated_at": now,
         }
+        # #731: say when a schema carries sub-keys nothing reads. Best-effort, after the record
+        # exists so a logging fault can never lose a registration.
+        _warn_unknown_schema_keys_731(method, path, endpoint.get("schema"),
+                                      getattr(self, "_logger", None))
         # PROPOSAL #50: enforce the canonical response envelope key (item/items — what the
         # projector emits + the delivery gate requires) for BUSINESS endpoints on EVERY
         # registration. #46 canonicalizes at KICKOFF, but the backend registers endpoints

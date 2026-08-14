@@ -1763,11 +1763,28 @@ and the default reaction to "declared but unread" is to wire it up, which here w
 is getting BETTER at declaring its contract, and the framework's reading surface has not kept up.
 #730 closed one gap; the other is closed deliberately.
 
-**Not built, and the reason is the exemption list.** A standing check for "declared keys nothing
-reads" would flag `headers` every run unless it carries an exemption list — and every entry on
-that list needs the judgement made above, per key. Worth doing when a third instance appears;
-premature at two, since a check that cries wolf on a correct decision trains a reader to ignore
-it (#726's lesson, on a different surface).
+**Looked for a third instance and found the MECHANISM instead.** `registryhub_tables`,
+`registryhub_ui_pages` and `registryhub_consumers` have **zero** declared-but-unread fields — not
+luck. `register_endpoint`'s tool PARAMETERS pin every sibling by name and type
+(`method`/`path`/`provider`/`status`), while `schema` is declared as a bare `{"type": "object"}`
+with no `properties` and no `required`. **Synonyms can only accumulate where the vocabulary is
+open, and `schema` is the only open field.** That narrows the earlier framing: it is not that the
+framework's reading surface lags generally, it is that one free dict has no agreed sub-key
+vocabulary, so each reasonable invention costs a run to discover.
+
+Three ways out: pin `schema.properties` and reject unknowns; keep folding case by case (#730);
+or a standing check. Rejecting is wrong on this evidence — `query` is a BETTER name than
+`request` for query parameters, and refusal discards good information to enforce a vocabulary.
+
+**Built: #731, the soft form**, which needs no decision because it changes no behaviour: on
+registration, a schema carrying sub-keys nothing reads is logged, kept, and the message points at
+where a fold would go. The known set is exactly the six sub-keys r146/r147/r148 actually use, so
+**all three historical runs produce zero warnings** — a new signal that fires on old data is noise
+on arrival. The signal is reserved for the next synonym, which is the moment the information is
+cheapest to act on.
+
+**Still the user's call:** whether to pin the vocabulary at the tool layer. #731 makes that
+decision better-informed rather than making it.
 
 **Cheapest observation.** None; settled by reading. What a run adds is whether the lane keeps
 inventing keys — a third synonym would change the calculus from "fold the one that matters" to
