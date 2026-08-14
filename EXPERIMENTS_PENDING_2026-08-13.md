@@ -459,9 +459,34 @@ runs would gain `validation_api_smoke_missing` and 28 the UI equivalent. Two thi
 decidable from disk: whether those runs genuinely lacked a working API, and whether anything
 still intends to write `tasks/tasks.yaml` at all.
 
-**Cheapest observation.** One run: does `tasks/tasks.yaml` ever appear?
-`task_definition_tools.py` targets it and `tasks/action_space.yaml`; if the writer is
-unreachable, the matrix should key on something that exists.
+**~~Cheapest observation.~~ HALF ANSWERED 2026-08-14, offline — the writer is NOT unreachable.**
+The second undecidable above ("whether anything still intends to write `tasks/tasks.yaml` at
+all") is decidable from the tree, and the answer is yes, all the way down the chain:
+
+    SaveTaskSuiteTool          writes output_dir/"tasks"/"tasks.yaml" with write_text
+    create_task_definition_tools()   includes it (task_definition_tools.py:554)
+    _bundle_task_definition()        bundles that factory as "task_definition"
+    agents_config.yaml               grants "task_definition" to verifier AND api_test_user
+
+Nothing is unreachable. `save_task_suite` appears in 0 of 253 run logs — not called, not even
+mentioned — and the reason is in the only prompt that raises the subject:
+
+    test_user_agent.j2:92   {"tool": "execute_task_suite", "when": "OPTIONAL — author
+                            tasks/tasks.yaml ... then run it.", "cap": "as needed"}
+
+**So the gate keys on an artifact whose production is explicitly OPTIONAL to the only role asked
+to produce it.** 0 of 146 is not a broken writer, it is what "optional and never chosen" looks
+like, and no run can tell us anything further about this half. That also redirects the fix: either
+the matrix stops keying on `tasks/tasks.yaml`, or the prompt stops calling it optional — but
+"find the unreachable writer" is a dead end, and the next reader should not spend a run on it.
+
+**Still needs a run:** the FIRST undecidable only — whether the 54 runs that delivered without an
+api_smoke pass genuinely lacked a working API. Dropping the `if task_suite_exists:` guard is
+still gated on that, unchanged.
+
+**Method note.** My first probe for a writer grepped for `tasks.yaml` on the same line as a write
+call and concluded there was none. The write is three lines below the path assignment. A
+single-line grep cannot answer "does anything write this file"; read the call site.
 
 **Trap for the next reader.** Measuring `codehub_checks.json` directly says api_smoke and
 ui_smoke pass in 0 of 144 — the records carry `status: "success"` and the kind under `evidence`,
