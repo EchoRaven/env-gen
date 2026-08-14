@@ -2703,6 +2703,42 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                 "escape ships the LAST round, not the best one (#618: 24 of 39 runs deliver "
                 "worse than their own best)" % (_better["score"], _better["delta"],
                                                 str(_better["code_state"])[:12]))
+        # #711: SAY WHEN THE GATING NUMBER HAS LEFT THE APP BEHIND.
+        # Both numbers are already computed and written side by side; nothing compares them.
+        # `blocking_average` is taken over `merged`, and #500 defines merged as the BEST
+        # per-screen capture ever persisted ("keep prior when its similarity beats the current
+        # one", ~200 lines above). verdict.json is rewritten every round, so the prior
+        # accumulates a high-water mark and the gating number is monotonically non-decreasing
+        # BY CONSTRUCTION. Both kept runs confirm it, and neither ever falls:
+        #
+        #   r146  gating 0.5809 0.5809 0.5855 0.6027 0.67 0.67 0.67 0.67 0.67
+        #         live   0.5783 0.5450 0.5627 0.5982 0.6655 0.6409 0.6409 0.6409 0.6409
+        #   r147  gating 0.655 0.655 0.655 0.668 0.688 0.700
+        #         live   0.6333 0.5975 0.5558 0.5858 0.6400 0.3817
+        #
+        # r146 DELIVERED at gating 0.67 while its screens sat at 0.6409 — under the 0.65 bar.
+        # r147's sixth round reads 0.700 against a live 0.3817, with genre_category at 0.08 and
+        # player at 0.03. This is also the mechanism behind #618's unexplained corpus pattern
+        # (24 of 39 runs deliver worse than their own best round): the gate's number IS the best
+        # round, per screen, so release happens when the high-water mark crosses the bar.
+        #
+        # #500's max is deliberate and defensible — one flaky blank capture should not tank a
+        # screen for the rest of the run — so it is NOT removed, and whether the gate should
+        # read the live mean instead is a calibration decision of the same class as the 0.65 bar.
+        # What was never defensible is that the divergence was SILENT while both numbers already
+        # existed. Same disposition as #641 above: warn, change no decision.
+        try:
+            _g711, _l711 = _verdict.get("blocking_average"), _verdict.get("blocking_average_live")
+            if (isinstance(_g711, (int, float)) and isinstance(_l711, (int, float))
+                    and _g711 - _l711 >= 0.05):
+                _LOG.warning(
+                    "#711 the gating average has left the app behind: blocking_average %.4f vs "
+                    "blocking_average_live %.4f (gap %.4f). The gating number is #500's "
+                    "best-ever-per-screen and never falls; the live one is THIS capture. A "
+                    "release authorised on the former ships the latter.",
+                    _g711, _l711, _g711 - _l711)
+        except Exception:
+            pass
         (vdir / "verdict.json").write_text(json.dumps(_verdict, indent=2, default=str),
                                            encoding="utf-8")
         _append_round_record_640(vdir, _verdict, results)
