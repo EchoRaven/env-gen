@@ -1628,10 +1628,26 @@ fault and the capture layer needs the fix.
 
 Three times this session I stumbled on the same thing — an instrument built for a problem,
 never pointed at it — and each time I found it by accident. Sweeping all 290 tool `NAME`s against
-every run log (a name appears in a log only when the tool is CALLED, so zero means never called):
+every run log (~~a name appears in a log only when the tool is CALLED, so zero means never
+called~~ — the parenthetical is wrong and is corrected below; the CONCLUSION survives it):
 
     tools defined                      290
     never called in 253 runs           137  (47%)
+
+**The instrument, stated correctly, because the obvious reading of it is unsound in one
+direction.** A bare-name grep counts MENTIONS, not calls, and this session already has the
+counter-example: `register_seed_data` appears in 34 run logs and was never called once — the
+mentions are the delivery gate demanding it and an agent grepping the app source for it. So:
+
+    never mentioned  =>  never called          SOUND — nothing can call what is never named
+    mentioned        =>  called                UNSOUND — see register_seed_data
+
+The 137 therefore stands as a lower bound on never-called, which is the only direction this
+item's triage uses. What does NOT follow is the complement: the other 153 are "mentioned", not
+"used", and anyone tempted to read them as a healthy-tool list should re-measure. A marker-based
+count is no better without care — `check_inbox` logs 132 `✅` and zero `🔧` in r147, while
+`apply_patch`, `edit`, `docker_up` and `deliver_project` log NEITHER marker despite obviously
+running, so a marker sweep UNDER-counts (187) exactly as the name sweep OVER-counts (137).
 
 **That number is not a defect list, and reading it as one would be the mistake.** Most of the 137
 are legitimately situational: `docker_down`, `interrupt_process`, `terminate_agent_team`,
