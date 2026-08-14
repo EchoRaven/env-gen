@@ -38,6 +38,28 @@ grep_log() {   # grep_log <label> <pattern> <note>
     else say "NOT SEEN" "$1" "${3:-}"; fi
 }
 
+# #717: REFUSE TO BE READ AS A RESULT WHILE THE RUN IS STILL GOING.
+# Every count below is a grep over a log that may still be growing, and a store read mid-run is a
+# snapshot, not an outcome. This is not hypothetical: r147 was read at ~9,000 lines of an eventual
+# 12,237, which produced "r147 did not deliver" (it delivered v1.0.0 in the 3,000 lines after the
+# look), "#700 x17" (final: 37), "160 attempts / 80 failures" (final: 178 / 84), and a claim that
+# a rejection rate "accelerates rather than tapering" drawn from a distribution whose tail had not
+# happened yet. Four wrong conclusions from one habit.
+#
+# `[main-exit]` is written by main() on every exit path — present in r145 (rc=1), r146 (rc=0) and
+# r147 (watchdog), absent while running. Cheap and unambiguous.
+if [[ -n "$LOG" && -f "$LOG" ]]; then
+    if ! tail -5 "$LOG" | grep -q -- "\[main-exit\]"; then
+        echo "############################################################################"
+        echo "#  WARNING: this run has NOT finished — no [main-exit] in the last 5 lines."
+        echo "#  Every number below is a SNAPSHOT of a growing log. A zero here means"
+        echo "#  'not yet', not 'never'. Re-run this after the run exits before recording"
+        echo "#  anything from it."
+        echo "############################################################################"
+        echo
+    fi
+fi
+
 echo "=== run: $RUN"
 echo
 echo "--- A. did this session's fixes actually execute? (signature greps) ---"
