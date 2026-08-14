@@ -1539,9 +1539,22 @@ hits the SERVED app.** Any lag between the two — a bundle not rebuilt since th
 every renamed path miss and fall to the catch-all, which is exactly the five-way byte-identical
 capture #713 now detects.
 
+**Strengthened, and the offline half is now exhausted.** r147's final `App.jsx` declares all
+FIFTEEN routes, `/watch/:titleId` included, and the working tree matches HEAD exactly. So at the
+commit the gate scored, the SOURCE was complete and correct — and four of those declared routes
+still captured as the landing page. That leaves source-vs-served as the only surviving
+explanation, and it cannot be closed from disk: `app/frontend/dist/` is not kept (the build lives
+in the container), so there is nothing to diff the source against.
+
+(A probe error of my own on the way, recorded because it briefly looked like a second finding: I
+listed the routes through `head -14` on a SORTED list, which cut `/watch/:titleId` — it sorts
+after `/title/:id` — and made a complete file look like it was missing the route the round had
+just added. The file has 15.)
+
 **Cheapest observation, revised.** One run: log the URL each capture navigates to AND the mtime
-of the served bundle beside it. Source-vs-served is now the only live hypothesis; if the bundle
-is current and the URLs are current, the collapse is the app's and belongs to the lane.
+or hash of the served bundle beside it. If the bundle predates the route rename, the gate is
+scoring a build that no longer matches the tree and every route-changing round will look like a
+collapse; if the bundle is current, the collapse is the app's and belongs to the lane.
 
 ---
 
