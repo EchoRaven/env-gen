@@ -1502,7 +1502,14 @@ final — no judgement followed my mid-run read — so round 6 stands as the las
 
     gating 0.700   live 0.3817   genre_category 0.08   player 0.03
 
-and the run released on it. `release-v1.0.0` is cut at `93d1a3d`, exactly ONE commit past round
+and the run released on it. **But 0.3817 overstates it, and the overstatement is #713's.** Four
+of the twelve screens shared the landing page's capture, so their 0.05/0.08/0.05/0.03 measure
+that page, not themselves. Over the eight screens actually photographed the mean is **0.5463**.
+The honest gap is 0.700 against 0.5463 — 0.15, still under the 0.65 bar, so #711 holds — and the
+two findings COMPOUND rather than stacking independently. Checked the two worst pages in the
+released tree before concluding: `GenreCategoryPage.jsx` is 45 lines with three fetch/useEffect
+sites and `PlayerPage.jsx` is 87 with five, against the top-scoring `LandingPage.jsx`'s 38. They
+are not stubs; their scores were simply measured on the wrong page. `release-v1.0.0` is cut at `93d1a3d`, exactly ONE commit past round
 6's `9e606251d`, differing by four one-line frontend edits — so 0.3817 is what shipped, and **no
 round ever judged the released commit at all**. #711 previously rested on r146's milder 0.67
 against 0.6409; the delivered r147 case is 0.700 against 0.3817.

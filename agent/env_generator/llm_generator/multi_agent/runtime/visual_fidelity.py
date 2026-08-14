@@ -2799,7 +2799,13 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         #
         # r146 DELIVERED at gating 0.67 while its screens sat at 0.6409 — under the 0.65 bar.
         # r147 is the extreme case and it ALSO delivered: its sixth and final round reads 0.700
-        # against a live 0.3817, with genre_category at 0.08 and player at 0.03, and
+        # against a live 0.3817 — though that live figure is itself DEPRESSED by #713, since four
+        # of its twelve screens (browse_by_languages, genre_category, new_and_popular, player)
+        # captured the landing page rather than their own and scored 0.05/0.08/0.05/0.03 for it.
+        # Over the eight screens that were actually photographed the mean is 0.5463. The gap is
+        # therefore 0.700 vs 0.5463 rather than vs 0.3817, still 0.15 and still under the 0.65
+        # bar — the finding holds, but #711 and #713 COMPOUND here and must not be added up as
+        # if they were independent. And
         # `codehub_releases.json` carries `1.0.0` — "Final delivery: delivery gate fully clear."
         # The release branch is cut at 93d1a3d, exactly ONE commit past round 6's 9e606251d and
         # differing only by four one-line frontend edits, so 0.3817 is what shipped. No round
