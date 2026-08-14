@@ -540,6 +540,37 @@ def dead_nav_link_remediation(target: str, jsx_name: str, declared_pages: set, r
     first: remove or repoint. When the target IS a declared page, the fix really is to wire
     its missing route.
     """
+    # #690: THE ROUTE EXISTS — THE LINK LOST ITS PARAMETER. Checked FIRST because it is now
+    # the dominant case and the other three branches all mis-diagnose it.
+    #
+    # `dead_nav_link` is the largest LIVE deliverability blocker: 212 occurrences in r100+
+    # against 37 before, i.e. getting worse, and it appears in the final Failed-checks line of 5
+    # of the 14 aborted runs that record one. What the gate actually flags:
+    #
+    #     components/HeroBillboard.jsx:  /watch/        -> /profiles   x34
+    #     components/HoverPreview.jsx:   /watch/        -> /profiles   x20
+    #     components/GenresDropdown.jsx: /browse/genre/ -> /profiles   x16
+    #
+    # Every one is a parameterised prefix with NOTHING after it — the template built
+    # `/watch/${id}` with an empty id. `/watch/:titleId` is declared and wired; the route is
+    # fine. But the three branches below would send the lane to wire a route that exists, author
+    # a page that exists, or repoint a link that already points at the right page — none of
+    # which is the fix, and all of which cost a round.
+    #
+    # Detected from data already in hand: the target ends in "/" and a declared route begins
+    # with it followed by a `:param` segment.
+    _raw = str(target or "").split("?", 1)[0].split("#", 1)[0]
+    if _raw.endswith("/") and len(_raw) > 1:
+        _param_routes = sorted(
+            d for d in (declared_pages or set())
+            if d.startswith(_raw) and ":" in d[len(_raw):].split("/", 1)[0])
+        if _param_routes:
+            return (f"nav link `{target}` ({jsx_name}) is a parameterised route with an EMPTY "
+                    f"parameter — the route `{_param_routes[0]}` IS declared and wired, so do "
+                    f"NOT add a route or repoint the link. The template interpolated an empty "
+                    f"id (e.g. `/watch/${{title.id}}` where `title.id` is undefined). Fix the "
+                    f"VALUE: check the field name the API actually returns, and do not render "
+                    f"the link at all while the id is missing.")
     t = _norm_nav_target(target)
     if t in (declared_pages or set()):
         return (f"nav link `{target}` ({jsx_name}) points at declared page `{t}` but App.jsx "
