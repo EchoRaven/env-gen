@@ -122,6 +122,52 @@ def test_it_states_the_consequence_plainly():
         r'"\s*\n\s*"', "", _block())
 
 
+# --- the DATA property #711 rests on, restored ------------------------------------------------
+# The executable version of this was deleted with #712's rewrite (commit 75cdff9) and never
+# replaced: what survived asserts only that the phrase "monotonically non-decreasing" appears in
+# a comment. #711's whole argument is the property, not the wording, so it is checked here on the
+# real persisted series from all three runs that have one.
+
+R146_GATING = [0.5809, 0.5809, 0.5855, 0.6027, 0.67, 0.67, 0.67, 0.67, 0.67]
+R146_LIVE = [0.5783, 0.5450, 0.5627, 0.5982, 0.6655, 0.6409, 0.6409, 0.6409, 0.6409]
+R147_GATING = [0.655, 0.655, 0.655, 0.668, 0.688, 0.700]
+R147_LIVE = [0.6333, 0.5975, 0.5558, 0.5858, 0.6400, 0.3817]
+R148_GATING = [0.619, 0.619, 0.619, 0.619, 0.619, 0.656, 0.656, 0.656, 0.656, 0.656]
+R148_LIVE = [0.6075, 0.6058, 0.6058, 0.425, 0.425, 0.61, 0.61, 0.61, 0.61, 0.61]
+
+
+@pytest.mark.parametrize("name,series", [
+    ("r146", R146_GATING), ("r147", R147_GATING), ("r148", R148_GATING)])
+def test_the_persisted_gating_series_never_falls(name, series):
+    """#500's merge takes the best per screen, so the recorded average cannot decrease."""
+    falls = [(i, a, b) for i, (a, b) in enumerate(zip(series, series[1:])) if b < a]
+    assert not falls, f"{name} gating fell: {falls}"
+
+
+@pytest.mark.parametrize("name,series", [
+    ("r146", R146_LIVE), ("r147", R147_LIVE), ("r148", R148_LIVE)])
+def test_the_live_series_DOES_fall(name, series):
+    """The contrast is the finding: the live capture is free to drop, the record is not."""
+    falls = [(i, a, b) for i, (a, b) in enumerate(zip(series, series[1:])) if b < a]
+    assert falls, f"{name} live never fell — the divergence claim needs re-checking"
+
+
+def test_r148s_warning_value_is_a_real_point_in_its_series():
+    """The 0.194 #711 logged is a MID-series gap, not the final one — my first version of this
+    test ranked final gaps and claimed r148 was widest, which is false: r147 ends at 0.318."""
+    pairs = list(zip(R148_GATING, R148_LIVE))
+    assert (0.619, 0.425) in pairs
+    assert round(0.619 - 0.425, 3) == 0.194
+
+
+@pytest.mark.parametrize("name,g,l", [
+    ("r146", R146_GATING, R146_LIVE),
+    ("r147", R147_GATING, R147_LIVE),
+    ("r148", R148_GATING, R148_LIVE)])
+def test_every_run_has_a_round_where_the_record_leads_the_app(name, g, l):
+    assert max(a - b for a, b in zip(g, l)) > 0, name
+
+
 # --- provenance -------------------------------------------------------------------------------------
 
 def test_both_runs_are_recorded():
