@@ -83,7 +83,7 @@ Examples:
                 "properties": {
                     "file": {
                         "type": "string",
-                        "enum": ["all", "project_brief", "tech_context", "system_patterns", "active_context", "progress"],
+                        "enum": ["all", "project_brief", "tech_context", "system_patterns", "active_context", "progress", "notebook"],
                         "description": "Which memory file to read (default: all)"
                     },
                     "mode": {
@@ -110,6 +110,17 @@ Examples:
             "system_patterns": "system_patterns.md",
             "active_context": "active_context.md",
             "progress": "progress.md",
+            # #684: the ONLY file this agent can write was the one file it could not read.
+            # `update_memory_bank` writes exclusively to notebook.md ("your private, writable
+            # notebook … it persists across all your steps"), MemoryBank.CORE_FILES lists it as
+            # the sixth core file, and 1715 of them exist across the corpus — but `notebook` was
+            # absent from this map, from the schema enum and from the error text, so every read
+            # was refused. r145 refused 8 of them, and 7 notebook.md files were sitting on disk
+            # in that same run with 4 carrying real content.
+            #
+            # That also settles the open question about why the notebook looked unused: it was
+            # not unused, it was unreadable. A write-only memory is inert by construction.
+            "notebook": "notebook.md",
         }
 
         if not memory_dir.exists():
@@ -208,7 +219,8 @@ Examples:
         else:
             return ToolResult(
                 success=False,
-                error_message=f"Unknown file '{file}'. Valid options: all, project_brief, tech_context, system_patterns, active_context, progress"
+                error_message=(f"Unknown file '{file}'. Valid options: all, project_brief, "
+                               "tech_context, system_patterns, active_context, progress, notebook")
             )
 
     def _resolve_memory_dir(self) -> Path:
