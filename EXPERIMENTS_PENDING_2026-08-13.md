@@ -1671,10 +1671,24 @@ scored against a page produced by a bundle older than the source the route list 
 make an api_smoke pass describe code that is no longer there, and nothing in the corpus
 distinguishes that from a genuine pass — which is exactly why it has never surfaced.
 
-**Cheapest observation.** Write a build stamp (source tree hash) into the image at build time and
-expose it on `/health`; have any probe that concludes about the running app compare it against the
-tree it just read. A mismatch is not a failure of the app — it is a statement that the measurement
-is void, which is the distinction #713 shows the framework currently cannot make.
+**THE INSTRUMENT ALREADY EXISTS AND IS UNWIRED.** I filed this as "build a stamp feature" and
+that was one grep short. `DockerInspectImageTool` exists, and its own description is this exact
+problem:
+
+    "Check if specific files exist inside a built Docker image. Useful for debugging when
+     containers show stale/placeholder content. Verifies that source code was actually
+     included in the Docker build."
+    docker_inspect_image(service="frontend", paths=["src/App.jsx", "dist/index.html"])
+
+It is exported at `tools/__init__.py:199`, appears in **no bundle**, and shows up in **0 of 253
+run logs** — against `docker_up`'s 235. Same shape as #699 and #700: the framework built the
+instrument and never pointed it at the problem, while the problem it was built for runs at 81%.
+
+**Cheapest observation, revised.** Not a new stamp — compare the served `src/App.jsx` against the
+one on disk at capture time, which `docker_inspect_image` was written to do. A mismatch is not a
+failure of the app; it is a statement that the measurement is void, and that is the distinction
+#713 shows the framework currently cannot make. Wiring it is a tool-grant change plus one call in
+the capture path, not a feature.
 
 ---
 
