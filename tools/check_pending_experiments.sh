@@ -127,7 +127,11 @@ gone_log "#687 browser transport"        "Navigation failed: Page.goto: net::ERR
 # NO BACKTICKS in these note strings: bash runs them as command substitution. The first draft
 # of this line embedded `rev-list ...` and the script printed "rev-list: command not found" on
 # every invocation — a checker that misreports itself is worse than one that is absent.
-grep_log "#727 reach declared"           "\"reach\"" "ADOPTION probe: how many of the 8 interaction screens the lane declares a path for. 8 = build the consumer; 0-2 = enforcement is the prerequisite"
+# The pattern is `reach=`, NOT `"reach"`. #725 renders a list argument as its SHAPE, so the log
+# line reads `reach=[1]` with no quotes — the quoted form matched the dict key in hub_tools.py
+# and nothing a run ever writes. #716 passed it because it checks a pattern exists in SOURCE,
+# which is a different question from whether it matches the LOGGED form.
+grep_log "#727 reach declared"           "reach=" "ADOPTION probe: how many of the 8 interaction screens the lane declares a path for. 8 = build the consumer; 0-2 = enforcement is the prerequisite"
 grep_log "#723 captures all distinct"    "screen captures are distinct" "the CLEAN path; without it, absence of #713 also meant 'the hash raised'"
 grep_log "#722 served build verified"    "served build matches the source" "the CLEAN path; its absence no longer means 'probe did not run' is indistinguishable"
 grep_log "#713b shared-route sharing"    "share ONE route" "EXPECTED, not a defect: interaction states of one page. browse_home_rows shares in 53 of 53 runs"

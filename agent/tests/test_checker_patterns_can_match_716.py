@@ -37,6 +37,11 @@ SRC_ROOT = Path(__file__).resolve().parents[1] / "env_generator" / "llm_generato
 # is built, so an entry that goes stale is traceable rather than a permanent excuse.
 RUNTIME_BUILT = {
     "] business_chain:": "chain_executor.py — f\"[{r['name']}] {b}\"",
+    # #727's adoption probe. The literal `reach=` is never written anywhere: #725's dispatch
+    # logger formats every argument as f"{_k}={...}", so the pair only exists at runtime. Its
+    # first spelling was `"reach"` WITH quotes, which does appear in hub_tools.py as a dict key
+    # — that satisfied the source check above while matching nothing a run ever emits.
+    "reach=": "tooling.py — f\"{_k}={truncate(_sh, 120)}\" over kickoff_declare_ui_page's arg",
 }
 
 
@@ -87,6 +92,26 @@ def test_no_pattern_is_empty():
 
 
 # --- every pattern can match something that exists ---------------------------------------------
+
+def test_a_pattern_that_only_matches_a_dict_KEY_is_caught():
+    """#716's ceiling, found by #727 slipping through it.
+
+    This test asks whether a pattern exists in SOURCE. That is not the same question as whether
+    it matches a LOGGED line, and #727's first version proved the gap: its pattern was `"reach"`
+    with quotes, which appears in hub_tools.py as a dict key and satisfied this check — while the
+    log, after #725 renders a list argument as its shape, reads `reach=[1]` with no quotes. The
+    pattern could never have matched a run.
+
+    A general fix is not available from here: this file cannot know a tool's log FORMAT. What it
+    can do is refuse the specific shape that caused it — a pattern that is nothing but a
+    double-quoted identifier, which is a source-literal spelling rather than a log spelling."""
+    import re as _re
+    suspicious = [f"{label} -> {pat}" for label, pat in _patterns().items()
+                  if _re.fullmatch(r'\\?"[a-z_]+\\?"', pat.strip())]
+    assert not suspicious, (
+        "these patterns are bare quoted identifiers, which match a source dict key rather than "
+        "anything a log writes — spell them as they appear in the LINE: " + ", ".join(suspicious))
+
 
 def test_every_EMITTED_pattern_is_findable_in_the_source():
     hay = _haystack()

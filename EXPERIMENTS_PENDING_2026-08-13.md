@@ -1831,6 +1831,19 @@ safe to build; **0-2 declared** now means what I originally claimed, because the
 exists — this would be the 138th optional mechanism and enforcement, not wording, is the
 prerequisite.
 
+**And the probe's own checker line was wrong too, in the same shape, one turn later.** It grepped
+for `"reach"` WITH quotes. #725 renders a list argument as its shape, so a run writes
+`reach=[1]` — no quotes — and the quoted form matched only the dict key in `hub_tools.py`.
+**#716 passed it**, because #716 asks whether a pattern exists in SOURCE, which is a different
+question from whether it matches a LOGGED line. Corrected to `reach=`, registered in #716's
+`RUNTIME_BUILT` table with its construction site (`tooling.py`'s `f"{_k}={...}"`), and #716 now
+also refuses any pattern that is a bare quoted identifier — the specific spelling that caused it.
+
+Three instances of one mistake in three consecutive turns: a probe whose target did not exist
+yet (the prompt never mentioned `reach`), a reading rule resting on that, and a pattern matching
+a source literal instead of the log. Each was caught before a run, which is the only reason they
+cost nothing — the same three after a run would have cost a run each.
+
 **Corrected while measuring:** my first count said 9 of 21. `spec.md` is markdown, not a screen —
 I listed the directory without filtering to images. It is scored 0 times, so the framework
 excludes it correctly and the "incidental finding" was mine, not the framework's.
