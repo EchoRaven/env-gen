@@ -66,9 +66,38 @@ def test_several_ids_are_all_named():
 
 # --- it stays quiet everywhere else -------------------------------------------------------------
 
-@pytest.mark.parametrize("status", [200, 201, 400, 401, 403, 409, 500, None])
-def test_only_404_qualifies(status):
+@pytest.mark.parametrize("status", [200, 201, 400, 401, 409, 500, None])
+def test_only_404_and_403_qualify(status):
     assert hint(status, {"title_id": "x"}, "title not found") == ""
+
+
+# --- #682b: the ownership 403, r145's most frequent business_chain failure (15 of them) -----------
+
+def test_an_ownership_403_names_the_id():
+    out = hint(403, {"profile_id": 7}, "profile_id does not belong to the caller")
+    assert "profile_id=7" in out
+
+
+def test_the_403_says_the_refusal_is_correct():
+    """An ownership denial is right; implying the server is wrong would send the lane astray."""
+    out = hint(403, {"profile_id": 7}, "does not belong to the caller")
+    assert "The refusal is CORRECT" in out
+    assert "the step is what is wrong" in out
+
+
+def test_the_403_offers_both_legitimate_repairs():
+    out = hint(403, {"profile_id": 7}, "not owned")
+    assert "Create the resource as THIS actor" in out
+    assert "expects 403 alone" in out
+
+
+def test_the_403_does_not_reuse_the_missing_row_wording():
+    out = hint(403, {"profile_id": 7}, "does not belong to the caller")
+    assert "no such row exists" not in out
+
+
+def test_a_403_that_is_not_about_ownership_stays_quiet():
+    assert hint(403, {"profile_id": 7}, "forbidden") == ""
 
 
 def test_a_404_that_is_not_about_a_missing_row_is_ignored():

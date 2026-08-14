@@ -1489,17 +1489,54 @@ _PROJECTED_TRACEBACK_RE = re.compile(r"backend traceback:[^\n]*\b_projected_[a-z
 def _unknown_id_hint_682(status, body, note) -> str:
     """Name the id the step actually sent, when the server says it does not exist."""
     try:
-        if status != 404 or not isinstance(body, Mapping):
+        if status not in (403, 404) or not isinstance(body, Mapping):
             return ""
         low = str(note or "").lower()
-        if "not found" not in low and "referenced resource" not in low:
+        _absent = "not found" in low or "referenced resource" in low
+        # #682b: the SAME root, one status along. r145's most frequent business_chain failure
+        # (15 of them) was `403 {"detail":"profile_id does not belong to the caller"}` against an
+        # expectation of [200, 201, 400, 404] — the chain used a profile it had not created, just
+        # as the 404 case used a title id from the asset namespace. Both are an id the step did
+        # not source from the system. The 403 wording must not suggest the SERVER is wrong: an
+        # ownership refusal is correct behaviour, and the step is what needs changing.
+        _foreign = status == 403 and ("does not belong" in low or "not owned" in low
+                                      or "belong to the caller" in low)
+        # #682c: a 400 that spells out the accepted values. r145's third stuck chain was
+        # `POST /api/titles/1/rating -> 400 {"detail":"value must be up|down|love"}` against a
+        # chain sending `value: 'like'`. The server named the answer and the chain still sat red
+        # for 75 minutes: the backend re-registered the ENDPOINT schema twice, but nobody changed
+        # the CHAIN. The enum exists only in custom_routes.py — the registered schema says
+        # `value: 'str'`, and across the corpus only 1 of 4013 endpoint schemas declares an enum,
+        # so the author could not have known it up front and cannot learn it except from here.
+        # Naming the remedy matters as much as the values: re-registering under the SAME name
+        # REPLACES a failing chain (registryhub only short-circuits when the stored one is
+        # already passing with identical steps), and nothing had ever said so.
+        _enum = None
+        if status == 400:
+            _m = re.search(r"must be\s+([A-Za-z0-9_]+(?:\s*\|\s*[A-Za-z0-9_]+)+)", str(note or ""))
+            if _m:
+                _enum = _m.group(1)
+        if not (_absent or _foreign or _enum):
             return ""
         sent = [(k, v) for k, v in body.items()
                 if re.search(r"(^|_)id$", str(k)) and not isinstance(v, (dict, list))
                 and str(v).strip() and "${" not in str(v)]
         if not sent:
             return ""
+        if _enum:
+            _vals = [v for v in (body or {}).values()
+                     if isinstance(v, str) and "${" not in v]
+            _sent = f"you sent {_vals[0]!r}; " if _vals else ""
+            return (f" — {_sent}the endpoint accepts only [{_enum}]. That set is enforced in the "
+                    "implementation and is NOT in the registered schema, so re-register the "
+                    "endpoint with the allowed values AND fix this step: re-registering a chain "
+                    "under the SAME name replaces it while it is failing.")
         named = "; ".join(f"{k}={v!r}" for k, v in sent[:3])
+        if _foreign:
+            return (f" — you sent {named}, and this caller does not own it. The refusal is "
+                    "CORRECT; the step is what is wrong. Create the resource as THIS actor in an "
+                    "earlier step and `save` its id, or make this a deliberate cross-user denial "
+                    "step that expects 403 alone.")
         return (f" — you sent {named}, and no such row exists. A hardcoded id is a guess: ids "
                 "differ between the dataset, the seed and the staged ASSET names. Read one from "
                 "an earlier step in this chain (list the collection, `save` an id from the "
