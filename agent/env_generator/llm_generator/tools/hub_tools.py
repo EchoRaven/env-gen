@@ -395,8 +395,23 @@ class CodeHubRecordCheckTool(HubTool):
             "evidence": {
                 "type": "object",
                 "description": (
-                    "Free-form mapping with check output, links to logs, "
-                    "step counts, etc. Persisted verbatim for audit."
+                    # #733: the SECOND instance of #732's shape, and this one already caused
+                    # a documented outage. "Free-form mapping" invited divergence while the
+                    # framework depended on particular keys. #193's own comment: writers
+                    # "often nest the check kind under evidence['metadata'] — while every
+                    # reader reads metadata.get('check'). ui_flow records were therefore
+                    # INVISIBLE to _has_passing_ui_evidence / flow_coverage / the retry
+                    # decider / remediation-task creation, and the UI gates cleared only via
+                    # the functionally_validated waiver." That was patched by normalising both
+                    # spellings — the same corpus-shaped repair #730 made for `query`, and the
+                    # kind that never converges. Publishing the slots does.
+                    "Check output. Free-form — extra keys are persisted verbatim for audit — "
+                    "but these are the ones the framework READS, so a value under any other "
+                    "name is stored and acted on by nothing: `summary` (one line, shown in "
+                    "gate reports), `execution_mode` ('auto' or 'manual'), and `metadata` (a "
+                    "nested mapping whose `check` and `flow` decide whether this record counts "
+                    "toward UI-flow coverage and the retry decision — put the check kind "
+                    "THERE, not at the top level)."
                 ),
             },
         },

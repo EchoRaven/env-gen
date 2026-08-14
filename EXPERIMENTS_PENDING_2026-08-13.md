@@ -1815,10 +1815,31 @@ that it no longer HAS to guess. #731 keeps reporting anything outside the publis
 known set now DERIVES from #732's declaration (plus `query` and `headers`, both already
 reckoned with) rather than from words one corpus used.
 
-**Cheapest observation.** Next run: `schema.request` populated on filterable GETs without any
-fold being needed. If a NEW synonym appears anyway, #731 names it — and that would mean publishing
-the vocabulary is not sufficient either, which is worth knowing before anyone builds a third
-patch.
+**Swept for the same shape and found a SECOND case with a worse history.** 16 tool parameters
+across 13 tools are declared as a bare `{"type": "object"}`, 9 with no description at all. Most
+are genuinely free metadata, so opacity is fine — the discriminator is whether the framework
+READS particular sub-keys. `codehub_record_check.evidence` does, and its description said
+**"Free-form mapping"**, actively inviting the divergence:
+
+    what it reads   evidence.summary, evidence.execution_mode, and a nested evidence.metadata
+                    whose `check` and `flow` decide UI-flow coverage and the retry decision
+    what it said    "Free-form mapping with check output, links to logs, step counts, etc."
+
+**And it has already cost an outage.** #193's own comment: writers "often nest the check kind
+under `evidence['metadata']` — while every reader reads `metadata.get('check')`. **ui_flow records
+were therefore INVISIBLE** to `_has_passing_ui_evidence` / `flow_coverage` / the retry decider /
+remediation-task creation, and **the UI gates cleared only via the functionally_validated
+waiver**." Patched by normalising both spellings — the same repair #730 made for `query`, a year
+earlier and with heavier consequences.
+
+**Fixed: #733**, publishing the read slots in the description while keeping the free-form
+allowance. Two instances now share one cause and one cure: the framework reads specific keys of an
+object it advertised as unstructured.
+
+**Cheapest observation.** Next run: `schema.request` populated on filterable GETs with no fold
+needed, and check evidence carrying `metadata.check` rather than a top-level `kind`. If a NEW
+synonym appears anyway, #731 names it — and that would mean publishing the vocabulary is not
+sufficient either, which is worth knowing before anyone builds a third patch.
 
 **Cheapest observation.** None; settled by reading. What a run adds is whether the lane keeps
 inventing keys — a third synonym would change the calculus from "fold the one that matters" to
