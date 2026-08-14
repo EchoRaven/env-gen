@@ -1010,8 +1010,58 @@ times and never read, but it explains a decision already taken (the `advisory` f
 it IS consumed), so it is documentation rather than an unheard recommendation. **This class is
 exhausted.**
 
-**Sweep B — every module-level function whose name appears only at its own `def`.** 26 hits, and
-one matters: **`promote_integration_to_main`** → #699 below.
+**Sweep B — every module-level function whose name appears only at its own `def`.** 26 hits, all
+triaged rather than sampled:
+
+    real findings   promote_integration_to_main       -> #699
+                    duplicate_route_content_groups    -> #700
+    checked, benign _declared_critical_flows (delivery_gate.py) — looks like a coverage gap and
+                    is not: `compute_flow_coverage` IS called, from deliverability.py:270, and
+                    the gate consumes its `deliverability_critical_flows_invalid` verdict. This
+                    is a redundant wrapper that was never wired, not a missing check.
+    utilities       get_project_root / get_prompts_dir / get_screenshot_dir / truncate_output /
+                    get_tool_logger / create_workspace / create_console_emitter /
+                    reset_for_tests / _tail_lines / _recent_tool_calls — helpers and test hooks;
+                    an uncalled helper costs nothing and hides nothing
+    tested-only     failure_signature (14 test refs, 0 production calls),
+                    _has (2), _login_jwt (bundled oauth contract test)
+    remainder       _all_phase_acked, _canon_seg_len, _owner_value,
+                    _resolve_backend_conflict_by_ownership, bootstrap_spec_for_backend,
+                    build_intent_judge_prompt, classify_memory_line, design_premises_text,
+                    list_requests, write_config — dead code with no detector semantics; none
+                    computes a finding that a consumer is missing
+
+**Both sweeps are now exhausted.** The class that produced #691/#694b/#696/#698 — a correct
+computation whose result nothing consumes — yields two more (#699, #700) and then stops.
+
+---
+
+## 25. #700 — #615's detector was never called, not even to report
+
+**Fixed: #700.** `duplicate_route_content_groups` finds distinct routes whose delivered pages
+fetch an identical unparameterised endpoint set, and therefore render identical content ("click
+Games, see Movies"). Half its silence is deliberate and documented at the detector: "Deliberately
+NOT wired as a delivery blocker. At 32/45 it would wedge nearly every run, and whether 'six
+identical pages' should block OR MERELY BE REPORTED is a calibration decision, not a measurement."
+
+Nobody took the reporting option either. Running it over r146's DELIVERED frontend:
+
+    /browse, /browse/browse-by-languages, /browse/games, /browse/latest
+        all fetch only /api/titles
+        BrowseByLanguagesPage, BrowseHomePage, GamesPage, NewAndPopularPage
+
+Four nav destinations rendering the same list, in a run that shipped and passed its gate. r145
+finds none, so this is not a universal artifact of the projection. It is now a WARNING from
+`deliverability.py`; the calibration decision is untouched and nothing blocks.
+
+**Only a run can settle.** Whether it should block. The detector's own 32/45 measurement is the
+argument against, and it predates #221's projection changes — the rate may have moved.
+
+**Cheapest observation.** Grep a run log for `#615` and count the routes named. If a delivered
+run shows four or more identical destinations and still scores well, that is the calibration
+evidence the original comment says is missing.
+
+---
 
 ---
 

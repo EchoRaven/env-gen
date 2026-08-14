@@ -6,10 +6,13 @@ Replaces the LLM-judged checklist with an evidence-based unified report.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
+
+_LOG_700 = logging.getLogger(__name__)
 
 
 # §2 gate-hardening (2026-06-22): the api_smoke RunHub run that sets
@@ -142,6 +145,43 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
         from .heal_pipeline import reconcile_integration_frontend_app_jsx
         _pages = workhub.get_ui_pages() or {}
         reconcile_integration_frontend_app_jsx(Path(app_root).parent, list(_pages.values()))
+    except Exception:
+        pass
+    # #700: REPORT the #615 groups. The detector `duplicate_route_content_groups` has existed
+    # since #615 and has never been called — not as a blocker and not as anything else. Its own
+    # comment explains the first half and leaves the second open: "Deliberately NOT wired as a
+    # delivery blocker. At 32/45 it would wedge nearly every run, and whether 'six identical
+    # pages' should block OR MERELY BE REPORTED is a calibration decision." Nobody took the
+    # reporting option either, so a defect measured in 32 of 45 runs has never once been said
+    # out loud.
+    #
+    # It still happens. Running the detector over r146's DELIVERED frontend finds one group:
+    # /browse, /browse/browse-by-languages, /browse/games and /browse/latest all fetch the
+    # bare unparameterised /api/titles, so four nav destinations render identical content.
+    # r145 finds none, so this is not a universal artifact of the projection.
+    #
+    # WARNING only — the calibration decision is untouched and nothing blocks. Same disposition
+    # as #691, #696 and #698: a finding that is computed and unobservable is worth no more than
+    # one that was never computed.
+    #
+    # NOTE THE PATH. `ui_page_delivery_blockers` below takes frontend/**src**, but
+    # `duplicate_route_content_groups` appends "src"/"pages" itself and so takes the frontend
+    # ROOT. Passing it the same argument as the line below silently returns [] — its contract
+    # is "[] when nothing can be resolved", which is indistinguishable from "nothing found".
+    try:
+        # Fetches its OWN pages rather than reusing `_pages` above: that name is bound inside a
+        # try/except-pass, so if the reconcile raised, reusing it would NameError into this
+        # block's own except and skip the report silently — the exact failure mode this fix is
+        # about.
+        from .frontend_audit import duplicate_route_content_groups
+        _pages_700 = workhub.get_ui_pages() or {}
+        for _g in duplicate_route_content_groups(Path(app_root) / "frontend", _pages_700) or []:
+            _LOG_700.warning(
+                "#615 %d routes render identical content: %s — all fetch only %s (components: "
+                "%s). Not a blocker; a nav destination that shows the same list as its siblings "
+                "is a fidelity defect the visual gate cannot see.",
+                len(_g.get("routes") or []), ", ".join(_g.get("routes") or []),
+                ", ".join(_g.get("endpoints") or []), ", ".join(_g.get("components") or []))
     except Exception:
         pass
     try:
