@@ -1354,6 +1354,19 @@ So the contract→implementation link holds across the whole delivered corpus. R
 verified positive, and as a reminder that a probe reporting a large number is more likely to be
 wrong than the tree is.
 
+**Sweep L — the frontend dual: is every declared screen actually routed?** Comparing each
+delivered run's `registryhub_ui_pages` routes against the `path=` props in its shipped `App.jsx`,
+normalising `:param` and `{param}` alike:
+
+    delivered runs with an App.jsx   27
+    declared ui_page routes          325
+    declared but not routed          **0**
+
+Both halves of the contract hold, then — 654 business endpoints served and 325 screens routed,
+across every run that shipped. That is consistent with `ui_page_delivery_blockers` being one of
+the LIVE gates, in contrast to the dead detectors items 23-27 are about: the checks that run are
+the checks whose subject comes out clean.
+
 ---
 
 ## 28. Sweep J and the per-profile privacy audit — both clean, recorded so they are not re-mined
