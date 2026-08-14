@@ -2239,7 +2239,28 @@ It was verified on r146. Checking all three:
 r147 and r148 IMPLEMENT filtering and DECLARE nothing. The implementation kept the capability —
 r148 even extended it, its `custom_routes.py` carrying `WHERE kind = :kind` against a
 module-level `_TITLE_COLS` constant with every user value bound — while the registered schema
-lost its query params entirely.
+carries no query params at all.
+
+**The CAUSE is unknown, and two attributions of mine were wrong.** I first called it a framework
+regression; `registryhub_register_endpoint` passes the schema through `_coerce_dict_param`, which
+converts a string to a dict and strips nothing, so the framework is not dropping it. I then
+called it the lane failing to declare, on a grep showing "74 register_endpoint calls in r146, 0
+containing 'kind'". **Those are not calls.** They are prose — rejection messages and tool
+listings — and the logs do not record this tool's arguments at all. That is item 36's own
+documented trap ("mentioned ⇏ called"), which I catalogued and audited others for, and then
+walked into.
+
+So: r146's schema did not come from `register_endpoint` as far as the logs can show, and
+`update_schema` is never called in any of the three runs. Where it came from is not recoverable
+from these artifacts.
+
+**What survives is durable, because it is read from the hub store rather than the log:** the
+contract for `GET /api/titles` carries the query params in r146 and carries none in r147 or r148,
+while all three backends implement filtering. That mismatch is the finding; its origin is open.
+
+**Cheapest observation.** Log the `schema` argument of `registryhub_register_endpoint` for one
+run. If the lane sends query params and the store lacks them, something between the two is
+dropping them; if the lane sends none, r146's came from a path that no longer runs.
 
 The consequence is visible in the same run: #708b, which exists to name the filters the contract
 declares, correctly found the endpoint record, correctly extracted ZERO optional params, and
