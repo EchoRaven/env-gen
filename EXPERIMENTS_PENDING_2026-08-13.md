@@ -1624,7 +1624,7 @@ fault and the capture layer needs the fix.
 
 ---
 
-## 37b. The tests do not travel with the fixes — by policy, and the commit messages do not say so
+## 37b. RETRACTED — the tests were missing by MY oversight, not by policy
 
 Noticed while committing #716 and worth stating because it changes what a reader of this
 branch can verify:
@@ -1634,9 +1634,26 @@ branch can verify:
     untracked                 218
     written this session      23  (#691-#716) — ALL untracked
 
-This is not an accident. `.gitignore:38` carries the rule with its rationale — "Dev test suites
-— kept local only, not part of the shipped pipeline repo" — added deliberately in `3b71e33
-chore(repo): keep dev tests and run scripts local-only` on 06-18.
+`.gitignore:38` does carry a rule with a rationale — "Dev test suites — kept local only, not part
+of the shipped pipeline repo", added in `3b71e33` on 06-18 — and I stopped there and called it
+policy. **That was wrong, and one more query would have caught it.** Dating every tracked file's
+ADD commit:
+
+    tracked tests added 08-12    74
+    tracked tests added 08-13    38
+    all 112 added AFTER the 06-18 rule
+    numbered range                #548 – #690
+
+**The established practice is to force-add framework-fix tests, overriding the ignore.** The
+tracked range ends at #690 and mine start at #691 — the break falls exactly where this session
+began. So the inconsistency is not "112 legacy files against a local-only policy"; it is that I
+used `git add -A`, which respects `.gitignore`, where every fix from #548 to #690 was force-added.
+Not a policy question at all, and not the user's to decide: an oversight of mine, 23 files wide.
+
+**Fixed:** the 23 numbered tests for #691-#716 are force-added, restoring the continuity. Left
+alone deliberately: the ~195 unnumbered files (`test_anthropic_prompt_caching.py` and the like),
+which are the scratch suites the rule is actually about — my first attempt swept all 218 in, which
+would have committed a pile of local experiments alongside the provenance.
 
 **The consequence is a communication gap, not a defect.** Every commit in this session ends with
 a line like "17 tests. 3438 pass". Those tests are the EVIDENCE for the claim the commit makes,
@@ -1644,18 +1661,10 @@ and by policy they stay on one machine — so the reader gets the assertion with
 backs it, and cannot re-run it after a refactor. The 112 tracked files make it worse by being
 inconsistent: a reader who sees tests in `agent/tests/` reasonably assumes the rest are there too.
 
-**Not acted on, deliberately.** Force-adding 218 files against a documented policy is not a call
-to make from inside a review pass. Three coherent options, in rough order of cost:
-
-  * leave it and stop citing test counts in commit messages that ship without them;
-  * track the tests for FRAMEWORK fixes (the `#NNN` files, which are provenance for behaviour
-    changes) while keeping scratch suites local — this is what the 112 look like in practice;
-  * drop the ignore entirely and track all 330.
-
-**Cheapest observation.** None needed; this is a decision, not a measurement. What a decision
-would want to know is already here: 218 files, 23 of them from this session, and a rule whose
-stated reason ("not part of the shipped pipeline repo") is about shipping rather than about
-review.
+**The lesson is the one this session keeps relearning.** A documented rationale read on its own
+looked authoritative enough to stop at, and stopping there produced a confident "this is policy,
+not my call" — the same shape as #708's stale `kind='standard'` objection and #713's stale
+capture-list claim. The check that settled it cost one `git log --diff-filter=A` per file.
 
 ---
 
