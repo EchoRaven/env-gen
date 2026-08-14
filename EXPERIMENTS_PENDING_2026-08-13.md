@@ -1733,6 +1733,55 @@ right one needed a distribution.
 
 ---
 
+## 63. #744 — 62% of the "open P0 bugs" that defer delivery are already fixed
+
+The one live-behaviour defect in this stretch: everything else here reports, this one **decides**,
+and it decides against the runs that did the work.
+
+`list_open_bugs` filtered on `metadata.bug_state` alone. That field is set at creation and moved
+only by `update_bug_state`/`close_bug`, which almost nobody calls. Across the 1477 bug tasks in
+the 148-run corpus:
+
+    open 1201   assigned 224   escalated 41   closed 6   fix_proposed 3   triaged 1
+    fix_verified 1
+
+**Six ever reach `closed`.** Completing the TASK does not touch `bug_state`, so 616 tasks sit at
+`status=completed` with `bug_state=open`, and `OPEN_STATES` counts both `open` and `assigned`.
+Two fields encode one lifecycle and only one is maintained, so they drift by construction.
+
+On the population the delivery path actually reads:
+
+    open P0s by bug_state alone           821   across 120 runs
+    ... also excluding a terminal status  310   across  90 runs
+    already fixed but counted as open     511   (62%)
+
+**Why it decides.** `collect_open_p0_by_source` (#630) is built on this list; its result becomes
+`bugs["p0"]`; and that value's only use is
+`verdict = "PASS" if bugs["p0"] == 0 else "DEFECTS"`, a verdict the delivery gate reads. A run
+that fixed every P0 still scored DEFECTS and deferred, because the fixed bugs kept
+`bug_state=open`. #630's widening was right and is not the fault here — the verifier files 207 of
+314 P0s and was invisible to the old narrow count — but the stale field turned the widened gate
+hardest against exactly the runs that had remediated.
+
+Fixed by excluding a terminal TASK status from the open list. `failed` is deliberately NOT
+terminal: an attempted fix that did not work leaves the bug outstanding, the same reading #743
+takes of that status. The `bug_state` filter is unchanged and still excludes `closed`/`escalated`
+— #744 adds a condition, it does not relax one.
+
+The blast radius is the reverse of items 56/58/62: those three would make delivery HARDER and
+need a decision. This one makes it correct in the direction it was already trying to go, so it
+needed none.
+
+Also note what did NOT break: no existing test failed. `list_open_bugs` had coverage for its
+`bug_state` filter and none for a completed task, which is why the drift lived this long.
+
+**Cheapest observation.** Next run, the squad line already prints both numbers —
+`verdict=%s: %d open P0 (%d from test-users)`. Compare `open P0` against the count of bug tasks
+whose status is non-terminal; they should now agree. If a DEFECTS verdict still names a bug whose
+task is completed, the terminal set is missing a status this corpus does not contain.
+
+---
+
 ## 62. #743 — bug tasks are excluded from the gate and delegated to a gate that isn't
 
 **A correction first.** Earlier in this session I wrote "the delivery gate reads no task status

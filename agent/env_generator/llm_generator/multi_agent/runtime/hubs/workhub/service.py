@@ -679,11 +679,35 @@ class WorkHub:
             if meta.get("kind") == bug_schema.KIND:
                 yield task
 
+    # #744: a bug is open if EITHER lifecycle field says so — and the task status is the one
+    # that actually gets maintained. `bug_state` is written at creation and moved by
+    # `update_bug_state`/`close_bug`, which almost nobody calls: across the 1477 bug tasks in
+    # the 148-run corpus it reads open 1201, assigned 224, escalated 41, and **closed 6**.
+    # Completing the TASK does not touch it, so 616 tasks sit at `status=completed` with
+    # `bug_state=open`. Two fields encode one lifecycle and they drift by construction.
+    _TERMINAL_TASK_STATES_744 = frozenset({"completed", "cancelled"})
+
     def list_open_bugs(self) -> list:
-        """Return bugs whose lifecycle state is not closed/escalated, sorted P0-first then oldest-first."""
+        """Return bugs whose lifecycle state is not closed/escalated, sorted P0-first then oldest-first.
+
+        #744: ALSO excludes a bug whose TASK has reached a terminal status. The `bug_state`
+        filter alone reported 821 open P0s across 120 runs where only 310 across 90 were really
+        outstanding — **62% of them were already completed or cancelled**.
+
+        That is not cosmetic. `collect_open_p0_by_source` (#630) is built on this list and its
+        result becomes `bugs["p0"]`, whose sole use is
+        ``verdict = "PASS" if bugs["p0"] == 0 else "DEFECTS"`` — a verdict the delivery gate
+        reads. So a run that FIXED every P0 still scored DEFECTS and deferred, because the fixed
+        bugs kept `bug_state=open`. #630 widened this gate deliberately and correctly; the stale
+        field then made it strictest against the runs that had done the work.
+
+        `failed` is deliberately NOT terminal here: a fix that was attempted and did not work
+        leaves the bug outstanding, which is the same reading #743 takes of that status.
+        """
         bugs = [
             t for t in self._iter_bug_tasks()
             if (t.get("metadata") or {}).get("bug_state", "open") in self._OPEN_BUG_STATES
+            and str(t.get("status") or "") not in self._TERMINAL_TASK_STATES_744
         ]
         bugs.sort(key=lambda t: (
             self._SEVERITY_RANK.get((t.get("metadata") or {}).get("severity", "P3"), 99),
