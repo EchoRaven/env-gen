@@ -1651,6 +1651,39 @@ fault and the capture layer needs the fix.
 
 ---
 
+## 36. The recurring shape, swept: 137 of 290 tools have never been called
+
+Three times this session I stumbled on the same thing — an instrument built for a problem,
+never pointed at it — and each time I found it by accident. Sweeping all 290 tool `NAME`s against
+every run log (a name appears in a log only when the tool is CALLED, so zero means never called):
+
+    tools defined                      290
+    never called in 253 runs           137  (47%)
+
+**That number is not a defect list, and reading it as one would be the mistake.** Most of the 137
+are legitimately situational: `docker_down`, `interrupt_process`, `terminate_agent_team`,
+`request_plan_changes` — you call them when the circumstance arises and it usually does not.
+
+**The actionable subset is the one with a matching, MEASURED problem.** All three of this
+session's finds have that shape, and it is the triage rule for the rest:
+
+    docker_inspect_image        "containers show stale content"   occurring in 81% of runs  -> #715
+    search_icons/search_photos  source an asset you lack          8 of 27 delivered runs    -> #707
+    promote_integration_to_main promote after verification        130 of 146 runs diverged  -> #706
+
+So the question to ask of each remaining name is not "is it used" but "is the problem it names
+happening". Candidates from the list that look worth that question, none of them checked yet:
+`compare_screenshots` and `extract_components` (a fidelity gate that judges by LLM while two
+mechanical comparators sit unused), `db_query`/`db_schema` (seed and schema defects are a
+recurring class), `log_search`/`log_analyze` (every lane greps logs by hand), and
+`check_environment`/`wait_for_service` (the docker_up blockers in items 26 and 33).
+
+**Cheapest observation.** For any candidate, grep the corpus for the failure its docstring
+names. If the failure has a non-zero live-era count and the tool has a zero call count, that is
+the same finding again — and the fix is a wiring change, not a feature.
+
+---
+
 ## 35. The generalisation behind #713: nothing checks that the running app is THIS source
 
 #713's diagnosis settled as the SERVE side — source fresh, bundle stale. Following that one level
