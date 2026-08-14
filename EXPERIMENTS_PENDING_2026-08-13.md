@@ -1733,6 +1733,45 @@ right one needed a distribution.
 
 ---
 
+## 45. The shape, swept — and why #707 and #711 are left alone
+
+Four times this session a detector's silence turned out to mean three different things (#691's
+silent skip, #696's invisible load failure, #712's dead branch, #715's two-warnings-no-third).
+Rather than wait for the fifth, sweeping every detector added in #691-#722 for a warning path
+with no clean path:
+
+    #707   2 warnings, 0 info
+    #711   2 warnings, 0 info
+    #712   withdrawn (#712r)
+    #713   2 warnings, 0 info   ← the one that bit
+    #715   fixed by #722
+
+**#713 bit on the same day the guard against it was built.** Reading r148 I wrote "#713 NOT SEEN,
+and meaningful — zero duplicate groups". That is right, but only because I independently hashed
+the twelve PNGs; had I not, "the hashing raised" and "results was empty" would have read
+identically to "all distinct". A detector guarding the validity of 26% of all fidelity scores
+should not need a second opinion. **Fixed: #723**, an INFO on the clean path naming how many
+captures were checked.
+
+**#707 and #711 are deliberately NOT given one, and the reason is the difference that makes the
+rule useful.** The question is not "does this detector stay silent when clean" — most do, and
+should. It is **"does anyone READ the silence as a result?"**
+
+    #713   the checker has a line for it, and I drew a conclusion from its absence   -> fix
+    #715   built expressly to answer item 34; its silence was the answer             -> fixed (#722)
+    #711   fires on a THRESHOLD (gap >= 0.05). Silence means "the gap is small",
+           which is the ordinary state and nobody reads it as a verdict             -> leave
+    #707   fires when the backstop had to invent an asset. Silence means the lane
+           did it properly — again the ordinary state                                -> leave
+
+Adding an INFO to those two would be noise dressed as rigour. The rule earns its keep only where
+a reader is entitled to treat absence as evidence, which is exactly the four cases that bit.
+
+**Cheapest observation.** None — this is settled by reading, and the sweep is recorded so the
+fifth instance is checked against this table rather than fixed reflexively.
+
+---
+
 ## 44. #722 — and r148's full accounting, which is what surfaced it
 
 r148 finished (`[main-exit]`, 12347 lines), so its absences are now readable. Build cutoff

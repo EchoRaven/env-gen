@@ -2960,6 +2960,16 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                 _rn = str((_r713 or {}).get("name") or "")
                 if _rn:
                     _routes713[_rn] = str((_r713 or {}).get("route") or "")
+            # #723: SAY WHEN THE CAPTURES ARE ALL DISTINCT. Fourth instance of the same shape
+            # (#691 silent skip, #696 invisible failure, #712 dead branch, #715 two warnings and
+            # no third), and this one bit while I was reading r148: I concluded "no duplicate
+            # groups" from #713's SILENCE, which also covers "the hashing raised" and "results
+            # was empty". The conclusion happened to be right only because I hashed the PNGs
+            # myself as well. A detector guarding the validity of 26% of all fidelity scores
+            # must not require a second opinion to be believed.
+            if not [g for g in _by713.values() if len(g) > 1]:
+                _LOG.info("#713 all %d screen captures are distinct — no shared-page scoring "
+                          "this pass.", len(_by713))
             for _h713, _names713 in _by713.items():
                 if len(_names713) < 2:
                     continue

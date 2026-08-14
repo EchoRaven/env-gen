@@ -127,6 +127,7 @@ gone_log "#687 browser transport"        "Navigation failed: Page.goto: net::ERR
 # NO BACKTICKS in these note strings: bash runs them as command substitution. The first draft
 # of this line embedded `rev-list ...` and the script printed "rev-list: command not found" on
 # every invocation — a checker that misreports itself is worse than one that is absent.
+grep_log "#723 captures all distinct"    "screen captures are distinct" "the CLEAN path; without it, absence of #713 also meant 'the hash raised'"
 grep_log "#722 served build verified"    "served build matches the source" "the CLEAN path; its absence no longer means 'probe did not run' is indistinguishable"
 grep_log "#713b shared-route sharing"    "share ONE route" "EXPECTED, not a defect: interaction states of one page. browse_home_rows shares in 53 of 53 runs"
 grep_log "#713 identical captures"       "screens captured the SAME image" "103 of 127 runs, 32 of 43 live; every score from a shared capture is of the wrong page"
