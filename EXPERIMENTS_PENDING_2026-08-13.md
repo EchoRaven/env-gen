@@ -1733,6 +1733,53 @@ right one needed a distribution.
 
 ---
 
+## 49. 8 of 20 reference screens are states the gate cannot reach at all
+
+The user proposed that the frontend lane — the agent that implemented the page — should declare
+which route to visit, which reference to compare against, and WHAT ACTION to perform to reach the
+state. Measuring the gap that proposal closes, on r148:
+
+    reference screens (images only)        20
+      with a matching ui_page              12
+      with none                             8
+
+    account_menu   browse_home_rows   card_hover_preview   card_preview
+    player_controls   rate_dialog   shows_genres_menu   title_episodes
+
+**All eight are interaction states** — an opened menu, a scrolled view, a hovered card, a modal,
+player chrome. The capture only navigates, so it reaches none of them and scores the base page
+against a reference showing the overlay. `card_hover_preview` is the measured case: BLOCKING in 36
+of 54 appearances, maximum 0.40, zero passes against a 0.65 bar (item 40).
+
+**So "every declared reference comparison passes" is currently unreachable** — not because the
+lane builds badly, but because 8 of 20 states have no path in. That reframes item 40 from "what
+do we do about screens that can never pass" to "they were never unreachable in principle, only
+unreached by a capture that cannot act".
+
+**Why the proposal is sound, and this is the part worth recording.** Letting the implementer
+describe the test sounds like #566z (a lane authoring its own unsatisfiable expectation). It is
+not, and the difference is ownership of the STANDARD: the gate scores against `screen["path"]`,
+the orchestrator-side ORIGINAL outside the lane's workspace; `design/references/` is only a
+lane-visible copy. The lane can say how to REACH a state; it cannot alter what the state is
+compared to. A wrong action produces a capture that does not match the fixed reference and scores
+badly, so there is no way to win by lying.
+
+**Two of the three parts already exist.** `map_reference_screens` already takes the lane's
+registered `ui_pages` as its most authoritative layer (#416), and the reference binds by
+normalised filename (`browse_home_page` ↔ `browse_home.jpg`). Only the ACTION is missing, and
+`goto` (visual_fidelity.py:1770) and `screenshot` (:1867) sandwich a live Playwright page.
+
+**Open, and the user's to decide.** What happens to a reference screen the lane does NOT declare
+a path for: advisory (the gate admits it cannot reach it, which retires item 40's permanent
+blocker) or blocking (which keeps the bar but leaves 8 screens unpassable). Advisory hands the
+lane partial control over which screens count, by omission. Recorded rather than chosen.
+
+**Corrected while measuring:** my first count said 9 of 21. `spec.md` is markdown, not a screen —
+I listed the directory without filtering to images. It is scored 0 times, so the framework
+excludes it correctly and the "incidental finding" was mine, not the framework's.
+
+---
+
 ## 48. A retraction has two failure modes, and I hit both
 
 #611 improved my fix instead of obstructing it, which prompted a self-audit: did I weaken any
