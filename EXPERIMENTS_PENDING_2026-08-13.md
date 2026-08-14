@@ -1920,10 +1920,36 @@ rule catches a CLAIM of freedom, not opacity — a bare `{"type": "object"}` wit
 not flagged, because most of the 16 such parameters are genuinely free metadata and flagging all
 of them would cry wolf on correct decisions.
 
-**Cheapest observation.** Next run: `schema.request` populated on filterable GETs with no fold
-needed, and check evidence carrying `metadata.check` rather than a top-level `kind`. If a NEW
-synonym appears anyway, #731 names it — and that would mean publishing the vocabulary is not
-sufficient either, which is worth knowing before anyone builds a third patch.
+**The gap is ONE cell, and splitting the counts shows it.** Classifying every endpoint by surface
+(framework-fixed `/auth`, `/health`, `/api/v1/*` versus lane business `/api/*`) and by method:
+
+                        r146      r147      r148
+    lane   POST        4/4       4/4       4/4     never faltered
+    lane   GET         3/11      0/11      0/11    the only gap, and it decayed
+    fixed  POST        3/8       5/8       2/8
+    fixed  GET         0/5       1/6       0/5
+
+Three things fall out. **The lane has never failed at body-shaped declarations** — 4/4 in every
+run — so this was never "the lane cannot declare", it is that GET query parameters were never
+asked for. **r146's three GET declarations are business endpoints** (`/api/titles`, `trending`,
+`search`), not framework ones, so the lane HAS done it and then stopped, which is #729's
+convergence-toward-the-instruction reading confirmed from the other side.
+
+And the third corrects an assumption of mine: **the framework's own fixed surface is not fully
+declared either** (POST 3/8, 5/8, 2/8). I had been treating it as the always-complete control
+group. Its GETs are `/health` and `/api/v1/tenants` — endpoints with no query parameters — so
+empty is CORRECT there and this is not a defect; what is wrong is only my use of it as a
+reference point.
+
+**So the probe is now scoped to business GETs.** A denominator including the fixed surface
+measures the wrong thing, since those are correctly empty. `tools/check_pending_experiments.sh`
+reads 3/11, 0/11, 0/11 on the three runs, matching the manual count.
+
+**Cheapest observation.** Next run: the business-GET ratio moving off 0/11 means the published
+slots landed. Also check evidence carrying `metadata.check` rather than a top-level `kind`. If a
+NEW synonym appears anyway, #731 names it and #735 tells the caller within the turn — and that
+would mean publishing the vocabulary is not sufficient either, which is worth knowing before
+anyone builds a third patch.
 
 **Cheapest observation.** None; settled by reading. What a run adds is whether the lane keeps
 inventing keys — a third synonym would change the calculus from "fold the one that matters" to

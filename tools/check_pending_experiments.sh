@@ -134,12 +134,21 @@ gone_log "#687 browser transport"        "Navigation failed: Page.goto: net::ERR
 # #729 is measured from the STORE, not the log: count GET endpoints whose schema.request is
 # non-empty. Above zero = the completed instruction landed; zero = enforcement, not wording.
 if [[ -f "$HUBS/registryhub_endpoints.json" ]]; then
+    # Scoped to BUSINESS GETs. The whole-GET count mixed in the framework's fixed surface —
+    # /health, /api/v1/tenants — which has no query parameters and is correctly empty, so a
+    # denominator including it measures the wrong thing. The gap is one cell: lane GETs went
+    # 3/11 -> 0/11 -> 0/11 while lane POSTs held 4/4 throughout.
     _n729=$(python3 -c "
-import json,sys
+import json
 d=json.load(open('$HUBS/registryhub_endpoints.json'))
-print(sum(1 for k,v in d.items() if not k.startswith('_') and isinstance(v,dict)
-          and str(v.get('method')).upper()=='GET' and ((v.get('schema') or {}).get('request'))))" 2>/dev/null || echo "?")
-    say "DATA" "#729 GETs declaring query params" "$_n729  (r146 3 -> r147 1 -> r148 0; >0 means the instruction landed)"
+def biz(p):
+    p=str(p)
+    return p.startswith('/api/') and '/api/v1/' not in p
+g=[v for k,v in d.items() if not k.startswith('_') and isinstance(v,dict)
+   and str(v.get('method')).upper()=='GET' and biz(v.get('path'))]
+w=[v for v in g if ((v.get('schema') or {}).get('request'))]
+print(f'{len(w)}/{len(g)}')" 2>/dev/null || echo "?")
+    say "DATA" "#729 business GETs w/ query params" "$_n729  (r146 3/11 -> r147 0/11 -> r148 0/11; lane POSTs held 4/4 throughout)"
 fi
 grep_log "#728 crossed endpoints"        "shares no path word with its own route" "the CAUSE behind #700's groups: a page calling another page's endpoint. r146 3, r147 0, r148 2"
 grep_log "#727 reach declared"           "reach=" "ADOPTION probe: how many of the 8 interaction screens the lane declares a path for. 8 = build the consumer; 0-2 = enforcement is the prerequisite"
