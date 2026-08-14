@@ -10,6 +10,34 @@ the cheapest observation that settles it.
 
 ---
 
+## CLOSED — era audit of every premise behind this session's fixes
+
+The `verification_checklist_not_ready` investigation showed a ranking of mine was not
+era-controlled and forced a correction to #690's committed claim. Applying the same control to
+every measurement that justified a fix, since an un-audited premise can point a fix at a problem
+that was solved months ago:
+
+| fix | r<100 | r100+ | live share |
+|-----|-------|-------|------------|
+| #675 `must be a list of length` | 0 | 1200 | **100%** |
+| #674 bare `HTTP Error: N` | 864 | 900 | 51% |
+| #676 `old_string not found` | 204 | 216 | 51% |
+| #677 `Connection refused` | 1042 | 742 | 42% |
+| #664 chain-registration rejects | 3144 | 1794 | 36% |
+| #668 impl-task denials | 1836 | 750 | 29% |
+| #678 FRAMEWORK-OWNED write denials | 1122 | 440 | 28% |
+
+All seven survive: every one has substantial live-era volume, so none targets solved history.
+#686-#690 were era-split during discovery, and #682-#685 come from r145 itself, so they are live
+by construction.
+
+One thing to look at with a run: **#675 is 100% live and zero before r100** — 1200 occurrences in
+the newer era and none in the older. A failure mode that appears rather than persists usually
+means something changed. The fix (say what arrived instead of one message for two mistakes) is
+right either way, but the ARRIVAL is unexplained and disk cannot say why.
+
+---
+
 ## CLOSED — the broken-assertion axis, decomposed by STATUS CODE
 
 Sorting the 202 stored broken assertions by status code instead of by wording is what surfaced
