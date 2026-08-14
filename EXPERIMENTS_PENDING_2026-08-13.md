@@ -1149,7 +1149,7 @@ is bespoke and left alone:
 | 27 of 45 `motion` | design_prep | **77 of 146** (53% vs 60%) | holds in substance |
 | 79 of 144 dup-cancels | workhub | **79 runs**, 474 of 867 cancels = **55%** | holds PRECISELY |
 | 514 in 50 of 50 rejects | registryhub | not directly comparable | see below |
-| 4 of 21 blast radius | test_user_squad | not re-run | bespoke over 21 named runs (r109/r127/r128/r133); rebuilding the criteria costs more than the answer is worth |
+| 4 of 21 blast radius | test_user_squad #630 | **does NOT reproduce — see below** | the only claim in the sweep that fails |
 | 6 of 45 default-import sites | frontend_scaffold | **7 of 146, 22 sites** | fix WORKS — extinct after r127 |
 | 146 of 146 ×2 | seed_audit, tool_bundles | current | mine, measured this session |
 
@@ -1170,7 +1170,31 @@ against the recorded 6 of 45 and 21. The absolute numbers barely moved while the
 so the rate fell from 13% to 4.8%, and the newest affected run is **r127** — r128 through r146 are
 all clean. Third fix-verification in this batch: the defect is extinct, not merely rarer.
 
-**Eight of thirteen measured claims are now re-verified**, none was found stale in DIRECTION, one
+**#630's `4 of 21` does not reproduce, and the gap matters.** The claim justifies DEFERRING a
+release when non-test-user P0s are open, on the grounds that the blast radius is small: "21 runs
+released, 17 carried ZERO, 4 would have deferred". Reconstructing it two ways over the current
+corpus, counting bug tasks with `metadata.kind == "bug"`, `metadata.severity == "P0"` and
+`metadata.source` outside `TEST_USER_SOURCES`:
+
+    at run END                      27 released,  5 with zero,  22 would defer
+    at FIRST RELEASE (reconstructed) 27 released,  7 with zero,  20 would defer
+
+against 21 / 17 / 4. r109 matches the named figure exactly (2); r127, r128 and r133 come out
+higher than recorded.
+
+**My reconstruction is not sound on its own** and I will not present it as if it were: only
+**15% (84 of 552)** of these bugs carry any `metadata.triage_history`, so the other 85% default to
+"open" in my probe no matter what actually happened. What rescues the ORDER of magnitude is a
+different number: of those 552 bugs, only **23 ever reach a closed `bug_state` at all**. Even if
+every one of those 23 closed before its release, the radius cannot fall from ~20 runs to 4.
+
+So either the original probe filtered materially differently, or the population moved. Both
+matter, because the conclusion resting on this figure — that the deferral is safe to enable
+because it would touch 4 runs in 21 — reads very differently at ~20 in 27. **This is the one item
+in the sweep I would not act on without the original probe**, and it is recorded rather than
+resolved.
+
+**Nine of thirteen measured claims re-checked; eight re-verified, one does not reproduce**, none was found stale in DIRECTION, one
 moved up and strengthened its decision (#615/#705), and THREE turned into evidence that their fix
 works (#635/#705b, #664, #632). The only ones left are `4 of 21` — bespoke over 21 named runs,
 where rebuilding the criteria costs more than the answer — and the two `146 of 146` figures, which
