@@ -1779,6 +1779,22 @@ take it as established. Struck through with the measurement that killed it, and 
 comment, docstring, test name, checker note — points at the surviving fact or the retraction.
 Copies in prose are the easiest to miss precisely because no tooling looks at them.
 
+**And past retractions, to any measurement that was overturned.** Sweeping test docstrings for
+the claims this session disproved found a FOURTH instance, and the worst of them:
+`test_gate_sees_every_p0_630.py` opened with "Blast radius 4 of 21, the deferral is exactly what
+'bug-free' asks for". Item 22's sweep records `4 of 21` as **the one claim in it that does not
+reproduce** — re-derivation gives 22 of 27 at run end, 20 of 27 at first release, roughly five
+times higher. That figure is not decoration: it is the justification for DEFERRING a release.
+
+It had been sitting in a test docstring since before this session, in a file whose tests all pass,
+which is the most convincing place a wrong number can live. Struck through with the re-derivation
+AND with the re-derivation's own limits (only 15% of these bugs carry `triage_history`, so the
+probe over-counts), and pinned by a test.
+
+**The pattern across all four.** Every instance was prose, none was an assertion, and all four
+were green the whole time. The tooling this session added — #716's pattern check, #719's
+cross-reference guard — reads code and the document. Nothing reads the sentences in between.
+
 **Cheapest observation.** None; this is settled by reading. Recorded because the next retraction
 in this file will have the same three exits and none is obvious from inside one.
 

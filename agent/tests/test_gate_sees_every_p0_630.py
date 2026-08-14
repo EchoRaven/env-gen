@@ -21,7 +21,23 @@ non-test-user P0s at the moment of its FIRST release:
        r127 (1 of 1) and r128 (3 of 4) had them RESOLVED later in the same run
        r109 (2) and r133 (1) never did -> they ride the existing escape budget
 
-Blast radius 4 of 21, the deferral is exactly what "bug-free" asks for, and it cannot wedge:
+~~Blast radius 4 of 21~~ — **that figure does NOT reproduce, and it is the number this whole
+paragraph rests on.** Re-derived over the current corpus, counting bug tasks with
+`metadata.kind == "bug"`, `metadata.severity == "P0"` and `metadata.source` outside
+`TEST_USER_SOURCES`:
+
+    claimed                          21 released, 17 zero,  4 would defer
+    at run END                       27 released,  5 zero, 22 would defer
+    at FIRST RELEASE (reconstructed) 27 released,  7 zero, 20 would defer
+
+r109 matches its named figure exactly; r127, r128 and r133 come out higher. The reconstruction is
+NOT sound on its own — only 15% (84 of 552) of these bugs carry `metadata.triage_history`, so the
+rest default to "open" in the probe — but the ORDER OF MAGNITUDE is off by roughly five, and the
+claim is what justifies deferring a release. EXPERIMENTS_PENDING records it as the one claim in
+that sweep which fails. Struck through rather than deleted, per item 48: the reasoning stays
+visible, and the number no longer reads as measured.
+
+The deferral may still be exactly what "bug-free" asks for, and it still cannot wedge:
 `squad_gate_outcome`'s `defect` branch burns an escape attempt and `squad_release_decision`'s
 wall clock is still the backstop.
 
@@ -144,3 +160,17 @@ def test_the_counterfactual_is_recorded():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_the_blast_radius_figure_is_marked_as_not_reproducing():
+    """Fourth instance of item 48's mode three, and the highest-stakes one: '4 of 21' justifies
+    DEFERRING a release, and it does not reproduce — re-derivation gives 20-22 of 27, five times
+    higher. The paragraph that rests on it now says so."""
+    import test_gate_sees_every_p0_630 as me
+    d = " ".join((me.__doc__ or "").split())
+    i = d.find("Blast radius 4 of 21")
+    assert i > 0, "the original figure should stay visible"
+    assert "~~" in d[max(0, i - 4):i], "it must be struck through where it appears"
+    assert "does NOT reproduce" in d
+    assert "22 would defer" in d
+    assert "NOT sound on its own" in d, "the re-derivation's own limits must travel with it"
