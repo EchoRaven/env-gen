@@ -1486,6 +1486,28 @@ def _notnull_missing_cols(body_text: "Optional[str]", method: str) -> "List[str]
 _PROJECTED_TRACEBACK_RE = re.compile(r"backend traceback:[^\n]*\b_projected_[a-z0-9_]+", re.I)
 
 
+def _unknown_id_hint_682(status, body, note) -> str:
+    """Name the id the step actually sent, when the server says it does not exist."""
+    try:
+        if status != 404 or not isinstance(body, Mapping):
+            return ""
+        low = str(note or "").lower()
+        if "not found" not in low and "referenced resource" not in low:
+            return ""
+        sent = [(k, v) for k, v in body.items()
+                if re.search(r"(^|_)id$", str(k)) and not isinstance(v, (dict, list))
+                and str(v).strip() and "${" not in str(v)]
+        if not sent:
+            return ""
+        named = "; ".join(f"{k}={v!r}" for k, v in sent[:3])
+        return (f" — you sent {named}, and no such row exists. A hardcoded id is a guess: ids "
+                "differ between the dataset, the seed and the staged ASSET names. Read one from "
+                "an earlier step in this chain (list the collection, `save` an id from the "
+                "response) instead of writing a literal.")
+    except Exception:
+        return ""
+
+
 def _denial_scope_verdict_663(sent_body, body_text) -> str:
     """#663: a denial probe that SUCCEEDED — did the write cross an ownership boundary?
 
@@ -2797,6 +2819,24 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                     note = ("cross-user denial re-verified with a FRESH intruder → DENIED; the "
                             f"original {status} was a stale/owner-colliding probe token, not a "
                             "real cross-user leak (#78)")
+        # #682: a 404 on a write says "not found" and never says WHAT was not found.
+        # r145 died on exactly this: business_chain never went green in 75 minutes because two
+        # chains posted `title_id: 'movie-1003596'` and got 404 "title not found". That id is
+        # real — it is an ASSET id from design_system.json — but the seeded titles are
+        # 'tv-stranger-signals'-shaped and design/dataset/titles.json uses integers, so three id
+        # vocabularies were in play and the verifier picked the one that is not in the database.
+        # The contract could not have told it: the registered schema says `title_id: 'str'`.
+        #
+        # The step's own request body holds the answer and the line never quoted it. Naming the
+        # field and the value turns "title not found" into something the author can act on.
+        # In the corpus the same shape is POST /api/my-list -> "referenced resource not found"
+        # x26, the largest single broken-assertion class after the denial probes.
+        #
+        # NOT a registration-time rule: I measured hardcoded `*_id` literals across the 3492
+        # stored chains first, and they fail at 5% — exactly the same rate as chains without
+        # them, with 392 PASSING chains using one. Rejecting them would have cost real work and
+        # caught nothing. The value only becomes wrong once the server says so.
+        note = note + _unknown_id_hint_682(status, body, note)
         entry = {"action": str(step.get("action") or path), "method": method,
                  "path": path, "status": status, "ok": ok, "kind": kind,
                  "note": note}
