@@ -61,6 +61,35 @@ else say "n/a" "#674 failed ToolResult data" "no run log given"; fi
 grep_log "#664 chain-reject escalation"  "have now been rejected"          "was: 4 escalations in 4928 rejects"
 grep_log "#663 denial-probe class"       "BOUNDARY CROSSED"                "P0 if present; SUBSTITUTED = status bug"
 grep_log "#671 matrix skipped"           "matrix_skipped_reason"           "reported when no tasks/tasks.yaml"
+grep_log "#683 chain named in failure"   "] business_chain:"               "was: the CHECK name, never the chain"
+grep_log "#688 empty-page hint"          "NO interactable elements"        "was: bare 'Timeout 5000ms exceeded'"
+grep_log "#689 navigation-race retry"    "Retried once after the navigation" "was: no retry; 132 races, 50 live"
+grep_log "#690 empty route parameter"    "EMPTY parameter"                 "was: 3 branches all mis-diagnosed it"
+grep_log "#682 unknown id named"         "no such row exists"              "was: bare 'title not found'"
+grep_log "#682b ownership 403"           "The refusal is CORRECT"          "was: bare 'does not belong to the caller'"
+
+# --- fixes whose signature is the DEFECT DISAPPEARING, not a new message -------------------------
+# These cannot be confirmed by presence. A zero here is the goal, but a zero also happens when the
+# branch was never reached, so each prints the pre-fix count for scale rather than a verdict.
+gone_log() {   # gone_log <label> <pattern> <was>
+    if [[ -z "$LOG" || ! -f "$LOG" ]]; then say "n/a" "$1" "no run log given"; return; fi
+    local n; n=$(grep -c -- "$2" "$LOG" 2>/dev/null || true)
+    if [[ "${n:-0}" -eq 0 ]]; then say "GONE" "$1" "0 this run  ${3:-}"
+    else say "STILL" "$1" "x$n  ${3:-}"; fi
+}
+# NEITHER verdict is self-interpreting, and this script cannot tell which fixes were compiled
+# into the run. Check that FIRST — `ps -o lstart=` the gen against `git log --date=local` — then:
+#   GONE  = the defect did not occur. Only evidence the fix works if the fix WAS in the build AND
+#           the condition arose; otherwise it just did not come up.
+#   STILL = the defect occurred. If the fix was not in the build this is the pre-fix BASELINE and
+#           exactly what the next run should improve on; only if it WAS in does it mean the fix
+#           missed this path.
+# r146 is the worked example: it launched 22:53 and #683-#690 were committed 23:34, so every
+# line in this block is baseline for it, not a verdict.
+gone_log "#684 notebook readable"        "Unknown file 'notebook'"         "was: 8 refusals in r145"
+gone_log "#685 endpoint lookup"          "Endpoint not found: POST /api/titles" "was: 10 in r145, 10 in r146"
+gone_log "#686 step headers sent"        "X-Profile-Id header is required" "was: 11 live-era, all r132"
+gone_log "#687 browser transport"        "Navigation failed: Page.goto: net::ERR_CONNECTION_REFUSED$" "was: 161 live-era with no diagnosis"
 echo
 echo "--- B. the nine findings that disk could not settle ---"
 
