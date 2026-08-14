@@ -203,6 +203,24 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
                         out[_ep] = sorted(_opt)
                     break
             return out
+        # #728: name the CAUSE beside #700's symptom. #700 says "these routes render identical
+        # content"; when the reason is that a page calls another page's endpoint while its own
+        # sits implemented and unused, say so — r148 shipped GenreCategoryPage fetching
+        # /api/my-list with GET /api/genres/{id}/titles implemented and untouched.
+        try:
+            from .frontend_audit import crossed_page_endpoints_728
+            _rh728 = getattr(hub_registry, "registryhub", None)
+            _eps728 = (_rh728.get_endpoints() or {}) if _rh728 is not None else {}
+            for _x in crossed_page_endpoints_728(_pages_700, _eps728) or []:
+                _LOG_700.warning(
+                    "#728 %s (%s) declares %s, which shares no path word with its own route, "
+                    "while %s is implemented and used by nothing. The page is calling another "
+                    "page's endpoint — code and declaration agree, so the consistency audits "
+                    "pass on the wrong thing.",
+                    _x["page"], _x["route"], ", ".join(_x["declares"]),
+                    ", ".join(_x["unused_match"][:1]))
+        except Exception:
+            pass
         for _g in duplicate_route_content_groups(Path(app_root) / "frontend", _pages_700) or []:
             _f708 = _filters_708b(_g.get("endpoints"))
             if _f708:

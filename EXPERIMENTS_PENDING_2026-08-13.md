@@ -1733,6 +1733,53 @@ right one needed a distribution.
 
 ---
 
+## 50. #728 — pages calling each other's endpoints, and why every audit passed
+
+Chasing a line in r148's #700 report that I had noticed and not followed: `/browse/genre/:genreId`
+and `/my-list` both fetching only `/api/my-list`.
+
+**It is a real shipped bug.** `GenreCategoryPage.jsx:27` fetches `/api/my-list` — click any genre,
+see your watchlist — while `GET /api/genres/{id}/titles` is registered, implemented, and called by
+nothing.
+
+**Why nothing caught it is the useful part.** The page also DECLARED
+`apis_used: ['GET /api/my-list']`. Code and declaration agree, so every consistency audit passes;
+they agree on the wrong thing. Only #700 noticed, and it reported the symptom ("these routes
+render identical content") rather than the cause.
+
+**It is a rotation, not a slip:**
+
+    r146   genre_category -> /api/my-list,  my_list -> /api/titles,  title_detail -> /api/genres
+    r147   none
+    r148   genre_category -> /api/my-list,  title_detail -> /api/genres
+
+Each page holding the next one's endpoint. r147 having zero, on the same framework and prompt,
+is what makes it avoidable rather than inherent — and is the negative control a detector needs.
+
+**Fixed: #728**, report-only beside #700. The criterion is purely structural and needs no product
+standard, which is why it is wired rather than filed for a decision: a page whose declared APIs
+share NO path word with its own route, while an implemented endpoint DOES, is wrong under any
+reading.
+
+**Deliberately narrower than the neighbouring question.** 12 of 16 implemented business endpoints
+are declared by no page at all in r146 and r148 (2 in r147) — `GET /api/search`,
+`GET /api/titles/trending`, `GET /api/continue-watching`, `DELETE /api/my-list/{id}` and more. The
+backend implements them, the chains pass on them (32/32 in r148), and no UI reaches them. Whether
+an endpoint without a UI caller is a defect is a judgement about product scope, and it is the
+user's — recorded here, not enforced.
+
+**Two defects in the detector, both caught by its own output before it shipped**, and both would
+have made it worse than nothing: without stemming, `genre` and `genres` were different words and
+it reported a clean ZERO on the run whose bug motivated it; with alphabetical ranking, it
+suggested `GET /api/genres/{id}/titles` over `GET /api/titles/{id}` for `/title/:id`, pointing at
+the wrong endpoint. Now ranked by token overlap, and back-tested to reproduce 3 / 0 / 2 exactly.
+
+**Cheapest observation.** The next run prints `#728 <page> declares … while <endpoint> is
+implemented and used by nothing` beside #700's group. If #700 fires and #728 does not, the
+identical content has a different cause and this detector is not the explanation.
+
+---
+
 ## 49. 8 of 20 reference screens are states the gate cannot reach at all
 
 The user proposed that the frontend lane — the agent that implemented the page — should declare

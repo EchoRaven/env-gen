@@ -1609,6 +1609,78 @@ def repair_fabricated_fallbacks(frontend_src: Any) -> Dict[str, Any]:
 _PAGE_FETCH_RE_615 = re.compile(r"""['"`](/api/[A-Za-z0-9_\-/]+)([^'"`]?)""")
 
 
+def _route_tokens_728(text: Any) -> set:
+    """Meaningful path words, crudely stemmed. `genre` and `genres` must be the same token —
+    the first version of this check did not stem, and so missed the very case that motivated it:
+    `/browse/genre/:genreId` against `/api/genres/{id}/titles` shares nothing until the plural
+    is folded, and the detector reported a clean zero on the run where the bug shipped."""
+    import re as _re
+    out = set()
+    for t in _re.split(r"[/:{}\-_]+", str(text or "").lower()):
+        if len(t) > 2 and t not in ("api", "v1", "get", "post", "put", "delete", "the"):
+            out.add(t[:-1] if t.endswith("s") and len(t) > 3 else t)
+    return out
+
+
+def crossed_page_endpoints_728(ui_pages: Any, endpoints: Any) -> List[Dict[str, Any]]:
+    """#728: pages calling ANOTHER page's endpoint while their own sits implemented and unused.
+
+    r148 shipped `GenreCategoryPage.jsx` fetching `/api/my-list`: click any genre, see your
+    watchlist. `GET /api/genres/{id}/titles` was registered AND implemented, and nothing used it.
+    Nothing caught it because the page DECLARED `apis_used: ['GET /api/my-list']` too — code and
+    declaration agree, so every consistency audit passes. They agree on the wrong thing.
+
+    Across the runs it is a rotation rather than a slip:
+
+        r146   genre_category -> /api/my-list, my_list -> /api/titles,
+               title_detail -> /api/genres          three pages, each holding the next one's
+        r147   none                                 same framework, same prompt — so it is
+        r148   genre_category -> /api/my-list,      avoidable, not inherent
+               title_detail -> /api/genres
+
+    The test needs no product standard, which is why it is wired rather than filed: a page whose
+    declared APIs share NO token with its own route, while an implemented endpoint DOES share
+    one, is wrong under any reading. That is narrower than "every implemented endpoint should
+    have a UI caller" — 12 of 16 endpoints are unused in r146 and r148, and whether that is a
+    defect is a judgement about product scope, deliberately not made here.
+
+    Report-only, like #700 beside which it is emitted.
+    """
+    out: List[Dict[str, Any]] = []
+    try:
+        pages = ui_pages if isinstance(ui_pages, dict) else {}
+        eps = endpoints if isinstance(endpoints, dict) else {}
+        impl = []
+        for k, v in eps.items():
+            if str(k).startswith("_") or not isinstance(v, dict):
+                continue
+            if str(v.get("status")) != "implemented":
+                continue
+            impl.append((f"{v.get('method')} {v.get('path')}", _route_tokens_728(v.get("path"))))
+        for k, v in pages.items():
+            if str(k).startswith("_") or not isinstance(v, dict):
+                continue
+            route = v.get("route")
+            used = [str(a) for a in (v.get("apis_used") or []) if str(a).strip()]
+            rt = _route_tokens_728(route)
+            if not rt or not used:
+                continue
+            if any(_route_tokens_728(a) & rt for a in used):
+                continue
+            # Rank by how much of the route the endpoint accounts for, then by brevity. Sorting
+            # alphabetically named the WORSE candidate: for `/title/:id` it put
+            # `GET /api/genres/{id}/titles` ahead of `GET /api/titles/{id}`, both of which match
+            # on "title". A suggestion that points at the wrong endpoint is worse than none.
+            better = sorted(((len(et & rt), -len(e), e) for e, et in impl if et & rt),
+                            reverse=True)
+            if better:
+                out.append({"page": v.get("name") or k, "route": str(route),
+                            "declares": used, "unused_match": [e for _, _, e in better][:3]})
+    except Exception:
+        return []
+    return out
+
+
 def duplicate_route_content_groups(frontend_src: Any, ui_pages: Any) -> List[Dict[str, Any]]:
     """#615 — groups of DISTINCT routes whose page components fetch the same unfiltered
     endpoint set. ``[]`` when nothing can be resolved, so a caller can always iterate."""
