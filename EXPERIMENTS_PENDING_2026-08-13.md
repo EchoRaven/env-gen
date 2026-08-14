@@ -1128,12 +1128,43 @@ type` run set, and the two "no tool entry" verdicts on tools that exist.
    it is not re-raised — same disposition as the FK-literal rule, the accent-colour filter and
    the blank-crop content check.
 
-   **Not checkable here as of 2026-08-14: pyrefly is NOT installed in the repo venv** (`import
-   pyrefly` → ModuleNotFoundError; the `pyrefly.toml` files on this box belong to unrelated
-   fbsource trees). Re-measuring needs it installed first — this entry is not offline-checkable
-   in the way the section heading promises, and listing it here as if it were has already cost
-   one look. A naive AST substitute is not a substitute: scanning for `X: T = None` where T does
-   not start with `Optional` returns **6737 hits over 1674 files**, and the top two buckets are
-   false positives — `Annotated[Optional[str], ...]` x737 and `_Optional[...]` x29 are already
-   optional. Whatever the true count is, "mechanical and zero-risk" deserves re-checking against
-   it before anyone starts: 363 curated findings and a four-figure sweep are different jobs.
+   **UNBLOCKED and RE-MEASURED 2026-08-14.** pyrefly was missing from the venv; `pip install
+   pyrefly` through the fwdproxy works (1.2.0). It then produced nothing at all, because it dies
+   walking the tree on a **tracked broken symlink**:
+
+       agent/env_generator/llm_generator/screenshot/expedia
+         -> /Users/thb/Desktop/Gen-Env/openenv-gen-Agent-base/screenshot
+
+   committed in `11d7960` (the engine migration), pointing at somebody's macOS Desktop, the only
+   symlink under `agent/` and the only broken link in the tree. Nothing references it — its
+   siblings `airbnb/` and `doordash/` are real directories, and the single textual mention is a
+   CLI help string naming `screenshot/expedia.png`, a file that does not exist either. Removed.
+   Any recursive tool would have hit the same wall.
+
+   With that gone, `pyrefly check` reports **1,591 errors**, and the entry's characterisation
+   holds up exactly:
+
+       362 bad-function-definition   287 bad-assignment   252 missing-attribute
+       248 bad-argument-type         196 bad-override      94 bad-instantiation
+
+   362 against the 363 recorded (one was fixed in between), and every sampled message is the
+   predicted shape — "Default `None` is not assignable to parameter `assignee` with type `str`".
+
+   **Triaged for real bugs before any sweep, and there are none.** The bug-like classes are
+   `unbound-name` (17) and `bad-return` (12); reading every `unbound-name` site:
+
+       checkpoint.py:399        redundant `import json` INSIDE a try, shadowing the module-level
+                                import at line 10 and making `except json.JSONDecodeError`
+                                theoretically unbound. A stdlib import does not fail; harmless.
+       chain_executor.py:2334   `_is_denial` — guarded by a short-circuit the code already
+                                documents ("referencing _is_denial after it is always safe").
+       route_projector.py:1044  `_parent_owner_filter` — has a default at line 1015.
+
+   That last one deserved a second look, because the default is `""`, i.e. a parent lookup with
+   NO owner filter, which is the #692 shape. It is not: the filter is empty only when
+   `_owner_fk(parent_meta)` finds no owner column on the parent at all (`genres`, `titles`), so
+   there is nothing to scope by. Correct by construction.
+
+   So the 362 remain a typing sweep with no bug behind them, and "mechanical, zero-risk" is
+   accurate — but it is 362 sites, and its only payoff is unmasking some of the 248
+   `bad-argument-type` findings. Worth doing deliberately, not as a drive-by.

@@ -44,7 +44,24 @@ def _stage_paths_robust(git_ops: "GitOps", paths: List[str]) -> List[str]:
 
 
 class CodeHub:
-    """GitHub/GitLab-like collaboration kernel for agent code work."""
+    """GitHub/GitLab-like collaboration kernel for agent code work.
+
+    #697: commit-and-check, not GitHub. The comparison invites a reader to expect the PR half,
+    and by write count (see #693 for why `_meta.version` is the right instrument) it does not
+    exist. Across 146 runs:
+
+        live            checks v11821, branches v115, commits v58, releases v4
+        never written   pull_requests, review_threads, code_reviews, repos
+                        — all at version 1 in 146 of 146
+
+    For pull_requests this is deliberate and already documented at the bundle: `#35` withholds
+    `codehub_open_pr` because "the pipeline is commit-only (committed work auto-integrates via
+    merge_agent_branch_to_main; PR-mode is dead)", and `#695` withheld the two PR tools it left
+    behind. The classes and service methods are kept for the live-monitor shim and the tests.
+
+    So the accurate description is the one above: branches, commits, checks and releases are the
+    working surface, and the review/PR surface is present in code and empty by design.
+    """
 
     def __init__(self, repo_root: Path, hub_dir: Path, eventhub: EventHub | None = None):
         self.repo_root = Path(repo_root)

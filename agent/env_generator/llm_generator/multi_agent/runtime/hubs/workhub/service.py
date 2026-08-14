@@ -72,7 +72,30 @@ def _transition_payload_679(task):
 
 
 class WorkHub:
-    """Notion/Jira-like workspace for docs, plans, tasks, attendees, and comments."""
+    """Notion/Jira-like workspace for docs, plans, tasks, attendees, and comments.
+
+    #697: five nouns, and one of them has never existed. Same instrument as #693 —
+    `JsonStore.update` always `_save_raw`s and always `_bump_meta`s, so `_meta.version` counts
+    writes exactly and a store still at 1 after a whole run was created and never written.
+    Across 146 runs:
+
+        live            tasks v1543, documents v151, comments v130, attendees v10, blocks v6
+        never written   workspaces, databases, decisions, acceptance_criteria, reactions
+                        — all at version 1 in 146 of 146
+
+    Four of the five nouns hold up: docs are `documents` (kinds retro 545, kickoff 154, project
+    146, knowledge 12, general 4), and tasks, attendees and comments are all live.
+
+    **"plans" is not one of them.** There is no plans store, no `plan` document kind, and the
+    tool that would create one has never run: `submit_plan` appears in 0 of 253 kept run logs,
+    though it is bundled (tool_bundles.py:661) and granted to the orchestrator. So the whole
+    submit_plan -> approval -> `_auto_approve_threshold` path, `plan_decision.py` included, is
+    unexercised, and this docstring was the only place claiming otherwise. See
+    EXPERIMENTS_PENDING item 19.
+
+    Nothing is deleted: the readers exist and an empty store is a legitimate state. What was
+    wrong was a sentence promising a surface that has never held a record.
+    """
 
     def __init__(self, hub_dir: Path, eventhub: EventHub | None = None):
         self.hub_dir = Path(hub_dir)
