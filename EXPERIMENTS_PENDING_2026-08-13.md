@@ -1769,10 +1769,45 @@ registered `ui_pages` as its most authoritative layer (#416), and the reference 
 normalised filename (`browse_home_page` ↔ `browse_home.jpg`). Only the ACTION is missing, and
 `goto` (visual_fidelity.py:1770) and `screenshot` (:1867) sandwich a live Playwright page.
 
-**Open, and the user's to decide.** What happens to a reference screen the lane does NOT declare
-a path for: advisory (the gate admits it cannot reach it, which retires item 40's permanent
-blocker) or blocking (which keeps the bar but leaves 8 screens unpassable). Advisory hands the
-lane partial control over which screens count, by omission. Recorded rather than chosen.
+**Where the declaration would live — both candidates measured, and neither is ready.**
+
+    carrier                      dedicated tool   gates/advances   lane fill rate
+    ui_pages                     kickoff_declare  yes              r146 1, r147 14, r148 4
+                                 _ui_page                          (of 13 / 27 / 16 — the rest
+                                                                    written by orchestrator)
+    reference_image_manifest     none             no — AUX key     2 of 146 runs
+
+`reference_image_manifest` looked ideal: the semantics fit exactly, the framework already refuses
+a manifest whose paths were not actually opened with `view_image` (base.py:601, so it cannot be
+authored from memory), and its list-of-dicts form ALREADY parses `{"path": ..., ...}` and ignores
+unknown keys — a `reach` field needs no parser change. But it is an AUX kickoff key, and
+`has_aux_content`'s own docstring says these have "NO dedicated kickoff_declare_* tool" and are
+"NOT buildable substance (don't advance the phase)". **The lane not writing it is not decay; it
+was never required to.** 2 of 146 runs is what fully-optional looks like.
+
+`ui_pages` has the tool and the gate, and I recommended it on that basis — then checked
+`created_by` and found the lane writes 4 of r148's 16 records, 14 of r147's 27, and 1 of r146's
+13. **The table is mostly orchestrator-populated and the lane's share swings 1 → 14 → 4.**
+
+**So the blocker is not which carrier to choose.** Neither is a place the lane reliably fills, and
+#664 already measured what does not fix that: the verifier prompt names its registry 30 times and
+an escalation fires 76 times, and the behaviour does not move. Item 36 counted 137 of 290 tools
+never called. A `reach` field on either carrier becomes the 138th mechanism that exists and is not
+used unless declaring it is **required and visible when missing**.
+
+**Open, and the user's to decide — now with the coupling visible.** What happens to a reference
+screen the lane does NOT declare a path for:
+
+  * **advisory** retires item 40's permanent blocker, but at the measured fill rates it would
+    silently drop all 8 interaction screens in the first run — hiding the problem, not fixing it;
+  * **blocking** keeps the bar, but wedges every run on those 8 until the lane actually declares.
+
+Both are unsafe while declaration is optional, which makes "make declaring reliable" the
+prerequisite rather than a follow-up.
+
+**Cheapest observation.** One run with a `reach` field added to `kickoff_declare_ui_page` and NO
+gate change: count how many of the 8 interaction screens get a declaration. That separates "the
+lane will do it when asked" from "it needs enforcement" without risking either failure mode.
 
 **Corrected while measuring:** my first count said 9 of 21. `spec.md` is markdown, not a screen —
 I listed the directory without filtering to images. It is scored 0 times, so the framework
