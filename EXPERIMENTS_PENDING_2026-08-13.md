@@ -1778,6 +1778,28 @@ causal path.
 run. If they diverge — and they must, one being merged — then every quality judgement made from
 `verdict.json` this session (including mine) describes the record rather than the app.
 
+**The generalisation, which is the only reusable part.** Six keys carry the same name in both
+dicts — `blocking_average`, `coverage`, `min_similarity`, `passed`, `screens`, `summary` — and at
+least three of them mean different things. Anyone reading these artifacts needs this table, and I
+did not have it:
+
+| artifact field | contains | so it is |
+|---|---|---|
+| `rounds.jsonl` → `live` | built from `results` | the CURRENT capture |
+| `rounds.jsonl` → `blocking_average` | from the verdict, over `merged` | the HIGH-WATER mark |
+| `rounds.jsonl` → `blocking_average_live` | `_live_average` | the CURRENT mean |
+| `verdict.json` → `screens` | `merged` | BEST-EVER per screen |
+| `verdict.json` → `passed` | `bool(passed) or _merged_passed` | merged-optimistic |
+| returned dict → `blocking_average` | `_blocking_similarity_average(results)` | the CURRENT capture |
+| returned dict → `passed` | `passed` | un-merged |
+| the PNGs on disk | the capture itself | CURRENT |
+
+Re-checking this session's analyses against it: #713 read PNG hashes off disk, so it is
+unaffected. #718's `card_hover_preview` figures came from `verdict.json` `screens` and are
+therefore BEST-EVER — the true current scores can only be lower, so "maximum 0.40, never passes"
+is a floor and the finding is strengthened, not weakened. The 0.5463 recomputation used
+`rounds.jsonl` `live`, which is current, and stands.
+
 ---
 
 ## 41. #711 CONFIRMED LIVE in r148 — announced, not reconstructed
