@@ -1733,6 +1733,48 @@ right one needed a distribution.
 
 ---
 
+## 69. Two hypotheses falsified, one method retired, and the delivered apps audited clean (#749)
+
+A turn with no defect in it, recorded in full because three of these would otherwise be re-mined.
+
+**Falsified: "the framework reads kickoff keys the lanes never write."** The mirror of #748, and
+the shape of #730. A sweep said `data_model` (13 reads) and `backend` (10) never appear in any
+hub record. They do — my vocabulary only indexed ONE level of nesting, and kickoff drafts sit
+deeper, in `workhub_documents` (142 records) and eventhub events (1422). Replaying the real read
+path (`_collect_drafts` → `backend` → `api_endpoints`/`data_model.tables`) over the corpus:
+**138 of 141 runs resolve endpoints or tables**, 2 miss the backend draft entirely. No defect.
+The one-level index is the same failure as the `payload.metadata.bug_artifacts` miss in item 61
+and the `metadata["priority"]` miss in item 56 — third time this session, always the same cause.
+
+**Method retired: "framework reads what nobody writes", statically.** Redone with a full
+recursive vocabulary (462,515 keys), 79 reads still look unmatched — and the list contains
+`blocking_average_live`, which certainly exists, in `design/visual_gate/` rather than
+`shared/hubs/`. The reads are on in-memory dicts and non-hub artifacts as often as on hub
+records, and nothing cheap tells them apart. **The method cannot answer the question**; it is
+recorded as unusable rather than left to look unexplored.
+
+**#749 — the delivered backends are clean, and the probe that says so is now permanent.** My
+memory's standing rule is to audit the delivered app even after a green gate (#569 was a live
+leak in r134's shipped `/api/search`). A crude first pass flagged 85 of 135 delivered
+`custom_routes.py`, and every sample was noise: an owner column in a JOIN condition or in the
+SELECT list says nothing about scoping. Tightened to "the owner column appears in NO predicate,
+in a GET handler, with no Python-side scoping either" the answer is **0 of 135**.
+
+That zero was then checked rather than believed, which matters because the tightening added a
+broad exclusion that could easily over-reject: a planted unscoped handler IS flagged, and a
+scoped one is NOT. So the result is real: **no delivered backend has a GET handler reading a
+per-user table without an owner predicate.** The #566s/#591/#598/#569 line holds across the whole
+delivered corpus.
+
+It is wired into `check_pending_experiments.sh` as section D, printing `P0` with the offending
+statements if a future run regresses and `DATA … clean` otherwise — a clean audit is only worth
+anything if it keeps being true.
+
+**Cheapest observation.** Section D runs on every future run for free. The corpus baseline it
+prints is 0 of 135, so any `P0` line is a regression with the statement already quoted.
+
+---
+
 ## 68. #748 — the reason the app would not boot was captured and withheld
 
 #747's shape, swept properly: **every hub field that is WRITTEN and never READ.** For each store,

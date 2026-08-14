@@ -349,3 +349,41 @@ PY
 else say "n/a" "wasted-step ranking" "no run log given"; fi
 echo
 echo "Read EXPERIMENTS_PENDING_2026-08-13.md for what each number means and what to conclude."
+
+# --- D. #749: does the DELIVERED backend leak another user's rows? -------------------------------
+# Audited across the corpus and CLEAN — 0 of 135 delivered `custom_routes.py` have a GET handler
+# reading a per-user table with no owner predicate and no Python-side scoping. That is a result,
+# not an absence: the probe was checked against a planted leak (caught) and a scoped handler (not
+# flagged) before the zero was believed. Kept here so the clean state is a REGRESSION guard rather
+# than a one-off audit — memory says to audit the delivered app even after a green gate (#569 was
+# a live leak in r134's shipped /api/search).
+python3 - "$RUN" <<'PY'
+import re, sys, pathlib
+OWNER = r'(user_id|profile_id|owner_id|account_id)'
+p = pathlib.Path(sys.argv[1]) / "app" / "backend" / "custom_routes.py"
+if not p.is_file():
+    print("%-9s %-46s %s" % ("n/a", "#749 owner-scoped delivered reads", "no custom_routes.py"))
+    raise SystemExit(0)
+src = p.read_text(errors="ignore")
+bad = []
+for h in re.split(r'\n@(?:router|app)\.', src)[1:]:
+    head = h.split('\n', 1)[0]
+    if not head.lower().startswith('get'):
+        continue
+    for m in re.finditer(r'SELECT\b[^"\';]{10,300}', h, re.I):
+        st = m.group(0)
+        if not re.search(r'FROM\s+\w+', st, re.I):
+            continue
+        if re.search(r'(WHERE|AND|ON)\b[^;]{0,200}?' + OWNER, st, re.I):
+            continue
+        if not re.search(OWNER, st, re.I):
+            continue
+        if re.search(OWNER + r'\s*(==|!=|in\b)', h) or re.search(r'current_user|_owner_val|profile_id\s*=', h):
+            continue
+        bad.append(" ".join(st.split())[:80])
+lab = "#749 owner-scoped delivered reads"
+if bad:
+    print("%-9s %-46s %s" % ("P0", lab, "%d unscoped read(s): %s" % (len(bad), "; ".join(bad[:2]))))
+else:
+    print("%-9s %-46s %s" % ("DATA", lab, "clean (corpus: 0 of 135 delivered backends leak)"))
+PY
