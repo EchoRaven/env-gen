@@ -1433,7 +1433,7 @@ DECAYING after the first escalation; today they grow 8 → 14 → 18 → 22.
 
 ---
 
-## 33. #664's escalation is READ-ONLY in practice — and more words will not fix it
+## 33. #710 — #664's escalation is READ-ONLY in practice — and more words will not fix it
 
 r147 is the first run with #664 fully in the build, and it answers a question #664's own comment
 left open ("what the logs CANNOT show: whether the agent read the warning"):

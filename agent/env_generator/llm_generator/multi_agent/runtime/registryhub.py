@@ -2088,7 +2088,7 @@ class RegistryHub:
                 # a median of just 2 distinct causes (r129: 81 rejections, 5 causes). The
                 # verifier re-submits the same unsatisfiable chain ~9x per cause.
                 #
-                # #709 — r147 ANSWERS THE OPEN QUESTION BELOW, and the answer rules out the
+                # #710 — r147 ANSWERS THE OPEN QUESTION BELOW, and the answer rules out the
                 # obvious next move. r147 is the first run with #664 fully in the build:
                 #
                 #     registration attempts                160     failures  80 (50%)
@@ -2115,6 +2115,7 @@ class RegistryHub:
                 # see the demand). Both are design decisions with real consequences — a stripped
                 # chain may be meaningless, an auto-registered endpoint invents contract — so
                 # neither is made here. Filed as EXPERIMENTS_PENDING item 33 with these numbers.
+                # (Renumbered #709 -> #710: tooling.py already held an in-flight #709.)
                 #
                 # (What the logs CANNOT show: whether the agent read the warning. They truncate
                 # at 300 chars, so the escalation appears 0 times in 55 files — an artifact of

@@ -849,6 +849,60 @@ class AgentTooling:
                     "it and make the change through the authoring surface named above, or "
                     "register the contract so the framework regenerates the file."
                 )
+                # #709: SAY WHICH KIND OF DENIAL THIS IS. `is_framework_owned` matches on the
+                # lane prefix plus the BASENAME (path_routed_workspace.py:647), so a path the
+                # framework does not generate is refused with a reason that is false for it.
+                # Measured over the 253 kept logs: 1576 framework-owned write denials, of which
+                # **134 name a path that is not the canonical one** —
+                # `app/frontend/src/services/package.json` x98, `app/frontend/src/package.json`
+                # x32, bare `package.json` x4. Telling a lane "the framework generates and
+                # overwrites this" about a file the framework has never written leaves it
+                # nothing to act on, and 98 retries on one path is what that looks like.
+                #
+                # The refusal itself stays — a nested package.json is not how a Vite app
+                # declares dependencies, so denying it is right. Only the reason is corrected,
+                # and it now carries the resolution instead of a false statement. Same class as
+                # #682/#690: the detection was fine, the text was the cost.
+                # Derived from the data that already exists, NOT from a new accessor: the
+                # ownership map is (lane-prefix, basenames) and the basename match is
+                # DELIBERATE — path_routed_workspace's own comment says it mirrors the conflict
+                # resolver so the write guard and the resolver cannot diverge. So the semantics
+                # stay; only "is this the canonical location" is inferred, and that is simply
+                # whether the file sits directly under the lane prefix (app/frontend/
+                # package.json) or nested deeper (app/frontend/src/services/package.json).
+                # My first draft called a `framework_owned_paths()` that does not exist, which
+                # would have made this whole branch dead — the exact defect class this session
+                # has been finding.
+                _canon_709 = []
+                try:
+                    from ...runtime.path_routed_workspace import _framework_owned_routes
+                    for _p in (fw_owned or []):
+                        _rel = str(_p).replace("\\", "/")
+                        for _prefix, _bases in (_framework_owned_routes() or []):
+                            if not _rel.startswith(_prefix):
+                                continue
+                            _tail = _rel[len(_prefix):]
+                            if _tail in _bases:        # directly under the prefix == canonical
+                                break
+                            if _tail.rsplit("/", 1)[-1] in _bases:
+                                _canon_709.append(_rel)
+                            break
+                except Exception:
+                    _canon_709 = []
+                if _canon_709:
+                    _names = ", ".join(_canon_709)
+                    return ToolResult(
+                        success=False,
+                        error_message=(
+                            f"Write denied: {_names}. NOT because the framework generates that "
+                            f"path — it does not. The name matches a framework-owned file "
+                            f"elsewhere in this lane, and a second one here would shadow it. "
+                            f"A frontend has ONE package.json, at app/frontend/package.json, "
+                            f"and it is framework-owned: add dependencies by registering the "
+                            f"contract, not by creating a nested manifest. If you were trying "
+                            f"to add a module, a plain .js/.jsx file needs no manifest."),
+                        metadata={"framework_owned": False, "shadowing_name": True},
+                    )
                 return ToolResult(
                     success=False,
                     error_message=(
