@@ -107,6 +107,48 @@ def test_the_gate_does_not_read_reach_yet():
     assert '"reach"' not in inspect.getsource(vf)
 
 
+# --- the lane is TOLD it exists, or the adoption probe measures nothing ------------------------
+
+def _prompt() -> str:
+    from pathlib import Path
+    from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as vf
+    root = Path(vf.__file__).resolve().parents[1]
+    return (root / "prompts" / "v3" / "frontend_agent.j2").read_text(encoding="utf-8")
+
+
+def test_the_prompt_introduces_reach():
+    """Without this the probe is void: it would measure 0 and 0 would mean 'never told', not
+    'will not do it'. #664's lesson — that wording does not move behaviour — was earned on an
+    instruction repeated 30 times, and cannot be applied to one never written."""
+    p = _prompt()
+    assert "reach=['hover:.title-card:first-child']" in p
+    assert "5c. A REFERENCE THAT SHOWS AN INTERACTION STATE" in p
+
+
+def test_the_prompt_names_the_verbs_and_the_ordering():
+    p = _prompt()
+    for v in ("hover", "click", "scroll", "wait"):
+        assert v in p
+    assert "AFTER navigation and BEFORE the screenshot" in p
+
+
+def test_the_prompt_gives_the_measured_reason():
+    p = _prompt()
+    assert "8 of 20 reference screens" in p
+    assert "NEVER passed in 36 blocking appearances" in p
+
+
+def test_the_prompt_says_it_is_not_a_way_to_choose_your_score():
+    """The safety property must reach the lane too, or it reads as an invitation to game."""
+    p = _prompt()
+    assert "does NOT let you choose your own score" in p
+    assert "scores WORSE" in p
+
+
+def test_the_prompt_covers_states_with_no_route_of_their_own():
+    assert "even when it has no route of its own" in _prompt()
+
+
 # --- provenance ---------------------------------------------------------------------------------
 
 def _block() -> str:

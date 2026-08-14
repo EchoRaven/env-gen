@@ -1817,9 +1817,19 @@ Neither is required, nothing consumes `reach` yet, and no gate behaviour moves �
 `visual_fidelity.py` does not read it. That is the point: the next run measures ADOPTION (how many
 of the 8 interaction screens get a declaration) without risking either failure mode above.
 
-Read it as: **8 declared** means the lane does it when asked and the consuming half is safe to
-build; **0-2 declared** means this is the 138th optional mechanism and enforcement, not wording,
-is the prerequisite — #664 already showed 30 prompt mentions plus 76 escalations move nothing.
+**The probe was void as first written, and catching that is the point of writing it down.** A
+field the lane has never been told about cannot be adopted, so it would have measured 0 — and my
+reading rule said 0 means "enforcement is the prerequisite". That inference does not hold: #664's
+lesson (wording does not move behaviour) was earned on an instruction repeated 30 times, and
+cannot be applied to one never written. Checked before assuming: `reach` appeared 11 times in the
+frontend prompt and every one was the English word ("reachable", "a user reaches"). The prompt now
+introduces the field as rule 5c, with the measurement that motivates it, the verbs, and the safety
+property — that a wrong `reach` scores WORSE, so it is not a way to choose your own number.
+
+Read the next run as: **8 declared** means the lane does it when asked and the consuming half is
+safe to build; **0-2 declared** now means what I originally claimed, because the instruction
+exists — this would be the 138th optional mechanism and enforcement, not wording, is the
+prerequisite.
 
 **Corrected while measuring:** my first count said 9 of 21. `spec.md` is markdown, not a screen —
 I listed the directory without filtering to images. It is scored 0 times, so the framework
