@@ -138,6 +138,15 @@ be asked any more. Anything further has to be posed against the new behaviour.
 
     13  tasks/tasks.yaml   absent in both       -> 146 of 146. The matrix gate keys on a file
                                                    nothing ever writes.
+    13  tasks/tasks.yaml   absent in both       -> writer NOT unreachable (verifier+api_test_user
+                                                  hold save_task_suite); the PROMPT marks the
+                                                  whole path OPTIONAL. Half answered 2026-08-14.
+    15  blank crops        n/a                  -> CLOSED 2026-08-14: crops ARE read (#461 renders
+                                                  the hero title-art crop); 0 of 2606 hero crops
+                                                  are blank, so the feared case never happens.
+    16  19 dead stores     n/a                  -> DECOMPOSED 2026-08-14 by write-count: 1 drained,
+                                                  6 never-written, 3 writerless, 9 out of probe
+                                                  scope. #693 fixes the docstring.
     14  max_ticks          5/240 and 1/240      -> CLOSED 2026-08-14, no action: delivered runs
                                                   spend MORE ticks than aborted ones (median 2
                                                   vs 1), so no reachable cap discriminates.
@@ -543,9 +552,36 @@ could surprise a consumer expecting a file per component. The naming also differ
 two artifacts (specs `pause_button`, crops `pause-button`), so any consumer joining them by name
 already normalises.
 
-**Cheapest observation.** One run: grep for reads of `design/crops/`. If only the design analyst
-writes them and nothing reads them, stop writing a crop for an empty region — and 4.9 GB of
-mostly-unread PNGs is worth revisiting separately.
+**~~Cheapest observation.~~ CLOSED 2026-08-14 — and the premise behind the suggested fix is
+wrong.** "Grep for reads of `design/crops/`" is a code question, not a run question, and the
+answer is that crops are very much read:
+
+    frontend_scaffold.py:10432  #461 stages design/crops/*.png → /assets/crops/ in the app
+    frontend_scaffold.py:5777   _hero_title_crop_url_461 picks the hero TITLE-ART crop and the
+                                projector renders it AS the hero title — "the crop IS the real
+                                reference wordmark"
+
+So they are not write-only, and "stop writing a crop for an empty region" would remove an input
+the hero depends on. r146's release tree carries 339 staged crops; decoding every one, **10 are
+single-colour** (3%) — `player_controls__{pause,subtitles,fullscreen,episodes,rewind-10,
+forward-10,next-episode}-button`, plus one card. Exactly the auto-hide set the corpus measurement
+found. Those ship as dead assets: staged, never referenced by a rendered component. A size
+question, not a correctness one.
+
+**Hypothesis raised here and REFUTED, recorded so nobody re-raises it.** If the hero title-art
+crop were blank, `_hero_title_crop_url_461` would render an empty image as the hero title, and
+the resolver does NOT check the crop has content — it matches on name and size only. That is a
+real gap in principle. Decoding every hero/title-art/logo/wordmark crop in the corpus:
+
+    2606 such crops, 0 single-colour
+
+Zero, across 146 runs. The blanks cluster entirely in auto-hiding player chrome, which is where
+the reference frame genuinely had nothing. Adding a content check to the resolver would be
+defending a case that has never occurred, so it is deliberately NOT added — same disposition as
+the FK-literal rule and the accent-colour filter, both measured and rejected rather than shipped.
+
+**Nothing here needs a run.** Item 15 is closed; the 4.9 GB of PNGs remains a size question worth
+revisiting on its own terms, not a correctness one.
 
 ---
 
