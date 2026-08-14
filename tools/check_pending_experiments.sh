@@ -163,6 +163,7 @@ grep_log "#737 blackout held off plateau" "blackout round does NOT count toward 
 grep_log "#737 SPA crash filed"          "is not a function" "the r148 killer, found by the verifier while the gate called itself clear. Any hit = the delivered app may not render — check it before trusting the release"
 grep_log "#715 served build is stale"    "the SERVED frontend does not know" "a hit VOIDS those screens' scores; #713's cause, caught before the capture"
 grep_log "#715 probe inconclusive"       "715 probe inconclusive" "fires if route literals do NOT survive the bundle — then the check needs rethinking, not the app"
+grep_log "#738 served bundle frozen"     "SERVED bundle did not change while app/frontend did" "the half #715 is blind to: routes unchanged, fix never reached the container. r148 died of this and #715 would have called it clean"
 grep_log "#707 invented asset staged"    "staged .* placeholder asset(s) the frontend referenced" "each hit = a path the lane invented instead of search_icons/save_image or drawing it"
 grep_log "#706 integration promoted"     "promoted integration -> main" "should appear once per delivered run; then rev-list --count main..integration should be 0"
 grep_log "#706 promotion refused"        "promotion did not happen" "the callee declined and names why — read it, do not assume the topology"

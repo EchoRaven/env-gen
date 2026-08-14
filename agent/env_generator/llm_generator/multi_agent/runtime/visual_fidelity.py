@@ -2036,6 +2036,21 @@ async def judge_screen_pair(llm: Any, screen: Mapping[str, Any], screenshot_path
 # ---------------------------------------------------------------------------
 # The gate
 # ---------------------------------------------------------------------------
+def _served_build_is_stale_738(prev: Any, frontend_commit: str, bundle: str) -> bool:
+    """#738: did app/frontend move while the SERVED bundle stayed byte-identical?
+
+    Pure predicate so the decision is testable without a container. Both halves must be
+    present and both must be known from the PREVIOUS capture — the first round of a run has
+    no prior and can never be stale. Reports only; see the call site for the disposition.
+    """
+    if not (isinstance(prev, Mapping) and frontend_commit and bundle):
+        return False
+    _pc, _pb = prev.get("frontend_commit"), prev.get("bundle")
+    if not (_pc and _pb):
+        return False
+    return bool(_pb == bundle and _pc != frontend_commit)
+
+
 def _auth_wipeout_655(judged_screens, auth_bounced) -> bool:
     """#655: did the authenticated session fail WHOLESALE? Judged per ROUTE, not per screen.
 
@@ -2239,6 +2254,66 @@ async def run_visual_fidelity(
                                 _LOG.info(
                                     "#715 served build matches the source: all %d declared "
                                     "route(s) are present in the bundle.", len(known_routes))
+                        # #738: A STALE BUNDLE WHOSE ROUTES DID NOT CHANGE.
+                        # #715 compares ROUTE LITERALS, so it only sees staleness that renamed
+                        # or added a route — r147's case. r148 died of the other half and #715
+                        # would have called it CLEAN: the routes never changed, a frontend bug
+                        # fix simply never reached the container, and #722 would have printed
+                        # "served build matches the source" over an app that crashed on every
+                        # page. A false all-clear is worse than the silence #722 was built to
+                        # end.
+                        #
+                        # The observation already exists — a lane wrote it by hand into the P0
+                        # that never got actioned: "PRIOR FIX (task_17fc0b5257) DID NOT LAND.
+                        # The deployed bundle hash + error signature are IDENTICAL to before."
+                        # Vite content-hashes its asset filenames, so that check is mechanical:
+                        # if the frontend source moved and the served asset names did not, the
+                        # container is serving a build from before the edit.
+                        #
+                        # Keyed on the last commit that TOUCHED app/frontend, not on HEAD. Most
+                        # commits in a run are backend or docs, and those legitimately leave the
+                        # bundle alone — keying on HEAD would fire on nearly every round.
+                        #
+                        # Same disposition as #715: reports, decides nothing. A stale serve does
+                        # not mean the app is broken, it means this measurement is of the wrong
+                        # build. Any fault leaves the state file untouched and says nothing.
+                        _assets738 = _sp715.run(
+                            ["docker", "exec", _cid715, "sh", "-c",
+                             "ls -1 /usr/share/nginx/html/assets/ 2>/dev/null"],
+                            capture_output=True, text=True, timeout=20).stdout.split()
+                        _bundle738 = " ".join(sorted(_assets738))
+                        _fe738 = subprocess.run(
+                            ["git", "log", "-1", "--format=%H", "--", "app/frontend"],
+                            cwd=str(project_dir), capture_output=True, text=True,
+                            timeout=20).stdout.strip()
+                        _sf738 = project_dir / "design" / "visual_gate" / "served_build.json"
+                        _prev738: Dict[str, Any] = {}
+                        try:
+                            if _sf738.exists():
+                                _prev738 = json.loads(
+                                    _sf738.read_text(encoding="utf-8")) or {}
+                        except Exception:
+                            _prev738 = {}
+                        if _served_build_is_stale_738(_prev738, _fe738, _bundle738):
+                            _LOG.warning(
+                                "#738 the SERVED bundle did not change while app/frontend did: "
+                                "still %s, but the frontend's last commit moved %s -> %s. The "
+                                "container is serving a build from BEFORE that edit, so this "
+                                "capture measures the old app and any fix in it is not present. "
+                                "Rebuild the frontend image (a source edit alone does not "
+                                "restage nginx's /usr/share/nginx/html). #715 cannot see this "
+                                "case: the routes are unchanged, so it reports the build clean.",
+                                _bundle738[:120], str(_prev738.get("frontend_commit"))[:9],
+                                _fe738[:9])
+                        if _bundle738 and _fe738:
+                            try:
+                                _sf738.parent.mkdir(parents=True, exist_ok=True)
+                                _sf738.write_text(
+                                    json.dumps({"frontend_commit": _fe738,
+                                                "bundle": _bundle738}),
+                                    encoding="utf-8")
+                            except Exception:
+                                pass
             except Exception:
                 pass
     except Exception:

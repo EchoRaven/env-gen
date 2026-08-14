@@ -1733,6 +1733,46 @@ right one needed a distribution.
 
 ---
 
+## 57. #738 — the stale-build detector would have called r148's stale build CLEAN
+
+Chasing #737's root cause: why did the crash survive the whole run? The P0 says it plainly, and
+a lane wrote this by hand because nothing in the framework did:
+
+    PRIOR FIX (task_17fc0b5257) DID NOT LAND. The deployed bundle hash + error signature are
+    IDENTICAL to before. This means one of: (a) the fix targeted the wrong file, (b) the
+    frontend docker image was not rebuilt, (c) Vite build cache served the stale bundle.
+
+So the lane fixed it and the container kept serving the pre-fix bundle. That is precisely what
+#715 exists to catch — and **#715 would have reported this build CLEAN**. It compares ROUTE
+LITERALS: it asks whether every route the source declares appears in the served bundle. r147's
+collapse renamed four routes, so #715 sees it. r148 renamed nothing; a bug fix simply never
+reached the container, so `known_routes` is fully present, `_missing715` is empty, and #722
+prints *"served build matches the source"* over an app that renders nothing. **A false all-clear
+is worse than the silence #722 was built to end.**
+
+Checked before claiming the detector was missing: #715/#722 were committed at 11:54 and 11:51 on
+08-14, after r148's 10:44:39 build cutoff and after the run finished at ~11:37. So r148 never had
+them, and the checker's three `NOT SEEN` lines for #715 are honest rather than a bug. The gap is
+in what #715 measures, not in whether it ran.
+
+#738 adds the other half, mechanically, from the observation the lane had to make by hand: Vite
+content-hashes its asset filenames (`index-C3zHFyCT.js`), so if the frontend source moved and the
+served asset names did not, the container is serving a build from before the edit. Keyed on the
+last commit that TOUCHED `app/frontend`, not on HEAD — most commits in a run are backend or docs
+and legitimately leave the bundle alone, so a HEAD key would fire nearly every round. Reports
+only, exactly like #715: a stale serve does not mean the app is broken, it means the measurement
+is of the wrong build. Extracted as a pure predicate so the decision is testable without a
+container; the first round of a run has no prior and can never be stale.
+
+**Cheapest observation.** Next run: does `#738` ever fire, and when it does, does the round that
+follows show a different bundle name? Both are one grep. The falsifier to watch for is a fire on
+a round where the frontend commit moved for a reason that cannot change the bundle (a comment, a
+test file under `app/frontend`) — if that turns out to be common, the key needs narrowing from
+the subtree to the built sources. That cannot be settled offline: the delivered tree has no
+`dist/`, because it is built inside the container.
+
+---
+
 ## 56. #737 — r148 shipped v1.0.0 with a frontend that crashed on every route
 
 **This overturns "delivery is solved".** I said it earlier in this session, on the evidence that
