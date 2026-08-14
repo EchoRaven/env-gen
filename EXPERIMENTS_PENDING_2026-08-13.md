@@ -1733,6 +1733,40 @@ right one needed a distribution.
 
 ---
 
+## 47. A hard limit on offline analysis: tool ARGUMENTS are recorded nowhere
+
+Twice this session I asked "what did the lane actually send to this tool?" — once for
+`register_seed_data` (item 33's territory) and once for `registryhub_register_endpoint` (item
+32's contract mismatch). Both times I answered it from a grep and both times the answer was
+wrong, because the thing I was grepping is prose. Rather than record that as a personal lapse a
+third time, here is the sweep of every artifact a run leaves:
+
+    the run log            tool NAMES appear in prose — rejection messages, tool listings,
+                           remediation text. Arguments: NO.
+    [tool-io] lines        `read returned 53,787 chars (~13k tokens)` — return SIZE only. 53
+                           lines in r148. Arguments: NO.
+    progress_events.jsonl  4 events in r148: generation_start, phase_start, phase_complete,
+                           generation_complete. Arguments: NO.
+    .memory/*.jsonl        19 records in r148, zero containing `args` or `arguments`.
+    the hub stores         the RESULT of a call, never its input.
+
+**So "what did the lane send" is not answerable from a finished run, at all.** Every question of
+that shape is run-dependent by construction, not by my failing to look hard enough — and the
+`#NNN` counts that look like call counts are mention counts, which is item 36's trap wearing a
+different hat.
+
+This bounds several open items. Item 32's contract mismatch (the store has query params in r146
+and none in r147/r148 while all three backends filter) cannot have its origin established from
+disk. Item 33's `register_seed_data` question is the same shape. Both need instrumentation, not
+more grepping.
+
+**Cheapest observation.** One line at the tool-dispatch boundary logging `name(args)` at DEBUG,
+capped. It would have answered both questions and costs nothing when the level is off. Whether
+that is worth the log volume is a judgement about run cost, not a measurement — which is why it
+is recorded here rather than added.
+
+---
+
 ## 46. #724 — and the question that dissolves #706 rather than answering it
 
 Following item 43 out: if `main` is a divergent framework-only copy, does anything depend on it?
