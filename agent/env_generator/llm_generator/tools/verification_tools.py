@@ -21,6 +21,38 @@ logger = logging.getLogger(__name__)
 # 1. SCREENSHOT COMPARISON TOOL
 # =============================================================================
 
+def _require_workspace_704(tool, method: str):
+    """#704: make the implicit precondition of the private extractors explicit.
+
+    These helpers dereference ``self.workspace`` without checking it, and that is CORRECT
+    layering rather than an oversight — every public ``execute`` guards with
+    ``if not self.workspace`` first, and the one out-of-band caller
+    (verification_tools.py:1149, which builds a ``VerifyAPIContractTool`` to reuse route
+    extraction) guards at :1145 before constructing it. Every path in reaches a helper only
+    after a guard, so the crash is not reachable and nothing here is a bug fix.
+
+    What the implicitness costs is a reader who cannot tell "safe by layering" from "missed a
+    check". Stating the contract turns an AttributeError-from-nowhere into a named error that
+    says which method needs a workspace and who is expected to guard, without changing any
+    reachable behaviour.
+
+    MEASURED, and NOT what I first claimed: I wrote that this would also clear the checker's
+    ``NoneType has no attribute`` reports on these methods. It does not. Before and after, with
+    the identical query, pyrefly reports 95 of them and 1,244 errors overall. A call to a
+    function that raises does not narrow a type — pyrefly would need an inline ``is None``
+    check, a ``NoReturn`` path, or for these bodies to use the returned value instead of
+    ``self.workspace``. That last one means rewriting eight dereferences inside
+    ``_find_image_pairs`` alone, which is a real edit for a cosmetic gain and is not done here.
+    The contract is worth stating on its own; the noise reduction was a claim, not a result.
+    """
+    ws = getattr(tool, "workspace", None)
+    if ws is None:
+        raise RuntimeError(
+            f"{type(tool).__name__}.{method} requires a workspace; its caller must guard "
+            f"with `if not self.workspace` first (every current caller does)")
+    return ws
+
+
 class CompareScreenshotsTool(BaseTool):
     """Compare reference screenshots with generated UI screenshots."""
     
@@ -213,6 +245,7 @@ Requires: pip install pillow scikit-image
     
     def _find_image_pairs(self) -> List[Tuple[str, str]]:
         """Find matching reference and generated image pairs."""
+        _require_workspace_704(self, "_find_image_pairs")
         pairs = []
         
         # Look for reference images
@@ -537,6 +570,7 @@ Example:
     
     def _extract_backend_routes(self, backend_dir: str) -> List[Dict]:
         """Extract routes from Express backend."""
+        _require_workspace_704(self, "_extract_backend_routes")
         routes = []
         
         dir_path = self.workspace.resolve(backend_dir)
@@ -680,6 +714,7 @@ Example:
     
     def _extract_frontend_calls(self, frontend_api: str) -> List[Dict]:
         """Extract API calls from frontend service."""
+        _require_workspace_704(self, "_extract_frontend_calls")
         calls = []
         
         api_path = self.workspace.resolve(frontend_api)
@@ -785,6 +820,7 @@ Example:
     
     def _extract_spec_endpoints(self, spec_file: str) -> List[Dict]:
         """Extract endpoints from API spec."""
+        _require_workspace_704(self, "_extract_spec_endpoints")
         endpoints = []
         
         spec_path = self.workspace.resolve(spec_file)
