@@ -1042,12 +1042,39 @@ it only covered module-level functions). 113 hits, most false positives where a 
 convention rather than by name — `do_POST`, `log_message`, `do_DELETE`. One matters:
 `AgentStepStageMixin._run_hub_sync_stage` → **#702**.
 
-**Four sweeps, four axes, and each new axis has yielded.** A, B, C and D are individually
+**Sweep E — calls whose RETURN is discarded, where the callee's name is finding-shaped**
+(blocker/error/issue/violation/missing/failure/defect/gap/verdict/report/finding) and it actually
+returns something. 5 hits, **no defect**: `stage_missing_seed_photos`, `stage_missing_frontend_
+assets`, `_persist_verdict` and `handle_validation_failure` are verbs — the side effect IS the
+point and the return is informational. The fifth, `project_missing_routes`, is a NAME COLLISION in
+my own scan: the `heal_pipeline` method returns `None`, and it was flagged because a same-named
+function in `route_projector` returns a dict.
+
+**Sweep F — module-level CONSTANTS never read.** 11 hits, **no live defect**, but all three
+signal-bearing ones needed checking against delivered code rather than assumption:
+
+  * `_LANDING_TEMPLATE` — a landing-page template added to fix "stuck on a dead 'Landing' heading
+    with no way in", referenced nowhere. Superseded: `_landing_page_src` (called from
+    frontend_scaffold.py:7652) builds the same wordmark + working `/login`+`/signup` nav inline.
+    r146's delivered LandingPage.jsx is a full page. The guarantee exists; the constant is an
+    orphaned duplicate.
+  * `ENFORCE_ROUTINE_SRC` — documents itself as "emitted verbatim into seed_data.py AND
+    oauth_store.py" and is emitted into neither: `_enforce_user_bootstrap_rows` appears in **0
+    generated files across all 146 runs**. Also superseded — the delivered `seed_data.py` carries
+    `_ensure_canonical_rows()` (defined line 117, called line 588) under FIX #72, same purpose.
+  * `_ANALYST_PROMPT`, `ALL_HUB_TOOLS`, and the `_paths.py` directory constants — inert, no
+    guarantee attached.
+
+The pattern in sweep F is worth stating: every hit was a fix implemented TWICE, where the second
+implementation won and the first was left in the tree. None is a behaviour gap; each is a
+maintenance trap, because the orphan reads like the live path.
+
+**Six sweeps, six axes; four yielded and two did not.** A, B, C and D are individually
 exhausted, but the honest summary is not "the search is finished" — it is that this FAMILY of
 defect (a correct computation whose result nothing observes) is dense enough that every new way of
-looking finds more: A→#698, B→#699+#700, C→#701, D→#702. The next axes worth trying, none of them
-run yet: return values discarded at the call site, constants defined and never read, config keys
-with no consumer, and prompt fragments assembled but never included.
+looking finds more: A→#698, B→#699+#700, C→#701, D→#702. A→#698, B→#699+#700, C→#701, D→#702,
+E→nothing, F→nothing. The axes still untried: config keys with no consumer, and prompt fragments
+assembled but never included.
 
 ---
 
