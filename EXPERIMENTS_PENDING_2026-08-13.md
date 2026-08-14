@@ -1687,8 +1687,27 @@ the judging"), and a judge failure falls through to `similarity: 0.0`. That is s
 same phantom-zero as #713 and it simply never fires. Worth knowing it exists before someone reads
 a 0.0 as a blank page.
 
-Still unchecked: `db_query`/`db_schema` and `check_environment`/`wait_for_service` (the docker_up
-blockers in items 26 and 33).
+| `db_query` / `db_schema` | schema/column errors the lane cannot diagnose | "column does not exist" 9, "relation does not exist" 3, "no such table" 0 — **12 in 253 runs** | not a live gap |
+| **`wait_for_service`** | "Prevents test failures due to services still starting up" | `Connection refused` **1801 / 113 logs**, `ERR_CONNECTION_REFUSED` 605, `not ready` 320, `BLOCKED at docker_up` 122 | **HIT — qualified** |
+
+**All five candidates now checked: four rejected, one hit, and the hit needs discounting.**
+`wait_for_service` has 0 calls in 253 runs while the failure it exists to prevent is the corpus's
+largest transport class. But era-splitting it, as every other claim in this file has been:
+
+    Connection refused   r<100  932 across 68 logs
+                         r100+  757 across 34 logs      <- still live
+                         r145 6 · r146 0 · r147 2
+
+The 1801 is dominated by history, and the newest three runs show 6, 0 and 2. So this is a real
+but SHRINKING gap, not another 81%-of-runs finding. Worth noting for its own sake: **#677 fixed
+this class by improving the message** ("1778 bare Connection refused" was its premise) **while a
+tool built to PREVENT the failure sat unused** — the diagnosis was wired and the prevention was
+not, which is the same asymmetry in a different form.
+
+The sweep's honest yield: the rule found three real cases when applied to things I had already
+stumbled on, and produced four rejections and one discounted hit when applied cold to the
+remaining candidates. That ratio is the point — it discriminates, and 137 unused tools is not 137
+defects.
 
 **Cheapest observation.** For any candidate, grep the corpus for the failure its docstring
 names. If the failure has a non-zero live-era count and the tool has a zero call count, that is
