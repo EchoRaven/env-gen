@@ -1000,8 +1000,32 @@ override mechanism, stated in `duplicated_routes`' own docstring.
   981px matches its content fraction. Changing to 796px took `_measured_deviations` error from
   +9.1% to +23%, so it was reverted. Settling this needs a run at each candidate width scored by
   the real judge, not by pixel arithmetic.
-- **#641 round-ledger recommendation at release.** Needs one run's `rounds.jsonl` to validate
-  the "a better state was available" selection.
+- **#641 round-ledger recommendation at release.** ~~Needs one run's `rounds.jsonl`.~~
+  **VALIDATED 2026-08-14 — the run happened.** Only r145 and r146 have a `rounds.jsonl` at all
+  (`design/visual_gate/rounds.jsonl`), which is why the corpus could not answer this. r146's
+  nine rounds:
+
+      r1 .5809  r2 .5809  r3 .5855  r4 .6027  r5 .6700 (live .6655)
+      r6-r9 .6700, live .6409 — four rounds that never recovered r5's live score
+
+  and `design/visual_gate/verdict.json` carries exactly the right call:
+
+      "better_state_available": {"code_state": "5333c4b1ffe2...", "score": 0.6655,
+                                 "delta": 0.0246}
+
+  Right round (r5), right score, and a delta matching an independent recomputation to the digit
+  (0.6655 - 0.6409). It cleared the 0.02 margin by 0.0046, so this run is also a narrow case,
+  not a comfortable one. r145 correctly did NOT fire — one round, nothing earlier to beat.
+
+  This also sharpens the PARTLY RETRACTED section above. "r146's blocking average sat at 0.641
+  for the last four rounds" is `blocking_average_live`, and it is not a plateau: it is a
+  **regression from r5's 0.6655 that four subsequent rounds never undid**.
+
+  **What is now open is a decision, not a measurement.** The recommendation fired and the run
+  shipped r9 anyway — by design, "it changes no decision taken here" — so r146 is the 25th
+  instance of the pattern its own note quotes (#618: 24 of 39 runs deliver worse than their own
+  best). Whether the bounded escape should ship the BEST recorded round instead of the last one
+  is a release-policy change, and #641 has now produced the evidence to argue it with.
 - **`_auto_approve_threshold = 3`.** ~~One run's plans would give the distribution.~~ **Two runs
   happened and gave zero.** `submit_plan` appears in **0 of 253 run logs** — r145 and r146
   included, and r146 had #658 in the build. It is not unreachable: `tool_bundles.py:661` bundles
