@@ -1369,6 +1369,27 @@ rather than reconstructed afterwards.
 
 **#664** also fired 32 times (chain-reject escalation).
 
+**r147 FINISHED — rc=0, released v1.0.0. Build cutoff first, because nothing below is readable
+without it.** r147 launched 08-14 03:10:56, so its build contains every fix committed before that
+and none after:
+
+    IN     #691/#691b 00:23 · #696 01:11 · #698 01:43 · #700 02:00 · #701 02:04 · #706 03:02
+    OUT    #707 03:38 · #708b 03:48 · #709 04:01 · #706b 04:15
+
+So `NOT SEEN` for #707 says nothing at all — it was not in the build. `NOT SEEN` for #696 and
+#701 DOES mean something: both were in, so their conditions simply did not arise (no suppressed
+load failure, no coverage-completion crash). That is the checker header's own rule applied before
+reading any verdict.
+
+**The result that matters most: #706 was IN the build, r147 released, and the promotion never
+fired.** That is not a condition-did-not-arise; it is a defect, and it is mine. The release notes
+read "Final delivery: delivery gate fully clear." — the other call site's wording — so the cut
+came from `orchestrator.py:2122`, not the `:3563` site #706 patched. r147 ends with
+`rev-list --count main..integration` = **40** and one commit unique to `main`: the exact
+pre-#706 topology. Fixed as **#706b**, and the test is generalised from "a hook exists" to "EVERY
+`create_release()` is followed by a promotion", which fails on the tree without it. A
+one-of-two-call-sites miss cannot be caught any other way than by running.
+
 **ITEM 18 IS NOW CLOSED IN A LIVE RUN — the strongest single result of the session.** The offline
 diagnosis was that `mcp_server` is committed on `main`, delivery is cut from `integration`, and
 `merge-base --is-ancestor` is FALSE so the release never sees it. In r147:

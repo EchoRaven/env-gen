@@ -3765,14 +3765,49 @@ class VisualFidelityGate:
             self.plateau_rounds = 0 if _improved else self.plateau_rounds + 1
             # FIX #558: track consecutive REAL judgments whose gating blocking_average (#542,
             # over BLOCKING screens only) cleared the min bar — the STABLE precondition for the
-            # avg fast-release (a single lucky pass never triggers a release; a round below the
-            # bar resets the count). Per-milestone, NOT reset by source churn (mirrors
-            # plateau_rounds). Best-effort: a result missing either field never advances it.
+            # avg fast-release. ~~a single lucky pass never triggers a release; a round below the
+            # bar resets the count~~ — see #712. Per-milestone, NOT reset by source churn
+            # (mirrors plateau_rounds). Best-effort: a result missing either field never advances.
+            #
+            # #712: THE STRUCK-OUT SENTENCE IS FALSE, AND THE PROTECTION IT DESCRIBES DOES NOT
+            # EXIST. `blocking_average` is #711's high-water mark — computed over #500's merged
+            # BEST-per-screen captures, so it is monotonically non-decreasing by construction and
+            # never falls in either kept run. Once `_ba >= _mn` holds it holds forever, which
+            # makes the `else` reset below UNREACHABLE after the first crossing. "N consecutive
+            # rounds above the bar" therefore means "one round above the bar, then wait N-1
+            # rounds", and with the default N=2 that is one lucky round plus one more judgment.
+            #
+            # r146 is the worked example, and it DELIVERED this way:
+            #
+            #     round   gating   live     avg_pass_rounds
+            #     1-4     0.58-0.60 …       0
+            #     5       0.67     0.6655   1     <- the only real crossing
+            #     6       0.67     0.6409   2 = N -> fast_release fires
+            #
+            # The app that shipped scored 0.6409, under the 0.65 bar it was judged against, on
+            # the strength of round 5's number latched into the mark. That is precisely the
+            # "single lucky pass" the original sentence promised could not happen.
+            #
+            # Not changed here: whether the counter should read `blocking_average_live` instead
+            # is the same calibration decision as #711 and the 0.65 bar, and flipping it would
+            # make every flaky capture reset the count — the thing #500 exists to prevent. What
+            # is fixed is the comment, plus a warning below when a release is authorised on a
+            # latched average whose live capture is under the bar.
             try:
                 _ba = result.get("blocking_average")
                 _mn = result.get("min_similarity")
                 if _ba is not None and _mn is not None and float(_ba) >= float(_mn):
                     self.avg_pass_rounds = self.avg_pass_rounds + 1
+                    # #712: the count advanced. Say so when the LIVE capture is under the bar,
+                    # because then the advance came from the latch and not from the app.
+                    _lv712 = result.get("blocking_average_live")
+                    if _lv712 is not None and float(_lv712) < float(_mn):
+                        _LOG.warning(
+                            "#712 avg_pass_rounds -> %d on a LATCHED average: gating %.4f >= bar "
+                            "%.4f but this capture scored %.4f. blocking_average never falls "
+                            "(#711), so the 'consecutive rounds' precondition cannot reset and "
+                            "a release may be authorised on a round the app did not earn.",
+                            self.avg_pass_rounds, float(_ba), float(_mn), float(_lv712))
                 else:
                     self.avg_pass_rounds = 0
             except Exception:
