@@ -244,7 +244,7 @@ profiles:
     # instruct the agent to call get_skill — so the tool MUST be granted or the gate is
     # unsatisfiable. (#35 retired the backend codehub_open_pr/api_contract_guard gate, but
     # get_skill stays load-bearing for the remaining skill-consult gates.)
-    tool_categories: ["file", "reasoning", "vision", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "knowledge_skill", "mcp_registry", "team_spawn", "team_reasoning", "runtime", "api", "api_contract", "database", "dependency", "reference", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "design", "progress"]
+    tool_categories: ["file", "reasoning", "vision", "communication", "memory", "project", "analysis", "knowledge_read", "knowledge_write", "knowledge_skill", "mcp_registry", "team_spawn", "team_reasoning", "runtime", "api", "api_contract", "database", "seed", "dependency", "reference", "web", "codehub", "workhub", "registryhub", "eventhub", "hub", "design", "progress"]
     # Backend reads the reference images too: every visible datum implies a
     # column, every actionable control implies an endpoint — the contract is
     # derived from the screens, not just the requirements text.

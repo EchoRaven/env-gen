@@ -398,14 +398,30 @@ def _bundle_codehub_tools(builder: ToolPoolBuilder, context: ToolAssemblyContext
             "codehub_get_diff",
             "codehub_get_blob",
             "codehub_get_file_content",
-            "codehub_list_prs",
+            # #695: codehub_list_prs and codehub_suggest_reviewers NOT surfaced either —
+            # the same argument #35 makes two comments above, applied to the two PR tools it
+            # left behind. In commit-only mode a PR cannot be opened, so listing PRs can only
+            # ever return an empty list: `codehub_pull_requests` sits at _meta.version 1 —
+            # created, never written — in 146 of 146 runs. `codehub_suggest_reviewers` is PR-
+            # bound in its own parameter descriptions ("The branch being submitted as a PR",
+            # "endpoint IDs touched by this PR"), so it advises on an artifact that cannot
+            # exist.
+            #
+            # They were not free. Across the 253 kept logs the pair appears 700 times and every
+            # single occurrence is the same catalogue line — `list_inline_comments,
+            # codehub_list_prs, codehub_suggest_reviewers` — with no call form anywhere. That is
+            # #257 economics exactly: a tool in the catalogue is re-sent with the prompt on
+            # every step of every agent that holds the bundle, so two permanently-empty tools
+            # are paid for continuously and used never.
+            #
+            # As with #35 the CLASSES stay (live-monitor HTTP shim, tests); they are simply not
+            # offered. If PR-mode is ever revived, revive all four names together.
             "codehub_list_checks",
             # #35: codehub_resolve_conflict (pr_id-based) NOT surfaced — it needs a PR in
             # conflict state, impossible in commit-only mode (run #34 "PR not found: 1").
             # Branch/worktree conflicts use codehub_resolve_merge_conflict below.
             "codehub_resolve_merge_conflict",
             "codehub_revert_commit",
-            "codehub_suggest_reviewers",
             "hub_snapshot",
         },
     )
