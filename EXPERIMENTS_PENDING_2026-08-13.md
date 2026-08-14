@@ -1733,6 +1733,52 @@ right one needed a distribution.
 
 ---
 
+## 67. #747 — the lane declares which reference each page matches, 1182 times, and the gate guessed
+
+**This is the user's own proposal, and the data to honour it has been arriving all along.**
+Earlier this session: 「这个具体navigate到具体哪个页面,和哪个参考图对比…要不直接让实现他的
+frontend agent来传输呢…最终目标是设立的所有参考对比都达标」. The frontend agent already
+transmits it.
+
+Found by generalising #742's shape — a tool parameter declared free-form whose value a consumer
+parses. Sweeping every `PARAMETERS` block for an `object` param with no `properties` gave 6
+candidates; the one that mattered was `metadata` on `kickoff_declare_ui_page`. Asking what agents
+actually put there, over the corpus, gives only three keys ever — and one of them is the answer:
+
+    ui_page records carrying metadata.reference_image                1182
+    ... naming a file that exists in that run's design/references/   1119   (94.7%)
+    distinct values                                                    54
+    (the other two keys: seeded_from_design 902, notes 210)
+
+`map_reference_screens` links a design screen to an app route, and its most authoritative layer
+(#416) INFERS that link from token overlap between the screen name and a ui_page's name —
+because it assumed nothing states it. `load_ui_pages` projected each record to
+`{name, route, component}` and **dropped `metadata` at the door**, so the declaration never
+reached the mapper. The framework has been guessing next to an explicit answer, 1182 times.
+
+Fixed: the declaration is now the top layer, ahead of #416, matched on the STEM — the 63 values
+that do not resolve are almost entirely an extension mismatch (`landing.png` declared,
+`landing.jpg` staged), and a declaration that is right about WHICH screen should not be discarded
+over a file suffix. Both existing exclusions are preserved exactly: an overlay name (#128) or a
+transient interaction-state name (#542a) is never given a page route or promoted, declaration or
+not, and a declared route the app does not serve is still ignored (#416's no-404 rule).
+
+**Two of my own errors, both from asserting instead of looking.** The projection fix went into
+the wrong place first — I edited the intermediate `items` list while the function rebuilds the
+records one loop later in `out.append`, so the field was dropped again and the test failed with
+`KeyError: 'reference_image'`. And the exclusion tests asserted `route != "/account"`, which
+failed: an overlay DOES get a route, from the generic filename→route fallback that predates all
+of this. What #128/#542a own is never inheriting a PAGE link and never being PROMOTED — the
+assertion is on `advisory`, with a non-vacuity case proving `advisory` is not True for everything.
+
+**Cheapest observation.** This is the first fix in the arc that acts on the user's design
+proposal with existing data, so the number to watch is direct: next run, how many screens get
+their route from the declaration rather than the guess, and do the two ever disagree? A
+disagreement is the interesting case — it means the token heuristic has been binding a reference
+to the wrong page, and the corpus cannot say how often because the declaration was never read.
+
+---
+
 ## 66. #746 — a guard that has been taking a decision silently for 255 runs
 
 A different sweep, aimed at the class this session keeps producing: **a detector that cannot

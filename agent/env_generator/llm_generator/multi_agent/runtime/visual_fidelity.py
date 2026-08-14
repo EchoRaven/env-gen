@@ -301,8 +301,18 @@ def load_ui_pages(project_dir: Any) -> List[Dict[str, Any]]:
             return out
         raw = json.loads(up.read_text(encoding="utf-8"))
         if isinstance(raw, Mapping):
+            # #747: KEEP THE REFERENCE THE PAGE DECLARED. This projection dropped `metadata`
+            # at the door, and `metadata.reference_image` is where the lane states which
+            # reference image the page it just built corresponds to. It is not rare and it is
+            # not guesswork: across the corpus **1182** ui_page records carry it, 54 distinct
+            # values, and **1119 of them (94.7%) name a file that exists in that run's
+            # design/references/**. The misses are almost all an extension mismatch (the lane
+            # wrote `landing.png`, the staged file is `landing.jpg`), which is why the match
+            # below is on the STEM.
             items = [{"name": v.get("name") or k, "route": v.get("route"),
-                      "component": v.get("component")}
+                      "component": v.get("component"),
+                      "reference_image": ((v.get("metadata") or {}).get("reference_image")
+                                          if isinstance(v.get("metadata"), Mapping) else None)}
                      for k, v in raw.items()
                      if k != "_meta" and isinstance(v, Mapping)]
         elif isinstance(raw, list):
@@ -313,8 +323,16 @@ def load_ui_pages(project_dir: Any) -> List[Dict[str, Any]]:
             route = str(v.get("route") or "").strip()
             if not route:
                 continue
+            # #747: read from EITHER shape. The dict branch above already lifted it out of
+            # `metadata`; the list branch passes raw records straight through, so it is still
+            # nested there. My first edit only touched `items` and this projection dropped it
+            # again one loop later — the field has to survive the LAST place it is rebuilt.
+            _ri747 = v.get("reference_image")
+            if not _ri747 and isinstance(v.get("metadata"), Mapping):
+                _ri747 = (v.get("metadata") or {}).get("reference_image")
             out.append({"name": str(v.get("name") or ""), "route": route,
-                        "component": str(v.get("component") or "")})
+                        "component": str(v.get("component") or ""),
+                        "reference_image": str(_ri747).strip() if _ri747 else None})
     except Exception:
         return []
     return out
@@ -432,8 +450,36 @@ def map_reference_screens(
         # structural overlay token — it never inherits a ui_page route / gets promoted to a
         # blocking page, and it is ALWAYS advisory (the classification branch below).
         _transient_by_name = bool(_TRANSIENT_STATE_RE.search(stem))
-        _matched_page = (None if (_overlay_by_name or _transient_by_name)
-                         else _match_ui_page(_screen_name_tokens(p.stem, stem), pages, known))
+        # #747: A DECLARATION BEATS A NAME MATCH. #416 infers the design_screen <-> ui_page
+        # link from token overlap because it assumed nothing states it. Something does: the
+        # lane writes `metadata.reference_image` on the page it just built — 1182 times across
+        # the corpus, 94.7% of them naming a file that really is in that run's references. The
+        # framework dropped the field in `load_ui_pages` and went on guessing.
+        #
+        # This is the user's own proposal ("let the frontend agent that implements it transmit
+        # which page maps to which reference"), and the data to honour it has been arriving all
+        # along. Matched on the STEM: the 63 non-resolving values are almost entirely an
+        # extension mismatch (`landing.png` declared, `landing.jpg` staged), and a declaration
+        # that is right about WHICH screen should not be discarded over a file suffix.
+        #
+        # Placed ahead of #416 and subject to exactly the same two exclusions — an overlay or
+        # transient-state name is still never given a page route (#128/#542a own those, and a
+        # declaration must not be able to promote a dropdown into a blocking screen).
+        _declared_page = None
+        if not (_overlay_by_name or _transient_by_name):
+            for _pg in pages:
+                _ri = str(_pg.get("reference_image") or "").strip()
+                if not _ri:
+                    continue
+                _ri_stem = re.sub(r"[^a-z0-9]+", "_", Path(_ri).stem.lower())
+                if _ri_stem and _ri_stem == stem:
+                    _rt = str(_pg.get("route") or "").strip()
+                    if _rt and (not known or _rt in known):
+                        _declared_page = _pg
+                        break
+        _matched_page = _declared_page or (
+            None if (_overlay_by_name or _transient_by_name)
+            else _match_ui_page(_screen_name_tokens(p.stem, stem), pages, known))
         if _matched_page is not None:
             route = str(_matched_page.get("route") or "").strip() or None
         _cl_route = str(_cl.get("route") or "").strip()
