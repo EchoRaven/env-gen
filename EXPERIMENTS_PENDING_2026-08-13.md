@@ -1672,11 +1672,23 @@ session's finds have that shape, and it is the triage rule for the rest:
     promote_integration_to_main promote after verification        130 of 146 runs diverged  -> #706
 
 So the question to ask of each remaining name is not "is it used" but "is the problem it names
-happening". Candidates from the list that look worth that question, none of them checked yet:
-`compare_screenshots` and `extract_components` (a fidelity gate that judges by LLM while two
-mechanical comparators sit unused), `db_query`/`db_schema` (seed and schema defects are a
-recurring class), `log_search`/`log_analyze` (every lane greps logs by hand), and
-`check_environment`/`wait_for_service` (the docker_up blockers in items 26 and 33).
+happening". **Three candidates checked, all three rejected — which is what makes the rule worth
+having:**
+
+| candidate | the problem it names | measured | verdict |
+|---|---|---|---|
+| `compare_screenshots` | the gate's similarity is LLM-judged, and a judge failure returns 0.0 — a phantom zero of the #713 kind | `judge JSON unparseable` and its siblings occur **once in the whole corpus** | not a live gap |
+| `extract_components` | per-component specs from a screenshot | design-prep already emits them — "20/20 reference screens decomposed into per-component build specs" in **159 runs** | redundant, not missing |
+| `log_search` / `log_analyze` | structured log analysis | lanes grep logs by hand **262 times**, but nothing shows those greps failing | an alternative path, not a defect |
+
+The `compare_screenshots` one is worth keeping for a reason beyond its verdict: the fidelity score
+IS an LLM judgement ("Deterministic in wiring — route mapping, capture, thresholding — LLM only in
+the judging"), and a judge failure falls through to `similarity: 0.0`. That is structurally the
+same phantom-zero as #713 and it simply never fires. Worth knowing it exists before someone reads
+a 0.0 as a blank page.
+
+Still unchecked: `db_query`/`db_schema` and `check_environment`/`wait_for_service` (the docker_up
+blockers in items 26 and 33).
 
 **Cheapest observation.** For any candidate, grep the corpus for the failure its docstring
 names. If the failure has a non-zero live-era count and the tool has a zero call count, that is
