@@ -2126,6 +2126,37 @@ class Orchestrator:
                         self._write_preview_config(_ver)
                         self._logger.warning(
                             "FINAL DELIVERY: gate clear → cut release v%s", _ver)
+                        # #706b: THE OTHER RELEASE PATH. #706 hooked the api_smoke-validated cut
+                        # further down this file and missed this one, which is the path r147
+                        # actually took — its release notes read "Final delivery: delivery gate
+                        # fully clear.", not the other site's wording, and r147 finished with
+                        # `rev-list --count main..integration` = 40 and one commit unique to
+                        # main: the exact pre-#706 topology the fix exists to end.
+                        #
+                        # Caught by the run launched to verify #706, which is the only way a
+                        # one-of-two-call-sites miss shows up — the unit tests asserted the hook
+                        # is present and correct, and it was, at the site the run did not use.
+                        # Same placement rule as #706: AFTER the cut, so the release still comes
+                        # from `integration` and `main` follows it. Best-effort throughout.
+                        try:
+                            from .agents.runtime.auto_commit import (
+                                promote_integration_to_main as _promote_706b)
+                            _ok6b, _info6b = _promote_706b(
+                                repo_root=self.output_dir, actor="orchestrator",
+                                blessed_run_id=str(_ver))
+                            if _ok6b:
+                                self._logger.info(
+                                    "framework delivery: promoted integration -> main (%s)",
+                                    _info6b)
+                            else:
+                                self._logger.warning(
+                                    "framework delivery: integration -> main promotion did not "
+                                    "happen (%s). The release is unaffected — it was cut from "
+                                    "integration — but `main` stays behind.", _info6b)
+                        except Exception as _promo6b:
+                            self._logger.warning(
+                                "framework delivery: integration -> main promotion raised: %s",
+                                _promo6b)
                 except Exception as _fin_rel_err:  # best-effort observability
                     self._logger.warning("final-gate release cut failed: %s", _fin_rel_err)
                 phases_completed = ["requirements", "kickoff", "code", "docker", "testing"]
