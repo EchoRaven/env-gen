@@ -1471,9 +1471,18 @@ right; if they pass vacuously, acceptance is the answer instead.
 
 ## 34. r147 FINAL — what the run settled, and what its NOT SEENs are worth
 
-r147 ended on the shutdown watchdog (`[main-exit] ... forcing exit (rc=0)`) **without delivering**,
-deferred throughout by "visual fidelity gate converging, frontend in bounded remediation window".
-`fast_release` never appears in the log, so no release path was taken.
+~~r147 ended on the shutdown watchdog without delivering.~~ **WRONG, and it was my measurement
+that was wrong, not the run.** r147 DID deliver: `codehub_releases.json` holds `1.0.0` with notes
+"Final delivery: delivery gate fully clear.", and the log carries the delivery marker once.
+
+I checked `releases` while the run was still going — around line 9000 of an eventual 12237 — saw
+an empty store, and reported "no delivery" both here and to the user. The release happened in the
+3000 lines after I looked. The lesson is narrow and mechanical: **a store read mid-run is a
+snapshot, not a result**, and nothing about an empty one distinguishes "never happened" from "not
+yet". The run had not even exited when I called it.
+
+What IS true from the same evidence: `fast_release` never appears, so the release came through
+the ordinary path, and the run did end on the shutdown watchdog afterwards.
 
 **Build cutoff — read this before any NOT SEEN.** r147 launched 03:10:56. Commits at or before
 03:02 are in it; everything from 03:18 on is not.
@@ -1488,7 +1497,7 @@ deferred throughout by "visual fidelity gate converging, frontend in bounded rem
 | #677 | LIVE x2 | transport diagnosis |
 | #684 #685 #686 #687 | **GONE, all four** | the defects they name did not occur |
 | #706 | NOT SEEN, **and meaningful** | it WAS in the build (03:02). r147 took the other release path → already repaired by #706b |
-| #696 #701 | NOT SEEN, inconclusive | their conditions need a delivery r147 never reached |
+| #696 #701 | NOT SEEN, **and meaningful** | both were in the build and r147 DID deliver, so the conditions genuinely did not arise |
 | #692 | NOT SEEN, proves nothing | its signature is in the backend CONTAINER log under FW_DEBUG |
 | #707 #711 #712 | NOT SEEN, **meaningless** | committed 03:38-04:18, after the cutoff |
 
