@@ -100,6 +100,9 @@ gone_log "#684 notebook readable"        "Unknown file 'notebook'"         "was:
 gone_log "#685 endpoint lookup"          "Endpoint not found: POST /api/titles" "was: 10 in r145, 10 in r146"
 gone_log "#686 step headers sent"        "X-Profile-Id header is required" "was: 11 live-era, all r132"
 gone_log "#687 browser transport"        "Navigation failed: Page.goto: net::ERR_CONNECTION_REFUSED$" "was: 161 live-era with no diagnosis"
+# The brackets are ESCAPED: grep reads [projected] as a character class, so the unescaped form
+# matches any one of those letters followed by " data load failed:" — over-matching, quietly.
+grep_log "#696 suppressed load failure" "\[projected\] data load failed:" "each hit = a page that rendered as an ordinary empty state while its API failed"
 # #692's signature is in the BACKEND CONTAINER log under FW_DEBUG, not here — see item 20. This
 # line only catches it if the container log was folded into the run log.
 grep_log "#692 owner unresolved"         "fw_owner_val.unresolved_sub_entity" "needs FW_DEBUG + the CONTAINER log; absence here proves nothing"
