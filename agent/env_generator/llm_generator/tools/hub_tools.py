@@ -1829,7 +1829,25 @@ class RegistryHubGetEndpointTool(HubTool):
     }
 
     async def _run(self, endpoint_id: str) -> ToolResult:
-        endpoint = self._hubs.registryhub.get_endpoints().get(endpoint_id)
+        # #685: LOOK IT UP THE WAY IT WAS STORED. The store's KEY collapses every path param —
+        # `RegistryHub.endpoint_id` rewrites `{id}` to `{}` — while the record's own `path` field
+        # keeps the named form. So an agent that reads `POST /api/titles/{id}/rating` off the
+        # registry and asks for it back by that exact string got "Endpoint not found", because
+        # the key is `POST /api/titles/{}/rating`. It was being asked to know an internal
+        # normalisation it is never shown. r145 refused 10 of these, all on that one endpoint.
+        #
+        # Canonicalising the query through the same helper that built the key makes the two
+        # agree. The raw lookup is tried first so an exact key still resolves unchanged.
+        _eps = self._hubs.registryhub.get_endpoints()
+        endpoint = _eps.get(endpoint_id)
+        if endpoint is None:
+            try:
+                from multi_agent.runtime.registryhub import RegistryHub as _RH
+                _parts = str(endpoint_id or "").strip().split(None, 1)
+                if len(_parts) == 2:
+                    endpoint = _eps.get(_RH.endpoint_id(_parts[0], _parts[1]))
+            except Exception:
+                endpoint = None
         if not endpoint:
             return ToolResult(success=False, error_message=f"Endpoint not found: {endpoint_id}")
         return ToolResult(data=endpoint)
