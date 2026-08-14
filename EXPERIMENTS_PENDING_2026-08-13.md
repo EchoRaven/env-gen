@@ -1733,6 +1733,53 @@ right one needed a distribution.
 
 ---
 
+## 42. #712 WITHDRAWN, and #711's consequence with it — I checked the wrong dict
+
+r148 disconfirmed #712 the first time the condition arose, and following that back invalidates
+the consequence I drew from #711 as well. Both fixes stay (their warnings are real); both claims
+about RELEASE are withdrawn.
+
+**What r148 showed.** Round 6: `blocking_average` 0.656, `blocking_average_live` 0.61, bar 0.65 —
+exactly the latch condition #712 described. #712's warning fired **zero** times. It cannot fire:
+`result` has no `blocking_average_live` key at all, because `run_visual_fidelity`'s body never
+mentions one. A dead branch guarding a claim, and the claim was false too.
+
+**The two dicts.** There are two numbers named `blocking_average`:
+
+    RETURNED by run_visual_fidelity   _blocking_similarity_average(results) — the CURRENT
+                                      capture, blocking screens only, never merged
+    PERSISTED by _persist_verdict     computed over #500's `merged` best-per-screen — the
+                                      high-water mark, monotonically non-decreasing
+
+`_persist_verdict` takes `results` and writes to disk; it does not touch the returned dict. And
+`_visual_fast_release_args` reads `gate.last_result` — the RETURNED one.
+
+**So:** the counter reads a value that CAN fall, the reset IS reachable, and #558's original
+sentence ("a round below the bar resets the count") was right all along. #712 is withdrawn and
+#558's wording restored.
+
+**And #711's consequence goes with it.** The divergence is real — the persisted record IS a
+high-water mark that drifts from the live capture, and warning about it is worth doing, which is
+why #711's warning stays. But "a release authorised on the former ships the latter" is false: the
+release path never reads the persisted number. The r146 "delivered at 0.67 while its screens sat
+at 0.6409" and r147 "delivered at 0.700 against 0.5463" claims are withdrawn — those are
+persisted figures, not the ones that authorised anything.
+
+**What cannot be recovered.** The value that DOES authorise a release — the current blocking-only
+average — is persisted nowhere. So "what number released r146" is unanswerable from artifacts,
+which is why these claims are withdrawn rather than re-measured.
+
+**The mistake, stated plainly.** I verified monotonicity from `rounds.jsonl`, which is the
+persisted record, and then reasoned about a counter that reads a different dict. Two numbers, one
+name. Every measurement I took was correct; the object I took it from was not the one in the
+causal path.
+
+**Cheapest observation.** Log the returned `blocking_average` beside the persisted one for one
+run. If they diverge — and they must, one being merged — then every quality judgement made from
+`verdict.json` this session (including mine) describes the record rather than the app.
+
+---
+
 ## 41. #711 CONFIRMED LIVE in r148 — announced, not reconstructed
 
 r148 is the first run carrying #711, and it fired twice while still running:

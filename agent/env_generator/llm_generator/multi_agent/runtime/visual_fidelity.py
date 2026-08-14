@@ -2797,7 +2797,28 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         #   r147  gating 0.655 0.655 0.655 0.668 0.688 0.700
         #         live   0.6333 0.5975 0.5558 0.5858 0.6400 0.3817
         #
-        # r146 DELIVERED at gating 0.67 while its screens sat at 0.6409 — under the 0.65 bar.
+        # #711r — RETRACTION OF THE CONSEQUENCE, kept above because the divergence itself is
+        # real and worth warning about. What is WRONG is the sentence "A release authorised on
+        # the former ships the latter", and the r146/r147 delivery claims built on it.
+        #
+        # The merged, monotonically non-decreasing number lives in the PERSISTED record —
+        # verdict.json and rounds.jsonl, written by _persist_verdict. The DECISION path does not
+        # read it. `_visual_fast_release_args` takes `gate.last_result`, which is the dict
+        # RETURNED by run_visual_fidelity at its final `return`, and that dict carries
+        # `blocking_average` = `_blocking_similarity_average(results)` — the CURRENT capture,
+        # never merged — and `passed` un-merged as well. `_persist_verdict` receives `results`
+        # and writes to disk; it does not mutate the returned dict.
+        #
+        # So: the RECORD is a high-water mark that diverges from the live capture, which matters
+        # for anyone reading verdict.json to judge quality (I did, all session, and it is why
+        # this warning is worth keeping). It is NOT what authorises a release.
+        #
+        # And the value that DOES authorise one is persisted nowhere — the current blocking-only
+        # average appears in no artifact — so "what number released r146" cannot be recovered
+        # from disk at all. That is the honest state, and it is why the delivery claims are
+        # withdrawn rather than re-measured.
+        #
+        # ~~r146 DELIVERED at gating 0.67 while its screens sat at 0.6409 — under the 0.65 bar.~~
         # r147 is the extreme case and it ALSO delivered: its sixth and final round reads 0.700
         # against a live 0.3817 — though that live figure is itself DEPRESSED by #713, since four
         # of its twelve screens (browse_by_languages, genre_category, new_and_popular, player)
@@ -3996,11 +4017,33 @@ class VisualFidelityGate:
             self.plateau_rounds = 0 if _improved else self.plateau_rounds + 1
             # FIX #558: track consecutive REAL judgments whose gating blocking_average (#542,
             # over BLOCKING screens only) cleared the min bar — the STABLE precondition for the
-            # avg fast-release. ~~a single lucky pass never triggers a release; a round below the
-            # bar resets the count~~ — see #712. Per-milestone, NOT reset by source churn
+            # avg fast-release (a single lucky pass never triggers a release; a round below the
+            # bar resets the count — TRUE as written; #712's strike-through is withdrawn, see
+            # #712r below). Per-milestone, NOT reset by source churn
             # (mirrors plateau_rounds). Best-effort: a result missing either field never advances.
             #
-            # #712: THE STRUCK-OUT SENTENCE IS FALSE, AND THE PROTECTION IT DESCRIBES DOES NOT
+            # #712r — THIS WHOLE BLOCK IS WITHDRAWN. The original #558 sentence was RIGHT and I
+            # struck it out on a false premise. The counter reads `result["blocking_average"]`,
+            # and `result` is what run_visual_fidelity RETURNS — `_blocking_similarity_average(
+            # results)`, the CURRENT capture's blocking-only mean. It is not the merged
+            # high-water value; that one exists only in the persisted record, written by
+            # _persist_verdict, which never touches the returned dict. So the current average
+            # CAN fall, the `else` reset below IS reachable, and "a round below the bar resets
+            # the count" is true as originally written.
+            #
+            # Caught by r148: round 6 recorded gating 0.656 against live 0.61 with the bar at
+            # 0.65 — the exact latch condition #712 described — and the warning below fired ZERO
+            # times. It cannot fire at all: `result` carries no `blocking_average_live` key
+            # (run_visual_fidelity's body never mentions it), so `_lv712` is always None. A dead
+            # branch guarding a claim that was false anyway, which is the defect class this
+            # session has been finding all along, written by me.
+            #
+            # Left in place, struck through rather than deleted, because the reasoning is the
+            # useful part: I verified monotonicity from rounds.jsonl — the PERSISTED number —
+            # and then assumed the counter read the same one. Two numbers with the same name in
+            # two dicts, and I checked the wrong dict.
+            #
+            # ~~#712: THE STRUCK-OUT SENTENCE IS FALSE, AND THE PROTECTION IT DESCRIBES DOES NOT
             # EXIST. `blocking_average` is #711's high-water mark — computed over #500's merged
             # BEST-per-screen captures, so it is monotonically non-decreasing by construction and
             # never falls in either kept run. Once `_ba >= _mn` holds it holds forever, which
