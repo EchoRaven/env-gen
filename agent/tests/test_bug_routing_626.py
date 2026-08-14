@@ -55,9 +55,17 @@ def test_the_first_lane_segment_wins():
 
 
 def test_a_filename_cannot_masquerade_as_a_lane():
-    """Segment EQUALITY, not substring — otherwise BackendStatus.jsx routes to the backend."""
+    """Segment EQUALITY, not substring — otherwise BackendStatus.jsx routes to the backend.
+
+    The invariant is 'never the BACKEND', which is what substring matching would have got
+    wrong. The bare-path case used to assert `is None` as well, and #741 changed that: a `.jsx`
+    file with no lane segment now routes to the frontend by extension, which is the right
+    answer and strictly better than leaving the bug unowned. Pinning the old `None` here would
+    have pinned an accident of the segment rule rather than #626's actual finding.
+    """
     assert find_owning_agent_for_file("app/frontend/src/components/BackendStatus.jsx") == "frontend"
-    assert find_owning_agent_for_file("src/components/BackendStatus.jsx") is None
+    assert find_owning_agent_for_file("src/components/BackendStatus.jsx") != "backend"
+    assert find_owning_agent_for_file("src/components/BackendStatus.jsx") == "frontend"  # #741
 
 
 def test_windows_separators_resolve_too():

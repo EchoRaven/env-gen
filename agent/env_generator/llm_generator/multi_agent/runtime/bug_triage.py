@@ -68,12 +68,39 @@ def find_owning_agent_for_table(registry, table_name: str) -> Optional[str]:
     return None
 
 
+# #741 — A PATH THAT NAMES NO LANE STILL NAMES A LANGUAGE.
+# #626's segment rule cannot route a path written relative to the app root, and those are
+# common: over the 148-run corpus the `affected_files` that no segment matches are led by
+# `src/App.jsx` (11), `src/pages/BrowseHomePage.jsx` (5), `src/api.js` (3) and
+# `custom_routes.py` (2). An extension is a second, independent signal, and adding it as a
+# FALLBACK (never overriding a segment match) routes **25 more bugs** — 22 frontend, 3 backend
+# — out of the 216 that currently end up owned by nobody.
+#
+# Only UNAMBIGUOUS extensions. `.js`/`.ts`/`.mjs` are deliberately absent: a Node backend uses
+# them too, and a wrongly-routed bug burns the wrong lane's cycle, which is worse than the
+# 7 extra routes it would buy. Anything under `app/backend/` already carries its segment and
+# never reaches this fallback, so the ambiguity only bites where the path is genuinely bare.
+_LANE_BY_EXTENSION_741 = {
+    "jsx": "frontend", "tsx": "frontend", "vue": "frontend", "svelte": "frontend",
+    "css": "frontend", "scss": "frontend", "less": "frontend",
+    "py": "backend",
+    "sql": "database",
+}
+
+
 def find_owning_agent_for_file(file_path: str) -> Optional[str]:
-    """#626: the owning lane is whichever lane NAMES a segment of the path, wherever it sits."""
+    """#626: the owning lane is whichever lane NAMES a segment of the path, wherever it sits.
+
+    #741: failing that, whichever lane owns the file's EXTENSION — segment first, always, so
+    `app/backend/schema.sql` stays with the backend that declared it.
+    """
     for segment in (file_path or "").replace("\\", "/").split("/"):
         owner = _LANE_BY_PATH_SEGMENT.get(segment.strip().lower())
         if owner:
             return owner
+    _tail = (file_path or "").strip().lower().rsplit(".", 1)
+    if len(_tail) == 2:
+        return _LANE_BY_EXTENSION_741.get(_tail[1])
     return None
 
 

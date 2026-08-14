@@ -1733,6 +1733,57 @@ right one needed a distribution.
 
 ---
 
+## 61. #741/#742 — 216 bugs in the corpus are owned by nobody, and both causes are readable
+
+`resolve_owning_agent` tries the endpoint, then the table, then the files. Measured over the
+1467 bugs in the 148-run corpus — `bug_artifacts` lives at `payload.metadata.bug_artifacts` on a
+workhub `task_created` event, **not** at `payload.bug_artifacts`, which is where I looked first
+and got a confident zero out of 299,279 events:
+
+    resolved to a lane     1251
+    owned by NOBODY         216      of which 131 carry no affected_files at all
+
+**#742 — the endpoint slot is mostly unparseable.** Of the 1129 bugs that set
+`affected_endpoint`:
+
+    449  match a registered endpoint exactly
+    339  have nothing path-shaped after the method
+    308  carry prose inside the path — "GET /api/titles?kind=series (or however the shows
+         page filters titles)", "frontend nginx"
+     20  differ only in the parameter NAME (/titles/{title_id} vs /titles/{id})
+     13  name a path that is not registered
+
+**57% of the values a parser depends on are not parseable**, and the tool contract says why:
+`bug_artifacts` was advertised as the bare string `"failing_test, stack_trace,
+affected_endpoint, affected_files, expected, actual, ..."` — slot names, no shape. Same family
+as #732/#733, and the same fix: publish a `properties` block, state the exact form of the two
+slots that are PARSED rather than merely read, and say where the uncertainty is supposed to go
+(`description`) so a rule that forbids does not leave the model stuck.
+
+I expected the parameter-name mismatch to be the story — the delivery gate has `_norm_gate_path`
+for exactly that (`/api/notes/{id}` ≡ `/api/notes/{}`) and triage does bare `==`. It is 20 of
+1129, **1.8%**. Normalising is still right, but it was not worth reporting as the cause, and I
+would have if I had stopped at the first plausible-looking gap.
+
+**#741 — a path that names no lane still names a language.** #626 routes by path SEGMENT, which
+by construction cannot help a path written relative to the app root, and those dominate what is
+left: `src/App.jsx` (11), `src/pages/BrowseHomePage.jsx` (5), `src/api.js` (3),
+`custom_routes.py` (2). Extension as a strict FALLBACK routes **25 more** (22 frontend, 3
+backend). `.js`/`.ts`/`.mjs` are excluded on purpose: a Node backend uses them, and a
+wrongly-routed bug burns the wrong lane's cycle — worse than the 7 extra routes it would buy.
+Anything under `app/backend/` already carries its segment and never reaches the fallback.
+
+This also corrected one of #626's own assertions. It pinned
+`find_owning_agent_for_file("src/components/BackendStatus.jsx") is None`, but #626's finding is
+"never the BACKEND" — `None` was an accident of the segment rule, and `frontend` is the right
+answer for a `.jsx` file. The test now states the invariant.
+
+**Cheapest observation.** #742 is a prompt-surface change and only a run can score it: next run,
+what fraction of `affected_endpoint` values parse? The corpus baseline to beat is **449/1129 =
+40%**. #741 needs no run — it is proven against the recorded paths.
+
+---
+
 ## 60. #740 — the capture drives a browser to every route and threw the console away
 
 There was no `page.on("console")` and no `"pageerror"` anywhere in `visual_fidelity.py`. The gate

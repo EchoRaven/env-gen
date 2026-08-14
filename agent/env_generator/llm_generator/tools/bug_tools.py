@@ -49,7 +49,48 @@ class BugCreateTool(HubTool):
             "title": {"type": "string"},
             "source": {"type": "string", "description": "verifier|runhub|codehub_check|manual"},
             "severity": {"type": "string", "enum": list(_VALID_SEVERITY)},
-            "bug_artifacts": {"type": "object", "description": "failing_test, stack_trace, affected_endpoint, affected_files, expected, actual, ..."},
+            # #742: NAME THE FORMAT, NOT JUST THE SLOT. This was a bare list of key names with
+            # no shape for any of them, and `resolve_owning_agent` needs two of them to PARSE:
+            # `affected_endpoint` is split on the first space and matched against RegistryHub,
+            # and `affected_files` is scanned for a lane segment. Measured over the 1467 bugs
+            # in the 148-run corpus, of the 1129 that set `affected_endpoint`:
+            #     449  match a registered endpoint exactly
+            #     339  have nothing path-shaped after the method
+            #     308  carry prose inside the path ("GET /api/titles?kind=series (or however
+            #          the shows page filters titles)", "frontend nginx")
+            #      20  differ only in the parameter NAME  (/titles/{title_id} vs /titles/{id})
+            # 216 bugs end up with NO owner at all, and an unassigned bug is nobody's job by
+            # construction — #626 measured those sitting a median 46 minutes into a released
+            # run. Same fix shape as #732/#733: the model writes what the description names,
+            # so the description states the exact form each consumer parses.
+            "bug_artifacts": {
+                "type": "object",
+                "description": (
+                    "Structured evidence. At least one of failing_test, stack_trace, "
+                    "affected_endpoint, affected_files, expected, actual. Two of these are "
+                    "PARSED, not just read, so their form matters: `affected_endpoint` must be "
+                    "exactly '<METHOD> <path>' as REGISTERED in RegistryHub (e.g. "
+                    "'GET /api/titles/{id}') — no query string, no parentheses, no prose, and "
+                    "the parameter name must be the registered one; `affected_files` must be "
+                    "repo-relative paths (e.g. 'app/frontend/src/App.jsx'), because the owning "
+                    "lane is resolved from a path segment. Put uncertainty in `description`, "
+                    "never inside these two."),
+                "properties": {
+                    "failing_test": {"type": "string",
+                                     "description": "chain/step or test id that failed"},
+                    "stack_trace": {"type": "string"},
+                    "affected_endpoint": {
+                        "type": "string",
+                        "description": "'<METHOD> <registered path>', e.g. 'POST /api/my-list'"},
+                    "affected_table": {"type": "string",
+                                       "description": "table name as registered in SchemaHub"},
+                    "affected_files": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": "repo-relative paths, e.g. app/backend/custom_routes.py"},
+                    "expected": {"type": "string"},
+                    "actual": {"type": "string"},
+                },
+            },
             "description": {"type": "string"},
             "parent_bug_id": {"type": "string", "description": "Set if this is a recurrence of an earlier bug."},
         },
