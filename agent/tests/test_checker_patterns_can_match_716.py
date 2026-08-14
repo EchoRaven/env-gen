@@ -112,7 +112,10 @@ def test_a_runtime_built_signature_names_its_construction_site(pat, site):
 
 def test_713s_pattern_matches_a_real_message():
     real = "#713 5 screens captured the SAME image (md5 02a3e3): landing, player"
-    pat = next(p for l, p in _patterns().items() if l.startswith("#713"))
+    # EXACT label, not a prefix: adding a "#713b shared-route sharing" line made
+    # startswith("#713") ambiguous and this test selected the wrong pattern. The guard was
+    # right; the selector was not.
+    pat = next(p for l, p in _patterns().items() if l.startswith("#713 "))
     assert all(part in real for part in _parts(pat)), (pat, real)
 
 
