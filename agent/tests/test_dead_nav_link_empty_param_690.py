@@ -14,8 +14,10 @@ ever goes green. Reading the final `Failed checks:` line of the 14 aborted runs 
     deliverability_dead_nav_link       5
     business_chain_failing             4
 
-`dead_nav_link` is also the largest LIVE blocker overall — 212 occurrences in r100+ against 37
-before, i.e. getting worse — and what it flags is always the same shape:
+`dead_nav_link` FIRES more in the live era than ever — 212 in r100+ against 37 before — though
+era-controlling the terminal blocker shows it is not what runs finally die on (13 of those 14
+aborted runs are pre-r100; the one r100+ run died on business_chain_failing). What it costs is
+rounds spent on a mis-stated cause. What it flags is always the same shape:
 
     components/HeroBillboard.jsx:  /watch/        -> /profiles   x34
     components/HoverPreview.jsx:   /watch/        -> /profiles   x20
@@ -128,7 +130,7 @@ def test_the_measurement_is_recorded():
     from env_generator.llm_generator.multi_agent.runtime import frontend_audit as fa
     flat = " ".join(inspect.getsource(fa.dead_nav_link_remediation).replace("#", " ").split())
     assert "212 occurrences in r100+ against 37 before" in flat
-    assert "5 of the 14 aborted runs" in flat
+    assert "the claim is withdrawn" in flat, "the over-claim must stay recorded"
 
 
 def test_why_it_must_run_first_is_recorded():

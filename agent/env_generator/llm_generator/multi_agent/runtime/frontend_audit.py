@@ -543,9 +543,13 @@ def dead_nav_link_remediation(target: str, jsx_name: str, declared_pages: set, r
     # #690: THE ROUTE EXISTS — THE LINK LOST ITS PARAMETER. Checked FIRST because it is now
     # the dominant case and the other three branches all mis-diagnose it.
     #
-    # `dead_nav_link` is the largest LIVE deliverability blocker: 212 occurrences in r100+
-    # against 37 before, i.e. getting worse, and it appears in the final Failed-checks line of 5
-    # of the 14 aborted runs that record one. What the gate actually flags:
+    # `dead_nav_link` FIRES more in the live era than ever: 212 occurrences in r100+ against 37
+    # before. It is not what runs finally die on — era-controlling the terminal `Failed checks:`
+    # line shows 13 of those 14 aborted runs are r<100, and the single r100+ one died on
+    # business_chain_failing. (An earlier draft of this note claimed 5 of 14 aborted runs blocked
+    # here; those 5 are all pre-r100 and the claim is withdrawn.) What it costs is rounds, not
+    # the run: each occurrence is a remediation cycle spent on a mis-stated cause. What the gate
+    # actually flags:
     #
     #     components/HeroBillboard.jsx:  /watch/        -> /profiles   x34
     #     components/HoverPreview.jsx:   /watch/        -> /profiles   x20
