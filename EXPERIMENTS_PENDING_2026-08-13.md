@@ -1733,6 +1733,49 @@ right one needed a distribution.
 
 ---
 
+## 44. #722 — and r148's full accounting, which is what surfaced it
+
+r148 finished (`[main-exit]`, 12347 lines), so its absences are now readable. Build cutoff
+10:44:39; #707, #711, #712, #713, #714 and #715 were all introduced before it and are IN. #718
+(11:16) and #721 (11:46) are not.
+
+| signature | r148 | reading |
+|---|---|---|
+| #711 | **LIVE x2** | 0.6190 vs 0.4250, gap 0.194 — the divergence announced, below the bar |
+| #706 refusal | **LIVE x1** | fired with an empty reason → #721 |
+| #700 | LIVE x98 | up from r147's 37 |
+| #691 + #691b | LIVE x1 each | the recovery still works |
+| #664 | LIVE x22 | down from r147's 76 |
+| #684 #685 #686 #687 | GONE, all four | third run running |
+| #712 | NOT SEEN | in the build, condition AROSE (round 6: 0.656 / 0.61 / bar 0.65), did not fire — the dead branch, already withdrawn as #712r |
+| **#713** | **NOT SEEN, and meaningful** | hashing r148's 12 captures gives **zero** duplicate groups, against r147's one group of five |
+| #714 #707 | NOT SEEN | in the build; their conditions did not arise |
+| #715 | NOT SEEN, **and it proves nothing** | → #722 |
+
+**#713's clean negative is the substantive one.** r147 had five screens sharing the landing
+page's image; r148 has none. If the cause were structural — the gate's screen→URL map — it would
+recur. It did not, which supports item 34's surviving hypothesis that r147's collapse was a
+transient source-vs-served lag rather than a permanent defect.
+
+**But #715 cannot corroborate it, and that is a defect of its own.** #715 exists precisely to
+answer source-vs-served, and it has two warning branches and no third. Silence therefore covers
+three states: probe ran and matched, probe never ran, probe skipped by a guard. Grepping r148 for
+"#715" returns six hits, all of them timestamp milliseconds. The check built for this question
+told us nothing about the run.
+
+Same shape as #691's silent skip, #696's invisible load failure and #712's dead branch — the
+most-repeated finding of this session, landing on a fix written to address it.
+
+**Fixed: #722** — an INFO line on the clean path naming how many routes were verified. Not a
+warning: a clean probe is provenance, not news. What changes is that "checked, matched" and
+"never checked" stop looking identical.
+
+**Cheapest observation.** Next run: if `#715 served build matches the source` appears alongside
+zero duplicate captures, source-vs-served is corroborated. If it appears and duplicates appear
+too, the hypothesis is dead and item 34 needs re-opening.
+
+---
+
 ## 43. #721 — the refusal built to say WHY reported an empty reason
 
 r148 finished and fired #706's refusal branch once:

@@ -2221,6 +2221,24 @@ async def run_visual_fidelity(
                                     "near zero. That is a STALE BUILD, not a bad page — the "
                                     "scores and deviations from this pass are void for them.",
                                     len(_stale_serve_715), ", ".join(_stale_serve_715[:6]))
+                            else:
+                                # #722: SAY SO WHEN IT IS CLEAN. Until now #715 had two warning
+                                # branches and no third, so silence covered three different
+                                # states: the probe ran and found nothing, the probe never ran,
+                                # and the probe was skipped by a guard above. r148 is exactly
+                                # that ambiguity — neither warning appears, and grepping the log
+                                # for "#715" returns six hits that are all timestamp
+                                # milliseconds. The one check built to answer item 34's
+                                # source-vs-served question told us nothing about r148, which is
+                                # the same defect shape as #691's silent skip, #696's invisible
+                                # load failure and #712's dead branch.
+                                #
+                                # INFO, not WARNING: a clean probe is not news, it is provenance.
+                                # What matters is that "checked, matched" and "never checked" stop
+                                # looking identical in a log.
+                                _LOG.info(
+                                    "#715 served build matches the source: all %d declared "
+                                    "route(s) are present in the bundle.", len(known_routes))
             except Exception:
                 pass
     except Exception:
