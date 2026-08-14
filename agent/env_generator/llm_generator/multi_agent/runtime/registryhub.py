@@ -107,6 +107,32 @@ def collapse_last_literal_segment(path: str) -> str:
     return "/" + "/".join(segs[:-1] + ["{x}"])
 
 
+def _merge_query_alias_730(schema: Any) -> Any:
+    """Fold ``schema.query`` into ``schema.request`` — see #730 at the call site.
+
+    Non-destructive: ``query`` is left in place so the lane's own wording survives in the record,
+    and existing ``request`` keys win, since that is the spelling every consumer already reads.
+    Anything that is not a dict passes through untouched.
+    """
+    try:
+        if not isinstance(schema, dict):
+            return schema
+        q = schema.get("query")
+        if not isinstance(q, dict) or not q:
+            return schema
+        req = schema.get("request")
+        merged = dict(q)
+        if isinstance(req, dict):
+            merged.update(req)
+        elif req:
+            return schema          # a non-dict request means something else is going on
+        out = dict(schema)
+        out["request"] = merged
+        return out
+    except Exception:
+        return schema
+
+
 class RegistryHub:
     """Apifox-like API registry, schema, consumer, mock, test, and review hub.
 
@@ -385,7 +411,25 @@ class RegistryHub:
             "path": self._canonical_path(path),
             "status": status or (old or {}).get("status") or "defined",
             "provider": provider or (old or {}).get("provider"),
-            "schema": schema or (old or {}).get("schema") or {},
+            # #730: a lane that names query parameters `query` is not ignored.
+            # r148 declared `GET /api/titles` with schema.query = {"kind": "string?",
+            # "limit": "integer?"} — correct information, its own word for it — and NOTHING in
+            # the framework reads `schema.query`. Every consumer reads `schema.request`
+            # (validation_runner:597, database_scaffold:350, scaffolder:517, #708b's filter
+            # hint), so the declaration was written, stored, and invisible.
+            #
+            # The cost is the largest functional defect measured: four of five identical-content
+            # route groups are pages fetching an unfiltered `/api/titles`, and the frontend has
+            # no contract basis for a filter it cannot see. I first read this as "the lane never
+            # declared them" and changed the backend prompt (#729) to ask for `request`. That is
+            # worth keeping as the canonical spelling, but it was the wrong diagnosis: the lane
+            # DID declare, in a synonym.
+            #
+            # Normalising on WRITE rather than at each reader means one place instead of four,
+            # and it recovers a declaration whichever word is chosen. `request` wins on conflict
+            # — it is what every consumer already reads, so a lane sending both is taken at the
+            # word the framework acts on.
+            "schema": _merge_query_alias_730(schema or (old or {}).get("schema") or {}),
             "metadata": {**((old or {}).get("metadata") or {}), **(metadata or {})},
             "_updated_by": agent,
             "_updated_at": now,

@@ -2649,11 +2649,31 @@ not declared does not exist to the frontend, the contract audit, or #708b's reme
 backend already implements them — r148's `list_titles` takes kind/genre/language and its SQL
 carries `WHERE kind = :kind` — so the contract was the only broken link.
 
-**Cheapest observation.** Next run: count GET endpoints with a non-empty `schema.request`. Above
-zero means the completed instruction landed and item 32's route-derived filtering is unblocked;
-still zero means declaration needs enforcement rather than wording, and #664's finding extends to
-this case after all. #725's dispatch logging now shows the `schema` argument's shape, so the same
-run also says whether the lane SENT them and something dropped them.
+**WRONG DIAGNOSIS — the lane DID declare them, under another name.** r148's `GET /api/titles`:
+
+    "schema": {"query": {"kind": "string?", "limit": "integer?"}, ...}
+
+`query`, which is the natural word for query parameters. Every consumer reads `schema.request`
+— validation_runner:597, database_scaffold:350, scaffolder:517, #708b's filter hint — and
+**nothing in the framework reads `schema.query`**. Written, stored, invisible.
+
+    r146   schema.query 0   schema.request 10
+    r147   schema.query 0   schema.request 10
+    r148   schema.query 3   schema.request  6
+
+So the "3 → 1 → 0 decline" counted one spelling of two. The decline is real for `request`; the
+information was not lost, it moved. My prompt change asked the lane to say `request` — worth
+keeping as the canonical spelling, but it was fixing the speaker when the listener was deaf.
+
+**Fixed: #730**, folding `query` into `request` on WRITE. One place instead of four readers, it
+recovers the declaration whichever word is chosen, `request` wins on conflict since that is what
+consumers act on, and the lane's own wording is left in the record. A test fails if a real
+`schema.query` reader ever appears, since the fold would then be redundant.
+
+**Cheapest observation.** Next run: `#729 GETs declaring query params` in the checker now counts
+post-fold, so above zero means the chain is whole — declared, folded, visible to #708b — and item
+32's route-derived filtering is unblocked at last. Still zero would mean the lane declared under a
+THIRD name, which #725's dispatch logging would show.
 
 The consequence is visible in the same run: #708b, which exists to name the filters the contract
 declares, correctly found the endpoint record, correctly extracted ZERO optional params, and
