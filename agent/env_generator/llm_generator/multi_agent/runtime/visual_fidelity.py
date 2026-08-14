@@ -1688,6 +1688,7 @@ async def capture_route_screenshots(
     auth_redirected: Optional[List[str]] = None,
     blank_screens: Optional[List[str]] = None,
     picker_screens: Optional[List[str]] = None,   # #657
+    console_errors: Optional[Dict[str, List[str]]] = None,   # #740
 
 ) -> Dict[str, str]:
     """Screenshot each screen's route; returns {screen name → png path}. A
@@ -1729,6 +1730,42 @@ async def capture_route_screenshots(
                     f"sessionStorage.setItem('{k}', {_tok_js})"
                     for k in _aliases) + ";")
             page = await ctx.new_page()
+            # #740: KEEP THE UNCAUGHT ERROR. The capture drives a real browser to every
+            # declared route, every remediation round, and threw away the single most
+            # diagnostic signal on the page — there is no `page.on("console")` or
+            # `"pageerror"` anywhere in this module. So a crashed SPA could only ever be
+            # described by its SYMPTOM: "route X rendered BLANK — the SPA never hydrated".
+            #
+            # r148 is what that costs. Its frontend threw `TypeError: (void 0) is not a
+            # function` on every authenticated route; the capture saw ten blank shells, the
+            # remediation task said "fix the page's mount/data load, not its styling", and the
+            # error itself reached the lane only because the VERIFIER separately drove a
+            # browser and read the console. Corpus: 14 runs carry a frontend runtime-crash
+            # signature in their task store and **all 14 released**, 9 of them with the crash
+            # task still open.
+            #
+            # Collected per screen, bounded (5 distinct messages each, 300 chars) so a page
+            # looping an error cannot flood the verdict. Console `error` level and uncaught
+            # exceptions only — warnings and logs are noise here. Purely additive: nothing
+            # reads this yet except the blank deviation text, and a screen with no errors is
+            # byte-identical to before.
+            _cur740 = {"name": "(startup)"}
+
+            def _rec740(kind: str, text: Any) -> None:
+                if console_errors is None:
+                    return
+                try:
+                    _b = console_errors.setdefault(_cur740["name"], [])
+                    _m = f"{kind}: {str(text)[:300]}"
+                    if _m not in _b and len(_b) < 5:
+                        _b.append(_m)
+                except Exception:
+                    pass
+
+            if console_errors is not None:
+                page.on("pageerror", lambda e: _rec740("uncaught", e))
+                page.on("console", lambda m: (
+                    _rec740("console.error", m.text) if m.type == "error" else None))
             # #491 (netflix r63) — POST-LOGIN PROFILE GATE. A token alone does not
             # pass <RequireProfile>: catalog routes redirect to /profiles until an
             # ACTIVE profile is selected, collapsing every catalog shot to the
@@ -1767,6 +1804,7 @@ async def capture_route_screenshots(
                     if _want != (_applied_scheme or "light"):
                         await page.emulate_media(color_scheme=_want)
                         _applied_scheme = _want
+                    _cur740["name"] = str(screen["name"])   # #740: attribute to THIS screen
                     await page.goto(base_url + _concrete_capture_route(screen["route"]),
                                     wait_until="networkidle", timeout=20000)
                     if _scheme or _storage_dirty:
@@ -2036,6 +2074,29 @@ async def judge_screen_pair(llm: Any, screen: Mapping[str, Any], screenshot_path
 # ---------------------------------------------------------------------------
 # The gate
 # ---------------------------------------------------------------------------
+def _group_console_errors_740(console_errors: Any) -> Dict[str, List[str]]:
+    """#740: {screen -> [messages]} inverted to {message -> [screens]}.
+
+    One broken import crashes every route, so a per-screen listing reads as N problems when
+    it is one. Grouping by MESSAGE makes the fan-out the headline: "this error, on 12 screens".
+    Pure and total — any malformed entry is skipped rather than raising inside a capture.
+    """
+    out: Dict[str, List[str]] = {}
+    if not isinstance(console_errors, Mapping):
+        return out
+    for name, msgs in console_errors.items():
+        if not isinstance(msgs, (list, tuple)):
+            continue
+        for m in msgs:
+            _m = str(m)
+            if not _m.strip():
+                continue
+            _seen = out.setdefault(_m, [])
+            if str(name) not in _seen:
+                _seen.append(str(name))
+    return out
+
+
 def _served_build_is_stale_738(prev: Any, frontend_commit: str, bundle: str) -> bool:
     """#738: did app/frontend move while the SERVED bundle stayed byte-identical?
 
@@ -2441,16 +2502,19 @@ async def run_visual_fidelity(
         _auth_bounced: List[str] = []
         _blank_screens: List[str] = []
         _picker_screens: List[str] = []          # #657
+        _console740: Dict[str, List[str]] = {}   # #740
 
         async def capture(scr):  # noqa: F811 — default capture closes over the boot
             return await capture_route_screenshots(
                 base_url, scr, token, shots_dir, auth_redirected=_auth_bounced,
-                blank_screens=_blank_screens, picker_screens=_picker_screens)
+                blank_screens=_blank_screens, picker_screens=_picker_screens,
+                console_errors=_console740)
 
     else:
         _auth_bounced = []
         _blank_screens = []
         _picker_screens = []
+        _console740 = {}
 
     shots = await capture(judged_screens)
     if _auth_wipeout_655(judged_screens, _auth_bounced):        # #655: by ROUTE, not by screen
@@ -2521,6 +2585,14 @@ async def run_visual_fidelity(
                         "<div id=root> shell). If transient (mid-rebuild) it is refunded a "
                         "few times; if it persists it is a real render/data-fetch failure "
                         "on this route — fix the page's mount/data load, not its styling")
+                # #740: name the ACTUAL error when the browser gave us one. Without this the
+                # lane is told a symptom ("never hydrated") and has to rediscover the cause;
+                # r148's remediation tasks said exactly that while the console was repeating
+                # `TypeError: (void 0) is not a function` on every route.
+                _err740 = _console740.get(screen["name"]) or []
+                if _err740:
+                    _dev += (". The browser reported: " + " | ".join(_err740[:3])
+                             + " — fix THAT, it is the reason the shell is empty")
             elif screen["name"] in _auth_bounced:
                 _dev = (f"route {screen['route']} redirected to /login — the auth guard "
                         "rejected the session on THIS route only; fix the route's auth "
@@ -2532,6 +2604,7 @@ async def run_visual_fidelity(
                             "deviations": [_dev],
                             "blank": screen["name"] in _blank_screens,
                             "advisory": bool(screen.get("advisory")),
+                            "console_errors": _console740.get(screen["name"]) or [],  # #740
                             "screenshot": None,
                             "reference": screen.get("path")})
             continue
@@ -2626,6 +2699,20 @@ async def run_visual_fidelity(
         summary += " [advisory (overlay, non-blocking): %s]" % ", ".join(_adv_note)
     if _blank_screens:
         summary += " [blank capture: %s]" % ", ".join(_blank_screens)
+    # #740: SAY THE ERROR OUT LOUD, ONCE PER PASS. Grouped by message rather than by screen —
+    # one broken import crashes every route, and 12 identical lines read as 12 problems.
+    _by740 = _group_console_errors_740(_console740)
+    if _by740:
+        _LOG.warning(
+            "#740 the browser reported %d distinct uncaught/console error(s) during this "
+            "capture: %s. Nothing in this module used to read the console, so a crashed SPA "
+            "could only be described as 'rendered BLANK' and the cause had to be rediscovered "
+            "by whoever drove a browser next. These are now in each screen's deviations.",
+            len(_by740),
+            "; ".join(f"{_m740[:160]} (on {len(_ns740)} screen(s): "
+                      f"{', '.join(sorted(_ns740)[:4])})"
+                      for _m740, _ns740 in sorted(
+                          _by740.items(), key=lambda kv: -len(kv[1]))[:4]))
     # #419: PERSIST the per-dimension verdict to disk so fidelity iteration is
     # TARGETED, not guessed (see _persist_verdict). Best-effort + write-only.
     _persist_verdict(project_dir, passed=passed, min_similarity=min_similarity,

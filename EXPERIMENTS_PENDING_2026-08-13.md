@@ -1733,6 +1733,85 @@ right one needed a distribution.
 
 ---
 
+## 60. #740 — the capture drives a browser to every route and threw the console away
+
+There was no `page.on("console")` and no `"pageerror"` anywhere in `visual_fidelity.py`. The gate
+navigates a real browser to every declared route, every remediation round, and discarded the
+single most diagnostic signal on the page. A crashed SPA could therefore only be described by its
+SYMPTOM — *"route X rendered BLANK — the SPA never hydrated"* — and the remediation task handed
+to the lane said *"fix the page's mount/data load, not its styling"*.
+
+r148 shows the cost. Its frontend threw `TypeError: (void 0) is not a function` on every
+authenticated route. The capture saw ten blank shells and said so at 11:13:19; the error TEXT
+reached the lane only because the verifier separately drove a browser and read the console, nine
+minutes later at 11:22:16.
+
+Corpus, over the 148 task stores:
+
+    runs whose tasks carry a frontend runtime-crash signature      14
+    of those, runs that RELEASED                                   14
+    of those, released with the crash task still open               9
+    runs carrying `(void 0) is not a function` specifically         5
+
+**A frontend runtime crash has never once stopped a release.** Reading the console does not stop
+one either — this is diagnosis, not a gate — but it puts the cause into the artifact the lane is
+handed instead of leaving it to be rediscovered by whoever drives a browser next.
+
+Bounded on purpose: 5 distinct messages per screen, 300 chars each, `error`-level console entries
+and uncaught exceptions only, so a page looping an error cannot flood the verdict. Errors are
+attributed to the screen being navigated (set before the `goto`, not after), attached to each
+screen's record as `console_errors`, appended to the blank-capture deviation, and summarised once
+per pass **grouped by message** — one broken import crashes every route, and twelve identical
+lines read as twelve problems.
+
+**Cheapest observation.** Next run: does `#740` fire, and does the grouped line name one error
+across many screens or many errors? If a blank capture ever reports NO console error, that is the
+interesting case — it would mean the shell is empty for a reason the browser did not raise
+(a mount that renders nothing, a route that matched nothing), and the deviation text should stop
+implying a crash.
+
+---
+
+## 59. Item 55's open question, answered: visual remediation works, weakly
+
+Item 55 recorded that the effectiveness of visual remediation **has never actually been
+measured**, because every delta I had computed came from blackout rounds. With the instrument
+understood, the measurement is possible offline. Two round classes are excluded, both for
+reasons established this session and neither of them a judgement call: **blackout** rounds
+(#737 — half or more screens at 0.00, the capture produced no page) and **#713 fall-through**
+rounds (three or more screens under 0.10 at once, the capture photographed another page).
+
+Per-screen deltas between consecutive rounds whose `code_state` actually changed, split by
+whether the screen was below the bar and therefore named in the remediation task:
+
+    run    usable rounds     targeted (named)          control (already passing)
+    r146        9/9          up 9  down 2  same 49     up 2  down 2  same 25
+    r147        5/6          up 4  down 2  same 25     up 1  down 2  same 14
+    r148        3/12         up 0  down 0  same  8     up 0  down 1  same  3
+    -----------------------------------------------------------------------------
+    total                    up 13 down 4  same 82     up 3  down 5  same 42
+                             net +9 over 99 obs        net -2 over 50 obs
+
+**Remediation works, and the sign is right**: a named screen is three times more likely to rise
+than to fall, while an unnamed one drifts slightly down. That is the first direct evidence in the
+arc that the loop does anything at all. It is also weak: **83% of named screens do not move**, so
+a round of remediation shifts roughly one screen in six.
+
+This closes item 55's question and RETRACTS the alarming version of it. My earlier reading —
+targeted screens moving *less* than untargeted ones, the three most reachable pages never moving
+— was entirely an artefact of r148's nine blackout rounds, and r147's apparent net-negative was
+the #713 fall-through. Both are withdrawn.
+
+It does NOT close item 54's half, which is a different question: the lane holding information
+(`/api/titles`'s `query: {kind, limit}`, fetched 28 times) and not using it. Fidelity remediation
+moving one screen in six says nothing about whether a *contract* fact gets acted on.
+
+**Cheapest observation.** The 83% flat rate is the number to attack next, and it is not yet
+decomposable offline: `rounds.jsonl` exists for only 4 runs, so 99 observations from three runs is
+the whole corpus. Any run that produces clean (non-blackout, non-fall-through) rounds enlarges it.
+
+---
+
 ## 58. #739 — one working page certifies the whole UI, so item 13's planned fix is not enough
 
 The third path by which r148 shipped a dead app, and the one that changes an existing entry.

@@ -165,6 +165,7 @@ grep_log "#715 served build is stale"    "the SERVED frontend does not know" "a 
 grep_log "#715 probe inconclusive"       "715 probe inconclusive" "fires if route literals do NOT survive the bundle — then the check needs rethinking, not the app"
 grep_log "#738 served bundle frozen"     "SERVED bundle did not change while app/frontend did" "the half #715 is blind to: routes unchanged, fix never reached the container. r148 died of this and #715 would have called it clean"
 grep_log "#739 UI evidence is thin"      "ui_smoke_pass=True rests on" "the passed/failed split behind ui_smoke_pass. r148 read True off landing+login while 12/14 pages crashed; this is the number item 13's decision always lacked"
+grep_log "#740 console error captured"   "distinct uncaught/console error(s) during this capture" "the browser's OWN error text, grouped by message. A blank capture with NO hit here is the interesting case: empty shell, nothing raised"
 grep_log "#707 invented asset staged"    "staged .* placeholder asset(s) the frontend referenced" "each hit = a path the lane invented instead of search_icons/save_image or drawing it"
 grep_log "#706 integration promoted"     "promoted integration -> main" "should appear once per delivered run; then rev-list --count main..integration should be 0"
 grep_log "#706 promotion refused"        "promotion did not happen" "the callee declined and names why — read it, do not assume the topology"
