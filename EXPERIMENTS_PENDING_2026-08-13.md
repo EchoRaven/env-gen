@@ -1649,6 +1649,18 @@ count is no better without care — `check_inbox` logs 132 `✅` and zero `🔧`
 `apply_patch`, `edit`, `docker_up` and `deliver_project` log NEITHER marker despite obviously
 running, so a marker sweep UNDER-counts (187) exactly as the name sweep OVER-counts (137).
 
+**Audited, and nothing else rested on the unsound half.** Having found the false justification I
+checked every place the inference appears, in this file and in the tree, before assuming the
+damage was local:
+
+    EXPERIMENTS_PENDING:480   `save_task_suite` 0 of 253 -> "not called, not even mentioned"
+    workhub/service.py:90     `submit_plan` 0 of 253 -> "has never run"
+    plan_decision.py:147      conditional phrasing, no count
+
+All three use the SOUND direction (zero ⇒ never called); none concludes "used" from a nonzero
+count. So the correction removes a wrong reason without disturbing a single conclusion, and this
+particular thread is closed rather than merely paused.
+
 **That number is not a defect list, and reading it as one would be the mistake.** Most of the 137
 are legitimately situational: `docker_down`, `interrupt_process`, `terminate_agent_team`,
 `request_plan_changes` — you call them when the circumstance arises and it usually does not.
