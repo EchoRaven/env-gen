@@ -9002,7 +9002,18 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
     the lane FILLS page bodies (write/edit) instead of authoring from nothing, and
     the app is navigable-by-construction the moment kickoff finalizes.
 
-    Safety: page stubs are written ONLY when missing (never clobber a real page).
+    Safety, as of #221: page stubs are written when missing, AND a ui_page covered by a
+    MEASURED design screen is re-projected over whatever is there — see the #221 note at the
+    write site below. This line used to read "written ONLY when missing (never clobber a real
+    page)"; #221 superseded that and the docstring was never updated, so a reader 100 lines
+    above the code was told the opposite of what it does. r146 is what caught it: MyListPage.jsx
+    alternating 59 lines (projection) / 241 lines (lane) across 9 rounds looked like a contract
+    violation until the #221 note turned up.
+
+    Worth knowing alongside it: in r146 the override cost NOTHING. Pairing each round's
+    code_state with its judged score, the lane's 241-line page and the 59-line projection both
+    scored 0.60 on my_list, and 214 vs 87 lines both scored 0.55 on player. #221's premise — the
+    projection is a floor, not a downgrade — held everywhere it could be measured there.
     App.jsx is (re)written ONLY when missing/empty or it still carries the
     ``@framework-managed-routes`` marker (the social-shaped baseline shell carries
     it; a lane that takes over routing deletes the marker → never overwritten).
