@@ -994,6 +994,55 @@ override mechanism, stated in `duplicated_routes`' own docstring.
 
 ---
 
+## 23. The "computed but never consumed" sweep — run to exhaustion
+
+#691, #694b, #696 and #698 were all one shape: a correct computation whose result nothing
+consumes. Rather than keep finding them one at a time, the pattern itself became the search.
+Two mechanical sweeps, both run over the whole framework:
+
+**Sweep A — every string-literal dict key assigned and never read back.** 69 candidates, almost
+all false positives: `merged_at`, `active_runs`, `log_tail` and friends are serialised to JSON
+and read by the live-monitor UI or a human, not by Python. Narrowing to keys whose NAME implies
+an action (`recommend|should_|suggest|stale|blocker|unresolved|available|_needed|_required|
+violation|mismatch|drift|regress`) and excluding the HTTP layer returns **exactly one hit:
+`better_state_available`** — already found and fixed as #698. `advisory_reason` is written three
+times and never read, but it explains a decision already taken (the `advisory` flag that drives
+it IS consumed), so it is documentation rather than an unheard recommendation. **This class is
+exhausted.**
+
+**Sweep B — every module-level function whose name appears only at its own `def`.** 26 hits, and
+one matters: **`promote_integration_to_main`** → #699 below.
+
+---
+
+## 24. #699 — the branch-promotion function that has never run
+
+**Fixed (docstring only): #699.** `auto_commit.promote_integration_to_main` says "Called by the
+verifier after a successful RunHub run so that `main` only ever points at code that has passed
+the latest verification." Nothing calls it — a call-syntax scan of the framework finds zero call
+sites. The consequence is in every generated repo that has both branches:
+
+    diverged in BOTH directions   130 runs   integration ahead 20-73, main holding 1 commit
+                                             integration lacks
+    main purely behind              5
+    main ahead                      3
+    in sync                         0
+
+`main` is frozen at the early bootstrap + first framework-delivery commit while integration
+accumulates the whole run, and they never reconverge because the function designed to reconverge
+them is dead. **That single orphaned commit on `main` is the one item 18 is about** — the MCP
+writer runs once, lands there, and the release, cut from integration, never sees it. Two findings,
+one topology.
+
+**Only a run can settle.** Whether wiring the promotion into the verifier is safe. It is a real
+behaviour change: `main` would start moving, and anything that reads `main` as a stable reference
+would see it. Deliberately not done here.
+
+**Cheapest observation.** After a run, `git -C <run> rev-list --count main..integration`. Today it
+is 20-73 in 130 of 146 runs; if the promotion is ever wired up it should be 0 at release.
+
+---
+
 ## 19. Older, still unresolved
 
 - **#644 viewport.** Two measured targets conflict: 796px matches the reference image aspect,

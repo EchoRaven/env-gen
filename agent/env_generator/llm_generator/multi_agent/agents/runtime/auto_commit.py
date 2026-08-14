@@ -1129,9 +1129,32 @@ def promote_integration_to_main(
 ) -> Tuple[bool, str]:
     """Fast-forward (or merge) ``integration_branch`` into ``main_branch``.
 
-    Called by the verifier after a successful RunHub run so that
-    ``main`` only ever points at code that has passed the latest
-    verification. Auto-merge to integration stays unchanged — that's
+    #699: THE SENTENCE BELOW IS NOT TRUE, AND HAS NEVER BEEN. Nothing calls this function —
+    a token scan of every identifier in the framework finds `promote_integration_to_main`
+    exactly once, at this `def`. The verifier does not call it; nobody does.
+
+    The consequence is measurable in the kept corpus. Comparing the two branches in every
+    generated repo that has both:
+
+        diverged in BOTH directions   130 runs   integration ahead 20-73, main holding 1
+                                                 commit integration lacks
+        main purely behind              5
+        main ahead                      3
+        in sync                         0
+
+    So `main` is frozen at the early bootstrap + first framework-delivery commit while
+    integration accumulates the entire run, and the two never reconverge because the function
+    designed to reconverge them is dead. That single orphaned commit on `main` is the same one
+    #691 is about: the MCP writer runs once, lands there, and the release — cut from
+    integration — never sees it.
+
+    Wiring this into the verifier is a real behaviour change with delivery consequences and is
+    deliberately NOT done here; what is fixed is a docstring that told the next reader the
+    promotion happens. The original claim, kept verbatim so the intent survives:
+
+        "Called by the verifier after a successful RunHub run so that
+        ``main`` only ever points at code that has passed the latest
+        verification." Auto-merge to integration stays unchanged — that's
     the WIP coordination branch — but ``main`` becomes the
     "verifier-blessed" reference. Other agents can still pull
     ``integration`` for cross-agent visibility; teams that want
