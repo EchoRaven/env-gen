@@ -1587,7 +1587,46 @@ class WorkhubCloseMeetingTool(HubTool):
 class RegistryHubRegisterEndpointTool(HubTool):
     NAME = "registryhub_register_endpoint"
     DESCRIPTION = "Register/update RegistryHub endpoint and schema."
-    PARAMETERS = {"type": "object", "properties": {"method": {"type": "string"}, "path": {"type": "string"}, "schema": {"type": "object"}, "provider": {"type": "string"}, "status": {"type": "string"}}, "uses": {"type": "array", "items": {"type": "string"}, "description": "endpoints this endpoint's logic builds on, e.g. ['GET /api/items'] — orders implementation and feeds verifier chain design"},
+    PARAMETERS = {"type": "object", "properties": {"method": {"type": "string"}, "path": {"type": "string"}, "schema": {
+                "type": "object",
+                # #732: NAME THE SLOTS THE FRAMEWORK READS, where the model can see them.
+                # `schema` was declared as a bare `{"type": "object"}` — the model was asked for
+                # "a schema" and had to guess the key names. r148 guessed `query` for query
+                # parameters, which is a BETTER word than the one we read, and every consumer
+                # (validation_runner, database_scaffold, scaffolder, #708b) reads `request`, so
+                # the declaration was stored and invisible for a whole run.
+                #
+                # Discovering that one synonym at a time does not converge: a different app will
+                # guess `params`, `queryParams`, `filters`. #730 folds `query` specifically and
+                # #731 warns about unknown keys, but both are netflix-shaped patches on a
+                # structural gap — the CONTRACT was never published at the point of the call.
+                #
+                # These four slot names belong to the framework, not to any app's domain, so
+                # naming them here is app-independent by construction and travels with the tool
+                # to every future generation. Extra keys stay legal: the model may still invent,
+                # it simply no longer has to.
+                "description": (
+                    "The endpoint's contract. The keys below are the ones the framework READS; "
+                    "any other key is stored faithfully but no consumer acts on it."),
+                "properties": {
+                    "request": {"type": "object", "description":
+                                "Parameters the endpoint ACCEPTS. For GET these are the QUERY "
+                                "PARAMETERS — declare every filter you implement, e.g. "
+                                "{\"kind\": \"string?\", \"genre\": \"string?\", "
+                                "\"limit\": \"int?\"}; for POST/PUT/PATCH the body fields. "
+                                "A trailing `?` marks optional. A filter you implement and do "
+                                "not declare here is invisible to the frontend, to the contract "
+                                "audit, and to remediation hints — which is how six catalogue "
+                                "routes ended up fetching the same unfiltered list."},
+                    "response": {"type": "object", "description":
+                                 "Shape of one returned item, {field: type}."},
+                    "response_key": {"type": "string", "description":
+                                     "Envelope key the payload sits under — `item` for one, "
+                                     "`items` for a list."},
+                    "auth_required": {"type": "boolean", "description":
+                                      "True when the endpoint rejects an unauthenticated call."},
+                },
+            }, "provider": {"type": "string"}, "status": {"type": "string"}}, "uses": {"type": "array", "items": {"type": "string"}, "description": "endpoints this endpoint's logic builds on, e.g. ['GET /api/items'] — orders implementation and feeds verifier chain design"},
         "required": ["method", "path"]}
 
     async def _run(self, method: str, path: str, schema=None, provider: str = "", status: str = "defined") -> ToolResult:

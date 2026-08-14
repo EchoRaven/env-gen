@@ -1783,8 +1783,42 @@ where a fold would go. The known set is exactly the six sub-keys r146/r147/r148 
 on arrival. The signal is reserved for the next synonym, which is the moment the information is
 cheapest to act on.
 
-**Still the user's call:** whether to pin the vocabulary at the tool layer. #731 makes that
-decision better-informed rather than making it.
+**THE USER RETIRED BOTH #730 AND #731 AS THE ANSWER, and was right.** An agent inventing new
+endpoints and new words is NORMAL. Discovering each invention one run at a time does not
+converge, and synonym matching cannot work at all: today it is `query`; a completely unrelated app
+will produce `params`, `queryParams`, `filters`. #730 is a hardcoded fold for one word and #731's
+known set was induced from three netflix runs — both are corpus-shaped patches on a structural
+gap.
+
+**The gap: the framework never published the slots it reads, at the point of the call.** The tool
+declared
+
+    "schema": {"type": "object"}
+
+with the description "Register/update RegistryHub endpoint and schema." The model was asked for
+"a schema" and had to GUESS the key names. r148 guessed `query` — a better word than the one every
+consumer reads — and the declaration was stored and invisible for a run.
+
+**Fixed: #732.** `registryhub_register_endpoint`'s PARAMETERS now name `request`, `response`,
+`response_key` and `auth_required` with descriptions, including what `request` means for a GET
+(the query parameters, `?` for optional) and what omitting it costs. `tooling.py` states that
+"Every tool advertises PARAMETERS to the model … the same text the model was shown", so this lands
+exactly where the guessing happened.
+
+**Why this is app-independent, which the previous two were not.** The four slots belong to the
+FRAMEWORK's contract, not to any app's domain — so the declaration travels with the tool to every
+future generation, netflix or otherwise. No corpus, no synonym table, no per-run discovery.
+
+**Invention stays legal.** No `additionalProperties: false`: the model may still coin a key, and
+the description says extra keys are stored faithfully but acted on by nothing. What changes is
+that it no longer HAS to guess. #731 keeps reporting anything outside the published set, and its
+known set now DERIVES from #732's declaration (plus `query` and `headers`, both already
+reckoned with) rather than from words one corpus used.
+
+**Cheapest observation.** Next run: `schema.request` populated on filterable GETs without any
+fold being needed. If a NEW synonym appears anyway, #731 names it — and that would mean publishing
+the vocabulary is not sufficient either, which is worth knowing before anyone builds a third
+patch.
 
 **Cheapest observation.** None; settled by reading. What a run adds is whether the lane keeps
 inventing keys — a third synonym would change the calculus from "fold the one that matters" to

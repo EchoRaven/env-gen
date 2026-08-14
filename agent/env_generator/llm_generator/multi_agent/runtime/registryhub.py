@@ -121,9 +121,32 @@ def collapse_last_literal_segment(path: str) -> str:
 # parameters better than `request` does — so refusing an unknown sub-key would discard good
 # information to enforce a vocabulary. Making it visible costs one line and is what #730 needed
 # in order to be noticed at all.
-_KNOWN_SCHEMA_KEYS_731 = frozenset({
-    "request", "response", "response_key", "auth_required", "query", "headers",
-})
+def _declared_schema_keys_732() -> frozenset:
+    """The slots the TOOL publishes, read from the tool definition itself.
+
+    #732 named them in `registryhub_register_endpoint`'s PARAMETERS so the model sees them at the
+    point of the call. Deriving the known set from that declaration instead of hardcoding it
+    means the two cannot drift, and — the part that matters — the set is no longer a list of
+    words this one netflix corpus happened to use. Falls back to the literal names if the tool
+    cannot be imported, since a warning helper must never be the thing that breaks a hub.
+    """
+    try:
+        from tools.hub_tools import RegistryHubRegisterEndpointTool as _T
+        props = ((_T.PARAMETERS or {}).get("properties") or {})
+        declared = ((props.get("schema") or {}).get("properties") or {})
+        if declared:
+            return frozenset(declared) | {"query", "headers"}
+    except Exception:
+        pass
+    return frozenset({"request", "response", "response_key", "auth_required",
+                      "query", "headers"})
+
+
+# `query` and `headers` are carried alongside the declared slots because both are REAL
+# declarations the framework has already reckoned with — `query` is folded into `request` by
+# #730, `headers` is deliberately left unread (item 51: a header selects an actor). Warning about
+# either would be reporting a settled decision as news.
+_KNOWN_SCHEMA_KEYS_731 = _declared_schema_keys_732()
 
 
 def _warn_unknown_schema_keys_731(method: Any, path: Any, schema: Any, logger: Any) -> None:
