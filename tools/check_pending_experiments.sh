@@ -102,7 +102,10 @@ gone_log "#686 step headers sent"        "X-Profile-Id header is required" "was:
 gone_log "#687 browser transport"        "Navigation failed: Page.goto: net::ERR_CONNECTION_REFUSED$" "was: 161 live-era with no diagnosis"
 # The brackets are ESCAPED: grep reads [projected] as a character class, so the unescaped form
 # matches any one of those letters followed by " data load failed:" — over-matching, quietly.
-grep_log "#706 integration promoted"     "promoted integration -> main" "should appear once per delivered run; `rev-list --count main..integration` should then be 0"
+# NO BACKTICKS in these note strings: bash runs them as command substitution. The first draft
+# of this line embedded `rev-list ...` and the script printed "rev-list: command not found" on
+# every invocation — a checker that misreports itself is worse than one that is absent.
+grep_log "#706 integration promoted"     "promoted integration -> main" "should appear once per delivered run; then rev-list --count main..integration should be 0"
 grep_log "#706 promotion refused"        "promotion did not happen" "the callee declined and names why — read it, do not assume the topology"
 grep_log "#701 coverage completion failed" "coverage-chain completion FAILED" "any hit explains a coverage stuck-blocker; was silent before"
 grep_log "#700 identical-content routes" "routes render identical content" "#615 detector, reporting for the first time; r146 had a 4-route group"
