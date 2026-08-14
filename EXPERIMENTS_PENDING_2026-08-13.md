@@ -1584,6 +1584,24 @@ remediation is built from. A screen that photographed the landing page contribut
 low score, and a low score is exactly what the remediation loop then works on — the lane is sent
 to fix a page that was never captured.
 
+**How much does it distort the SCORES? Less than expected, and in the opposite direction.**
+Recomputing each affected run's blocking average with the duplicate members removed:
+
+    81 runs recomputable — average rises in 42, falls in 21, unchanged in 18
+    median shift +0.0058, mean +0.0083, range -0.115 .. +0.225
+
+So the duplicates mostly drag the average DOWN and the recorded numbers are, at the median,
+slightly PESSIMISTIC rather than flattering. The median shift is negligible; the tail is not.
+
+**And at the 0.65 bar exactly ONE verdict flips: r143, False -> True.** Its only two blocking
+screens were `browse_by_languages` at **0.25** — the phantom, an image belonging to another
+screen — and `login` at 0.70. Drop the phantom and the gate passes.
+
+**What that does NOT prove.** r143 never released, but its log carries no STUCK/ABORT and no
+final `Failed checks:` line — it ends mid-activity, so the run was cut off rather than turned
+away by this gate. The phantom made the verdict False; whether it cost the release is not in
+evidence and is not claimed here.
+
 **The phantom-remediation loop, measured.** The consequence is not just a wrong score — the
 deviations computed from that score become the lane's to-do list. Counting deviations
 (`deviations` + `measured_deviations`) by whether the screen was inside a duplicate group:
