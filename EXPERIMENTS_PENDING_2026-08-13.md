@@ -944,7 +944,7 @@ answer. It is recorded here so the next reader inherits the number rather than t
 
 ---
 
-## 21. #696 — does the suppressed load failure actually reach console_errors?
+## 37. #696 — does the suppressed load failure actually reach console_errors?
 
 **Changed: #696.** Every projected page fetch throws `HTTP <status>` and then discards exactly
 that error, falling through to the graceful empty state. The suppression is deliberate, measured
@@ -1412,87 +1412,60 @@ suppressed-load-failure line, #701, #707, and the four expected-zero signatures
 
 ---
 
-## 33. r147: #664's escalation informs but does not deter — measured live
+## 33. #664/#710 — the escalation is READ-ONLY in practice, and more words cannot fix it
 
-Mining r147's own log (the freshest data, and the first run carrying #683-#708b) by tool-failure
-class puts chain registration on top by a wide margin:
+Two passes wrote this up independently and it sat here as two 42-line items saying one thing;
+merged with the union of their evidence, because the duplicate itself cost a reader two reads.
+
+Mining r147's own log by tool-failure class puts chain registration on top by a wide margin:
 
     registryhub_register_verification_chain   160 attempts, 80 FAILED (50%)
     write 24 · edit 6 · test_api 4 · register_endpoint 4 · apply_patch 4
 
-and 62 of those 80 are one endpoint, `PUT /api/profiles/{}`, which the contract genuinely lacks —
-the requirements declare `GET`/`POST /api/profiles` and no `PUT`. The verifier is authoring
-chains for profile EDITING, a plausible feature nobody asked for.
+62 of those 80 are ONE endpoint, `PUT /api/profiles/{}`, which the contract genuinely lacks — the
+requirements declare `GET`/`POST /api/profiles` and no `PUT`. Worth noting WHY the verifier wants
+it: `PUT /api/profiles/{id}` is a perfectly reasonable endpoint for a profile picker with "Manage
+Profiles". The verifier is not hallucinating so much as completing a familiar product shape.
 
-**#664 fires, immediately, and changes nothing.** First attempt at log line 2705; first escalation
-at line **2711**, six lines later. Last attempt at line **8994**. Rejections of that same endpoint
-by thousand-line bucket:
+**#664 fires immediately and changes nothing.** This answers a question #664's own comment left
+open ("what the logs CANNOT show: whether the agent read the warning"):
 
-    2000s: 8    5000s: 14    6000s: 18    7000s: 22
+    first attempt        line 2705
+    first escalation     line 2711     six lines later
+    last attempt         line 8994     6,283 lines later
+    escalations emitted  72
 
-**Increasing, not tapering.** The escalation fired 72 times over the run and the re-submission
-rate for the endpoint it names went UP.
-
-**The message is not the problem.** It already gives both exits verbatim: "DROP those steps (or
-the chain). If delivery genuinely needs this coverage, ask the backend lane to implement +
-register the endpoint FIRST." This is not the #682/#690 class where the text named a problem
-without a resolution — the text is good and is ignored. So a wording fix cannot help, which is
-worth recording because wording is what every neighbouring fix in this file did.
-
-**Only a run can settle: which mechanism actually stops it.** Two candidates, both changing
-verification semantics, so neither is guessed at here:
-
-  * **auto-drop** — register the chain minus the offending steps and say so ("registered 4 of 5
-    steps; step[2] PUT /api/profiles/{id} dropped, not in the contract"). Gets coverage moving,
-    but a silently thinner chain tests less than the author intended;
-  * **file the gap** — turn the Nth rejection into a work item for the backend lane instead of a
-    message to the verifier, so the request is dispatched once rather than repeated 62 times.
-
-**Cheapest observation.** Count `🔧 registryhub_register_verification_chain` against `❌` of the
-same, and bucket the rejected endpoint by log position. A working deterrent shows the buckets
-DECAYING after the first escalation; today they grow 8 → 14 → 18 → 22.
-
----
-
-## 33. #710 — #664's escalation is READ-ONLY in practice — and more words will not fix it
-
-r147 is the first run with #664 fully in the build, and it answers a question #664's own comment
-left open ("what the logs CANNOT show: whether the agent read the warning"):
-
-    registration attempts                160      failures  80 (50%)
-    escalations emitted                   72
-    first attempt                        line 2705
-    first escalation                     line 2711    six lines later
-    last attempt                         line 8994    6,283 lines later
-
-For the worst single endpoint, `PUT /api/profiles/{}` — 62 rejections between lines 2711 and
-7825 — the rate **accelerates** after the escalation:
+and for that endpoint the rate ACCELERATES after the escalation rather than tapering:
 
     rejections per 1000 log lines:   2000s: 8    5000s: 14    6000s: 18    7000s: 22
 
-**This is not an instruction gap of the #694/#707 kind, and that matters because it rules out the
-cheap fix.** The verifier prompt names `registryhub_list_endpoints` and registered/implemented
-**30 times**, and the escalation already says precisely the right thing ("DROP those steps (or
-the chain) … re-submitting will keep failing"). Thirty mentions plus a targeted, early, repeated
-escalation did not change the behaviour. Writing a thirty-first sentence is the reflex to resist.
+**The message is not the problem, and that is the finding.** It already gives both exits verbatim
+— "DROP those steps (or the chain). If delivery genuinely needs this coverage, ask the backend
+lane to implement + register the endpoint FIRST." On top of that the verifier prompt names
+`registryhub_list_endpoints` and registered/implemented **30 times**. Thirty mentions plus a
+targeted, early, repeated escalation did not move the behaviour. This is NOT the
+#682/#690/#694/#707 class where the text named a problem without naming a resolution — here the
+text is good and is ignored, so a wording fix cannot help. Worth recording plainly, because
+wording is what almost every neighbouring fix in this file did, and writing a thirty-first
+sentence is the reflex to resist.
 
-Worth noting WHY the verifier wants it: `PUT /api/profiles/{id}` is a perfectly reasonable
-endpoint for a profile picker with "Manage Profiles" — it is simply not in the requirements,
-which declare only `GET /api/profiles` and `POST /api/profiles`. The verifier is not hallucinating
-so much as completing a familiar product shape.
+**Only a run can settle which mechanism actually stops it.** Both change verification semantics,
+so neither is guessed at here:
 
-**Only a run can settle** which of the two real options is right:
+  * **ENFORCEMENT / auto-drop** — register the chain minus the offending steps and say so
+    ("registered 4 of 5 steps; step[2] PUT /api/profiles/{id} dropped, not in the contract").
+    Gets coverage moving; the risk is that a silently thinner chain tests less than the author
+    intended, or nothing at all.
+  * **ACCEPTANCE / file the gap** — turn the Nth rejection into a work item for the backend lane
+    (or a pending consumer) so the demand is dispatched ONCE instead of repeated 62 times. The
+    risk is the framework inventing contract the requirements never asked for.
 
-  * ENFORCEMENT — strip the unregistered steps and register the remainder, so the chain makes
-    progress instead of bouncing. Risk: a chain missing a step may no longer test anything.
-  * ACCEPTANCE — auto-queue the endpoint as a pending consumer so the backend lane sees the
-    demand. Risk: the framework invents contract the requirements never asked for.
-
-**Cheapest observation.** Implement ENFORCEMENT behind a flag and count, in one run: total
-registration attempts, failures, and whether the stripped chains still fail their assertions. If
-attempts drop toward the number of distinct causes (r147: 80 failures for a handful of causes) and
-the stripped chains still catch real defects, enforcement is right. If the stripped chains pass
-vacuously, acceptance is the answer instead.
+**Cheapest observation.** Implement ENFORCEMENT behind a flag and, in one run, count total
+registration attempts and failures, bucket the rejected endpoint by log position, and check
+whether the stripped chains still fail their assertions. A working deterrent shows the buckets
+DECAYING after the first escalation — today they grow 8 → 14 → 18 → 22. If attempts drop toward
+the number of distinct causes and the stripped chains still catch real defects, enforcement is
+right; if they pass vacuously, acceptance is the answer instead.
 
 ---
 
@@ -1558,7 +1531,7 @@ collapse; if the bundle is current, the collapse is the app's and belongs to the
 
 ---
 
-## 34. #713's real scale — a quarter of every fidelity number is measured on a shared page
+## 38. #713's real scale — a quarter of every fidelity number is measured on a shared page
 
 #713 was found on r147 (four screens byte-identical to `landing.png`) and its corpus scale turned
 out to be far worse than the single run suggested. Hashing every capture in every run:
@@ -1935,7 +1908,7 @@ does not.
 
 ---
 
-## 22. Tools no role can reach — one real orphan, and why the obvious guard does not work
+## 39. Tools no role can reach — one real orphan, and why the obvious guard does not work
 
 Three findings in this session had the same shape (`register_seed_data` routed to a lane without
 the category, `registryhub_request_review`/`submit_review` granted to nobody, the codehub PR
