@@ -1278,6 +1278,41 @@ class AgentTooling:
                     if _SECRETISH_ARG_RE_611.search(_k):
                         _v = "<redacted>"
                     elif not isinstance(_v, (str, int, float, bool)):
+                        # #725: SUMMARISE a structured argument instead of dropping it.
+                        # This `continue` is why "what did the lane send?" is unanswerable from a
+                        # finished run for exactly the arguments worth asking about. Both times I
+                        # needed it this session the value was a dict — `schema` on
+                        # registryhub_register_endpoint (item 32's contract mismatch) and
+                        # `sample_excerpt` on register_seed_data (item 33) — and both were
+                        # skipped silently, leaving only the tool NAME in prose. I then measured
+                        # those names and read mention counts as call counts, twice.
+                        #
+                        # KEYS ONLY, never values — which is what #611 was protecting. Its
+                        # `test_a_non_scalar_value_is_skipped_not_dumped` exists to stop a deep
+                        # structure being dumped into the line, and a truncated repr would have
+                        # broken that for a real reason. The shape is all I ever needed: for
+                        # `schema={"request": {"kind": ..., "genre": ...}}` this renders
+                        # `schema={request:{kind,genre,language,limit,offset}}` — enough to answer
+                        # "were the query params sent at all" without a single value leaving the
+                        # argument. One level of nesting, capped, so #611's line-length
+                        # discipline holds.
+                        try:
+                            def _shape725(v, depth=0):
+                                if isinstance(v, dict):
+                                    if depth >= 1:
+                                        return "{…}" if v else "{}"
+                                    return "{" + ",".join(
+                                        f"{k}:{_shape725(x, depth + 1)}" if isinstance(
+                                            x, (dict, list, tuple)) else str(k)
+                                        for k, x in list(v.items())[:8]) + "}"
+                                if isinstance(v, (list, tuple)):
+                                    return f"[{len(v)}]"
+                                return ""
+                            _sh = _shape725(_v)
+                            if _sh:
+                                _t.append(f"{_k}={truncate(_sh, 120)}")
+                        except Exception:
+                            pass
                         continue
                     _t.append(f"{_k}={truncate(str(_v), 120)}")
                 if len(_t) >= 3:

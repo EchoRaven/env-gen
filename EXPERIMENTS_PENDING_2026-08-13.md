@@ -1741,8 +1741,8 @@ Twice this session I asked "what did the lane actually send to this tool?" — o
 wrong, because the thing I was grepping is prose. Rather than record that as a personal lapse a
 third time, here is the sweep of every artifact a run leaves:
 
-    the run log            tool NAMES appear in prose — rejection messages, tool listings,
-                           remediation text. Arguments: NO.
+    the run log            tool NAMES in prose, AND — corrected below — up to three SCALAR
+                           arguments per call. Structured ones: NO.
     [tool-io] lines        `read returned 53,787 chars (~13k tokens)` — return SIZE only. 53
                            lines in r148. Arguments: NO.
     progress_events.jsonl  4 events in r148: generation_start, phase_start, phase_complete,
@@ -1750,7 +1750,31 @@ third time, here is the sweep of every artifact a run leaves:
     .memory/*.jsonl        19 records in r148, zero containing `args` or `arguments`.
     the hub stores         the RESULT of a call, never its input.
 
-**So "what did the lane send" is not answerable from a finished run, at all.** Every question of
+**CORRECTED one commit later, and the correction is the fix.** "Recorded nowhere" was wrong. The
+dispatch DOES log arguments — `_log_tool_call` builds up to three `name=value` pairs — but its
+filter read:
+
+    elif not isinstance(_v, (str, int, float, bool)):
+        continue
+
+so every dict and list was skipped in silence. Both values I needed were dicts (`schema`,
+`sample_excerpt`), which is why the log showed only names. I had read the absence in the artifacts
+without reading the code that writes them, and concluded a limit where there was a filter.
+
+**Fixed: #725** — but not the way I first wrote it, and #611 is why. My first version logged a
+truncated `repr`, which broke `test_a_non_scalar_value_is_skipped_not_dumped` — a test that
+exists to stop a deep structure being dumped into the line, and it was right to fire. The shape
+was all I ever needed, so #725 renders KEYS ONLY, one level deep, eight keys max:
+
+    schema={"request": {"kind": "string?", "genre": "string?"}, "response_key": "items"}
+        →  schema={request:{…},response_key}
+
+    sample_excerpt=[{...}, {...}, {...}]   →   sample_excerpt=[3]
+
+No value ever leaves the argument, #611's line-length discipline holds, and "were the query
+params sent at all" is answerable — which is exactly what items 32 and 33 need.
+
+**So the original claim, narrowed to what is true:** Every question of
 that shape is run-dependent by construction, not by my failing to look hard enough — and the
 `#NNN` counts that look like call counts are mention counts, which is item 36's trap wearing a
 different hat.
