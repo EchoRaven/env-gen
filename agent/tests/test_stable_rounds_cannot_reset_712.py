@@ -35,6 +35,13 @@ def _src() -> str:
     return inspect.getsource(vf)
 
 
+def _r_block() -> str:
+    """The #712r retraction, anchored on its own end rather than a character count."""
+    s = _src()
+    i = s.index("#712r")
+    return s[i:s.index("~~#712: THE STRUCK-OUT SENTENCE IS FALSE", i)]
+
+
 # --- the retraction is recorded, not silently reverted ---------------------------------------
 
 def test_the_withdrawal_is_explicit():
@@ -51,30 +58,26 @@ def test_558s_original_sentence_is_restored_unstruck():
 def test_the_strike_through_is_gone_from_558():
     s = _src()
     i = s.index("FIX #558: track consecutive REAL judgments")
-    head = s[i:i + 600]
+    head = s[i:s.index("#712r", i)]
     assert "~~a single lucky pass" not in head
 
 
 def test_the_reason_names_the_two_dicts():
-    s = _src()
-    i = s.index("#712r")
-    block = s[i:i + 1800]
+    block = _r_block()
     assert "run_visual_fidelity RETURNS" in block
     assert "persisted record" in block
 
 
 def test_r148s_disconfirming_evidence_is_recorded():
     s = _src()
-    i = s.index("#712r")
-    block = " ".join(s[i:i + 2200].replace("#", " ").split())
+    block = " ".join(_r_block().replace("#", " ").split())
     assert "0.656 against live 0.61" in block
     assert "fired ZERO times" in block
 
 
 def test_the_dead_branch_is_named_as_such():
     s = _src()
-    i = s.index("#712r")
-    block = " ".join(s[i:i + 2200].replace("#", " ").split())
+    block = " ".join(_r_block().replace("#", " ").split())
     assert "dead branch" in block
     assert "written by me" in block
 
@@ -90,7 +93,7 @@ def test_the_reset_branch_still_exists():
     """It is reachable again, which is the whole point of the retraction."""
     s = _src()
     i = s.index('_ba = result.get("blocking_average")')
-    assert "self.avg_pass_rounds = 0" in s[i:i + 2500]
+    assert "self.avg_pass_rounds = 0" in s[i:s.index("FIX #129", i)]
 
 
 def test_the_returned_average_is_the_current_capture():
