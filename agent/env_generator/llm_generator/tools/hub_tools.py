@@ -2437,6 +2437,43 @@ class KickoffDeclareUiPageTool(_KickoffDeclareBase):
         "apis_used": {"type": "array", "items": {"type": "string"}, "description":
                       "endpoints this page calls, e.g. ['GET /api/boards', 'POST /api/boards'] "
                       "— drives the page's defined→implemented lifecycle"},
+        # #727: HOW TO REACH THE STATE A REFERENCE SHOWS. Measured on r148: of 20 reference
+        # screens, 8 have no page at all — account_menu, browse_home_rows, card_hover_preview,
+        # card_preview, player_controls, rate_dialog, shows_genres_menu, title_episodes. Every
+        # one is an INTERACTION state (an opened menu, a scroll, a hover, a modal, player
+        # chrome), reachable only by acting on a page, while the visual capture only navigates.
+        # So the gate photographs the base page, scores it against a reference showing the
+        # overlay, and the screen can never pass: card_hover_preview BLOCKS in 36 of 54
+        # appearances with a maximum of 0.40 against a 0.65 bar.
+        #
+        # The agent that built the page knows how to reach the state; the gate is guessing. This
+        # lets it say so. It does NOT hand over the standard — the gate scores against the
+        # orchestrator-side reference original, outside the lane's workspace, so a wrong `reach`
+        # produces a capture that misses a fixed target and scores worse. There is no way to win
+        # by lying, which is what separates this from #566z's authored expectations.
+        #
+        # DECLARATION ONLY in this change: nothing consumes `reach` yet and no gate behaviour
+        # moves. That is deliberate — item 49 records both failure modes of consuming it early
+        # (advisory would silently drop all 8 screens at the measured fill rate; blocking would
+        # wedge every run until the lane declares) and the cheapest way to tell those apart is
+        # one run that counts ADOPTION with the gate untouched.
+        #
+        # Flat, per this tool's own convention: a list of "verb:selector" strings, not nested
+        # JSON.
+        "reference": {"type": "string", "description":
+                      "OPTIONAL basename of the reference image this page or state corresponds "
+                      "to, e.g. 'card_hover_preview.jpg'. Only needed when it differs from the "
+                      "page id — the gate matches by normalised filename otherwise."},
+        "reach": {"type": "array", "items": {"type": "string"}, "description":
+                  "OPTIONAL steps to perform AFTER navigating to `route` and BEFORE the "
+                  "screenshot, so a state that is not its own page can be photographed. Flat "
+                  "'verb:selector' strings, in order, e.g. "
+                  "['hover:.title-card:first-child'] for a hover preview, "
+                  "['click:[data-testid=account-menu]'] for an opened menu, "
+                  "['scroll:800'] for a scrolled view. Verbs: hover, click, scroll, wait. "
+                  "Declare this for any reference screen that is an INTERACTION state — a menu, "
+                  "modal, hover, or scrolled view — because the capture only navigates and will "
+                  "otherwise photograph the base page and score it against your overlay."},
         "milestone_index": {"type": "integer", "minimum": 0},
     }, "required": ["meeting_id", "id", "route"]}
 
@@ -2444,6 +2481,7 @@ class KickoffDeclareUiPageTool(_KickoffDeclareBase):
                    purpose: str = "", components: Optional[list] = None,
                    must_have: Optional[list] = None,
                    component: str = "", apis_used: Optional[list] = None,
+                   reference: str = "", reach: Optional[list] = None,
                    milestone_index: Optional[int] = None,
                    **_extra: Any) -> ToolResult:
         page = {"id": id, "route": route}
@@ -2452,6 +2490,8 @@ class KickoffDeclareUiPageTool(_KickoffDeclareBase):
         if must_have: page["must_have"] = [str(m) for m in must_have][:60]
         if component: page["component"] = str(component)
         if apis_used: page["apis_used"] = [str(a) for a in apis_used][:60]
+        if reference: page["reference"] = str(reference)
+        if reach: page["reach"] = [str(r) for r in reach][:12]
         return self._declare(meeting_id, {"ui_pages": [page]}, milestone_index)
 
 

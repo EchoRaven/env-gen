@@ -1805,9 +1805,21 @@ screen the lane does NOT declare a path for:
 Both are unsafe while declaration is optional, which makes "make declaring reliable" the
 prerequisite rather than a follow-up.
 
-**Cheapest observation.** One run with a `reach` field added to `kickoff_declare_ui_page` and NO
-gate change: count how many of the 8 interaction screens get a declaration. That separates "the
-lane will do it when asked" from "it needs enforcement" without risking either failure mode.
+**Cheapest observation — BUILT as #727, declaration only.** `kickoff_declare_ui_page` now accepts
+two optional fields, flat per the tool's own "no nested JSON" convention:
+
+    reference   basename of the reference image this state corresponds to, when it differs
+                from the page id
+    reach       ordered "verb:selector" steps performed after navigating and before the
+                screenshot — hover / click / scroll / wait, capped at 12
+
+Neither is required, nothing consumes `reach` yet, and no gate behaviour moves — a test asserts
+`visual_fidelity.py` does not read it. That is the point: the next run measures ADOPTION (how many
+of the 8 interaction screens get a declaration) without risking either failure mode above.
+
+Read it as: **8 declared** means the lane does it when asked and the consuming half is safe to
+build; **0-2 declared** means this is the 138th optional mechanism and enforcement, not wording,
+is the prerequisite — #664 already showed 30 prompt mentions plus 76 escalations move nothing.
 
 **Corrected while measuring:** my first count said 9 of 21. `spec.md` is markdown, not a screen —
 I listed the directory without filtering to images. It is scored 0 times, so the framework
