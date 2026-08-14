@@ -1115,10 +1115,28 @@ type` run set, and the two "no tool entry" verdicts on tools that exist.
    The claim in the original entry — "each one currently hides real `bad-argument-type` findings
    downstream" — does not survive its own test. Fixing all 362 revealed no masked argument-type
    errors; the category shrank. What the sweep DID surface is a different category: **95 of the
-   264 `missing-attribute` errors are now `NoneType has no attribute`**, concentrated on hub
-   access — `workhub` 13, `eventhub` 7, `codehub` 6, `registryhub` 4. Those are the real yield:
-   parameters that are genuinely optional and are dereferenced without a guard. Whether any is
-   reachable with None is a separate question and the next thread, not settled here.
+   264 `missing-attribute` errors are now `NoneType has no attribute`**.
+
+   **That thread is now followed to the end, and it is ALSO a negative — the "real yield" line
+   that stood here was one commit too optimistic.** The 95 are dominated by two families and
+   neither contains a live bug:
+
+   * **`self.workspace.<x>` (~20).** Nine classes take `workspace: Optional[Workspace] = None`.
+     All **18** instantiation sites in the tree pass one — zero omit it — so the attribute is
+     never actually None. Latent at worst. One of those classes both guards
+     (`if not self.workspace:`) and dereferences unguarded elsewhere, so the INCONSISTENCY is
+     real even though the crash is not.
+   * **`reg.<hub>` after `_resolve_hubs` (~30).** The shape is
+     `reg, err = _resolve_hubs(...)` / `if err: return err` / `reg.workhub...`, and pyrefly
+     cannot express that the two are correlated. Reading every return path settles it:
+     `(None, err)` when the workspace is missing, `(reg, None)` otherwise — and the
+     `if reg is None:` branch CONSTRUCTS a HubRegistry rather than erroring. `reg` is never None
+     when `err` is falsy. Pure false positive.
+
+   Net for item 3: keep the sweep — 362 real annotation defects corrected, 1591 -> 1244 total,
+   and the signatures now say what the code means — but it surfaced **no live bug**, matching
+   the independent conclusion reached on the 248 masked findings. The remaining 1244 should not
+   be assumed to hide one either.
 
    **It also broke the tree, briefly, in exactly the way the entry predicted.** These modules do
    not use `from __future__ import annotations`, so annotations evaluate at def time. Six files
