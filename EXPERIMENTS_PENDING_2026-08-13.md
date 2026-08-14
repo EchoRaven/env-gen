@@ -1733,6 +1733,44 @@ right one needed a distribution.
 
 ---
 
+## 64. #745 — the retrospective told 102 runs that nobody ever fixed anything
+
+The same root as #744, found by asking which OTHER consumers read `bug_state` without the task
+status. `retro_aggregator._bug_stats` counts `closed` only when `bug_state == "closed"`:
+
+    bugs that ever reached bug_state == "closed"        6
+    bug tasks whose STATUS is completed               818
+    runs whose retrospective reports `closed: 0`   127 / 129
+    ... of those, runs that DID fix bugs              102     ← reported as zero
+
+The retrospective is the framework's own self-assessment and an input to what the next run learns
+from. It was telling 102 runs that their entire remediation effort produced nothing. Fixed the
+same way — derive from the field that is maintained. `cancelled` stays excluded, because #672
+measured 55% of cancellations as duplicates and a deduped bug was never fixed.
+
+One ordering detail is now pinned rather than left implicit: the branch is
+`if closed … elif escalated`, so a bug that was escalated and then completed counts as CLOSED.
+That is the right reading and it is decided entirely by branch order, which is exactly the kind
+of thing a later edit flips without noticing.
+
+**The other `bug_state` readers were checked and need nothing.** `base.py:909` and
+`hub_pulse.py:862` both iterate `list_open_bugs()`/`list_bugs_assigned_to()`, so #744 already
+fixed their population; they only display the field afterwards.
+
+**The pattern, stated so it can be swept for.** Both defects are the same shape: **a field
+written once at creation, advanced only by a call almost nobody makes, and read by a consumer
+that treats it as current.** The tell is a status vocabulary whose terminal values are nearly
+absent from the corpus — `closed` 6, `fix_verified` 1, `triaged` 1 out of 1477. Any other
+lifecycle field in the hubs is worth the same one-line check: count its terminal values across
+the corpus and compare against the thing that actually finishes.
+
+**Cheapest observation.** No run needed for the fix. What a run would show is the retro line
+itself: `closed` should now be non-zero on any run that remediated anything, and if it is still
+0 while bug tasks completed, the derivation is reading a different store than the one the
+retrospective is built from.
+
+---
+
 ## 63. #744 — 62% of the "open P0 bugs" that defer delivery are already fixed
 
 The one live-behaviour defect in this stretch: everything else here reports, this one **decides**,

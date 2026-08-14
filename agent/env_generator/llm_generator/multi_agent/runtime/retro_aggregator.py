@@ -32,8 +32,20 @@ def _bug_stats(workhub) -> Dict[str, Any]:
         meta = b.get("metadata") or {}
         sev = meta.get("severity", "P3")
         by_sev[sev] = by_sev.get(sev, 0) + 1
+        # #745: THE RETROSPECTIVE SAID NOBODY EVER FIXED ANYTHING.
+        # `closed` counted only `bug_state == "closed"`. That field is set at creation and
+        # advanced only by `update_bug_state`/`close_bug`, which almost nobody calls — the whole
+        # 148-run corpus contains **6** bugs that ever reached it, against **818** whose TASK was
+        # completed. So 127 of 129 runs report `closed: 0`, and in 102 of them that is false:
+        # they fixed bugs and the retrospective — the framework's own self-assessment, and an
+        # input to what the next run learns — recorded zero.
+        #
+        # Same root as #744 (two fields encode one lifecycle, one of them is maintained) and the
+        # same fix: DERIVE from the field that is kept current instead of duplicating it. A
+        # completed task IS a closed bug; `cancelled` is deliberately excluded, because #672
+        # measured 55% of cancellations as duplicates and a deduped bug was never fixed.
         state = meta.get("bug_state", "")
-        if state == "closed":
+        if state == "closed" or str(b.get("status") or "") == "completed":
             closed += 1
         elif state == "escalated":
             escalated += 1
