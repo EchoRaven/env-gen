@@ -2855,6 +2855,20 @@ carries `WHERE kind = :kind` — so the contract was the only broken link.
 — validation_runner:597, database_scaffold:350, scaffolder:517, #708b's filter hint — and
 **nothing in the framework reads `schema.query`**. Written, stored, invisible.
 
+**Impact, corrected — it is GET-only.** Listing four consumers made this look like a
+system-wide loss, and I said so. It is not. Both heavyweight consumers are method-scoped:
+`_probe_body` is called only from `_http("POST", …)`, and `database_scaffold`'s column derivation
+opens with `if method != "POST": continue`. And the POST side never lost anything:
+
+    business POST endpoints with a request schema
+    r146  4/4      r147  4/4      r148  4/4
+
+So smoke-test bodies and generated table columns were never affected. The loss lands on GET query
+parameters alone, which reaches exactly two places: #708b's filter hint and the frontend's basis
+for passing a filter. That is narrower than I claimed one turn earlier and does not reduce the
+importance — the GET path is what blocks four of the five identical-content route groups — but
+"three consumers were starved" was reading the consumption side without checking the data side.
+
     r146   schema.query 0   schema.request 10
     r147   schema.query 0   schema.request 10
     r148   schema.query 3   schema.request  6
