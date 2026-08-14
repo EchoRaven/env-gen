@@ -1733,6 +1733,47 @@ right one needed a distribution.
 
 ---
 
+## 54. RETRACTED — the frontend HAD the parameters. It did not use them.
+
+The user asked the obvious question: the agent declares an endpoint, testing and consumption read
+the declaration, so where is the problem? Following it retires the diagnosis behind #729-#735.
+
+**The frontend fetched the full record, after the backend wrote it, and ignored what it said.**
+
+    11:01:18   backend registers /api/titles with schema.query = {kind, limit}
+    11:01:56   frontend calls registryhub_get_endpoint on it — 38 seconds later
+    11:04:54   frontend's last such call; 28 in total for this one path (r147: 24)
+
+`registryhub_list_endpoints` does strip the schema (#303, "~85% of each row"), but that is not a
+wall: full detail is one call away and the frontend made it, repeatedly. It read the raw record,
+so the `query` vs `request` key name never mattered to it. Then it wrote six pages that fetch
+bare `/api/titles`.
+
+**So three claims I built on are false:**
+
+    "the contract does not declare query params"   r148 declared them, under `query`
+    "the frontend has no contract basis"           it fetched that basis 28 times
+    "the key mismatch blocks the frontend"         the frontend reads the record, not our keys
+
+**What the key mismatch DID block is narrower and worth keeping.** #708b exists to say, in the
+identical-content report, "this endpoint already accepts these filters and the pages pass none".
+It reads `schema.request`, so r148's `query` made it silent — the one mechanism that pushes this
+fact AT the lane instead of waiting to be queried. #730's fold restores that. **Its value is not
+recovering lost information; it is letting the only report that volunteers the information see
+it.** I described it as the former, and that was wrong.
+
+**The real problem is a different class.** Not a plumbing gap — the lane held the parameters and
+did not use them. That belongs with #664's finding (30 prompt mentions plus 76 escalations moved
+nothing) rather than with anything a declaration or a published vocabulary can fix. #727's
+adoption probe is the nearest live instrument: it measures whether a lane acts on something it is
+told, which is the same question.
+
+**Cheapest observation.** Next run, with #730 folding: does #708b fire on the catalogue group,
+and if it does, does the lane then pass a filter? The first half is plumbing and should now work.
+The second half is the actual open question, and no amount of declaring answers it.
+
+---
+
 ## 53. #735 — "can it declare freely now?" The honest answer was no, until the caller was told
 
 The user asked whether the agent can now declare freely instead of us fixing one possible problem
@@ -2919,7 +2960,9 @@ correctly said nothing. I spent a while treating that silence as a dead branch o
 checking the data. It is not the branch; it is the contract.
 
 And it explains the六-route group r148 reports: with nothing declared, the frontend has no
-contract basis for passing a filter, so every catalogue page fetches bare `/api/titles`. The
+contract basis for passing a filter, so every catalogue page fetches bare `/api/titles`. **[That
+clause is RETRACTED — see item 54: the frontend fetched the full record 28 times and had the
+parameters. What was blocked was #708b's report, not the lane's access.]** The
 route-derived fix is therefore blocked one step earlier than item 32 assumed — not on the
 fidelity trade-off, but on a contract that no longer describes its own endpoint.
 
