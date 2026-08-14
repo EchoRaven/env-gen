@@ -1496,6 +1496,43 @@ vacuously, acceptance is the answer instead.
 
 ---
 
+## 34. r147 FINAL — what the run settled, and what its NOT SEENs are worth
+
+r147 ended on the shutdown watchdog (`[main-exit] ... forcing exit (rc=0)`) **without delivering**,
+deferred throughout by "visual fidelity gate converging, frontend in bounded remediation window".
+`fast_release` never appears in the log, so no release path was taken.
+
+**Build cutoff — read this before any NOT SEEN.** r147 launched 03:10:56. Commits at or before
+03:02 are in it; everything from 03:18 on is not.
+
+| signature | r147 | reading |
+|---|---|---|
+| #691 + #691b | LIVE x1 each | subtree recovered AND landed on the delivery line — item 18 closed live |
+| #700 | LIVE x37 | the #615 detector's first run ever; found a FIVE-route group |
+| #698 | LIVE x4 | #641's recommendation is audible at last |
+| #682b | LIVE x7 | ownership-403 diagnosis |
+| #664 | LIVE x76 | and #710 shows it informs without deterring |
+| #677 | LIVE x2 | transport diagnosis |
+| #684 #685 #686 #687 | **GONE, all four** | the defects they name did not occur |
+| #706 | NOT SEEN, **and meaningful** | it WAS in the build (03:02). r147 took the other release path → already repaired by #706b |
+| #696 #701 | NOT SEEN, inconclusive | their conditions need a delivery r147 never reached |
+| #692 | NOT SEEN, proves nothing | its signature is in the backend CONTAINER log under FW_DEBUG |
+| #707 #711 #712 | NOT SEEN, **meaningless** | committed 03:38-04:18, after the cutoff |
+
+**The non-delivery is explained and it is not a framework regression.** Round 6's live average
+collapsed to 0.3817 (genre_category 0.08, browse_by_languages 0.05, player 0.03) in the same
+commit that renamed three routes in `App.jsx` to match the declared contract — `/new-and-popular`
+→ `/new`, `/genre/:id` → `/browse/genre/:genreId`, `/browse-by-languages` → `/browse/languages`.
+The lane was right to align them; the captures for those screens went to near-zero in the same
+round. Whether the gate's screen→URL map follows a route rename is the obvious next question and
+is NOT answered here — I could not find the capture site, and the log records no navigation URLs.
+
+**Cheapest observation.** One run: log the URL each screen capture navigates to. If a renamed
+route is still captured at its old path, that is a framework defect worth more than any fidelity
+tuning; if the URLs are current, the collapse is the app's and belongs to the lane.
+
+---
+
 ## 32. #615's CAUSE fix — unblocked, quantified, and genuinely run-dependent
 
 #708 retired the technical objection ("the seed gives every title `kind='standard'`") and #708b
