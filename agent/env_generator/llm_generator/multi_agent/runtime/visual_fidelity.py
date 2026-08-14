@@ -4058,17 +4058,57 @@ class VisualFidelityGate:
             # ANY genuine improvement re-arms it. _visual_release_decision escapes
             # early once the scores have flatlined (log-mining runs 50-62: the final
             # window averaged ~65min, ~40% of total wall-clock, and never passed).
-            _improved = False
-            for _s in screens:
-                if _s.get("advisory"):
-                    continue
-                _n, _sim = str(_s.get("name")), float(_s.get("similarity") or 0.0)
-                if _sim > self._best_by_screen.get(_n, 0.0) + 0.02:
-                    self._best_by_screen[_n] = _sim
-                    _improved = True
-                elif _n not in self._best_by_screen:
-                    self._best_by_screen[_n] = _sim
-            self.plateau_rounds = 0 if _improved else self.plateau_rounds + 1
+            # #737: A BLACKOUT CANNOT IMPROVE, SO IT MANUFACTURES ITS OWN PLATEAU.
+            # #75a refunds a wholesale blank capture, BOUNDED by _TRANSIENT_REFUND_CAP so a
+            # genuinely blank app cannot defer forever — correct. What follows the cap was not:
+            # `capture_transient` stays True, the branch above stops returning, and every screen
+            # arrives at 0.00. A 0.00 never beats its best-so-far, so `_improved` is False by
+            # construction and `plateau_rounds` climbs once per blackout round. The plateau
+            # escape then reads that as "the scores have flatlined" and ships.
+            #
+            # r148 is the worked example end to end:
+            #
+            #   11:13:19  10 of 12 screens blank -> refunded (transient 1/3)
+            #   11:14:49  same 10 blank          -> refunded (transient 2/3)
+            #   11:18:16  same 10 blank          -> refunded (transient 3/3)   cap exhausted
+            #   ...five more blackout rounds, each incrementing plateau_rounds...
+            #   11:36:46  deferral RELEASED (... PLATEAU 5 no-improvement rounds - #138 escape)
+            #   11:36:47  FINAL DELIVERY: gate clear -> cut release v1.0.0
+            #
+            # The app was genuinely broken, not the capture: the verifier independently filed
+            # `TypeError: (void 0) is not a function` at 11:22:16, and four P0 tasks were still
+            # OPEN at the cut, one of them titled "P0 REMEDIATION: SPA crashes on ALL routes"
+            # whose description reads "DELIVERY IS BLOCKED BY THIS ONE BUG". So the blackout was
+            # the truest signal in the run, and it was consumed as evidence of stability.
+            #
+            # Corpus: 8 of 116 runs with a verdict.json end with blank>=2 or half their screens
+            # at 0.00. r148 is NOT among them — #500's high-water merge had already erased its
+            # blackout from the persisted record — so that 7% is a floor, not an estimate.
+            #
+            # A blackout round carries NO information about whether the app has plateaued, so it
+            # neither increments nor resets. Deliberately narrow: `total_judgments` and
+            # `last_judgment_at` above still advance (a blank capture still costs a vision call),
+            # and the wall-clock/total-judgment escapes still bound the run — this removes a
+            # false accelerant, it does not add a way to hang.
+            if result.get("capture_transient"):
+                orch._logger.warning(
+                    "#737 blackout round does NOT count toward the plateau: the capture "
+                    "produced no rendered page, so its 0.00s are not evidence the app has "
+                    "flatlined (plateau still %s). Past #75a's refund cap this round is "
+                    "judged and remediated as before — only the escape counter is held.",
+                    self.plateau_rounds)
+            else:
+                _improved = False
+                for _s in screens:
+                    if _s.get("advisory"):
+                        continue
+                    _n, _sim = str(_s.get("name")), float(_s.get("similarity") or 0.0)
+                    if _sim > self._best_by_screen.get(_n, 0.0) + 0.02:
+                        self._best_by_screen[_n] = _sim
+                        _improved = True
+                    elif _n not in self._best_by_screen:
+                        self._best_by_screen[_n] = _sim
+                self.plateau_rounds = 0 if _improved else self.plateau_rounds + 1
             # FIX #558: track consecutive REAL judgments whose gating blocking_average (#542,
             # over BLOCKING screens only) cleared the min bar — the STABLE precondition for the
             # avg fast-release (a single lucky pass never triggers a release; a round below the

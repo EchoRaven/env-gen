@@ -1733,6 +1733,79 @@ right one needed a distribution.
 
 ---
 
+## 56. #737 — r148 shipped v1.0.0 with a frontend that crashed on every route
+
+**This overturns "delivery is solved".** I said it earlier in this session, on the evidence that
+r146/r147/r148 all released v1.0.0 with endpoints and chains green. r148's release is worthless:
+its SPA threw `TypeError: (void 0) is not a function` on every authenticated route, and the
+framework cut the release anyway, calling the gate clear.
+
+The mechanism, which is the fixable part. #75a refunds a wholesale blank capture, bounded by
+`_TRANSIENT_REFUND_CAP` so a genuinely blank app cannot defer forever — correct. Past the cap the
+refund branch stops returning, `capture_transient` stays True, and every screen arrives at 0.00.
+**A 0.00 can never beat its best-so-far, so `_improved` is False by construction and
+`plateau_rounds` climbs once per blackout round.** #138's escape reads that as a flatline:
+
+    11:13:19  10 of 12 screens blank -> refunded (transient 1/3)
+    11:14:49  same 10 blank          -> refunded (transient 2/3)
+    11:18:16  same 10 blank          -> refunded (transient 3/3)     cap exhausted
+    ...five more blackout rounds, each incrementing plateau_rounds...
+    11:36:46  deferral RELEASED (escape ... PLATEAU 5 no-improvement rounds - #138 early escape)
+    11:36:47  FINAL DELIVERY: gate clear -> cut release v1.0.0
+
+**The blackout was the truest signal in the run, and it was consumed as evidence of stability.**
+
+It was not a capture glitch. The verifier found it independently at 11:22:16 and broadcast
+"1 P1 frontend bug filed (JS runtime error on /browse, /signup)". Four P0 tasks were still OPEN
+at the cut — "All authenticated UI routes crash: '(void 0) is not a function' — empty #root",
+"SPA crashes on ALL routes", "Frontend runtime crash on 12/14 pages", and "P0 REMEDIATION: ..."
+created at **11:31:34, five minutes and thirteen seconds before the release**, whose description
+reads *"DELIVERY IS BLOCKED BY THIS ONE BUG. Verifier confirmed 6 critical UI flows fail"*.
+
+Fixed: a blackout round neither increments nor resets `plateau_rounds`. Narrow by design —
+`total_judgments` and `last_judgment_at` still advance, the round is still judged and remediated,
+and the wall-clock and total-judgment escapes still bound the run. It removes a false accelerant;
+it does not add a way to hang, and it does not by itself stop a broken app from shipping.
+
+**Corpus.** 8 of 116 runs with a `verdict.json` end with `blank>=2` or half their screens at
+0.00: r121, r125, r30, r43 (11 of 12 screens at zero), r49, r60 (11 of 13), r68, r72. **r148 is
+not among them** — #500's high-water merge had already erased its blackout from the persisted
+record — so 7% is a floor. The log-side probe is thinner (only 2 of the retained `gm_*.log`
+files contain a blank refund at all), which is why the fix rests on the mechanism plus r148
+rather than on a frequency estimate.
+
+### Two things this does NOT fix, one of which is the user's call
+
+**(a) A wrong claim of mine, corrected here.** I reported that task priority is never persisted —
+"13,416 tasks, every one `priority: None`". That was a FIELD-LOCATION error, the exact failure
+my own notes warn about: `create_task` stores it at `metadata["priority"]` (service.py:246), and
+the corpus reads P2 8502 / P0 3630 / P1 1124 / P3 12. Priority is fine. I dumped the record's
+top-level keys, saw `metadata` sitting in the list, and concluded absence without opening it.
+
+**(b) The delivery gate does not look at open bugs at all.** `delivery_gate.py` never reads a
+task's status or priority; its five checks are artifacts, code footprint, hub registration,
+contract alignment, and the build checklist. Whether it SHOULD is a real decision, and the naive
+version is not viable — measured over the corpus:
+
+        gate hard-blocks on any open P0                124 of 148 runs (83%) blocked
+        ... narrowed to P0s whose text names a crash    63 of 148 runs (42%) blocked
+
+83% is not a gate, it is a halt. And task hygiene is the reason: r148's open P0s include eleven
+stale `Fix breaking change in GET /api/...` left `in_progress`. So "block on an open P0" is out.
+The framework's own capture is far better evidence than its task store — it PHOTOGRAPHED the
+blank page — which is what makes a blackout-based block the candidate worth considering.
+
+**Cheapest observation, and the decision.** The fix is proven offline against r148's recorded
+sequence; no run is needed for it. What needs a decision is narrower and sharper than the P0
+question: **should a blackout that persists past the refund cap BLOCK delivery outright?** It
+would have stopped r148 shipping a dead app. It can also newly fail runs whose capture — not
+app — is broken, and #711r's warning about exactly that class is why this is not being done
+unilaterally. A run would then measure the cost: how often a post-cap blackout is the app versus
+the capture. Until that is decided, r148's outcome remains reachable: the escape is slower, but
+nothing yet refuses to ship a frontend that renders nothing.
+
+---
+
 ## 55. #736 — #711 compared a 2-screen mean against a 12-screen one, every time it ever fired
 
 Chasing "does the lane act on the remediation it is handed?" through the artifacts, because that

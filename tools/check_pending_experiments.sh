@@ -159,6 +159,8 @@ grep_log "#713 identical captures"       "screens captured the SAME image" "103 
 grep_log "#712 count advanced on a latch" "on a LATCHED average" "the stable-rounds precondition cannot reset; r146 fast-released this way at live 0.6409"
 grep_log "#711 gate left the app behind" "the gating average has left the app behind" "gating avg is #500 best-ever-per-screen; live is THIS capture. r147 r6: 0.700 vs 0.3817"
 grep_log "#736 blank capture refunded"   "blank capture, attempt refunded" "r148 blanked 10 of 12 screens for 9 rounds; #711 fired on it twice. Any #711 hit ABOVE with no hit here is now a GENUINE divergence — that is what #736 bought"
+grep_log "#737 blackout held off plateau" "blackout round does NOT count toward the plateau" "each hit = a round that used to feed the #138 escape; r148 shipped v1.0.0 on 5 of them with the SPA crashing on every route"
+grep_log "#737 SPA crash filed"          "is not a function" "the r148 killer, found by the verifier while the gate called itself clear. Any hit = the delivered app may not render — check it before trusting the release"
 grep_log "#715 served build is stale"    "the SERVED frontend does not know" "a hit VOIDS those screens' scores; #713's cause, caught before the capture"
 grep_log "#715 probe inconclusive"       "715 probe inconclusive" "fires if route literals do NOT survive the bundle — then the check needs rethinking, not the app"
 grep_log "#707 invented asset staged"    "staged .* placeholder asset(s) the frontend referenced" "each hit = a path the lane invented instead of search_icons/save_image or drawing it"
