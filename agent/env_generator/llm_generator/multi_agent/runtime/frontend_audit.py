@@ -1583,9 +1583,26 @@ def repair_fabricated_fallbacks(frontend_src: Any) -> Dict[str, Any]:
 #
 # Deliberately NOT wired as a delivery blocker. At 32/45 it would wedge nearly every run, and
 # whether "six identical pages" should block or merely be reported is a calibration decision,
-# not a measurement — the same call as the 0.65 fidelity bar. Also worth knowing before anyone
+# not a measurement — the same call as the 0.65 fidelity bar. ~~Also worth knowing before anyone
 # "fixes" it by inventing filters: the seed gives every title `kind='standard'`, so a
-# route-derived filter would return everything or nothing.
+# route-derived filter would return everything or nothing.~~
+#
+# #708 — THAT LAST SENTENCE IS STALE, and it is the one that discourages fixing the CAUSE.
+# The delivered app ships two seed files and both discriminate:
+#
+#     app/backend/seed_dataset.json   60 titles   kind: movie 28 / series 32   (framework-owned
+#                                                 REAL data; the lane cannot clobber it)
+#     app/backend/seed_data.json      15 titles   kind: series 8 / movie 7
+#
+# with real genres in both (Horror/Comedy/Action & Adventure/Animation/…). `kind='standard'`
+# survives only in the framework's 6-row fallback seed, which is not the shipped catalog — I
+# measured that fallback first and nearly repeated the stale claim from it.
+#
+# So a route-derived filter would NOT "return everything or nothing": /movies -> kind=movie (28),
+# /shows -> kind=series (32), and the genre pages have `/api/genres/{id}/titles` already in the
+# contract. Whoever picks this up next can fix the cause rather than only reporting it — the
+# reason recorded for not doing so no longer holds. The calibration question above is untouched;
+# only the technical objection is withdrawn.
 # capture the char AFTER the path too: a fetch that continues into `{`, `?`, `$` or `+` is
 # PARAMETERISED and therefore differentiates the page. Matching only the literal prefix would
 # make `/api/titles/{id}` and `/api/titles?kind=movie` both look like a bare `/api/titles`.
