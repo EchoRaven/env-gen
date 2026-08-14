@@ -5408,7 +5408,24 @@ _OWNED_LIST_NAME_535 = re.compile(
 
 def _owned_list_shell_src_535(comp, nav_name, grid_name, endpoint, label, bg, text):
     """#535 shared-shell page: top-nav header + poster grid + graceful empty
-    state, fetching the page's OWN endpoint. Measured bg/text; no product literals."""
+    state, fetching the page's OWN endpoint. Measured bg/text; no product literals.
+
+    #696 (applies to all three projected fetches, this one and the two detail-modal ones):
+    the HTTP-status suppression below is DELIBERATE and unchanged — a status failure falls
+    through to the graceful empty/loading state instead of painting a raw fetch error, which
+    is what the comment beside the detail-modal copy calls "generalizable" and what r104's
+    new_and_popular regression was about. A genuine network/parse error still shows.
+
+    What it also did, unintentionally, is make a 500 indistinguishable from an empty dataset.
+    The user is told "Titles you add will appear here" when the server actually failed, and
+    the framework's judged screenshot shows a clean, plausible, well-scoring page. That is the
+    #566x shape exactly: the harm is invisible BECAUSE nothing looks broken.
+
+    So the suppressed branch now also writes a console.error. Not one pixel changes, and the
+    browser lane already collects precisely this — `browser_navigate` returns `console_errors`
+    filtered to type == "error" — so a silent data failure becomes visible to machinery that
+    is already running, without reintroducing the text this branch exists to hide.
+    """
     return (
         "// framework-wired owned-list shell (#535) — shared top-nav + poster grid, the\n"
         "// same shell as the catalog pages; only emitted when both components exist\n"
@@ -5426,7 +5443,7 @@ def _owned_list_shell_src_535(comp, nav_name, grid_name, endpoint, label, bg, te
         "    fetch('" + endpoint + "', token ? { headers: { Authorization: 'Bearer ' + token } } : {})\n"
         "      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })\n"
         "      .then((d) => setRows(Array.isArray(d && d.items) ? d.items : (d && d.item ? [d.item] : (Array.isArray(d) ? d : []))))\n"
-        "      .catch((e) => setError(/\\bHTTP\\b/.test(String(e)) ? '' : String(e)))\n"
+        "      .catch((e) => { if (/\\bHTTP\\b/.test(String(e))) { console.error('[projected] data load failed: ' + String(e)); setError(''); } else { setError(String(e)); } })\n"
         "      .finally(() => setLoading(false));\n"
         "  }, []);\n"
         "  return (\n"
@@ -7123,7 +7140,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             f"    fetch({_item_js_547}, _h)\n"
             "      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })\n"
             "      .then(setData)\n"
-            "      .catch((e) => setError(/\\bHTTP\\b/.test(String(e)) ? '' : String(e)));\n")
+            "      .catch((e) => { if (/\\bHTTP\\b/.test(String(e))) { console.error('[projected] data load failed: ' + String(e)); setError(''); } else { setError(String(e)); } });\n")
         if _eps_ep_547:
             _eps_js_547 = _remap_route_param_547(_api_path_to_js(_eps_ep_547), _eps_ep_547)
             _effect_547 += (
@@ -7146,7 +7163,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
                        # #536: never surface a raw 'Error: HTTP 404/500' string in the UI — an
                        # HTTP-status failure suppresses to the graceful empty/loading catalog
                        # state (a genuine network/parse error still shows). Generalizable.
-                       "      .catch((e) => setError(/\\bHTTP\\b/.test(String(e)) ? '' : String(e)));\n"
+                       "      .catch((e) => { if (/\\bHTTP\\b/.test(String(e))) { console.error('[projected] data load failed: ' + String(e)); setError(''); } else { setError(String(e)); } });\n"
                        if get_ep else
                        # #426: no GET endpoint (e.g. a player/media screen with only param-fetched
                        # data) — render the reference STRUCTURE without a data fetch; emitting
