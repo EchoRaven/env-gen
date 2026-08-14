@@ -1733,6 +1733,43 @@ right one needed a distribution.
 
 ---
 
+## 43. #721 — the refusal built to say WHY reported an empty reason
+
+r148 finished and fired #706's refusal branch once:
+
+    promotion did not happen (promotion merge conflict: )
+
+The class, and nothing after the colon. #706 logs `(False, info)` distinctly from a raised
+exception precisely on the argument that the callee "declines and names why", and the one failure
+mode it exists to explain reports nothing.
+
+**Cause, verified rather than assumed.** It read `p.stderr`. Building a real conflict — two
+branches editing one file, then `git merge`:
+
+    rc = 1
+    stdout:  Auto-merging f.txt
+             CONFLICT (content): Merge conflict in f.txt
+             Automatic merge failed; fix conflicts and then commit the result.
+    stderr:  (empty)
+
+So the detail was always going to be blank, in every run, on the only path that reaches it.
+
+**Fixed: #721.** It asks git for the paths rather than parsing prose — `diff --name-only
+--diff-filter=U` lists exactly the unmerged ones — capped at six with a count, falling back to
+stdout, then stderr, then a literal "no detail" so the message can never end in a bare colon.
+
+**What it does NOT tell us yet, and this is the open part.** r148's promotion failed on a
+conflict between `integration` and `main`, and with the detail empty we still do not know which
+paths. #706 was wired on the premise that promoting after the cut is safe because `main` merely
+follows; a conflict means the two have diverged in content, not just position. Whether that is
+the stranded `mcp_server` subtree (#691's territory) or something broader is unknown.
+
+**Cheapest observation.** The next run with #721 in the build prints the paths. If they are
+`mcp_server/*` the two findings are one; if they are app files, `main` has content
+`integration` does not and the promotion needs a strategy, not just a hook.
+
+---
+
 ## 42. #712 WITHDRAWN, and #711's consequence with it — I checked the wrong dict
 
 r148 disconfirmed #712 the first time the condition arose, and following that back invalidates

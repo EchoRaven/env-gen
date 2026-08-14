@@ -1236,8 +1236,26 @@ def promote_integration_to_main(
     except Exception as exc:
         return False, f"promotion merge raised: {exc}"
     if p.returncode != 0:
+        # #721: report the CONFLICTING PATHS, which git writes to stdout, not stderr.
+        # r148 produced exactly "promotion merge conflict: " — the class with no cause — because
+        # this read stderr. Verified against a real conflict: `git merge` exits 1, writes
+        # "Auto-merging f.txt / CONFLICT (content): Merge conflict in f.txt / Automatic merge
+        # failed" to STDOUT, and leaves stderr EMPTY. So the detail was always going to be blank
+        # on the one failure mode this branch exists to explain.
+        #
+        # Ask git for the paths directly rather than parsing prose: --diff-filter=U lists exactly
+        # the unmerged ones. Fall back to the streams if that fails, stdout first.
+        _paths = ""
+        try:
+            _rc_u, _out_u, _ = _run_git(["diff", "--name-only", "--diff-filter=U"], cwd=repo)
+            if _rc_u == 0 and (_out_u or "").strip():
+                _names = [n for n in (_out_u or "").split("\n") if n.strip()]
+                _paths = "%d file(s): %s" % (len(_names), ", ".join(_names[:6]))
+        except Exception:
+            _paths = ""
+        _detail = _paths or (p.stdout or "").strip() or (p.stderr or "").strip() or "no detail"
         _run_git(["merge", "--abort"], cwd=repo)
-        return False, f"promotion merge conflict: {p.stderr.strip()}"
+        return False, f"promotion merge conflict: {_detail}"
     rc, out, _err = _run_git(["rev-parse", "--short", "HEAD"], cwd=repo)
     return True, out.strip() if rc == 0 else "?"
 
