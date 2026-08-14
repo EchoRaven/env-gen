@@ -1,6 +1,7 @@
 r"""#680: the visual remediation task carried every blocking screen in full — up to 126 KB.
 
-#679 traced check_inbox's 633M chars (62.9% of all tool output) back to task descriptions.
+#679 traced check_inbox (187.3M chars, 46.7% of the 401M the per-run tool_io_rollup
+tables account for) back to task descriptions.
 This is where those descriptions come from, and it is the largest single object the system
 produces:
 

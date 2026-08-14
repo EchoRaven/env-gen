@@ -18,8 +18,12 @@ _DEFUNCT_LANES = frozenset({"design", "database"})
 # #679: the SENDER-side saving #274 asked for, aimed with #257's instrument.
 #
 # `[tool-io]` accounting (added by #257 so the next run could answer "which tool grows the
-# prompt") finally has a corpus: 1006M chars of tool output landed in conversations, and
-# check_inbox is 633M of it — 62.9%, mean 73k chars per call over 8632 calls. #302 already
+# prompt") finally has a corpus: of the 401M chars of tool output the per-run
+# `tool_io_rollup` tables account for, check_inbox is 187.3M — 46.7%, mean 24,044 over
+# 7788 calls, max 1,515,342. (A first pass reconstructed this from the per-call log lines
+# instead and got 62.9% / mean 73k: those lines are only emitted above
+# _TOOL_IO_LOG_THRESHOLD = 20000 chars, so summing them counts only the big calls and
+# inflates every mean. The rollup is the authoritative total; the ranking is unchanged.) #302 already
 # previews already-READ bodies (240 chars) and #274 forbids clipping UNREAD ones, for good
 # reason: a trimmed task_ready contract left the receiver unable to see it or ask for the rest
 # and wedged the pipeline. #274 names the only sanctioned lever — "context savings for oversized

@@ -3059,7 +3059,8 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
     #     432 of 447 exceed 20 KB and hold 99% of their 28.2M chars
     #     `description` is 77.8% of ALL task bytes (31.6M of 41M across 12836 tasks)
     #
-    # That description is what #679 traced check_inbox's 633M chars back to, and it is delivered
+    # That description is what #679 traced check_inbox back to — 187.3M chars, 46.7% of the
+    # 401M the per-run tool_io_rollup tables account for — and it is delivered
     # whole to the lane. #649 already measured the dilution inside one screen (mean 6.4 fix
     # instructions, and the holistic score tracks only the WEAKEST dimension); a median task
     # stacks eight of those.

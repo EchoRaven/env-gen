@@ -3,8 +3,13 @@ r"""#679: every task lifecycle transition re-sent the whole record, description 
 #257 added `[tool-io]` accounting so a future run could answer "which tool grows the prompt".
 That accounting now has a corpus, and it names one:
 
-    1006M chars of tool output landed in conversations
-    check_inbox is 633M of it — 62.9%, mean 73k chars per call over 8632 calls
+    401M chars of tool output, per the authoritative per-run `tool_io_rollup` tables
+    check_inbox is 187.3M of it — 46.7%, mean 24,044 over 7788 calls, max 1,515,342
+
+(A first pass reconstructed this from the per-call log lines and got 62.9% / mean 73k. Those
+lines are only emitted above _TOOL_IO_LOG_THRESHOLD = 20000 chars, so summing them counts only
+the big calls and inflates every mean. The rollup is the authoritative total and the ranking is
+unchanged — check_inbox is still first by a wide margin.)
 
 The read side is already settled and must not be touched. #302 previews already-READ bodies at
 240 chars, and #274 forbids clipping UNREAD ones after a `[:500]` cap left a receiver unable to
@@ -156,7 +161,8 @@ def test_the_measurement_is_recorded():
     import inspect
     from env_generator.llm_generator.multi_agent.runtime.hubs.workhub import service as sv
     flat = " ".join(inspect.getsource(sv).replace("#", " ").split())
-    assert "check_inbox is 633M of it" in flat
+    assert "check_inbox is 187.3M" in flat
+    assert "_TOOL_IO_LOG_THRESHOLD" in flat, "the biased first pass must be recorded"
     assert "reclaims 76% of the bytes" in flat
 
 
