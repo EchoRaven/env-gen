@@ -1733,6 +1733,55 @@ right one needed a distribution.
 
 ---
 
+## 62. #743 — bug tasks are excluded from the gate and delegated to a gate that isn't
+
+**A correction first.** Earlier in this session I wrote "the delivery gate reads no task status
+or priority at all" (items 56, 58). That is wrong in the general form: `incomplete_required_tasks`
+calls `wh.list_tasks()` and filters on `pending`/`in_progress`. The truth is narrower and worse,
+and it is written in that function's own docstring:
+
+    Ad-hoc `task_*` … are NOT structural kickoff kinds — they are governed by their own gates
+    (visual deferral, deliverability) and are deliberately excluded here so this gate never
+    double-blocks them.
+
+The exclusion is right in shape; a bug should not double-block. But for `kind='bug'` **the
+delegation goes nowhere.** Checked rather than assumed: `deliverability.py` contains no `bug`
+string at all, and `delivery_gate.py`'s only bug-kind or severity comparison is #743's own.
+
+**Corpus, restricted to `metadata.kind == 'bug'` — 1477 bug tasks in 129 runs:**
+
+    completed 818   pending 363   cancelled 140   in_progress 139   failed 17
+    P0 only:  completed 443,  genuinely open 317,  cancelled 99
+    runs ending with an unresolved P0 bug      90
+    of those, runs that RELEASED               90        100%
+
+So the P0 option is dead from this direction too — 90 of 129 is a halt, not a gate. That is the
+same verdict item 56 reached from the all-kinds side (124 of 148), now confirmed on the narrower
+population where the stale structural tasks cannot inflate it.
+
+**`failed` is the signal worth a decision.** `fail_task` is authorised (creator, claimer, or
+orchestrator only) and REQUIRES a reason, so the status means an attempt was made and did not
+work — where `pending` can just mean nobody reached it. Only **20 of 148 runs (13%)** end with
+one, and **all 20 released**, carrying things like *"Frontend Dockerfile uses registry-blocked
+base images"*, *"Record the missing critical UI flow validations (blocks delivery)"* and
+*"Landing page (/) renders a stub"*.
+
+Landed: `unresolved_bugs` in the gate payload plus two warnings — one for FAILED tasks with their
+`fail_reason`, one for open P0 bugs. Decides nothing, same disposition as #711/#715/#738/#739.
+
+**Cheapest observation, and the decision.** This is now the third gate-tightening waiting on the
+same call, and they should be decided together because they are the same trade in three places:
+
+    item 56   a post-cap BLACKOUT blocks delivery          would have caught r148
+    item 58   ui_smoke stops being existential             would have caught r148
+    item 62   a FAILED task blocks delivery                13% blast radius, all 20 shipped
+
+The blast radii are known for all three. What no artifact can answer is how many of those blocks
+would have been RIGHT — a blocked run that would have shipped a working app is a pure loss, and
+only a run that is allowed to hit the block can tell us.
+
+---
+
 ## 61. #741/#742 — 216 bugs in the corpus are owned by nobody, and both causes are readable
 
 `resolve_owning_agent` tries the endpoint, then the table, then the files. Measured over the

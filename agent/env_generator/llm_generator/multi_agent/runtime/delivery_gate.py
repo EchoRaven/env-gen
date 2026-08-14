@@ -95,6 +95,60 @@ def _norm_gate_path(p: Any) -> str:
     return s.rstrip("/") or "/"
 
 
+def unresolved_bug_tasks_743(hubs) -> Dict[str, Any]:
+    """#743: bug tasks are excluded from the structural gate, delegated to a gate that isn't.
+
+    `incomplete_required_tasks` deliberately counts only structural kickoff kinds, and says why:
+    ad-hoc `task_*` "are governed by their own gates (visual deferral, deliverability) and are
+    deliberately excluded here so this gate never double-blocks them". The exclusion is right in
+    shape — a bug should not double-block — but the delegation goes nowhere for this kind:
+    **neither `deliverability.py` nor this module references `kind='bug'` or a bug severity
+    anywhere.** Nothing consumes them.
+
+    Measured over the corpus, restricted to `metadata.kind == 'bug'` (1477 bug tasks in 129 runs):
+
+        completed 818   pending 363   cancelled 140   in_progress 139   failed 17
+        P0 only:  completed 443, genuinely open 317, cancelled 99
+        runs ending with an unresolved P0 bug        90
+        of those, runs that RELEASED                 90     — 100%
+
+    So a hard block on "any open P0 bug" would stop 90 of 129 runs and is not a gate, it is a
+    halt. **`failed` is the narrow one**: `fail_task` is authorised (creator/claimer/orchestrator
+    only), requires a `reason`, and means an attempt was MADE and did not work — unlike `pending`,
+    which can just mean nobody reached it. Only **20 of 148 runs (13%)** end with one, and all 20
+    released, carrying things like "Frontend Dockerfile uses registry-blocked base images" and
+    "Record the missing critical UI flow validations (blocks delivery)".
+
+    Reports only — no verdict changes here. Whether `failed` should block is a gate-tightening
+    of the same class as item 56 and is recorded for a decision rather than switched on.
+    """
+    wh = getattr(hubs, "workhub", None)
+    if wh is None or not hasattr(wh, "list_tasks"):
+        return {}
+    try:
+        tasks = wh.list_tasks() or []
+    except Exception:
+        return {}
+    failed: List[Dict[str, Any]] = []
+    open_p0: List[Dict[str, Any]] = []
+    for t in tasks:
+        if not isinstance(t, dict):
+            continue
+        meta = t.get("metadata") or {}
+        status = str(t.get("status") or "")
+        if status == "failed":
+            failed.append({"id": t.get("id"), "title": str(t.get("title") or "")[:120],
+                           "severity": meta.get("severity"),
+                           "reason": str(t.get("fail_reason") or "")[:200],
+                           "kind": meta.get("kind")})
+        elif (meta.get("kind") == "bug" and meta.get("severity") == "P0"
+                and status in {"pending", "in_progress"}):
+            open_p0.append({"id": t.get("id"), "title": str(t.get("title") or "")[:120],
+                            "status": status, "assignee": t.get("assignee")})
+    return {"failed": failed[:10], "failed_count": len(failed),
+            "open_p0_bugs": open_p0[:10], "open_p0_bug_count": len(open_p0)}
+
+
 def scope_filter_incomplete(incomplete_tasks: List[Dict[str, Any]], scope_paths) -> List[Dict[str, Any]]:
     """§4 milestone-scoped gate: keep only incomplete structural tasks whose endpoint is in
     THIS milestone's slice; defer (drop) tasks for a clearly out-of-slice endpoint (a later
@@ -1658,6 +1712,26 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # blocks a run_validation-covered endpoint whose per-endpoint task was
     # left open. NOT relaxed by functionally_validated — an un-evidenced
     # implement_*/validate task is genuine incomplete work, not bookkeeping.
+    # #743: the structural gate excludes bug tasks as "governed by their own gates"; no gate
+    # consumes them. Say what is open at the cut. Reports, decides nothing.
+    _bugs743 = unresolved_bug_tasks_743(hubs)
+    if logger and _bugs743.get("failed_count"):
+        logger.warning(
+            "#743 %d task(s) are in status FAILED at the delivery cut and nothing reads them: "
+            "%s. `fail_task` is authorised and requires a reason, so this is a deliberate "
+            "'attempted and did not work' — unlike pending. 20 of 148 corpus runs end with one "
+            "and all 20 released. Reported, not enforced.",
+            _bugs743["failed_count"],
+            "; ".join(f"[{f.get('severity') or '-'}] {f.get('title')}"
+                      f"{' — ' + f['reason'] if f.get('reason') else ''}"
+                      for f in _bugs743.get("failed", [])[:4]))
+    if logger and _bugs743.get("open_p0_bug_count"):
+        logger.warning(
+            "#743 %d P0 BUG task(s) are still open at the delivery cut: %s. Corpus: 90 of 129 "
+            "runs end this way and 90 of 90 released, so this is reported rather than blocking "
+            "— a hard block here would be a halt, not a gate.",
+            _bugs743["open_p0_bug_count"],
+            "; ".join(str(b.get("title")) for b in _bugs743.get("open_p0_bugs", [])[:4]))
     incomplete_tasks = incomplete_required_tasks(hubs)
     # §4: when a milestone slice is provided (intermediate milestone), defer structural tasks
     # for a clearly out-of-slice endpoint — an intermediate milestone is gated on ITS OWN
@@ -1719,6 +1793,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         "invalid_json": invalid_json,
         "failed_checks": failed_checks,
         "incomplete_required_tasks": incomplete_tasks,
+        "unresolved_bugs": _bugs743,     # #743: reported, never enforced
         "noncanonical_response_keys": noncanonical_response_keys,
         "business_chain": business_chain_block,
         "completeness": completeness_results,  # #557 reported (not-yet-blocking)
