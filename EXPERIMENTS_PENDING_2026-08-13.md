@@ -1809,8 +1809,21 @@ deleting the reasoning — which is the thing item 48 argues against.
 
 **Its limits, stated rather than discovered later.** It cannot judge a NEW claim; it only keeps
 settled ones settled, and every entry is added by hand after a measurement overturns something.
-That is the honest ceiling of a text check, and it is why the registry starts at four rather than
-pretending to be complete.
+That is the honest ceiling of a text check.
+
+**Four is tested, not provisional.** The session produced twelve retraction commits, so a
+four-entry registry looks unfinished. Six more overturned phrasings were run through the same
+sweep — "accelerates rather than tapering", "160 attempts", "did not deliver", "the capture list
+is stale", "routes did not resolve", "clear the checker" — and produced **zero** genuine unmarked
+copies. Four covers what actually exists in the tree.
+
+**The trial also found the guard's real failure mode, which is not false negatives.** Both
+apparent hits were false alarms caused by a marker list narrower than the correction's own
+wording: one claim sits in a two-column table whose right column IS the correction, the other is
+#718's comment quoting #713's sentence in order to refute it — the quotation trap that has caught
+four assertions in this session. A guard that cries wolf trains a reader to ignore it, so the
+rule is now written into the file: **when adding an entry, take the markers FROM the correction
+that is already there, never invent them in advance.**
 
 **Verified non-vacuous.** A guard over prose is easy to write so that it can never fire, so the
 control is permanent: planting an unmarked copy in a scratch directory must make the sweep name

@@ -36,6 +36,27 @@ OVERTURNED = {
 }
 RADIUS = 900
 
+# WHY THE REGISTRY IS FOUR AND NOT TWELVE. This session produced twelve retraction commits, so
+# four looks thin. It was tested rather than assumed: six more overturned phrasings were run
+# through this same sweep — "accelerates rather than tapering", "160 attempts", "did not
+# deliver", "the capture list is stale", "routes did not resolve", "clear the checker" — and
+# they produced ZERO genuine unmarked copies. Four is adequate for what actually exists in the
+# tree, not a starting point someone forgot to finish.
+#
+# The two apparent hits in that trial were both false alarms, and they show this guard's real
+# failure mode: a marker list narrower than the correction's actual wording.
+#
+#   test_unfinished_run_banner_717.py   the claim sits in a two-column table whose RIGHT column
+#                                       is the correction ("it delivered v1.0.0 in the 3,000
+#                                       lines after I looked") — marked, just not with the words
+#                                       I had guessed
+#   visual_fidelity.py                  #718's comment QUOTING #713's sentence in order to
+#                                       explain why it is wrong — the quotation trap that has
+#                                       bitten four assertions in this session
+#
+# So when adding an entry, read the correction that is already there and take the markers FROM
+# it. Markers invented in advance produce alarms that train a reader to ignore the guard.
+
 
 def _files():
     for d in SEARCH_DIRS:
