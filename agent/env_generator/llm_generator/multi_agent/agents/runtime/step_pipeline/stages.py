@@ -344,6 +344,36 @@ class AgentStepStageMixin(AgentActionStageMixin):
         loop_time: Callable[[], float],
         mark_stage: Callable[..., None],
     ) -> Optional[Dict[str, Any]]:
+        """#702: THIS STAGE HAS NEVER RUN, AND CANNOT AS WIRED.
+
+        Found by sweeping class methods whose name appears only at their own `def` — the same
+        search that produced #699 and #700 at module level. Three of the mixin's stages are
+        siblings; two are wired and this one is not:
+
+            _run_retrieve_context_stage   2 call sites
+            _run_knowledge_sync_stage     1 call site
+            _run_hub_sync_stage           0
+
+        It is inert three ways over, not one:
+
+          1. `step_runner.py:146` initialises `hub_sync_tool_names: set = set()` and NOTHING
+             ever adds to it — no `.add`, no reassignment anywhere in the tree.
+          2. That always-empty set is still threaded into `action.py:290`'s
+             `... | knowledge_store_names | hub_sync_tool_names`, a union that contributes
+             nothing.
+          3. `step_runner` never calls this method, so even the `mark_stage(..., executed=False,
+             skip_reason=...)` branch below never records that the stage was skipped. The
+             pipeline does not know the stage exists.
+
+        No run has ever executed it: no call site, no `hub_sync` entry in any step trace, and
+        the 56 log files that appear to mention it are all matching the tail of the unrelated
+        `registryhub_sync`.
+
+        Wiring it up is a real behaviour change — agents would begin making hub-sync tool calls
+        at step boundaries, which is a per-step token cost (#257) — and is deliberately NOT done
+        here. What is fixed is that a reader could open this file and reasonably conclude that
+        hub state is synchronised each step. It is not.
+        """
         if not enabled or not hub_sync_tool_names:
             mark_stage(
                 "hub_sync",

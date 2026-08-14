@@ -1037,8 +1037,17 @@ sites. Nine are the documented and correct "a hiccup must never wedge the gate" 
 swallow degrades a check to a no-op and the gate carries on. One is more than that:
 `delivery_gate`'s `complete_coverage_chain(hubs)` → **#701**.
 
-**All three sweeps are now exhausted.** The class that produced #691/#694b/#696/#698 — a correct
-computation whose result nothing observes — yields three more (#699, #700, #701) and then stops.
+**Sweep D — every CLASS METHOD whose name appears only at its own `def`** (sweep B's completion;
+it only covered module-level functions). 113 hits, most false positives where a framework calls by
+convention rather than by name — `do_POST`, `log_message`, `do_DELETE`. One matters:
+`AgentStepStageMixin._run_hub_sync_stage` → **#702**.
+
+**Four sweeps, four axes, and each new axis has yielded.** A, B, C and D are individually
+exhausted, but the honest summary is not "the search is finished" — it is that this FAMILY of
+defect (a correct computation whose result nothing observes) is dense enough that every new way of
+looking finds more: A→#698, B→#699+#700, C→#701, D→#702. The next axes worth trying, none of them
+run yet: return values discarded at the call site, constants defined and never read, config keys
+with no consumer, and prompt fragments assembled but never included.
 
 ---
 
@@ -1120,6 +1129,31 @@ that the consequence is expensive when it happens: two named runs lost 78 minute
 
 **Cheapest observation.** Grep a run log for `coverage-chain completion FAILED`. Any hit explains
 a coverage stuck-blocker in that run and redirects the fix away from the verifier.
+
+---
+
+## 27. #702 — a step-pipeline stage that has never run, and cannot as wired
+
+**Fixed (docstring only): #702.** Three sibling stages live in `AgentStepStageMixin`.
+`_run_retrieve_context_stage` has 2 call sites, `_run_knowledge_sync_stage` 1, and
+`_run_hub_sync_stage` **0**. It is inert three ways over:
+
+  1. `step_runner.py:146` initialises `hub_sync_tool_names: set = set()`, and an AST scan of the
+     file finds exactly ONE assignment to that name — that one. Nothing ever adds to it.
+  2. The always-empty set is still threaded into `action.py:290`'s
+     `... | knowledge_store_names | hub_sync_tool_names`, a union contributing nothing.
+  3. `step_runner` never calls the stage, so even its `executed=False, skip_reason=...` branch
+     never fires — the pipeline does not know the stage exists.
+
+No run has executed it: no call site, no `hub_sync` entry in any step trace, and the 56 log files
+that appear to mention it are all matching the tail of the unrelated `registryhub_sync`.
+
+**Only a run can settle.** What wiring it costs. Hub-sync tool calls at every step boundary is a
+per-step token cost (#257), and the stage's own `_decide_stage_boolean` adds an LLM call when
+there are no file changes. That is why this is a docstring fix and not a wiring change.
+
+**Cheapest observation.** After wiring it experimentally, compare `tool_io_rollup` and step count
+against a matched run. If the stage fires on most steps, the cost is the whole question.
 
 ---
 
