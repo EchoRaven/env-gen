@@ -125,6 +125,20 @@ def test_why_595_missed_them_is_recorded():
     assert "single overlay falls under that threshold" in b
 
 
+def test_the_blocking_measurement_is_recorded():
+    """The screen that cannot be photographed was gating releases."""
+    b = " ".join(_block().replace("#", " ").split())
+    assert "BLOCKING screen in 36 of its 54 appearances" in b
+    assert "clears the 0.65 bar exactly ZERO times" in b
+
+
+def test_the_reframing_of_711_and_712_is_recorded():
+    b = " ".join(_block().replace("#", " ").split())
+    # `.replace("#", " ")` then a split/join collapses the gap, so it reads "711 and 712".
+    assert "reframes 711 and 712" in b
+    assert "could never release on the gate's own terms" in b
+
+
 def test_the_refusal_to_demote_is_recorded():
     b = " ".join(_block().replace("#", " ").split())
     assert "dropping it loses coverage" in b

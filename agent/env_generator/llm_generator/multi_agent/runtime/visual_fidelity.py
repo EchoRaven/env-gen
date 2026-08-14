@@ -2900,6 +2900,19 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
             # these were never caught. Removing all three from the average is worth +0.0208 on
             # the mean run and +0.1785 at the extreme.
             #
+            # AND IT BLOCKS. `card_hover_preview` is a BLOCKING screen in 36 of its 54
+            # appearances, and across those 36 its maximum similarity is 0.40, its median 0.30,
+            # and it clears the 0.65 bar exactly ZERO times. So in 36 runs a screen the gate
+            # cannot photograph was gating the release. (`account_menu` is advisory in all 22 of
+            # its appearances — handled correctly — and `browse_home_rows` blocks in 22 of 52.)
+            #
+            # That reframes #711 and #712 rather than merely adding to them. #500's high-water
+            # merge, #558's fast-release and the plateau escapes are not only leniency: they are
+            # what lets a run finish at all when part of the measurement is structurally broken.
+            # Remove every escape and those 36 runs could never release on the gate's own terms.
+            # Which means the calibration question — should the gate read the live mean — cannot
+            # be answered without also deciding what to do about screens that can never pass.
+            #
             # Not demoted here — an overlay screen is real product and dropping it loses
             # coverage, the same trade #713 declined to make. What changes is that the two cases
             # stop sharing one wrong sentence.
