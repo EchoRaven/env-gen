@@ -1793,7 +1793,28 @@ probe over-counts), and pinned by a test.
 
 **The pattern across all four.** Every instance was prose, none was an assertion, and all four
 were green the whole time. The tooling this session added — #716's pattern check, #719's
-cross-reference guard — reads code and the document. Nothing reads the sentences in between.
+cross-reference guard — reads code and the document. Nothing read the sentences in between.
+
+**Fixed: #726**, which now does. It holds a registry of claims this session measured false and
+requires any surviving copy — in `llm_generator/` or in `tests/` — to carry a correction marker
+within 900 characters:
+
+    kind='standard'                                     ~~ / RETIRED / STALE / seed_dataset
+    Blast radius 4 of 21                                ~~ / does NOT reproduce
+    A release authorised on the former ships the latter ~~ / RETRACTION / is WRONG
+    a single lucky pass never triggers a release        TRUE as written / #712r / ~~
+
+A second test requires each claim to still EXIST somewhere, so an entry cannot be satisfied by
+deleting the reasoning — which is the thing item 48 argues against.
+
+**Its limits, stated rather than discovered later.** It cannot judge a NEW claim; it only keeps
+settled ones settled, and every entry is added by hand after a measurement overturns something.
+That is the honest ceiling of a text check, and it is why the registry starts at four rather than
+pretending to be complete.
+
+**Verified non-vacuous.** A guard over prose is easy to write so that it can never fire, so the
+control is permanent: planting an unmarked copy in a scratch directory must make the sweep name
+it (`probe.py`), and striking the same copy through must silence it. Both are tests.
 
 **Cheapest observation.** None; this is settled by reading. Recorded because the next retraction
 in this file will have the same three exits and none is obvious from inside one.
