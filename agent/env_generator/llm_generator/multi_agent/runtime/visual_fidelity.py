@@ -2802,6 +2802,30 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                     len(_names713), _h713[:12], ", ".join(sorted(_names713)))
                 _verdict.setdefault("identical_captures_713", []).append(
                     {"md5": _h713, "screens": sorted(_names713)})
+                # #714: and STOP THE PHANTOM REMEDIATION. Detection alone still leaves the
+                # lane a to-do list about a page that was never photographed. Measured over the
+                # corpus: screens inside a duplicate group carry 17.5 deviations each against
+                # 15.3 for real ones — scored against someone else's page, nearly everything
+                # looks wrong — so 5835 of 21550 deviations (27%) describe an uncaptured screen.
+                #
+                # `remediation_text` already honours `scope_excluded_screens` (#565 uses it to
+                # drop out-of-milestone pages), and it reads the list from the verdict at
+                # CONSUMPTION time. Appending here therefore suppresses exactly the phantom
+                # entries and touches no score: the averages, the pass/fail and the 0.65 bar are
+                # computed earlier and are byte-identical. Deliberately NOT demoting to advisory
+                # — that would change gating arithmetic, and the evidence does not yet say what
+                # the right gate behaviour is when a quarter of the exam did not render.
+                #
+                # One canonical screen per group is KEPT scorable, as #542a does: the group did
+                # photograph SOMETHING, and dropping every member would hide that too.
+                try:
+                    _grp713 = sorted(_names713)
+                    _ex713 = _verdict.setdefault("scope_excluded_screens", [])
+                    for _nm713 in _grp713[1:]:          # keep _grp713[0] scorable
+                        if _nm713 not in _ex713:
+                            _ex713.append(_nm713)
+                except Exception:
+                    pass
         except Exception:
             pass
         (vdir / "verdict.json").write_text(json.dumps(_verdict, indent=2, default=str),
