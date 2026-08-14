@@ -1069,11 +1069,33 @@ The pattern in sweep F is worth stating: every hit was a fix implemented TWICE, 
 implementation won and the first was left in the tree. None is a behaviour gap; each is a
 maintenance trap, because the orphan reads like the live path.
 
-**Six sweeps, six axes; four yielded and two did not.** A, B, C and D are individually
+**Sweep G — keys in `agents_config.yaml` that no code reads.** 5 hits; three (`dynamic`,
+`notifies`, `coordinator`) are common words my key scan matched loosely and are not dead. Two are
+real, and NEITHER is a live defect:
+
+  * **`optional_stages: [retrieve_context, knowledge_sync]`**, under the comment "Optional stages
+    may be skipped by the model" — read nowhere, so the declaration has no effect. Its neighbour
+    `stages:` IS live (`step_runner` calls `_stage_enabled(...)`). Inert declaration, no
+    behaviour attached; not fixed, because "which stages the model may skip" is a design question
+    and inventing an enforcement for it would be a behaviour change.
+  * **`can_spawn`** — also read by no code, and three PROMPTS present it to agents as
+    enforcement: "DO NOT spawn workers (can_spawn=false by YAML flag)". The real mechanism is the
+    `team_spawn` tool bundle: no bundle, no tool, whatever the prompt says. Cross-checking the two
+    independently-maintained declarations: **all 7 roles with `can_spawn: false` also lack
+    `team_spawn`**, so no role is restricted by prompt alone today.
+
+**Guarded, not fixed: #703.** Nothing is broken, so there is no production change. What is missing
+is anything that KEEPS the two declarations agreeing — they live in different parts of the same
+file, and adding `team_spawn` to a `can_spawn: false` role would leave that agent reading "you are
+restricted by YAML flag" with the tool in its hands. Eight tests pin the invariant in both
+directions, the current restricted set, and the premise itself (that no code reads the flag and
+the prompts still claim it) so the guard deletes itself honestly if either changes.
+
+**Seven sweeps, seven axes; four yielded defects, three did not.** A, B, C and D are individually
 exhausted, but the honest summary is not "the search is finished" — it is that this FAMILY of
 defect (a correct computation whose result nothing observes) is dense enough that every new way of
 looking finds more: A→#698, B→#699+#700, C→#701, D→#702. A→#698, B→#699+#700, C→#701, D→#702,
-E→nothing, F→nothing. The axes still untried: config keys with no consumer, and prompt fragments
+E→nothing, F→nothing, G→#703 (a guard, not a defect). One axis still untried: prompt fragments
 assembled but never included.
 
 ---
