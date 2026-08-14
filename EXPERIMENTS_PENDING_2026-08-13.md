@@ -895,3 +895,13 @@ they are not an injection surface.
 3. **The 363 `bad-function-definition` reports** are overwhelmingly `X: SomeType = None` where
    the annotation should be `Optional[...]`. Mechanical, zero-risk, and each one currently hides
    real `bad-argument-type` findings downstream.
+
+   **Not checkable here as of 2026-08-14: pyrefly is NOT installed in the repo venv** (`import
+   pyrefly` → ModuleNotFoundError; the `pyrefly.toml` files on this box belong to unrelated
+   fbsource trees). Re-measuring needs it installed first — this entry is not offline-checkable
+   in the way the section heading promises, and listing it here as if it were has already cost
+   one look. A naive AST substitute is not a substitute: scanning for `X: T = None` where T does
+   not start with `Optional` returns **6737 hits over 1674 files**, and the top two buckets are
+   false positives — `Annotated[Optional[str], ...]` x737 and `_Optional[...]` x29 are already
+   optional. Whatever the true count is, "mechanical and zero-risk" deserves re-checking against
+   it before anyone starts: 363 curated findings and a four-figure sweep are different jobs.
