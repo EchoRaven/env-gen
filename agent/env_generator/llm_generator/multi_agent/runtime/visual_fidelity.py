@@ -3051,9 +3051,33 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
     _geo_on = _layout_geometry_enabled()
     _emitted: set = set()
     _mandated_screens = 0
-    for r in result.get("screens", []):
-        if r.get("passed") or r.get("name") in latched or r.get("name") in _scope_excluded:
-            continue
+    # #680: ORDER WORST-FIRST, THEN CAP — the #662 shape, one level up.
+    # This loop walked `result["screens"]` in judge order and emitted EVERY blocking screen in
+    # full. The resulting task description is the largest single object the system produces:
+    #
+    #     447 visual remediation tasks, median 8 screens and 57,815 chars, max 15 and 126,047
+    #     432 of 447 exceed 20 KB and hold 99% of their 28.2M chars
+    #     `description` is 77.8% of ALL task bytes (31.6M of 41M across 12836 tasks)
+    #
+    # That description is what #679 traced check_inbox's 633M chars back to, and it is delivered
+    # whole to the lane. #649 already measured the dilution inside one screen (mean 6.4 fix
+    # instructions, and the holistic score tracks only the WEAKEST dimension); a median task
+    # stacks eight of those.
+    #
+    # Capping loses nothing because remediation is RE-ISSUED every round — 447 tasks over ~100
+    # runs, ~4.5 per run — so a screen that does not fit this round leads the next one. What
+    # would lose work is capping WITHOUT ordering, which is why the sort comes first: the
+    # screens furthest below the bar are the ones the gate is waiting on.
+    #
+    # Four is half the median screen count and halves the payload (51% of bytes, measured over
+    # the same 447), and the remainder is named with its scores rather than silently dropped.
+    _REMEDIATION_SCREEN_CAP_680 = 4
+    _eligible = [r for r in (result.get("screens") or [])
+                 if not (r.get("passed") or r.get("name") in latched
+                         or r.get("name") in _scope_excluded)]
+    _eligible.sort(key=lambda r: float(r.get("similarity") or 0.0))
+    _deferred = _eligible[_REMEDIATION_SCREEN_CAP_680:]
+    for r in _eligible[:_REMEDIATION_SCREEN_CAP_680]:
         lines.append(f"\n## {r['name']}  (route {r['route']}, similarity {r['similarity']:.2f})")
         if _ab_on and _audit is not None:
             # A1: a failing screen whose reference components map to staged real
@@ -3158,6 +3182,16 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
             len(_audit.get("unused_mapped") or []), len(_emitted), _mandated_screens)
     lines.append("\nReference images: use list_reference_images / view_image. "
                  "Your screenshots from the last gate run are in design/visual_gate/.")
+    # #680: name what did not fit, with its scores, so the omission is visible and the lane
+    # knows it is a sequencing decision rather than a claim that these screens are fine.
+    if _deferred:
+        lines.append(
+            "\n## Not in this round ({} more below the bar)\n".format(len(_deferred))
+            + ", ".join(f"{r.get('name')} ({float(r.get('similarity') or 0.0):.2f})"
+                        for r in _deferred)
+            + "\n These are ordered behind the screens above, which are further from the bar. "
+              "Remediation is re-issued every round, so they lead the next one — fix the ones "
+              "above first rather than spreading effort across all of them.")
     return _regressed + _head + "\n".join(lines)   # #619/#620
 
 
