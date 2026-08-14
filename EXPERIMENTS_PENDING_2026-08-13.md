@@ -1558,6 +1558,46 @@ collapse; if the bundle is current, the collapse is the app's and belongs to the
 
 ---
 
+## 34. #713's real scale — a quarter of every fidelity number is measured on a shared page
+
+#713 was found on r147 (four screens byte-identical to `landing.png`) and its corpus scale turned
+out to be far worse than the single run suggested. Hashing every capture in every run:
+
+    runs with >= 2 captures          127
+    runs with an identical group     103  (81%)
+    screens inside a duplicate group 380 of 1476  (26%)
+
+    worst: r37 12 of 13 screens are ONE image · r48 11/13 · r6 11/12
+
+**Era-split, because "85% of runs" invites the assumption that it is solved history:**
+
+    r<100    84 runs, 71 affected (85%), 254/1032 screens (25%)
+    r100+    43 runs, 32 affected (74%), 126/444 screens (28%)
+
+The affected-RUN rate fell slightly and the affected-SCREEN fraction ROSE. This is live.
+
+**What that costs is not a screen here and there — it is the validity of the metric.** Every
+fidelity number this document reasons with was computed over a population in which roughly a
+quarter of screens did not render their own page: the 0.65 bar, r146's 0.6409, r147's 0.3817,
+#618's "24 of 39 runs deliver worse than their own best", the per-screen deviations the
+remediation is built from. A screen that photographed the landing page contributes a real-looking
+low score, and a low score is exactly what the remediation loop then works on — the lane is sent
+to fix a page that was never captured.
+
+**Only a run can settle: which side of source-vs-served causes it.** The corrected #713 comment is
+careful here — `known_routes` is re-parsed from App.jsx on every call so the list is never stale;
+what remains is that the list comes from SOURCE while the browser hits the SERVED app, so any lag
+(a bundle not rebuilt after a route change) makes new paths miss and fall to the catch-all. Which
+it was in r147 is not decided, and guessing it is how the first version of that comment went
+wrong.
+
+**Cheapest observation.** With #713 in the build, grep a run for `screens captured the SAME
+image`. Then, for one affected screen, compare the served bundle's route table against App.jsx at
+capture time — if they differ, it is the serve lag; if they agree, the navigation itself is at
+fault and the capture layer needs the fix.
+
+---
+
 ## 32. #615's CAUSE fix — unblocked, quantified, and genuinely run-dependent
 
 #708 retired the technical objection ("the seed gives every title `kind='standard'`") and #708b
