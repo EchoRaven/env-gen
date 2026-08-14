@@ -944,6 +944,56 @@ answer. It is recorded here so the next reader inherits the number rather than t
 
 ---
 
+## 21. #696 — does the suppressed load failure actually reach console_errors?
+
+**Changed: #696.** Every projected page fetch throws `HTTP <status>` and then discards exactly
+that error, falling through to the graceful empty state. The suppression is deliberate, measured
+(r104 new_and_popular) and unchanged. What it also did is make a 500 indistinguishable from an
+empty dataset — the user reads "Titles you add will appear here." while the endpoint is failing,
+and the framework judges a screenshot of a clean, plausible, well-scoring page. #566x shape: the
+harm is invisible BECAUSE nothing looks broken. The suppressed branch now writes a
+`console.error`; no pixel changes and the error text still never reaches the DOM.
+
+**Only a run can settle.** Whether `browser_navigate`'s `console_errors` actually surfaces it in
+the lane, and how often it fires. The mechanism is right on paper — core.py filters
+`log["type"] == "error"` and drops extension noise, which a `console.error` from app code passes
+— but no kept run contains the line, because no kept run has the fix.
+
+**Cheapest observation.** Grep a run log for `[projected] data load failed:`. Every occurrence is
+a page that rendered as an ordinary empty state while its API was failing. Zero occurrences with
+non-zero `deviations` about blank pages would mean the suppression is not the path those come
+through.
+
+---
+
+## 22. Audited in r146's SHIPPED tree and found clean — do not re-raise
+
+Four frontend hypotheses from the same audit that produced #696, each measured and dropped. They
+look like defects and are not; recording them so the next reader does not spend the same time.
+
+- **Unhandled fetch rejections.** None. Every component in the shipped frontend that calls
+  `fetch` has a `catch`.
+- **The hero renders TEXT when data loads and the reference title-art CROP only when it does
+  not** — which looks like an inversion of #461's stated purpose. It is `#531`, deliberate and
+  measured: "the static reference crop (#461) is DROPPED for data pages and kept ONLY as the
+  fallback shown when there is NO record ... the r97 miss: thin catalog screens scored 0.40-0.55
+  rendering the static crop over the live backdrop."
+- **Unreferenced components shipped.** `HeroBillboard.jsx`, `NetflixNav.jsx`, `TenantPicker.jsx`
+  and a second `LoginPage.jsx` under `pages/` (App.jsx imports the one under `components/`) are
+  in the release and imported by nothing. They are residue of `#221`: when the projector
+  re-projects a page it takes over the rendering, and the lane's components lose their importer.
+  Vite tree-shakes unreferenced modules out of the build, so the runtime cost is nil; the cost is
+  a reader opening a 161-line LoginPage that does not serve `/login`.
+- **`text(f"DELETE FROM {tbl}")` in the shipped `custom_routes.py`.** Not injection — `tbl` comes
+  from a hardcoded literal tuple in all three occurrences.
+
+Also confirmed deliberate, from the backend half of the same audit: the five unauthenticated
+`/api/v1/*` admin endpoints are exempted on purpose — main.py's auth middleware treats
+`/api/v1/*` as public infra — and the eleven duplicate route definitions are the DESIGNED
+override mechanism, stated in `duplicated_routes`' own docstring.
+
+---
+
 ## 19. Older, still unresolved
 
 - **#644 viewport.** Two measured targets conflict: 796px matches the reference image aspect,
@@ -962,6 +1012,53 @@ answer. It is recorded here so the next reader inherits the number rather than t
   subsystem is supposed to run at all for a single-team app build, and #658 correspondingly has
   no run that can validate it. Same probe as item 13, opposite answer: there the tool is reachable
   and optional, here it is reachable and simply never invoked by anything.
+
+---
+
+## 22. Tools no role can reach — one real orphan, and why the obvious guard does not work
+
+Three findings in this session had the same shape (`register_seed_data` routed to a lane without
+the category, `registryhub_request_review`/`submit_review` granted to nobody, the codehub PR
+entrance granted 2/0/0 while `force_merge` is granted 11 times), so I set out to build the
+generalizable guard: **assert that every declared tool is granted to at least one role.**
+
+**Result: exactly one genuine orphan in the whole tree.**
+
+    data_engine_tools   discover_datasets, preview_dataset, download_dataset, generate_seed_sql
+                        "data_engine" is whitelisted as a category in tool_surface.py:41
+                        granted to 0 roles in agents_config.yaml
+                        0 invocations in 253 run logs
+
+A whole dataset-acquisition surface — including `generate_seed_sql`, which is adjacent to the
+seed-gate work above — that no agent can reach. Whether it is wanted is a design question; that it
+is currently unreachable is not.
+
+**And the guard itself is NOT the cheap static check I claimed.** Four independent indirections
+sit between a tool and a grant, and my first four attempts each produced false positives before I
+checked usage:
+
+    1. tools are granted by CATEGORY, not by name   -> flagged eventhub_subscribe, which every
+                                                       role holding "eventhub" can call
+    2. bundle key `X_tools` <-> category `X`        -> flagged milestone_tools; config says
+                                                       "milestone"
+    3. bundle name unrelated to category            -> flagged material_prep_tools; it is granted
+                                                       as "design", and its tools are among the
+                                                       most-used in the corpus (extract_palette
+                                                       1023, decompose_reference 1139,
+                                                       sample_color 898)
+    4. bundle routes to tools named for ANOTHER hub -> flagged schemahub_tools, whose wrappers
+                                                       deliberately kept `registryhub_*` NAMEs
+                                                       ("prompts and trained behaviour still
+                                                       reference them") and arrive via
+                                                       "registryhub"
+
+So a string-matching guard cannot be made correct. The only sound implementation instantiates the
+tool pool per role through `ToolPoolBuilder` and asks which tools actually land — a real
+integration check, not a lint. That is a larger job than the one-liner I proposed, and worth
+saying plainly: **I recommended this fix as "pure static, zero runtime risk" and that was wrong.**
+
+Catching it cost four measurements and no production change, which is the right ratio. The three
+original instances remain individually recorded above; each was verified by hand.
 
 ---
 
