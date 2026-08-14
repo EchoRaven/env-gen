@@ -1433,6 +1433,48 @@ DECAYING after the first escalation; today they grow 8 → 14 → 18 → 22.
 
 ---
 
+## 33. #664's escalation is READ-ONLY in practice — and more words will not fix it
+
+r147 is the first run with #664 fully in the build, and it answers a question #664's own comment
+left open ("what the logs CANNOT show: whether the agent read the warning"):
+
+    registration attempts                160      failures  80 (50%)
+    escalations emitted                   72
+    first attempt                        line 2705
+    first escalation                     line 2711    six lines later
+    last attempt                         line 8994    6,283 lines later
+
+For the worst single endpoint, `PUT /api/profiles/{}` — 62 rejections between lines 2711 and
+7825 — the rate **accelerates** after the escalation:
+
+    rejections per 1000 log lines:   2000s: 8    5000s: 14    6000s: 18    7000s: 22
+
+**This is not an instruction gap of the #694/#707 kind, and that matters because it rules out the
+cheap fix.** The verifier prompt names `registryhub_list_endpoints` and registered/implemented
+**30 times**, and the escalation already says precisely the right thing ("DROP those steps (or
+the chain) … re-submitting will keep failing"). Thirty mentions plus a targeted, early, repeated
+escalation did not change the behaviour. Writing a thirty-first sentence is the reflex to resist.
+
+Worth noting WHY the verifier wants it: `PUT /api/profiles/{id}` is a perfectly reasonable
+endpoint for a profile picker with "Manage Profiles" — it is simply not in the requirements,
+which declare only `GET /api/profiles` and `POST /api/profiles`. The verifier is not hallucinating
+so much as completing a familiar product shape.
+
+**Only a run can settle** which of the two real options is right:
+
+  * ENFORCEMENT — strip the unregistered steps and register the remainder, so the chain makes
+    progress instead of bouncing. Risk: a chain missing a step may no longer test anything.
+  * ACCEPTANCE — auto-queue the endpoint as a pending consumer so the backend lane sees the
+    demand. Risk: the framework invents contract the requirements never asked for.
+
+**Cheapest observation.** Implement ENFORCEMENT behind a flag and count, in one run: total
+registration attempts, failures, and whether the stripped chains still fail their assertions. If
+attempts drop toward the number of distinct causes (r147: 80 failures for a handful of causes) and
+the stripped chains still catch real defects, enforcement is right. If the stripped chains pass
+vacuously, acceptance is the answer instead.
+
+---
+
 ## 32. #615's CAUSE fix — unblocked, quantified, and genuinely run-dependent
 
 #708 retired the technical objection ("the seed gives every title `kind='standard'`") and #708b
