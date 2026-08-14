@@ -133,6 +133,55 @@ def test_a_runtime_built_signature_names_its_construction_site(pat, site):
     assert pat in _patterns().values(), f"exemption for a pattern no longer in the checker: {pat}"
 
 
+# --- every pattern verified against a REAL output line, not against source -----------------------
+# The lesson of three consecutive mistakes: a pattern can exist in source and still never match a
+# run. Source presence and log matching are different questions, and only the second one matters.
+# Each entry is a line as a run actually writes it — copied from a log where one exists, or
+# constructed from the exact f-string that produces it.
+SAMPLE_LINES = {
+    "#727 reach declared":
+        "🔧 kickoff_declare_ui_page: id=card_hover route=/browse reach=[1]",
+    "#713 identical captures":
+        "#713 5 screens captured the SAME image (md5 02a3e3): landing, player",
+    "#713b shared-route sharing":
+        "#713b 4 screens share ONE route (/browse) and therefore one capture: account_menu",
+    "#711 gate left the app behind":
+        "#711 the gating average has left the app behind: blocking_average 0.6190 vs "
+        "blocking_average_live 0.4250 (gap 0.1940)",
+    "#691 absent delivery subtree":
+        "delivery subtree 'mcp_server' is not in the working tree at commit time — nothing "
+        "from it will ship",
+    "#691b subtree recovered":
+        "recovered delivery subtree 'mcp_server' from 5f9973483 — it was committed on a branch",
+    "#706 promotion refused":
+        "framework delivery: integration -> main promotion did not happen (promotion merge "
+        "conflict: 2 file(s): app/backend/main.py)",
+    "#722 served build verified":
+        "#715 served build matches the source: all 13 declared route(s) are present",
+    "#723 captures all distinct":
+        "#713 all 12 screen captures are distinct — no shared-page scoring this pass.",
+    "#700 identical-content routes":
+        "#615 6 routes render identical content: /browse, /games — all fetch only /api/titles",
+}
+
+
+@pytest.mark.parametrize("label,line", sorted(SAMPLE_LINES.items()))
+def test_the_pattern_matches_a_line_a_run_actually_writes(label, line):
+    pats = _patterns()
+    assert label in pats, f"{label} is no longer in the checker; drop the sample or fix the label"
+    for part in _parts(pats[label]):
+        assert part in line, (
+            f"{label}'s pattern fragment {part!r} does not appear in the line a run writes. "
+            f"This is the #727 shape: the pattern was spelled for the SOURCE, not the LOG.")
+
+
+def test_the_samples_cover_this_sessions_probes():
+    """A sample table nobody extends is worse than none — it looks like coverage."""
+    recent = {l for l in _patterns() if any(f"#{n}" in l for n in range(691, 730))}
+    covered = recent & set(SAMPLE_LINES)
+    assert len(covered) >= 8, f"only {len(covered)} of {len(recent)} recent probes have a sample"
+
+
 # --- the regression that motivated this ----------------------------------------------------------
 
 def test_713s_pattern_matches_a_real_message():
