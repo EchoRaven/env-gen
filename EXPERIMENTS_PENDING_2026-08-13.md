@@ -1584,6 +1584,22 @@ remediation is built from. A screen that photographed the landing page contribut
 low score, and a low score is exactly what the remediation loop then works on — the lane is sent
 to fix a page that was never captured.
 
+**The phantom-remediation loop, measured.** The consequence is not just a wrong score — the
+deviations computed from that score become the lane's to-do list. Counting deviations
+(`deviations` + `measured_deviations`) by whether the screen was inside a duplicate group:
+
+    screens in a duplicate group   333 screens -> 5835 deviations   (17.5 per screen)
+    screens that captured properly 1024 screens -> 15715 deviations (15.3 per screen)
+
+A never-captured screen produces MORE remediation than a real one, which follows: scored against
+a page that is not its own, nearly everything about it looks wrong. **5835 of the corpus's 21550
+fidelity deviations — 27% — describe a screen the gate never photographed.** More than a quarter
+of all fidelity remediation is work aimed at a phantom, and it is authored with the same
+confidence and specificity as the real quarter.
+
+That also reframes the "frozen score" observations elsewhere in this file: a lane that fixes
+everything it is told and sees no movement may be fixing a page the gate is not looking at.
+
 **Only a run can settle: which side of source-vs-served causes it.** The corrected #713 comment is
 careful here — `known_routes` is re-parsed from App.jsx on every call so the list is never stale;
 what remains is that the list comes from SOURCE while the browser hits the SERVED app, so any lag
