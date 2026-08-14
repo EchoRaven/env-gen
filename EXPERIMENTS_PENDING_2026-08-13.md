@@ -1527,9 +1527,21 @@ The lane was right to align them; the captures for those screens went to near-ze
 round. Whether the gate's screen→URL map follows a route rename is the obvious next question and
 is NOT answered here — I could not find the capture site, and the log records no navigation URLs.
 
-**Cheapest observation.** One run: log the URL each screen capture navigates to. If a renamed
-route is still captured at its old path, that is a framework defect worth more than any fidelity
-tuning; if the URLs are current, the collapse is the app's and belongs to the lane.
+**ANSWERED IN PART, 2026-08-14 — and the first answer was wrong.** The capture list is NOT
+stale: `run_visual_fidelity` re-parses `known_routes` straight out of `App.jsx` on every call
+(`re.findall(r'<Route\s+path=["\']([^"\']+)["\']')`), and `_concrete_capture_route` substitutes
+params (`/browse/genre/:genreId` → `/browse/genre/1`). Both hypotheses I formed — a literal
+`:param` navigation, then a stale route list — are refuted, and the second had already reached
+production text before I checked it.
+
+What survives is narrower and sharper: **the route list is read from SOURCE while the browser
+hits the SERVED app.** Any lag between the two — a bundle not rebuilt since the rename — makes
+every renamed path miss and fall to the catch-all, which is exactly the five-way byte-identical
+capture #713 now detects.
+
+**Cheapest observation, revised.** One run: log the URL each capture navigates to AND the mtime
+of the served bundle beside it. Source-vs-served is now the only live hypothesis; if the bundle
+is current and the URLs are current, the collapse is the app's and belongs to the lane.
 
 ---
 

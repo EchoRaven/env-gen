@@ -2757,8 +2757,14 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         # flagged the symptom (delta 0.2583, the largest in the corpus) but nothing named the
         # CAUSE, and a near-zero score is indistinguishable from a page that is merely bad.
         #
-        # The trigger to look for: routes RENAMED AFTER THE CAPTURE LIST WAS BUILT, so
-        # the list still holds the old paths while the app only answers the new ones.
+        # The trigger, stated only as far as it is proven. ~~routes renamed after the capture
+        # list was built~~ is WRONG and was checked: `known_routes` is re-parsed out of
+        # App.jsx on every call (`re.findall(r'<Route\s+path=...')` in run_visual_fidelity),
+        # so the list is never stale. What IS true is that the route list comes from SOURCE
+        # while the browser hits the SERVED app, so any lag between the two — a bundle not
+        # rebuilt since the rename — makes the new paths miss and fall to the catch-all.
+        # Which of those it was in r147 is not decided here; the detector does not need to
+        # know, and guessing it is how the first version of this comment got it wrong.
         #
         # Byte-identical captures are the cheap tell: distinct screens cannot legitimately
         # produce the same PNG. Hashing what is already on disk costs one read per screen and
