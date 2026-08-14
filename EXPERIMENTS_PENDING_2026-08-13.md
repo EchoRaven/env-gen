@@ -1767,8 +1767,20 @@ silently changes meaning. A retraction is not finished when the claim is marked;
 when every assertion about the claim has been re-pointed at either the surviving fact or the
 retraction itself.
 
+**Swept, and there was a third instance.** Applying the rule to EVERY retraction rather than the
+two that produced it: six struck-through claims in the production tree, two of them referenced
+from tests. One reference asserts the retraction (correct). The other is not an assertion at all
+— it is the module DOCSTRING of `test_duplicate_route_content_615.py`, stating #708's retired
+`kind='standard'` objection as current reasoning, in a file that predates the finding. Nothing
+greps a docstring, so it outlived the retraction by a day in the place a reader is most likely to
+take it as established. Struck through with the measurement that killed it, and pinned by a test.
+
+**So the rule generalises past assertions.** A claim is retracted only when every COPY of it —
+comment, docstring, test name, checker note — points at the surviving fact or the retraction.
+Copies in prose are the easiest to miss precisely because no tooling looks at them.
+
 **Cheapest observation.** None; this is settled by reading. Recorded because the next retraction
-in this file will have the same two exits and neither is obvious from inside one.
+in this file will have the same three exits and none is obvious from inside one.
 
 ---
 

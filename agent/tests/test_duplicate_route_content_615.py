@@ -12,9 +12,21 @@ merely in the declared `apis_used`). r100 is the worst — SIX routes, each fetc
 
 Deliberately NOT wired as a delivery blocker. At 32/45 it would wedge nearly every run, and
 whether "six identical pages" should block or merely be reported is a CALIBRATION decision, not
-a measurement — the same class as the 0.65 fidelity bar. Also worth knowing before anyone
+a measurement — the same class as the 0.65 fidelity bar. ~~Also worth knowing before anyone
 "fixes" it by inventing route-derived filters: the seed gives every title `kind='standard'`, so
-such a filter would return everything or nothing.
+such a filter would return everything or nothing.~~
+
+RETIRED by #708, and this copy outlived the retraction. The production comment in
+`frontend_audit.py` was struck through when the claim was measured false; this docstring said it
+plainly for another day. The shipped app carries `seed_dataset.json` with 60 titles, kind
+**movie 28 / series 32**, and real genres — `kind='standard'` survives only in the framework's
+6-row fallback seed, which is not the catalogue. A route-derived filter would return 28 and 32,
+not everything or nothing.
+
+Left visible rather than deleted, per item 48: a retraction is finished only when every copy of
+the claim points at either the surviving fact or the retraction, and this file is why that rule
+needed writing down — the objection lived on here, in a test predating the finding, where a
+reader would take it as established.
 """
 import pytest
 
@@ -125,3 +137,17 @@ def test_it_is_not_wired_as_a_delivery_blocker():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_the_retired_objection_is_marked_retired_here_too():
+    """#708 measured `kind='standard'` false; this file's docstring outlived that retraction
+    by a day. Item 48's rule made explicit: a claim is retracted only when every COPY points at
+    the surviving fact or the retraction, and copies in test docstrings are the easiest to miss
+    because nothing greps them."""
+    import test_duplicate_route_content_615 as me
+    d = " ".join((me.__doc__ or "").split())
+    i = d.find("the seed gives every title")
+    assert i > 0, "the original objection should stay visible"
+    assert "~~" in d[max(0, i - 90):i], "it must be struck through where it appears"
+    assert "RETIRED by #708" in d
+    assert "movie 28 / series 32" in d
