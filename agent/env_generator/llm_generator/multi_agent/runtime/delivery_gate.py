@@ -47,6 +47,47 @@ def _ui_smoke_pass(validation_results: Any) -> bool:
     )
 
 
+def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
+    """#739: how BROAD is the UI evidence behind ``ui_smoke_pass``?
+
+    `_ui_smoke_pass` is existential — ONE passing UI record satisfies it, and a FAILING UI
+    record is not consulted at all. In r148 that reads `ui_smoke_pass=True` off `ui_smoke on
+    landing + login PASS` while the SPA threw `TypeError: (void 0) is not a function` on 12 of
+    14 pages, and the run released v1.0.0.
+
+    This matters most for a decision that is already pending. #671 measured that the UI-smoke
+    requirement has NEVER been evaluated — it sits behind `task_suite_exists`, and
+    `tasks/tasks.yaml` exists in 0 of 144 runs — and recorded "enforcing it needs a live run".
+    **r148 shows enforcement alone would not have caught it**: landing and login passed, so
+    `ui_smoke_pass` is True either way. The predicate has to stop being existential too, and
+    that is not a change to make blind — hence a measurement, reported beside the verdict.
+
+    Returns counts only; changes no decision. `pages` is best-effort: UI records name their
+    page inconsistently (`page`, `route`, `name`), so a missing name is counted as evidence
+    without a page rather than dropped.
+    """
+    passed: List[str] = []
+    failed: List[str] = []
+    for r in (validation_results or []):
+        if not isinstance(r, dict):
+            continue
+        if (r.get("metadata", {}) or {}).get("check") not in _UI_SMOKE_EVIDENCE_CHECKS:
+            continue
+        meta = r.get("metadata", {}) or {}
+        page = str(meta.get("page") or meta.get("route") or meta.get("name")
+                   or r.get("name") or "?")
+        if r.get("status") == "passed":
+            passed.append(page)
+        elif r.get("status") in ("failed", "error"):
+            failed.append(page)
+    return {
+        "passed_records": len(passed),
+        "failed_records": len(failed),
+        "pages_passed": sorted(set(passed)),
+        "pages_failed": sorted(set(failed)),
+    }
+
+
 def _norm_gate_path(p: Any) -> str:
     """Param-agnostic path key for milestone-scope matching: '/api/notes/{id}' ≡ '/api/notes/{}'."""
     s = str(p or "").split("?", 1)[0]
@@ -1503,6 +1544,20 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         for r in validation_results
     )
     ui_smoke_pass = _ui_smoke_pass(validation_results)
+    # #739: make the thinness audible. The verdict is unchanged — this only says what it rests
+    # on, because "ui_smoke_pass=True" alongside failing UI records reads as app-wide UI health
+    # and in r148 meant two unauthenticated pages out of fourteen.
+    _breadth739 = _ui_evidence_breadth_739(validation_results)
+    if ui_smoke_pass and _breadth739["failed_records"]:
+        logger.warning(
+            "#739 ui_smoke_pass=True rests on %d passing UI record(s) while %d FAILED: passed "
+            "%s / failed %s. The check is existential (#287) and never consults a failing "
+            "record, so one working page certifies the whole UI. r148 read True off landing + "
+            "login while the SPA crashed on 12 of 14 pages and released v1.0.0. Reported, not "
+            "enforced — the matrix that would consume it is itself skipped (#671).",
+            _breadth739["passed_records"], _breadth739["failed_records"],
+            ", ".join(_breadth739["pages_passed"][:6]) or "-",
+            ", ".join(_breadth739["pages_failed"][:6]) or "-")
     failed_validation_top = [
         {
             "task_id": r.get("task_id"),
@@ -1690,6 +1745,9 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             "all_passed": validation_summary.get("all_passed", False),
             "api_smoke_pass": api_smoke_pass,
             "ui_smoke_pass": ui_smoke_pass,
+            # #739: ui_smoke_pass is EXISTENTIAL and never consults a failing record. r148 read
+            # True off landing+login while 12 of 14 pages crashed. Reported, not enforced.
+            "ui_evidence_breadth": _ui_evidence_breadth_739(validation_results),
             "retries_used_total": validation_summary.get("retries_used_total", 0),
             "retry_pending_count": validation_summary.get("retry_pending_count", 0),
             "retry_exhausted_count": validation_summary.get("retry_exhausted_count", 0),

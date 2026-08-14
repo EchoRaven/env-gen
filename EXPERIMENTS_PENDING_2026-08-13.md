@@ -1733,6 +1733,39 @@ right one needed a distribution.
 
 ---
 
+## 58. #739 — one working page certifies the whole UI, so item 13's planned fix is not enough
+
+The third path by which r148 shipped a dead app, and the one that changes an existing entry.
+
+The verifier reported `run_validation PASS 13/13` and `ui_smoke on landing + login PASS` while
+the SPA crashed on 12 of 14 pages. `_ui_smoke_pass` explains it in one word: **`any`**. One
+passing UI-evidence record satisfies the whole UI requirement, and a FAILING record is never
+consulted — six failing `ui_flow` records sit next to two passing `ui_smoke` records and the
+verdict is True. Landing and login are the two unauthenticated pages, i.e. the two that did not
+crash.
+
+**But the predicate is not even reached.** #671 already measured that the UI-smoke requirement
+has never been evaluated: it sits behind `task_suite_exists`, and `tasks/tasks.yaml` exists in
+**0 of 144 runs**. That is item 13, whose recorded next step is "enforcing the matrix needs a
+live run to validate".
+
+**r148 falsifies that plan.** Switching the matrix on would have changed nothing here — landing
+and login passed, so `ui_smoke_pass` is True with or without enforcement, and the app that
+crashed on every route still delivers. So item 13's fix is necessary and *insufficient*: the
+predicate must stop being existential at the same time, or enforcement buys a green light on the
+exact failure that motivates it. Recorded here rather than switched on, because both halves
+together are a real gate-tightening and neither can be validated offline.
+
+What landed now is the measurement beside the verdict — `ui_evidence_breadth` in the gate
+payload plus a warning when a True verdict sits on top of failing UI records. Same disposition
+as #711/#715/#738: says what the verdict rests on, decides nothing.
+
+**Cheapest observation.** Next run: does `#739` fire, and what is the passed/failed split? That
+is the input the item 13 decision has always been missing — nobody has ever seen how much of an
+app its "UI smoke pass" actually covers, because the number did not exist until now.
+
+---
+
 ## 57. #738 — the stale-build detector would have called r148's stale build CLEAN
 
 Chasing #737's root cause: why did the crash survive the whole run? The P0 says it plainly, and
