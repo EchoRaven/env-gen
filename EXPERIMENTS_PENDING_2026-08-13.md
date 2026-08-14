@@ -1733,6 +1733,62 @@ right one needed a distribution.
 
 ---
 
+## 65. Sweeping #745's pattern across every hub store — two inert, one falsified, none live
+
+#745 named a shape worth sweeping for: **a field written once at creation, advanced only by a
+call almost nobody makes, and read by a consumer that treats it as current.** The tell is a
+status vocabulary whose terminal values are nearly absent. Every `status`/`state`/`verdict` field
+in every hub store, over the 148-run corpus:
+
+    workhub_tasks.status              13268   completed 10247  in_progress 1377  cancelled 869
+    codehub_checks.status              6469   recorded 4205  success 1702  passed 310  failure 252
+    registryhub_endpoints.status       4104   implemented 4047  defined 51  deprecated 6
+    registryhub_verification_chains    3651   passing 3140  registered 267  failing 151
+    registryhub_ui_components.status   2469   implemented 1805  defined 664
+    registryhub_ui_pages.status        2298   implemented 1788  defined 510
+    registryhub_contract_tests.verdict 2026   pass 2011  fail 15
+    runhub_runs.status                 1492   completed 1276  aborted 216
+    codehub_branches.status             328   active 328
+    milestones.status                   185   pending 139  active 30  delivered 16
+
+Three candidates matched the shape. **None is a live defect, and saying so is the point** — this
+is recorded so the same three are not re-mined.
+
+**`codehub_checks.status` — hypothesis falsified.** `recorded` is 65% of the store and is not a
+verdict, and the gate decides the build checklist with an EXACT match:
+`all_passing = all(s == "success" ...)`. Three spellings exist in the store (`success` 1702,
+`passed` 310, `failure` 252), so a `passed` build check would read as not-passing. Checked before
+claiming it: `build:*` checks use **only** `success` (491) and `failure` (68) — never `passed`.
+The three-spelling problem is confined to `validation:*`, which is read through #193/#236's
+normaliser (`success` → `passed`). `artifact.recorded` (4204 of the 4205) is a step-pipeline
+artifact record, not a verdict. **No defect.** I would have reported one had I stopped at the
+vocabulary mismatch.
+
+**`codehub_branches.status` — inert.** 328 of 328 are `active`: the purest form of the tell, one
+value ever observed. It is written in exactly one place (`service.py:238`,
+`existing.get("status") or "active"`) and **no code reads it**. Inaccurate but consequence-free.
+
+**`milestones.status` — inert, and explained.** 129 of 141 released runs have no milestone that
+ever reached `delivered`. The cause is in `orchestrator.py:1327-1329`: a milestone is marked
+delivered only when a LATER one starts, so **the final milestone of every run is never marked**,
+by construction — and for the single-milestone runs that are the proven path, that is the only
+milestone. The corpus agrees exactly: multi-milestone runs show `active` + `delivered`, i.e. all
+but the last. The only reader of the field is that same advance logic, so nothing decides on it.
+
+Deliberately NOT fixed. Marking the final milestone at the release cut would be a release-path
+edit (#706's hook is where it would go) for zero behavioural gain, and the release path is the
+last place to accept risk for a record-accuracy improvement. It is worth knowing about for the
+reason this session keeps re-learning: **a record that reads "pending" for a delivered run is
+exactly the kind of artifact that produced wrong conclusions here** — `verdict.json`'s high-water
+merge erasing r148's blackout being the expensive example.
+
+**Cheapest observation.** None of the three needs a run. What WOULD be worth one line of a future
+run's log is whether `codehub_checks` ever records a `build:*` check as `passed` rather than
+`success` — the moment it does, the gate's exact match becomes the defect I wrongly expected, and
+the corpus baseline is 0 of 559.
+
+---
+
 ## 64. #745 — the retrospective told 102 runs that nobody ever fixed anything
 
 The same root as #744, found by asking which OTHER consumers read `bug_state` without the task
