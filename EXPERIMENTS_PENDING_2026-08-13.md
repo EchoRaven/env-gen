@@ -1150,7 +1150,7 @@ is bespoke and left alone:
 | 79 of 144 dup-cancels | workhub | **79 runs**, 474 of 867 cancels = **55%** | holds PRECISELY |
 | 514 in 50 of 50 rejects | registryhub | not directly comparable | see below |
 | 4 of 21 blast radius | test_user_squad | not re-run | bespoke over 21 named runs (r109/r127/r128/r133); rebuilding the criteria costs more than the answer is worth |
-| 6 of 45 default-import sites | frontend_scaffold | not re-run | needs #632's detector over every delivered tree |
+| 6 of 45 default-import sites | frontend_scaffold | **7 of 146, 22 sites** | fix WORKS — extinct after r127 |
 | 146 of 146 ×2 | seed_audit, tool_bundles | current | mine, measured this session |
 
 The duplicate-cancellation one is the strongest verification in the set: same run count (79), same
@@ -1164,9 +1164,17 @@ escalation text shows instead is a fix-verification in the #705b mould: `have no
 fires **68 times in r145 and 0 in r146**, and the underlying "NOT in the registered contract"
 rejection is absent from r146 entirely.
 
-**Seven of thirteen measured claims are now re-verified**, none was found stale in DIRECTION, one
-moved up and strengthened its decision (#615/#705), and two turned into evidence that their fix
-works (#635/#705b, #664).
+The #632 one was run the same way #705 was — the detector over every delivered tree, on a COPY of
+each `app/frontend/src` since it is a repair function that writes. **7 of 146 runs, 22 sites**
+against the recorded 6 of 45 and 21. The absolute numbers barely moved while the corpus tripled,
+so the rate fell from 13% to 4.8%, and the newest affected run is **r127** — r128 through r146 are
+all clean. Third fix-verification in this batch: the defect is extinct, not merely rarer.
+
+**Eight of thirteen measured claims are now re-verified**, none was found stale in DIRECTION, one
+moved up and strengthened its decision (#615/#705), and THREE turned into evidence that their fix
+works (#635/#705b, #664, #632). The only ones left are `4 of 21` — bespoke over 21 named runs,
+where rebuilding the criteria costs more than the answer — and the two `146 of 146` figures, which
+are mine and current.
 
 **The lesson from the two that resolved cleanly.** #615's premise moved UP and strengthened the
 decision resting on it; #635's premise moved up too but its fix had already erased the symptom.
