@@ -3097,8 +3097,25 @@ def run_chains(base: str, project_dir: Any,
                           endpoints=list(business_endpoints or []),
                           projected=_projected)
                for ch in chains]
-    broken = [b for r in results for b in r["broken"]]
-    framework_defects = [b for r in results for b in r.get("framework_defects", [])]
+    # #683: KEEP THE CHAIN NAME. `r["name"]` is right here and the flatten dropped it, so every
+    # downstream report named the STEP and not the chain that owns it. What the verifier actually
+    # received, 15 times in r145 — its most repeated notification:
+    #
+    #     Framework validation attempt N/6: api_smoke NOT passing — FAILED: business_chain
+    #     | failed=['business_chain:POST /api/my-list → 403 (expected [200, 201, 400, 404]; ...)']
+    #
+    # "business_chain" there is the CHECK name (framework_validation builds the label from
+    # `c.get('name')`), not the chain. The verifier held 50 chains that run and had to work out
+    # by hand which one owned that step — 15 times, and it never did: `rating_dynamic_title`
+    # appears exactly twice in the whole 20637-line log, i.e. registered once and never revisited,
+    # while business_chain stayed red for 75 minutes and aborted the run.
+    #
+    # A failing chain CAN be repaired — register_verification_chain only short-circuits a
+    # re-registration whose status is already passing — so naming it is the whole difference
+    # between an actionable report and a search problem.
+    broken = [f"[{r['name']}] {b}" for r in results for b in r["broken"]]
+    framework_defects = [f"[{r['name']}] {b}"
+                         for r in results for b in r.get("framework_defects", [])]
     total = sum(len(r["steps"]) for r in results)
     # Record pass/fail back onto the registry records (best-effort) — the
     # registry is the single place to see chain health (monitor renders it).
