@@ -1864,9 +1864,43 @@ the other release path (fixed by #706b), r148 reached the right hook and refused
 conflict, and `main..integration` still reads 31 there. The hook works; the merge has never
 landed.
 
-**Cheapest observation.** The next run with #721 in the build prints the paths. If they are
-`mcp_server/*` the two findings are one; if they are app files, `main` has content
-`integration` does not and the promotion needs a strategy, not just a hook.
+**ANSWERED OFFLINE after the failed shortcut — it is the second branch.** Redoing the merge at
+the commits that existed AT 11:36:47 (integration `faf8e6c2f`, main `4ef333854`) rather than at
+the final pair: **rc=1, 16 conflicting files**, and none of them is `mcp_server/*`:
+
+    backend/main.py   backend/seed_data.json   frontend/index.html   frontend/src/App.jsx
+    every page component (Browse*, Games, GenreCategory, Landing, Movies, MyList,
+    NewAndPopular, Player, Shows, TitleDetail)   frontend/src/services/api.js
+
+That is the whole app. And main's one divergent commit, `4ef3338` at 11:00:51, is a "framework
+delivery: backend skeleton + frontend infra + projections" — it wrote the entire skeleton onto
+`main` while the lane's work went to `integration`. **This is #691's mechanism at full scale:**
+#691 caught the `mcp_server` subtree; the same fork strands a whole parallel framework-only copy
+of the app.
+
+**So `main` is not behind `integration` — it is a divergent version of the same files, and a
+merge is the wrong operation.** Measuring what main actually contributes:
+
+    run    main..integration   integration..main   files main has that integration lacks
+    r146          34                  1                          3   ← the mcp_server trio
+    r147          40                  1                          0
+    r148          31                  1                          0
+
+`main`'s only unique contribution has ever been the stranded MCP subtree, and **#691b already
+recovers that into integration** — which is why r147 and r148 read zero. With #691b in place,
+integration's tree strictly supersedes main's.
+
+**What #706 should do instead, and why it is not done here.** Move the ref (`git branch -f main
+integration`) rather than merge: it achieves exactly "main follows integration", costs no
+conflict resolution, and loses nothing measurable because main contributes no unique file. The
+safety of that rests entirely on #691b continuing to recover the subtree — r146, before #691b,
+is precisely the run where a ref-move would have discarded three real files. That coupling makes
+it a release-topology decision rather than a bug fix, so it is recorded with its evidence rather
+than applied.
+
+**Cheapest observation.** None needed for the diagnosis; it is settled. What a run would add is
+confirmation that #721 prints these same paths, and that the zero-unique-files property holds on
+a fourth run.
 
 ---
 
