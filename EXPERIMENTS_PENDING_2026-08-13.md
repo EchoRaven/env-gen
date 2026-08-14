@@ -1642,11 +1642,22 @@ ADD commit:
     tracked tests added 08-12    74
     tracked tests added 08-13    38
     all 112 added AFTER the 06-18 rule
-    numbered range                #548 – #690
 
-**The established practice is to force-add framework-fix tests, overriding the ignore.** The
-tracked range ends at #690 and mine start at #691 — the break falls exactly where this session
-began. So the inconsistency is not "112 legacy files against a local-only policy"; it is that I
+and, on a third pass because the second was also wrong, by number band:
+
+    band        tracked   untracked
+    450-499        0         29
+    500-549        1         37
+    550-599       13         51
+    600-649       49          0
+    650-699       53          0
+    700-749       14          0
+
+**The established practice is to force-add framework-fix tests, overriding the ignore, and it
+begins at #600.** From #600 up, every numbered test is tracked with none missing; below #550
+almost none are; 550-599 is the transition. My "#548-#690 are all tracked" was itself wrong —
+51 files in that range are not — but the conclusion survives on the corrected basis: the
+practice is complete from #600 onward and mine, #691-#716, were the only gap in it. So the inconsistency is not "112 legacy files against a local-only policy"; it is that I
 used `git add -A`, which respects `.gitignore`, where every fix from #548 to #690 was force-added.
 Not a policy question at all, and not the user's to decide: an oversight of mine, 23 files wide.
 
@@ -1661,10 +1672,17 @@ and by policy they stay on one machine — so the reader gets the assertion with
 backs it, and cannot re-run it after a refactor. The 112 tracked files make it worse by being
 inconsistent: a reader who sees tests in `agent/tests/` reasonably assumes the rest are there too.
 
-**The lesson is the one this session keeps relearning.** A documented rationale read on its own
-looked authoritative enough to stop at, and stopping there produced a confident "this is policy,
-not my call" — the same shape as #708's stale `kind='standard'` objection and #713's stale
-capture-list claim. The check that settled it cost one `git log --diff-filter=A` per file.
+**Three wrong assertions in one thread, each corrected by the next query, is the lesson.**
+
+    1. "the tests are local-only by policy"        — the rationale was real, the practice was not
+    2. "#548-#690 are all tracked"                 — 51 in that range are not
+    3. "the ~195 untracked are scratch suites"     — 117 of them are numbered framework tests
+
+Each was stated with the confidence of the one measurement behind it, and each fell to one more
+measurement. Same shape as #708's stale `kind='standard'` objection and #713's stale capture-list
+claim, but three times in a row on one small question — the give-away being that every wrong
+version was reached by reading ONE thing (a rationale, a min/max, a filename pattern) where the
+right one needed a distribution.
 
 ---
 
