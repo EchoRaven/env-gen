@@ -3537,6 +3537,41 @@ class Orchestrator:
                     )
             except Exception as _rel_err:  # release is best-effort observability
                 self._logger.warning("framework delivery: create_release failed: %s", _rel_err)
+            # #706: PROMOTE INTEGRATION TO MAIN, here and only here.
+            # `promote_integration_to_main` has existed with the docstring "Called by the
+            # verifier after a successful RunHub run so that `main` only ever points at code
+            # that has passed the latest verification" and has never been called — #699 found
+            # zero call sites. The consequence is measurable in every generated repo that has
+            # both branches: 130 of 146 runs diverged in BOTH directions, integration ahead by
+            # 20-73 commits while `main` held one commit integration lacked; 0 runs in sync.
+            # That one orphaned commit on `main` is #691's — the MCP writer runs once, lands
+            # there before the fork, and the release never sees it.
+            #
+            # This is the point the docstring describes: the gate is fully clear, api_smoke
+            # passed, and the release has just been cut. Promoting after the cut, not before,
+            # keeps the invariant that matters — the RELEASE still comes from `integration`
+            # (source="integration" above is untouched) and `main` follows it rather than
+            # feeding it. Nothing is rolled back and no delivered artifact changes.
+            #
+            # Best-effort by construction: a promotion failure is logged and swallowed. The
+            # run has already delivered at this point, so nothing here may block it.
+            try:
+                from .agents.runtime.auto_commit import promote_integration_to_main
+                _ok, _info = promote_integration_to_main(
+                    repo_root=self.output_dir, actor="orchestrator",
+                    blessed_run_id=str(release_tag))
+                if _ok:
+                    self._logger.info(
+                        "framework delivery: promoted integration -> main (%s)", _info)
+                else:
+                    self._logger.warning(
+                        "framework delivery: integration -> main promotion did not happen "
+                        "(%s). The release is unaffected — it was cut from integration — but "
+                        "`main` stays behind, which is the 130-of-146 state #699 measured.",
+                        _info)
+            except Exception as _promo_err:
+                self._logger.warning(
+                    "framework delivery: integration -> main promotion raised: %s", _promo_err)
             # Framework-written preview pointer for the Env Forge UI (NOT an agent
             # artifact — see _write_preview_config). Deterministic, agent-invisible.
             self._write_preview_config(release_tag)

@@ -1240,12 +1240,22 @@ them is dead. **That single orphaned commit on `main` is the one item 18 is abou
 writer runs once, lands there, and the release, cut from integration, never sees it. Two findings,
 one topology.
 
-**Only a run can settle.** Whether wiring the promotion into the verifier is safe. It is a real
-behaviour change: `main` would start moving, and anything that reads `main` as a stable reference
-would see it. Deliberately not done here.
+**WIRED 2026-08-14 as #706, on the user's decision.** Not into the verifier — into
+`orchestrator.py`, immediately AFTER the delivery gate goes fully clear and
+`create_release(source="integration")` has cut the release. Placing it after the cut is what makes
+it safe: the release still comes from `integration` and `main` now follows it rather than feeding
+it, so nothing that ships depends on the promotion succeeding. Nothing is rolled back — the
+opposite of the bounded-escape question, which was declined for exactly that reason. Best-effort:
+the run has already delivered when this executes, so a failure is logged and swallowed, and a
+refused promotion `(False, info)` reads differently from a raised one.
+
+**Still only a run can settle.** Whether it succeeds in practice, and whether anything downstream
+reads `main` as a fixed reference and notices it moving.
 
 **Cheapest observation.** After a run, `git -C <run> rev-list --count main..integration`. Today it
-is 20-73 in 130 of 146 runs; if the promotion is ever wired up it should be 0 at release.
+is 20-73 in 130 of 146 runs; with #706 in the build it should be **0 at release**. The log line
+`framework delivery: promoted integration -> main` says it ran; `promotion did not happen` says
+the callee refused and names why.
 
 ---
 

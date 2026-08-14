@@ -1129,9 +1129,16 @@ def promote_integration_to_main(
 ) -> Tuple[bool, str]:
     """Fast-forward (or merge) ``integration_branch`` into ``main_branch``.
 
-    #699: THE SENTENCE BELOW IS NOT TRUE, AND HAS NEVER BEEN. Nothing calls this function —
-    a token scan of every identifier in the framework finds `promote_integration_to_main`
-    exactly once, at this `def`. The verifier does not call it; nobody does.
+    #699: THE SENTENCE BELOW WAS NOT TRUE FOR THE WHOLE KEPT HISTORY, and #706 made it true.
+    Until 2026-08-14 nothing called this function — a token scan of every identifier in the
+    framework found `promote_integration_to_main` exactly once, at this `def`.
+
+    #706 wires it, at the one point the sentence actually describes: `orchestrator.py`, right
+    after the delivery gate goes fully clear and `create_release(source="integration")` has cut
+    the release. Not the verifier itself, because the promotion must follow the CUT — the
+    release still comes from `integration` and `main` now follows it rather than feeding it.
+    The call is best-effort: a failure is logged and swallowed, since the run has already
+    delivered by then and nothing there may block it.
 
     The consequence is measurable in the kept corpus. Comparing the two branches in every
     generated repo that has both:
@@ -1148,9 +1155,11 @@ def promote_integration_to_main(
     #691 is about: the MCP writer runs once, lands there, and the release — cut from
     integration — never sees it.
 
-    Wiring this into the verifier is a real behaviour change with delivery consequences and is
-    deliberately NOT done here; what is fixed is a docstring that told the next reader the
-    promotion happens. The original claim, kept verbatim so the intent survives:
+    The measurement that justified wiring it, kept because it is what the next run should move:
+    130 of 146 runs diverged in BOTH directions, integration ahead 20-73 commits while `main`
+    held one commit integration lacked, and 0 runs in sync. After #706 a delivered run should
+    read `rev-list --count main..integration` == 0 at release. The original claim, kept verbatim
+    so the intent survives:
 
         "Called by the verifier after a successful RunHub run so that
         ``main`` only ever points at code that has passed the latest
