@@ -1489,7 +1489,7 @@ _PROJECTED_TRACEBACK_RE = re.compile(r"backend traceback:[^\n]*\b_projected_[a-z
 def _unknown_id_hint_682(status, body, note) -> str:
     """Name the id the step actually sent, when the server says it does not exist."""
     try:
-        if status not in (403, 404) or not isinstance(body, Mapping):
+        if status not in (400, 403, 404) or not isinstance(body, Mapping):
             return ""
         low = str(note or "").lower()
         _absent = "not found" in low or "referenced resource" in low
@@ -1518,11 +1518,6 @@ def _unknown_id_hint_682(status, body, note) -> str:
                 _enum = _m.group(1)
         if not (_absent or _foreign or _enum):
             return ""
-        sent = [(k, v) for k, v in body.items()
-                if re.search(r"(^|_)id$", str(k)) and not isinstance(v, (dict, list))
-                and str(v).strip() and "${" not in str(v)]
-        if not sent:
-            return ""
         if _enum:
             _vals = [v for v in (body or {}).values()
                      if isinstance(v, str) and "${" not in v]
@@ -1531,6 +1526,11 @@ def _unknown_id_hint_682(status, body, note) -> str:
                     "implementation and is NOT in the registered schema, so re-register the "
                     "endpoint with the allowed values AND fix this step: re-registering a chain "
                     "under the SAME name replaces it while it is failing.")
+        sent = [(k, v) for k, v in body.items()
+                if re.search(r"(^|_)id$", str(k)) and not isinstance(v, (dict, list))
+                and str(v).strip() and "${" not in str(v)]
+        if not sent:
+            return ""
         named = "; ".join(f"{k}={v!r}" for k, v in sent[:3])
         if _foreign:
             return (f" — you sent {named}, and this caller does not own it. The refusal is "

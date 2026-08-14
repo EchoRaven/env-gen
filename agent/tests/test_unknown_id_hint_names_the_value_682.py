@@ -66,9 +66,44 @@ def test_several_ids_are_all_named():
 
 # --- it stays quiet everywhere else -------------------------------------------------------------
 
-@pytest.mark.parametrize("status", [200, 201, 400, 401, 409, 500, None])
-def test_only_404_and_403_qualify(status):
+@pytest.mark.parametrize("status", [200, 201, 401, 409, 500, None])
+def test_only_400_403_and_404_qualify(status):
     assert hint(status, {"title_id": "x"}, "title not found") == ""
+
+
+# --- #682c: a 400 that spells out the accepted values (r145's third stuck chain) ------------------
+
+def test_an_enum_400_quotes_the_allowed_set():
+    out = hint(400, {"value": "like"}, "value must be up|down|love")
+    assert "[up|down|love]" in out
+
+
+def test_the_enum_400_names_what_was_sent():
+    assert "you sent 'like'" in hint(400, {"value": "like"}, "value must be up|down|love")
+
+
+def test_it_says_the_enum_is_missing_from_the_contract():
+    """The whole reason the author could not have known: 1 of 4013 schemas declares one."""
+    out = hint(400, {"value": "like"}, "value must be up|down|love")
+    assert "NOT in the registered schema" in out
+
+
+def test_it_says_a_same_name_re_registration_replaces_a_failing_chain():
+    """Nothing had ever told the verifier this, and the chain sat red for 75 minutes."""
+    out = hint(400, {"value": "like"}, "value must be up|down|love")
+    assert "SAME name replaces it while it is failing" in out
+
+
+def test_a_400_without_an_allowed_set_stays_quiet():
+    assert hint(400, {"value": "like"}, "bad request") == ""
+
+
+def test_a_two_value_enum_is_recognised():
+    assert "[up|down]" in hint(400, {"value": "x"}, "value must be up|down")
+
+
+def test_a_prose_400_mentioning_must_be_but_no_set_is_ignored():
+    assert hint(400, {"value": "x"}, "value must be a string") == ""
 
 
 # --- #682b: the ownership 403, r145's most frequent business_chain failure (15 of them) -----------
