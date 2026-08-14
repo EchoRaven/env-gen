@@ -1031,8 +1031,14 @@ triaged rather than sampled:
                     list_requests, write_config — dead code with no detector semantics; none
                     computes a finding that a consumer is missing
 
-**Both sweeps are now exhausted.** The class that produced #691/#694b/#696/#698 — a correct
-computation whose result nothing consumes — yields two more (#699, #700) and then stops.
+**Sweep C — every `except ...: pass` in the runtime whose guarded body calls something
+detector-shaped** (audit/check/detect/validate/verify/blocker/coverage/probe/scan/assert). Ten
+sites. Nine are the documented and correct "a hiccup must never wedge the gate" pattern, where the
+swallow degrades a check to a no-op and the gate carries on. One is more than that:
+`delivery_gate`'s `complete_coverage_chain(hubs)` → **#701**.
+
+**All three sweeps are now exhausted.** The class that produced #691/#694b/#696/#698 — a correct
+computation whose result nothing observes — yields three more (#699, #700, #701) and then stops.
 
 ---
 
@@ -1090,6 +1096,30 @@ would see it. Deliberately not done here.
 
 **Cheapest observation.** After a run, `git -C <run> rev-list --count main..integration`. Today it
 is 20-73 in 130 of 146 runs; if the promotion is ever wired up it should be 0 at release.
+
+---
+
+## 26. #701 — the fix for the #1 stuck-blocker could fail silently and leave the blocker
+
+**Fixed: #701.** `delivery_gate` calls `complete_coverage_chain(hubs)` inside a bare
+`except Exception: pass`. The comment two lines above says what that call is:
+
+    "COVERAGE-BY-CONSTRUCTION (2026-07-01): once the verifier authored real chains, let the
+     framework complete the mechanical api-coverage gap (the #1 recurring stuck-blocker —
+     run-12/run-19 wedged 78min here)."
+
+When it raises, no `kind="coverage"` chain is registered, the api-coverage check immediately below
+finds the mechanical gap this call exists to close, and the run wedges on exactly the blocker the
+call prevents — while the wedge reads as a verifier failure, because nothing said the prevention
+had failed. The swallow is KEPT (a completion hiccup must not crash the gate, and the check below
+still runs correctly); only the silence ends.
+
+**Only a run can settle: does it ever actually raise?** A silent failure leaves no artifact, so
+the corpus cannot say — the same reason #692's rate is unmeasurable offline. What can be said is
+that the consequence is expensive when it happens: two named runs lost 78 minutes each.
+
+**Cheapest observation.** Grep a run log for `coverage-chain completion FAILED`. Any hit explains
+a coverage stuck-blocker in that run and redirects the fix away from the verifier.
 
 ---
 

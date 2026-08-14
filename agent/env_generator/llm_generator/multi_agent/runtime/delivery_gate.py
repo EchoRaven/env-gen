@@ -16,6 +16,10 @@ class constructed with (output_dir, hubs, logger) + the 3 cross-group callbacks
 from __future__ import annotations
 
 import os
+
+import logging
+
+_LOG_701 = logging.getLogger(__name__)
 import re
 from typing import Any, Dict, List, Optional
 
@@ -680,8 +684,25 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
     # counts ONLY for the coverage check below.
     try:
         complete_coverage_chain(hubs)
-    except Exception:
-        pass
+    except Exception as _e:
+        # #701: SAY SO. This call is the fix for what the comment above calls "the #1 recurring
+        # stuck-blocker — run-12/run-19 wedged 78min here", and it was swallowed whole. When it
+        # raises, no kind="coverage" chain is registered, the api-coverage check below finds the
+        # gap it was written to close, and the run wedges on exactly the blocker this prevents —
+        # with nothing anywhere saying the prevention failed.
+        #
+        # The swallow itself is right: a coverage-completion hiccup must never crash the gate,
+        # and the check below still runs. What was wrong is that the two outcomes — "completed"
+        # and "crashed, so the next 78 minutes are for nothing" — were indistinguishable.
+        # Same disposition as #691, #696, #698 and #700: keep the behaviour, end the silence.
+        try:
+            _LOG_701.warning(
+                "coverage-chain completion FAILED (%s: %s) — no kind=\"coverage\" chain was "
+                "registered, so the api-coverage check below will report the mechanical gap "
+                "this call exists to close. A coverage stuck-blocker after this line is a "
+                "SYMPTOM of it, not a verifier failure.", type(_e).__name__, _e)
+        except Exception:
+            pass
     try:
         chains = rh.get_verification_chains() or {}
     except Exception:
