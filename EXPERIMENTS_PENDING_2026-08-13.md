@@ -614,10 +614,8 @@ so `_meta.version` is an exact write count. Across all 146 runs:
                    table_consumers, table_breaking_changes             writer exists in the tree
     no writer      projects, providers, schemas                        v1 in 146/146, and NO
                                                                        mutation anywhere at all
-    unscoped       the 9 codehub_* / workhub_* stores                  not built by the
-                                                                       JsonStore(..."name") form,
-                                                                       so not reachable by this
-                                                                       probe — still open
+    unscoped       the 9 codehub_* / workhub_* stores                  RESOLVED 2026-08-14,
+                                                                       see below
 
 Only the first of those was ever a question about behaviour, and it is CLOSED above: the queue
 works. The third is statically decided — a store that is constructed, read via `.value()`, and
@@ -629,6 +627,43 @@ that should wait for evidence. What was wrong was a class docstring telling the 
 `schema` and `mock` carry data when neither has ever held a record. Seventeen tests, including a
 negative control proving the writerless probe can find a writer when one exists, and a guard that
 fails if anybody later adds a writer without updating the docstring.
+
+**The last nine, resolved 2026-08-14.** They are built by keyword in a factory
+(`decisions=JsonStore(hub_dir / "workhub_decisions.json")`), which is why the attribute-based
+probe missed them. All nine are `version == 1` in 146 of 146 runs. By writer count:
+
+    no writer at all (4)   codehub_review_threads, workhub_acceptance_criteria,
+                           workhub_databases, workhub_workspaces      — same class as
+                           projects/providers/schemas: statically dead, no run can change it
+    has writers (5)        codehub_pull_requests (10 write sites!), codehub_repos (3),
+                           codehub_code_reviews (1), workhub_decisions (1),
+                           workhub_reactions (1)
+
+`codehub_pull_requests` is the interesting one: ten mutation sites and never written. The methods
+ARE reachable — `hub_tools.py` wraps them, and `live_monitor_server.py` exposes them over HTTP —
+so "unreachable" is wrong. Counting real invocations by the `🔧 <tool>:` call marker across all
+253 logs (see the correction below), the whole codehub surface is:
+
+    codehub_commit 3984 · record_check 3054 · resolve_merge_conflict 322 ·
+    get_file_content 60 · list_prs 18 · get_diff 9        — and nothing else
+
+Thirteen of the nineteen declared codehub tools have never been invoked, `codehub_open_pr` among
+them. **No pull request has ever been opened in 146 runs**, so the four PR/review stores are empty
+for the plainest possible reason, and `codehub_list_prs`' 18 calls all read an empty collection.
+
+One structural oddity worth recording rather than fixing blind: the grants are inverted around
+that workflow. `codehub_force_merge` — the override — is granted in **11** config places, while
+the entrance `codehub_open_pr` is granted in 2 and `codehub_review_pr` / `codehub_merge_pr` in
+**none at all**. A workflow whose escape hatch is its most widely granted step, and whose normal
+path cannot be completed by anyone, is not going to run. Whether the PR surface is meant to be
+live here is a design question this note does not answer.
+
+**Measurement correction, recorded because it nearly became a finding.** I first counted tool
+usage by grepping the tool name in run logs and reported `codehub_list_prs` at 808 calls,
+`suggest_reviewers` at 700 and `list_inline_comments` at 1180 — about 2,700 calls into an
+always-empty surface. Dumping the lines showed 700 of the 808 are one repeated Knowledge Agent
+line, `Tool surface (register): 71 tools; categories={'codehub': 7, ...}` — a registration
+inventory, not a call. The real figure is 18. Count the invocation MARKER, never the name.
 
 **Left open here:** whether the six "never written" writers are unreachable or merely idle — that
 is six separate reachability questions, not one, and the pending_consumers closure above is a
@@ -859,6 +894,33 @@ projections use `_fw_owner_val`/`_fw_owns` — so whichever serves, the read is 
 Also checked in the same pass and clean: the three `text(f"DELETE FROM {tbl}")` interpolations in
 the shipped `custom_routes.py` take `tbl` from a hardcoded literal tuple, not from a request, so
 they are not an injection surface.
+
+---
+
+## 21. The rating enum — MEASURED AND REJECTED 2026-08-14, no change
+
+Carried since the 400-decomposition as "1 rating enum (r145, single instance)": the shipped
+`custom_routes.py` rejects anything outside `['down','up','love']` (or an integer 1-5) with a 400,
+while the endpoint contract declares the field as a free `value: str`. A verifier authoring a
+chain from the contract can therefore send a legal-looking string and be refused, and the refusal
+is recorded as a broken assertion against a handler that is behaving correctly.
+
+Real, and not worth a mechanism. Two measurements over all 146 runs:
+
+    endpoint schemas that declare an `enum`      0 of 4043
+    enum-style rejections in verification chains 4 occurrences, in 3 runs
+
+So no contract anywhere has ever carried an enum, and the mismatch this creates costs four
+recorded failures in the whole corpus. Teaching the contract layer to declare and propagate enums
+— or deriving them from handler source — is a large, cross-cutting change against a four-instance
+problem, and every such change this session that was measured first has been rejected: the
+hardcoded-FK registration rule (5% failure with and without), the accent-colour filter (best cut
+still lost 27% of genuine red accents), and the blank-crop content check (0 of 2606 hero crops
+affected). This joins them.
+
+**Nothing to run.** If the count ever climbs — the cheapest watch is `grep -ciE "must be one
+of|invalid value|allowed values"` over the chain store — the arithmetic changes and so does the
+answer. It is recorded here so the next reader inherits the number rather than the anecdote.
 
 ---
 
