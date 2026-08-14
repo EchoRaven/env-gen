@@ -1332,6 +1332,49 @@ against a matched run. If the stage fires on most steps, the cost is the whole q
 
 ---
 
+## 31. r147 — FIVE fixes validated live, mid-run
+
+r147 is the first generation containing #683-#707. Signatures already fired while it is still
+running, so these are no longer "proven at the unit level":
+
+**#691 + #691b — the pair fired exactly as designed, and the subtree SHIPPED.**
+
+    03:33:53  delivery subtree 'mcp_server' is not in the working tree at commit time —
+              nothing from it will ship while the registry still advertises 16 registered
+              MCP entries
+    03:33:53  recovered delivery subtree 'mcp_server' from 5f9973483 — it was committed on a
+              branch the release is not cut from. Shipping it.
+
+and on disk `mcp_server/app/main.py` (9652 bytes) plus `pyproject.toml` now exist. **This is the
+first run in 146 where the MCP subtree survives to delivery.** The "16 registered MCP entries" in
+the warning matches the offline measurement exactly (1 server + 15 tools).
+
+**#700 — the #615 detector reports for the first time in its existence**, and finds MORE than
+r146 did:
+
+    5 routes render identical content: /browse/languages, /games, /movies, /new, /shows
+        — all fetch only /api/titles
+    2 routes render identical content: /title/:id, /watch/:titleId
+        — all fetch only /api/titles/
+
+A five-route group against r146's four. This is the defect that was invisible for 146 runs.
+
+**#698 — #641's recommendation is audible**, and the first two firings show the gap WIDENING:
+
+    03:34:55  an earlier capture of this run scored 0.633 (+0.036) at commit 5f9973483c3b
+    03:37:01  an earlier capture of this run scored 0.633 (+0.077)
+
+The run is drifting from its own best in real time — #618's pattern, visible as it happens
+rather than reconstructed afterwards.
+
+**#664** also fired 32 times (chain-reject escalation).
+
+Still to check when it finishes: #706's `promoted integration -> main` and whether
+`rev-list --count main..integration` is 0 at release, #696's suppressed-load-failure line, #701,
+#707, and the four expected-zero signatures (#684/#685/#686/#687, all GONE so far).
+
+---
+
 ## 30. The asset/data policy audit — two clean, one gap, and the pairing is the point
 
 Checking the DELIVERED corpus against the run description's own words ("use the REAL provided
