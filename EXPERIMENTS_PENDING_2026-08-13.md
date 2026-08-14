@@ -665,9 +665,29 @@ always-empty surface. Dumping the lines showed 700 of the 808 are one repeated K
 line, `Tool surface (register): 71 tools; categories={'codehub': 7, ...}` — a registration
 inventory, not a call. The real figure is 18. Count the invocation MARKER, never the name.
 
-**Left open here:** whether the six "never written" writers are unreachable or merely idle — that
-is six separate reachability questions, not one, and the pending_consumers closure above is a
-warning against answering them in bulk.
+**The six "never written" writers, answered 2026-08-14 — three states, not one.** Probing them by
+tool NAME is what kept going wrong; `hub_tools.py` builds its tools in a factory, so a
+`NAME = "..."` grep cannot see them. Walking from the hub method back to the enclosing `NAME`
+assignment gives the real picture:
+
+    no tool entry at all (2)     add_example, add_mock — no agent can reach them by any path
+    tool exists, granted to
+      NOBODY (2)                 request_api_review  -> registryhub_request_review   0 grants
+                                 submit_api_review   -> registryhub_submit_review    0 grants
+    granted, never called (2)    register_table_consumer, update_table_schema — 7 config
+                                 grants each, 0 real invocations in 253 logs
+
+The middle pair is the finding: `registryhub_reviews` has two writers, both properly exposed as
+tools, and **no role in agents_config.yaml is granted either of them**. That is the same shape as
+the codehub PR surface above — a workflow that is implemented and wired but has no entrance
+anybody can use — and it is the reason that store has never held a record, quite apart from
+whether an API review is wanted here.
+
+**Instrument warning, because it caught me four separate times in this one item.** Grepping a
+name against logs or config over-counts (registration inventories are not calls: 808 → 18) and
+grepping `NAME = "x"` against the tree under-counts (factory-built tools are invisible: I twice
+reported "no tool entry" for tools that exist). Count invocation MARKERS in logs, and walk
+method → enclosing NAME in source. Both corrections are recorded above rather than quietly fixed.
 
 **Sharpest single case.** `registryhub_pending_consumers` has BOTH a writer
 (`register_consumer(..., pending=True)` queues a consumer whose endpoint does not exist yet) and
