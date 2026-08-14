@@ -542,6 +542,37 @@ and the entire CodeHub PR/review surface. For contrast the live ones: eventhub_e
 eventhub_threads 132822, workhub_tasks 12836, codehub_checks 6242, registryhub_endpoints 3983,
 registryhub_breaking_changes 3924, registryhub_verification_chains 3442.
 
+**DECOMPOSED 2026-08-14 — "empty on disk" was three different states wearing one face.** Counting
+RECORDS cannot tell a queue that drained from a writer that never ran. Counting WRITES can:
+`JsonStore.update` always `_save_raw`s and always `_bump_meta`s, with no branch that skips either,
+so `_meta.version` is an exact write count. Across all 146 runs:
+
+    state          stores                                              evidence
+    drained        pending_consumers                                   v29/v33 in r145+r146
+    never written  examples, mocks, reviews, seed_registrations,       v1 in 146/146, but a
+                   table_consumers, table_breaking_changes             writer exists in the tree
+    no writer      projects, providers, schemas                        v1 in 146/146, and NO
+                                                                       mutation anywhere at all
+    unscoped       the 9 codehub_* / workhub_* stores                  not built by the
+                                                                       JsonStore(..."name") form,
+                                                                       so not reachable by this
+                                                                       probe — still open
+
+Only the first of those was ever a question about behaviour, and it is CLOSED above: the queue
+works. The third is statically decided — a store that is constructed, read via `.value()`, and
+mutated nowhere makes every branch keyed on it unreachable, and no run can change that.
+
+**Fixed: #693**, and only the docstring. The stores stay: their readers exist, an empty store is a
+legitimate state, and deleting live-looking machinery on a static argument is the kind of change
+that should wait for evidence. What was wrong was a class docstring telling the next reader that
+`schema` and `mock` carry data when neither has ever held a record. Seventeen tests, including a
+negative control proving the writerless probe can find a writer when one exists, and a guard that
+fails if anybody later adds a writer without updating the docstring.
+
+**Left open here:** whether the six "never written" writers are unreachable or merely idle — that
+is six separate reachability questions, not one, and the pending_consumers closure above is a
+warning against answering them in bulk.
+
 **Sharpest single case.** `registryhub_pending_consumers` has BOTH a writer
 (`register_consumer(..., pending=True)` queues a consumer whose endpoint does not exist yet) and
 readers (`list_stale_pending_consumers`, whose result drives `my_stale_pending_consumers` in
@@ -549,13 +580,44 @@ every hub pulse and gates three branches there). An internal caller at registryh
 pass `pending=True`. Yet the store is empty in 144 of 144 runs, so the pulse field is always
 empty and those branches never fire.
 
-**Only a run can settle.** Whether the queue is empty because pages always declare endpoints
-that already exist (benign, and the mechanism is simply idle) or because the 1365 call site is
-unreachable. Both produce an identical empty store on disk.
+**~~Only a run can settle.~~ CLOSED 2026-08-14 — the runs already happened, and the mechanism
+works end to end.** Neither of the two hypotheses above is right, and the reason the store looks
+dead is a third thing: entries are queued and then PROMOTED AND DELETED (registryhub.py:454), so a
+fully-working queue lands on disk looking exactly like a never-used one.
 
-**Cheapest observation.** One run: log at registryhub.py:1365 whether the branch is entered, and
-count `register_consumer` calls whose endpoint is absent. If the branch never runs while absent
-endpoints do occur, the pending path is dead and the pulse should stop reading it.
+The discriminator is the event, not the store: the pending branch `_emit`s `consumer_pending` at
+registryhub.py:637, and events persist. Across all 146 runs there are 30 such events, and they
+fall in only TWO runs — r145 and r146, the two runs from this session:
+
+    run   consumer_pending events   store version   entries   last_modified_by
+    r146            16                   33            0        registryhub
+    r145            14                   29            0        registryhub
+
+`JsonStore.update` always `_save_raw`s and always `_bump_meta`s — there is no conditional skip —
+so version counts writes exactly, and the arithmetic closes it:
+
+    r145   14 sets + 14 deletes + 1 create = 29   ✓
+    r146   16 sets + 16 deletes + 1 create = 33   ✓
+
+Every queued consumer was promoted and removed. Nothing is lost, nothing is dead, and the pulse
+field is empty at the END because the queue drained, not because it never filled. The 144 older
+runs have zero `consumer_pending` events, so for them the mechanism genuinely never fired — which
+is why the corpus could not tell the two hypotheses apart, and why "empty in 144 of 144" was not
+evidence of a defect.
+
+**Method note, because I got this wrong twice on the way.** I first "confirmed a contradiction"
+(events present, store never written) off a run set built by matching `'consumer' in type`, which
+silently swallowed 2404 `consumer_registered` events and put the wrong runs in the set; r118, the
+run I then dumped, has zero `consumer_pending`. Dumping one real record is what caught it — the
+same rule that has caught five field-location errors in this session. The earlier claim that 22
+ui_page references pointed at never-registered endpoints in 5 runs stands as a measurement, but it
+is unrelated to this store: those runs emit no `consumer_pending` at all, so the endpoint existed
+when the consumer registered and was absent from the FINAL registry for some other reason.
+
+**What is still open in item 16** is the rest of the list — the other 18 stores, including the
+whole CodeHub PR/review surface and `registryhub_examples` / `mocks` / `schemas`. This closure
+covers only the sharpest case, and it moves the prior for the others: an empty store is not
+evidence of a dead writer until the corresponding EVENT is checked too.
 
 ---
 
@@ -716,15 +778,26 @@ stands on the asymmetry, not on a frequency; the frequency is still worth knowin
 good and this is now belt-and-braces; non-zero means projected reads were being scoped to the
 wrong owner every time it appeared, and each line names the table and the uid it refused to use.
 
-**Worth pairing with it.** r146 shipped ELEVEN duplicate route definitions — every user-facing
-path is declared once in the lane's `custom_routes.py` and again as a projection in `main.py`
-(`/api/titles/{title_id}` vs `/api/titles/{id}`, etc). `include_router(_custom_router)` runs at
-main.py:849 and the projections at 990+, so first-match-wins hands every one to the lane. Both
-sides are owner-safe today — the lane's `_resolve_profile_id` scopes with `WHERE id = :pid AND
-user_id = :uid` and 404s otherwise; the projections use `_fw_owner_val`/`_fw_owns` — so this is
-not a live leak. It is a standing hazard of exactly the #566y/#568 class: a registration-order
-change silently swaps which implementation serves every endpoint, and that is a safety change
-wearing the clothes of a refactor.
+**RETRACTED, same day, before it cost anyone a look.** I first recorded here that r146 shipping
+ELEVEN duplicate route definitions — every user-facing path declared once in the lane's
+`custom_routes.py` and again as a projection in `main.py` — was "a standing hazard of the
+#566y/#568 class". It is not a hazard at all; it is the designed override mechanism, and the
+framework says so in the docstring of the very function that looks for duplicates:
+
+    duplicated_routes(): "(METHOD, normpath) routes defined 2+ times WITHIN a single served
+    module ... A cross-module override (main.py's projected handler + a custom_routes.py
+    override) is NOT flagged — only same-file duplicates, which are always a lane bug."
+                                                    — backend_audit.py:197-202
+
+`include_router(_custom_router)` at main.py:849 running before the projections at 990+ is the
+mechanism working as intended, not an accident of ordering. What I actually verified is worth
+keeping, though, because it is the thing that matters: **both sides are owner-safe** — the lane's
+`_resolve_profile_id` scopes with `WHERE id = :pid AND user_id = :uid` and 404s otherwise, and the
+projections use `_fw_owner_val`/`_fw_owns` — so whichever serves, the read is scoped.
+
+Also checked in the same pass and clean: the three `text(f"DELETE FROM {tbl}")` interpolations in
+the shipped `custom_routes.py` take `tbl` from a hardcoded literal tuple, not from a request, so
+they are not an injection surface.
 
 ---
 

@@ -108,7 +108,27 @@ def collapse_last_literal_segment(path: str) -> str:
 
 
 class RegistryHub:
-    """Apifox-like API registry, schema, consumer, mock, test, and review hub."""
+    """Apifox-like API registry, schema, consumer, mock, test, and review hub.
+
+    #693: that sentence over-advertises, and the gap is measurable rather than a matter of
+    taste. `_meta.version` in a JsonStore counts writes exactly — `JsonStore.update` always
+    `_save_raw`s and always `_bump_meta`s, with no conditional skip — so a store still sitting
+    at version 1 across every kept run was created and never written by anybody. Over 146 runs:
+
+        live            endpoints v96, verification_chains v1574, consumers v41,
+                        breaking_changes v37 ...
+        drained         pending_consumers — v29/v33 in r145/r146 and empty at rest, because
+                        entries are promoted then deleted; see EXPERIMENTS_PENDING item 16
+        never written   examples, mocks, reviews, seed_registrations, table_consumers,
+                        table_breaking_changes  — a writer exists, it has never fired
+        no writer       projects, providers, SCHEMAS — construction and `.value()` reads only,
+                        no mutation anywhere in the tree, so every branch keyed on them is dead
+
+    So of the five surfaces this line promises, `schema` and `mock` have never held a record,
+    and `review` has a writer that has never run. Kept in one place rather than deleted piecemeal
+    because the readers still exist and an empty store is a legitimate state — what was wrong was
+    the docstring implying they carry data.
+    """
 
     def __init__(self, hub_dir: Path, eventhub: "EventHub | None" = None,
                  workhub: "WorkHub | None" = None):
