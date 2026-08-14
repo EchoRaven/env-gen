@@ -1369,9 +1369,25 @@ rather than reconstructed afterwards.
 
 **#664** also fired 32 times (chain-reject escalation).
 
+**ITEM 18 IS NOW CLOSED IN A LIVE RUN — the strongest single result of the session.** The offline
+diagnosis was that `mcp_server` is committed on `main`, delivery is cut from `integration`, and
+`merge-base --is-ancestor` is FALSE so the release never sees it. In r147:
+
+    r146   mcp_server commit is NOT an ancestor of integration     (the defect)
+    r147   1b6eb54 IS an ancestor of integration                   (fixed)
+
+and it got there the right way: #691b's `git checkout <sha> -- mcp_server` restores into the
+working tree AND the index, so the pre-existing `git add -A -- mcp_server` swept it into the
+framework delivery commit ON integration. The whole chain works, not just the file copy.
+
+**#682b also fired (x3)** — the ownership-403 diagnosis, new this run. #700 is now at x17 and
+#698 at x3, both climbing.
+
 Still to check when it finishes: #706's `promoted integration -> main` and whether
-`rev-list --count main..integration` is 0 at release, #696's suppressed-load-failure line, #701,
-#707, and the four expected-zero signatures (#684/#685/#686/#687, all GONE so far).
+`rev-list --count main..integration` is 0 at release (r147 has not released yet — `releases` is
+empty and neither the promotion nor a FINAL DELIVERY line has appeared), #696's
+suppressed-load-failure line, #701, #707, and the four expected-zero signatures
+(#684/#685/#686/#687, all GONE so far).
 
 ---
 
