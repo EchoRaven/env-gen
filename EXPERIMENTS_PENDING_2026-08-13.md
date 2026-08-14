@@ -1733,6 +1733,48 @@ right one needed a distribution.
 
 ---
 
+## 68. #748 — the reason the app would not boot was captured and withheld
+
+#747's shape, swept properly: **every hub field that is WRITTEN and never READ.** For each store,
+every key appearing in ≥80 records whose name never occurs as a string literal anywhere in the
+tree. Three candidates out of the whole corpus:
+
+    runhub_runs.compose_stderr                216 records, ALL 216 non-empty
+    codehub_checks.evidence.http_status       133
+    workhub_tasks.evidence.contract_test_...   95
+
+`compose_stderr` has exactly **one writer and zero readers**, and it is never filler — all 216
+carry the real cause, e.g. `CRITICAL:podman_compose:missing files: ['…/docker-compose.yml']`.
+Meanwhile the EVENT everything downstream reacts to carried the bare label:
+
+    self.update_run_status(run_id, "aborted", compose_stderr=(up_result.stderr or "")[:500])
+    self._emit("run_completed", run_id, {"reason": "compose_up_failed"}, priority="high")
+
+The orchestrator and the lanes were told the app would not boot and not why, with the answer
+sitting in a field beside them. Same shape as #677 (1778 bare "Connection refused"), #690 and
+#740 — the diagnosis exists at the moment of failure and is kept from whoever must act on it.
+
+Fixed: logged, and carried in the event payload alongside the returncode. The store write is
+unchanged, and the empty-stderr case — the one that reads as "no information" and is exactly when
+a hint is worth most — gets an explicit hint instead of a blank.
+
+**The other two are left alone deliberately.** `evidence.http_status` and
+`evidence.contract_test_recorded` are audit fields on records a human or a later query reads;
+#733 already established that `evidence` persists extra keys verbatim BY DESIGN. Unread is not
+the same defect there: nothing is making a decision without them.
+
+**A recurring trap, now closed in the tests rather than re-hit.** Two assertions failed on
+implicit string-concatenation SEAMS: a message split as `"…so every "` / `"check after this…"`
+keeps its quote characters, so a whitespace-collapsed view reads `every " "check` and the
+assertion fails on punctuation that is not in the message. Third occurrence this session; the
+test now closes the seam (`re.sub(r'"\s*\n\s*"', "", …)`) before matching.
+
+**Cheapest observation.** Any run whose app fails to boot: the log line names the cause instead
+of `aborted`. The corpus baseline is that 216 boot failures were recorded and none of them said
+why in the log — so a single future occurrence with a cause attached settles it.
+
+---
+
 ## 67. #747 — the lane declares which reference each page matches, 1182 times, and the gate guessed
 
 **This is the user's own proposal, and the data to honour it has been arriving all along.**

@@ -244,9 +244,31 @@ class RunHub:
             self.update_run_status(run_id, "starting_compose", agent="runhub")
             up_result = compose.up()
             if up_result.returncode != 0:
+                # #748: THE REASON WAS CAPTURED AND WITHHELD. `compose_stderr` was written to
+                # the run record here and read NOWHERE — one writer, zero readers, across the
+                # whole tree. It is not empty filler: 216 records in the corpus carry it and
+                # **all 216 are non-empty**, holding the actual cause
+                # ("CRITICAL:podman_compose:missing files: ['…/docker/docker-compose.yml']").
+                # Meanwhile the EVENT that everyone downstream reacts to carried the bare label
+                # `compose_up_failed`, so the orchestrator and the lanes were told the app would
+                # not boot and not why. Same shape as #677 (1778 bare "Connection refused"),
+                # #690 and #740: the diagnosis exists at the moment of failure and is kept from
+                # the party that has to act on it. Log it and put it in the event; the store
+                # write is unchanged.
+                _stderr748 = (up_result.stderr or "").strip()
                 self.update_run_status(run_id, "aborted", agent="runhub",
-                                        compose_stderr=(up_result.stderr or "")[:500])
-                self._emit("run_completed", run_id, {"reason": "compose_up_failed"},
+                                        compose_stderr=_stderr748[:500])
+                _logger.warning(
+                    "compose up FAILED for run %s (rc=%s) — the app never booted, so every "
+                    "check after this is measuring nothing. Cause: %s",
+                    run_id, up_result.returncode,
+                    _stderr748[:400] or "(compose produced no stderr — check the compose file "
+                                        "exists and the daemon is reachable)")
+                self._emit("run_completed", run_id,
+                           {"reason": "compose_up_failed",
+                            # #748: the payload carries the cause, not just the label.
+                            "compose_stderr": _stderr748[:500],
+                            "returncode": up_result.returncode},
                             priority="high")
                 return self.get_run(run_id)
 
