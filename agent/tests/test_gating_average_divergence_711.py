@@ -46,9 +46,14 @@ def _block() -> str:
 # --- it fires on a real divergence and stays quiet otherwise ------------------------------------
 
 def test_the_threshold_is_a_gap_not_a_level():
-    """A run can be far below the bar with both numbers agreeing; that is not this warning."""
+    """A run can be far below the bar with both numbers agreeing; that is not this warning.
+
+    #736 changed the left-hand side from `_g711` (the run-wide gating mean) to `_g736` (that
+    mean restricted to the screens THIS capture scored), because the two averages did not
+    always cover the same screens. The threshold itself is untouched and is still a GAP."""
     b = _block()
-    assert "_g711 - _l711 >= 0.05" in b
+    assert "_g736 - _l711 >= 0.05" in b
+    assert "_g711 - _l711 >= 0.05" not in b, "the unrestricted comparison must not come back"
 
 
 def test_r147s_round_six_would_fire():
@@ -106,23 +111,34 @@ def test_non_numeric_values_are_ignored():
 # --- the message explains which number is which ---------------------------------------------------
 
 def test_it_names_both_numbers():
+    """#736 renamed them in the message. The two keys were accurate labels while the warning
+    compared the two persisted values directly; now it compares a RESTRICTED gating mean, and
+    printing it as `blocking_average` would name a number that is not in the verdict. Both are
+    still named — and the run-wide pair is reported alongside, so nothing is hidden."""
     b = _block()
-    assert "blocking_average %.4f" in b and "blocking_average_live %.4f" in b
+    assert "best-ever %.4f vs live %.4f" in b
+    assert "run-wide the two are %.4f vs %.4f" in b
 
 
 def test_it_says_the_gating_number_never_falls():
     assert "best-ever-per-screen and never falls" in _block()
 
 
-def test_the_consequence_is_present_AND_marked_withdrawn():
+def test_the_consequence_is_no_longer_emitted():
     """It used to assert the sentence plainly, as the finding. #711r withdrew it: the release
     path reads `gate.last_result`, the RETURNED dict, whose blocking_average is the current
-    capture — not the persisted high-water number this warning is about. The sentence survives
-    struck through so the reasoning is visible, and a test that only checked its PRESENCE would
-    now be certifying a withdrawn claim."""
+    capture — not the persisted high-water number this warning is about.
+
+    The sentence then survived STRUCK THROUGH in the comment while the warning kept printing it
+    verbatim, so every reader of a real run log was still told the withdrawn claim — for two
+    fixes. #736 removed it from the emitted text; what the log now carries is the half that
+    #711r left standing (the RECORD overstates the app) plus the correction itself. A test that
+    checked only its PRESENCE would have certified it, so this checks its ABSENCE."""
     import re
     flat = re.sub(r'"\s*\n\s*"', "", _block())
-    assert "A release authorised on the former ships the latter" in flat
+    assert "A release authorised on the former ships the latter" not in flat
+    assert "the RECORD on disk overstates the app" in flat
+    assert "NOT what authorises a release" in flat
     assert "RETRACTION OF THE CONSEQUENCE" in flat
     assert "is WRONG" in flat
 

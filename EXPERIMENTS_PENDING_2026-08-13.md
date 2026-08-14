@@ -1733,6 +1733,67 @@ right one needed a distribution.
 
 ---
 
+## 55. #736 — #711 compared a 2-screen mean against a 12-screen one, every time it ever fired
+
+Chasing "does the lane act on the remediation it is handed?" through the artifacts, because that
+is the question item 54 left open and it is answerable offline. The route was: per-screen deltas
+between rounds → restrict to rounds where `code_state` actually changed → split by whether the
+screen was BELOW the bar (i.e. named by remediation) or above it.
+
+    targeted by remediation     up 6   down 14   same 101      moved 17%
+    not targeted (control)      up 1   down 11   same  23      moved 34%
+
+Targeted screens moved LESS than untargeted ones, which is the wrong sign, and the three that
+never moved at all were `browse_home`, `movies`, `new_and_popular` — the most reachable pages in
+the app, not the unphotographable interaction states of item 40.
+
+**All of that is an artefact and is withdrawn.** The captures tell the real story: 66 screenshots
+in r148 reduce to 15 distinct images, and from 11:13:19 the live scores of ten screens read
+`0.00` for the remaining nine rounds. They are BLANK CAPTURES, and the framework already handles
+them correctly — it names them, classifies them transient, and refunds the attempt:
+
+    [blank capture: browse_by_languages, browse_home, games, genre_category, movies, my_list,
+     new_and_popular, player, shows, title_detail] — blank capture, attempt refunded (transient 1/3)
+
+Both averages filter `blank is True`, so nothing is polluted: `blocking_average_live` = 0.4250 is
+exactly `(landing 0.45 + login 0.40) / 2`, the only two screens that captured. Correct arithmetic.
+
+**What is NOT correct is #711, which I added earlier this session.** Its only condition is a
+`>= 0.05` gap between the gating average and the live one, with no check that the two cover the
+same screens — and a blank capture makes them cover wildly different populations. So at 11:13:19
+and again at 11:14:49 it announced
+
+    #711 the gating average has left the app behind: blocking_average 0.6190 vs
+    blocking_average_live 0.4250 (gap 0.1940)
+
+which is a 12-screen mean minus a 2-screen mean: composition, not divergence. Across every log in
+the corpus **#711 has fired 2 times and 2 of 2 are this artefact — a 100% false-positive rate over
+its entire firing history**, on a round the framework had already labelled and refunded.
+
+Fixed by restricting the gating mean to the screens the capture actually scored, with no tuned
+constant (#656's disposition). A real divergence still fires: #713's r147 case is four routes
+falling THROUGH to the landing page, which are captured and scored, so they stay in both
+populations — pinned as a negative control in the tests, alongside the case where most screens
+blank AND the survivors genuinely regressed.
+
+**A second defect fell out of it.** #711r had measured the sentence "A release authorised on the
+former ships the latter" false — the release path reads the RETURNED dict, the current capture,
+not the persisted high-water number — and struck it through in the comment. But the warning kept
+PRINTING it verbatim, so every reader of a real run log was still told the withdrawn claim, for
+two fixes. It is now out of the emitted text, replaced by the half #711r left standing plus the
+correction. The test that guarded it asserted the sentence was PRESENT; that assertion was
+certifying a withdrawn claim, which is precisely #726's trap, and the first draft of #736's own
+test file repeated it. Both now check for its ABSENCE.
+
+**Cheapest observation.** No run needed for the fix — it is proven against r148's recorded
+numbers. What a run WOULD settle is the question this item started from and did not answer,
+because the instrument was broken: with the blank rounds excluded, does remediation move the
+screens it names? Every delta measured above came from a blackout, so the honest state is that
+**the effectiveness of visual remediation has never actually been measured**, and item 54's
+"does the lane act on what it holds" is still open on both counts.
+
+---
+
 ## 54. RETRACTED — the frontend HAD the parameters. It did not use them.
 
 The user asked the obvious question: the agent declares an endpoint, testing and consumption read

@@ -2859,14 +2859,40 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         # existed. Same disposition as #641 above: warn, change no decision.
         try:
             _g711, _l711 = _verdict.get("blocking_average"), _verdict.get("blocking_average_live")
-            if (isinstance(_g711, (int, float)) and isinstance(_l711, (int, float))
-                    and _g711 - _l711 >= 0.05):
+            # #736: COMPARE LIKE WITH LIKE. #711's only condition was a >=0.05 gap between the
+            # two averages; it never checked they cover the SAME screens, and often they do
+            # not. Both averages correctly drop `blank is True`, so a blank capture shrinks the
+            # LIVE denominator while the gating one keeps every screen's best-ever score — and
+            # a near-total blackout then leaves a 2-screen mean facing a 12-screen mean. That
+            # difference is COMPOSITION, not divergence. r148 round 4: gating 0.6190 over 12
+            # screens vs live 0.4250 over the only two that captured (landing 0.45 + login 0.40
+            # -- exactly their mean), on a round the framework had ALREADY labelled
+            # `[blank capture: ...] - attempt refunded`. Across every log in the corpus #711 has
+            # fired 2 times and BOTH are this artefact: a 100% false-positive firing history.
+            #
+            # No tuned constant is needed (same disposition as #656): restrict the gating mean
+            # to the screens this capture actually scored. A real divergence still fires —
+            # #713's r147 case is four routes falling THROUGH to the landing page, which are
+            # captured and scored, so they stay in both populations.
+            _names736 = {s.get("name") for s in _live_blocking}
+            _cmp736 = [s for s in _blocking_merged if s.get("name") in _names736]
+            _g736 = (round(sum(_sim(s) for s in _cmp736) / len(_cmp736), 4)
+                     if _cmp736 else None)
+            if (isinstance(_g736, (int, float)) and isinstance(_l711, (int, float))
+                    and _g736 - _l711 >= 0.05):
                 _LOG.warning(
-                    "#711 the gating average has left the app behind: blocking_average %.4f vs "
-                    "blocking_average_live %.4f (gap %.4f). The gating number is #500's "
-                    "best-ever-per-screen and never falls; the live one is THIS capture. A "
-                    "release authorised on the former ships the latter.",
-                    _g711, _l711, _g711 - _l711)
+                    "#711 the gating average has left the app behind: over the %d screen(s) "
+                    "THIS capture scored, best-ever %.4f vs live %.4f (gap %.4f). The gating "
+                    "number is #500's best-ever-per-screen and never falls; the live one is "
+                    "this capture, so the RECORD on disk overstates the app. #711r: that is "
+                    "NOT what authorises a release — the release path reads the returned "
+                    "dict, i.e. the current capture — and the emitted text used to say it "
+                    "did, which was measured false and is why this sentence now says this. "
+                    "(#736: run-wide the two are %.4f vs %.4f over %d screen(s); compared "
+                    "like-for-like above, because a blank capture shrinks the live population "
+                    "and the rest of the gap would be composition, not divergence.)",
+                    len(_cmp736), _g736, _l711, _g736 - _l711,
+                    _g711, _l711, len(_blocking_merged))
         except Exception:
             pass
         # #713: TWO SCREENS THAT CAPTURED THE SAME IMAGE DID NOT BOTH RENDER.

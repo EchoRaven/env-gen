@@ -158,6 +158,7 @@ grep_log "#713b shared-route sharing"    "share ONE route" "EXPECTED, not a defe
 grep_log "#713 identical captures"       "screens captured the SAME image" "103 of 127 runs, 32 of 43 live; every score from a shared capture is of the wrong page"
 grep_log "#712 count advanced on a latch" "on a LATCHED average" "the stable-rounds precondition cannot reset; r146 fast-released this way at live 0.6409"
 grep_log "#711 gate left the app behind" "the gating average has left the app behind" "gating avg is #500 best-ever-per-screen; live is THIS capture. r147 r6: 0.700 vs 0.3817"
+grep_log "#736 blank capture refunded"   "blank capture, attempt refunded" "r148 blanked 10 of 12 screens for 9 rounds; #711 fired on it twice. Any #711 hit ABOVE with no hit here is now a GENUINE divergence — that is what #736 bought"
 grep_log "#715 served build is stale"    "the SERVED frontend does not know" "a hit VOIDS those screens' scores; #713's cause, caught before the capture"
 grep_log "#715 probe inconclusive"       "715 probe inconclusive" "fires if route literals do NOT survive the bundle — then the check needs rethinking, not the app"
 grep_log "#707 invented asset staged"    "staged .* placeholder asset(s) the frontend referenced" "each hit = a path the lane invented instead of search_icons/save_image or drawing it"
