@@ -1733,6 +1733,35 @@ right one needed a distribution.
 
 ---
 
+## 41. #711 CONFIRMED LIVE in r148 — announced, not reconstructed
+
+r148 is the first run carrying #711, and it fired twice while still running:
+
+    #711 the gating average has left the app behind:
+         blocking_average 0.6190 vs blocking_average_live 0.4250 (gap 0.1940)
+
+**Recorded mid-run on purpose, and only because of the direction.** #717 says a growing log
+cannot be read as a result — but that rule is about ABSENCE. A signature that has fired has
+fired; nothing later un-fires it. A positive is durable, a negative is provisional, and this is
+the positive half.
+
+The gap is the largest of the three measured:
+
+    r146   0.67   vs 0.6409   0.029   (delivered)
+    r147   0.700  vs 0.5463   0.154   (delivered, corrected for #713 contamination)
+    r148   0.6190 vs 0.4250   0.194   (announced by the detector itself)
+
+And it fired BELOW the bar — gating 0.6190 has not reached 0.65 — which is more useful than the
+r146/r147 cases, not less: the divergence becomes visible before it can authorise anything. The
+whole point of #711 was that both numbers were already computed and nothing compared them; here
+the comparison happens while there is still time to act on it.
+
+**What this does NOT settle.** Whether the gate should read the live mean is still open, still
+coupled to item 40 (screens that can never be photographed), and still not mine to decide. What
+r148 removes is any doubt that the divergence is real, reproducible, and large.
+
+---
+
 ## 40. #718 — the gate blocks on a screen it cannot photograph, and has 36 times
 
 Following "r147's four screens were never actually photographed" out to the corpus. Hashing every
