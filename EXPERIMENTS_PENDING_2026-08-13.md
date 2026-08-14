@@ -1624,6 +1624,41 @@ fault and the capture layer needs the fix.
 
 ---
 
+## 37b. The tests do not travel with the fixes — by policy, and the commit messages do not say so
+
+Noticed while committing #716 and worth stating because it changes what a reader of this
+branch can verify:
+
+    test files on disk        330
+    tracked by git            112
+    untracked                 218
+    written this session      23  (#691-#716) — ALL untracked
+
+This is not an accident. `.gitignore:38` carries the rule with its rationale — "Dev test suites
+— kept local only, not part of the shipped pipeline repo" — added deliberately in `3b71e33
+chore(repo): keep dev tests and run scripts local-only` on 06-18.
+
+**The consequence is a communication gap, not a defect.** Every commit in this session ends with
+a line like "17 tests. 3438 pass". Those tests are the EVIDENCE for the claim the commit makes,
+and by policy they stay on one machine — so the reader gets the assertion without the thing that
+backs it, and cannot re-run it after a refactor. The 112 tracked files make it worse by being
+inconsistent: a reader who sees tests in `agent/tests/` reasonably assumes the rest are there too.
+
+**Not acted on, deliberately.** Force-adding 218 files against a documented policy is not a call
+to make from inside a review pass. Three coherent options, in rough order of cost:
+
+  * leave it and stop citing test counts in commit messages that ship without them;
+  * track the tests for FRAMEWORK fixes (the `#NNN` files, which are provenance for behaviour
+    changes) while keeping scratch suites local — this is what the 112 look like in practice;
+  * drop the ignore entirely and track all 330.
+
+**Cheapest observation.** None needed; this is a decision, not a measurement. What a decision
+would want to know is already here: 218 files, 23 of them from this session, and a rule whose
+stated reason ("not part of the shipped pipeline repo") is about shipping rather than about
+review.
+
+---
+
 ## 36. The recurring shape, swept: 137 of 290 tools have never been called
 
 Three times this session I stumbled on the same thing — an instrument built for a problem,
