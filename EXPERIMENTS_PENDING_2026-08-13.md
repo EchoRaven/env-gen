@@ -1332,6 +1332,30 @@ against a matched run. If the stage fires on most steps, the cost is the whole q
 
 ---
 
+## 30. The asset/data policy audit — two clean, one gap, and the pairing is the point
+
+Checking the DELIVERED corpus against the run description's own words ("use the REAL provided
+assets", "seed the catalog from dataset/titles.json", "no dead links", "no fabricated data"):
+
+| requirement | measured over 27 delivered runs | result |
+|---|---|---|
+| never pull a remote stock URL (rule 3) | remote image URLs in the shipped frontend | **0** |
+| seed from the real dataset | `seed_data.py` containing any of the 60 real titles | **27 of 27** |
+| images must resolve (rule 5) | local `/assets/...` refs that 404 | **20, across 8 runs** → #707 |
+
+**The pairing is what makes #707 a policy defect rather than lane sloppiness.** The lane obeys
+"no remote URLs" in 27 of 27 and seeds real data in 27 of 27 — it follows the asset policy
+everywhere the policy is satisfiable. The one place it breaks rule 5 is the one place the policy
+offered no exit: the "who's watching" screen needs avatars, `assets[]` has none, and rule 3 said
+only "use the staged assets". 19 of the 20 broken references are invented
+`/assets/avatars/...` paths.
+
+So the fix is the missing rung, not more enforcement — #707's rule 5b ladder plus the widened
+`stage_missing_frontend_assets` backstop. Recorded here because the two clean rows are what rule
+out the alternative diagnosis.
+
+---
+
 ## 29. Sweep K — every declared business endpoint IS served, in every delivered run
 
 **Clean, and the two ways I nearly got it wrong are the useful part.** The probe compares the
