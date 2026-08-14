@@ -1774,9 +1774,37 @@ it reported a clean ZERO on the run whose bug motivated it; with alphabetical ra
 suggested `GET /api/genres/{id}/titles` over `GET /api/titles/{id}` for `/title/:id`, pointing at
 the wrong endpoint. Now ranked by token overlap, and back-tested to reproduce 3 / 0 / 2 exactly.
 
+**CORRECTED, and the correction demotes this item.** I wrote that these crossings are the cause
+of r148's identical-content groups. They are the cause of ONE. r148 has three groups and #728
+explains only the two-route one:
+
+    /browse/genre/:genreId + /my-list                          -> #728 (crossed endpoint)
+    /browse, /browse/languages, /games, /movies, /new, /shows  -> NOT #728
+    /browse, /games, /movies, /new, /shows                     -> NOT #728
+
+`/movies` fetching `GET /api/titles` is not a crossing — that IS its endpoint. It shares content
+with `/games` and `/shows` because none of them passes a filter. #728 correctly stays silent
+there: no `/api/movies` exists to suggest, so it does not invent one.
+
+Counting both runs that carry a #700 report at all (the detector only began reporting this
+session, so the sample is two):
+
+    r147   2 identical-content groups,  0 crossings
+    r148   3 identical-content groups,  2 crossings
+
+**Five groups, of which #728 explains one.** r147's row is the decisive one: two groups with zero
+crossings means the dominant cause is not "calls the wrong endpoint" but "calls the right endpoint
+without a filter" — item 32's territory, itself blocked a step earlier on the contract no longer
+declaring `request` query params (empty in r147/r148, populated in r146).
+
+**So the two are orthogonal and the larger one is untouched.** #728 is worth keeping — it catches
+a real shipped bug and r147's zero is a clean negative control — but anyone who fixes it expecting
+the "half the pages look identical" symptom to go will find the six-route group exactly where it
+was. That misreading is why this is recorded rather than quietly corrected.
+
 **Cheapest observation.** The next run prints `#728 <page> declares … while <endpoint> is
-implemented and used by nothing` beside #700's group. If #700 fires and #728 does not, the
-identical content has a different cause and this detector is not the explanation.
+implemented and used by nothing` beside #700's group. #700 firing WITHOUT #728 is the expected
+majority case, not a detector failure.
 
 ---
 
