@@ -15,6 +15,58 @@ from .stores import WorkHubStores
 _DEFUNCT_LANES = frozenset({"design", "database"})
 
 
+# #679: the SENDER-side saving #274 asked for, aimed with #257's instrument.
+#
+# `[tool-io]` accounting (added by #257 so the next run could answer "which tool grows the
+# prompt") finally has a corpus: 1006M chars of tool output landed in conversations, and
+# check_inbox is 633M of it — 62.9%, mean 73k chars per call over 8632 calls. #302 already
+# previews already-READ bodies (240 chars) and #274 forbids clipping UNREAD ones, for good
+# reason: a trimmed task_ready contract left the receiver unable to see it or ask for the rest
+# and wedged the pipeline. #274 names the only sanctioned lever — "context savings for oversized
+# bodies must come from the SENDER (send a summary + a hub pointer), not from clipping on read."
+#
+# Nothing had ever aimed at the sender because nothing recorded which one. The event payloads do:
+# of 257M chars across 288562 events, task_created 40.0M + task_claimed 36.9M + task_completed
+# 34.5M is 43%, and claimed/completed carry the SAME mean as created (~3.1k) — every lifecycle
+# transition re-sends the whole record, description included, though the description was
+# delivered once at creation.
+#
+# So: task_created is UNTOUCHED (that is #274's wedge case verbatim — the assignee needs the
+# contract, and it is the only one with a real recipient). Only the four transitions are
+# trimmed, and only when they are actually large:
+#
+#     25496 transition events, 76.1M chars, median 733 — most are already small
+#     p90 2441, p99 74967, max 128438 — a tiny tail holds everything
+#     a cut at 2000 touches 14% of events and reclaims 76% of the bytes (58.0M of 76.1M)
+#
+# 86% of transitions therefore pass through byte-identical. The trimmed ones keep every
+# identifying field plus a pointer to `workhub_get_task(id)`, so nothing is unrecoverable —
+# which is the condition #274's wedge failed.
+_TRANSITION_BODY_CHARS_679 = 2000
+
+_TRANSITION_KEEP_679 = ("id", "plan_id", "title", "status", "assignee", "claimed_by",
+                        "created_by", "_updated_by", "_updated_at")
+
+
+def _transition_payload_679(task):
+    """A state-transition event's payload: the whole record when small, else identity + pointer."""
+    try:
+        if not isinstance(task, dict) or len(str(task)) <= _TRANSITION_BODY_CHARS_679:
+            return task
+        out = {k: task.get(k) for k in _TRANSITION_KEEP_679 if task.get(k) is not None}
+        for k in ("result", "reason", "cancel_reason"):
+            v = task.get(k)
+            if v is not None and len(str(v)) <= _TRANSITION_BODY_CHARS_679 // 4:
+                out[k] = v
+        out["_body_omitted"] = (
+            f"state-transition notice — the full record ({len(str(task))} chars, description "
+            f"and payload included) was delivered when the task was CREATED and is fetchable "
+            f"with workhub_get_task(task_id={task.get('id')!r})")
+        return out
+    except Exception:
+        return task
+
+
 class WorkHub:
     """Notion/Jira-like workspace for docs, plans, tasks, attendees, and comments."""
 
@@ -251,7 +303,7 @@ class WorkHub:
         verified = self.stores.tasks.get(task_id) or {}
         if verified.get("claimed_by") != agent or verified.get("claim_token") != claim_token:
             return {"error": "Claim lost during write-verify", "winner": verified.get("claimed_by")}
-        self._emit("task_claimed", verified, recipients=[])
+        self._emit("task_claimed", _transition_payload_679(verified), recipients=[])
         return verified
 
     def update_task_plan(self, task_id: str, plan: dict, agent: str) -> dict:
@@ -317,7 +369,7 @@ class WorkHub:
         updated["result"] = result or {}
         updated["evidence"] = evidence or {}
         self.stores.tasks.update(lambda m: m.set(task_id, updated, agent), change_info={"agent": agent})
-        self._emit("task_completed", updated, recipients=[])
+        self._emit("task_completed", _transition_payload_679(updated), recipients=[])
         return updated
 
     def fail_task(self, task_id: str, agent: str, reason: str = "",
@@ -349,7 +401,7 @@ class WorkHub:
         updated["_updated_by"] = agent
         updated["_updated_at"] = now
         self.stores.tasks.update(lambda m: m.set(task_id, updated, agent), change_info={"agent": agent})
-        self._emit("task_failed", updated, recipients=[])
+        self._emit("task_failed", _transition_payload_679(updated), recipients=[])
         return updated
 
     def cancel_task(self, task_id: str, agent: str, reason: str = "",
@@ -397,7 +449,7 @@ class WorkHub:
         updated["_updated_by"] = agent
         updated["_updated_at"] = now
         self.stores.tasks.update(lambda m: m.set(task_id, updated, agent), change_info={"agent": agent})
-        self._emit("task_cancelled", updated, recipients=[], priority="high")
+        self._emit("task_cancelled", _transition_payload_679(updated), recipients=[], priority="high")
         return updated
 
     # ------------------------------------------------------------------
