@@ -25,10 +25,12 @@ were unreachable while `self` was untyped.
 17 files carry the block. The attribute lists were taken FROM THE DIAGNOSTICS rather than guessed,
 and method-versus-data was decided by whether the source calls `self.NAME(`.
 """
+from typing import Optional  # noqa: E402  (used above the file's own typing import)
 import ast
 import pathlib
 
 import pytest
+from typing import Optional
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1] / "env_generator/llm_generator"
 

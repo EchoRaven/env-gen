@@ -61,6 +61,7 @@ prompts) MUST match it. Update the docstring here first if the shape
 shifts.
 """
 from __future__ import annotations
+from typing import Optional  # noqa: E402  (used above the file's own typing import)
 
 import inspect
 import re
@@ -430,6 +431,7 @@ from .schema_tolerance import (  # noqa: E402
     extract_backend_endpoints as _extract_backend_endpoints,
     extract_frontend_screens as _extract_frontend_screens,
 )
+from typing import Optional
 
 
 def _extract_api_vs_frontend(

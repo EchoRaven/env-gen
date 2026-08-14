@@ -42,6 +42,7 @@ from .communication_tools import (
     ListAgentsTool,
     SubscribeMessagesTool,
 )
+from typing import Optional
 
 
 # ===== Grep Tool =====

@@ -31,6 +31,7 @@ agent-drivable business operations.
 """
 
 from __future__ import annotations
+from typing import Optional  # noqa: E402  (used above the file's own typing import)
 
 import re
 from pathlib import Path

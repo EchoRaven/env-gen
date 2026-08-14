@@ -21,6 +21,7 @@ ground truth during kickoff and implementation.
 """
 
 from __future__ import annotations
+from typing import Optional  # noqa: E402  (used above the file's own typing import)
 
 import base64
 import json

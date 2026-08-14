@@ -61,6 +61,7 @@ The ``paths`` map names the conventional location for each file under
 """
 
 from __future__ import annotations
+from typing import Optional  # noqa: E402  (used above the file's own typing import)
 
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Mapping, Optional

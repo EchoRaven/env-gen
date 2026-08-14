@@ -1103,7 +1103,32 @@ type` run set, and the two "no tool entry" verdicts on tools that exist.
    not Optional, across **56 files** — `str` 164, `dict` 36, `list` 30, `List` 28, `Dict` 17,
    `Workspace` 17, `'EnvGenAgent'` 17, `int` 14. Close enough to 363 to call it the same set.
 
-   **NOT swept, deliberately, and the reason is about this environment rather than the change.**
+   **SWEPT 2026-08-14 once pyrefly was installed, and the stated payoff is REFUTED.** 365
+   parameters across 55 files rewritten by ast-located text surgery (positions from the AST,
+   text spliced in place, so nothing is reformatted). Measured before and after:
+
+       bad-function-definition   362 -> 0
+       bad-argument-type         248 -> 245      <- DOWN 3, not up
+       missing-attribute         252 -> 264      <- up 12
+       total                    1591 -> 1244
+
+   The claim in the original entry — "each one currently hides real `bad-argument-type` findings
+   downstream" — does not survive its own test. Fixing all 362 revealed no masked argument-type
+   errors; the category shrank. What the sweep DID surface is a different category: **95 of the
+   264 `missing-attribute` errors are now `NoneType has no attribute`**, concentrated on hub
+   access — `workhub` 13, `eventhub` 7, `codehub` 6, `registryhub` 4. Those are the real yield:
+   parameters that are genuinely optional and are dereferenced without a guard. Whether any is
+   reachable with None is a separate question and the next thread, not settled here.
+
+   **It also broke the tree, briefly, in exactly the way the entry predicted.** These modules do
+   not use `from __future__ import annotations`, so annotations evaluate at def time. Six files
+   use `Optional[` ABOVE their own `from typing import` line (reasoning_tools.py uses it at 163
+   and imports at 187), and my import-insertion regex took the first typing import it found —
+   too late in the file. 52 collection errors, `NameError: name 'Optional' is not defined`.
+   Repaired by inserting the import after the module docstring in those six. 3192 tests pass.
+
+   ~~**NOT swept, deliberately, and the reason is about this environment rather than the
+   change.**~~ (Kept below for the record; pyrefly is back.)
    `pyrefly` is gone — `[tool.pyrefly]` is still in pyproject.toml but no binary exists on PATH
    or in the venv — so the claimed payoff ("each one hides real `bad-argument-type` findings
    downstream") cannot be observed here. A 361-site sweep would therefore deliver churn with no

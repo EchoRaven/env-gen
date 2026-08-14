@@ -7,6 +7,7 @@ Provides:
 
 These tools support agent self-reflection and structured task management.
 """
+from typing import Optional  # noqa: E402  (used above the file's own typing import)
 
 from ._base import (
     BaseTool,
