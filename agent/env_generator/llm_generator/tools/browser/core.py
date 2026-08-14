@@ -97,7 +97,22 @@ class BrowserNavigateTool(BaseTool):
             return ToolResult.ok(result)
             
         except Exception as e:
-            return ToolResult.fail(f"Navigation failed: {str(e)}")
+            # #687: the same transport diagnosis test_api got in #677. Chromium reports
+            # `net::ERR_CONNECTION_REFUSED` for exactly the condition #677 explains, and this
+            # tool said only "Navigation failed: <raw>". Measured over the 249 run logs: 601
+            # ERR_CONNECTION_REFUSED navigations, 161 of them in the LIVE era (r100+), plus 308
+            # more reaching the browser lane's own failure list — retrying a navigation to a
+            # process that is not running cannot succeed however many times it is tried.
+            # Imported locally and best-effort: a diagnosis must never replace the real error.
+            _why = ""
+            try:
+                from tools.runtime_tools import _request_failure_reason_677
+                _why = _request_failure_reason_677(e, url)
+                _why = _why.split("—", 1)[1].strip() if "—" in _why else ""
+            except Exception:
+                _why = ""
+            return ToolResult.fail(f"Navigation failed: {str(e)}"
+                                   + (f" — {_why}" if _why else ""))
     
     def _is_extension_error(self, text: str) -> bool:
         patterns = ["chrome-extension://", "moz-extension://", "extensions::", "background.js"]

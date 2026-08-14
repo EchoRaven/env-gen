@@ -158,7 +158,12 @@ def _request_failure_reason_677(exc: BaseException, url: str) -> str:
     except Exception:
         return f"Request failed: <unprintable {type(exc).__name__}>"
     try:
-        text = str(exc).lower()
+        # #687: Chromium spells the SAME conditions differently. A browser navigation reports
+        # `net::ERR_CONNECTION_REFUSED`, which does not contain the substring "connection
+        # refused" that the urllib branch below matches on, so the browser lane got none of this
+        # diagnosis. Normalising the net:: tokens here keeps ONE diagnosis in one place — #665's
+        # lesson was that a second copy drifts from the first.
+        text = str(exc).lower().replace("net::err_", "").replace("_", " ")
         target = ""
         try:
             from urllib.parse import urlparse
@@ -172,10 +177,11 @@ def _request_failure_reason_677(exc: BaseException, url: str) -> str:
                     "retrying this call cannot succeed. Bring the stack up (docker compose) or "
                     "wait for the build to finish, and check the port matches the one the "
                     "backend actually binds.")
-        if "name or service not known" in text or "nodename nor servname" in text:
+        if ("name or service not known" in text or "nodename nor servname" in text
+                or "name not resolved" in text):
             return (base + f" — the HOST does not resolve{target}. Inside compose use the "
                     "SERVICE name, not localhost; from the host use the published port.")
-        if "connection reset by peer" in text:
+        if "connection reset by peer" in text or "connection reset" in text:
             return (base + f" — the peer accepted then RESET the connection{target}: the "
                     "process is starting, crashing on this request, or behind a proxy that "
                     "closed it. Check the container log before retrying.")
