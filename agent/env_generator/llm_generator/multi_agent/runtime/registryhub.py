@@ -2088,6 +2088,34 @@ class RegistryHub:
                 # a median of just 2 distinct causes (r129: 81 rejections, 5 causes). The
                 # verifier re-submits the same unsatisfiable chain ~9x per cause.
                 #
+                # #709 — r147 ANSWERS THE OPEN QUESTION BELOW, and the answer rules out the
+                # obvious next move. r147 is the first run with #664 fully in the build:
+                #
+                #     registration attempts                160     failures  80 (50%)
+                #     escalations emitted (this message)    72
+                #     first attempt                        line 2705
+                #     first escalation                     line 2711   (six lines later)
+                #     last attempt                         line 8994   (6,283 lines later)
+                #
+                # and for the single worst endpoint, `PUT /api/profiles/{}` — 62 rejections,
+                # first at 2711, last at 7825 — the rate ACCELERATES after the escalation:
+                #
+                #     per 1000 log lines:   2000-2999: 8    5000: 14    6000: 18    7000: 22
+                #
+                # So the warning is emitted early, repeatedly, and the behaviour it asks for does
+                # not happen. This is NOT an instruction gap of the #694/#707 kind: the verifier
+                # prompt names `registryhub_list_endpoints` and "registered"/"implemented" 30
+                # times, and this escalation already says exactly the right thing ("DROP those
+                # steps"). Adding another sentence is the reflex to resist — thirty of them plus
+                # a targeted escalation did not move it.
+                #
+                # What would: ENFORCEMENT (strip the unregistered steps and register the
+                # remainder, so the chain makes progress instead of bouncing) or ACCEPTANCE (let
+                # the endpoint be auto-registered as a pending consumer and let the backend lane
+                # see the demand). Both are design decisions with real consequences — a stripped
+                # chain may be meaningless, an auto-registered endpoint invents contract — so
+                # neither is made here. Filed as EXPERIMENTS_PENDING item 33 with these numbers.
+                #
                 # (What the logs CANNOT show: whether the agent read the warning. They truncate
                 # at 300 chars, so the escalation appears 0 times in 55 files — an artifact of
                 # the log, not evidence about the agent. What is provable is the ORDERING, and

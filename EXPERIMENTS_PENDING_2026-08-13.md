@@ -1391,6 +1391,48 @@ suppressed-load-failure line, #701, #707, and the four expected-zero signatures
 
 ---
 
+## 33. r147: #664's escalation informs but does not deter — measured live
+
+Mining r147's own log (the freshest data, and the first run carrying #683-#708b) by tool-failure
+class puts chain registration on top by a wide margin:
+
+    registryhub_register_verification_chain   160 attempts, 80 FAILED (50%)
+    write 24 · edit 6 · test_api 4 · register_endpoint 4 · apply_patch 4
+
+and 62 of those 80 are one endpoint, `PUT /api/profiles/{}`, which the contract genuinely lacks —
+the requirements declare `GET`/`POST /api/profiles` and no `PUT`. The verifier is authoring
+chains for profile EDITING, a plausible feature nobody asked for.
+
+**#664 fires, immediately, and changes nothing.** First attempt at log line 2705; first escalation
+at line **2711**, six lines later. Last attempt at line **8994**. Rejections of that same endpoint
+by thousand-line bucket:
+
+    2000s: 8    5000s: 14    6000s: 18    7000s: 22
+
+**Increasing, not tapering.** The escalation fired 72 times over the run and the re-submission
+rate for the endpoint it names went UP.
+
+**The message is not the problem.** It already gives both exits verbatim: "DROP those steps (or
+the chain). If delivery genuinely needs this coverage, ask the backend lane to implement +
+register the endpoint FIRST." This is not the #682/#690 class where the text named a problem
+without a resolution — the text is good and is ignored. So a wording fix cannot help, which is
+worth recording because wording is what every neighbouring fix in this file did.
+
+**Only a run can settle: which mechanism actually stops it.** Two candidates, both changing
+verification semantics, so neither is guessed at here:
+
+  * **auto-drop** — register the chain minus the offending steps and say so ("registered 4 of 5
+    steps; step[2] PUT /api/profiles/{id} dropped, not in the contract"). Gets coverage moving,
+    but a silently thinner chain tests less than the author intended;
+  * **file the gap** — turn the Nth rejection into a work item for the backend lane instead of a
+    message to the verifier, so the request is dispatched once rather than repeated 62 times.
+
+**Cheapest observation.** Count `🔧 registryhub_register_verification_chain` against `❌` of the
+same, and bucket the rejected endpoint by log position. A working deterrent shows the buckets
+DECAYING after the first escalation; today they grow 8 → 14 → 18 → 22.
+
+---
+
 ## 32. #615's CAUSE fix — unblocked, quantified, and genuinely run-dependent
 
 #708 retired the technical objection ("the seed gives every title `kind='standard'`") and #708b
