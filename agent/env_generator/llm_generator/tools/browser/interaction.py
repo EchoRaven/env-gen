@@ -34,6 +34,20 @@ _CANDIDATE_SELECTOR = "input, textarea, select, button, a[href], [role='button']
 _CANDIDATE_ATTRS = ("name", "id", "placeholder", "aria-label", "type", "data-testid")
 
 
+def _candidates_hint_688(cands: str) -> str:
+    """Render #362's candidate list, keeping "empty page" distinct from "could not look"."""
+    if cands == _EMPTY_PAGE_688:
+        return (" This page has NO interactable elements at all — it is blank or never "
+                "hydrated, so no selector can match. Do not try another selector: check that "
+                "the route rendered (navigate again and read the content) before interacting.")
+    return f" Interactable elements on this page: {cands}" if cands else ""
+
+
+# #688: the sentinel for "the probe RAN and the page offers nothing", as distinct from "" which
+# still means "could not look". Callers must render these two differently.
+_EMPTY_PAGE_688 = "\x00empty-page"
+
+
 async def describe_interactive_candidates(page, limit: int = 12) -> str:
     """A short list of what IS interactable on the page (#362).
 
@@ -46,12 +60,26 @@ async def describe_interactive_candidates(page, limit: int = 12) -> str:
     Runs on an ALREADY-failing path, so it must never raise and never mask the
     real error: any problem returns "".
     """
+    # #688: "" MEANT THREE DIFFERENT THINGS AND THE CALLER COULD NOT TELL THEM APART.
+    # No page, a failed probe, and a page that genuinely offers NOTHING all returned "", so the
+    # caller dropped the hint entirely and the agent saw the bare "Timeout 5000ms exceeded".
+    # The third case is the one that matters and it is the opposite diagnosis: the selector is
+    # not wrong, the PAGE never rendered. Measured over the 249 run logs: browser_fill fails
+    # 1238 times (830 of them in the LIVE era r100+, up from 408 before — it is getting worse)
+    # and browser_click 410 (214 live), and the live samples carry no hint at all, which is only
+    # possible when this returned "".
+    #
+    # `_EMPTY_PAGE_688` is returned ONLY when the query succeeded and found nothing. A probe
+    # that could not run still returns "" — unchanged — because saying "the page is empty" when
+    # we failed to look would be worse than saying nothing.
     if page is None:
         return ""
     try:
         els = await page.query_selector_all(_CANDIDATE_SELECTOR)
     except Exception:
         return ""
+    if not els:
+        return _EMPTY_PAGE_688
     out = []
     for el in (els or [])[:limit * 3]:
         try:
@@ -245,8 +273,7 @@ Features:
         # #362: same reasoning as the fill path above.
         _cands = await describe_interactive_candidates(
             getattr(getattr(self.browser, "state", None), "page", None))
-        if _cands:
-            error_msg += f" Interactable elements on this page: {_cands}"
+        error_msg += _candidates_hint_688(_cands)   # #688: same distinction for click
         if error_hints:
             error_msg += "\n\nHints:\n- " + "\n- ".join(error_hints)
         
@@ -297,8 +324,7 @@ class BrowserFillTool(BaseTool):
             # #362: name what IS on the page so one failure answers the question
             # instead of seeding N more selector guesses.
             _cands = await describe_interactive_candidates(self.browser.state.page)
-            _hint = (f" Interactable elements on this page: {_cands}"
-                     if _cands else "")
+            _hint = _candidates_hint_688(_cands)
             return ToolResult.fail(f"Fill failed: {str(e)}.{_hint}")
 
 
