@@ -118,6 +118,35 @@ which is what this run did NOT show.
 
 ---
 
+## SETTLED BY r145 + r146 — close these, they are answered
+
+Auditing my own record the way I audited the checker: an item still listed as open after the runs
+answered it costs the next reader exactly what a stale docstring costs.
+
+**Item 10 — "267 chains registered but never run" → CLOSED.** r145 ended with 47 passing / 3
+failing / **0 registered**; r146 with 9 passing / **0 registered**. No chain was stranded in
+either run. The corpus figure (267 across 26 runs) is history; #664, which cut the
+re-registration loop from 126 attempts on one endpoint down to 2, is the plausible reason but the
+closure stands on the count alone.
+
+**Item 17 — "the breaking-change machinery is starved of consumers" → PREMISE GONE.** The corpus
+median was 0 registered consumers. r145 registered **65**, r146 **53**. Whatever the machinery
+does or does not do downstream, it is no longer input-starved, so the question as written cannot
+be asked any more. Anything further has to be posed against the new behaviour.
+
+**Items 13, 14, 18 — fact CONFIRMED, action still open.** Each reproduced twice more:
+
+    13  tasks/tasks.yaml   absent in both       -> 146 of 146. The matrix gate keys on a file
+                                                   nothing ever writes.
+    14  max_ticks          5/240 and 1/240      -> the cap cannot bind; corpus max was 6.
+    18  mcp_server/        absent in both       -> reproduced, still unexplained.
+
+**Item 15 — still open, and the checker cannot help.** 330 and 339 crops exist in the two runs,
+but PIL is unavailable in this environment so the blank-detection line reports `n/a`. It needs an
+environment with Pillow, not another run.
+
+---
+
 ## NEXT RUN — run this first
 
     tools/check_pending_experiments.sh <run-dir> [<run-log>]
