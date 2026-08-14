@@ -10,6 +10,42 @@ the cheapest observation that settles it.
 
 ---
 
+## CLOSED — the broken-assertion axis, decomposed by STATUS CODE
+
+Sorting the 202 stored broken assertions by status code instead of by wording is what surfaced
+#686; recording the full decomposition here so nobody re-walks it. Every entry is era-checked,
+because most of the volume turned out to be already-fixed history:
+
+| status | n | share | disposition |
+|--------|---|-------|-------------|
+| 400 | 75 | 37.1% | 53 `null value in column` ALL r13-r67 (historical); **11 `X-Profile-Id header is required` ALL r100+ → #686**; 6 integrity r<100; 1 rating enum (r145, single instance) |
+| 404 | 59 | 29.2% | → #682 (names the id that was sent) |
+| 500 | 36 | 17.8% | 28 r<100; **8 live, all lane-authored raw SQL** — see below, no framework fix |
+| 2xx | 20 |  9.9% | ALL DENIAL-PROBE, all r100+ → #663 |
+| 403 |  8 |  4.0% | → #682b (ownership, opposite remedy to 404) |
+| 422 |  4 |  2.0% | all r<100, historical |
+
+**The 500s are not a framework defect.** Six of the eight live ones are one error across r105,
+r114 and r128: `insert or update on table "ratings" violates foreign key constraint
+"ratings_profile_id_fkey", Key (profile_id)=(46)`. I first traced this to `_fw_owner_val`'s
+documented fallback ("every failure falls back to the user id", which the same comment says
+FK-violates) and was wrong: the rating handler is LANE-authored in custom_routes.py, a raw
+`INSERT INTO ratings (profile_id, ...)` with `int(pid)` and no existence check, wrapped as
+`HTTPException(500, "rating db op failed: ...")`. `_fw_owner_val` is not in that path.
+
+Ruled out first: no reset/factory chain exists in any of the three runs, so #566x's mid-pass
+database wipe cannot explain the missing profile.
+
+Checked and correct: `classify_endpoint_failure` routes a 500 to `framework_defect` ONLY when the
+body matches a projected-handler traceback. The lane's wording does not match, so it is
+classified `broken` and dispatched to the lane — the right destination.
+
+What remains is a generated-app quality issue the framework cannot reach from here: a lane
+handler that inserts caller-supplied ids without checking them, and reports a client error as a
+500. Worth a prompt-level look if it recurs; not worth a framework patch.
+
+---
+
 ## NEXT RUN — run this first
 
     tools/check_pending_experiments.sh <run-dir> [<run-log>]
