@@ -965,6 +965,33 @@ answer. It is recorded here so the next reader inherits the number rather than t
 
 ---
 
+## Where the tests are — read this before auditing a commit
+
+Every fix in this document says "N tests". None of those files appear in the commits, and that is
+**deliberate repo policy, not an omission**:
+
+    .gitignore:38   /agent/tests/
+    3b71e33  2026-06-18  chore(repo): keep dev tests and run scripts local-only
+
+312 test files exist on disk; **112 are tracked and 200 are local-only.** So a commit message
+reading "30 tests; 3115 pass" describes verification that was run, not files that shipped. Anyone
+pulling this branch gets the production fixes without the tests that pin them, and should not
+read the absence as untested work.
+
+The exception is deliberate too, and worth knowing: the four CONVENTION guards are all force-added
+and tracked, so they enforce for everybody —
+
+    test_no_new_fixed_width_source_windows.py     test_no_get_event_loop_in_tests.py
+    test_tuned_constants_carry_a_rationale_647.py test_llm_provider_signatures_stay_uniform.py
+
+I nearly "fixed" that last one, having convinced myself it was local-only while its two named
+siblings were tracked. It was tracked all along; my filter pattern (`_have_`) simply does not
+match `carry_a_rationale`. Fifth instance in this session of reading "absent from my filtered
+list" as "absent from the world" — the same error class as the 5 wrong zeros, the `'consumer' in
+type` run set, and the two "no tool entry" verdicts on tools that exist.
+
+---
+
 ## Next actions that are still offline-checkable
 
 1. ~~**#658 follow-up.**~~ Done — no subscriber exists; see item 6 and #659b.
