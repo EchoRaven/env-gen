@@ -102,6 +102,7 @@ gone_log "#686 step headers sent"        "X-Profile-Id header is required" "was:
 gone_log "#687 browser transport"        "Navigation failed: Page.goto: net::ERR_CONNECTION_REFUSED$" "was: 161 live-era with no diagnosis"
 # The brackets are ESCAPED: grep reads [projected] as a character class, so the unescaped form
 # matches any one of those letters followed by " data load failed:" — over-matching, quietly.
+grep_log "#698 better state available" "better state available: an earlier capture" "fires when an earlier round beat what ships; r146 would have"
 grep_log "#696 suppressed load failure" "\[projected\] data load failed:" "each hit = a page that rendered as an ordinary empty state while its API failed"
 # #692's signature is in the BACKEND CONTAINER log under FW_DEBUG, not here — see item 20. This
 # line only catches it if the container log was folded into the run log.

@@ -2675,6 +2675,28 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         # earlier rounds only. Recommendation only — it changes no decision taken here.
         _better = better_state_available_641(vdir, _verdict.get("blocking_average_live"))
         if _better:
+            # #698: SAY IT OUT LOUD. #641 computes this correctly — r146 validated it end to
+            # end, picking round 5's commit with delta 0.0246 against a 0.02 margin — and then
+            # wrote it into verdict.json, which NOTHING reads. Grepping the tree for
+            # `better_state_available` / `better_state_note` finds only the three lines that
+            # produce them, and the single reader of verdict.json is #500's best-of merge two
+            # hundred lines above, which takes per-screen similarities and never looks at these
+            # keys. So the recommendation reached no agent, no gate, no log and no human.
+            #
+            # Same shape as #691's silent skip and #696's invisible load failure: a correct
+            # detector whose output is not observable is indistinguishable from one that never
+            # ran. A WARNING costs nothing and changes no decision — the release policy question
+            # (ship the best recorded round rather than the last) stays open on purpose, because
+            # an earlier commit can score better VISUALLY while being functionally worse, and
+            # that trade is not this function's to make.
+            try:
+                _LOG.warning(
+                    "#641 better state available: an earlier capture of this run scored %.3f "
+                    "(+%.3f) at commit %s, and the bounded escape ships the LAST round. "
+                    "#618: 24 of 39 runs deliver worse than their own best.",
+                    _better["score"], _better["delta"], str(_better["code_state"])[:12])
+            except Exception:
+                pass
             _verdict["better_state_available"] = _better
             _verdict["better_state_note"] = (
                 "an earlier capture of this run scored %.3f (+%.3f) at commit %s — the bounded "

@@ -1021,11 +1021,21 @@ override mechanism, stated in `duplicated_routes`' own docstring.
   for the last four rounds" is `blocking_average_live`, and it is not a plateau: it is a
   **regression from r5's 0.6655 that four subsequent rounds never undid**.
 
-  **What is now open is a decision, not a measurement.** The recommendation fired and the run
+  **And it told nobody — fixed as #698.** Grepping the tree for `better_state_available` /
+  `better_state_note` finds only the three lines that PRODUCE them, and the sole reader of
+  `verdict.json` is #500's best-of merge, which takes per-screen similarities and never looks at
+  these keys. A correct recommendation reached no agent, no gate, no log and no human: the same
+  shape as #691's silent skip and #696's invisible load failure. #698 emits a WARNING with the
+  score, delta, commit and the #618 population figure. Best-effort; it changes no decision.
+
+  **What stays open is a decision, not a measurement.** The recommendation fired and the run
   shipped r9 anyway — by design, "it changes no decision taken here" — so r146 is the 25th
   instance of the pattern its own note quotes (#618: 24 of 39 runs deliver worse than their own
   best). Whether the bounded escape should ship the BEST recorded round instead of the last one
-  is a release-policy change, and #641 has now produced the evidence to argue it with.
+  is a release-policy change and is deliberately NOT made here: an earlier commit can score
+  better VISUALLY while being functionally worse, and that trade is not the fidelity scorer's to
+  make. #641 has now produced the evidence to argue it with, and #698 makes the evidence visible
+  at the moment it is produced.
 - **`_auto_approve_threshold = 3`.** ~~One run's plans would give the distribution.~~ **Two runs
   happened and gave zero.** `submit_plan` appears in **0 of 253 run logs** — r145 and r146
   included, and r146 had #658 in the build. It is not unreachable: `tool_bundles.py:661` bundles
@@ -1146,10 +1156,15 @@ type` run set, and the two "no tool entry" verdicts on tools that exist.
    neither contains a live bug:
 
    * **`self.workspace.<x>` (~20).** Nine classes take `workspace: Optional[Workspace] = None`.
-     All **18** instantiation sites in the tree pass one — zero omit it — so the attribute is
-     never actually None. Latent at worst. One of those classes both guards
-     (`if not self.workspace:`) and dereferences unguarded elsewhere, so the INCONSISTENCY is
-     real even though the crash is not.
+     Still not a live bug, but **my first reason for saying so was wrong and is corrected here**:
+     I measured "18 instantiation sites, zero omit `workspace`", which counts whether the
+     PARAMETER is passed, not whether a non-None value is. Three sites pass `workspace=None`
+     explicitly — `orchestrator.py:2084` and `framework_validation.py:185/1204`, all
+     `RunValidationTool(workspace=None)`. The conclusion survives for a better reason: that class
+     guards correctly (`if self.workspace is not None and getattr(self.workspace, "base_root",
+     None)`), and the classes that dereference unguarded are never handed None. The
+     INCONSISTENCY inside `verification_tools.py` — one method guards with
+     `if not self.workspace:` while others do not — is real even though the crash is not.
    * **`reg.<hub>` after `_resolve_hubs` (~30).** The shape is
      `reg, err = _resolve_hubs(...)` / `if err: return err` / `reg.workhub...`, and pyrefly
      cannot express that the two are correlated. Reading every return path settles it:
