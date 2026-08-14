@@ -1651,6 +1651,33 @@ fault and the capture layer needs the fix.
 
 ---
 
+## 35. The generalisation behind #713: nothing checks that the running app is THIS source
+
+#713's diagnosis settled as the SERVE side — source fresh, bundle stale. Following that one level
+up asks a question the framework never asks anywhere: **is the app currently serving actually
+built from the current source?**
+
+Searching for any freshness mechanism finds one near-miss and nothing else.
+`maybe_refresh_stale_build_checklist` (#120/#492) re-records stale `build:*` CHECK RESULTS when a
+transient stamps them failure — it is about the records, not about the binary. Grepping for a
+build stamp, build id, source hash or bundle hash returns nothing. So every probe that reasons
+about the running app — the visual capture, api_smoke, the browser lane, the chain executor —
+trusts that the container matches the tree, and nothing verifies it.
+
+#713 is that gap made visible, and it is not rare: **103 of 127 runs (81%)** contain screens
+scored against a page produced by a bundle older than the source the route list came from.
+
+**Only a run can settle: how wide the gap is beyond the visual gate.** The same staleness would
+make an api_smoke pass describe code that is no longer there, and nothing in the corpus
+distinguishes that from a genuine pass — which is exactly why it has never surfaced.
+
+**Cheapest observation.** Write a build stamp (source tree hash) into the image at build time and
+expose it on `/health`; have any probe that concludes about the running app compare it against the
+tree it just read. A mismatch is not a failure of the app — it is a statement that the measurement
+is void, which is the distinction #713 shows the framework currently cannot make.
+
+---
+
 ## 32. #615's CAUSE fix — unblocked, quantified, and genuinely run-dependent
 
 #708 retired the technical objection ("the seed gives every title `kind='standard'`") and #708b
