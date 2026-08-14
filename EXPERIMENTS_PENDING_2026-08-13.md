@@ -1844,6 +1844,23 @@ yet (the prompt never mentioned `reach`), a reading rule resting on that, and a 
 a source literal instead of the log. Each was caught before a run, which is the only reason they
 cost nothing — the same three after a run would have cost a run each.
 
+**And the obvious follow-up: did the same shape contaminate the OLDER probes, whose readings this
+session already acted on?** All three mistakes were in patterns added this session; the 23 older
+ones had never been checked this way. Of those, 10 match a real r145-r148 log and 13 have never
+matched — and "never matched" is exactly the ambiguity that hid #713's dead pattern.
+
+Checking all 13 by whether their fragments can be produced at all (folding adjacent string
+literals, since a pattern split across two f-strings can never appear): **21 of 23 are sound**,
+and the only two that cannot be found in source are `] business_chain:` and `reach=` — the two
+already registered as runtime-constructed with their construction sites. **So no older probe has
+the #727 shape, and this session's readings of r145-r148 stand.**
+
+**Stated at its real strength, which is weaker than the sample check.** "Fragments present in
+folded source" shows a pattern is not obviously unproducible; it does not prove the fragments
+appear together on one line. The sample-line table is the stronger instrument and covers this
+session's probes; extending it backwards is worth doing when an older probe's NOT SEEN is about
+to carry an argument.
+
 **Corrected while measuring:** my first count said 9 of 21. `spec.md` is markdown, not a screen —
 I listed the directory without filtering to images. It is scored 0 times, so the framework
 excludes it correctly and the "incidental finding" was mine, not the framework's.
