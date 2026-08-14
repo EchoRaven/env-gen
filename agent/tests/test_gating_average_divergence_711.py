@@ -114,12 +114,17 @@ def test_it_says_the_gating_number_never_falls():
     assert "best-ever-per-screen and never falls" in _block()
 
 
-def test_it_states_the_consequence_plainly():
-    # Folded: the sentence spans two f-string literals, so a raw source match splits it at
-    # `A "` + `"release`. Fourth time this trap has bitten in this session.
+def test_the_consequence_is_present_AND_marked_withdrawn():
+    """It used to assert the sentence plainly, as the finding. #711r withdrew it: the release
+    path reads `gate.last_result`, the RETURNED dict, whose blocking_average is the current
+    capture — not the persisted high-water number this warning is about. The sentence survives
+    struck through so the reasoning is visible, and a test that only checked its PRESENCE would
+    now be certifying a withdrawn claim."""
     import re
-    assert "A release authorised on the former ships the latter" in re.sub(
-        r'"\s*\n\s*"', "", _block())
+    flat = re.sub(r'"\s*\n\s*"', "", _block())
+    assert "A release authorised on the former ships the latter" in flat
+    assert "RETRACTION OF THE CONSEQUENCE" in flat
+    assert "is WRONG" in flat
 
 
 # --- the DATA property #711 rests on, restored ------------------------------------------------
@@ -175,10 +180,13 @@ def test_both_runs_are_recorded():
     assert "r146 gating 0.5809" in b and "r147 gating 0.655" in b
 
 
-def test_the_delivering_counterexample_is_recorded():
+def test_the_delivering_counterexample_is_recorded_AS_WITHDRAWN():
+    """The r146 and r147 delivery claims are struck through, not deleted. Asserting only their
+    presence — which is what this test did — reads as certifying them."""
     b = " ".join(_block().replace("#", " ").split())
-    assert "r146 DELIVERED at gating 0.67" in b
-    assert "0.6409" in b
+    assert "r146 DELIVERED at gating 0.67" in b and "0.6409" in b
+    i = b.index("r146 DELIVERED at gating 0.67")
+    assert "~~" in b[max(0, i - 40):i], "the claim must be struck through where it appears"
 
 
 def test_the_mechanism_is_attributed_to_500():

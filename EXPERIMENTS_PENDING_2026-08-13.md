@@ -1733,6 +1733,45 @@ right one needed a distribution.
 
 ---
 
+## 48. A retraction has two failure modes, and I hit both
+
+#611 improved my fix instead of obstructing it, which prompted a self-audit: did I weaken any
+guard this session? The sweep — every test MODIFIED rather than created, and every assertion
+deleted — found no weakening, but it found the two ways a retraction goes wrong, one of each.
+
+**Mode 1: the retraction deletes evidence that outlives the claim.** #712's rewrite removed 20
+assertions. Nineteen asserted the withdrawn claim and went correctly. One did not:
+
+    assert all(b >= a for a, b in zip(R146_GATING, R146_GATING[1:]))
+
+r146's persisted gating series IS monotonically non-decreasing, that was never withdrawn, and
+**#711 still rests on it**. What survived asserted only that the PHRASE "monotonically
+non-decreasing" appears in a comment — a test of my prose. Restored under #711 on all three runs'
+real series, with the contrast that makes it a finding: the persisted series never falls in any
+run, the live series falls in every one.
+
+**Mode 2: the retraction leaves tests certifying the withdrawn claim.** The mirror, found by
+looking for it. #711's consequence was withdrawn by STRIKING THROUGH rather than deleting, so the
+sentences remain in the source — and two tests still asserted their presence:
+
+    assert "A release authorised on the former ships the latter" in ...
+    assert "r146 DELIVERED at gating 0.67" in b
+
+Both passed, both were green, and both now read as certifying a claim I had withdrawn one commit
+earlier. Renamed and rewritten to assert the presence AND the strike-through, so the suite states
+"this was said and then withdrawn" rather than "this is the finding".
+
+**The rule the two modes share.** Striking through is the right way to retract — the reasoning
+stays visible — but it leaves the withdrawn text greppable, so any test anchored on that text
+silently changes meaning. A retraction is not finished when the claim is marked; it is finished
+when every assertion about the claim has been re-pointed at either the surviving fact or the
+retraction itself.
+
+**Cheapest observation.** None; this is settled by reading. Recorded because the next retraction
+in this file will have the same two exits and neither is obvious from inside one.
+
+---
+
 ## 47. A hard limit on offline analysis: tool ARGUMENTS are recorded nowhere
 
 Twice this session I asked "what did the lane actually send to this tool?" — once for
