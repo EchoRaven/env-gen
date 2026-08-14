@@ -2435,11 +2435,34 @@ def execute_chain(base: str, chain: Mapping[str, Any],
         # defect and dispatched to a lane that has nothing to fix. Deterministic every
         # pass, so the gate can never see all chains green in ONE eval → wedge.
         # Send it tenant-SCOPED: the endpoint stays covered, the fixture survives.
+        # #686: A STEP'S OWN `headers` WERE SILENTLY DISCARDED.
+        # `_headers` was only ever the framework's tenant-scope override, so a step that
+        # authored headers had them dropped on the floor and then failed on the endpoint's own
+        # complaint. Measured: 275 steps across the corpus declare `headers`, and 11 broken
+        # assertions in the LIVE era (r100+) are `400 {"detail":"X-Profile-Id header is
+        # required"}` — an endpoint that genuinely demands one, so without this it is untestable
+        # by construction, not merely awkward to test.
+        #
+        # The framework told authors as much — the tool description lists only method/path/body/
+        # expect/save/auth, and #586's rejection text says "a chain step carries no headers" —
+        # but nothing rejected a step that declared them, so the verifier kept authoring them and
+        # kept reading a 400 whose cause was entirely on this side. Silently dropping input is
+        # worse than refusing it.
+        #
+        # Authored headers go on FIRST and the framework's own override last, so
+        # `_scoped_reset_header` still wins where it applies; `Authorization` is never taken from
+        # a step, because auth comes from `auth`/`token` and a step-supplied one would quietly
+        # change actor and defeat the ownership probes (#591/#663).
         _headers: Optional[Dict[str, str]] = None
+        _authored = step.get("headers")
+        if isinstance(_authored, Mapping):
+            _headers = {str(k): str(v) for k, v in _authored.items()
+                        if str(k).strip() and str(k).lower() != "authorization"}
+            _headers = _headers or None
         _scope_note: Optional[str] = None
         if _is_factory_reset(method, path):
-            _headers = _scoped_reset_header(chain.get("name"), own_tenant_id,
-                                            last_reg_creds)
+            _fw = _scoped_reset_header(chain.get("name"), own_tenant_id, last_reg_creds)
+            _headers = {**(_headers or {}), **_fw}
             _scope_note = f"reset-scoped->{_headers[_TENANT_SCOPE_HEADER]}"
         res = _http(method, base + path, token=token, body=body, headers=_headers)
         status = res.get("status")

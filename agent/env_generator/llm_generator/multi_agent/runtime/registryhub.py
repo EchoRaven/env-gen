@@ -1926,8 +1926,9 @@ class RegistryHub:
                 "chain rejected: unsatisfiable expectations — " + _d +
                 ". One request cannot return two different statuses. If you meant to test a "
                 "REJECTION, make it a genuinely different request: a different actor (auth), "
-                "a foreign id in the path/query, or a different body — a chain step carries no "
-                "headers, so 'the same call without a header' cannot be expressed.")}
+                "a foreign id in the path/query, or a different body. A step CAN set `headers` "
+                "(#686), but not Authorization — actor identity comes from `auth`, so "
+                "'the same call as a different user' must use a different token.")}
         # #591: the MIRROR of #586 — an expectation nothing can FALSIFY. A business step that
         # accepts both a 2xx and 401/403 passes whether the app served the data or refused the
         # caller, so it proves nothing about access control while still counting toward the

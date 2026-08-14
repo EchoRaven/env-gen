@@ -1715,7 +1715,7 @@ class RegistryHubRegisterVerificationChainTool(HubTool):
         "Step fields: method, path (or endpoint='METHOD /path'), optional "
         "body (use ${rand} for unique values, ${var} to reuse saved ones), "
         "expect (accepted status codes), save (var->dot.path into the JSON "
-        "response), auth (var holding the bearer token). Malformed steps are "
+        "response), auth (var holding the bearer token), headers (a dict of extra request headers — #686; Authorization is ignored here, use auth). Malformed steps are "
         "REJECTED with the reason. run_validation executes every registered "
         "chain (business_chain check) and records pass/fail on the registry.")
     PARAMETERS = {
