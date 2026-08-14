@@ -118,7 +118,51 @@ def audit_seed_data(hub_registry) -> SeedReport:
                 "table": name,
                 "reason": "missing_seed",
                 "detail": {"min_seed_rows": min_rows,
-                           "hint": "call register_seed_data after seeding"},
+                           # #694: say WHAT register_seed_data is. The old hint read as if the
+                           # generated app needed a startup call, and that is exactly how it was
+                           # read: an agent spent a multi-turn investigation on a "seed-gate
+                           # blocker" and reported back "recommended routing a backend task to
+                           # add register_seed_data() startup" — the wrong lane, the wrong
+                           # artifact, and a task queued against app code that must never
+                           # contain it. It is an AGENT-FACING HUB TOOL (tools/seed_tools.py:19,
+                           # NAME = "register_seed_data"); the caller of this audit calls it
+                           # itself after inserting rows. Same class as #682 and #690: the
+                           # remediation text, not the detection, is what costs the rounds.
+                           #
+                           # Rare but expensive: `missing_seed` fires 14 times across 253 logs,
+                           # because the loop above only examines tables still marked `defined`
+                           # and 1632 of the corpus's 1648 table records are `implemented` by
+                           # then. Low frequency, high per-firing cost — which is the argument
+                           # for fixing the wording rather than the detector.
+                           #
+                           # #694b, two measurements that bound how bad the old wording was and
+                           # add one thing the paragraph above does not cover. First the cost:
+                           # `[backend] GREP pattern=register_seed_data scope=app/backend` runs
+                           # 84 times across 18 runs, every one returning "0 matches", and 3
+                           # runs escalate to `P0 delivery-gate: register_seed_data for all 12
+                           # tables (0/12 registered)`. Then the outcome: 0 `seed_registered`
+                           # events and registryhub_seed_registrations at _meta.version 1
+                           # (create only) in 146 of 146 runs — the tool has never once been
+                           # called successfully, so this hint has never yet led anywhere.
+                           #
+                           # And the part that is not just wording: the `seed` bundle is granted
+                           # to orchestrator and verifier only — backend, frontend and debugger
+                           # do not hold it (agents_config.yaml). "Call it yourself" is the
+                           # right instruction for the audit's caller and an impossible one for
+                           # whoever the blocker is dispatched to, which is `backend` in all 18
+                           # of those runs. The sentence below therefore says what to do when
+                           # you do not have the tool, rather than assuming you do. Changing the
+                           # GRANT is a routing decision with blast radius past this audit and
+                           # is deliberately not made here.
+                           "hint": ("Seed this table, then call the `register_seed_data` HUB "
+                                    "TOOL yourself to record the row count. Do NOT add a "
+                                    "register_seed_data() call to the generated backend — it "
+                                    "is not app code and nothing in the app can call it. "
+                                    "It also requires the table to be registered first. If the "
+                                    "tool is not in your toolset, do not go looking for it in "
+                                    "the app — report that you lack it and hand the item back; "
+                                    "it lives in the `seed` bundle, which not every role "
+                                    "holds.")},
             })
             continue
 
