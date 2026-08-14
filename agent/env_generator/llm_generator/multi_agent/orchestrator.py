@@ -367,7 +367,8 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
                              avg_stable_rounds: int = 0,
                              avg_release_rounds: int = VISUAL_AVG_RELEASE_ROUNDS,
                              avg_release: bool = VISUAL_AVG_RELEASE,
-                             coverage_ok: bool = False) -> str:
+                             coverage_ok: bool = False,
+                             app_dead: bool = False) -> str:
     """Decide the visual-blocked delivery path. Returns:
       * ``"defer"``       — keep blocking the release; the lane should iterate.
       * ``"release"``     — escape: deliver anyway (recorded below-threshold).
@@ -398,6 +399,32 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
     is a pure additive path: with the defaults (``coverage_ok`` False, averages None)
     it never fires, so every other branch is byte-identical. Disable via
     ``avg_release`` (env ENVGEN_VISUAL_AVG_RELEASE)."""
+    # #750 — NO ESCAPE MAY SHIP AN APP THAT DEMONSTRABLY DOES NOT RENDER. User-approved.
+    #
+    # Every branch below returns "release": wall-clock, attempt cap, plateau, hard plateau,
+    # idle source, and #558's fast path. r148 took the plateau one and shipped v1.0.0 with the
+    # SPA throwing `TypeError: (void 0) is not a function` on every authenticated route. The
+    # corpus says that is the rule, not the exception — 14 of 14 runs carrying a frontend
+    # runtime-crash signature released, 90 of 90 runs with an unresolved P0 bug released.
+    #
+    # The reason this is a veto and not another escape condition: an escape answers "have we
+    # waited long enough", and no amount of waiting makes a blank page a delivery. It is placed
+    # FIRST so it dominates `fast_release` too, which is otherwise the one path that can fire
+    # before any of the time floors.
+    #
+    # `app_dead` is deliberately NARROW and only became measurable this session. It is not "the
+    # capture blanked" — #75a refunds that, and a capture can blank for reasons that are not the
+    # app's fault, which is exactly why item 56 sat undecided. It is "the capture blanked PAST
+    # the refund cap AND the browser reported an uncaught error on those routes" (#740 collects
+    # them; before #740 the framework threw the console away and the two cases were
+    # indistinguishable). A pure capture glitch raises nothing in the console and is untouched.
+    #
+    # This can end a run with NO release. That is the intended trade and the reason it needed a
+    # decision rather than a default: no app is better than an app that renders nothing. The run
+    # still terminates on its own wall-clock; it simply does not cut a release, and the latch
+    # CLEARS the moment a capture renders, so a lane that fixes the crash still ships.
+    if app_dead:
+        return "defer"
     if (avg_release and coverage_ok and avg_release_rounds > 0
             and blocking_average is not None and avg_min is not None
             and blocking_average >= avg_min
@@ -461,6 +488,8 @@ def _visual_fast_release_args(gate) -> dict:
         "avg_min": res.get("min_similarity"),
         "avg_stable_rounds": getattr(gate, "avg_pass_rounds", 0),
         "coverage_ok": _blocking_judged >= 1,
+        # #750: carried through both call sites, which already splat this dict.
+        "app_dead": bool(getattr(gate, "app_dead_750", False)),
     }
 
 

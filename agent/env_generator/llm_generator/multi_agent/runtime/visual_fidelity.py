@@ -4060,6 +4060,7 @@ class VisualFidelityGate:
         self._seed_reminder_sent = False   # #133: one backend seed reminder per milestone
         self._best_by_screen: Dict[str, float] = {}  # #138: best similarity per blocking screen
         self.plateau_rounds = 0            # #138: consecutive judgments with no new best
+        self.app_dead_750 = False          # #750: blackout past the cap WITH console errors
         self.avg_pass_rounds = 0           # #558: consecutive judged rounds whose gating
         #                                    blocking_average cleared the min bar (the STABLE
         #                                    precondition for the avg fast-release; a single
@@ -4305,7 +4306,37 @@ class VisualFidelityGate:
                     "flatlined (plateau still %s). Past #75a's refund cap this round is "
                     "judged and remediated as before — only the escape counter is held.",
                     self.plateau_rounds)
+                # #750 (user-approved): LATCH "the app does not render" and veto every release
+                # escape. Narrow by construction, and only measurable since #740 started
+                # keeping the console: a blank capture alone is #75a's business and can be the
+                # harness rather than the app — which is precisely why this decision sat open.
+                # A blank capture PAST the refund cap whose routes ALSO raised an uncaught
+                # error is not ambiguous. r148 is the case: 10 of 12 screens blank for nine
+                # rounds while the console repeated `TypeError: (void 0) is not a function`,
+                # and it released v1.0.0 through the plateau escape.
+                _errs750 = sorted({m for _s in (screens or [])
+                                   for m in (_s.get("console_errors") or [])})
+                if self.transient_refunds >= _TRANSIENT_REFUND_CAP and _errs750:
+                    if not self.app_dead_750:
+                        orch._logger.warning(
+                            "#750 DELIVERY VETOED — the app does not render. The capture has "
+                            "blanked past #75a's refund cap (%s/%s) and the browser raised: "
+                            "%s. Every release escape (wall-clock, attempts, plateau, idle, "
+                            "#558 fast path) is refused while this holds; it clears as soon as "
+                            "one capture renders. Fix the crash — no release is better than a "
+                            "release that renders nothing.",
+                            self.transient_refunds, _TRANSIENT_REFUND_CAP,
+                            "; ".join(_errs750[:3]))
+                    self.app_dead_750 = True
             else:
+                # #750: a capture that RENDERED clears the veto. The latch must never outlive
+                # the condition — a lane that fixes the crash has to be able to ship, and a
+                # sticky veto would turn one bad round into a run that can never deliver.
+                if self.app_dead_750:
+                    orch._logger.warning(
+                        "#750 veto CLEARED — this capture rendered, so the app is no longer "
+                        "demonstrably dead and the release escapes apply again.")
+                    self.app_dead_750 = False
                 _improved = False
                 for _s in screens:
                     if _s.get("advisory"):

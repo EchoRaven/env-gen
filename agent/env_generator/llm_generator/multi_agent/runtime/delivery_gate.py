@@ -76,9 +76,14 @@ def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
         meta = r.get("metadata", {}) or {}
         page = str(meta.get("page") or meta.get("route") or meta.get("name")
                    or r.get("name") or "?")
-        if r.get("status") == "passed":
+        # #752: canonicalise the spelling. Readers normally arrive through #193/#236's
+        # normaliser, but the raw store carries THREE spellings — `success` 1198, `passed` 310,
+        # `failure` 252 — and this function is now load-bearing (#752 blocks on `failed`), so a
+        # record that skipped the normaliser must not silently read as neither.
+        _st = str(r.get("status") or "").strip().lower()
+        if _st in ("passed", "success", "pass"):
             passed.append(page)
-        elif r.get("status") in ("failed", "error"):
+        elif _st in ("failed", "failure", "error"):
             failed.append(page)
     return {
         "passed_records": len(passed),
@@ -1602,6 +1607,24 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # on, because "ui_smoke_pass=True" alongside failing UI records reads as app-wide UI health
     # and in r148 meant two unauthenticated pages out of fourteen.
     _breadth739 = _ui_evidence_breadth_739(validation_results)
+    # #752 (user-approved) — CONTRADICTED UI EVIDENCE BLOCKS; MISSING UI EVIDENCE DOES NOT.
+    #
+    # #739 showed `ui_smoke_pass` is existential: one passing record satisfies the whole UI
+    # requirement and a FAILING one is never consulted. r148 read True off "ui_smoke on landing
+    # + login PASS" while the SPA crashed on 12 of 14 pages, and item 58 concluded that merely
+    # switching #671's matrix on would not have caught it — landing and login passed either way.
+    #
+    # Item 58 asked for both halves. Measuring them separately is what makes this safe to turn
+    # on, and they are nothing alike:
+    #     passing AND failing UI records (contradicted)    6 of 148 runs   -> 4%, a gate
+    #     no UI evidence at all (missing)                 67 of 148 runs   -> 45%, a halt
+    # So the contradiction blocks, unconditionally and regardless of `task_suite_exists`,
+    # because it needs no matrix to interpret: the app itself said both things. The MISSING
+    # case stays exactly where #671 left it, behind `tasks/tasks.yaml` — blocking 45% of runs
+    # for absent evidence is a stop, not a quality bar, and #671 already recorded that
+    # enforcing it needs a live run.
+    if _breadth739["failed_records"]:
+        failed_checks.append("validation_ui_evidence_failed")
     if ui_smoke_pass and _breadth739["failed_records"]:
         logger.warning(
             "#739 ui_smoke_pass=True rests on %d passing UI record(s) while %d FAILED: passed "
@@ -1732,6 +1755,25 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             "— a hard block here would be a halt, not a gate.",
             _bugs743["open_p0_bug_count"],
             "; ".join(str(b.get("title")) for b in _bugs743.get("open_p0_bugs", [])[:4]))
+    # #751 (user-approved) — A TASK EXPLICITLY MARKED FAILED BLOCKS THE CUT.
+    #
+    # #743 measured both candidates and only this one is a gate rather than a halt:
+    #     any open P0 BUG      90 of 129 runs would block   -> a halt
+    #     any FAILED task      20 of 148 runs would block   -> 13%
+    # and all 20 of those released. `failed` is not "nobody got to it" — `fail_task` is
+    # authorised (creator, claimer or orchestrator only) and REQUIRES a reason, so the status
+    # is a deliberate "this was attempted and did not work", carrying things like "Frontend
+    # Dockerfile uses registry-blocked base images" and "Record the missing critical UI flow
+    # validations (blocks delivery)".
+    #
+    # The open-P0 half stays REPORTED, exactly as #743 left it: blocking 70% of runs is not a
+    # quality bar, it is a stop, and task hygiene is why (r148's open P0s included eleven stale
+    # `Fix breaking change in GET /api/...` left in_progress).
+    #
+    # Clearing it is cheap and in the lane's hands: complete the task, or cancel it if it was
+    # wrong. That is the same escape any structural blocker already has.
+    if _bugs743.get("failed_count"):
+        failed_checks.append("unresolved_failed_tasks")
     incomplete_tasks = incomplete_required_tasks(hubs)
     # §4: when a milestone slice is provided (intermediate milestone), defer structural tasks
     # for a clearly out-of-slice endpoint — an intermediate milestone is gated on ITS OWN

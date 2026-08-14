@@ -1733,6 +1733,58 @@ right one needed a distribution.
 
 ---
 
+## 70. #750/#751/#752 — the decision was taken: three gates now BLOCK. Items 56/58/62 CLOSED.
+
+User-approved, all three. Everything found in #736-#749 reported and decided nothing, and the
+corpus says what that costs: **14 of 14** runs with a frontend runtime-crash signature released,
+**90 of 90** runs with an unresolved P0 bug released, r148 cut v1.0.0 with the SPA throwing
+`TypeError: (void 0) is not a function` on every route.
+
+Each blast radius was measured before flipping it, and **one of the three was deliberately split
+rather than switched on whole**:
+
+    ENABLED
+      #750  blackout past the refund cap AND console errors   would have caught r148
+      #751  a task in status `failed`                          20 of 148 runs   (13%)
+      #752  UI evidence that both passes and fails              6 of 148 runs   ( 4%)
+    NOT ENABLED — measured, and a halt rather than a gate
+      any open P0 bug (#743)                                   90 of 129 runs   (70%)
+      UI evidence MISSING entirely (#671's matrix)             67 of 148 runs   (45%)
+
+**#750 — the veto.** Every branch of `_visual_release_decision` returns `"release"`; an escape
+answers "have we waited long enough", which is not a question a blank page has a good answer to.
+So it is a veto placed FIRST, dominating even #558's fast path (the one that fires before every
+time floor). Its condition only became measurable this session: "the capture blanked" alone is
+#75a's business and can be the harness rather than the app — precisely why item 56 sat open —
+but "blanked past the refund cap AND the browser raised an uncaught error" is not ambiguous, and
+#740 is what made the second half observable. The latch clears the moment one capture renders, so
+a lane that fixes the crash still ships. **This can end a run with no release at all. That is the
+trade, and it is why it needed a decision rather than a default.**
+
+**#751 — `failed` blocks, open P0 does not.** `fail_task` is authorised and requires a reason, so
+the status means "attempted and did not work", unlike `pending` which can mean nobody looked. A
+lane clears it by completing the task or cancelling it if it was wrong.
+
+**#752 — contradicted evidence blocks, missing evidence does not.** Item 58 asked for both halves;
+measuring them separately is what makes it safe. A run whose UI evidence both passes and fails
+needs no matrix to interpret — the app said both things — so it blocks unconditionally. Absent
+evidence stays behind #671's `tasks/tasks.yaml` condition. Also canonicalised the status spelling
+while doing it: the raw store carries `success` 1198, `passed` 310, `failure` 252, and a record
+that skipped #193/#236's normaliser must not read as neither now that this is load-bearing.
+
+**Two guards of my own caught me while writing this.** The `_visual_fast_release_args` exact-
+equality tests failed on the new `app_dead` key — kept as exact equality deliberately, since that
+is what caught the addition. And the fixed-width-source-window guard rejected a `g[i:i + 1400]`
+slice in the new test; anchored on a real boundary instead. That is its seventh catch this session.
+
+**Cheapest observation.** Every one of these is now visible in a run log by its check name:
+`unresolved_failed_tasks`, `validation_ui_evidence_failed`, and #750's "DELIVERY VETOED" line. The
+number that matters is how many blocks turn out to be RIGHT — a blocked run that would have
+shipped a working app is a pure loss, and no artifact can answer it. The corpus baselines to judge
+against are the three percentages above.
+
+---
+
 ## 69. Two hypotheses falsified, one method retired, and the delivered apps audited clean (#749)
 
 A turn with no defect in it, recorded in full because three of these would otherwise be re-mined.
