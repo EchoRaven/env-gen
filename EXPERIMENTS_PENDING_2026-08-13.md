@@ -1600,8 +1600,27 @@ confidence and specificity as the real quarter.
 That also reframes the "frozen score" observations elsewhere in this file: a lane that fixes
 everything it is told and sees no movement may be fixing a page the gate is not looking at.
 
-**Only a run can settle: which side of source-vs-served causes it.** The corrected #713 comment is
-careful here — `known_routes` is re-parsed from App.jsx on every call so the list is never stale;
+**SETTLED — it is the SERVE side, and r147 proves it by timeline.** I said this needed a run;
+the evidence was already on disk and I had not gone looking for it. The chain:
+
+    03:59:12   [VERIFIER] Task complete: Validation pass BLOCKED at docker_up
+    04:02:44   the route rename lands (code_state 9e606251d)
+    04:03:54   the last capture — 70 seconds later
+    04:04:54   "Frontend build tooling pinned to known-good" — AFTER the capture
+
+There is **no rebuild or restart between the rename and the capture**, and the validation before
+it was blocked at `docker_up`. `known_routes` is re-parsed from App.jsx on every call, so the gate
+navigated to the NEW paths; the browser was serving a bundle built before the rename, which knows
+only the OLD ones; every new path missed and fell to the catch-all. Source fresh, serve stale.
+
+That generalises past r147: **a capture is only meaningful if the served bundle postdates the
+source the route list was parsed from, and nothing checks that.** The cheapest guard is to compare
+the two at capture time — read the served app's route table (or a build stamp) and refuse to score
+screens whose route is absent from it, rather than recording 0.03 and generating remediation for
+a page that was never reachable.
+
+~~**Only a run can settle: which side of source-vs-served causes it.**~~ The corrected #713 comment
+is careful here — `known_routes` is re-parsed from App.jsx on every call so the list is never stale;
 what remains is that the list comes from SOURCE while the browser hits the SERVED app, so any lag
 (a bundle not rebuilt after a route change) makes new paths miss and fall to the catch-all. Which
 it was in r147 is not decided, and guessing it is how the first version of that comment went
