@@ -1,0 +1,5 @@
+[2026-08-11 20:36:18] monitor start for netflix-web-r141 (pid 452393)
+[2026-08-11 20:36:18] etime=00:29 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-11 21:06:21] etime=30:31 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)

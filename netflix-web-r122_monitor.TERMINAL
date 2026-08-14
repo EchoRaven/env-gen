@@ -1,0 +1,8 @@
+==================== TERMINAL @ 2026-08-10 00:08:54 ====================
+gen process:      DOWN
+main-exit:        main() returned 1 | forcing exit (rc=1)
+GENERATION COMPLETE lines: 0 | 
+release tags (0): [(none)]
+rc verdict:       NONZERO (main() returned 1)
+VERDICT:          NON-SUCCESS / WEDGE — diagnose ground-truth-first, STOP+report before relaunch.
+========================================================

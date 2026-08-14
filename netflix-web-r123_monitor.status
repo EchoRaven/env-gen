@@ -1,0 +1,7 @@
+[2026-08-10 02:54:10] monitor start for netflix-web-r123 (pid 3778197)
+[2026-08-10 02:54:10] etime=00:32 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-10 03:24:12] etime=30:34 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 3 failed check(s): ['business_chain_failing', 'deliverability_bare_authed_fetch', 'deliverability_bare_authed_fetch']
+[2026-08-10 03:54:14] etime=01:00:36 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 3 failed check(s): ['business_chain_failing', 'deliverability_bare_authed_fetch', 'deliverability_bare_authed_fetch']

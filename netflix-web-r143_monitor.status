@@ -1,0 +1,5 @@
+[2026-08-12 00:16:57] monitor start for netflix-web-r143 (pid 2891913)
+[2026-08-12 00:16:57] etime=00:27 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-12 00:46:59] etime=30:29 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 2 failed check(s): ['business_chain_failing', 'deliverability_ui_flow_missing']

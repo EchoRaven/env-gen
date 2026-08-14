@@ -1,0 +1,29 @@
+[2026-08-10 16:41:03] monitor start for netflix-web-r129 (pid 433891)
+[2026-08-10 16:41:03] etime=00:32 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-10 17:11:05] etime=30:34 | tags=[(none)] | undefcol=1 | advance_signals=0
+         blocker: gate has 6 failed check(s): ['business_chain_missing', 'contract_alignment_failed', 'deliverability_dead_artifacts', 'deliverability_no_successful_run', 'delive
+[2026-08-10 17:41:07] etime=01:00:36 | tags=[(none)] | undefcol=1 | advance_signals=4
+         blocker: gate has 2 failed check(s): ['deliverability_ui_flow_missing', 'incomplete_required_tasks']
+[2026-08-10 18:11:08] etime=01:30:37 | tags=[(none)] | undefcol=1 | advance_signals=10
+         blocker: gate has 2 failed check(s): ['deliverability_ui_flow_missing', 'incomplete_required_tasks']
+[2026-08-10 18:41:10] etime=02:00:39 | tags=[1.0.0] | undefcol=1 | advance_signals=12
+         blocker: gate has 2 failed check(s): ['deliverability_ui_flow_missing', 'incomplete_required_tasks']
+[2026-08-10 19:11:11] etime=02:30:40 | tags=[1.0.0] | undefcol=1 | advance_signals=12
+         blocker: gate has 1 failed check(s): ['verification_checklist_not_ready']
+[2026-08-10 19:41:13] etime=03:00:42 | tags=[1.0.0] | undefcol=1 | advance_signals=12
+         blocker: gate has 1 failed check(s): ['business_chain_failing']
+[2026-08-10 20:11:15] etime=03:30:44 | tags=[1.0.0] | undefcol=1 | advance_signals=12
+         blocker: gate has 2 failed check(s): ['business_chain_failing', 'verification_checklist_not_ready']
+[2026-08-10 20:41:16] etime=04:00:45 | tags=[1.0.0] | undefcol=1 | advance_signals=12
+         blocker: gate has 2 failed check(s): ['business_chain_failing', 'verification_checklist_not_ready']
+[2026-08-10 20:46:17] etime=DOWN | tags=[1.0.0] | undefcol=1 | advance_signals=12
+         blocker: gate has 2 failed check(s): ['business_chain_failing', 'verification_checklist_not_ready']
+==================== TERMINAL @ 2026-08-10 20:46:17 ====================
+gen process:      DOWN
+main-exit:        main() returned 1 | <none>
+GENERATION COMPLETE lines: 1 | Status: FAILED
+release tags (1): [1.0.0]
+rc verdict:       NONZERO (main() returned 1)
+VERDICT:          NON-SUCCESS / WEDGE — diagnose ground-truth-first, STOP+report before relaunch.
+========================================================

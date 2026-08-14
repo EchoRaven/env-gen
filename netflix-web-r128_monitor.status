@@ -1,0 +1,11 @@
+[2026-08-10 14:28:30] monitor start for netflix-web-r128 (pid 2911553)
+[2026-08-10 14:28:30] etime=00:35 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-10 14:58:32] etime=30:37 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['business_chain_failing']
+[2026-08-10 15:28:33] etime=01:00:38 | tags=[1.0.0] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['business_chain_failing']
+[2026-08-10 15:58:35] etime=01:30:40 | tags=[1.0.0] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['business_chain_failing']
+[2026-08-10 16:28:37] etime=02:00:42 | tags=[1.0.0] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['business_chain_failing']

@@ -1819,6 +1819,57 @@ class HealPipeline:
             staged_any = False
             for sub in ("app", "mcp_server", "docker"):
                 if not (repo / sub).exists():
+                    # #691: SAY WHEN A DELIVERY SUBTREE IS NOT THERE TO SHIP.
+                    # This skip was silent, and one of the three is routinely absent: the MCP
+                    # server. r145 and r146 both log "mcp_server/app/: 15 tool(s) emitted, 15
+                    # registered" and both end with NO mcp_server/ in the delivered tree —
+                    # 125 of 144 corpus runs are missing it too.
+                    #
+                    # The mechanism, identical in both runs: the writer commits mcp_server/ on
+                    # `main` (r146 60c738f, r145 0b0e81b), delivery runs on `integration`, and
+                    # `git merge-base --is-ancestor` says main is NOT an ancestor of integration.
+                    # So at delivery time the directory genuinely is not in the working tree and
+                    # this guard is correct to skip — but the registry still advertises the
+                    # surface (registryhub_mcp_registry: 16 entries in r146), so the run ships a
+                    # contract it does not contain and nothing says so.
+                    #
+                    # Which side to fix — write it on the delivery branch, or merge that path in
+                    # — is a branch-topology decision, and I am not guessing it here. What is
+                    # unambiguous is that a silently absent delivery subtree should not be
+                    # silent. WARNING when a hub still claims the surface, INFO otherwise.
+                    try:
+                        _claimed = 0
+                        if sub == "mcp_server":
+                            # Read the STORE, not the object graph: MCPRegistry is its own
+                            # class rather than a registryhub mixin, so a getattr chain here
+                            # would be a guess that silently evaluates to 0 and never warns.
+                            # The store file is derivable from `repo` alone.
+                            import json as _json
+                            _f = repo / "shared" / "hubs" / "registryhub_mcp_registry.json"
+                            if _f.exists():
+                                _v = _json.loads(_f.read_text() or "{}")
+                                _claimed = sum(
+                                    1 for k, r in (_v or {}).items()
+                                    if not str(k).startswith("_")
+                                    and isinstance(r, dict)
+                                    and r.get("kind") in ("tool", "server")
+                                )
+                        _msg = ("delivery subtree %r is not in the working tree at "
+                                "commit time — nothing from it will ship")
+                        if _claimed:
+                            # "entries", not "tools": the store holds 1 server + 15 tools in
+                            # both measured runs, and saying "16 tools" would contradict the
+                            # writer's own "15 tool(s) emitted, 15 registered" log line.
+                            orch._logger.warning(_msg + " while the registry still advertises "
+                                                 "%d registered MCP entries (servers + tools). "
+                                                 "Check which BRANCH wrote it: the delivery "
+                                                 "commit runs on the integration branch and a "
+                                                 "subtree committed only on `main` is invisible "
+                                                 "here.", sub, _claimed)
+                        else:
+                            orch._logger.info(_msg, sub)
+                    except Exception:
+                        pass
                     continue
                 rc, _o, _e = _run_git(
                     ["add", "-A", "--", sub,

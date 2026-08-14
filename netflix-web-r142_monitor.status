@@ -1,0 +1,23 @@
+[2026-08-11 21:21:34] monitor start for netflix-web-r142 (pid 867307)
+[2026-08-11 21:21:34] etime=00:27 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-11 21:51:36] etime=30:29 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['verification_checklist_not_ready']
+[2026-08-11 22:21:38] etime=01:00:31 | tags=[1.0.0] | undefcol=0 | advance_signals=2
+         blocker: gate has 3 failed check(s): ['business_chain_failing', 'deliverability_dead_artifacts', 'deliverability_no_successful_run']
+[2026-08-11 22:51:41] etime=01:30:34 | tags=[1.0.0] | undefcol=0 | advance_signals=6
+         blocker: gate has 1 failed check(s): ['business_chain_failing']
+[2026-08-11 23:21:43] etime=02:00:36 | tags=[1.0.0,1.1.0] | undefcol=0 | advance_signals=6
+         blocker: gate has 1 failed check(s): ['verification_checklist_not_ready']
+[2026-08-11 23:51:46] etime=02:30:39 | tags=[1.0.0,1.1.0] | undefcol=0 | advance_signals=6
+         blocker: gate has 1 failed check(s): ['business_chain_failing']
+[2026-08-12 00:10:47] etime=DOWN | tags=[1.0.0,1.1.0,1.2.0] | undefcol=0 | advance_signals=6
+         blocker: gate has 1 failed check(s): ['business_chain_failing']
+==================== TERMINAL @ 2026-08-12 00:10:48 ====================
+gen process:      DOWN
+main-exit:        main() returned 0 | forcing exit (rc=0)
+GENERATION COMPLETE lines: 1 | Status: SUCCESS
+release tags (3): [1.0.0,1.1.0,1.2.0]
+rc verdict:       0
+VERDICT:          *** MULTI-MILESTONE VALIDATED *** (>=2 tags + rc=0)
+========================================================

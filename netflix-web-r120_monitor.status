@@ -1,0 +1,21 @@
+[2026-08-09 03:03:51] monitor start for netflix-web-r120 (pid 642761)
+[2026-08-09 03:03:51] etime=00:32 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-09 03:33:53] etime=30:33 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-09 04:03:55] etime=01:00:35 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['deliverability_ui_page_unwired']
+[2026-08-09 04:33:56] etime=01:30:36 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['deliverability_ui_page_unwired']
+[2026-08-09 05:03:58] etime=02:00:38 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['deliverability_ui_page_unwired']
+[2026-08-09 05:23:59] etime=DOWN | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['deliverability_ui_page_unwired']
+==================== TERMINAL @ 2026-08-09 05:23:59 ====================
+gen process:      DOWN
+main-exit:        main() returned 1 | <none>
+GENERATION COMPLETE lines: 1 | Status: FAILED
+release tags (0): [(none)]
+rc verdict:       NONZERO (main() returned 1)
+VERDICT:          NON-SUCCESS / WEDGE — diagnose ground-truth-first, STOP+report before relaunch.
+========================================================

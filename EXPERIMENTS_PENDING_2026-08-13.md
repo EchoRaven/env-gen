@@ -138,8 +138,12 @@ be asked any more. Anything further has to be posed against the new behaviour.
 
     13  tasks/tasks.yaml   absent in both       -> 146 of 146. The matrix gate keys on a file
                                                    nothing ever writes.
-    14  max_ticks          5/240 and 1/240      -> the cap cannot bind; corpus max was 6.
-    18  mcp_server/        absent in both       -> reproduced, still unexplained.
+    14  max_ticks          5/240 and 1/240      -> CLOSED 2026-08-14, no action: delivered runs
+                                                  spend MORE ticks than aborted ones (median 2
+                                                  vs 1), so no reachable cap discriminates.
+    18  mcp_server/        absent in both       -> SOLVED 2026-08-14: written on `main`, delivered
+                                                  from `integration`; not lost, not deleted. #691
+                                                  makes the silent skip audible.
 
 **Item 15 — still open, and the checker cannot help.** 330 and 339 crops exist in the two runs,
 but PIL is unavailable in this environment so the blank-detection line reports `n/a`. It needs an
@@ -473,6 +477,21 @@ Lowering it needs evidence of a correct value the corpus does not supply.
 family — incremented on adjacent lines in orchestrator.py — so `stalled = idle_tick_count >= 3`
 also sits above p90.)
 
+**CLOSED 2026-08-14 — no run needed, and the answer is "leave it alone".** The sentence above says
+lowering it "needs evidence of a correct value the corpus does not supply". That framing was too
+weak: the corpus can decide the question outright, by asking whether ticks separate the runs a cap
+would exist to kill. Splitting all 136 runs that record a tick count by OUTCOME:
+
+    delivered      27 runs   ticks {1,2,3,4,6}      median 2   max 6
+    not delivered 109 runs   ticks {0,1,2,3,4,5}    median 1   max 5
+
+The ranges overlap, and the direction is the opposite of the one a cap assumes: **delivered runs
+spend MORE ticks than aborted ones** (median 2 vs 1, max 6 vs 5). A tick cap is therefore not a
+weak stuck-detector, it is an anti-correlated one — every reachable value kills healthy runs
+strictly before stuck ones. r145 (STUCK, 85 min, 0 tags) burned 5 ticks; r146 (delivered v1.0.0)
+burned 1. Nothing to change: 240 is inert, and inert is the correct behaviour for this knob. The
+protection people might imagine it gives comes from the STUCK detector, which fired in r145.
+
 ---
 
 ## 15. 847 component crops are single-colour blanks
@@ -590,14 +609,41 @@ against 15 registered — so the scaffold is right when it runs. The 18 are spre
 (r2, r17, r34 … r139, r142) and the newest runs are among those without, so this is intermittent,
 not historical.
 
-**Only a run can settle.** Whether the scaffold writes into a worktree that never reaches the run
-root, or writes to the root and something later removes it. A removed worktree leaves no trace,
-so the artifacts cannot separate the two — and the registry's `implemented` is written from the
-write's own return value, so it cannot witness the loss either.
+**~~Only a run can settle.~~ SOLVED 2026-08-14 from the artifacts — it is neither of the two.**
+The paragraph below was wrong about the evidence, not just the answer, and the error is worth
+keeping: it said "a removed worktree leaves no trace, so the artifacts cannot separate the two".
+The artifacts separate them completely; I had only looked at the filesystem, and the answer was in
+git. ~~Whether the scaffold writes into a worktree that never reaches the run root, or writes to
+the root and something later removes it.~~
 
-**Cheapest observation.** One run: log `orch.output_dir` at the `write_mcp_server` call and stat
-`mcp_server/` again at delivery. If the path differs, it is a worktree-merge gap; if it matches
-and the directory is gone, something deletes it.
+Both r145 and r146 log that the writer ran and succeeded — `mcp_server/app/: 15 tool(s) emitted,
+15 registered.` — and both end with no `mcp_server/` anywhere. `git log --diff-filter=D` finds no
+commit that removes it, because none does:
+
+    r146   mcp_server/app/{main.py,pyproject.toml,start.sh}   added in 60c738f   on branch main
+    r145   same three files                                   added in 0b0e81b   on branch main
+    both   HEAD = integration;  merge-base --is-ancestor <commit> HEAD  ->  FALSE
+
+**The writer commits to `main`, delivery runs on `integration`, and the two have diverged.** The
+files are neither lost nor deleted — they are on a branch the release is not cut from. That also
+explains the intermittency noted above without appealing to chance: the 18 runs that do ship it
+are the ones whose topology happened to put the write on the delivery line.
+
+`commit_framework_delivery` already lists the subtree — `for sub in ("app", "mcp_server",
+"docker")` — and skips it on `if not (repo / sub).exists(): continue`, which at that moment is
+*correct*: on `integration` the directory really is not there. The defect is that the skip was
+**silent** while `registryhub_mcp_registry` advertised the surface — 16 entries (1 server + 15
+tools) in both runs.
+
+**Fixed: #691** makes the skip audible — WARNING naming the branch question when a store still
+advertises the surface, INFO otherwise. It reads the count from the store file (whose path follows
+from `repo`) rather than a getattr chain into the hub graph: `MCPRegistry` is its own class, not a
+registryhub mixin, so a guessed accessor would evaluate to 0 forever and the warning would never
+fire — a dead branch guarding a silent skip.
+
+**Still open, and now the only open half:** which side to repair — write the subtree on the
+delivery branch, or merge that path into `integration` before the cut. That is a branch-topology
+decision, #691 deliberately does not make it, and the next run's WARNING is the input for it.
 
 **Related, deferred with it.** The delivery gate has `deliverability_failed_mcp_probes` but does
 not require the surface to exist. Requiring it would have failed 27 of the 35 delivered runs, so

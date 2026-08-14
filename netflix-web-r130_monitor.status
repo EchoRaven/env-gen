@@ -1,0 +1,19 @@
+[2026-08-10 21:17:01] monitor start for netflix-web-r130 (pid 3519160)
+[2026-08-10 21:17:01] etime=00:34 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-10 21:47:02] etime=30:35 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 3 failed check(s): ['business_chain_failing', 'deliverability_ui_flow_missing', 'incomplete_required_tasks']
+[2026-08-10 22:17:04] etime=01:00:37 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['business_chain_failing']
+[2026-08-10 22:47:06] etime=01:30:39 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['business_chain_failing']
+[2026-08-10 22:57:07] etime=DOWN | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 2 failed check(s): ['business_chain_failing', 'verification_checklist_not_ready']
+==================== TERMINAL @ 2026-08-10 22:57:07 ====================
+gen process:      DOWN
+main-exit:        main() returned 1 | <none>
+GENERATION COMPLETE lines: 1 | Status: FAILED
+release tags (0): [(none)]
+rc verdict:       NONZERO (main() returned 1)
+VERDICT:          NON-SUCCESS / WEDGE — diagnose ground-truth-first, STOP+report before relaunch.
+========================================================

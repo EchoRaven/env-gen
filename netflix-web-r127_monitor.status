@@ -1,0 +1,21 @@
+[2026-08-10 11:41:01] monitor start for netflix-web-r127 (pid 1010540)
+[2026-08-10 11:41:01] etime=00:32 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-10 12:11:03] etime=30:34 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['deliverability_ui_flow_failed']
+[2026-08-10 12:41:04] etime=01:00:35 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['verification_checklist_not_ready']
+[2026-08-10 13:11:06] etime=01:30:37 | tags=[1.0.0] | undefcol=0 | advance_signals=0
+         blocker: gate has 4 failed check(s): ['business_chain_failing', 'deliverability_dead_artifacts', 'deliverability_no_successful_run', 'incomplete_required_tasks']
+[2026-08-10 13:41:08] etime=02:00:39 | tags=[1.0.0] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['business_chain_failing']
+[2026-08-10 14:05:09] etime=DOWN | tags=[1.0.0] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['business_chain_failing']
+==================== TERMINAL @ 2026-08-10 14:05:09 ====================
+gen process:      DOWN
+main-exit:        main() returned 1 | <none>
+GENERATION COMPLETE lines: 1 | Status: FAILED
+release tags (1): [1.0.0]
+rc verdict:       NONZERO (main() returned 1)
+VERDICT:          NON-SUCCESS / WEDGE — diagnose ground-truth-first, STOP+report before relaunch.
+========================================================

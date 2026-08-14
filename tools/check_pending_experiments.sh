@@ -67,6 +67,12 @@ grep_log "#689 navigation-race retry"    "Retried once after the navigation" "wa
 grep_log "#690 empty route parameter"    "EMPTY parameter"                 "was: 3 branches all mis-diagnosed it"
 grep_log "#682 unknown id named"         "no such row exists"              "was: bare 'title not found'"
 grep_log "#682b ownership 403"           "The refusal is CORRECT"          "was: bare 'does not belong to the caller'"
+# #691 is the one line here whose PRESENCE is the expected outcome, not a regression. The branch
+# topology it reports (writer commits mcp_server/ on `main`, delivery cuts from `integration`) is
+# NOT fixed — only made audible. Seeing it means the diagnosis reproduced a third time and the
+# remaining decision (write on the delivery branch vs merge the path in) has its input. Its
+# ABSENCE is the interesting result: either the topology changed, or the subtree finally shipped.
+grep_log "#691 absent delivery subtree"  "is not in the working tree at commit time" "EXPECTED to fire; r145+r146 both silently shipped without mcp_server/"
 
 # --- fixes whose signature is the DEFECT DISAPPEARING, not a new message -------------------------
 # These cannot be confirmed by presence. A zero here is the goal, but a zero also happens when the

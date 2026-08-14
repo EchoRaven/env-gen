@@ -1,0 +1,15 @@
+[2026-08-08 03:01:51] monitor start for netflix-web-r116 (pid 464353)
+[2026-08-08 03:01:51] etime=00:32 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-08 03:31:53] etime=30:34 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-08 03:59:55] etime=DOWN | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 7 failed check(s): ['business_chain_failing', 'deliverability_dead_artifacts', 'deliverability_no_successful_run', 'deliverability_ui_flow_missing', 'f
+==================== TERMINAL @ 2026-08-08 03:59:55 ====================
+gen process:      DOWN
+main-exit:        main() returned 1 | <none>
+GENERATION COMPLETE lines: 1 | Status: FAILED
+release tags (0): [(none)]
+rc verdict:       NONZERO (main() returned 1)
+VERDICT:          NON-SUCCESS / WEDGE — diagnose ground-truth-first, STOP+report before relaunch.
+========================================================

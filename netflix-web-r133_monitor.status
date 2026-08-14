@@ -1,0 +1,11 @@
+[2026-08-11 03:03:53] monitor start for netflix-web-r133 (pid 2866639)
+[2026-08-11 03:03:53] etime=00:28 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-11 03:33:55] etime=30:31 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 7 failed check(s): ['business_chain_failing', 'deliverability_dead_artifacts', 'deliverability_no_successful_run', 'deliverability_ui_flow_missing', 'f
+[2026-08-11 04:03:58] etime=01:00:33 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['deliverability_ui_flow_missing']
+[2026-08-11 04:34:00] etime=01:30:35 | tags=[1.0.0] | undefcol=0 | advance_signals=4
+         blocker: gate has 1 failed check(s): ['business_chain_failing']
+[2026-08-11 05:04:03] etime=02:00:38 | tags=[1.0.0] | undefcol=0 | advance_signals=4
+         blocker: gate has 1 failed check(s): ['business_chain_failing']

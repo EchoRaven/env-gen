@@ -1,0 +1,11 @@
+[2026-08-10 04:15:35] monitor start for netflix-web-r124 (pid 479010)
+[2026-08-10 04:15:35] etime=00:34 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-10 04:45:36] etime=30:35 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 3 failed check(s): ['business_chain_failing', 'deliverability_bare_authed_fetch', 'deliverability_bare_authed_fetch']
+[2026-08-10 05:15:38] etime=01:00:37 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['verification_checklist_not_ready']
+[2026-08-10 05:45:40] etime=01:30:39 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['verification_checklist_not_ready']
+[2026-08-10 06:15:41] etime=02:00:40 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['verification_checklist_not_ready']

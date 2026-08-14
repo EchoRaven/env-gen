@@ -1,0 +1,17 @@
+[2026-08-08 21:40:22] monitor start for netflix-web-r119 (pid 2320499)
+[2026-08-08 21:40:22] etime=00:33 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-08 22:10:24] etime=30:35 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 15 failed check(s): ['database_sql_missing', 'deliverability_ui_flow_missing', 'deliverability_ui_page_unwired', 'deliverability_ui_page_unwired', 'del
+[2026-08-08 22:40:26] etime=01:00:37 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 2 failed check(s): ['deliverability_bare_authed_fetch', 'deliverability_bare_authed_fetch']
+[2026-08-08 22:48:26] etime=DOWN | tags=[1.0.0] | undefcol=0 | advance_signals=0
+         blocker: gate has 2 failed check(s): ['deliverability_bare_authed_fetch', 'deliverability_bare_authed_fetch']
+==================== TERMINAL @ 2026-08-08 22:48:26 ====================
+gen process:      DOWN
+main-exit:        main() returned 0 | forcing exit (rc=0)
+GENERATION COMPLETE lines: 0 | 
+release tags (1): [1.0.0]
+rc verdict:       0
+VERDICT:          rc=0 but only 1 tag(s) — NOT the multi-milestone target; inspect.
+========================================================

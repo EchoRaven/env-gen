@@ -1,0 +1,17 @@
+[2026-08-09 17:00:01] monitor start for netflix-web-r121 (pid 3001153)
+[2026-08-09 17:00:01] etime=00:32 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-09 17:30:03] etime=30:34 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['verification_checklist_not_ready']
+[2026-08-09 18:00:04] etime=01:00:35 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['business_chain_failing']
+[2026-08-09 18:22:05] etime=DOWN | tags=[1.0.0,1.1.0] | undefcol=0 | advance_signals=0
+         blocker: gate has 1 failed check(s): ['business_chain_failing']
+==================== TERMINAL @ 2026-08-09 18:22:06 ====================
+gen process:      DOWN
+main-exit:        main() returned 0 | <none>
+GENERATION COMPLETE lines: 1 | Status: SUCCESS
+release tags (2): [1.0.0,1.1.0]
+rc verdict:       0
+VERDICT:          *** MULTI-MILESTONE VALIDATED *** (>=2 tags + rc=0)
+========================================================

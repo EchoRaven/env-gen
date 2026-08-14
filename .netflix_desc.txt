@@ -1,0 +1,43 @@
+Build a pixel-faithful, fully-functional Netflix web clone — a multi-profile video streaming
+catalog. Match every reference screenshot exactly (dark #141414 theme, red #e50914 accent, the
+NETFLIX wordmark, poster rails, hero billboard, title-detail modal, full-screen player). Use the
+REAL provided assets: seed the catalog from dataset/titles.json (real titles, posters, backdrops,
+synopses), play real trailer clips from the assets, and use the provided logo, icon set and fonts.
+Complete functionality with EVERY interactive control wired to a real backend action — no dead
+links, no placeholder stubs, no fabricated data; honest empty states. Full design details are in
+design/references and the spec doc.
+
+Each profile sees only its own My List, ratings and Continue Watching (per-profile private data).
+
+Endpoints:
+- POST /auth/register
+- POST /auth/login
+- GET /api/profiles
+- POST /api/profiles
+- GET /api/titles
+- GET /api/titles/{id}
+- GET /api/titles/{id}/episodes
+- GET /api/titles/trending
+- GET /api/titles/top10
+- GET /api/genres
+- GET /api/genres/{id}/titles
+- GET /api/search
+- GET /api/my-list
+- POST /api/my-list
+- DELETE /api/my-list/{id}
+- POST /api/titles/{id}/rating
+- GET /api/continue-watching
+
+Data model:
+- table: users: id, email, password_hash, name
+- table: profiles: id, user_id, name, avatar, is_kids
+- table: titles: id, name, kind, year, genre, maturity_rating, rating, synopsis, poster, backdrop, video_url, duration, top10_rank
+- table: episodes: id, title_id, season, number, name, synopsis, duration, thumbnail
+- table: genres: id, name
+- table: title_genres: id, title_id, genre_id
+- table: my_list: id, profile_id, title_id
+- table: ratings: id, profile_id, title_id, value
+- table: continue_watching: id, profile_id, title_id, progress_seconds
+
+Screens: landing, login, profiles (who's watching), browse_home, shows, movies, games,
+new_and_popular, genre_category, title_detail, player, my_list, browse_by_languages.

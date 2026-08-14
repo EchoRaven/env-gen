@@ -1,0 +1,8 @@
+==================== TERMINAL @ 2026-08-08 22:48:26 ====================
+gen process:      DOWN
+main-exit:        main() returned 0 | forcing exit (rc=0)
+GENERATION COMPLETE lines: 0 | 
+release tags (1): [1.0.0]
+rc verdict:       0
+VERDICT:          rc=0 but only 1 tag(s) — NOT the multi-milestone target; inspect.
+========================================================

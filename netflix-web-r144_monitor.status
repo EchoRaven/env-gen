@@ -1,0 +1,5 @@
+[2026-08-12 01:16:51] monitor start for netflix-web-r144 (pid 3548203)
+[2026-08-12 01:16:51] etime=00:29 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-12 01:46:54] etime=30:31 | tags=[(none)] | undefcol=0 | advance_signals=2
+         blocker: gate has 1 failed check(s): ['verification_checklist_not_ready']
