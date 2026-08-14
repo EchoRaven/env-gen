@@ -1391,6 +1391,41 @@ suppressed-load-failure line, #701, #707, and the four expected-zero signatures
 
 ---
 
+## 32. #615's CAUSE fix — unblocked, quantified, and genuinely run-dependent
+
+#708 retired the technical objection ("the seed gives every title `kind='standard'`") and #708b
+made the report name the filters the contract declares. What remains is making `/movies` actually
+fetch `?kind=movie`. Every prerequisite is confirmed:
+
+    backend    list_titles(kind=Query(None), genre=..., language=...) — already accepts them
+    contract   schema.request = {kind: string?, genre: string?, language: string?, …}
+    seed       seed_dataset.json: 60 titles, kind movie 28 / series 32, real genres
+
+**It is not implemented, and the reason is a trade I cannot settle offline.** Filtering by route
+changes how much each page renders:
+
+    /movies  -> kind=movie    60 -> 28 items   (-53%)
+    /shows   -> kind=series   60 -> 32 items   (-47%)
+    a genre page              as few as 1 item
+
+The visual gate scores each rendered screen against a reference screenshot, and the Netflix
+references are dense poster grids. Halving a grid — or rendering a genre page with one poster —
+is exactly the kind of change that moves a fidelity score, and the standing goal asks for
+functionally-correct AND visually-similar. So the fix that makes five routes stop being the same
+page may cost the thing the gate measures. That is not a judgement to make from a corpus.
+
+**Only a run can settle.** Score the same app twice, once with route-derived filtering and once
+without, and compare per-screen similarity on the affected screens (`movies`, `shows`,
+`genre_category`, `browse_by_languages`, `new_and_popular`).
+
+**Cheapest observation.** The projector change is small enough to gate behind an env flag; run
+one generation with it on and diff `design/visual_gate/verdict.json`'s per-screen scores against
+a matched run. If the affected screens hold their score, the functional fix is free and should
+ship; if they drop, the calibration question #615 raised is the real one and the report (#700 +
+#708b) is the right ceiling.
+
+---
+
 ## 30. The asset/data policy audit — two clean, one gap, and the pairing is the point
 
 Checking the DELIVERED corpus against the run description's own words ("use the REAL provided
