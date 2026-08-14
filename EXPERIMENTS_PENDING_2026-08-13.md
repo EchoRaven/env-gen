@@ -1733,6 +1733,33 @@ right one needed a distribution.
 
 ---
 
+## 52. Auditing my own guards: which are proven, and which only look it
+
+Two guards this session shipped able to report a clean pass while blind — #716 let #727's dead
+pattern through, and #734's first sweep skipped every tool name containing a digit, so a planted
+violation went unseen. Twice is a pattern, so rather than wait for a third I audited all six
+guards built here for whether their non-vacuity is DEMONSTRATED or assumed:
+
+    guard   proven how
+    #716    FIRED twice on real changes (caught #713's ambiguous selector; was itself taught by
+            #727's dead pattern, which it had passed)
+    #719    FIRED on #721 and #724 — code carrying a number the document did not
+    #717    never fired, but tests BOTH directions: a log with `[main-exit]` and one without
+    #726    planted-violation control, written with it
+    #734    planted-violation control, added after the control caught it vacuous
+    #720    never fired, one-way assertion only  ← the only unproven one
+
+**"No control" is not the same as "vacuous".** A guard that has actually fired on a real change is
+better evidenced than one with a synthetic control, and #717's two-direction test is a control in
+substance. So the audit's output is one addition, not six: #720 now empties its registry and
+requires every shared key to be reported, which fails if the sweep sees nothing.
+
+**Cheapest observation.** None — this is settled by reading. Recorded because the instinct on
+finding two blind guards is to add controls everywhere, and four of the six did not need one; the
+work was in telling which.
+
+---
+
 ## 51. The same shape twice, and only one of them should be folded
 
 #730 folded `schema.query` into `schema.request` because the lane declared query parameters under

@@ -90,6 +90,24 @@ def test_every_declaration_says_whether_they_agree(key, note):
         f"{key}'s note must state agreement or difference, not just exist")
 
 
+def test_the_guard_is_not_vacuous(monkeypatch):
+    """Planted violation, because "no undeclared shared key" is exactly the assertion that reads
+    green when the sweep sees nothing at all.
+
+    Audited every guard built this session for this: #716 and #719 are proven by having FIRED on
+    real changes, #717 tests both directions (marker present and absent), and this one had only a
+    one-way assertion. Two guards this session shipped able to report a clean pass while blind —
+    #716 let #727's dead pattern through, #734's sweep skipped tool names with digits — so an
+    unproven guard is the thing to fix rather than to trust."""
+    import test_verdict_key_semantics_720 as me
+    monkeypatch.setattr(me, "KNOWN_SHARED", {}, raising=False)
+    shared = _returned_keys() & _persisted_keys()
+    assert shared, "the two dicts share no keys at all — the sweep itself is broken"
+    undeclared = sorted(shared - set(me.KNOWN_SHARED))
+    assert undeclared, "with an empty registry every shared key must be reported"
+    assert "blocking_average" in undeclared
+
+
 # --- the three that actually differ, pinned ---------------------------------------------------------
 
 def test_the_returned_average_is_computed_from_results():
