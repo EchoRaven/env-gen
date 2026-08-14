@@ -27,6 +27,7 @@ from pathlib import Path
 # stderr (the run log) — the external watcher sends it before killing a frozen run.
 import faulthandler
 import signal as _signal
+from typing import Optional
 _ASYNC_LOOP = [None]  # set by _main_with_loop_capture; read by the USR2 dumper
 try:
     faulthandler.register(_signal.SIGUSR1, all_threads=True)
@@ -200,7 +201,7 @@ from utils.model_limits import resolve_max_output_tokens
 from multi_agent import Orchestrator
 
 
-def setup_logging(verbose: bool = False, log_file: Path = None):
+def setup_logging(verbose: bool = False, log_file: Optional[Path] = None):
     """Setup logging configuration.
     
     Args:
@@ -255,7 +256,7 @@ def reset_output_dir(output_dir: Path) -> None:
             child.unlink()
 
 
-def parse_milestones(raw: str = None):
+def parse_milestones(raw: Optional[str] = None):
     """Parse the --milestones argument into an ordered list of dicts.
 
     Accepts a path to a JSON file OR an inline JSON string. Returns an ordered

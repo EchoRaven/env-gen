@@ -64,7 +64,7 @@ Examples:
         ReportProgressTool._instances[agent_id] = self
     
     @classmethod
-    def configure(cls, agent_id: str, agent_name: str, callback: Callable = None, memory_bank=None):
+    def configure(cls, agent_id: str, agent_name: str, callback: Optional[Callable] = None, memory_bank=None):
         """Configure an instance for specific agent."""
         instance = cls._instances.get(agent_id)
         if instance:
@@ -107,7 +107,7 @@ Examples:
             }
         )
     
-    def execute(self, status: str, phase: str = None, details: Dict[str, Any] = None) -> ToolResult:
+    def execute(self, status: str, phase: Optional[str] = None, details: Optional[Dict[str, Any]] = None) -> ToolResult:
         report = {
             "type": "progress_report",
             "agent_id": self._agent_id,
@@ -199,7 +199,7 @@ Examples:
         ReportCompletionTool._instances[agent_id] = self
     
     @classmethod
-    def configure(cls, agent_id: str, agent_name: str, callback: Callable = None, memory_bank=None):
+    def configure(cls, agent_id: str, agent_name: str, callback: Optional[Callable] = None, memory_bank=None):
         """Configure an instance for specific agent."""
         instance = cls._instances.get(agent_id)
         if instance:
@@ -250,9 +250,9 @@ Examples:
     def execute(
         self,
         task: str,
-        files_created: List[str] = None,
-        phase: str = None,
-        summary: str = None,
+        files_created: Optional[List[str]] = None,
+        phase: Optional[str] = None,
+        summary: Optional[str] = None,
         **kwargs,
     ) -> ToolResult:
         # Backward/typo compatibility for LLM-generated keys like "files_created?"
@@ -377,7 +377,7 @@ Examples:
         self._agent = agent
     
     @classmethod
-    def configure(cls, agent_id: str, agent_name: str, callback: Callable = None, memory_bank=None, agent=None):
+    def configure(cls, agent_id: str, agent_name: str, callback: Optional[Callable] = None, memory_bank=None, agent=None):
         """Configure an instance for specific agent."""
         instance = cls._instances.get(agent_id)
         if instance:
@@ -463,7 +463,7 @@ Examples:
         self._recent_issues[assign_to].append((now, issue_hash))
         return False
     
-    def execute(self, issue: str, assign_to: str = "backend", severity: str = "warning", phase: str = None, context: str = None) -> ToolResult:
+    def execute(self, issue: str, assign_to: str = "backend", severity: str = "warning", phase: Optional[str] = None, context: Optional[str] = None) -> ToolResult:
         # Deduplication check
         if self._is_duplicate(issue, assign_to):
             return ToolResult(
@@ -608,7 +608,7 @@ Examples:
         GetProgressTool._instances[agent_id] = self
     
     @classmethod
-    def configure(cls, agent_id: str, callback: Callable = None):
+    def configure(cls, agent_id: str, callback: Optional[Callable] = None):
         """Configure an instance for specific agent."""
         instance = cls._instances.get(agent_id)
         if instance:
@@ -649,7 +649,7 @@ Examples:
             }
         )
     
-    def execute(self, scope: str = "summary", agent_id: str = None, limit: int = 20) -> ToolResult:
+    def execute(self, scope: str = "summary", agent_id: Optional[str] = None, limit: int = 20) -> ToolResult:
         query = {
             "type": "progress_query",
             "from_agent": self._agent_id,

@@ -150,7 +150,7 @@ class ConfigurableAgent(EnvGenAgent):
         agent_id: str,
         llm: LLM,
         workspace_manager: "WorkspaceManager",
-        config_override: Dict[str, Any] = None,
+        config_override: Optional[Dict[str, Any]] = None,
     ):
         # Support _config_key override for spawned runtime agents.
         # e.g., agent_id="api_debugger_abc123" but config resolves to "analysis_worker"
@@ -594,7 +594,7 @@ def create_agent(
     agent_id: str,
     llm: LLM,
     workspace_manager: "WorkspaceManager",
-    config_override: Dict[str, Any] = None,
+    config_override: Optional[Dict[str, Any]] = None,
 ) -> ConfigurableAgent:
     """
     Create an agent from config.

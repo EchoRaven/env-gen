@@ -211,7 +211,7 @@ class GateRegistry:
         page_id: str,
         reviewer: str,
         state: str,
-        similarity_score: float = None,
+        similarity_score: Optional[float] = None,
         deviations: Optional[List[dict]] = None,
         summary: str = "",
     ) -> dict:

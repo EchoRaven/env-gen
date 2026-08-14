@@ -1071,7 +1071,7 @@ class GeneratorMemory(AgentMemory):
     
     def __init__(
         self,
-        llm: LLM = None,
+        llm: Optional[LLM] = None,
         short_term_size: int = 100,
         long_term_size: int = 1000,
         condenser_max_size: int = 80,
@@ -1632,7 +1632,7 @@ class GeneratorMemory(AgentMemory):
         content: str, 
         category: str = "general",
         importance: float = 0.5,
-        share_with: List[str] = None
+        share_with: Optional[List[str]] = None
     ) -> str:
         """
         Add a piece of knowledge.
@@ -1690,8 +1690,8 @@ class GeneratorMemory(AgentMemory):
     
     def recall_knowledge(
         self, 
-        query: str = None, 
-        category: str = None,
+        query: Optional[str] = None, 
+        category: Optional[str] = None,
         limit: int = 5
     ) -> List[Dict[str, Any]]:
         """

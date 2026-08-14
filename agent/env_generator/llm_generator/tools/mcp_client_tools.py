@@ -33,7 +33,7 @@ class MCPClient:
     def __init__(
         self,
         server_url: str = "http://localhost:8080",
-        auth_token: str = None,
+        auth_token: Optional[str] = None,
         timeout: float = 30.0
     ):
         self.server_url = server_url.rstrip("/")
@@ -72,7 +72,7 @@ class MCPClient:
     async def call_tool(
         self,
         tool_name: str,
-        arguments: Dict[str, Any] = None
+        arguments: Optional[Dict[str, Any]] = None
     ) -> Dict:
         """
         Call an MCP tool.
@@ -147,7 +147,7 @@ class MCPClient:
     def call_tool_sync(
         self,
         tool_name: str,
-        arguments: Dict[str, Any] = None
+        arguments: Optional[Dict[str, Any]] = None
     ) -> Dict:
         """Synchronous version of call_tool."""
         try:
@@ -172,8 +172,8 @@ _mcp_client: Optional[MCPClient] = None
 
 
 def get_mcp_client(
-    server_url: str = None,
-    auth_token: str = None
+    server_url: Optional[str] = None,
+    auth_token: Optional[str] = None
 ) -> MCPClient:
     """Get or create MCP client."""
     global _mcp_client
@@ -239,7 +239,7 @@ Returns list of available tools on success.
     def execute(
         self,
         server_url: str,
-        auth_token: str = None
+        auth_token: Optional[str] = None
     ) -> ToolResult:
         """Connect to MCP server and list tools."""
         try:
@@ -366,7 +366,7 @@ Returns the tool execution result.
     def execute(
         self,
         tool_name: str,
-        arguments: Dict[str, Any] = None
+        arguments: Optional[Dict[str, Any]] = None
     ) -> ToolResult:
         """Call MCP tool."""
         try:

@@ -82,7 +82,7 @@ Connection uses docker-compose service name 'db' by default.
     def execute(
         self,
         query: str,
-        database: str = None,
+        database: Optional[str] = None,
         allow_write: bool = False,
         _retried_after_start: bool = False,
     ) -> ToolResult:
@@ -445,7 +445,7 @@ Examples:
             }
         )
     
-    def execute(self, table: str = None, include_data: bool = False) -> ToolResult:
+    def execute(self, table: Optional[str] = None, include_data: bool = False) -> ToolResult:
         if table:
             return self._inspect_table(table, include_data)
         else:
@@ -586,7 +586,7 @@ Examples:
     
     def execute(
         self,
-        check_tables: List[str] = None,
+        check_tables: Optional[List[str]] = None,
         check_seed: bool = False
     ) -> ToolResult:
         results = {

@@ -41,7 +41,7 @@ Returns:
 Requires: pip install pillow scikit-image
 """
     
-    def __init__(self, workspace: Workspace = None):
+    def __init__(self, workspace: Optional[Workspace] = None):
         super().__init__(name=self.NAME, category=ToolCategory.FILE)
         self.workspace = workspace
         self._logger = logging.getLogger(__name__)
@@ -79,8 +79,8 @@ Requires: pip install pillow scikit-image
     
     async def execute(
         self, 
-        reference: str = None, 
-        generated: str = None,
+        reference: Optional[str] = None, 
+        generated: Optional[str] = None,
         threshold: float = 0.7
     ) -> ToolResult:
         """Compare screenshots and return similarity analysis."""
@@ -333,7 +333,7 @@ Example:
     verify_api_contract()  # Auto-detect and verify
 """
     
-    def __init__(self, workspace: Workspace = None):
+    def __init__(self, workspace: Optional[Workspace] = None):
         super().__init__(name=self.NAME, category=ToolCategory.FILE)
         self.workspace = workspace
         self._logger = logging.getLogger(__name__)
@@ -1073,7 +1073,7 @@ After generation, use send_message() to notify Frontend Agent.
         "review_worker",
     })
 
-    def __init__(self, workspace: Workspace = None, agent_id: str = ""):
+    def __init__(self, workspace: Optional[Workspace] = None, agent_id: str = ""):
         super().__init__(name=self.NAME, category=ToolCategory.FILE)
         self.workspace = workspace
         self._logger = logging.getLogger(__name__)
@@ -1331,7 +1331,7 @@ Example:
 Returns the API spec content if available, or instructions to wait.
 """
     
-    def __init__(self, workspace: Workspace = None):
+    def __init__(self, workspace: Optional[Workspace] = None):
         super().__init__(name=self.NAME, category=ToolCategory.FILE)
         self.workspace = workspace
         self._logger = logging.getLogger(__name__)
@@ -1451,7 +1451,7 @@ Returns the API spec content if available, or instructions to wait.
 # FACTORY FUNCTION
 # =============================================================================
 
-def create_verification_tools(workspace: Workspace = None) -> List[BaseTool]:
+def create_verification_tools(workspace: Optional[Workspace] = None) -> List[BaseTool]:
     """Create all verification tools."""
     # Imported lazily to avoid a module-load cycle (validation_tools pulls in the
     # runtime lifecycle/validation_runner).

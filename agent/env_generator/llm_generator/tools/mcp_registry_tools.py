@@ -136,7 +136,7 @@ class ListMCPToolsTool(_MCPToolBase):
                 "properties": {"server_name": {"type": "string"}},
             }, required=[])
 
-    async def execute(self, *, server_name: str = None, **_kw) -> ToolResult:
+    async def execute(self, *, server_name: Optional[str] = None, **_kw) -> ToolResult:
         tools = list(
             (self.hub_registry.mcp_registry.get_mcp_tools(server_name=server_name) or {}).values()
         )

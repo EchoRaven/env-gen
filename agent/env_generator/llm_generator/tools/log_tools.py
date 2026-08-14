@@ -253,12 +253,12 @@ Examples:
     
     def execute(
         self,
-        source: str = None,
-        file: str = None,
+        source: Optional[str] = None,
+        file: Optional[str] = None,
         level: str = "all",
-        pattern: str = None,
+        pattern: Optional[str] = None,
         last_lines: int = 100,
-        raw_logs: str = None
+        raw_logs: Optional[str] = None
     ) -> ToolResult:
         # Get log content
         if raw_logs:
@@ -415,10 +415,10 @@ Examples:
     
     def execute(
         self,
-        source: str = None,
-        file: str = None,
+        source: Optional[str] = None,
+        file: Optional[str] = None,
         focus: str = "errors",
-        raw_logs: str = None
+        raw_logs: Optional[str] = None
     ) -> ToolResult:
         # Get parsed logs
         parse_result = self._parse_tool.execute(
@@ -595,8 +595,8 @@ Examples:
     def execute(
         self,
         pattern: str,
-        source: str = None,
-        file: str = None,
+        source: Optional[str] = None,
+        file: Optional[str] = None,
         context: int = 2,
         max_matches: int = 20
     ) -> ToolResult:

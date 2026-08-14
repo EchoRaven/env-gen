@@ -122,7 +122,7 @@ def _norm_ep_key(method: str, path: str) -> str:
     return str(method).upper() + " " + norm
 
 
-def render_tool(ep: Dict[str, Any], alias: str = None) -> str:
+def render_tool(ep: Dict[str, Any], alias: Optional[str] = None) -> str:
     """Render one ``@mcp.tool`` async function projecting a backend endpoint.
 
     Built with plain string templating (NOT an f-string) so the generated
@@ -308,7 +308,7 @@ exec uv run python main.py
 
 
 def _resolve_tool_names(endpoints: Dict[str, Any],
-                        tool_aliases: Dict[str, str] = None) -> List[tuple]:
+                        tool_aliases: Optional[Dict[str, str]] = None) -> List[tuple]:
     """[(endpoint, unique_tool_name)] in contract order, GUARANTEED collision-free.
 
     A base name (the spec alias, else ``tool_op_id``) that repeats gets a deterministic
@@ -334,7 +334,7 @@ def _resolve_tool_names(endpoints: Dict[str, Any],
 
 
 def render_mcp_server(endpoints: Dict[str, Any], env_name: str = "app",
-                      tool_aliases: Dict[str, str] = None) -> str:
+                      tool_aliases: Optional[Dict[str, str]] = None) -> str:
     """Render the full ``main.py``: fixed skeleton + one tool per business
     endpoint. Deterministic — same contract in, byte-identical server out."""
     title = env_name.replace("_", " ").replace("-", " ").title()
@@ -367,7 +367,7 @@ def spec_tool_aliases(spec: Dict[str, Any]) -> Dict[str, str]:
 
 
 def mcp_tool_records(endpoints: Dict[str, Any],
-                     tool_aliases: Dict[str, str] = None) -> List[Dict[str, Any]]:
+                     tool_aliases: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
     """The tool registration records (one per business endpoint) the
     orchestrator feeds to ``mcp_registry.register_mcp_tool``."""
     recs: List[Dict[str, Any]] = []
@@ -393,7 +393,7 @@ def mcp_tool_records(endpoints: Dict[str, Any],
 
 def write_mcp_server(output_dir: Path, endpoints: Dict[str, Any],
                      env_name: str = "app",
-                     tool_aliases: Dict[str, str] = None) -> Dict[str, Any]:
+                     tool_aliases: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """Author ``<output_dir>/mcp_server/<env>/{main.py, pyproject.toml, start.sh}``.
 
     Like the DB DDL (and unlike the AS modules), this projects from the

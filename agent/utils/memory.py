@@ -71,7 +71,7 @@ class ShortTermMemory:
         self._buffer: deque[MemoryItem] = deque(maxlen=max_size)
         self._index: dict[str, MemoryItem] = {}
     
-    def add(self, content: str, metadata: dict = None, importance: float = 0.5) -> str:
+    def add(self, content: str, metadata: Optional[dict] = None, importance: float = 0.5) -> str:
         """Add item to memory."""
         item = MemoryItem(
             content=content,
@@ -139,7 +139,7 @@ class LongTermMemory:
         self.max_size = max_size
         self._memories: dict[str, MemoryItem] = {}
     
-    def add(self, content: str, metadata: dict = None, importance: float = 0.5) -> str:
+    def add(self, content: str, metadata: Optional[dict] = None, importance: float = 0.5) -> str:
         """Add item to memory."""
         item = MemoryItem(
             content=content,
@@ -278,8 +278,8 @@ class WorkingMemory:
         """Check if key exists."""
         return key in self._storage
     
-    def add_step(self, thought: str = None, action: str = None,
-                 action_input: Any = None, observation: str = None) -> None:
+    def add_step(self, thought: Optional[str] = None, action: Optional[str] = None,
+                 action_input: Any = None, observation: Optional[str] = None) -> None:
         """Add a step to action history."""
         step = {"timestamp": datetime.now().isoformat()}
         if thought:
@@ -520,7 +520,7 @@ class AgentMemory:
             )
     
     def remember(self, content: str, memory_type: str = "short",
-                 metadata: dict = None, importance: float = 0.5) -> str:
+                 metadata: Optional[dict] = None, importance: float = 0.5) -> str:
         """
         Add a memory.
         
@@ -537,7 +537,7 @@ class AgentMemory:
             return self.long_term.add(content, metadata, importance)
         return self.short_term.add(content, metadata, importance)
     
-    def recall(self, query: str, sources: list[str] = None, limit: int = 5) -> list[MemoryItem]:
+    def recall(self, query: str, sources: Optional[list[str]] = None, limit: int = 5) -> list[MemoryItem]:
         """
         Search across memory systems.
         

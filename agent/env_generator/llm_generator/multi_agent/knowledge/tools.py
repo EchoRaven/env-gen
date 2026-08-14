@@ -39,8 +39,8 @@ GET_RELEVANT_KNOWLEDGE_TOOL = GetRelevantKnowledgeTool().tool_definition
 
 def query_knowledge(
     query: str,
-    category: str = None,
-    tags: List[str] = None,
+    category: Optional[str] = None,
+    tags: Optional[List[str]] = None,
     limit: int = 3,
 ) -> Dict[str, Any]:
     """Legacy functional wrapper for querying knowledge."""
@@ -81,11 +81,11 @@ def store_knowledge(
     solution: str,
     summary: str = "",
     problem: str = "",
-    symptoms: List[str] = None,
+    symptoms: Optional[List[str]] = None,
     root_cause: str = "",
     example_code: str = "",
     wrong_code: str = "",
-    tags: List[str] = None,
+    tags: Optional[List[str]] = None,
     severity: str = "medium",
 ) -> Dict[str, Any]:
     """Legacy functional wrapper for storing knowledge."""
@@ -141,7 +141,7 @@ def mark_knowledge_useful(knowledge_id: str, useful: bool = True) -> Dict[str, A
     return {"success": True, "message": f"Marked knowledge as {'useful' if useful else 'not useful'}"}
 
 
-def list_knowledge(category: str = None, limit: int = 20) -> Dict[str, Any]:
+def list_knowledge(category: Optional[str] = None, limit: int = 20) -> Dict[str, Any]:
     store = get_store()
     if category:
         entries = store.list_by_category(KnowledgeCategory(category), limit)

@@ -63,7 +63,7 @@ class PriorityMessageQueue:
             heapq.heappush(self._heap, PrioritizedMessage.from_message(message))
             self._not_empty.set()
     
-    async def get(self, timeout: float = None) -> Optional[BaseMessage]:
+    async def get(self, timeout: Optional[float] = None) -> Optional[BaseMessage]:
         """Get highest priority message."""
         try:
             if timeout:

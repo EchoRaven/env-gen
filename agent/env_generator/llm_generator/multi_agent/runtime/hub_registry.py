@@ -337,10 +337,10 @@ class HubRegistry:
         agent: str,
         summary: str = "",
         execution_mode: str = "auto",
-        duration_seconds: float = None,
-        artifacts: list = None,
-        evidence: dict = None,
-        metadata: dict = None,
+        duration_seconds: Optional[float] = None,
+        artifacts: Optional[list] = None,
+        evidence: Optional[dict] = None,
+        metadata: Optional[dict] = None,
     ) -> dict:
         """Record a validation result via CodeHub.checks.
 
@@ -398,7 +398,7 @@ class HubRegistry:
         except Exception:
             return []
 
-    def get_validation_results(self, status: str = None, agent: str = None, limit: int = 100) -> list:
+    def get_validation_results(self, status: Optional[str] = None, agent: Optional[str] = None, limit: int = 100) -> list:
         """Return validation results from CodeHub.checks.
 
         FIX #193 (instagram run80 archive, verified): writers pass status
@@ -469,10 +469,10 @@ class HubRegistry:
         self,
         validation_task_id: str,
         publisher: str,
-        domain: str = None,
-        title: str = None,
-        description: str = None,
-        assign_to: str = None,
+        domain: Optional[str] = None,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        assign_to: Optional[str] = None,
         priority: str = "P1",
     ) -> dict:
         """Create a remediation dev task from a failed validation result."""
@@ -512,8 +512,8 @@ class HubRegistry:
         self,
         validation_task_id: str,
         publisher: str,
-        domain: str = None,
-        assign_to: str = None,
+        domain: Optional[str] = None,
+        assign_to: Optional[str] = None,
         priority: str = "P1",
         max_auto_retries: int = 1,
     ) -> dict:

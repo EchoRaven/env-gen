@@ -281,7 +281,7 @@ class CodeHubCommitTool(HubTool):
         "required": ["message"],
     }
 
-    async def _run(self, message: str, files: list = None) -> ToolResult:
+    async def _run(self, message: str, files: Optional[list] = None) -> ToolResult:
         return ToolResult(data=self._hubs.codehub.commit(self._agent_id, message, files=files))
 
 
@@ -339,7 +339,7 @@ class CodeHubOpenPRTool(HubTool):
         "required": ["branch", "linked_tasks"],
     }
 
-    async def _run(self, branch: str, linked_tasks: list, target: str = "main", reviewers: list = None, linked_apis: list = None, linked_pages: list = None, linked_consumers: list = None, title: str = "", description: str = "") -> ToolResult:
+    async def _run(self, branch: str, linked_tasks: list, target: str = "main", reviewers: Optional[list] = None, linked_apis: Optional[list] = None, linked_pages: Optional[list] = None, linked_consumers: Optional[list] = None, title: str = "", description: str = "") -> ToolResult:
         result = self._hubs.codehub.open_pull_request(
             branch, target=target,
             reviewers=reviewers or [],
@@ -408,7 +408,7 @@ class CodeHubRecordCheckTool(HubTool):
         pr_id: str,
         name: str,
         status: str,
-        evidence: dict = None,
+        evidence: Optional[dict] = None,
     ) -> ToolResult:
         result = self._hubs.codehub.record_check(
             pr_id=pr_id,
@@ -471,9 +471,9 @@ class CodeHubReviewPRTool(HubTool):
         "required": ["pr_id", "state"],
     }
 
-    async def _run(self, pr_id: str, state: str, comments: list = None,
-                   inline_comments: list = None,
-                   considered_alternatives: list = None) -> ToolResult:
+    async def _run(self, pr_id: str, state: str, comments: Optional[list] = None,
+                   inline_comments: Optional[list] = None,
+                   considered_alternatives: Optional[list] = None) -> ToolResult:
         result = self._hubs.codehub.submit_review(
             pr_id, self._agent_id, state,
             comments=comments or [],
@@ -497,7 +497,7 @@ class CodeHubListInlineCommentsTool(HubTool):
         "required": ["pr_id"],
     }
 
-    async def _run(self, pr_id: str, file: str = None) -> ToolResult:
+    async def _run(self, pr_id: str, file: Optional[str] = None) -> ToolResult:
         return ToolResult(data={
             "inline_comments": self._hubs.codehub.list_inline_comments(pr_id, file=file),
         })
@@ -521,7 +521,7 @@ class CodeHubSuggestReviewersTool(HubTool):
         "required": ["branch"],
     }
 
-    async def _run(self, branch: str, linked_apis: list = None, linked_tasks: list = None, k: int = 3) -> ToolResult:
+    async def _run(self, branch: str, linked_apis: Optional[list] = None, linked_tasks: Optional[list] = None, k: int = 3) -> ToolResult:
         suggestions = self._hubs.codehub.suggest_reviewers(
             branch, linked_apis=linked_apis or [], linked_tasks=linked_tasks or [],
             author=self._agent_id, k=k,
@@ -708,7 +708,7 @@ class WorkHubCreateDocumentTool(HubTool):
     )
     PARAMETERS = {"type": "object", "properties": {"title": {"type": "string"}, "parent": {"type": "string"}, "attendees": {"type": "array", "items": {"type": "string"}}}, "required": ["title"]}
 
-    async def _run(self, title: str, parent: str = None, attendees: list = None) -> ToolResult:
+    async def _run(self, title: str, parent: Optional[str] = None, attendees: Optional[list] = None) -> ToolResult:
         return ToolResult(data=self._hubs.workhub.create_document(title, parent=parent, attendees=attendees or [], agent=self._agent_id))
 
 
@@ -740,7 +740,7 @@ class WorkHubUpdatePageTool(HubTool):
         name: str,
         path: str = "",
         status: str = "defined",
-        components: list = None,
+        components: Optional[list] = None,
         reference_image: str = "",
         notes: str = "",
     ) -> ToolResult:
@@ -771,7 +771,7 @@ class WorkHubTaskTool(HubTool):
     # (22 hard failures in one episode). Accept ``reason`` + route fail/cancel
     # here so the call succeeds; ``**_ignored`` tolerates any other stray kwargs
     # rather than hard-failing a whole step on an extra field.
-    async def _run(self, action: str, task_id: str = None, title: str = "", description: str = "", assignee: str = None, result: dict = None, evidence: dict = None, priority: str = "P2", reason: str = "", **_ignored) -> ToolResult:
+    async def _run(self, action: str, task_id: Optional[str] = None, title: str = "", description: str = "", assignee: Optional[str] = None, result: Optional[dict] = None, evidence: Optional[dict] = None, priority: str = "P2", reason: str = "", **_ignored) -> ToolResult:
         if action == "create":
             return ToolResult(data=self._hubs.workhub.create_task(title=title, description=description, assignee=assignee, agent=self._agent_id, task_id=task_id, priority=priority))
         if action == "claim":
@@ -1044,7 +1044,7 @@ class WorkHubListTasksTool(HubTool):
             row["priority"] = md["priority"]
         return row
 
-    async def _run(self, assignee: str = None, status: str = None, domain: str = None, plan_id: str = None) -> ToolResult:
+    async def _run(self, assignee: Optional[str] = None, status: Optional[str] = None, domain: Optional[str] = None, plan_id: Optional[str] = None) -> ToolResult:
         tasks = self._hubs.workhub.list_tasks(assignee=assignee, status=status, domain=domain, plan_id=plan_id)
         compact = [self._compact(t) for t in tasks] if isinstance(tasks, list) else tasks
         return ToolResult(data={
@@ -1095,7 +1095,7 @@ class WorkhubListReadyTool(HubTool):
         "properties": {"assignee": {"type": "string"}},
     }
 
-    async def _run(self, assignee: str = None) -> ToolResult:
+    async def _run(self, assignee: Optional[str] = None) -> ToolResult:
         ready = self._hubs.workhub.list_ready_tasks(assignee=assignee)
         return ToolResult(data={"ready": ready})
 
@@ -1111,7 +1111,7 @@ class WorkhubListBlockedTool(HubTool):
         "properties": {"assignee": {"type": "string"}},
     }
 
-    async def _run(self, assignee: str = None) -> ToolResult:
+    async def _run(self, assignee: Optional[str] = None) -> ToolResult:
         blocked = self._hubs.workhub.list_blocked_tasks(assignee=assignee)
         return ToolResult(data={"blocked": blocked})
 
@@ -1133,7 +1133,7 @@ class WorkHubListDocumentsTool(HubTool):
     DESCRIPTION = "List WorkHub coordination documents, optionally filtered by kind or status."
     PARAMETERS = {"type": "object", "properties": {"kind": {"type": "string"}, "status": {"type": "string"}}}
 
-    async def _run(self, kind: str = None, status: str = None) -> ToolResult:
+    async def _run(self, kind: Optional[str] = None, status: Optional[str] = None) -> ToolResult:
         # #606 — A LIST TOOL SHOULD RETURN A LISTING. This returned every document's FULL
         # record: `workhub_list_documents` was logged at up to 204,469 chars (~51k tokens) in
         # ONE call, averaging 22.6k. Over the arc's 227 stored documents the `metadata` field
@@ -1624,7 +1624,7 @@ class RegistryHubConsumerTool(HubTool):
         "required": ["endpoint_id", "file_path"],
     }
 
-    async def _run(self, endpoint_id: str, file_path: str, metadata: dict = None, pending: bool = False) -> ToolResult:
+    async def _run(self, endpoint_id: str, file_path: str, metadata: Optional[dict] = None, pending: bool = False) -> ToolResult:
         return ToolResult(data=self._hubs.registryhub.register_consumer(
             endpoint_id, file_path, self._agent_id,
             metadata=metadata or {}, pending=pending,
@@ -1700,7 +1700,7 @@ class RegistryHubUpdateSchemaTool(HubTool):
         "required": ["endpoint_id"],
     }
 
-    async def _run(self, endpoint_id: str, request: dict = None, response: dict = None) -> ToolResult:
+    async def _run(self, endpoint_id: str, request: Optional[dict] = None, response: Optional[dict] = None) -> ToolResult:
         return ToolResult(data=self._hubs.registryhub.update_schema(
             endpoint_id, request=request, response=response, agent=self._agent_id))
 
@@ -1796,7 +1796,7 @@ class RegistryHubListEndpointsTool(HubTool):
         },
     }
 
-    async def _run(self, status: str = None, provider: str = None) -> ToolResult:
+    async def _run(self, status: Optional[str] = None, provider: Optional[str] = None) -> ToolResult:
         endpoints = self._hubs.registryhub.get_endpoints()
         if status:
             endpoints = {k: v for k, v in endpoints.items() if v.get("status") == status}
@@ -1874,7 +1874,7 @@ class RegistryHubGetBreakingChangesTool(HubTool):
         "properties": {"since_ts": {"type": "number"}},
     }
 
-    async def _run(self, since_ts: float = None) -> ToolResult:
+    async def _run(self, since_ts: Optional[float] = None) -> ToolResult:
         return ToolResult(data={"breaking_changes": self._hubs.registryhub.get_breaking_changes(since_ts=since_ts)})
 
 
@@ -1891,7 +1891,7 @@ class RegistryHubRecordContractTestTool(HubTool):
         "required": ["endpoint_id", "result"],
     }
 
-    async def _run(self, endpoint_id: str, result: dict, evidence: dict = None) -> ToolResult:
+    async def _run(self, endpoint_id: str, result: dict, evidence: Optional[dict] = None) -> ToolResult:
         return ToolResult(data=self._hubs.registryhub.record_api_test(
             endpoint_id, result, evidence=evidence or {}, agent=self._agent_id))
 
@@ -1908,7 +1908,7 @@ class RegistryHubDeprecateEndpointTool(HubTool):
         "required": ["endpoint_id"],
     }
 
-    async def _run(self, endpoint_id: str, replacement_id: str = None) -> ToolResult:
+    async def _run(self, endpoint_id: str, replacement_id: Optional[str] = None) -> ToolResult:
         return ToolResult(data=self._hubs.registryhub.deprecate_endpoint(
             endpoint_id, replacement_id=replacement_id, agent=self._agent_id))
 
@@ -1944,7 +1944,7 @@ class RegistryHubSubmitReviewTool(HubTool):
         "required": ["review_id", "decision"],
     }
 
-    async def _run(self, review_id: str, decision: str, comments: list = None) -> ToolResult:
+    async def _run(self, review_id: str, decision: str, comments: Optional[list] = None) -> ToolResult:
         return ToolResult(data=self._hubs.registryhub.submit_api_review(
             review_id, reviewer=self._agent_id, decision=decision, comments=comments or []))
 
@@ -1985,7 +1985,7 @@ class RegistryHubListTablesTool(HubTool):
         },
     }
 
-    async def _run(self, provider: str = None, status: str = None) -> ToolResult:
+    async def _run(self, provider: Optional[str] = None, status: Optional[str] = None) -> ToolResult:
         tables = self._hubs.schema_hub.list_tables(provider=provider)
         if status and isinstance(tables, dict):
             tables = {k: v for k, v in tables.items()
@@ -2027,7 +2027,7 @@ class RegistryHubRegisterTableConsumerTool(HubTool):
         "required": ["table_name", "file_path"],
     }
 
-    async def _run(self, table_name: str, file_path: str, metadata: dict = None) -> ToolResult:
+    async def _run(self, table_name: str, file_path: str, metadata: Optional[dict] = None) -> ToolResult:
         return ToolResult(data=self._hubs.schema_hub.register_table_consumer(
             table_name=table_name, file_path=file_path, agent=self._agent_id,
             metadata=metadata or {}))
@@ -2041,7 +2041,7 @@ class RegistryHubGetTableBreakingChangesTool(HubTool):
         "properties": {"since_ts": {"type": "number"}},
     }
 
-    async def _run(self, since_ts: float = None) -> ToolResult:
+    async def _run(self, since_ts: Optional[float] = None) -> ToolResult:
         return ToolResult(data={"breaking_changes": self._hubs.schema_hub.get_table_breaking_changes(since_ts=since_ts)})
 
 
@@ -2077,7 +2077,7 @@ class EventHubSubscribeTool(HubTool):
     }
 
     async def _run(self, source_hub: str = "*", event_type: str = "*",
-                   filter: dict = None, priority_floor: str = "low",
+                   filter: Optional[dict] = None, priority_floor: str = "low",
                    delivery: str = "live") -> ToolResult:
         # O14/Phase 4.1: thread caller=agent_id (tool-invoked path).
         return ToolResult(data=self._hubs.eventhub.subscribe(
@@ -2152,7 +2152,7 @@ class EventHubMarkAllReadTool(HubTool):
         "properties": {"before_ts": {"type": "number"}},
     }
 
-    async def _run(self, before_ts: float = None) -> ToolResult:
+    async def _run(self, before_ts: Optional[float] = None) -> ToolResult:
         # O14/Phase 4.1: thread caller=agent_id (tool-invoked path).
         return ToolResult(data={"marked": self._hubs.eventhub.mark_all_read(
             self._agent_id, before_ts=before_ts, caller=self._agent_id,
@@ -2248,7 +2248,7 @@ class CodeHubListPRsTool(HubTool):
         },
     }
 
-    async def _run(self, status: str = None, author: str = None, reviewer: str = None) -> ToolResult:
+    async def _run(self, status: Optional[str] = None, author: Optional[str] = None, reviewer: Optional[str] = None) -> ToolResult:
         return ToolResult(data={"prs": self._hubs.codehub.list_prs(status=status, author=author, reviewer=reviewer)})
 
 
@@ -2263,7 +2263,7 @@ class CodeHubListChecksTool(HubTool):
         },
     }
 
-    async def _run(self, pr_id: str = None, name: str = None) -> ToolResult:
+    async def _run(self, pr_id: Optional[str] = None, name: Optional[str] = None) -> ToolResult:
         return ToolResult(data={"checks": self._hubs.codehub.list_checks(pr_id=pr_id, name=name)})
 
 
@@ -2342,7 +2342,7 @@ class WorkHubCommentTool(HubTool):
         "required": ["resource_id", "body"],
     }
 
-    async def _run(self, resource_id: str, body: str, mentions: list = None) -> ToolResult:
+    async def _run(self, resource_id: str, body: str, mentions: Optional[list] = None) -> ToolResult:
         return ToolResult(data=self._hubs.workhub.comment(
             resource_id=resource_id, body=body, agent=self._agent_id,
             mentions=mentions or []))
@@ -2361,7 +2361,7 @@ class WorkHubReplyTool(HubTool):
         "required": ["comment_id", "body"],
     }
 
-    async def _run(self, comment_id: str, body: str, mentions: list = None) -> ToolResult:
+    async def _run(self, comment_id: str, body: str, mentions: Optional[list] = None) -> ToolResult:
         return ToolResult(data=self._hubs.workhub.reply(
             comment_id=comment_id, body=body, agent=self._agent_id,
             mentions=mentions or []))

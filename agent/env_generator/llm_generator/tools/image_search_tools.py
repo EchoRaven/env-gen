@@ -256,7 +256,7 @@ Requires GOOGLE_API_KEY and GOOGLE_CX environment variables.
 Use search_icons for icons, search_logos for company logos.
 """
     
-    def __init__(self, *, workspace: Workspace, api_key: str = None, cx: str = None):
+    def __init__(self, *, workspace: Workspace, api_key: Optional[str] = None, cx: Optional[str] = None):
         super().__init__(name=self.NAME, category=ToolCategory.FILE)
         if workspace is None:
             raise ValueError(f"{self.NAME}: workspace is required (no bypass construction)")
@@ -415,7 +415,7 @@ Uses Logo.dev (if LOGO_DEV_TOKEN set) or free alternatives.
 Use search_icons for icons, search_photos for photos.
 """
     
-    def __init__(self, *, workspace: Workspace, api_token: str = None):
+    def __init__(self, *, workspace: Workspace, api_token: Optional[str] = None):
         super().__init__(name=self.NAME, category=ToolCategory.FILE)
         if workspace is None:
             raise ValueError(f"{self.NAME}: workspace is required (no bypass construction)")
@@ -756,7 +756,7 @@ Requires Playwright: pip install playwright && playwright install
     async def execute(
         self, 
         url: str, 
-        path: str = None,
+        path: Optional[str] = None,
         full_page: bool = False,
         width: int = 1280,
         height: int = 800
@@ -820,10 +820,10 @@ Requires Playwright: pip install playwright && playwright install
 # =============================================================================
 
 def create_image_search_tools(
-    workspace: Workspace = None, 
-    google_api_key: str = None, 
-    google_cx: str = None, 
-    logo_dev_token: str = None
+    workspace: Optional[Workspace] = None, 
+    google_api_key: Optional[str] = None, 
+    google_cx: Optional[str] = None, 
+    logo_dev_token: Optional[str] = None
 ) -> List[BaseTool]:
     """Create all image tools.
     

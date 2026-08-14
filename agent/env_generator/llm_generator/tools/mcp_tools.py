@@ -552,7 +552,7 @@ class ListMCPToolsTool(BaseTool):
 Returns a list of recommended MCP tools based on the API specification.
 """
     
-    def __init__(self, workspace_path: Path = None, hubs=None):
+    def __init__(self, workspace_path: Optional[Path] = None, hubs=None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.workspace_path = workspace_path
         self._hubs = hubs
@@ -659,7 +659,7 @@ Checks:
 - Error handling patterns
 """
     
-    def __init__(self, workspace_path: Path = None):
+    def __init__(self, workspace_path: Optional[Path] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.workspace_path = workspace_path
     
@@ -749,7 +749,7 @@ Checks:
             return ToolResult.fail(f"Validation error: {e}")
 
 
-def create_mcp_tools(workspace_path: Path = None, hubs=None) -> List[BaseTool]:
+def create_mcp_tools(workspace_path: Optional[Path] = None, hubs=None) -> List[BaseTool]:
     """Create MCP helper tools."""
     return [
         GetMCPReferenceTool(),

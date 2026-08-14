@@ -81,8 +81,8 @@ class SubmitVisualReviewTool(_VisualReviewToolBase):
             }, required=["page_id", "state"])
 
     async def execute(self, *, page_id: str, state: str,
-                       similarity_score: float = None,
-                       deviations: list = None, summary: str = "",
+                       similarity_score: Optional[float] = None,
+                       deviations: Optional[list] = None, summary: str = "",
                        **_kw) -> ToolResult:
         result = self.hub_registry.gate_registry.submit_visual_review(
             page_id=page_id,

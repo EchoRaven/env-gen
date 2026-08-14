@@ -94,7 +94,7 @@ def create_tool_param(
     name: str,
     description: str,
     parameters: dict[str, dict],
-    required: list[str] = None,
+    required: Optional[list[str]] = None,
 ) -> dict:
     """
     Create a tool parameter in OpenAI/LiteLLM ChatCompletionToolParam format.
@@ -180,7 +180,7 @@ class BaseTool(ABC):
                 return ToolResult.ok(content)
     """
     
-    def __init__(self, name: str = None, category: ToolCategory = None):
+    def __init__(self, name: Optional[str] = None, category: Optional[ToolCategory] = None):
         self._execution_count = 0
         self._last_executed: Optional[datetime] = None
         self._category = category if category is not None else ToolCategory.CUSTOM
@@ -370,11 +370,11 @@ T = TypeVar('T')
 
 
 def tool(
-    name: str = None,
-    description: str = None,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
     category: ToolCategory = ToolCategory.CUSTOM,
-    parameters: dict = None,
-    required: list[str] = None,
+    parameters: Optional[dict] = None,
+    required: Optional[list[str]] = None,
 ):
     """
     Decorator to convert a function into a tool.

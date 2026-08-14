@@ -528,7 +528,7 @@ def reference_screen_routes(output_dir: Any) -> set:
         return set()
 
 
-def dead_nav_link_remediation(target: str, jsx_name: str, declared_pages: set, reference_routes: set = None) -> str:
+def dead_nav_link_remediation(target: str, jsx_name: str, declared_pages: set, reference_routes: Optional[set] = None) -> str:
     """#278 — a DECISIVE one-line fix for a dead nav link, ordered by cost.
 
     r61 stalled 81 min on /shop + /upload nav links the sidebar drew from the TikTok
@@ -596,7 +596,7 @@ def dead_nav_link_remediation(target: str, jsx_name: str, declared_pages: set, r
 
 
 def dead_nav_link_blockers(frontend_src: Any, limit: int = 20,
-                           reference_routes: set = None) -> List[str]:
+                           reference_routes: Optional[set] = None) -> List[str]:
     """#238 (tiktok r27 M1, runtime-verified): the delivered app's own Profile
     nav (SidebarNavigation/TopRightActions ``<Link to="/profile">``) resolved to
     NO route — App.jsx wired only ``/@:username`` — so clicking Profile hit the

@@ -14,6 +14,7 @@ Call seed_knowledge() to populate a fresh knowledge store.
 
 from .types import Knowledge, KnowledgeCategory, Severity
 from .store import KnowledgeStore
+from typing import Optional
 
 
 def get_seed_knowledge() -> list:
@@ -980,7 +981,7 @@ Verify: docker compose logs backend | grep 'listening'""",
     ]
 
 
-def seed_knowledge(store: KnowledgeStore = None) -> int:
+def seed_knowledge(store: Optional[KnowledgeStore] = None) -> int:
     """
     Seed the knowledge store with initial entries.
     

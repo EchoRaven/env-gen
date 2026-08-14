@@ -107,10 +107,10 @@ Next step: Use preview_dataset(dataset_id) to see columns.
     
     def execute(
         self,
-        query: str = None,
-        instruction: str = None,
+        query: Optional[str] = None,
+        instruction: Optional[str] = None,
         limit: int = 15,
-        expected_fields: List[str] = None,
+        expected_fields: Optional[List[str]] = None,
         schema_probe_count: int = 5,
         force_refresh: bool = False,
     ) -> ToolResult:
@@ -320,7 +320,7 @@ Next step: Use generate_seed_sql() to create INSERT statements.
     def execute(
         self,
         dataset_id: str,
-        subset: str = None,
+        subset: Optional[str] = None,
         split: str = "train",
         sample_size: int = 5,
         force_refresh: bool = False,
@@ -579,7 +579,7 @@ Returns: status, cache_dir, row_count (when complete)
     def execute(
         self,
         dataset_id: str,
-        subset: str = None,
+        subset: Optional[str] = None,
         split: str = "train",
         background: bool = True,
         check_status: bool = False
@@ -791,12 +791,12 @@ Parameters:
         table_name: str,
         output_file: str,
         field_mapping: Optional[Dict[str, str]] = None,
-        transforms: Dict[str, str] = None,
-        filters: Dict[str, Dict] = None,
-        subset: str = None,
+        transforms: Optional[Dict[str, str]] = None,
+        filters: Optional[Dict[str, Dict]] = None,
+        subset: Optional[str] = None,
         limit: int = 100,
         append: bool = False,
-        quality_gate: Dict[str, Any] = None,
+        quality_gate: Optional[Dict[str, Any]] = None,
         quality_gate_strict: bool = True,
         quality_sample_size: int = 25,
     ) -> ToolResult:

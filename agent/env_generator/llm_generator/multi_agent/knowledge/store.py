@@ -792,7 +792,7 @@ class KnowledgeStore:
     # Utilities
     # =========================================================================
     
-    def get_context_relevant(self, context: str, agent: str = None, limit: int = 3) -> List[Knowledge]:
+    def get_context_relevant(self, context: str, agent: Optional[str] = None, limit: int = 3) -> List[Knowledge]:
         """Get knowledge relevant to context"""
         query = KnowledgeQuery(query=context, agent=agent, limit=limit)
         results = self.search(query)

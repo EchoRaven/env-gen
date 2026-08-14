@@ -54,7 +54,7 @@ Use this as your SINGLE validation action when validation is ready: call it once
 then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
 """
 
-    def __init__(self, *, workspace: Workspace = None, agent_id: str = ""):
+    def __init__(self, *, workspace: Optional[Workspace] = None, agent_id: str = ""):
         super().__init__(name=self.NAME, category=ToolCategory.RUNTIME)
         self.workspace = workspace
         self._agent_id = agent_id
@@ -408,7 +408,7 @@ then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
             return None
 
 
-def create_validation_tools(workspace: Workspace = None) -> List[BaseTool]:
+def create_validation_tools(workspace: Optional[Workspace] = None) -> List[BaseTool]:
     """Factory for the framework-driven validation tool(s)."""
     return [RunValidationTool(workspace=workspace)]
 

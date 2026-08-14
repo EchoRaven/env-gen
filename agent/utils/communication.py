@@ -87,10 +87,10 @@ class MessageBus:
     def subscribe(
         self,
         subscriber_id: str,
-        message_types: list[MessageType] = None,
-        filter_func: Callable[[BaseMessage], bool] = None,
-        callback: Callable[[BaseMessage], Any] = None,
-        async_callback: Callable[[BaseMessage], Any] = None,
+        message_types: Optional[list[MessageType]] = None,
+        filter_func: Optional[Callable[[BaseMessage], bool]] = None,
+        callback: Optional[Callable[[BaseMessage], Any]] = None,
+        async_callback: Optional[Callable[[BaseMessage], Any]] = None,
         priority: int = 0,
     ) -> str:
         """
@@ -179,7 +179,7 @@ class MessageBus:
         self._record_message(message)
         return True
     
-    async def broadcast(self, message: BaseMessage, exclude: list[str] = None) -> int:
+    async def broadcast(self, message: BaseMessage, exclude: Optional[list[str]] = None) -> int:
         """
         Broadcast message
         
@@ -311,7 +311,7 @@ class EventEmitter:
         """Listen to one-time event"""
         self._once_listeners[event].append(callback)
     
-    def off(self, event: str, callback: Callable = None) -> None:
+    def off(self, event: str, callback: Optional[Callable] = None) -> None:
         """Stop listening"""
         if callback is None:
             # Remove all listeners for this event

@@ -470,7 +470,7 @@ def _flatten_dangling_tool_calls(msgs: list) -> list:
     return out
 
 
-def _prepare_messages_for_request(messages, model: str = None, tools=None):
+def _prepare_messages_for_request(messages, model: Optional[str] = None, tools=None):
     """Single serialization contract for EVERY request path: prune orphan tool_results
     (#249), fit oversized images (#248), and — when the request declares no tools — flatten
     the tool protocol to text (#259). Four call sites built the wire payload independently,
@@ -552,7 +552,7 @@ class Message:
         return cls(role="user", content=content_parts)
     
     @classmethod
-    def assistant(cls, content: str = None, tool_calls: list = None) -> "Message":
+    def assistant(cls, content: Optional[str] = None, tool_calls: Optional[list] = None) -> "Message":
         return cls(role="assistant", content=content, tool_calls=tool_calls)
     
     @classmethod
@@ -616,7 +616,7 @@ def _apply_observation_mask(messages: list, cutoff: int, max_old: int,
     return out
 
 
-def _mask_old_observations(messages: list, model: str = None) -> list:
+def _mask_old_observations(messages: list, model: Optional[str] = None) -> list:
     """Truncate the bulky text content of stale messages to bound per-call input —
     but ONLY when the full history would exceed the model's RECOMMENDED WORKING
     window. A large-context model (e.g. Gemini's ~1M) keeps its COMPLETE history
@@ -979,7 +979,7 @@ class BaseLLMClient(ABC):
         self,
         func,
         *args,
-        max_retries: int = None,
+        max_retries: Optional[int] = None,
         **kwargs
     ) -> Any:
         """Retry with exponential backoff and smart rate limit handling"""

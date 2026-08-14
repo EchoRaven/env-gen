@@ -494,7 +494,7 @@ def create_task_message(
     target_id: str,
     task_name: str,
     task_description: str = "",
-    task_params: dict = None,
+    task_params: Optional[dict] = None,
     priority: MessagePriority = MessagePriority.NORMAL,
 ) -> TaskMessage:
     """Shortcut method to create a task message"""
@@ -517,8 +517,8 @@ def create_result_message(
     task_id: str,
     success: bool,
     result_data: Any = None,
-    error_message: str = None,
-    reply_to: str = None,
+    error_message: Optional[str] = None,
+    reply_to: Optional[str] = None,
 ) -> ResultMessage:
     """Shortcut method to create a result message"""
     header = MessageHeader(
@@ -581,7 +581,7 @@ class MessageTracker:
         content: str,
         msg_type: str,
         requires_response: bool = False,
-        timeout_seconds: int = None,
+        timeout_seconds: Optional[int] = None,
     ):
         """Track a sent message."""
         self._sent_messages[message_id] = {
@@ -610,7 +610,7 @@ class MessageTracker:
             self._sent_messages[message_id]["status"] = MessageStatus.READ
             self._sent_messages[message_id]["read_at"] = datetime.now()
     
-    def mark_responded(self, message_id: str, response_message_id: str = None):
+    def mark_responded(self, message_id: str, response_message_id: Optional[str] = None):
         """Mark message as responded to."""
         if message_id in self._sent_messages:
             self._sent_messages[message_id]["status"] = MessageStatus.RESPONDED

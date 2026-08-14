@@ -148,7 +148,7 @@ class EventEmitter:
                 cb for cb in self._listeners[event_type] if cb != callback
             ]
     
-    def emit(self, event_type: EventType, message: str, data: Dict[str, Any] = None) -> Event:
+    def emit(self, event_type: EventType, message: str, data: Optional[Dict[str, Any]] = None) -> Event:
         """Emit an event to all listeners"""
         event = Event(
             type=event_type,

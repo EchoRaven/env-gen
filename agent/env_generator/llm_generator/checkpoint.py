@@ -270,7 +270,7 @@ class CheckpointManager:
             self.checkpoint.phases[phase].status = "generating"
         self._save_if_auto()
     
-    def complete_phase(self, phase: str, issues: List[str] = None, fixes: List[str] = None) -> None:
+    def complete_phase(self, phase: str, issues: Optional[List[str]] = None, fixes: Optional[List[str]] = None) -> None:
         """Mark a phase as complete"""
         if phase in self.checkpoint.phases:
             self.checkpoint.phases[phase].status = "complete"
@@ -319,7 +319,7 @@ class CheckpointManager:
             self.checkpoint.files[path].status = "reflecting"
         self._save_if_auto()
     
-    def complete_file(self, path: str, content_hash: str = None) -> None:
+    def complete_file(self, path: str, content_hash: Optional[str] = None) -> None:
         """Mark a file as complete"""
         if path in self.checkpoint.files:
             self.checkpoint.files[path].status = "complete"
@@ -334,7 +334,7 @@ class CheckpointManager:
                     self.checkpoint.phases[phase].generated_files.append(path)
         self._save_if_auto()
     
-    def fail_file(self, path: str, issues: List[str] = None) -> None:
+    def fail_file(self, path: str, issues: Optional[List[str]] = None) -> None:
         """Mark a file as failed"""
         if path in self.checkpoint.files:
             self.checkpoint.files[path].status = "failed"
@@ -435,7 +435,7 @@ class CheckpointManager:
             self.checkpoint.files[path].issues.append("Content validation failed")
         self._save_if_auto()
     
-    def get_incomplete_files(self, phase: str = None) -> List[str]:
+    def get_incomplete_files(self, phase: Optional[str] = None) -> List[str]:
         """Get list of files that are not complete"""
         incomplete = []
         for path, file in self.checkpoint.files.items():

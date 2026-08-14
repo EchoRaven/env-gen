@@ -250,7 +250,7 @@ def _check_file_region_claim(tool: BaseTool, file_path: str) -> Optional[ToolRes
         data={"file_path": file_path, "active_regions": region_preview},
     )
 
-def write_workspace_file(workspace: Workspace, file_path: str, content: str, tool: BaseTool = None) -> ToolResult:
+def write_workspace_file(workspace: Workspace, file_path: str, content: str, tool: Optional[BaseTool] = None) -> ToolResult:
     """Create or overwrite a file under the workspace."""
     if tool is not None:
         claim_err = _check_file_region_claim(tool, file_path)

@@ -289,7 +289,7 @@ class EnvironmentStateCache:
             for k, v in self._state.items()
         }
     
-    def reset(self, key: str = None):
+    def reset(self, key: Optional[str] = None):
         """Reset state (for testing or manual refresh)."""
         if key:
             self._state.pop(key, None)
@@ -410,12 +410,12 @@ class ProcessManager:
         self,
         command: str,
         cwd: str,
-        name: str = None,
-        port: int = None,
-        timeout: int = None,
-        on_exit: Callable[[int, int], None] = None,
-        process_type: ProcessType = None,
-        env: dict = None,
+        name: Optional[str] = None,
+        port: Optional[int] = None,
+        timeout: Optional[int] = None,
+        on_exit: Optional[Callable[[int, int], None]] = None,
+        process_type: Optional[ProcessType] = None,
+        env: Optional[dict] = None,
     ) -> ProcessInfo:
         """
         Start a background process with unified tracking.
@@ -544,7 +544,7 @@ class ProcessManager:
         
         return self._kill_process(info.pid, signal.SIGINT)
     
-    def wait(self, pid_or_name: Union[int, str], timeout: float = None) -> Optional[int]:
+    def wait(self, pid_or_name: Union[int, str], timeout: Optional[float] = None) -> Optional[int]:
         """
         Wait for a process to exit.
         
@@ -993,8 +993,8 @@ linting use `lint(path)`; for npm installs prefer `install_dependencies()`.
     def execute(
         self,
         command: str,
-        cwd: str = None,
-        timeout: int = None,
+        cwd: Optional[str] = None,
+        timeout: Optional[int] = None,
         allow_sudo: bool = False,
     ) -> ToolResult:
         import re
@@ -1177,7 +1177,7 @@ linting use `lint(path)`; for npm installs prefer `install_dependencies()`.
         self,
         command: str,
         timeout: int,
-        work_dir: Path = None,
+        work_dir: Optional[Path] = None,
         allow_sudo: bool = False,
     ) -> ToolResult:
         work_dir = work_dir or Path(
@@ -1589,14 +1589,14 @@ After starting, use these tools to manage:
     def execute(
         self,
         command: str,
-        cwd: str = None,
-        name: str = None,
-        port: int = None,
+        cwd: Optional[str] = None,
+        name: Optional[str] = None,
+        port: Optional[int] = None,
         wait_seconds: int = 10,
-        timeout: int = None,
+        timeout: Optional[int] = None,
         auto_select_port_on_conflict: bool = True,
-        port_search_start: int = None,
-        port_search_end: int = None,
+        port_search_start: Optional[int] = None,
+        port_search_end: Optional[int] = None,
         inject_port_env: bool = True,
     ) -> ToolResult:
         # Resolve working directory. Default to the agent's code_root
@@ -2225,7 +2225,7 @@ Examples:
             }
         )
     
-    def execute(self, ports: List[int] = None, stop_all: bool = False) -> ToolResult:
+    def execute(self, ports: Optional[List[int]] = None, stop_all: bool = False) -> ToolResult:
         pm = get_process_manager()
         results = []
         
@@ -2340,8 +2340,8 @@ To test them, get a token first, then pass it as a header:
         self,
         method: str,
         url: str,
-        body: str = None,
-        headers: dict = None,
+        body: Optional[str] = None,
+        headers: Optional[dict] = None,
         expect=None,
     ) -> ToolResult:
         try:

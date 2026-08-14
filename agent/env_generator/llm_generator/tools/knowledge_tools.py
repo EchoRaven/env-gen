@@ -81,7 +81,7 @@ Returns matched knowledge with solutions, code examples, and context."""
     async def execute(
         self,
         query: str,
-        category: str = None,
+        category: Optional[str] = None,
         limit: int = 3,
         **kwargs
     ) -> ToolResult:
@@ -215,7 +215,7 @@ This builds a persistent knowledge base that improves over time!"""
         problem: str = "",
         example_code: str = "",
         wrong_code: str = "",
-        tags: List[str] = None,
+        tags: Optional[List[str]] = None,
         severity: str = "medium",
         **kwargs
     ) -> ToolResult:

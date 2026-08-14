@@ -68,7 +68,7 @@ class GenerationResult:
 # Track allocated ports to avoid duplicates
 _allocated_ports: set = set()
 
-def find_free_port(preferred: List[int] = None, range_start: int = 8000, range_end: int = 9000) -> int:
+def find_free_port(preferred: Optional[List[int]] = None, range_start: int = 8000, range_end: int = 9000) -> int:
     """Find an available port that hasn't been allocated yet.
 
     Bind-tests on 0.0.0.0 (NOT localhost): docker publishes host ports on 0.0.0.0, so a
@@ -520,9 +520,9 @@ class Orchestrator:
         llm_config: LLMConfig,
         output_dir: Path,
         name: str = "generated_app",
-        reference_images: List[str] = None,
+        reference_images: Optional[List[str]] = None,
         verbose: bool = False,
-        design_input: str = None,
+        design_input: Optional[str] = None,
     ):
         self._logger = logging.getLogger("Orchestrator")
         if verbose:
@@ -959,7 +959,7 @@ class Orchestrator:
     async def run(
         self,
         goal: str,
-        requirements: List[str] = None,
+        requirements: Optional[List[str]] = None,
         resume: bool = False,
         milestones: Optional[List[Dict[str, Any]]] = None,
     ) -> GenerationResult:

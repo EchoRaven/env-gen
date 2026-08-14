@@ -221,7 +221,7 @@ class StateManager:
         self,
         task_id: str,
         max_retries: int = 3,
-        metadata: dict = None,
+        metadata: Optional[dict] = None,
     ) -> TaskContext:
         """Create new task"""
         with self._lock:
@@ -241,7 +241,7 @@ class StateManager:
         self,
         task_id: str,
         new_state: TaskState,
-        error_message: str = None,
+        error_message: Optional[str] = None,
         result: Any = None,
     ) -> bool:
         """Update task state"""

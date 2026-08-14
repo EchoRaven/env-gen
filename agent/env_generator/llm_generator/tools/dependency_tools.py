@@ -419,8 +419,8 @@ Example:
         self,
         path: str,
         production: bool = False,
-        packages: List[str] = None,
-        dev_packages: List[str] = None,
+        packages: Optional[List[str]] = None,
+        dev_packages: Optional[List[str]] = None,
     ) -> ToolResult:
         import subprocess
         

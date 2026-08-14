@@ -160,7 +160,7 @@ Recommended wait times:
             required=["seconds"]
         )
     
-    async def execute(self, seconds: int, reason: str = None) -> ToolResult:
+    async def execute(self, seconds: int, reason: Optional[str] = None) -> ToolResult:
         import asyncio
         
         # Clamp to reasonable range
@@ -316,7 +316,7 @@ plan(
     # Class-level registry of instances by agent_id
     _instances: dict = {}
     
-    def __init__(self, agent_id: str = None):
+    def __init__(self, agent_id: Optional[str] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent_id = agent_id or "default"
         self._hubs = None
@@ -347,7 +347,7 @@ plan(
             self._workspace_root = Path(workspace_manager.base_dir)
     
     @classmethod
-    def get_instance(cls, agent_id: str = None) -> "PlanTool":
+    def get_instance(cls, agent_id: Optional[str] = None) -> "PlanTool":
         """Get PlanTool instance for a specific agent_id."""
         agent_id = agent_id or "default"
         if agent_id not in cls._instances:
@@ -1663,7 +1663,7 @@ plan(
     # =========================================================================
     
     def _add_task(self, stage_id: str, task_id: str, description: str, 
-                  assignee: str = None, dependencies: List[str] = None) -> ToolResult:
+                  assignee: Optional[str] = None, dependencies: Optional[List[str]] = None) -> ToolResult:
         """Add a task to a stage."""
         if not self._plan:
             return ToolResult(success=False, error_message="No plan exists.")
@@ -1727,7 +1727,7 @@ plan(
         )
     
     def _update_task_status(self, stage_id: str, task_id: str, 
-                            status: str, reason: str = None) -> ToolResult:
+                            status: str, reason: Optional[str] = None) -> ToolResult:
         """Update task status."""
         if not self._plan:
             return ToolResult(success=False, error_message="No plan exists.")
@@ -1759,7 +1759,7 @@ plan(
             }
         )
     
-    def _complete_task(self, stage_id: str, task_id: str, result: str = None) -> ToolResult:
+    def _complete_task(self, stage_id: str, task_id: str, result: Optional[str] = None) -> ToolResult:
         """Complete a task with optional result."""
         if not self._plan:
             return ToolResult(success=False, error_message="No plan exists.")
@@ -1799,8 +1799,8 @@ plan(
             }
         )
     
-    def _list_tasks(self, stage_id: str = None, filter_status: str = None, 
-                    filter_assignee: str = None) -> ToolResult:
+    def _list_tasks(self, stage_id: Optional[str] = None, filter_status: Optional[str] = None, 
+                    filter_assignee: Optional[str] = None) -> ToolResult:
         """List tasks with optional filters."""
         if not self._plan:
             return ToolResult(success=False, error_message="No plan exists.")
@@ -1882,7 +1882,7 @@ Examples:
 
     _instances: dict = {}
 
-    def __init__(self, agent_id: str = None):
+    def __init__(self, agent_id: Optional[str] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent_id = agent_id or "default"
         self._current_plan: list = []
@@ -1973,11 +1973,11 @@ Examples:
     def execute(
         self,
         action: str,
-        items: list = None,
-        item_index: int = None,
-        item_text: str = None,
+        items: Optional[list] = None,
+        item_index: Optional[int] = None,
+        item_text: Optional[str] = None,
         result: str = "pass",
-        notes: str = None
+        notes: Optional[str] = None
     ) -> ToolResult:
         
         if action == "create":

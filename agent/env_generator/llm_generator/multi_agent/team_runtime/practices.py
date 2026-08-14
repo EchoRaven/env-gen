@@ -86,10 +86,10 @@ class TeamPracticeStore:
         agents_spawned: List[Dict],
         success: bool,
         outcome_summary: str,
-        findings: List[Dict] = None,
-        context: Dict = None,
+        findings: Optional[List[Dict]] = None,
+        context: Optional[Dict] = None,
         duration_seconds: float = 0.0,
-        created_by: str = None,
+        created_by: Optional[str] = None,
     ) -> TeamPractice:
         """
         Record a new team practice.
@@ -124,8 +124,8 @@ class TeamPracticeStore:
     
     def get_similar_practices(
         self,
-        problem_category: str = None,
-        practice_type: PracticeType = None,
+        problem_category: Optional[str] = None,
+        practice_type: Optional[PracticeType] = None,
         successful_only: bool = True,
         limit: int = 5,
     ) -> List[TeamPractice]:

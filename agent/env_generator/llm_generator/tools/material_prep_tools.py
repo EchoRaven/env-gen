@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.tool import BaseTool, ToolResult, ToolCategory, create_tool_param  # noqa: E402
 from workspace import Workspace  # noqa: E402
 from multi_agent.runtime import material_prep as mp  # noqa: E402
+from typing import Optional
 
 # #464: per-run cache of the deterministic per-image vision decomposition (keyed by
 # resolved image path) — the design_analyst re-decomposes the same screens many times;
@@ -370,12 +371,12 @@ MATERIAL_PREP_TOOL_CLASSES = [SampleColorTool, CropReferenceTool, ExtractPalette
                               ZoomCompareTool, MeasureLayoutTool]
 
 
-def create_material_prep_tools(workspace: Workspace = None) -> list:
+def create_material_prep_tools(workspace: Optional[Workspace] = None) -> list:
     """The DETERMINISTIC material-prep tools (no LLM): sample_color / crop_reference / extract_palette."""
     return [cls(workspace=workspace) for cls in MATERIAL_PREP_TOOL_CLASSES]
 
 
-def create_material_prep_vision_tools(workspace: Workspace = None, llm_client=None) -> list:
+def create_material_prep_vision_tools(workspace: Optional[Workspace] = None, llm_client=None) -> list:
     """The vision-backed material-prep tool: decompose_reference (needs an LLM)."""
     return [DecomposeReferenceTool(workspace=workspace, llm_client=llm_client)]
 

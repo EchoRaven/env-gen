@@ -568,7 +568,7 @@ class CodeHub:
         # Strict: ALL required reviewers must approve, not just one
         return required.issubset(approved)
 
-    def record_check(self, pr_id: str, name: str, status: str, evidence: dict = None, agent: str = "verifier") -> dict:
+    def record_check(self, pr_id: str, name: str, status: str, evidence: Optional[dict] = None, agent: str = "verifier") -> dict:
         # Authorship gate: record_check admits only agents in the PR's
         # allowlist (orchestrator ∪ pr.checks_authorized ∪ pr.reviewers).
         # Empty actor falls through (back-compat for un-threaded
@@ -1312,8 +1312,8 @@ class CodeHub:
     def get_versions(self) -> Dict[str, int]:
         return self.stores.versions()
 
-    def suggest_reviewers(self, branch: str, linked_apis: list = None,
-                          linked_tasks: list = None, author: str = "",
+    def suggest_reviewers(self, branch: str, linked_apis: Optional[list] = None,
+                          linked_tasks: Optional[list] = None, author: str = "",
                           k: int = 3) -> list:
         """Weighted reviewer picker. Returns top-k {agent, score, reasons}."""
         candidates: dict = {}

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Set
+from typing import Optional, Any, Dict, List, Set
 
 
 # Placeholder marker words (case-insensitive)
@@ -285,7 +285,7 @@ def audit_authored_seed(data: Any) -> List[str]:
     return issues
 
 
-def amplify_authored_seed(data: Any, min_total: int = None) -> Any:
+def amplify_authored_seed(data: Any, min_total: Optional[int] = None) -> Any:
     """FIX #84 (instagram run-5, live): deterministically AMPLIFY a realistic-but-thin
     authored seed to the density floor by cloning-and-perturbing the lane's OWN rows —
     the lane authored 9 believable rows, the gate demands >= 10, and 7 remediation

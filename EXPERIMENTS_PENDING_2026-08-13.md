@@ -1168,3 +1168,30 @@ type` run set, and the two "no tool entry" verdicts on tools that exist.
    So the 362 remain a typing sweep with no bug behind them, and "mechanical, zero-risk" is
    accurate — but it is 362 sites, and its only payoff is unmasking some of the 248
    `bad-argument-type` findings. Worth doing deliberately, not as a drive-by.
+
+   **And the 248 were then read too, so the payoff is known rather than assumed.** Most are the
+   implicit-`Optional` cascade (`X | None` handed to a parameter typed `X`) — the same root, not
+   new information. Three classes are genuine type MISMATCHES rather than None-ness, and all
+   three were traced to the call site:
+
+       str -> Path (6)          canonical_file_tools/delete.py. `execute(self, file_path: str)`
+                                immediately rebinds file_path from `_resolve_workspace_path`,
+                                which returns `Tuple[Optional[Path], Optional[str]]`. At runtime
+                                it IS a Path — line 61 calls `.is_dir()` on it. The parameter
+                                ANNOTATION is what lies, exactly the `llm_func` defect fixed
+                                earlier in this session. No runtime bug.
+       dict[int] -> dict[str]   chain_executor builds `eps_dict = {i: dict(e) for i, e in
+       (4)                      enumerate(...)}` — integer keys — and hands it to
+                                `state_entities_missing_write(endpoints: Dict[str, Any])`. The
+                                callee never indexes it: `_methods_touching` iterates
+                                `_iter_endpoints(endpoints)` by record. Key type is irrelevant.
+       tuple arity (4+5)        material_prep_tools.crop_reference. `_region()` returns
+                                `tuple[float, ...]`, and the 4-tuple contract is enforced at
+                                runtime one line later — `if reg is None: return fail("region
+                                must be 4 numbers")`. Guarded.
+
+   **Net result of running the strongest static analyser available over the whole tree: 1,591
+   findings, zero live bugs.** Every bug-like class — 17 `unbound-name`, 12 `bad-return`, and the
+   three mismatch families above — resolves to a stale annotation, a documented invariant, or a
+   runtime guard the checker cannot see. That is a real answer to item 3 rather than a deferral:
+   the sweep is cosmetic, and nobody should expect defects to fall out of it.

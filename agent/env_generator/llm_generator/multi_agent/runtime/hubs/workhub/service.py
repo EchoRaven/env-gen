@@ -139,7 +139,7 @@ class WorkHub:
     _VALID_PRIORITIES = ("P0", "P1", "P2", "P3")
     _PRIORITY_RANK = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 
-    def create_document(self, title: str, parent: str = None, attendees: Optional[List[str]] = None, agent: str = "",
+    def create_document(self, title: str, parent: Optional[str] = None, attendees: Optional[List[str]] = None, agent: str = "",
                     kind: str = "general", metadata: Optional[dict] = None) -> dict:
         """Create a coordination document (kind=kickoff/meeting/retro/project/general).
 
@@ -232,11 +232,11 @@ class WorkHub:
         self,
         title: str,
         description: str = "",
-        assignee: str = None,
-        plan_id: str = None,
+        assignee: Optional[str] = None,
+        plan_id: Optional[str] = None,
         depends_on: Optional[List[str]] = None,
         agent: str = "",
-        task_id: str = None,
+        task_id: Optional[str] = None,
         **metadata: Any,
     ) -> dict:
         # Cutover 23: priority validation (defaults to P2, must be one of P0-P3)
@@ -362,7 +362,7 @@ class WorkHub:
         )
         return updated
 
-    def complete_task(self, task_id: str, agent: str, result: dict = None, evidence: dict = None) -> dict:
+    def complete_task(self, task_id: str, agent: str, result: Optional[dict] = None, evidence: Optional[dict] = None) -> dict:
         task = self.stores.tasks.get(task_id)
         if not task:
             return {"error": f"Task not found: {task_id}"}
@@ -706,8 +706,8 @@ class WorkHub:
         return task
 
     def update_bug_state(self, task_id: str, new_state: str, agent: str,
-                         note: str = "", assignee: str = None,
-                         status: str = None,
+                         note: str = "", assignee: Optional[str] = None,
+                         status: Optional[str] = None,
                          **metadata_updates) -> dict:
         if new_state not in self._VALID_BUG_STATES:
             raise ValueError(f"invalid bug state: {new_state!r}")
@@ -739,7 +739,7 @@ class WorkHub:
                     priority="high")
         return updated
 
-    def close_bug(self, task_id: str, agent: str, fix_evidence: dict = None) -> dict:
+    def close_bug(self, task_id: str, agent: str, fix_evidence: Optional[dict] = None) -> dict:
         # Single write: mark closed + flip status to completed atomically.
         return self.update_bug_state(task_id, "closed", agent=agent,
                                      note="fix verified",
@@ -780,7 +780,7 @@ class WorkHub:
     # Cutover 23: priority + dependency-aware schedulers
     # ------------------------------------------------------------------
 
-    def list_ready_tasks(self, assignee: str = None) -> list:
+    def list_ready_tasks(self, assignee: Optional[str] = None) -> list:
         """Pending tasks whose deps are all completed, sorted (priority_rank, created_at)."""
         out = []
         all_tasks = self.stores.tasks.value() or {}
@@ -799,7 +799,7 @@ class WorkHub:
         ))
         return out
 
-    def list_blocked_tasks(self, assignee: str = None) -> list:
+    def list_blocked_tasks(self, assignee: Optional[str] = None) -> list:
         """Pending tasks with at least one incomplete dep."""
         out = []
         all_tasks = self.stores.tasks.value() or {}
@@ -840,10 +840,10 @@ class WorkHub:
 
     def list_tasks(
         self,
-        assignee: str = None,
-        status: str = None,
-        domain: str = None,
-        plan_id: str = None,
+        assignee: Optional[str] = None,
+        status: Optional[str] = None,
+        domain: Optional[str] = None,
+        plan_id: Optional[str] = None,
     ) -> List[dict]:
         """Return tasks filtered by the given criteria (all optional)."""
         tasks = list(self.stores.tasks.value().values())
@@ -976,7 +976,7 @@ class WorkHub:
             document["blocks"] = blocks
         return document
 
-    def list_documents(self, kind: str = None, status: str = None) -> List[dict]:
+    def list_documents(self, kind: Optional[str] = None, status: Optional[str] = None) -> List[dict]:
         """Return documents filtered by kind and/or status."""
         documents = list(self.stores.documents.value().values())
         if kind is not None:
@@ -1593,7 +1593,7 @@ class WorkHub:
             "content": {"phase": phase, "reason": reason},
         }, agent=agent)
 
-    def get_project_status(self, name: str = None) -> dict:
+    def get_project_status(self, name: Optional[str] = None) -> dict:
         """Return the most-recently-updated project document with its latest phase."""
         documents = [p for p in self.stores.documents.value().values() if p.get("kind") == "project"]
         if name is not None:
@@ -1637,7 +1637,7 @@ class WorkHub:
             "content": {"title": title, "body": content, **metadata},
         }, agent=agent)
 
-    def get_shared_implementations(self, since_ts: float = None) -> list:
+    def get_shared_implementations(self, since_ts: Optional[float] = None) -> list:
         """Return knowledge blocks, optionally filtered by timestamp."""
         blocks = [
             b for b in self.stores.blocks.value().values()

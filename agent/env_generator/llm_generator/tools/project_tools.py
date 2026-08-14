@@ -409,7 +409,7 @@ Use this before creating new files to avoid duplicates.
             }
         )
     
-    def execute(self, file_name: str = None) -> ToolResult:
+    def execute(self, file_name: Optional[str] = None) -> ToolResult:
         if not self.workspace.code_root.exists():
             return ToolResult(
                 success=False,

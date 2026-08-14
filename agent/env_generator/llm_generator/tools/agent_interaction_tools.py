@@ -64,7 +64,7 @@ Examples:
     read_memory_bank(file="active_context")
 """
     
-    def __init__(self, workspace: Workspace = None, agent_id: Optional[str] = None, model: Optional[str] = None):
+    def __init__(self, workspace: Optional[Workspace] = None, agent_id: Optional[str] = None, model: Optional[str] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.workspace = workspace
         self.agent_id = agent_id
@@ -328,13 +328,13 @@ Do not use this for transient chain-of-thought. Store only what helps your futur
 
     def execute(
         self,
-        focus: str = None,
-        next_step: str = None,
-        recent_change: str = None,
-        completed: List[str] = None,
-        issues: List[str] = None,
-        decisions: List[str] = None,
-        tech_notes: List[str] = None,
+        focus: Optional[str] = None,
+        next_step: Optional[str] = None,
+        recent_change: Optional[str] = None,
+        completed: Optional[List[str]] = None,
+        issues: Optional[List[str]] = None,
+        decisions: Optional[List[str]] = None,
+        tech_notes: Optional[List[str]] = None,
     ) -> ToolResult:
         memory_bank = getattr(self.agent, "memory_bank", None) if self.agent else None
         if not memory_bank:
@@ -437,7 +437,7 @@ The notify feature:
 - If you receive an issue, you'll automatically start working on it
 """
     
-    def __init__(self, agent_id: str = None, agent: "EnvGenAgent" = None):
+    def __init__(self, agent_id: Optional[str] = None, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent_id = agent_id or "default"
         self.agent = agent
@@ -483,9 +483,9 @@ The notify feature:
     def execute(
         self, 
         message: str, 
-        notify: list = None,
-        notify_content: str = None,
-        outputs: dict = None
+        notify: Optional[list] = None,
+        notify_content: Optional[str] = None,
+        outputs: Optional[dict] = None
     ) -> ToolResult:
         from .reasoning_tools import PlanTool
         
@@ -615,7 +615,7 @@ Args:
     checklist: Dict with verification results
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
         self._delivered = False
@@ -659,7 +659,7 @@ Args:
         )
 
     def execute(self, confirmation: str, delivery_summary: str,
-                checklist: dict = None) -> ToolResult:
+                checklist: Optional[dict] = None) -> ToolResult:
         # PR 6 review (2026-05-30) deleted five gate blocks that
         # used to live here (retro / coverage / visual / seed /
         # runhub-since-session). All five were dead-on-production:

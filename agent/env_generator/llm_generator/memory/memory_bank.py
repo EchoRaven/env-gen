@@ -703,7 +703,7 @@ Working on: initialization
             
             self._files["progress"].save("\n".join(new_lines))
     
-    def update_active_context(self, focus: str = None, recent_change: str = None, next_step: str = None) -> None:
+    def update_active_context(self, focus: Optional[str] = None, recent_change: Optional[str] = None, next_step: Optional[str] = None) -> None:
         """
         Update the active context file.
         
@@ -791,9 +791,9 @@ Working on: initialization
     def append_notebook(
         self,
         *,
-        focus: str = None,
-        next_step: str = None,
-        recent_change: str = None,
+        focus: Optional[str] = None,
+        next_step: Optional[str] = None,
+        recent_change: Optional[str] = None,
         completed: Optional[List[str]] = None,
         issues: Optional[List[str]] = None,
         decisions: Optional[List[str]] = None,

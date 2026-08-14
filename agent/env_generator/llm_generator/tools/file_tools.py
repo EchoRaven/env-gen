@@ -411,7 +411,7 @@ class FileHistory:
             return self._history[path].pop()
         return None
     
-    def clear(self, path: str = None):
+    def clear(self, path: Optional[str] = None):
         if path:
             self._history.pop(path, None)
         else:
@@ -1249,7 +1249,7 @@ If you truly need the raw base64 payload, pass include_base64=true (WARNING: hug
         
         return None
     
-    def execute(self, path: str = None, description: str = None,
+    def execute(self, path: Optional[str] = None, description: Optional[str] = None,
                 include_base64: bool = False, **alias_kwargs) -> ToolResult:
         # Param-name tolerance (mechanism #40): real-LLM calls write the
         # argument as image_path/file_path/image — a hard TypeError here cost
@@ -1394,7 +1394,7 @@ from the written spec/requirements.
     # Default screenshot library path (relative to llm_generator)
     SCREENSHOT_LIB_PATH = Path(__file__).parent.parent / "screenshot"
     
-    def __init__(self, *, workspace: Workspace, screenshot_lib: Path = None):
+    def __init__(self, *, workspace: Workspace, screenshot_lib: Optional[Path] = None):
         super().__init__(name=self.NAME, category=ToolCategory.FILE)
         if workspace is None:
             raise ValueError(f"{self.NAME}: workspace is required (no bypass construction)")
@@ -1416,7 +1416,7 @@ from the written spec/requirements.
             }
         )
     
-    def execute(self, project: str = None) -> ToolResult:
+    def execute(self, project: Optional[str] = None) -> ToolResult:
         # `project` is accepted for backward-compat but intentionally IGNORED:
         # this tool always lists the reference images for the environment being
         # built right now — the ones staged into workspace/screenshots by
@@ -1517,7 +1517,7 @@ of copying them again.
     
     SCREENSHOT_LIB_PATH = Path(__file__).parent.parent / "screenshot"
     
-    def __init__(self, *, workspace: Workspace, screenshot_lib: Path = None):
+    def __init__(self, *, workspace: Workspace, screenshot_lib: Optional[Path] = None):
         super().__init__(name=self.NAME, category=ToolCategory.FILE)
         if workspace is None:
             raise ValueError(f"{self.NAME}: workspace is required (no bypass construction)")
@@ -1548,7 +1548,7 @@ of copying them again.
             }
         )
     
-    def execute(self, source: str, destination: str = None) -> ToolResult:
+    def execute(self, source: str, destination: Optional[str] = None) -> ToolResult:
         import shutil
         
         # Resolve source path. Runtime references copied into workspace/screenshots
@@ -1698,7 +1698,7 @@ Examples:
             }
         )
     
-    def execute(self, pattern: str, path: str = None) -> ToolResult:
+    def execute(self, pattern: str, path: Optional[str] = None) -> ToolResult:
         # An empty/absent path searches the workspace ROOT (".") — matching this
         # tool's own docstring (`glob "*.py"  # ... in current dir`). Previously
         # `path or ""` failed the resolver's "path is required" guard, so an

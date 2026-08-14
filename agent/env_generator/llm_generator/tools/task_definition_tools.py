@@ -87,7 +87,7 @@ Action types are NOT restricted - use whatever makes sense:
 - custom: Application-specific actions
 """
     
-    def __init__(self, output_dir: Path = None):
+    def __init__(self, output_dir: Optional[Path] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.output_dir = output_dir
         self._action_space = None
@@ -242,7 +242,7 @@ define_task({
 ```
 """
     
-    def __init__(self, output_dir: Path = None):
+    def __init__(self, output_dir: Optional[Path] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.output_dir = output_dir
         self._tasks = []

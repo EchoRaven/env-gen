@@ -165,7 +165,7 @@ Returns detailed analysis including:
 Use this when you have a reference image to build a web page from.
 """
     
-    def __init__(self, llm_client=None, workspace: Workspace = None):
+    def __init__(self, llm_client=None, workspace: Optional[Workspace] = None):
         super().__init__()
         self._llm = llm_client
         self._logger = logging.getLogger(__name__)
@@ -188,7 +188,7 @@ Use this when you have a reference image to build a web page from.
             required=["image_path"]
         )
     
-    async def execute(self, image_path: str, focus_area: str = None) -> ToolResult:
+    async def execute(self, image_path: str, focus_area: Optional[str] = None) -> ToolResult:
         if not self._llm:
             return ToolResult(
                 success=False,
@@ -255,7 +255,7 @@ Use this when you have a reference image to build a web page from.
                 error_message=f"Analysis failed: {str(e)}"
             )
     
-    def _build_analysis_prompt(self, focus_area: str = None) -> str:
+    def _build_analysis_prompt(self, focus_area: Optional[str] = None) -> str:
         if self._jinja is None:
             self._jinja = _get_prompt_env()
         return self._jinja.get_template("vision/analyze_image.j2").render(
@@ -329,7 +329,7 @@ Returns similarity analysis and specific differences to fix.
 Use this after generating UI code to verify it matches the reference.
 """
 
-    def __init__(self, llm_client=None, workspace: Workspace = None):
+    def __init__(self, llm_client=None, workspace: Optional[Workspace] = None):
         super().__init__()
         self._llm = llm_client
         self._logger = logging.getLogger(__name__)
@@ -423,7 +423,7 @@ Use this to get detailed specs for individual components like:
 - Sidebars
 """
     
-    def __init__(self, llm_client=None, workspace: Workspace = None):
+    def __init__(self, llm_client=None, workspace: Optional[Workspace] = None):
         super().__init__()
         self._llm = llm_client
         self._workspace = workspace
@@ -489,7 +489,7 @@ Use this to get detailed specs for individual components like:
             return ToolResult(success=False, error_message=f"Extraction failed: {e}")
 
 
-def create_vision_tools(llm_client=None, workspace: Workspace = None) -> List[BaseTool]:
+def create_vision_tools(llm_client=None, workspace: Optional[Workspace] = None) -> List[BaseTool]:
     """Create all vision tools with optional LLM client"""
     tools = [
         AnalyzeImageTool(llm_client, workspace=workspace),

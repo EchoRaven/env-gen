@@ -30,7 +30,7 @@ class HealthcheckResult:
     last_error: str = ""
 
 
-def _default_runner(args: List[str], cwd: str = None, timeout: float = 120.0) -> ComposeResult:
+def _default_runner(args: List[str], cwd: Optional[str] = None, timeout: float = 120.0) -> ComposeResult:
     # R2 round-11 Fix A: force classic builder. RunHub.start_run uses this
     # runner to bring up generated apps for the deliverability gate;
     # `up -d --remove-orphans` triggers an implicit build when images are
@@ -45,7 +45,7 @@ def _default_runner(args: List[str], cwd: str = None, timeout: float = 120.0) ->
 
 
 class ComposeLifecycle:
-    def __init__(self, cwd: str, runner: Callable = None,
+    def __init__(self, cwd: str, runner: Optional[Callable] = None,
                  compose_file: Optional[str] = None) -> None:
         self.cwd = cwd
         self._runner = runner or _default_runner
@@ -82,7 +82,7 @@ def _coerce(r: Any) -> ComposeResult:
 
 class HealthcheckProbe:
     def __init__(self, url: str, poll_interval_s: float = 2.0,
-                 timeout_s: float = 60.0, getter: Callable = None,
+                 timeout_s: float = 60.0, getter: Optional[Callable] = None,
                  request_timeout_s: float = 5.0,
                  clock: Callable[[], float] = time.time,
                  sleep: Callable[[float], None] = time.sleep) -> None:

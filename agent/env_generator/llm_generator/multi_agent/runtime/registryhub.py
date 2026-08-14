@@ -130,8 +130,8 @@ class RegistryHub:
     the docstring implying they carry data.
     """
 
-    def __init__(self, hub_dir: Path, eventhub: "EventHub | None" = None,
-                 workhub: "WorkHub | None" = None):
+    def __init__(self, hub_dir: Path, eventhub: Optional["EventHub | None"] = None,
+                 workhub: Optional["WorkHub | None"] = None):
         self.hub_dir = Path(hub_dir)
         self.eventhub = eventhub
         self._workhub = workhub
@@ -302,7 +302,7 @@ class RegistryHub:
         single = m != "GET" or last == "me" or is_param
         return "item" if single else "items"
 
-    def register_endpoint(self, method: str, path: str, schema: dict = None, provider: str = "", agent: str = "", status: str = "defined", **metadata: Any) -> dict:
+    def register_endpoint(self, method: str, path: str, schema: Optional[dict] = None, provider: str = "", agent: str = "", status: str = "defined", **metadata: Any) -> dict:
         # Ownership: backend owns endpoint registration; the kickoff
         # coordinator (actor='orchestrator') also registers the
         # canonical contract during finalize_kickoff. Frontend signals
@@ -589,7 +589,7 @@ class RegistryHub:
         self._emit("endpoint_registered", endpoint, recipients=[], priority="normal")
         return endpoint
 
-    def update_schema(self, endpoint_id: str, request: dict = None, response: dict = None, agent: str = "") -> dict:
+    def update_schema(self, endpoint_id: str, request: Optional[dict] = None, response: Optional[dict] = None, agent: str = "") -> dict:
         endpoint = self._endpoints.get(endpoint_id)
         if not endpoint:
             return {"error": f"Endpoint not found: {endpoint_id}"}
@@ -606,7 +606,7 @@ class RegistryHub:
         endpoint_id: str,
         file_path: str,
         agent: str,
-        metadata: dict = None,
+        metadata: Optional[dict] = None,
         pending: bool = False,
     ) -> dict:
         """Register a consumer relationship.
@@ -707,7 +707,7 @@ class RegistryHub:
         self._emit("consumer_registered", consumer, recipients=[])
         return consumer
 
-    def record_api_test(self, endpoint_id: str, result: dict, evidence: dict = None, agent: str = "verifier") -> dict:
+    def record_api_test(self, endpoint_id: str, result: dict, evidence: Optional[dict] = None, agent: str = "verifier") -> dict:
         # Authorship lock: contract-test records are the artifact verifier
         # reads to decide pass/fail on the API contract. Only the verifier
         # lane may author. Path A bundle trim in tool_bundles.py +
@@ -840,7 +840,7 @@ class RegistryHub:
             if c.get("file_path") == file_path
         ]
 
-    def get_breaking_changes(self, since_ts: float = None) -> List[dict]:
+    def get_breaking_changes(self, since_ts: Optional[float] = None) -> List[dict]:
         items = list(self._breaking_changes.value().values())
         if since_ts is not None:
             items = [b for b in items if b.get("created_at", 0) >= since_ts]
@@ -884,8 +884,8 @@ class RegistryHub:
         self._emit("mock_added", mock, recipients=[])
         return mock
 
-    def add_example(self, endpoint_id: str, request_example: dict = None,
-                    response_example: dict = None, agent: str = "") -> dict:
+    def add_example(self, endpoint_id: str, request_example: Optional[dict] = None,
+                    response_example: Optional[dict] = None, agent: str = "") -> dict:
         if endpoint_id not in self._endpoints.value():
             return {"error": f"Endpoint not found: {endpoint_id}"}
         actor = agent or "registryhub"
@@ -906,7 +906,7 @@ class RegistryHub:
         self._emit("example_added", example, recipients=[])
         return example
 
-    def deprecate_endpoint(self, endpoint_id: str, replacement_id: str = None,
+    def deprecate_endpoint(self, endpoint_id: str, replacement_id: Optional[str] = None,
                            agent: str = "") -> dict:
         endpoint = self._endpoints.get(endpoint_id)
         if not endpoint:
@@ -1183,7 +1183,7 @@ class RegistryHub:
     def register_table(
         self,
         name: str,
-        schema: dict = None,
+        schema: Optional[dict] = None,
         provider: str = "",
         agent: str = "",
         status: str = "defined",
@@ -1287,7 +1287,7 @@ class RegistryHub:
                     pass
         return table
 
-    def list_tables(self, provider: str = None) -> Dict[str, dict]:
+    def list_tables(self, provider: Optional[str] = None) -> Dict[str, dict]:
         tables = self._tables.value()
         if provider is None:
             return tables
@@ -1392,7 +1392,7 @@ class RegistryHub:
             return
 
     def register_ui_page(self, name: str, route: str = "", component: str = "",
-                         apis_used: list = None, components: list = None,
+                         apis_used: Optional[list] = None, components: Optional[list] = None,
                          path: str = "", status: str = "defined",
                          agent: str = "", **metadata: Any) -> dict:
         from ._role_gate import require_allowed_actor
@@ -1576,7 +1576,7 @@ class RegistryHub:
         return self._ui_pages.value().get(self._ui_snake(name))
 
     def register_ui_component(self, name: str, component: str = "",
-                              apis_used: list = None, status: str = "defined",
+                              apis_used: Optional[list] = None, status: str = "defined",
                               agent: str = "", **metadata: Any) -> dict:
         actor = agent or "registryhub"
         now = time.time()
@@ -1710,7 +1710,7 @@ class RegistryHub:
         table_name: str,
         file_path: str,
         agent: str,
-        metadata: dict = None,
+        metadata: Optional[dict] = None,
     ) -> dict:
         # Deliberately ungated on actor identity — `agent` is the
         # CONSUMER, not the owner. The L1 write-time gate
@@ -1856,7 +1856,7 @@ class RegistryHub:
             "type_changed_columns": type_changed_columns,
         }
 
-    def get_table_breaking_changes(self, since_ts: float = None) -> list:
+    def get_table_breaking_changes(self, since_ts: Optional[float] = None) -> list:
         items = list(self._table_breaking_changes.value().values())
         if since_ts is not None:
             items = [b for b in items if b.get("created_at", 0) >= since_ts]

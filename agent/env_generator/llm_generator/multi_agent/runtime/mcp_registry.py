@@ -150,7 +150,7 @@ class MCPRegistry:
         self,
         server_name: str,
         tool_name: str,
-        schema: dict = None,
+        schema: Optional[dict] = None,
         provider: str = "",
         agent: str = "",
         status: str = "defined",
@@ -191,7 +191,7 @@ class MCPRegistry:
         self._emit("mcp_tool_registered", record, recipients=[])
         return record
 
-    def get_mcp_tools(self, server_name: str = None) -> Dict[str, dict]:
+    def get_mcp_tools(self, server_name: Optional[str] = None) -> Dict[str, dict]:
         out = {}
         for k, v in self._store_value().items():
             if v.get("kind") != "tool":
@@ -232,8 +232,8 @@ class MCPRegistry:
 
     def get_mcp_consumers(
         self,
-        server_name: str = None,
-        tool_name: str = None,
+        server_name: Optional[str] = None,
+        tool_name: Optional[str] = None,
     ) -> List[dict]:
         out = []
         for v in self._store_value().values():

@@ -327,7 +327,7 @@ Example:
             },
         )
     
-    async def execute(self, service: str = None, no_cache: bool = False) -> ToolResult:
+    async def execute(self, service: Optional[str] = None, no_cache: bool = False) -> ToolResult:
         # Check environment cache - skip if Docker daemon was recently unavailable
         if env_cache:
             should_skip, reason = env_cache.should_skip("docker_daemon", cooldown_seconds=300)
@@ -458,7 +458,7 @@ Example:
     
     async def execute(
         self,
-        service: str = None,
+        service: Optional[str] = None,
         build: bool = False,
         force_recreate: bool = False,
         fresh: bool = True,
@@ -1076,7 +1076,7 @@ Example:
             },
         )
     
-    async def execute(self, service: str, paths: List[str] = None) -> ToolResult:
+    async def execute(self, service: str, paths: Optional[List[str]] = None) -> ToolResult:
         compose_file = _find_compose_file_global(self.workspace.base_root)
         if not compose_file:
             return ToolResult.fail("docker-compose.yml not found")
@@ -1504,7 +1504,7 @@ Examples:
             },
         )
     
-    def execute(self, reset: str = None) -> ToolResult:
+    def execute(self, reset: Optional[str] = None) -> ToolResult:
         if not env_cache:
             return ToolResult.ok(data={
                 "info": "Environment cache not available",

@@ -111,8 +111,8 @@ def _create_message(
     target_agent_id: str,
     content: str,
     msg_type: str,
-    context: Dict = None,
-    tags: List[str] = None,
+    context: Optional[Dict] = None,
+    tags: Optional[List[str]] = None,
     priority: str = "normal",
     persist: bool = False,
 ) -> BaseMessage:
@@ -226,7 +226,7 @@ Returns:
     Confirmation with message ID
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
     
@@ -284,7 +284,7 @@ Returns:
         to_agent: str, 
         content: str, 
         msg_type: str = "info",
-        tags: List[str] = None,
+        tags: Optional[List[str]] = None,
         priority: str = "normal",
         persist: bool = False,
     ) -> ToolResult:
@@ -399,7 +399,7 @@ Returns:
     The agent's response
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
     
@@ -529,7 +529,7 @@ Returns:
     Confirmation with recipient count
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
     
@@ -575,7 +575,7 @@ Returns:
         self, 
         message: str, 
         msg_type: str = "info",
-        tags: List[str] = None,
+        tags: Optional[List[str]] = None,
         persist: bool = False,
     ) -> ToolResult:
         if not self.agent:
@@ -691,7 +691,7 @@ Returns:
     List of matching messages with metadata
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
     
@@ -750,11 +750,11 @@ Returns:
         self,
         limit: int = 10,
         clear: bool = True,
-        from_agent: str = None,
-        tags: List[str] = None,
-        msg_type: str = None,
+        from_agent: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        msg_type: Optional[str] = None,
         unread_only: bool = False,
-        search: str = None,
+        search: Optional[str] = None,
     ) -> ToolResult:
         if not self.agent:
             return ToolResult(success=False, error_message="Agent not configured")
@@ -999,7 +999,7 @@ Returns:
     List of all persistent messages
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
     
@@ -1077,7 +1077,7 @@ Returns:
     List of matching messages
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
     
@@ -1110,7 +1110,7 @@ Returns:
             }
         )
     
-    def execute(self, query: str, from_agent: str = None) -> ToolResult:
+    def execute(self, query: str, from_agent: Optional[str] = None) -> ToolResult:
         if not self.agent:
             return ToolResult(success=False, error_message="Agent not configured")
         
@@ -1191,7 +1191,7 @@ Returns:
     List of agent IDs and their roles
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
     
@@ -1273,7 +1273,7 @@ Returns:
     Subscription ID
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
     
@@ -1381,7 +1381,7 @@ Returns:
     Confirmation of unsubscription
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
     
@@ -1468,7 +1468,7 @@ Returns:
     Confirmation of publication
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
     
@@ -1573,7 +1573,7 @@ Args:
     message_id: ID of the message (returned when you sent it)
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
     
@@ -1644,7 +1644,7 @@ Use this to:
 - Decide whether to follow up or escalate
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
     
@@ -1718,7 +1718,7 @@ Args:
     note: Optional note to include with acknowledgement
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
     
@@ -1749,7 +1749,7 @@ Args:
             }
         )
     
-    def execute(self, message_id: str, note: str = None) -> ToolResult:
+    def execute(self, message_id: str, note: Optional[str] = None) -> ToolResult:
         if not self.agent:
             return ToolResult(success=False, error_message="Agent not configured")
         
@@ -1833,7 +1833,7 @@ Args:
     status_note: Brief status update (optional)
 """
     
-    def __init__(self, agent: "EnvGenAgent" = None):
+    def __init__(self, agent: Optional["EnvGenAgent"] = None):
         super().__init__(name=self.NAME, category=ToolCategory.AGENT)
         self.agent = agent
     
@@ -1871,8 +1871,8 @@ Args:
     def execute(
         self,
         message_id: str,
-        estimated_minutes: int = None,
-        status_note: str = None
+        estimated_minutes: Optional[int] = None,
+        status_note: Optional[str] = None
     ) -> ToolResult:
         if not self.agent:
             return ToolResult(success=False, error_message="Agent not configured")
@@ -1950,7 +1950,7 @@ Args:
 # Exports
 # ============================================================================
 
-def create_communication_tools(agent: "EnvGenAgent" = None, include_advanced: bool = True) -> List[BaseTool]:
+def create_communication_tools(agent: Optional["EnvGenAgent"] = None, include_advanced: bool = True) -> List[BaseTool]:
     """Create communication tools for an agent.
 
     By default returns full set; callers can request a core-only subset.

@@ -406,7 +406,7 @@ class BaseAgent(ABC):
         elif hasattr(result, 'error_message'):
             self.record_error(result.error_message or "")
     
-    def log_event(self, event_type: str, content: str, metadata: dict = None) -> None:
+    def log_event(self, event_type: str, content: str, metadata: Optional[dict] = None) -> None:
         """Log a custom event."""
         if self._debug_logger:
             self._debug_logger.log(event_type, content, metadata or {})
@@ -432,7 +432,7 @@ class BaseAgent(ABC):
         self,
         func: Callable,
         *args,
-        max_retries: int = None,
+        max_retries: Optional[int] = None,
         **kwargs,
     ) -> Any:
         """
@@ -510,7 +510,7 @@ class BaseAgent(ABC):
     async def call_tool_with_retry(
         self,
         tool_name: str,
-        max_retries: int = None,
+        max_retries: Optional[int] = None,
         **kwargs,
     ) -> ToolResult:
         """

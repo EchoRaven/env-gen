@@ -310,7 +310,7 @@ class Task:
         if state.type == "initial" and not self.initial_state:
             self.initial_state = state.id
     
-    def add_transition(self, from_state: str, to_state: str, condition: Dict = None, priority: int = 0):
+    def add_transition(self, from_state: str, to_state: str, condition: Optional[Dict] = None, priority: int = 0):
         """Add a transition."""
         self.transitions.append(Transition(
             from_state=from_state,
