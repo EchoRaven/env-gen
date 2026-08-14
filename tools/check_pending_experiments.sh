@@ -105,6 +105,7 @@ gone_log "#687 browser transport"        "Navigation failed: Page.goto: net::ERR
 # NO BACKTICKS in these note strings: bash runs them as command substitution. The first draft
 # of this line embedded `rev-list ...` and the script printed "rev-list: command not found" on
 # every invocation — a checker that misreports itself is worse than one that is absent.
+grep_log "#712 count advanced on a latch" "on a LATCHED average" "the stable-rounds precondition cannot reset; r146 fast-released this way at live 0.6409"
 grep_log "#711 gate left the app behind" "the gating average has left the app behind" "gating avg is #500 best-ever-per-screen; live is THIS capture. r147 r6: 0.700 vs 0.3817"
 grep_log "#707 invented asset staged"    "staged .* placeholder asset(s) the frontend referenced" "each hit = a path the lane invented instead of search_icons/save_image or drawing it"
 grep_log "#706 integration promoted"     "promoted integration -> main" "should appear once per delivered run; then rev-list --count main..integration should be 0"
