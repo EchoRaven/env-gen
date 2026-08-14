@@ -1836,6 +1836,25 @@ earlier and with heavier consequences.
 allowance. Two instances now share one cause and one cure: the framework reads specific keys of an
 object it advertised as unstructured.
 
+**Made into a rule rather than waiting for a third instance: #734.** Both cases share one
+invariant — *a parameter whose description CLAIMS free-form must not be one the framework reads
+keys of*. A guard sweeps every object-typed tool parameter and fails on any that advertises
+freedom while naming no slots. Zero violations today, which is the point: it is satisfied now and
+fires on the next one, without needing a corpus or a synonym table.
+
+**The guard was vacuous when first written, and I only found that because I ran the control after
+building it.** Its sweep matched tool names with `[a-z_]+`, so `browser_check_a11y` and
+`browser_a11y_tree` — real tools — were invisible, and the planted violation went unseen while
+the guard reported a clean pass. Fixed to `[a-z0-9_]+`, with a test for the blind spot and a
+permanent non-vacuity control. **A guard whose non-vacuity is assumed is worth less than none**,
+and this is the second time this session that writing one produced a false clean (the first was
+#716 passing #727's dead pattern).
+
+**Stated limits.** "Names a slot" is detected by a backtick, a proxy rather than a parse; and the
+rule catches a CLAIM of freedom, not opacity — a bare `{"type": "object"}` with no description is
+not flagged, because most of the 16 such parameters are genuinely free metadata and flagging all
+of them would cry wolf on correct decisions.
+
 **Cheapest observation.** Next run: `schema.request` populated on filterable GETs with no fold
 needed, and check evidence carrying `metadata.check` rather than a top-level `kind`. If a NEW
 synonym appears anyway, #731 names it — and that would mean publishing the vocabulary is not
