@@ -1733,6 +1733,39 @@ right one needed a distribution.
 
 ---
 
+## 46. #724 — and the question that dissolves #706 rather than answering it
+
+Following item 43 out: if `main` is a divergent framework-only copy, does anything depend on it?
+
+**Nothing that ships does.** Every `release-v1.0.0` across r146, r147 and r148 is an ancestor of
+`integration` and of NEITHER `main`. No code reads the `main` branch's content by name. So the
+promotion has never affected a delivered artifact, in any run, and its two failures (#706's wrong
+hook, #721's merge conflict) cost the product nothing.
+
+**What it does affect is a promise.** `promote_integration_to_main`'s own docstring says "`main`
+becomes the verifier-blessed reference … teams that want 'only ship verified' can deploy from
+`main`". Today `main` points at a framework skeleton with no lane work in it — precisely the tree
+nobody should deploy. The promise is not merely unkept; it points the wrong way.
+
+**Fixed: #724**, the smaller sibling. `create_branch_at`'s docstring said release branches "must
+capture a snapshot of `main`" — measurably false, and it recommends the worst available tree to
+whoever adds the next caller. Corrected, with the old sentence kept as an attributed quotation.
+Both existing call sites pass `start_point` explicitly, so the misleading `="main"` default is
+inert today; a test now fails if a third caller starts relying on it.
+
+**The decision, which is not mine.** Two coherent options, and the evidence for both is now in:
+
+  * **move the ref** (`git branch -f main integration`) — keeps the promise, no conflicts, loses
+    nothing measurable, and is safe only while #691b keeps recovering the MCP subtree (r146,
+    pre-#691b, is the run where it would have discarded three real files);
+  * **withdraw the promise** — if nobody deploys from `main`, then `main` is fork residue and
+    #706, #706b and #721 can all be removed rather than repaired.
+
+**Cheapest observation.** Not a measurement — the repository cannot see whether an external
+consumer deploys from `main`. There is no code consumer; that does not rule out a human one.
+
+---
+
 ## 45. The shape, swept — and why #707 and #711 are left alone
 
 Four times this session a detector's silence turned out to mean three different things (#691's

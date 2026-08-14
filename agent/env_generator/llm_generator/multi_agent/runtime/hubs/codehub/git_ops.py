@@ -243,10 +243,25 @@ class GitOps:
         """Create (or move, if *force*) *branch* pointing at *start_point*.
 
         Unlike :meth:`checkout`, this does NOT switch the working tree's HEAD --
-        it just plants a ref. Used for release branches, which must capture a
-        snapshot of ``main`` without disturbing whatever is currently checked
+        it just plants a ref, without disturbing whatever is currently checked
         out (agent worktrees, the integrator's HEAD, etc.). Returns the SHA the
         branch now points to.
+
+        #724: the previous sentence said release branches "must capture a snapshot of ``main``".
+        That is wrong and it points at the worst available tree. Measured across r146, r147 and
+        r148: every `release-v1.0.0` is an ancestor of ``integration`` and of NEITHER ``main``
+        — releases are cut with ``source="integration"``. And ``main`` is not a lagging copy of
+        the same work: reproducing r148's promotion merge at the commits that existed when it
+        ran gives 16 conflicting files, the whole app, because the framework's delivery commit
+        writes the entire skeleton onto ``main`` while the lane's work goes to ``integration``
+        (#691's stranding at full scale). A branch cut from ``main`` would be framework
+        projections with no lane work in it.
+
+        The ``start_point="main"`` default is therefore misleading, and it is retained only
+        because changing a public default is not a docstring fix. Both call sites pass the point
+        explicitly today (``"HEAD"`` at service.py:806, ``source`` at :1104), so nothing relies
+        on it — but a third caller that did would cut from the wrong tree, and the sentence above
+        used to tell them that was correct.
         """
         cmd = ["branch"]
         if force:
