@@ -3,10 +3,28 @@
 import asyncio
 import re
 import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 
 class ParallelCoordinationSupport:
+    # #681: THE HOST-CLASS CONTRACT, DECLARED. This is a MIXIN — the names below are
+    # supplied by the class it is mixed into, so a checker reading this file alone reports
+    # every use as a missing attribute. That was 990 of 2218 diagnostics (45%), the single
+    # largest class, and it buried real ones: the same sweep found #658 and a dangling
+    # WorkHub annotation under it. Annotation-only, under TYPE_CHECKING — no runtime effect.
+    if TYPE_CHECKING:
+        _failure_rate_high_cap: Any
+        _failure_rate_high_threshold: Any
+        _failure_rate_medium_cap: Any
+        _failure_rate_medium_threshold: Any
+        _file_claim_lock: Any
+        _file_claim_ttl_seconds: Any
+        _read_mostly_max_parallel: Any
+        def _recent_failure_rate(self, *a: Any, **k: Any) -> Any: ...
+        _write_high_risk_max_parallel: Any
+        _write_low_risk_max_parallel: Any
+        _write_medium_risk_max_parallel: Any
+
     @staticmethod
     def _normalize_declared_file_path(raw: Any) -> Optional[str]:
         if not isinstance(raw, str):

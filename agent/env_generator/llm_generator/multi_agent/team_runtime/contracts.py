@@ -5,13 +5,24 @@ import hashlib
 import json
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 from uuid import uuid4
 
 from .models import AgentTeam, TeamAgentSpec
 
 
 class TeamContractSupport:
+    # #681: THE HOST-CLASS CONTRACT, DECLARED. This is a MIXIN — the names below are
+    # supplied by the class it is mixed into, so a checker reading this file alone reports
+    # every use as a missing attribute. That was 990 of 2218 diagnostics (45%), the single
+    # largest class, and it buried real ones: the same sweep found #658 and a dangling
+    # WorkHub annotation under it. Annotation-only, under TYPE_CHECKING — no runtime effect.
+    if TYPE_CHECKING:
+        _conflict_notification_ttl_seconds: Any
+        _logger: Any
+        def _normalize_declared_file_path(self, *a: Any, **k: Any) -> Any: ...
+        _orchestrator: Any
+
     @staticmethod
     def _extract_string_list(value: Any) -> List[str]:
         if value is None:

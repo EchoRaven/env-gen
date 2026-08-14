@@ -1,11 +1,23 @@
 """Notification support for dynamic agent management."""
 
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from .models import AgentLifecycle
 
 
 class RuntimeNotificationSupport:
+    # #681: THE HOST-CLASS CONTRACT, DECLARED. This is a MIXIN — the names below are
+    # supplied by the class it is mixed into, so a checker reading this file alone reports
+    # every use as a missing attribute. That was 990 of 2218 diagnostics (45%), the single
+    # largest class, and it buried real ones: the same sweep found #658 and a dangling
+    # WorkHub annotation under it. Annotation-only, under TYPE_CHECKING — no runtime effect.
+    if TYPE_CHECKING:
+        _logger: Any
+        def _normalize_findings(self, *a: Any, **k: Any) -> Any: ...
+        _orchestrator: Any
+        _spawned_agents: Any
+        def get_agent_team_status(self, *a: Any, **k: Any) -> Any: ...
+
     def _on_agent_result_message(self, message: Any) -> None:
         """Capture result/error messages from spawned agents."""
         try:

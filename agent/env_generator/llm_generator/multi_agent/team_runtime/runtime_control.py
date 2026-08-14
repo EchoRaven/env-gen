@@ -4,7 +4,7 @@ import asyncio
 import re
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set
 from uuid import uuid4
 
 import yaml
@@ -14,6 +14,29 @@ from .models import AgentLifecycle, SpawnedAgent
 
 
 class RuntimeControlSupport:
+    # #681: THE HOST-CLASS CONTRACT, DECLARED. This is a MIXIN — the names below are
+    # supplied by the class it is mixed into, so a checker reading this file alone reports
+    # every use as a missing attribute. That was 990 of 2218 diagnostics (45%), the single
+    # largest class, and it buried real ones: the same sweep found #658 and a dangling
+    # WorkHub annotation under it. Annotation-only, under TYPE_CHECKING — no runtime effect.
+    if TYPE_CHECKING:
+        DYNAMIC_TEAM_RULES_RELATIVE_PATH: Any
+        STATIC_CORE_AGENT_TYPES: Any
+        def _available_spawn_budget(self, *a: Any, **k: Any) -> Any: ...
+        _failure_events: Any
+        def _is_active_team_member_agent(self, *a: Any, **k: Any) -> Any: ...
+        _logger: Any
+        def _mark_agent_ledger_terminated(self, *a: Any, **k: Any) -> Any: ...
+        _orchestrator: Any
+        def _prune_metrics(self, *a: Any, **k: Any) -> Any: ...
+        def _recent_failure_rate(self, *a: Any, **k: Any) -> Any: ...
+        _spawn_callbacks: Any
+        _spawn_events: Any
+        _spawned_agents: Any
+        _success_events: Any
+        _terminate_callbacks: Any
+        def set_runtime_agent_lifecycle(self, *a: Any, **k: Any) -> Any: ...
+
     @staticmethod
     def _cfg_int(raw: Any, key: str, default: int, min_value: Optional[int] = None) -> int:
         try:

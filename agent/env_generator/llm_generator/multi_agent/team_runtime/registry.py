@@ -2,12 +2,24 @@
 
 import asyncio
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from .models import AgentLifecycle, AgentRuntimeKind
 
 
 class RuntimeRegistrySupport:
+    # #681: THE HOST-CLASS CONTRACT, DECLARED. This is a MIXIN — the names below are
+    # supplied by the class it is mixed into, so a checker reading this file alone reports
+    # every use as a missing attribute. That was 990 of 2218 diagnostics (45%), the single
+    # largest class, and it buried real ones: the same sweep found #658 and a dangling
+    # WorkHub annotation under it. Annotation-only, under TYPE_CHECKING — no runtime effect.
+    if TYPE_CHECKING:
+        _agent_ledger: Any
+        def _is_success_findings(self, *a: Any, **k: Any) -> Any: ...
+        _logger: Any
+        def _recommended_action_from_error_code(self, *a: Any, **k: Any) -> Any: ...
+        _spawned_agents: Any
+
     def _normalize_tool_names(self, tool_names: Optional[List[str]]) -> List[str]:
         normalized: List[str] = []
         seen: Set[str] = set()

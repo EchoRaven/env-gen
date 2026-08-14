@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional
 
 
 def scrub_workspace_paths(text: Any, roots: Iterable[str]) -> Any:
@@ -61,6 +61,15 @@ def _summarize_step_trace(step_trace: Optional[Dict[str, Any]]) -> Dict[str, Any
 
 
 class AgentStepHelperMixin:
+    # #681: THE HOST-CLASS CONTRACT, DECLARED. This is a MIXIN — the names below are
+    # supplied by the class it is mixed into, so a checker reading this file alone reports
+    # every use as a missing attribute. That was 990 of 2218 diagnostics (45%), the single
+    # largest class, and it buried real ones: the same sweep found #658 and a dangling
+    # WorkHub annotation under it. Annotation-only, under TYPE_CHECKING — no runtime effect.
+    if TYPE_CHECKING:
+        _logger: Any
+        agent_id: Any
+
     @staticmethod
     def _format_step_reminder_lines(value: Any, indent: str = "") -> List[str]:
         """Render flexible reminder content into readable prompt lines."""

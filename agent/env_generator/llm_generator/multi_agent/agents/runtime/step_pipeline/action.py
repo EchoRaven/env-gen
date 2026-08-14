@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Tuple
 
 from utils.llm import Message
 
@@ -30,6 +30,27 @@ def _apply_hub_focus(self, names: Set[str]) -> Set[str]:
 
 
 class AgentActionStageMixin:
+    # #681: THE HOST-CLASS CONTRACT, DECLARED. This is a MIXIN — the names below are
+    # supplied by the class it is mixed into, so a checker reading this file alone reports
+    # every use as a missing attribute. That was 990 of 2218 diagnostics (45%), the single
+    # largest class, and it buried real ones: the same sweep found #658 and a dangling
+    # WorkHub annotation under it. Annotation-only, under TYPE_CHECKING — no runtime effect.
+    if TYPE_CHECKING:
+        ACTION_STAGE_ALWAYS_INCLUDE: Any
+        TEAM_MODE_SUPPORT_TOOLS: Any
+        TEAM_TOOL_NAMES: Any
+        def _call_stage_llm(self, *a: Any, **k: Any) -> Any: ...
+        def _check_and_handle_urgent(self, *a: Any, **k: Any) -> Any: ...
+        _execution_mode: Any
+        def _filtered_tool_schemas(self, *a: Any, **k: Any) -> Any: ...
+        _logger: Any
+        def _parse_action_status(self, *a: Any, **k: Any) -> Any: ...
+        def _process_tool_calls(self, *a: Any, **k: Any) -> Any: ...
+        def _stage_tool_names(self, *a: Any, **k: Any) -> Any: ...
+        def _stamp_step_activity(self, *a: Any, **k: Any) -> Any: ...
+        agent_id: Any
+        def log_response(self, *a: Any, **k: Any) -> Any: ...
+
     def _build_endpoint_impl_directive(self) -> Optional[str]:
         """FIX #24 — framework-driven per-endpoint implementation focus.
 

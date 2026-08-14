@@ -3,10 +3,21 @@
 import hashlib
 import json
 import time
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 
 class ParallelContractSupport:
+    # #681: THE HOST-CLASS CONTRACT, DECLARED. This is a MIXIN — the names below are
+    # supplied by the class it is mixed into, so a checker reading this file alone reports
+    # every use as a missing attribute. That was 990 of 2218 diagnostics (45%), the single
+    # largest class, and it buried real ones: the same sweep found #658 and a dangling
+    # WorkHub annotation under it. Annotation-only, under TYPE_CHECKING — no runtime effect.
+    if TYPE_CHECKING:
+        SUBTASK_CONTRACT_VERSION: Any
+        _completed_subtask_fingerprints: Any
+        def _prune_metrics(self, *a: Any, **k: Any) -> Any: ...
+        _subtask_task_max_chars: Any
+
     def _validate_subtask_contract(self, subtask: Dict[str, Any], *, custom_mode: bool = False) -> Optional[str]:
         """Validate child task contract and return field-path error if invalid."""
         if not isinstance(subtask, dict):

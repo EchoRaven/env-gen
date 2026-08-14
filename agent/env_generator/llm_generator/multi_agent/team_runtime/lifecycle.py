@@ -3,12 +3,35 @@
 import asyncio
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from .models import AgentLifecycle, AgentTeam, TeamAgentSpec
 
 
 class TeamLifecycleSupport:
+    # #681: THE HOST-CLASS CONTRACT, DECLARED. This is a MIXIN — the names below are
+    # supplied by the class it is mixed into, so a checker reading this file alone reports
+    # every use as a missing attribute. That was 990 of 2218 diagnostics (45%), the single
+    # largest class, and it buried real ones: the same sweep found #658 and a dangling
+    # WorkHub annotation under it. Annotation-only, under TYPE_CHECKING — no runtime effect.
+    if TYPE_CHECKING:
+        STATIC_CORE_AGENT_TYPES: Any
+        _agent_ledger: Any
+        _agent_teams: Any
+        def _extract_string_list(self, *a: Any, **k: Any) -> Any: ...
+        def _is_active_team_member_agent(self, *a: Any, **k: Any) -> Any: ...
+        _logger: Any
+        def _normalize_tool_names(self, *a: Any, **k: Any) -> Any: ...
+        def _notify_parent_team_completion(self, *a: Any, **k: Any) -> Any: ...
+        def _report_team_conflict_to_hub(self, *a: Any, **k: Any) -> Any: ...
+        def _slug(self, *a: Any, **k: Any) -> Any: ...
+        _spawned_agents: Any
+        _team_launch_tasks: Any
+        def _validate_file_contract_context_shape(self, *a: Any, **k: Any) -> Any: ...
+        def _validate_team_member_file_ownership(self, *a: Any, **k: Any) -> Any: ...
+        def spawn_worker(self, *a: Any, **k: Any) -> Any: ...
+        def terminate_runtime_agent(self, *a: Any, **k: Any) -> Any: ...
+
     def _apply_disabled_tools(self, agent: Any, disabled_tools: Optional[List[str]]) -> List[str]:
         disabled = self._normalize_tool_names(disabled_tools)
         if not disabled:

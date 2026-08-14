@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Set
 
 from utils.llm import Message
 
@@ -10,6 +10,23 @@ from .action import AgentActionStageMixin
 
 
 class AgentStepStageMixin(AgentActionStageMixin):
+    # #681: THE HOST-CLASS CONTRACT, DECLARED. This is a MIXIN — the names below are
+    # supplied by the class it is mixed into, so a checker reading this file alone reports
+    # every use as a missing attribute. That was 990 of 2218 diagnostics (45%), the single
+    # largest class, and it buried real ones: the same sweep found #658 and a dangling
+    # WorkHub annotation under it. Annotation-only, under TYPE_CHECKING — no runtime effect.
+    if TYPE_CHECKING:
+        TEAM_MODE_SUPPORT_TOOLS: Any
+        TEAM_TOOL_NAMES: Any
+        def _call_stage_llm(self, *a: Any, **k: Any) -> Any: ...
+        _execution_mode: Any
+        def _filtered_tool_schemas(self, *a: Any, **k: Any) -> Any: ...
+        _logger: Any
+        def _process_pending_notifications(self, *a: Any, **k: Any) -> Any: ...
+        def _process_tool_calls(self, *a: Any, **k: Any) -> Any: ...
+        def _stage_tool_names(self, *a: Any, **k: Any) -> Any: ...
+        agent_id: Any
+
     # How many steps to skip between auto-retrieves once knowledge has
     # been auto-fetched at least once. Lets the LLM-decision path still
     # fire in between — it'll usually say "no", saving the round-trip

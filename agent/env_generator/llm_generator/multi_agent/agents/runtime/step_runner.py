@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from utils.llm import Message
 
@@ -11,6 +11,26 @@ from .step_pipeline import AgentStepHelperMixin, AgentStepStageMixin, AgentStepT
 
 
 class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolingMixin):
+    # #681: THE HOST-CLASS CONTRACT, DECLARED.
+    # This is a MIXIN: `agent_id`, `_logger`, `_hubs` and the sibling methods below are
+    # supplied by the class it is mixed into (multi_agent/agents/base.py), so a checker
+    # reading this file alone reports every use as a missing attribute. That was 990 of
+    # the 2218 diagnostics — 45%, the single largest class — and it buried the real ones:
+    # the same sweep found #658 (two constructors called with arguments the classes do not
+    # have) and a dangling `WorkHub` annotation, both genuine, under that noise.
+    # Annotation-only, under TYPE_CHECKING: no runtime effect, no import at runtime.
+    if TYPE_CHECKING:
+        agent_id: str
+        _logger: Any
+        _hubs: Any
+        _execution_mode: Any
+        _shutdown_requested: Any
+        _interrupt_messages: Any
+        def check_if_stuck(self, *a: Any, **k: Any) -> Any: ...
+        def get_loop_breaker_prompt(self, *a: Any, **k: Any) -> Any: ...
+        def clear_stuck_history(self, *a: Any, **k: Any) -> Any: ...
+        def _check_and_handle_urgent(self, *a: Any, **k: Any) -> Any: ...
+
 
     def _stamp_step_activity(self) -> None:
         """#147/#149 liveness stamp. Called from loop-OWNED paths only (loop

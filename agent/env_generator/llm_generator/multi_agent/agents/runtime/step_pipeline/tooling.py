@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from utils.llm import Message
 
@@ -73,6 +73,29 @@ _IDEMPOTENT_READ_TOOLS_609 = frozenset({"read"})
 
 
 class AgentStepToolingMixin:
+    # #681: THE HOST-CLASS CONTRACT, DECLARED. This is a MIXIN — the names below are
+    # supplied by the class it is mixed into, so a checker reading this file alone reports
+    # every use as a missing attribute. That was 990 of 2218 diagnostics (45%), the single
+    # largest class, and it buried real ones: the same sweep found #658 and a dangling
+    # WorkHub annotation under it. Annotation-only, under TYPE_CHECKING — no runtime effect.
+    if TYPE_CHECKING:
+        ACTION_STAGE_ALWAYS_INCLUDE: Any
+        TEAM_MODE_SUPPORT_TOOLS: Any
+        TEAM_TOOL_NAMES: Any
+        def _apply_finish_policies(self, *a: Any, **k: Any) -> Any: ...
+        def _execute_tool(self, *a: Any, **k: Any) -> Any: ...
+        def _log_tool_details(self, *a: Any, **k: Any) -> Any: ...
+        def _log_tool_result(self, *a: Any, **k: Any) -> Any: ...
+        _logger: Any
+        def _process_pending_notifications(self, *a: Any, **k: Any) -> Any: ...
+        agent_id: Any
+        def call_with_retry(self, *a: Any, **k: Any) -> Any: ...
+        def get_tools_for_llm(self, *a: Any, **k: Any) -> Any: ...
+        llm: Any
+        def record_action(self, *a: Any, **k: Any) -> Any: ...
+        def record_error(self, *a: Any, **k: Any) -> Any: ...
+        def record_observation(self, *a: Any, **k: Any) -> Any: ...
+
     def _scrub_workspace_paths(self, text: Any) -> Any:
         """Relativize absolute env/worktree roots in agent-facing tool output
         (PATH FIREWALL — see helpers.scrub_workspace_paths). Gathers this lane's

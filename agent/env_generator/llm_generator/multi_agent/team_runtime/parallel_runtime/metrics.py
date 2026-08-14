@@ -2,12 +2,38 @@
 
 import time
 from datetime import datetime
-from typing import Any, Callable, Dict, List
+from typing import TYPE_CHECKING, Any, Callable, Dict, List
 
 from ..models import AgentLifecycle, SpawnedAgent
 
 
 class ParallelMetricsSupport:
+    # #681: THE HOST-CLASS CONTRACT, DECLARED. This is a MIXIN — the names below are
+    # supplied by the class it is mixed into, so a checker reading this file alone reports
+    # every use as a missing attribute. That was 990 of 2218 diagnostics (45%), the single
+    # largest class, and it buried real ones: the same sweep found #658 and a dangling
+    # WorkHub annotation under it. Annotation-only, under TYPE_CHECKING — no runtime effect.
+    if TYPE_CHECKING:
+        _circuit_min_samples: Any
+        _circuit_open_until: Any
+        _circuit_threshold: Any
+        _failure_window_seconds: Any
+        _max_parallel_duration_samples: Any
+        _observed_contract_rejected_total: Any
+        _observed_deduped_total: Any
+        _observed_subtasks_total: Any
+        _recommended_actions_total: Any
+        _spawn_budget_per_window: Any
+        _spawn_callbacks: Any
+        _spawn_window_seconds: Any
+        _spawned_agents: Any
+        _subtask_fingerprint_ttl_seconds: Any
+        _subtask_task_max_chars: Any
+        _terminate_callbacks: Any
+        def get_active_runtime_agents(self, *a: Any, **k: Any) -> Any: ...
+        def get_runtime_registry_snapshot(self, *a: Any, **k: Any) -> Any: ...
+        def terminate_runtime_agent(self, *a: Any, **k: Any) -> Any: ...
+
     def _prune_metrics(self) -> None:
         now = time.time()
         self._spawn_events = [t for t in self._spawn_events if now - t <= self._spawn_window_seconds]

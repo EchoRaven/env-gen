@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import datetime
-from typing import Dict, List, Mapping, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Mapping, Optional, Tuple
 from uuid import uuid4
 
 from utils.llm import Message
@@ -13,6 +13,30 @@ from .common import ProcessingState
 
 
 class AgentMessaging:
+    # #681: THE HOST-CLASS CONTRACT, DECLARED.
+    # This is a MIXIN: `agent_id`, `_logger`, `_hubs` and the sibling methods below are
+    # supplied by the class it is mixed into (multi_agent/agents/base.py), so a checker
+    # reading this file alone reports every use as a missing attribute. That was 990 of
+    # the 2218 diagnostics — 45%, the single largest class — and it buried the real ones:
+    # the same sweep found #658 (two constructors called with arguments the classes do not
+    # have) and a dangling `WorkHub` annotation, both genuine, under that noise.
+    # Annotation-only, under TYPE_CHECKING: no runtime effect, no import at runtime.
+    if TYPE_CHECKING:
+        agent_id: str
+        # mirror base.py:679/683 exactly — declared Optional there, and this file both
+        # assigns a str and restores None, so an inferred `str` would flag the restore.
+        _active_phase: Optional[str]
+        _focus_hub: Optional[str]
+        _logger: Any
+        _hubs: Any
+        _message_queue: Any
+        _external_bus: Any
+        _priority_queue: Any
+        _pending_questions: Any
+        _message_tracker: Any
+        def _compose_system_prompt(self, *a: Any, **k: Any) -> Any: ...
+        def run_agentic_loop(self, *a: Any, **k: Any) -> Any: ...
+
     async def receive_message(self, message: BaseMessage) -> None:
         """
         Override BaseAgent.receive_message to use priority queue.

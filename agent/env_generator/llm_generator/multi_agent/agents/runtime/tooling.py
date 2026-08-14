@@ -5,7 +5,7 @@ import difflib
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from utils.tool import ToolResult
 
@@ -330,6 +330,27 @@ _SECRETISH_ARG_RE_611 = re.compile(
     r"pass|secret|token|auth|credential|api_?key|cookie", re.I)
 
 class AgentTooling:
+    # #681: THE HOST-CLASS CONTRACT, DECLARED.
+    # This is a MIXIN: `agent_id`, `_logger`, `_hubs` and the sibling methods below are
+    # supplied by the class it is mixed into (multi_agent/agents/base.py), so a checker
+    # reading this file alone reports every use as a missing attribute. That was 990 of
+    # the 2218 diagnostics — 45%, the single largest class — and it buried the real ones:
+    # the same sweep found #658 (two constructors called with arguments the classes do not
+    # have) and a dangling `WorkHub` annotation, both genuine, under that noise.
+    # Annotation-only, under TYPE_CHECKING: no runtime effect, no import at runtime.
+    if TYPE_CHECKING:
+        agent_id: str
+        _logger: Any
+        _tools: Any
+        _tool_instances: Any
+        workspace: Any
+        base_dir: Any
+        llm: Any
+        _include_vision: Any
+        allowed_tool_categories: Any
+        _hubs: Any
+        def log_tool_call(self, *a: Any, **k: Any) -> Any: ...
+
     def _register_env_gen_tools(self):
         """Register environment generation tools based on allowed_tool_categories."""
         include_browser = "browser" in self.allowed_tool_categories
