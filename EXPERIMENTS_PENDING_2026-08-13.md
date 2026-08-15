@@ -1733,6 +1733,42 @@ right one needed a distribution.
 
 ---
 
+## 91. The fourth class is NOT sweepable — and that is the finding
+
+Three classes swept cleanly (#770 silent handlers, #771 projections, #772 mirrored logic). The
+fourth candidate is the one that bit ME hardest: **a field written at one depth and read at
+another.** I made that error four times in this session alone — `bug_artifacts` at
+`payload.metadata.*` not `payload.*` (a confident zero over 299,279 events), `priority` at
+`metadata.priority` (a wrong "never persisted, 13,416 tasks"), `check` in the record NAME rather
+than `evidence.check` (a 4% blast radius that was really 17%), and the r150 verdict's high-water
+merge hiding the very zeros I was hunting.
+
+**It has a code correlate, and it does not survey.** A sweep for "keys written into `metadata`
+somewhere and read at top level somewhere" returns a table led by `title` (2 metadata writes, 43
+top-level reads) — which is noise, because a task legitimately has a top-level `title` and
+something unrelated stashes one in metadata. **Key names collide across unrelated record types,
+so the query cannot separate a mis-read from two different objects.**
+
+Validated the only way that means anything — against the known instances. It finds `check` and
+misses `priority`, so it is not even a reliable detector of the cases I already know about. The
+one hit it does surface resolves clean on inspection: all five top-level `check` reads are
+`event.data.get("check")` on a progress EVENT, a different object from a validation record, and
+`story_hub.py:87` correctly reads `meta.get("check")`.
+
+**So the honest boundary: this class is real, it is the most expensive one in the session, and it
+is not fixable by a sweep.** The countermeasure is procedural and already recorded in my notes —
+**dump a real record before reporting any zero** — and the four instances above are what happens
+when that is skipped. Recording the failed sweep so the next attempt does not re-derive it.
+
+**The four classes, closed:**
+
+    swallowed cause       #748 #740 #769 #770      582 candidates -> 4 real, rule + bound
+    fixed-key projection  #767b #768b #771 #771b    39 candidates -> 4 real, end-to-end guard
+    hand-mirrored logic   #764 #772                 20 candidates -> 1 real, drift guard
+    field-location        (4 analysis errors)      NOT SWEEPABLE — noise dominates; procedural
+
+---
+
 ## 90. #772 — the third class: logic duplicated by hand, and "kept in sync via grep"
 
 #764's root cause was not the bad rewrite, it was the duplication behind it:
