@@ -1733,6 +1733,46 @@ right one needed a distribution.
 
 ---
 
+## 95. #775 — I dismissed it as "the lane's to fix", and it was the framework's template
+
+Item 94 ended by noticing r150's `top10` handler falling back to ten arbitrary titles, and
+setting it aside: *"#769's class in GENERATED code rather than the framework; the lane's to fix
+... out of scope for a framework change."* **That call was made without checking, and it was
+wrong.**
+
+Measured across the delivered backends instead of assumed:
+
+    handlers whose `except` branch still returns data          42   (33 honest empty, 9 degraded)
+    handlers returning ok/success=TRUE from an `except`        58, across 46 of 137 runs (34%)
+
+The dominant shape is not the lane improvising. It is `{"ok": True, "tenant_id": ...}` on the
+tenant control plane, in run after run — and `backend_agent.j2` hands the lane exactly that line:
+
+    @app.post("/api/v1/reset")
+    def reset(...):
+        # ... delete business rows scoped to the tenant's users ...
+        return {"ok": True, "tenant_id": x_tenant_id}
+
+The template has no try/except. A lane that defensively wraps the body keeps the template's
+success return, and it lands in the except branch. **The framework taught the shape.**
+
+**Why it matters beyond tidiness.** The verifier's chains call reset BETWEEN steps and trust
+`ok: true`, so a reset that failed and reported success leaves the next step reading rows it
+believes were cleared. That is #566x from the other direction — *"a coverage chain FACTORY-RESETS
+the DB mid-pass — the step PASSES so the harm is invisible."*
+
+The template now returns what it deleted, names the consumer that trusts the flag, and says
+plainly not to return that line from an except: **an honest failure is recoverable, a false
+success is not.** Patched in BOTH prompt versions — v3 is the default, v4 is opt-in per file
+(#269), and fixing one would have left the defect reachable by an environment variable, which is
+how a fix gets reported as shipped and is not.
+
+**Cheapest observation.** The corpus number to beat is 58 across 46 runs. On the next run, grep
+the delivered `custom_routes.py` for `ok.*True` inside an `except` — zero is the target, and any
+survivor is a lane choice rather than a copied template, which is a different conversation.
+
+---
+
 ## 94. Why #774 is owner-columns-only — the rest of the comparison is noise, measured
 
 #774 restricts itself to OWNER columns. That was instinct when I wrote it; here is the data that

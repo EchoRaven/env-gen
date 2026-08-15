@@ -650,7 +650,13 @@ def reset(x_tenant_id: str | None = Header(None, alias="X-Tenant-Id"), db: Sessi
     # X-Tenant-Id => delete only that tenant's BUSINESS rows (child-first FK order),
     # PRESERVE the users + tenants rows. No header => factory reset (dev only).
     # ... delete business rows scoped to the tenant's users ...
-    return {"ok": True, "tenant_id": x_tenant_id}
+    # #775: REPORT WHAT YOU ACTUALLY DID. `ok` must describe the delete, never the handler
+    # surviving. Do NOT wrap this in `try/except` and return this line from the except branch:
+    # the verifier's chains call reset between steps and TRUST ok=true, so a reset that failed
+    # and reported success leaves the next step reading rows it believes were cleared. Measured
+    # over the corpus: 58 handlers across 46 of 137 runs return ok/success=true from an except.
+    # If the delete raises, let it 500 — an honest failure is recoverable, a false success is not.
+    return {"ok": True, "tenant_id": x_tenant_id, "deleted": deleted_counts}
 
 @app.get("/api/v1/tenants")
 def list_tenants(db: Session = Depends(get_db)):
