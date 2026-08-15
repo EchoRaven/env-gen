@@ -1733,6 +1733,56 @@ right one needed a distribution.
 
 ---
 
+## 92. r150 SHIPPED a real bug — the one privacy rule in the spec — and #773 is why nothing saw it
+
+Auditing what r150 actually delivered, per the standing rule that a green gate does not excuse
+skipping the audit (#569 was a live leak in r134's shipped `/api/search`). r150's app renders
+well; **it also ships the single functional requirement the task statement calls out, wrong.**
+
+The spec:
+
+    Each profile sees only its own My List, ratings and Continue Watching (per-profile private data).
+    - table: my_list: id, profile_id, title_id
+    - table: ratings: id, profile_id, title_id, value
+    - table: continue_watching: id, profile_id, title_id, progress_seconds
+
+The delivered DDL, all three:
+
+    "user_id" integer references users(id) NOT NULL
+
+and the handlers scope to match — `WHERE cw.user_id = :uid`,
+`SELECT id FROM ratings WHERE user_id = :uid`. **Two profiles on one account share their My List,
+ratings and Continue Watching.** RegistryHub's contract records `user_id` too, so the DDL, the
+contract and the code all agree with each other and all disagree with the spec — **every
+consistency check the framework runs passes.** Nothing compares the contract to the requirement.
+
+**#773 — the instrument existed and returned nothing.** `extract_contract_from_description` is
+built to pull `{endpoints, tables}` out of exactly this text. On r150's slice it returned
+**endpoints: 17, tables: 0**. The regex expected `- NAME: cols`; every description writes
+`- table: NAME: cols`, so group(1) captured the literal word "table", group(2) became
+`users: id, email, ...`, its first column parsed as `users:` — not an identifier — and the whole
+extraction collapsed. Fixed with an optional non-capturing prefix; r150's slice now yields 9
+tables with `profile_id` on all three.
+
+Its consumer is `_derive_missing_essential_sections`, which salvages a stalled BACKEND lane and
+whose docstring promises "the milestone slice already LISTS the endpoints/tables ... so extract
+them". **It could never have salvaged a schema** — and `tables: []` is indistinguishable from "the
+spec declared no tables", so the failure was invisible for as long as it existed.
+
+**#773 alone catches nothing, and this item does not pretend otherwise.** It restores the input.
+The check that would have caught r150 — compare the declared/implemented schema against the
+spec's own table lines and report a column the spec named that the app does not have — is a new
+consumer, and it belongs with the gate decisions rather than in a quiet commit: a spec/contract
+mismatch is a FUNCTIONAL defect by the standing goal, but it is also the first check here that
+would fail an app the lane believes it finished.
+
+**Cheapest observation.** With #773 in, one line on the next run compares
+`extract_contract_from_description(slice)["tables"]` against `registryhub_tables` and prints the
+columns the spec asked for that the contract does not carry. That measurement is free and
+decides whether the check should block, warn, or stay a report.
+
+---
+
 ## 91. The fourth class is NOT sweepable — and that is the finding
 
 Three classes swept cleanly (#770 silent handlers, #771 projections, #772 mirrored logic). The

@@ -349,8 +349,28 @@ def _read_meeting_decisions(hubs: Any, meeting_id: str) -> List[Mapping[str, Any
 _DESC_ENDPOINT_RE = re.compile(
     r"^\s*[-*]?\s*(GET|POST|PUT|PATCH|DELETE)\s+(/[^\s)]+)", re.IGNORECASE | re.MULTILINE
 )
+# #773: the description writes `- table: NAME: cols`; this expected `- NAME: cols`. With the
+# optional `table:` prefix absent from the pattern, group(1) captured the literal word "table"
+# and group(2) became "users: id, email, ..." — whose first column parses as `users:`, is not an
+# identifier, and is dropped. The whole extraction then yields ZERO tables while endpoints (a
+# separate regex) yield 17.
+#
+# r150's own milestone slice is the proof:
+#
+#     - table: my_list: id, profile_id, title_id
+#     - table: ratings: id, profile_id, title_id, value
+#     - table: continue_watching: id, profile_id, title_id, progress_seconds
+#
+#     extract_contract_from_description(slice) -> endpoints: 17, tables: 0
+#
+# The consumer is `_derive_missing_essential_sections`, whose docstring says "the milestone slice
+# already LISTS the endpoints/tables ... so extract them" and which salvages a stalled BACKEND
+# lane. It could never have salvaged a schema — only the endpoints — and nothing said so,
+# because `tables: []` is indistinguishable from "the spec had no tables".
+#
+# Both forms accepted: the `table:` prefix is optional and non-capturing.
 _DESC_TABLE_RE = re.compile(
-    r"^\s*[-*]\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.+)$", re.MULTILINE
+    r"^\s*[-*]\s+(?:table\s*:\s*)?([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.+)$", re.MULTILINE
 )
 
 
