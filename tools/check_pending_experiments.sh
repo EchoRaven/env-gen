@@ -181,6 +181,7 @@ grep_log "#765 inverse alias refused"    "refusing to alias" "the alias repair w
 grep_log "#767 zero kept its reply"      "raw_judge_reply" "for any screen at 0.00, the judge's own text. Empty/shapeless = #766 was the cause; a considered verdict = the rubric scores rendered pages at zero"
 grep_log "#769 capture failed"           "capture FAILED for screen" "the reason a screen was never photographed. r150 lost 9 of 12 to a bare `except: continue` and the gate reported 0.1727 about the HARNESS"
 grep_log "#770 auto-repair failed"       "auto-repair" "a source-mutating repair threw and the gate then reported the symptom it was meant to clear. Any hit = read the blocker below it as a consequence"
+grep_log "#774 spec owner column lost"   "SPEC names an owner column" "the contract is self-consistent and still not the requirement. 8 of 111 corpus runs, every one profile_id on the per-profile private tables"
 grep_log "#758 declaration bound"        "declared reference bound screen" "how many screens the lane STATED instead of the gate guessing. r149 carried 15 declarations and logged none of this"
 grep_log "#657 picker stall"            "never got past the PROFILE PICKER" "introduced 08-12, only 5 runs since, 0 hits — TOO YOUNG to call dead. A hit means profile selection does not persist; keep counting"
 grep_log "#750 DELIVERY VETOED"          "DELIVERY VETOED — the app does not render" "user-approved veto: blackout past the refund cap WITH console errors. Would have stopped r148. Any hit = no release cut, deliberately"

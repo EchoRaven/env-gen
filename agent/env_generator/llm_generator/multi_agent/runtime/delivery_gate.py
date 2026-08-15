@@ -56,6 +56,76 @@ def _ts757(rec: Any) -> float:
     return 0.0
 
 
+_OWNER_COLUMNS_774 = ("profile_id", "user_id", "tenant_id", "owner_id", "account_id")
+
+
+def _spec_owner_columns_lost_774(hubs: Any) -> List[Dict[str, str]]:
+    """#774: a column the SPEC named that the contract does not carry — owner keys only.
+
+    r150 shipped `my_list`, `ratings` and `continue_watching` keyed on `user_id` while its own
+    description said `profile_id` and stated the one privacy rule in the task: *"Each profile
+    sees only its own My List, ratings and Continue Watching."* Two profiles on an account shared
+    all three. DDL, RegistryHub contract and handlers agreed with each other and disagreed with
+    the spec, so every consistency check the framework runs passed — nothing compares the
+    contract to the REQUIREMENT.
+
+    Owner columns only, and that restriction is what makes it usable. Measured over the corpus
+    with #773's extractor restored:
+
+        runs comparable                                    111
+        runs where a spec column is missing                 20   -- all RENAMES
+        runs losing an OWNER column                          8   -- 7%, every one profile_id
+
+    A rename is the dominant shape and is benign: the spec says `poster`, the app ships
+    `poster_url`. Token overlap separates them, EXCLUDING the token `id` — every table has an
+    `id`, so a bare substring test reads `profile_id` as a rename of `id` and reports zero. That
+    was the first version of this check, and it is the same over-loose matching #765 refuses one
+    module over.
+
+    Reported, not enforced. Returns [] on any fault.
+    """
+    out: List[Dict[str, str]] = []
+    try:
+        from .kickoff.run_kickoff import extract_contract_from_description as _ex
+        _ms = getattr(hubs, "milestones", None) or getattr(hubs, "workhub", None)
+        rows = []
+        try:
+            rows = [r for r in (hubs.milestones.list_milestones() or []) if isinstance(r, dict)]
+        except Exception:
+            rows = []
+        spec: Dict[str, set] = {}
+        for r in rows:
+            for t in (_ex(str(r.get("description_slice") or "")).get("tables") or []):
+                spec.setdefault(str(t.get("name")), set()).update(
+                    str(c.get("name")) for c in (t.get("columns") or []) if isinstance(c, dict))
+        if not spec:
+            return []
+        have: Dict[str, set] = {}
+        for t in (hubs.registryhub.get_tables() or {}).values():
+            if not isinstance(t, dict):
+                continue
+            cols = (t.get("schema") or {}).get("columns") or []
+            have[str(t.get("name"))] = {str(c.get("name")) for c in cols if isinstance(c, dict)}
+
+        def _toks(c: str) -> set:
+            return {x for x in str(c).split("_") if x and x != "id"}
+
+        for name, cols in spec.items():
+            present = have.get(name)
+            if not present:
+                continue
+            for col in sorted(cols - present):
+                if col not in _OWNER_COLUMNS_774:
+                    continue
+                if any(_toks(col) & _toks(x) for x in present):
+                    continue                      # a rename, not a loss
+                out.append({"table": name, "column": col,
+                            "has": ", ".join(sorted(c for c in present if c.endswith("_id")))})
+    except Exception:
+        return []
+    return out
+
+
 def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
     """#739: how BROAD is the UI evidence behind ``ui_smoke_pass``?
 
@@ -1773,6 +1843,23 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # implement_*/validate task is genuine incomplete work, not bookkeeping.
     # #743: the structural gate excludes bug tasks as "governed by their own gates"; no gate
     # consumes them. Say what is open at the cut. Reports, decides nothing.
+    # #774: the spec named an owner column the contract does not carry. Reported, not enforced —
+    # 8 of 111 corpus runs, every one `profile_id` on the per-profile private tables, which is
+    # the single privacy rule those specs state. Whether it should BLOCK is a decision of the
+    # same class as #750/#751/#752 and is recorded rather than taken here.
+    try:
+        _lost774 = _spec_owner_columns_lost_774(hubs)
+        if _lost774:
+            logger.warning(
+                "#774 the SPEC names an owner column this contract does not carry: %s. The DDL, "
+                "the contract and the handlers can all agree with each other and still not "
+                "implement the requirement — r150 shipped my_list/ratings/continue_watching on "
+                "user_id while its spec said profile_id, so every profile on an account shared "
+                "them. Reported, not enforced.",
+                "; ".join(f"{x['table']}.{x['column']} (has: {x['has'] or 'no *_id'})"
+                          for x in _lost774[:6]))
+    except Exception:
+        pass
     _bugs743 = unresolved_bug_tasks_743(hubs)
     if logger and _bugs743.get("failed_count"):
         logger.warning(

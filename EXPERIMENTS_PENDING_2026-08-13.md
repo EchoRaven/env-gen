@@ -1733,6 +1733,38 @@ right one needed a distribution.
 
 ---
 
+## 93. #774 — the measurement item 92 deferred, run now, and it is 8 of 111
+
+Item 92 said the spec-vs-contract comparison was "free next run". It was free NOW — every run has
+a description slice and a contract on disk — so it was run instead of deferred.
+
+    runs comparable                      111
+    runs where a spec column is missing   20   -- all RENAMES (spec `poster`, app `poster_url`)
+    runs losing an OWNER column            8   -- 7%, and every one is `profile_id`
+
+**Every hit is the same defect**: `profile_id` gone from `my_list`, `ratings`,
+`continue_watching` — the three tables whose spec sentence is *"Each profile sees only its own
+My List, ratings and Continue Watching."* r101, r150, r22, r32, r41 lose all three; r55, r89, r95
+lose it on `ratings`. Not noise, and not one bad run.
+
+**The discriminator is the entire check, and my first one was wrong.** Substring matching
+reported **zero** owner losses — because every table has an `id` column and `id` is a substring
+of `profile_id`, so the real defect read as a rename. That is the same over-loose matching #765
+refuses, made again one turn after writing it. Token overlap with the `id` token excluded
+separates a rename (`poster` / `poster_url`, 20 runs) from a different owner (`profile_id` /
+`user_id`, 8 runs).
+
+Wired as a REPORT, deliberately. It is a functional defect by the standing goal, and it is also
+the first check here that would fail an app the lane believes it finished — so whether it blocks
+belongs with #750/#751/#752's decision, now with its number attached: **7%, and every one of
+those eight is a real privacy defect rather than a false positive.**
+
+**Cheapest observation.** `#774 spec owner column lost` is in the checker. Unlike most entries it
+needs no interpretation: a hit means the delivered app does not implement a requirement its own
+spec states, and the corpus says the hit rate is 7% with no false positives observed.
+
+---
+
 ## 92. r150 SHIPPED a real bug — the one privacy rule in the spec — and #773 is why nothing saw it
 
 Auditing what r150 actually delivered, per the standing rule that a green gate does not excuse
