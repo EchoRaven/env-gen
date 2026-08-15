@@ -1733,6 +1733,56 @@ right one needed a distribution.
 
 ---
 
+## 100. Validating #777 end to end — and retiring the fix I set out to build
+
+#777 shipped with a caveat I wrote into it: *"if #776 still fires, the handler is lane-authored
+rather than projected — which is #528's precedence question, and a different fix."* That was
+checkable, so it was checked, and the answer runs three deep.
+
+**1. Both handlers exist.** r151 defines `GET /api/my-list` in `main.py` (projected, carries
+`_fw_owner_val`) AND in `custom_routes.py` (lane-authored). Two handlers, one route.
+
+**2. The projected one wins, and it is the one that leaked.** The generated app's own
+`_custom_route_overrides_projected` keeps the projected handler for standard CRUD — a bare
+collection like `/api/my-list` — so a buggy lane handler cannot shadow it. And the projected line
+in r151 is exactly:
+
+    rows = db.query(MyList).filter(getattr(MyList, "user_id") == _fw_owner_val(MyList, "user_id", user))...
+
+with `profile_id` right there in the serialised row. **So #777 reaches the handler that actually
+served the leak.**
+
+**3. The emitted code is now right.** Running the projector on a my_list-shaped model:
+
+    rows = db.query(MyList).filter(getattr(MyList, "profile_id") == _fw_owner_val(MyList, "profile_id", user))...
+
+Not "the template changed" — the generated line changed, verified by running the generator.
+
+### And the fix I originally proposed is unnecessary
+
+This thread began with a different plan: **derive `owner_scoped_reads` from the spec**, because
+the framework derives it from whatever isolation chains the verifier happened to author
+(`scaffolder.py:356`) and its own note says the declaration is unreliable
+(`heal_pipeline.py:927`: *"owner_scoped_reads declaration is unreliable (run-9/10 leaked
+events)"*). r151's generated `_OWNER_SCOPED_RESOURCES` is `{'profile','profiles','profiless'}` —
+`my_list`, `ratings` and `continue_watching` are NOT in it, which looked like the root cause.
+
+It is not. Running the projector with the flag OFF still emits the filter, because
+`owner_user_content` settles `read_scoped` structurally for a table that relates a user to
+someone else's content — exactly `my_list(user_id, title_id)`. **The scoping decision never
+depended on the unreliable derivation for this shape; only the COLUMN did.**
+
+So the derive-from-spec work is retired before being built. It would have been a real change to
+a real weakness that is not this defect's cause, and I would have shipped it believing otherwise.
+The thing that made the difference was running the generator instead of reading it.
+
+**Cheapest observation.** Unchanged from #777, now with a sharper failure mode: if `#776` still
+reports LEAK next run, it is NOT the precedence question — the projected read is fixed and wins.
+It would mean the table shape defeated `_read_owner_fk_777`, and the emitted line is the place to
+look.
+
+---
+
 ## 99. #777 — the fix, not another detector: reads scope to the narrowest declared owner
 
 Everything since #774 has been detection. This is the one that removes the defect at the source,
