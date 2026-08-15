@@ -1840,6 +1840,41 @@ one, and it is the sort of thing that presents as an impossible bug.
 
 ---
 
+## 80. #763 — the framework holds the lane to `node --check` and never checks its own JS
+
+Following the guard-quality question one step further: **which numbered test files assert only on
+SOURCE TEXT and never exercise a behaviour?** Four of 260. Three are legitimately findings kept
+as versioned records (#614's static hunt, #617's amnesia diagnosis, #618's score-trajectory
+reconstruction) — that is the same thing this document does, expressed as tests. The fourth,
+#471, guards **generated JavaScript** with substring assertions, which inside pytest is the only
+cheap option and not a defect.
+
+But it points at one. `file_tools` runs `node --check` on what an AGENT writes. `frontend_scaffold`
+writes JavaScript into the app itself — the two auto-stub repair passes (#753, #761) among others
+— and **nothing ever verifies it parses.** The framework holds the lane to a standard it does not
+apply to its own output, and node is available here, so the stronger check was affordable all
+along and simply never made.
+
+A malformed snippet is not a small defect in that position: it breaks the vite build, which
+wedges `docker compose up`, which is how a run loses its entire frontend — the family #75x traces.
+
+**Result: both passes emit valid ESM.** Checked across nine name shapes plus each shape alone,
+including the `console.error` message that embeds a name and an inferred literal inside a
+single-quoted JS string, which is the part most likely to break the file. So this is a regression
+guard, not a bug report — and it covers exactly the two emitters I changed this session.
+
+**The probe was wrong first, and that is recorded in the test.** My first check wrote a `.js`
+file and node rejected `export` outright. That is a property of the harness, not of the emitted
+code, and reporting it would have been a false defect; `.mjs` is the correct container. The
+non-vacuity pair is pinned too — a deliberately broken snippet must fail the check, or a green
+result would only mean node accepts everything.
+
+**Cheapest observation.** None needed; it runs in the suite (skipped where node is absent). What
+it buys is the next emitter: any future site that writes JS into the app can be added to the same
+parse check in one line.
+
+---
+
 ## 79. #762 — a number collision and an order-dependent suite, both mine
 
 Committing item 78 turned the suite red in a way that had nothing to do with its subject, and
