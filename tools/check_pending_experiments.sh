@@ -367,6 +367,41 @@ else say "n/a" "wasted-step ranking" "no run log given"; fi
 echo
 echo "Read EXPERIMENTS_PENDING_2026-08-13.md for what each number means and what to conclude."
 
+# --- D2. #776: scoped by SOMEONE is not scoped by the RIGHT someone ------------------------------
+# #749 accepts any of (user_id|profile_id|owner_id|account_id) as an owner predicate, so a GET on
+# a per-PROFILE table filtering `WHERE user_id = :uid` reads CLEAN. r151 is the case: its DDL
+# declares BOTH columns on my_list/ratings/continue_watching, POST /api/my-list writes profile_id
+# (x6), and GET /api/my-list + GET /api/continue-watching scope by user_id only -- so profile B
+# sees profile A's list, which is the one privacy rule those specs state. #774 is green too (the
+# contract HAS profile_id), so two checks pass over one real leak.
+# Corpus: 16 runs declare both columns on a table; 2 read it by the broader owner only (r151, r60).
+python3 - "$RUN" <<'D2'
+import re, sys, pathlib
+root = pathlib.Path(sys.argv[1])
+ddl = root / "app" / "database" / "init" / "01_init.sql"
+routes = root / "app" / "backend" / "custom_routes.py"
+lab = "#776 read scoped by the WIDER owner"
+if not ddl.is_file() or not routes.is_file():
+    print("%-9s %-46s %s" % ("n/a", lab, "no ddl/custom_routes")); raise SystemExit(0)
+both = set()
+for m in re.finditer(r'CREATE TABLE(?:\s+IF NOT EXISTS)?\s+"?([A-Za-z_]\w*)"?\s*\((.*?)\n\s*\);',
+                     ddl.read_text(errors="ignore"), re.S | re.I):
+    if re.search(r"\buser_id\b", m.group(2)) and re.search(r"\bprofile_id\b", m.group(2)):
+        both.add(m.group(1))
+if not both:
+    print("%-9s %-46s %s" % ("n/a", lab, "no table declares both owners")); raise SystemExit(0)
+src = routes.read_text(errors="ignore")
+bad = set()
+for h in re.split(r"\n@(?:router|app)\.", src)[1:]:
+    if not h.split("\n", 1)[0].lower().startswith("get"): continue
+    if "profile_id" in h: continue
+    for t in both:
+        if re.search(r"\b%s\b" % re.escape(t), h) and "user_id" in h: bad.add(t)
+note = (", ".join(sorted(bad)) + " -- read by user_id on a per-profile table") if bad else \
+       ("%d table(s) declare both; every GET uses the narrow one" % len(both))
+print("%-9s %-46s %s" % ("LEAK" if bad else "clean", lab, note + "  (corpus: 2 of 16)"))
+D2
+
 # --- D. #749: does the DELIVERED backend leak another user's rows? -------------------------------
 # Audited across the corpus and CLEAN — 0 of 135 delivered `custom_routes.py` have a GET handler
 # reading a per-user table with no owner predicate and no Python-side scoping. That is a result,

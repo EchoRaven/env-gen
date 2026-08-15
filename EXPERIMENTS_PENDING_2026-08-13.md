@@ -1733,6 +1733,67 @@ right one needed a distribution.
 
 ---
 
+## 98. r151 — the gates blocked, and blocked CORRECTLY. Plus #776, the leak two green checks miss.
+
+r151: `main() returned 1`, **Status FAILED, 116 min, no release.** Thirteen fixes got their first
+real exposure and four are verified against their own baselines:
+
+    #700 identical-content routes   r149: x108 (two findings, 54x each)  ->  r151: x2
+    #754 compose path               r149: 13 'missing files'             ->  r151: GONE, 0
+    #758 declaration bound          r149: no such line existed           ->  r151: x40
+    #769 capture failed             r150: lost 9 of 12 screens           ->  r151: 0, and
+                                                                             zero blank screens
+                                                                             in all 4 rounds
+
+**#758's answer to item 67, first data:** 40 screens bound by the lane's declaration and
+**`OVERRULES` never fired** — the declaration and the token guess agreed every time. The
+heuristic has not been binding references to the wrong page, at least here.
+
+**#751 blocked, and it was right.** The final blockers were three, and all three are one defect:
+
+    nav link `/title/` (HoverPreviewCard.jsx)   -- EMPTY parameter (#690's diagnosis)
+    nav link `/watch/` (ContinueWatchingRail.jsx)
+    unresolved_failed_tasks                     -- #751
+
+The single failed task: *"Delivery blocker: guard empty-id nav links in ContinueWatchingRail —
+Claimed 30+ min without landing the fix despite 3 rounds of explicit fix patterns."* So #690
+diagnosed it, **#764 stopped the repair from rewriting those links to `/tenants`**, the lane was
+told the right fix three times and did not land it, someone marked it failed with an honest
+reason, and #751 refused to ship. **Second data point on "are the blocks right", and like #752 in
+r150 it is a yes.** Before this session r151 very likely delivers: the repair would have
+repointed the links and cleared that blocker, and `unresolved_failed_tasks` did not exist.
+
+### #776 — two green checks over one real leak
+
+r151's DDL declares **both** `user_id` and `profile_id` on `my_list`/`ratings`/
+`continue_watching`, and `POST /api/my-list` writes `profile_id` six times. But:
+
+    GET /api/my-list            profile_id x0,  user_id x1
+    GET /api/continue-watching  profile_id x0,  user_id x5
+
+**Profile B sees profile A's list** — the same privacy failure as r150, reached the other way:
+the column exists and is written, and the READ ignores it. And neither existing check sees it.
+**#774 is green** because the contract HAS `profile_id`. **#749 is green** because its owner
+predicate is a UNION — `(user_id|profile_id|owner_id|account_id)` — so scoped by SOMEONE counts
+as scoped by the RIGHT someone.
+
+#776 closes exactly that: when a table declares both a broader and a narrower owner, a GET that
+uses only the broader one is a leak against the declared model. Corpus: **16 runs declare both,
+2 read by the wider owner (r151, r60)**. Verified to flag r151 and r60, and to stay `n/a` on r150
+where no table draws the distinction.
+
+**Two probe errors on the way, both caught before they were reported.** `head -1` on a two-line
+grep made me announce "r151 uses user_id, same as r150" — wrong, it has both. And a greedy
+`CREATE TABLE[^(]*` captured `t` instead of table names, so the first corpus count was three runs
+of a letter matching everywhere. Ninth and tenth of this session; the self-check (print the
+extracted table names before trusting the count) is what caught the second.
+
+**Cheapest observation.** `#776` is in section D2. It is the one check here that fires on a run
+whose contract, schema audit and owner audit are all green — so a hit is worth more than most,
+and the corpus rate is 2 of 16.
+
+---
+
 ## 97. Chasing #775r's own follow-up: no defect, and two corrections to my own claims
 
 Item 96 closed by naming a number to watch next run: *"174 steps that can only pass is not
