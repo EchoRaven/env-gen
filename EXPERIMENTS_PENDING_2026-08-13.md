@@ -1733,6 +1733,41 @@ right one needed a distribution.
 
 ---
 
+## 76. #759 — sweeping THIS session's fixes for the defect #758 just found
+
+#758's lesson generalises to my own work, so it was applied to it. For every fix #736-#758:
+does it emit a log signature, and does the checker grep for it? Six had neither:
+
+    #741  #742  #744  #745  #747  #754
+
+**#747 is a false positive** — #758 logs it, under 758's number rather than 747's. The other
+five change DATA rather than emit text, and the right instrument for those is a measurement, not
+a log line: five new warnings saying "I ran" would be noise, and #758's point is EVALUABILITY,
+not volume. So they became artifact probes in the checker (section E), and they already answer
+things about r149:
+
+    #744 completed bugs hidden from open list   7 of 7 completed bugs still read bug_state=open
+    #745 retro would count these as closed      7 fixed; the retro would have reported closed=0
+    #742 affected_endpoint parseable            2 of 2 well-formed — n<10, proves nothing
+    #741 bugs routed by extension alone         0 of that shape this run
+    #754 compose path resolves                  13 'missing files' — r149 PREDATES the fix
+
+**r149 confirms #744 and #745 at 100% in a single run.** Every one of its seven fixed bugs still
+carried `bug_state=open`, so every one was a phantom "open P0" to `list_open_bugs`, and the
+retrospective would have reported that this run closed nothing. The corpus said 616 and 127-of-129;
+one run says 7 of 7 and 0.
+
+**And I wrote the #754 line wrong on the first pass.** It printed "the cwd fix did not cover this
+call path" for a run that predates the fix — a verdict where the data supports only a baseline.
+The checker's own header says GONE/STILL is not self-interpreting and to check the build date
+first; I wrote the line that ignores it. Corrected to demand the date check in the note itself.
+
+**Cheapest observation.** Section E runs free on every future run. The one to watch is #754: on a
+post-fix run, any non-zero `missing files` count is a call path the resolution missed, and the
+pre-fix baseline is 13.
+
+---
+
 ## 75. #758 — #747 shipped silent, so its first live run proved nothing
 
 Closing two of this document's own recorded probes against r149, now that it is known to be a

@@ -398,3 +398,111 @@ if bad:
 else:
     print("%-9s %-46s %s" % ("DATA", lab, "clean (corpus: 0 of 135 delivered backends leak)"))
 PY
+
+# --- E. #759: the session's SILENT fixes, measured from artifacts --------------------------------
+# A sweep of #736-#758 found six with neither a log signature nor a checker line: #741 #742 #744
+# #745 #747 #754. (#747 is a false positive — #758 logs it.) The other five change data rather
+# than emit text, so the honest instrument is a measurement, not a new log line: adding five
+# warnings to say "I ran" would be noise, and #758's lesson is about EVALUABILITY, not volume.
+python3 - "$RUN" "${LOG:-}" <<'PY'
+import json, os, re, sys
+run, log = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else "")
+def say(k, lab, note): print("%-9s %-46s %s" % (k, lab, note))
+def load(p):
+    try:
+        with open(os.path.join(run, "shared", "hubs", p)) as f:
+            d = json.load(f)
+        return [r for r in (d if isinstance(d, list) else list(d.values())) if isinstance(r, dict)]
+    except Exception:
+        return None
+
+tasks = load("workhub_tasks.json")
+if tasks is None:
+    say("n/a", "#744/#745 bug lifecycle", "no workhub_tasks.json")
+else:
+    bugs = [t for t in tasks if (t.get("metadata") or {}).get("kind") == "bug"]
+    done = [b for b in bugs if str(b.get("status")) == "completed"]
+    stale = [b for b in done if (b.get("metadata") or {}).get("bug_state") in
+             ("open", "triaged", "assigned", "in_progress", "fix_proposed")]
+    say("DATA", "#744 completed bugs hidden from open list",
+        "%d of %d completed bugs still read bug_state=open — each was a phantom "
+        "'open P0' before #744 (corpus: 616)" % (len(stale), len(done)))
+    say("DATA", "#745 retro would count these as closed",
+        "%d fixed bugs; before #745 the retro reported closed=%d (corpus: 127 of 129 "
+        "runs reported 0)" % (len(done),
+                              len([b for b in bugs if (b.get("metadata") or {}).get("bug_state") == "closed"])))
+
+# #742: are affected_endpoint values parseable? corpus baseline 449/1129 = 40%
+ev = load("eventhub_events.json")
+if ev is None:
+    say("n/a", "#742 affected_endpoint parseable", "no eventhub_events.json")
+else:
+    def walk(o):
+        if isinstance(o, dict):
+            if isinstance(o.get("bug_artifacts"), dict):
+                yield o["bug_artifacts"]
+            for v in o.values():
+                yield from walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                yield from walk(v)
+    seen, tot, ok = set(), 0, 0
+    for ba in walk(ev):
+        k = json.dumps(ba, sort_keys=True)[:200]
+        if k in seen:
+            continue
+        seen.add(k)
+        ae = str(ba.get("affected_endpoint") or "")
+        if " " not in ae:
+            continue
+        tot += 1
+        p = ae.split(" ", 1)[1]
+        if p.startswith("/") and " " not in p and "(" not in p:
+            ok += 1
+    if tot == 0:
+        say("n/a", "#742 affected_endpoint parseable", "no bug carried one this run")
+    else:
+        say("DATA", "#742 affected_endpoint parseable",
+            "%d of %d well-formed (corpus baseline 449/1129 = 40%%; n<10 proves nothing)"
+            % (ok, tot))
+
+# #741: bugs whose files name no lane but do name a language
+LANE = ("backend", "frontend", "database", "migrations", "db")
+EXT = ("jsx", "tsx", "vue", "svelte", "css", "scss", "less", "py", "sql")
+if tasks is not None and ev is not None:
+    n = 0
+    seen = set()
+    for ba in walk(ev):
+        k = json.dumps(ba, sort_keys=True)[:200]
+        if k in seen:
+            continue
+        seen.add(k)
+        fs = ba.get("affected_files") or []
+        if not isinstance(fs, list) or not fs:
+            continue
+        if any(s.strip().lower() in LANE for p in fs for s in str(p).replace("\\", "/").split("/")):
+            continue
+        if any(str(p).lower().rsplit(".", 1)[-1] in EXT for p in fs if "." in str(p)):
+            n += 1
+    say("DATA", "#741 bugs routed by extension alone",
+        "%d bug(s) whose files name no lane but do name a language — unowned before #741 "
+        "(corpus: +25)" % n)
+
+# #754: the compose-path defect is the ABSENCE of this cause
+if log and os.path.isfile(log):
+    try:
+        txt = open(log, errors="ignore").read()
+    except Exception:
+        txt = ""
+    miss = len(re.findall(r"missing files: \[", txt))
+    # NOT a verdict on the fix: a run that PREDATES #754 shows the baseline, and this script
+    # cannot tell which build it is reading. The header already says GONE/STILL is not
+    # self-interpreting; saying "the fix did not cover this" would be the exact error the
+    # header warns about, and it is the one I made when I first wrote this line.
+    say("GONE" if miss == 0 else "STILL", "#754 compose path resolves",
+        ("0 'missing files' this run" if miss == 0 else
+         "x%d 'missing files' — check the build date FIRST: pre-#754 this is the BASELINE, "
+         "post-#754 it means the cwd fix missed a call path" % miss) + " (r149, pre-fix: 13)")
+else:
+    say("n/a", "#754 compose path resolves", "no run log given")
+PY
