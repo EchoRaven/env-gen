@@ -1733,6 +1733,45 @@ right one needed a distribution.
 
 ---
 
+## 78. bug_triage audited — four hypotheses, four falsified, one benign hazard found
+
+The user opened `bug_triage.py` again, so it got a second pass. Four ways it could be broken were
+checked and **all four are fine**; recording them so the file is not re-mined a third time.
+
+**1. `list_endpoints` is dead code, harmlessly.** `_registryhub_endpoints` tries
+`registryhub.list_endpoints()` first — and **no `def list_endpoints` exists anywhere in the
+tree**, so that branch can never be taken. It falls through to `get_endpoints()`, which returns
+the full store. My concern was #303's COMPACT rows dropping `provider`; they do not apply here,
+and the corpus confirms the field is present on **4120 of 4283** endpoint records (96%).
+
+**2. `registry.schema_hub` exists** — `hub_registry.py:194` aliases it to `self.registryhub` —
+and both `get_table` and `list_tables` are real methods on it. Table routing works.
+
+**3. `resolve_owning_agent`'s call site is guarded** (`try/except` in `bug_tools`) and has a
+keyword fallback behind it, so an unresolvable bug still routes.
+
+**4. The import that looked fatal is not.** `bug_tools` does
+`from multi_agent.runtime.bug_triage import resolve_owning_agent` — a TOP-LEVEL `multi_agent`,
+which under the launcher's `PYTHONPATH=$REPO/agent` raises `ModuleNotFoundError`, inside a bare
+`except` that would silently null the owner. I had the finding written. Then I checked
+`sys.path`: **`main.py:197` inserts the `llm_generator` directory at startup**, so `multi_agent`
+IS a valid top-level package in a real run, and the import succeeds. Reproduced both ways to be
+sure. **Falsified — and it would have been a large, confident, wrong finding.**
+
+**The hazard that IS real, and is currently benign.** That dual path means the same file lives in
+`sys.modules` under two names, as **two distinct module objects with two copies of module-level
+state**. Verified for four modules — `bug_triage`, `visual_fidelity`, `delivery_gate`,
+`registryhub` — all four are `a is b → False`. Today it costs nothing: every duplicated global is
+a CONSTANT (`_LANE_BY_PATH_SEGMENT`, `_LANE_BY_EXTENSION_741`, `_UI_SMOKE_EVIDENCE_CHECKS`,
+`_VIEWPORT`, `_CV646`) and none is written at runtime — the single `_VIEWPORT[` hit is a read.
+
+**Cheapest observation.** No probe, because there is nothing to count yet. The condition to watch
+is structural: **the day any of these modules gains a module-level CACHE or registry, it will
+silently exist twice**, and the two copies will disagree. That is worth remembering before adding
+one, and it is the sort of thing that presents as an impossible bug.
+
+---
+
 ## 77. Mining r149's deviations — one dead end, one near-miss, nothing live
 
 Two angles closed against r149, recorded so neither is re-opened.
