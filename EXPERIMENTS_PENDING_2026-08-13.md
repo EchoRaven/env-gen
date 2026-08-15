@@ -1733,6 +1733,50 @@ right one needed a distribution.
 
 ---
 
+## 99. #777 — the fix, not another detector: reads scope to the narrowest declared owner
+
+Everything since #774 has been detection. This is the one that removes the defect at the source,
+and the lever turned out to be a tuple element's position.
+
+`_owner_fk` walks `_OWNER_FK_NAMES` in order and takes the first hit. `profile_id` is LAST, and
+the reason is written down:
+
+    # Last in the list so a user-level owner (user_id/account_id) still wins when both exist;
+    # the VALUE is resolved to the caller's profile by _fw_owner_val (backend).
+
+**That is right for filling a column on write and wrong for scoping a read.** If the rows are
+per-profile and the filter is `user_id == caller`, every profile on the account sees every other
+profile's rows. The projector already knew: *"r141 shipped GET /api/my-list and
+GET /api/continue-watching unscoped for exactly this reason, while r142 was safe only because its
+draw happened to pick profile_id."* **A draw.** r151 lost it again.
+
+The three read sites now filter on `_read_owner_fk_777(meta, owner_fk)` — the narrowest owner the
+table declares. `_fw_owner_val` already resolves a `profile_id` to the caller's profile (#692), so
+the value side needed nothing.
+
+**Scope held, deliberately.** The create/write path keeps `_owner_fk` (the NOT-NULL argument for
+filling `user_id` is still true), and **the DELETE owner gate is left alone** — profile B deleting
+profile A's row is plausibly the same leak in the write direction, but I have not measured it, and
+this session's rule is measure-then-fix. Recorded as an open question rather than an assumed one.
+
+**How the three pieces now fit:**
+
+    #774  the contract lost profile_id entirely          detect   8 of 111 runs
+    #776  the contract has it and the READ ignores it    detect   2 of 16 runs
+    #777  the read now picks it automatically            PREVENT
+
+**Two guards earned their keep during the change.** An `assert s.count(...) == 1` refused the
+first patch because the owner-check line appears TWICE — once under `GET /{id}`, once under
+`DELETE /{id}` — and a blind replace would have silently altered the delete gate I had just
+decided to leave alone. Line-anchoring by enclosing branch fixed it. And nothing was written to
+disk on the failed attempt, so the file was never half-patched.
+
+**Cheapest observation.** On the next run, `#776` should read `clean` where it read `LEAK`, and
+the delivered `GET /api/my-list` should filter on `profile_id`. If #776 still fires, the handler
+is lane-authored rather than projected — which is #528's precedence question, and a different fix.
+
+---
+
 ## 98. r151 — the gates blocked, and blocked CORRECTLY. Plus #776, the leak two green checks miss.
 
 r151: `main() returned 1`, **Status FAILED, 116 min, no release.** Thirteen fixes got their first

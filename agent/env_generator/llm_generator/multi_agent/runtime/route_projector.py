@@ -687,6 +687,41 @@ def _owner_fk(child_meta: Dict[str, Any], exclude: Tuple[str, ...] = ()) -> Opti
     return None
 
 
+_NARROW_OWNER_FK_NAMES = ("profile_id",)
+
+
+def _read_owner_fk_777(child_meta: Dict[str, Any], owner_fk: Optional[str]) -> Optional[str]:
+    """#777: for a READ, the NARROWEST owner the table declares wins.
+
+    `_owner_fk` walks `_OWNER_FK_NAMES` in order and takes the first hit, with `profile_id` LAST
+    on purpose. The note there says "a user-level owner (user_id/account_id) still wins when both
+    exist; the VALUE is resolved to the caller's profile by _fw_owner_val". That reasoning holds
+    for FILLING a column on write. It does not hold for SCOPING a read: if the rows are
+    per-profile and the filter is `user_id == caller`, every profile on the account sees every
+    other profile's rows.
+
+    The projector already records the consequence a few lines down — *"r141 shipped
+    GET /api/my-list and GET /api/continue-watching unscoped for exactly this reason, while r142
+    was safe only because its draw happened to pick profile_id"* — and r151 shipped it again: a
+    DDL with BOTH columns, `POST /api/my-list` writing profile_id six times, and
+    `GET /api/my-list` + `GET /api/continue-watching` filtering on user_id alone. #776 detects
+    that; this is the half that prevents it.
+
+    READS only. The create/write path keeps `_owner_fk` untouched, because the NOT-NULL argument
+    for filling `user_id` is still true, and the DELETE owner gate is left alone as an
+    unmeasured question rather than an assumed one. Same first-match-over-an-unordered-list shape
+    as #506's accent resolution.
+    """
+    try:
+        cols = child_meta.get("cols", []) or []
+    except Exception:
+        return owner_fk
+    for narrow in _NARROW_OWNER_FK_NAMES:
+        if narrow in cols and narrow != owner_fk:
+            return narrow
+    return owner_fk
+
+
 def _is_per_user_sub_entity_fk(child_meta: Dict[str, Any], owner_fk: str,
                                models: Dict[str, Dict[str, Any]]) -> bool:
     """#566y — True iff ``owner_fk`` attributes the row to a PER-USER SUB-ENTITY (a
@@ -1003,6 +1038,8 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
     # else's content does not.
     read_scoped = bool(owner_fk) and (bool(owner_scoped_reads) or owner_sub_entity
                                       or owner_user_content)
+    # #777: the column a READ filters on — the narrowest owner the table declares.
+    read_owner_fk = _read_owner_fk_777(meta, owner_fk) if read_scoped else owner_fk
 
     # Nested parent: /api/users/{username}/posts → parent users(User) via {username}.
     parent_ctx = _parent_context(path, models, table) if cls else None
@@ -1094,7 +1131,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
             # the resource's owner_scoped_reads contract signal (or, #566y, settled
             # by a sub-entity owner FK); open by default.
             body_lines += [
-                f'    if getattr(obj, "{owner_fk}", None) != _fw_owner_val(type(obj), "{owner_fk}", user):',
+                f'    if getattr(obj, "{read_owner_fk}", None) != _fw_owner_val(type(obj), "{read_owner_fk}", user):',  # #777
                 '        raise HTTPException(status_code=404, detail="not found")',
             ]
         body_lines += [
@@ -1194,7 +1231,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         ]
         if read_scoped:
             body_lines.append(
-                f'    query = query.filter(getattr({cls}, "{owner_fk}") == _fw_owner_val({cls}, "{owner_fk}", user))')
+                f'    query = query.filter(getattr({cls}, "{read_owner_fk}") == _fw_owner_val({cls}, "{read_owner_fk}", user))')  # #777
         body_lines += [
             "    if term:",
             f"        cols_to_search = [c for c in {_search_cols!r} if hasattr({cls}, c)]",
@@ -1241,7 +1278,7 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
         if read_scoped:
             # PRIVATE resource: the list is the caller's own rows only.
             body_lines = [
-                f'    rows = db.query({cls}).filter(getattr({cls}, "{owner_fk}") == _fw_owner_val({cls}, "{owner_fk}", user)).limit(100).all()',
+                f'    rows = db.query({cls}).filter(getattr({cls}, "{read_owner_fk}") == _fw_owner_val({cls}, "{read_owner_fk}", user)).limit(100).all()',  # #777
                 f"    return {{\"items\": [{_serialize_expr('r', cols)} for r in rows], \"total\": len(rows)}}",
             ]
         else:
