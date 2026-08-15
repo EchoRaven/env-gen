@@ -1733,6 +1733,46 @@ right one needed a distribution.
 
 ---
 
+## 97. Chasing #775r's own follow-up: no defect, and two corrections to my own claims
+
+Item 96 closed by naming a number to watch next run: *"174 steps that can only pass is not
+evidence that reset works."* That was answerable now, from the chain records, so it was answered
+rather than deferred. **Both halves of what I said turned out to be wrong, and there is no
+framework defect at the end of it.**
+
+**Correction 1 — reset chains DO fail.** Chain outcomes live at the CHAIN level
+(`status` / `last_result` / `last_run_at`), not on the step, which is where I first looked:
+
+    chains containing a reset step       173, across 74 runs
+      passing                            154
+      registered (never run)              16
+      failing                              3
+
+Three failures is 1.7%, not the zero my "can only pass" framing implied. Rare, but the assertion
+is not vacuous — a reset chain can and does fail.
+
+**Correction 2 — `last_result` is populated, and I nearly reported the opposite as a finding.**
+My first pass printed `None` for all 173 and I was one step from recording "a declared field that
+is always empty, with a reader at `framework_validation.py:582` that can never fire" — the #746
+class. It was an extraction artifact: I read the dict branch with `.get('status')`/`.get('passed')`,
+keys it does not have, and printed the literal string `"None"`. Cross-tabulating by status
+instead showed the truth:
+
+    reset chains, passing     154  ->  last_result PRESENT
+    reset chains, registered   16  ->  absent, correctly (they never ran)
+    reset chains, failing       3  ->  last_result PRESENT
+
+**That is the eighth field-or-shape error of this session** and the second in two items. Item 91
+recorded that this class is not sweepable and the countermeasure is procedural — *dump a real
+record before reporting any zero*. Here the procedure worked: the cross-tab was the dump, and it
+caught the error before it reached the document as a finding.
+
+**Recorded as a negative.** No fix, no code change. The value is that the next person does not
+re-derive it, and that #775r's closing line is now corrected rather than left standing as a
+number to chase.
+
+---
+
 ## 96. #775r — I shipped a claim into the prompt without checking it. The truth is worse.
 
 #775's instruction told the lane *"the verifier's chains call reset between steps and TRUST
