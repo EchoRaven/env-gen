@@ -1733,6 +1733,45 @@ right one needed a distribution.
 
 ---
 
+## 94. Why #774 is owner-columns-only — the rest of the comparison is noise, measured
+
+#774 restricts itself to OWNER columns. That was instinct when I wrote it; here is the data that
+justifies it, because the restriction is the difference between a usable check and another
+82-item table nobody can act on.
+
+Spec columns the contract lacks, with renames (token overlap) already removed and owner columns
+set aside: **19 of 111 runs**, led by
+
+    18 runs   titles.genre        -- normalised away into the `title_genres` join table
+    13 runs   titles.name         -- the contract calls it `title`
+    13 runs   ratings.value       -- the contract calls it `rating`
+    11 runs   episodes.synopsis   -- the contract calls it `description`
+     5 runs   titles.top10_rank
+
+Every one of those is a SYNONYM rename or a normalisation my token rule cannot see, and they are
+not defects. `top10_rank` looked like the exception — no synonym, and it maps to a named feature
+— so it was checked in the delivered code rather than assumed:
+
+    @router.get("/api/titles/top10")
+    ... .order_by(coalesce(Title.avg_rating,0).desc(), coalesce(Title.view_count,0).desc()) ...
+    d["rank"] = i
+
+**The ranking is derived rather than stored, which is a defensible design choice**, and the
+endpoint works. Not a defect either.
+
+**So the non-owner half of this comparison has no signal, and that is the finding.** It joins
+item 91's field-location class: real-sounding, and not separable from legitimate variation by any
+query I can write. The owner half is the opposite — 8 runs, one defect, zero false positives —
+because a different owner column is not a naming choice, it changes WHO can see the data.
+
+**One thing noticed and deliberately not chased.** r150's `top10` handler wraps its ordered query
+in `except Exception:` and falls back to `db.query(Title).limit(10)` — ten arbitrary titles
+presented as the Top 10. That is #769's class appearing in GENERATED code rather than the
+framework, and it is the lane's to fix; recorded here so the observation is not lost, but out of
+scope for a framework-generalizable change.
+
+---
+
 ## 93. #774 — the measurement item 92 deferred, run now, and it is 8 of 111
 
 Item 92 said the spec-vs-contract comparison was "free next run". It was free NOW — every run has
