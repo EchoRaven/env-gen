@@ -1733,6 +1733,47 @@ right one needed a distribution.
 
 ---
 
+## 90. #772 — the third class: logic duplicated by hand, and "kept in sync via grep"
+
+#764's root cause was not the bad rewrite, it was the duplication behind it:
+`repair_dead_nav_links`' docstring said *"Classification mirrors ``dead_nav_link_remediation``"*
+— mirrored BY HAND. #690 taught one copy and not the other, and nothing could notice, because
+they live in different modules and no test crossed them. So the class got swept, like #770's
+silent handlers and #771's projections.
+
+**20 places declare they are kept identical to something else.** Most are prose references to a
+line number and cannot be pinned by a test. One is security-critical and states its own
+maintenance procedure:
+
+    tools/image_search_tools.py:29
+    # SSRF guard — kept in sync with tools/web_tools.py::_ssrf_check via grep.
+
+**They have NOT drifted** — compared as normalised ASTs (docstrings stripped, comments and
+formatting free to differ), byte-identical logic. That is a clean negative and it is recorded so
+nobody re-mines it. The duplication itself is defensible for a small guard.
+
+**What was missing is any way to know that tomorrow.** A grep is something a person has to
+remember; #764 is what that costs when they do not. The pair is now compared structurally by a
+test, plus behaviourally on the cases that matter (loopback, AWS metadata, `file://`, RFC1918,
+unparseable) so that two identical copies of a BROKEN guard would also fail.
+
+**One correction inside the fix.** My first behavioural test asserted a public URL is ALLOWED by
+both. It failed — this box has no DNS egress, so resolution fails and both guards correctly
+reject. That was an environment assumption dressed as an invariant; it now asserts the two
+AGREE, which is the property the file exists to protect.
+
+**Cheapest observation.** None — this is proven at the unit level and needs no run. What it buys
+is that the next divergence fails the suite instead of shipping, which is the only thing #764
+was missing.
+
+**The three classes this session produced, now each swept and bounded:**
+
+    swallowed cause      #748 #740 #769 #770    582 candidates, 4 real, rule + bound recorded
+    fixed-key projection #767b #768b #771 #771b 39 candidates, 4 real, end-to-end guard added
+    hand-mirrored logic  #764 #772              20 candidates, 1 real, drift guard added
+
+---
+
 ## 89. #771 — the verdict could not name the image it scored, and a guard found a fourth loss
 
 The second recurring class of this session, swept the way #770 swept the first. #767b and #768b
