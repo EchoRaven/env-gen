@@ -20,6 +20,7 @@ state a contract and change no reachable behaviour, and the experiments file has
 for them. Those are exempted BY NAME with the reason, so an exemption is a claim someone can check
 rather than a silent hole.
 """
+import pathlib
 import re
 from pathlib import Path
 
@@ -70,6 +71,48 @@ def test_every_fix_number_is_reachable_from_the_record():
     assert not orphans, (
         "these fixes exist in code with no mention in EXPERIMENTS_PENDING, so a reader of the "
         "record cannot reach them: " + ", ".join(f"#{n}" for n in orphans))
+
+
+def test_no_fix_number_is_used_for_TWO_different_fixes():
+    """#762: the property #719 was built for and did not test.
+
+    I numbered two unrelated changes #760 in one session — `deliverability`'s say-it-once fix
+    and `frontend_scaffold`'s second throwing stub — and nothing caught it. Reachability was
+    checked; UNIQUENESS was not, so a collision reads as one well-documented fix.
+
+    A number is a claim that a record entry, a test file and a code site describe the SAME
+    change. Two code sites in unrelated modules under one number breaks that, so it is checked
+    by TEST FILE, which is the artifact that carries the number in its own name."""
+    import collections
+    # The TRAILING number only. A first attempt took every 3-digit group in the name and
+    # produced false positives that say something real about the convention: `404` in
+    # `test_projected_nested_create_404_498.py` is an HTTP STATUS in the description, and
+    # `617` in `test_remediation_loop_integration_617_620.py` is one fix FAMILY spanning two
+    # numbers. A filename cannot mechanically tell a fix number from a number in prose, so the
+    # check is scoped to what the convention does guarantee — the name ENDS in its fix number.
+    here = pathlib.Path(__file__).parent
+    by_num = collections.defaultdict(set)
+    for f in here.glob("test_*.py"):
+        m = re.search(r"_(\d{3})\.py$", f.name)
+        if m:
+            by_num[int(m.group(1))].add(f.name)
+    # Explicit, reasoned exemptions — the same shape as NO_DOC_ENTRY above, because a fix may
+    # legitimately own two test files and a blanket ban would just be turned off.
+    SHARED = {
+        620: "test_remediation_loop_integration_617_620.py covers the 617+620 pair; "
+             "test_collateral_damage_named_620.py is the same fix's second file.",
+        557: "both files are R4-core contract-completeness — one fix, two aspects.",
+        500: "a GENUINE pre-existing collision: cjs/esm/umd orphan-brace and the visual "
+             "verdict max-latch are unrelated changes that both took #500. Both predate this "
+             "guard and their records cite their own filenames, so renaming would break more "
+             "than it fixes. Exempted knowingly, not silently — and it is the second collision "
+             "found in this codebase, which is why the guard exists.",
+    }
+    dupes = {n: sorted(v) for n, v in by_num.items()
+             if len(v) > 1 and n not in SHARED}
+    assert not dupes, (
+        "one fix number, two unrelated test files — a collision reads as one documented fix: "
+        + "; ".join(f"#{n}: {', '.join(v)}" for n, v in sorted(dupes.items())))
 
 
 @pytest.mark.parametrize("num,reason", sorted(NO_DOC_ENTRY.items()))
