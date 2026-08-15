@@ -1,9 +1,12 @@
 r"""#750/#751/#752: three delivery gates go from REPORTING to BLOCKING. User-approved.
 
 Everything found this session (#736-#749) reported and decided nothing, and the corpus says what
-that costs: **14 of 14** runs carrying a frontend runtime-crash signature released, **90 of 90**
-runs with an unresolved P0 bug released, and r148 cut v1.0.0 with the SPA throwing
-`TypeError: (void 0) is not a function` on every authenticated route.
+that costs (#755-CORRECTED figures): of 149 runs only **29 ever cut a real release**; 14 carry a
+frontend runtime-crash signature and **3 released**; 86 carry an unresolved P0 bug and **15
+released**. An earlier reading said 14/14 and 90/90 — inflated by counting a bootstrap
+`{"version": 1}` document in codehub_releases as a release tag. r148 is the concrete case and is
+unaffected: it cut v1.0.0 with the SPA throwing `TypeError: (void 0) is not a function` on every
+authenticated route.
 
 Each blast radius was measured before the switch, and one of the three was deliberately split:
 
@@ -105,7 +108,7 @@ def test_the_latch_clears_when_a_capture_renders():
 def test_the_veto_explains_the_trade_in_place():
     d = " ".join(inspect.getsource(_D).replace("#", " ").split())
     assert "no app is better than an app that renders nothing" in d
-    assert "14 of 14 runs" in d
+    assert "3 of them\n    # released" in d or "3 of them" in d
 
 
 # --- #751: a task explicitly marked failed blocks -------------------------------------------------

@@ -1733,6 +1733,58 @@ right one needed a distribution.
 
 ---
 
+## 72. #755 — RETRACTION: "X of X runs released" was every run, because of a bootstrap document
+
+The largest correction of the session, and it lands on numbers I have quoted in five items and in
+the justification for three gates.
+
+Chasing why r149 died, I asked how often runs end without `[main-exit]`. The marker predates the
+whole corpus (introduced 06-15; oldest log 07-30) and `main()` prints it on all three exit paths,
+so the question is sound. **94 of 149 runs never print it.** Testing whether the PROCESS or only
+the LOG had died, I compared release timestamps against the log's last write — and got "91 of 94
+have no usable release record", which was itself wrong, and led me to the real error.
+
+**Every `codehub_releases.json` in the corpus is non-empty**, because every one carries a
+bootstrap document:
+
+    {"version": 1, "last_modified_by": "ensure_codehub_document", "last_modified_at": ...}
+
+A real release record looks nothing like it — `{"id": "1.0.0", "tag": "1.0.0", "source":
+"integration", "branch": "release-v1.0.0", "branch_sha": ..., "created_at": ...}`. My release
+test was `r.get("tag") or r.get("version")`, so **the bootstrap document's `version: 1` scored as
+a release tag and every run counted as released.**
+
+Corrected, with `tag` as the predicate:
+
+    runs in the corpus                                       149
+    runs that actually cut a release                          29    (19%)
+    frontend runtime-crash signature   14 runs  ->  released   3    (I said 14 of 14)
+    unresolved P0 bug                  86 runs  ->  released  15    (I said 90 of 90)
+    a task in status `failed`          20 runs  ->  released   4    (I said 20 of 20)
+
+**Do the three gate decisions survive?** Yes, and I checked rather than assumed. #751 blocks 4
+releases instead of 20 — still the narrowest candidate. #743's open-P0 option would block 15 of
+the 29 real releases (52%), so "a halt, not a gate" holds from the corrected side too. #750 rests
+on r148, which released independently of any of this. **The decisions stand; five stated numbers
+did not, and they are now corrected at every site** — orchestrator.py's veto comment,
+delivery_gate.py's #743 docstring and both #743 warnings, two test docstrings, the checker line,
+and items 62/70 above.
+
+**The bigger fact this uncovered.** Only **19% of runs ever release**, and 63% never reach
+`main()`'s exit. Every corpus statement in this document was computed over a population where
+four out of five runs produced no app — including mine. That does not invalidate the defect
+findings (those are about mechanisms, and most were verified against source or a single named
+run), but it does mean "the corpus" is not a corpus of finished runs, and no rate quoted over it
+should be read as a rate over deliveries.
+
+**Cheapest observation.** `tag` is the predicate; `version` is a bootstrap artefact. Any future
+question of the form "how many runs released" must use the former. The 63%-no-`main-exit` finding
+is left OPEN: I could not establish whether those processes were killed or merely stopped logging,
+because the newer-files test is contaminated by later git activity and no release lands after a
+log dies in any of the 94.
+
+---
+
 ## 71. r149 was KILLED, and its 108 surviving minutes paid for two fixes (#753, #754)
 
 **The run did not finish.** Launched 16:56, gone 18:44:29 with no `[main-exit]`, no traceback and
@@ -1788,8 +1840,9 @@ get there", not "did not fire". The three blocking gates remain unexercised end-
 ## 70. #750/#751/#752 — the decision was taken: three gates now BLOCK. Items 56/58/62 CLOSED.
 
 User-approved, all three. Everything found in #736-#749 reported and decided nothing, and the
-corpus says what that costs: **14 of 14** runs with a frontend runtime-crash signature released,
-**90 of 90** runs with an unresolved P0 bug released, r148 cut v1.0.0 with the SPA throwing
+corpus says what that costs (**numbers corrected by item 72**): of 149 runs only **29 ever cut a
+real release**; 14 carry a frontend runtime-crash signature and **3 released**; 86 carry an
+unresolved P0 bug and **15 released**. r148 cut v1.0.0 with the SPA throwing
 `TypeError: (void 0) is not a function` on every route.
 
 Each blast radius was measured before flipping it, and **one of the three was deliberately split
@@ -2190,7 +2243,8 @@ population where the stale structural tasks cannot inflate it.
 **`failed` is the signal worth a decision.** `fail_task` is authorised (creator, claimer, or
 orchestrator only) and REQUIRES a reason, so the status means an attempt was made and did not
 work — where `pending` can just mean nobody reached it. Only **20 of 148 runs (13%)** end with
-one, and **all 20 released**, carrying things like *"Frontend Dockerfile uses registry-blocked
+one, and **4 of those released** (item 72 corrects an earlier "all 20"), carrying things like
+*"Frontend Dockerfile uses registry-blocked
 base images"*, *"Record the missing critical UI flow validations (blocks delivery)"* and
 *"Landing page (/) renders a stub"*.
 
@@ -2202,7 +2256,7 @@ same call, and they should be decided together because they are the same trade i
 
     item 56   a post-cap BLACKOUT blocks delivery          would have caught r148
     item 58   ui_smoke stops being existential             would have caught r148
-    item 62   a FAILED task blocks delivery                13% blast radius, all 20 shipped
+    item 62   a FAILED task blocks delivery                13% of runs; 4 of them released
 
 The blast radii are known for all three. What no artifact can answer is how many of those blocks
 would have been RIGHT — a blocked run that would have shipped a working app is a pure loss, and

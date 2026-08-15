@@ -404,8 +404,12 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
     # Every branch below returns "release": wall-clock, attempt cap, plateau, hard plateau,
     # idle source, and #558's fast path. r148 took the plateau one and shipped v1.0.0 with the
     # SPA throwing `TypeError: (void 0) is not a function` on every authenticated route. The
-    # corpus says that is the rule, not the exception — 14 of 14 runs carrying a frontend
-    # runtime-crash signature released, 90 of 90 runs with an unresolved P0 bug released.
+    # corpus (#755-CORRECTED): 14 runs carry a frontend runtime-crash signature and 3 of them
+    # released; 86 carry an unresolved P0 bug and 15 released. My first reading said 14/14 and
+    # 90/90 — wrong, and inflated by counting a bootstrap `{"version": 1}` document in
+    # codehub_releases as a release TAG. Only 29 of 149 runs ever cut a real release. The
+    # numbers moved; the finding did not: nothing stopped a broken app from shipping, and r148
+    # is the case in point — it released v1.0.0 with the SPA crashing on every route.
     #
     # The reason this is a veto and not another escape condition: an escape answers "have we
     # waited long enough", and no amount of waiting makes a blank page a delivery. It is placed

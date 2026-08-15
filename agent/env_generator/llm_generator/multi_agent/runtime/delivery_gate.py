@@ -114,11 +114,17 @@ def unresolved_bug_tasks_743(hubs) -> Dict[str, Any]:
 
         completed 818   pending 363   cancelled 140   in_progress 139   failed 17
         P0 only:  completed 443, genuinely open 317, cancelled 99
-        runs ending with an unresolved P0 bug        90
-        of those, runs that RELEASED                 90     — 100%
+        runs ending with an unresolved P0 bug        86
+        of those, runs that RELEASED                 15     (of 29 real releases in the corpus)
 
-    So a hard block on "any open P0 bug" would stop 90 of 129 runs and is not a gate, it is a
-    halt. **`failed` is the narrow one**: `fail_task` is authorised (creator/claimer/orchestrator
+    #755 CORRECTION: this block first read "90 ... 90 — 100%". Both halves were wrong. The
+    release test was `r.get("tag") or r.get("version")`, and every `codehub_releases.json`
+    carries a bootstrap `{"version": 1, "last_modified_by": "ensure_codehub_document"}` document
+    — so EVERY run scored as released. A real release record has a `tag`, and only 29 of 149
+    runs have one.
+
+    So a hard block on "any open P0 bug" would stop 86 of 129 runs — and 15 of the 29 runs that
+    actually released — and is not a gate, it is a halt. **`failed` is the narrow one**: `fail_task` is authorised (creator/claimer/orchestrator
     only), requires a `reason`, and means an attempt was MADE and did not work — unlike `pending`,
     which can just mean nobody reached it. Only **20 of 148 runs (13%)** end with one, and all 20
     released, carrying things like "Frontend Dockerfile uses registry-blocked base images" and
@@ -1743,7 +1749,8 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             "#743 %d task(s) are in status FAILED at the delivery cut and nothing reads them: "
             "%s. `fail_task` is authorised and requires a reason, so this is a deliberate "
             "'attempted and did not work' — unlike pending. 20 of 148 corpus runs end with one "
-            "and all 20 released. Reported, not enforced.",
+            "and 4 of those 20 released (#755: my first count said all 20, inflated by a "
+            "bootstrap doc read as a release tag). Reported, not enforced.",
             _bugs743["failed_count"],
             "; ".join(f"[{f.get('severity') or '-'}] {f.get('title')}"
                       f"{' — ' + f['reason'] if f.get('reason') else ''}"
@@ -1751,8 +1758,8 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     if logger and _bugs743.get("open_p0_bug_count"):
         logger.warning(
             "#743 %d P0 BUG task(s) are still open at the delivery cut: %s. Corpus: 90 of 129 "
-            "runs end this way and 90 of 90 released, so this is reported rather than blocking "
-            "— a hard block here would be a halt, not a gate.",
+            "runs end this way and 15 of them released (#755-corrected; 86 runs, not 90), so "
+            "this is reported rather than blocking — 15 of the 29 real releases is a halt.",
             _bugs743["open_p0_bug_count"],
             "; ".join(str(b.get("title")) for b in _bugs743.get("open_p0_bugs", [])[:4]))
     # #751 (user-approved) — A TASK EXPLICITLY MARKED FAILED BLOCKS THE CUT.

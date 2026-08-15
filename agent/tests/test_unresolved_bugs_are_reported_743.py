@@ -15,15 +15,20 @@ Corpus, restricted to `metadata.kind == 'bug'` (1477 bug tasks across 129 runs):
 
     completed 818   pending 363   cancelled 140   in_progress 139   failed 17
     P0 only:  completed 443, genuinely open 317, cancelled 99
-    runs ending with an unresolved P0 bug     90
-    of those, runs that RELEASED              90      100%
+    runs ending with an unresolved P0 bug     86
+    of those, runs that RELEASED              15      (of 29 real releases in the whole corpus)
 
-A hard block on "any open P0 bug" would stop 90 of 129 runs. That is a halt, not a gate, and it
+#755 CORRECTION: this first read "90 ... 90 ... 100%". The release test was
+`r.get("tag") or r.get("version")` and every codehub_releases.json carries a bootstrap
+`{"version": 1}` document, so every run scored as released. Only 29 of 149 ever cut a real tag.
+
+A hard block on "any open P0 bug" would stop 86 of 129 runs. That is a halt, not a gate, and it
 is the same conclusion reached from the other direction in item 56 (124 of 148 on all-kinds P0).
 
 **`failed` is the narrow signal.** `fail_task` is authorised (creator/claimer/orchestrator),
 requires a `reason`, and means an attempt was MADE and did not work — `pending` can just mean
-nobody reached it. Only 20 of 148 runs end with one, and all 20 released.
+nobody reached it. Only 20 of 148 runs end with one, and 4 of those released (#755 corrects an
+earlier "all 20": a bootstrap `{"version": 1}` document was being read as a release tag).
 """
 import inspect
 
@@ -164,7 +169,8 @@ def test_the_delegation_gap_is_recorded():
 
 def test_the_blast_radius_of_both_options_is_recorded():
     d = " ".join((dg.unresolved_bug_tasks_743.__doc__ or "").split())
-    assert "90 of 129 runs and is not a gate, it is a halt" in d
+    assert "86 of 129 runs" in d and "is not a gate, it is a halt" in d
+    assert "15 of the 29 runs that actually released" in d, "#755: the corrected release count"
     assert "20 of 148 runs (13%)" in d
 
 
