@@ -1763,9 +1763,22 @@ def repair_frontend_missing_local_exports(frontend_dir) -> Dict[str, object]:
                 if n[:1].isupper():
                     lines.append(f"export const {n} = (props) => null;  // auto-stub component")
                 else:
+                    # #760: the SECOND throwing stub, and this one is worse than #753's.
+                    # #753 fixed the api.js emitter after r149 showed `isAuthenticated not
+                    # implemented (auto-stub)` taking down 9 screens. This site has the same
+                    # defect and is not async, so the throw is SYNCHRONOUS — it kills the caller
+                    # at the call, not as an unhandled rejection one tick later.
+                    #
+                    # The asymmetry two lines up is the argument: a capitalised name (a
+                    # COMPONENT) already gets `=> null`, deliberately non-fatal. The same
+                    # function chose gentleness for components and fatality for functions, and
+                    # #753 established which of those a crashed React tree deserves.
+                    _empty760 = _stub_empty_value_753(n)
                     lines.append(
                         f"export const {n} = (...args) => {{ "
-                        f"throw new Error('{n} not implemented (auto-stub)'); }};")
+                        f"console.error('[auto-stub] {n} is imported but its module does not "
+                        f"export it - MISSING IMPLEMENTATION, not an empty result. Returning "
+                        f"{_empty760} so the page still renders.'); return {_empty760}; }};")
             target.write_text(tgt_src.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
             result["repaired"].append((target.name, add))
         # Re-export existing-but-unexported local bindings (e.g. a Context the lane

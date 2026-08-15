@@ -1772,6 +1772,39 @@ one, and it is the sort of thing that presents as an impossible bug.
 
 ---
 
+## 78. #760 — #753 fixed one of two throwing stubs, and the file said which
+
+Asking the obvious follow-on to #753 — is there another site? — finds one immediately.
+`frontend_scaffold` runs two import/export repair passes that invent a missing export.
+#753 fixed `repair_frontend_api_exports`. `repair_frontend_missing_local_exports` had the
+identical defect and was left behind.
+
+It is worse in one respect: **its stub is not async**, so the throw is SYNCHRONOUS and kills the
+caller at the call site, rather than surfacing a tick later as an unhandled rejection.
+
+**The function's own asymmetry is the argument, and it was already written down:**
+
+    if n[:1].isupper():
+        lines.append(f"export const {n} = (props) => null;  // auto-stub component")
+    else:
+        ... throw new Error(f"{n} not implemented (auto-stub)") ...
+
+A capitalised name — a COMPONENT — already gets a deliberately non-fatal `=> null`. **The same
+code chose gentleness for components and fatality for plain functions**, and #753 established
+which of those a crashed React tree deserves. The component branch is untouched; the function
+branch now does what #753's does, reusing its helper rather than growing a second copy of the
+shape inference.
+
+A test now asserts that **no throwing stub survives anywhere in the module**, so a third site
+cannot appear unnoticed — which is exactly how this one survived #753.
+
+**Cheapest observation.** Both stubs write `[auto-stub]` into the browser console, and #740
+captures it. Next run, `#740 console error captured` naming an `[auto-stub]` line tells us the
+lane is still leaving imports unresolved — but the page it happens on will now render, so it
+will be judged and remediated instead of scoring 0.00.
+
+---
+
 ## 77. Mining r149's deviations — one dead end, one near-miss, nothing live
 
 Two angles closed against r149, recorded so neither is re-opened.

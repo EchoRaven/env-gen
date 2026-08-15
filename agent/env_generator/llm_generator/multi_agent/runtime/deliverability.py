@@ -13,6 +13,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
 
 _LOG_700 = logging.getLogger(__name__)
+# #760: groups already announced this process. See the call site for why a module-level set is
+# the right shape here and why item 78's dual-import bound (<=2 announcements) is acceptable.
+_SAID_700: set = set()
 
 
 # §2 gate-hardening (2026-06-22): the api_smoke RunHub run that sets
@@ -222,6 +225,24 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
         except Exception:
             pass
         for _g in duplicate_route_content_groups(Path(app_root) / "frontend", _pages_700) or []:
+            # #760: SAY IT ONCE PER GROUP, NOT ONCE PER PASS. This runs on every deliverability
+            # sweep, and r149 logged `routes render identical content` **108 times carrying two
+            # distinct findings** — the same two groups, 54 times each. That is not a cosmetic
+            # problem: it buries every other warning in the file, and it makes a COUNT
+            # meaningless. My own checker line reported "#700 identical-content routes x108",
+            # which reads as 108 defects and is 2.
+            #
+            # Keyed on the group's identity, so a group that CHANGES (a route joins or leaves)
+            # is reported again — the interesting event — while a stable one is stated once.
+            #
+            # Bounded by item 78's dual-import hazard rather than defeated by it: this module
+            # is in sys.modules under both `multi_agent...` and `env_generator...`, so this set
+            # exists twice and a group can be announced at most TWICE per run. 108 -> <=2 is the
+            # fix; pretending the set is a singleton would be the bug.
+            _key760 = (tuple(_g.get("routes") or []), tuple(_g.get("endpoints") or []))
+            if _key760 in _SAID_700:
+                continue
+            _SAID_700.add(_key760)
             _f708 = _filters_708b(_g.get("endpoints"))
             if _f708:
                 _LOG_700.warning(
