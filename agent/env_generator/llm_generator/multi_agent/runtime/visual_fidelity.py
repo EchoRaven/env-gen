@@ -2065,12 +2065,14 @@ def _parse_verdict(text: str) -> Dict[str, Any]:
         # flag judge_error so it is never CACHED as truth (line ~1215) and is re-judged
         # next milestone (with the #466 larger token budget, the retry now succeeds).
         return {"similarity": 0.0, "dimensions": {}, "deviations": ["judge returned no JSON"],
-                "summary": str(text)[:200], "judge_error": True}
+                "summary": str(text)[:200], "judge_error": True,
+                "raw_judge_reply": str(text)[:400]}   # #767: same key on every zero path
     try:
         data = json.loads(m.group(0))
     except Exception:
         return {"similarity": 0.0, "dimensions": {}, "deviations": ["judge JSON unparseable"],
-                "summary": m.group(0)[:200], "judge_error": True}
+                "summary": m.group(0)[:200], "judge_error": True,
+                "raw_judge_reply": str(text)[:400]}   # #767: same key on every zero path
     dims: Dict[str, Any] = {}
     raw_dims = data.get("dimensions") or {}
     if isinstance(raw_dims, Mapping):
@@ -2111,19 +2113,42 @@ def _parse_verdict(text: str) -> Dict[str, Any]:
         # not kept, so this hole is a defect found while investigating, not a proven diagnosis.
         if not scores:
             _empty766 = True
+    # #767: KEEP THE RAW REPLY FOR A ZERO. r150 released with eight screens at 0.00 whose
+    # captures are 1.4MB of correctly rendered page — I opened the PNGs and browse_home is a
+    # complete Netflix clone (wordmark, full nav, hero with a seeded title, three poster rails).
+    # So the zeros are a MEASUREMENT failure, and the question "did the judge actually say 0.0,
+    # or did it return an empty JSON that #766 now flags" could not be answered, because the
+    # reply is parsed and discarded.
+    #
+    # A zero is the one score worth keeping the evidence for: it is the only value that can be
+    # produced by a NON-answer, it is rare enough that the cost is nothing, and #500's merge
+    # will erase it from the persisted record within a round or two. Truncated hard — this is a
+    # diagnostic crumb, not a transcript.
+    def _stamp767(v: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            if float(v.get("similarity") or 0.0) == 0.0:
+                v["raw_judge_reply"] = str(text)[:400]
+        except Exception:
+            pass
+        return v
+
     if _empty766:
-        return {"similarity": 0.0, "dimensions": {},
+        return _stamp767({"similarity": 0.0, "dimensions": {},
                 "deviations": ["judge returned JSON with no similarity and no dimensions — "
                                "a NON-VERDICT, not a 0.0 (#766)"],
-                "summary": str(text)[:200], "judge_error": True}
+                "summary": str(text)[:200], "judge_error": True})
     devs = [str(x)[:300] for x in (data.get("deviations") or []) if str(x).strip()][:10]
     fixes = [str(x)[:300] for x in (data.get("fixes") or []) if str(x).strip()][:10]
-    return {"similarity": sim, "dimensions": dims, "deviations": devs,
+    # #767: stamped HERE too, and this is the half that matters most. A reply of
+    # `{"similarity": 0.0}` about a page that renders correctly is the case #766 cannot explain
+    # and the one r150 needs answered — was it a considered verdict with reasons, or a hollow
+    # one? Only the raw text can say, and one round from now it will be gone.
+    return _stamp767({"similarity": sim, "dimensions": dims, "deviations": devs,
             "fixes": fixes, "summary": str(data.get("summary", ""))[:300],
             # FIX #133: the judge's empty-state observation becomes REPORTABLE (it was
             # told to ignore data-empty states — now it also flags them so the framework
             # can remind the BACKEND lane to seed the missing rows).
-            "empty_state": bool(data.get("empty_state"))}
+            "empty_state": bool(data.get("empty_state"))})
 
 
 async def judge_screen_pair(llm: Any, screen: Mapping[str, Any], screenshot_path: str) -> Dict[str, Any]:
@@ -2734,6 +2759,12 @@ async def run_visual_fidelity(
                         # this screenshot). Facts beside the judge's opinion.
                         "measured_deviations": _measured_deviations(
                             project_dir, screen["name"], shot),
+                        # #767b: carry the raw reply through. This append PROJECTS a fixed key
+                        # set, so #767's crumb was being dropped exactly here — the fix would
+                        # have shipped and recorded nothing. Only ever present on a 0.00, so
+                        # every other record is byte-identical.
+                        **({"raw_judge_reply": verdict["raw_judge_reply"]}
+                           if verdict.get("raw_judge_reply") else {}),
                         "summary": verdict.get("summary", "")})
 
     # FIX #128: ADVISORY screens (overlay/flyout/modal interaction states) are judged +

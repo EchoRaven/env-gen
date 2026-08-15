@@ -1733,6 +1733,40 @@ right one needed a distribution.
 
 ---
 
+## 85. #767 — closing the gap item 84 named: a 0.00 now keeps its own evidence
+
+Item 84 ended by naming the real gap and calling it cheap: **persist the judge's raw reply for
+any screen scoring 0.00**, and one run settles whether r150's eight zeros were considered
+verdicts or hollow ones. Done.
+
+A zero is the one score worth keeping evidence for. It is the only value a NON-answer can
+produce, it is rare enough that the cost is nothing, and #500's high-water merge erases it from
+the persisted record within a round or two — so by the time anyone asks, it is gone. Every path
+that can reach 0.00 now carries `raw_judge_reply` (truncated to 400 chars): no JSON, unparseable
+JSON, #766's empty verdict, an explicit `{"similarity": 0.0}`, and dimensions that average to
+zero. **Nothing above 0.00 carries it**, so there is no bloat and no new noise.
+
+**The half that nearly made it useless is worth more than the fix.** The screen record is built
+by `results.append({...})` — a FIXED key projection — so the crumb was being dropped one line
+after it was created. I checked instead of assuming, which this session has repeatedly punished
+me for not doing: #741's field location (a confident zero over 299,279 events, wrong depth),
+#752's blast radius (4% measured with a filter that matched almost nothing; really 17%), the
+#764 guard that would have read a set deliberately missing the routes it needed. The test pins
+the projection too, so replacing it with `**verdict` fails loudly rather than silently changing
+what is persisted.
+
+The explicit-zero path is the one that matters most and is easy to get backwards: a reply of
+`{"similarity": 0.0}` about a page that renders correctly is exactly what #766 CANNOT explain,
+so it must keep its text — while still not being flagged as a judge error, because an honest
+zero is a legitimate verdict. Both properties are pinned.
+
+**Cheapest observation.** On the next run, for any screen at 0.00, read `raw_judge_reply` in
+`verdict.json`. Two outcomes, both decisive: the reply is empty or shapeless → #766 was the
+cause and is now caught; the reply is a considered verdict with reasons → the judge genuinely
+scores rendered pages at zero, which is a prompt/rubric problem and a different fix entirely.
+
+---
+
 ## 84. I LOOKED AT THE SCREENSHOTS. The app is good; the score is wrong. Retracting item 83's ask.
 
 Item 83 ended by asking for a decision: widen #750 so that "N of M screens at 0.00 in the final
