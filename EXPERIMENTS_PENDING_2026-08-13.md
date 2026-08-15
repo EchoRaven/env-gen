@@ -1733,6 +1733,41 @@ right one needed a distribution.
 
 ---
 
+## 80. #761/#762 — the same throwing stub in a second place, and the coupling #760 introduced
+
+**#761 — #753 fixed one of two emitters.** `repair_frontend_missing_local_exports` has its own
+auto-stub path, and for a lowercase name it emitted a `throw`, exactly like the api.js emitter
+#753 fixed after r149 showed `isAuthenticated not implemented (auto-stub)` taking down 9 screens.
+**This one is worse: it is not `async`**, so the throw is SYNCHRONOUS — it kills the caller at the
+call site rather than surfacing as an unhandled rejection a tick later.
+
+The argument was already sitting two lines above it. A capitalised name (a COMPONENT) gets
+`(props) => null`, deliberately non-fatal. **The same function chose gentleness for components
+and fatality for functions**, and #753 settled which of those a crashed React tree deserves. Now
+both emitters do the same thing: name the missing implementation on the console, return a shape
+inferred from the name, let the page render.
+
+**#762 — #760 introduced test coupling, and it is the worst kind.** #760's say-once memory is a
+module-level set, which outlives a test. Whichever test reached the detector first silenced every
+later one, so **the suite passed file-by-file and failed as a whole** — a failure mode that reads
+as flakiness rather than coupling, which is how it survives.
+
+A process-lifetime memory is right for a RUN (one generation = one process) and wrong for a test
+session (hundreds of runs in one process). So the reset became part of the contract —
+`reset_said_700()` — rather than tests poking a private global, and it clears **both**
+`sys.modules` copies, because item 78's dual-import hazard means the set genuinely exists twice.
+Verified directly: two copies, `a is b → False`, both polluted, both cleared.
+
+My own fixture in the #760 test was the private-poking version and cleared only one copy; it is
+removed in favour of the public reset, on the way in AND out — a test that LEAVES the memory
+populated silences the next file just as effectively as one that inherits it.
+
+**Cheapest observation.** #761 has the same signature as #753 (`[auto-stub]` + `MISSING
+IMPLEMENTATION` on the console), so #740 will capture it from the browser if it ever fires. The
+distinguishing text is "its module does not export it" versus #753's "api.js does not export it".
+
+---
+
 ## 79. #760 — the loudest signature in r149 was two findings printed 108 times
 
 r149's highest-count signature was `#700 identical-content routes x108`. It is **two distinct
