@@ -1733,6 +1733,48 @@ right one needed a distribution.
 
 ---
 
+## 83. r150 RELEASED — and shipped 9 of 12 screens at 0.00. #750 could not see it.
+
+r150 finished cleanly: `main() returned 0`, `Status: SUCCESS`, 5940s, **v1.0.0 cut**. It is the
+first genuinely successful run of the arc under the new gates, and reading it properly makes it
+the worst result of the session.
+
+    final round:  12 screens, NINE at 0.00, live mean 0.1727, gating 0.6778
+    rounds 7-10:  zeros 7 -> 4 -> 6 -> 9
+
+**#750's veto never fired, and could not have.** Its condition is a blackout past #75a's refund
+cap, and the log says `[blank capture: title_detail]` — **exactly one** screen classified blank.
+`capture_transient` never became true (one blank of twelve is #75a's "partial", which carries
+real sibling verdicts by design), so nothing was refunded, #737 never applied, and #750's latch
+never armed. The veto I built for "the app does not render" is keyed on a classification this
+run never produced.
+
+**So what are the other eight zeros?** Not blank captures. Not missing captures — every screen
+has 6-11 shots on disk and the recent ones are **1.4-1.6 MB**, which is a content-rich page. Not
+judge failures — `judge call failed` / `no JSON` / `unparseable` are all zero in the log. Eight
+content-rich screenshots scoring exactly 0.00, with the subset changing every round.
+
+**The oscillation is the tell: a real app does not vary like that, a measurement does.** But the
+raw judge responses are not kept, so the cause is NOT established, and this item does not claim
+one.
+
+**#766 is a hole found while looking.** `_parse_verdict` handles three shapes; two set
+`judge_error` (no JSON, unparseable JSON) precisely so #142 never caches them and #466 treats
+them as transient. The third — **valid JSON carrying neither `similarity` nor a usable
+`dimensions` block** — fell through `else 0.0` with no flag, indistinguishable from an honest
+zero. A believed 0.0 drags the blocking average, counts as a real judgment for #138's plateau,
+and is then erased from `verdict.json` by #500's high-water merge. Fixed; an explicit
+`{"similarity": 0.0}` and dimensions that genuinely average to zero are untouched, which is the
+risk that had to be avoided.
+
+**Cheapest observation, and it is the important one.** #750 needs a second trigger that does not
+depend on #75a's blank classification — "N of M screens at 0.00 in the FINAL round" is visible in
+`rounds.jsonl` and would have caught both r148 and r150. That is a gate-tightening on the same
+footing as the three already taken, and it needs the same decision, because r150 shows the
+current veto has a shape it cannot see.
+
+---
+
 ## 82. #765 — sweeping the class #764 belongs to, and the one other member of it
 
 #764 was a repair that MUTATES generated source and picks its replacement by similarity. That is

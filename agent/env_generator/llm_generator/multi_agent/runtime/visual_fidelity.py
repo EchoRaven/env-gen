@@ -2088,10 +2088,34 @@ def _parse_verdict(text: str) -> Dict[str, Any]:
                                   if str(x).strip()][:15]
             dims[d["key"]] = rec
     sim = _clamp01(data.get("similarity"))
+    _empty766 = False
     if sim is None:
         # model omitted the overall judgment — average its dimension scores
         scores = [r["score"] for r in dims.values()]
         sim = round(sum(scores) / len(scores), 3) if scores else 0.0
+        # #766: PARSED, BUT EMPTY — A NON-VERDICT, NOT A ZERO. The two sibling paths above
+        # (no JSON at all; JSON that will not parse) both set `judge_error`, precisely so #142
+        # never caches them and #75a/#466 can treat them as transient. This third shape was
+        # missed: valid JSON carrying NEITHER `similarity` NOR a usable `dimensions` block
+        # yields 0.0 with no flag, and is then indistinguishable from an honest "this page looks
+        # nothing like the reference".
+        #
+        # A 0.0 the framework believes is expensive. It drags the blocking average, it counts as
+        # a real judgment for #138's plateau, and #500's high-water merge then hides it from the
+        # persisted record — so nobody reading verdict.json afterwards can even see it happened.
+        #
+        # NOT claimed as r150's cause. r150 shipped v1.0.0 with 9 of 12 screens at 0.00 on its
+        # final round while the gating average sat at 0.6778, and the zeros oscillate across
+        # rounds (7 -> 4 -> 6 -> 9) on 1.4MB content-rich captures with no judge error logged —
+        # which points at the measurement rather than the app, but the raw judge responses are
+        # not kept, so this hole is a defect found while investigating, not a proven diagnosis.
+        if not scores:
+            _empty766 = True
+    if _empty766:
+        return {"similarity": 0.0, "dimensions": {},
+                "deviations": ["judge returned JSON with no similarity and no dimensions — "
+                               "a NON-VERDICT, not a 0.0 (#766)"],
+                "summary": str(text)[:200], "judge_error": True}
     devs = [str(x)[:300] for x in (data.get("deviations") or []) if str(x).strip()][:10]
     fixes = [str(x)[:300] for x in (data.get("fixes") or []) if str(x).strip()][:10]
     return {"similarity": sim, "dimensions": dims, "deviations": devs,
