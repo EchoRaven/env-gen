@@ -1733,6 +1733,39 @@ right one needed a distribution.
 
 ---
 
+## 79. #760 — the loudest signature in r149 was two findings printed 108 times
+
+r149's highest-count signature was `#700 identical-content routes x108`. It is **two distinct
+findings, each logged 54 times**:
+
+    5 routes render identical content: /browse/languages, /games, /movies, /new, /shows
+    2 routes render identical content: /title/:id, /watch/:titleId
+
+The warning sits in a function that runs on every deliverability sweep and has no memory. That is
+not cosmetic. It buries every other warning in a 21,000-line log, and it makes a COUNT
+meaningless — **my own checker line said "x108", which reads as 108 defects and is 2.** Both the
+emit and that note are fixed.
+
+Keyed on the group's identity (routes + endpoints), so a group that CHANGES — a route joining or
+leaving it — is announced again, which is the interesting event, while a stable one is stated
+once.
+
+**This is item 78's hazard arriving one item later.** Item 78 recorded that every module here
+lives in `sys.modules` twice, and that the day one gains module-level state it will exist twice.
+#760 needs exactly that: cross-call memory. So the bound is stated rather than wished away —
+the set exists twice, a group can be announced at most **twice** per run, and 108 → ≤2 is the
+fix. Pretending the set is a singleton would have been the bug, and the test pins the note.
+
+Also corrected: the unfinished-run banner still read "no [main-exit] in the last 5 lines" after
+#756 changed the test to whole-file. A banner that describes a test the script no longer performs
+is how the next reader gets misled — which is precisely what #756 was about.
+
+**Cheapest observation.** On r150, `#700` should read x2 or less. If it reads x1 while r149 read
+two distinct groups, the second group is genuinely gone; if it still reads in the dozens, the
+dedupe key is wrong.
+
+---
+
 ## 78. bug_triage audited — four hypotheses, four falsified, one benign hazard found
 
 The user opened `bug_triage.py` again, so it got a second pass. Four ways it could be broken were

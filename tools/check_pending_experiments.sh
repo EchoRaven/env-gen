@@ -57,7 +57,7 @@ if [[ -n "$LOG" && -f "$LOG" ]]; then
     # position-based test for a whole-file fact is the same mistake #717 was written to stop.
     if ! grep -q -- "\[main-exit\]" "$LOG"; then
         echo "############################################################################"
-        echo "#  WARNING: this run has NOT finished — no [main-exit] in the last 5 lines."
+        echo "#  WARNING: this run has NOT finished — no [main-exit] anywhere in the log."
         echo "#  Every number below is a SNAPSHOT of a growing log. A zero here means"
         echo "#  'not yet', not 'never'. Re-run this after the run exits before recording"
         echo "#  anything from it."
@@ -186,7 +186,7 @@ grep_log "#707 invented asset staged"    "staged .* placeholder asset(s) the fro
 grep_log "#706 integration promoted"     "promoted integration -> main" "should appear once per delivered run; then rev-list --count main..integration should be 0"
 grep_log "#706 promotion refused"        "promotion did not happen" "the callee declined and names why — read it, do not assume the topology"
 grep_log "#701 coverage completion failed" "coverage-chain completion FAILED" "any hit explains a coverage stuck-blocker; was silent before"
-grep_log "#700 identical-content routes" "routes render identical content" "#615 detector, reporting for the first time; r146 had a 4-route group"
+grep_log "#700 identical-content routes" "routes render identical content" "#760 dedupes per GROUP, so the count is now defects not passes — r149 read x108 for TWO findings (54x each). Bounded at <=2 per group by item 78's dual import"
 grep_log "#698 better state available" "better state available: an earlier capture" "fires when an earlier round beat what ships; r146 would have"
 grep_log "#696 suppressed load failure" "\[projected\] data load failed:" "each hit = a page that rendered as an ordinary empty state while its API failed"
 # #692's signature is in the BACKEND CONTAINER log under FW_DEBUG, not here — see item 20. This
