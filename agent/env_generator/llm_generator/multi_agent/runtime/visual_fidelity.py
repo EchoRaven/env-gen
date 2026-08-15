@@ -1986,7 +1986,27 @@ async def capture_route_screenshots(
                                          _hist / f"{_stamp}_{screen['name']}.png")
                     except Exception:
                         pass
-                except Exception:
+                except Exception as _cap769:
+                    # #769: SAY WHY THE CAPTURE FAILED. This was a bare `continue`, so a screen
+                    # that could not be photographed left NO trace — and downstream it becomes a
+                    # hard 0.00 that counts against the gate (#542's invariant, deliberately).
+                    #
+                    # r150 is what that costs. Its final round captured 3 of 12 screens and
+                    # scored NINE zeros; the zeros track missing captures exactly, round by
+                    # round (4 shots -> 0 zeros; 0 shots -> 7 zeros). The app was fine — its
+                    # captures from earlier rounds are a complete Netflix clone. So the gate
+                    # reported 0.1727 about the HARNESS and nothing anywhere said so.
+                    #
+                    # Same shape as #748 one layer up: the reason existed, was caught, and was
+                    # discarded at the `except`. Bounded by construction — at most one line per
+                    # screen per pass, and the exception type is the useful half (a navigation
+                    # timeout, a closed page and a proxy refusal are three different problems).
+                    _LOG.warning(
+                        "#769 capture FAILED for screen '%s' (%s): %s: %s. No screenshot, so "
+                        "this screen scores 0.00 downstream — that zero is about the capture, "
+                        "not the page.",
+                        screen.get("name"), screen.get("route"),
+                        type(_cap769).__name__, str(_cap769)[:200])
                     continue
         finally:
             await browser.close()

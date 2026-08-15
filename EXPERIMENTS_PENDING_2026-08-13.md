@@ -1733,6 +1733,42 @@ right one needed a distribution.
 
 ---
 
+## 87. #769 — the capture threw away its own reason, for the third time this session
+
+Item 86 named the next direction: if the zeros are missing captures, the visual gate's real
+problem is capture RELIABILITY. That needs no run — the code says why nobody could tell. The
+per-screen capture body ended:
+
+    except Exception:
+        continue
+
+**A navigation timeout, a closed page and a proxy refusal were indistinguishable from each other
+and from nothing happening.** The screen simply got no shot, and downstream it becomes a hard
+0.00 that counts (#542's invariant, which #768r kept deliberately). r150 lost nine of twelve that
+way and the gate reported **0.1727 about the harness**, with nothing anywhere saying so.
+
+Now it names the screen, the route, the exception TYPE and 200 chars of message, and states in
+the line itself that the zero it produces is about the capture rather than the page — because
+that misreading is the whole failure mode, and I made it myself two turns ago.
+
+**This is the third swallowed cause this session, and they are the same defect:**
+
+    #748  compose up failed     the reason was in the store, never in the log
+    #740  the SPA crashed       the console had the error, nothing read it
+    #769  the capture failed    the exception was caught and dropped at the `except`
+
+Each time the discarded reason turned out to BE the answer. That is now a pattern worth stating
+as a rule: **an `except` that neither re-raises nor logs is a decision to never find out**, and
+this codebase has been paying for three of them.
+
+**Cheapest observation.** Next run, `#769 capture failed` is a one-line grep. Its exception TYPE
+is the whole diagnosis: `TimeoutError` on a slow page is a different fix (raise the budget) from
+a proxy refusal (`ERR_TUNNEL_CONNECTION_FAILED`, which #740 already saw on the console side) or a
+closed page (a crash in the harness). Until that line exists in a real log, "capture reliability"
+is a hypothesis with one run behind it.
+
+---
+
 ## 86. The zeros are MISSING CAPTURES — and the fix that followed had to be withdrawn
 
 Applying item 84's lesson properly. I had looked at two PNGs; there are twelve screens, so I
