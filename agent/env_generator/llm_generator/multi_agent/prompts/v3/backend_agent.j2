@@ -651,11 +651,17 @@ def reset(x_tenant_id: str | None = Header(None, alias="X-Tenant-Id"), db: Sessi
     # PRESERVE the users + tenants rows. No header => factory reset (dev only).
     # ... delete business rows scoped to the tenant's users ...
     # #775: REPORT WHAT YOU ACTUALLY DID. `ok` must describe the delete, never the handler
-    # surviving. Do NOT wrap this in `try/except` and return this line from the except branch:
-    # the verifier's chains call reset between steps and TRUST ok=true, so a reset that failed
-    # and reported success leaves the next step reading rows it believes were cleared. Measured
-    # over the corpus: 58 handlers across 46 of 137 runs return ok/success=true from an except.
-    # If the delete raises, let it 500 — an honest failure is recoverable, a false success is not.
+    # surviving. Do NOT wrap this in `try/except` and return this line from the except branch.
+    #
+    # The mechanism, measured rather than assumed (#775r corrects an earlier draft of this note
+    # that said the chains "trust ok=true" — they do not, and the truth is worse): 174 chain
+    # steps across 74 runs call POST /api/v1/reset, and every one of them asserts on the HTTP
+    # STATUS — [200, 204], [200, 204, 401, 403] — never on the body. So swallowing the error
+    # turns a 500 the chain would have FAILED on into a 200 it PASSES, and the next step then
+    # reads rows it believes were cleared. 58 handlers across 46 of 137 runs already do this.
+    #
+    # If the delete raises, let it 500 — an honest failure is recoverable, a false success is
+    # not, and the status code is the only part of this response anything actually reads.
     return {"ok": True, "tenant_id": x_tenant_id, "deleted": deleted_counts}
 
 @app.get("/api/v1/tenants")

@@ -1733,6 +1733,41 @@ right one needed a distribution.
 
 ---
 
+## 96. #775r — I shipped a claim into the prompt without checking it. The truth is worse.
+
+#775's instruction told the lane *"the verifier's chains call reset between steps and TRUST
+ok=true"*. I wrote that as the justification and shipped it into two prompt templates without
+verifying the consumer. **Checked afterwards, it is half wrong:**
+
+    chain steps calling POST /api/v1/reset      174, across 74 of the corpus runs
+    what they assert                            [200, 204] / [200, 204, 401, 403] / ...
+                                                — the HTTP STATUS, never the body
+
+They call it constantly — that half is very right, and 174/74 is a stronger number than I had.
+But **nothing reads `ok`**. The flag I built the argument on is not consumed by anything.
+
+**And the corrected mechanism is worse than the one I claimed.** A handler that swallows the
+error returns **200**, so the chain step PASSES. Let the exception propagate and it is a 500 the
+chain FAILS on. The `except: return {"ok": True}` pattern does not mislead a reader of the body —
+it converts a failing chain step into a passing one, through the status code, and the next step
+then reads rows it believes were cleared. 58 handlers across 46 of 137 runs already do this.
+
+Both prompts now carry the measured mechanism instead of my assumption, and the last line says
+what actually matters: *the status code is the only part of this response anything reads.*
+
+**This is the session's own rule turned on itself.** Every sweep this turn insisted on validating
+a detector against known cases before trusting it (#771's projection sweep found neither known
+instance on the first try; #774's discriminator reported zero because `id` is a substring of
+`profile_id`). I applied that to the code and not to the sentence I was writing into a prompt
+that ships to every backend lane.
+
+**Cheapest observation.** Unchanged and now better grounded: grep the delivered `custom_routes.py`
+for `ok.*True` inside an `except`. Corpus baseline 58 across 46 runs; target zero. The chain-side
+number to watch alongside it is whether any reset step ever FAILS — 174 steps that can only pass
+is not evidence that reset works.
+
+---
+
 ## 95. #775 — I dismissed it as "the lane's to fix", and it was the framework's template
 
 Item 94 ended by noticing r150's `top10` handler falling back to ten arbitrary titles, and

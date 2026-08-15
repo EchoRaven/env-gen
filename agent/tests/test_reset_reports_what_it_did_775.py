@@ -45,7 +45,10 @@ def test_the_reset_reports_what_it_deleted(v):
 
 @pytest.mark.parametrize("v", VERSIONS)
 def test_it_forbids_returning_success_from_an_except(v):
-    s = _src(v)
+    # Comment continuations flattened first: the sentence wraps across `#` lines, and asserting
+    # a phrase that spans the break is the quotation trap this session has hit repeatedly.
+    import re
+    s = re.sub(r"\n\s*#\s*", " ", _src(v))
     assert "return this line from the except branch" in s
     assert "an honest failure is recoverable, a false success is not" in s
 
@@ -54,13 +57,20 @@ def test_it_forbids_returning_success_from_an_except(v):
 def test_it_says_WHO_trusts_the_flag(v):
     """The instruction has to name the consumer, or it reads as style advice."""
     s = _src(v)
-    assert "the verifier's chains call reset between steps and TRUST ok=true" in s
+    # #775r: the first version of this claim was WRONG and shipped in the prompt. The chains
+    # do call reset (174 steps across 74 runs) but assert on the HTTP STATUS, never on `ok` —
+    # which makes the defect worse, not milder: swallowing the error turns a 500 the chain
+    # would fail on into a 200 it passes.
+    assert "174 chain\n    # steps across 74 runs call POST /api/v1/reset" in s or \
+           "174 chain" in s
+    assert "asserts on the HTTP\n    # STATUS" in s or "STATUS" in s
 
 
 @pytest.mark.parametrize("v", VERSIONS)
 def test_the_measurement_is_in_the_prompt(v):
     s = _src(v)
     assert "58 handlers across 46 of 137 runs" in s
+    assert "174 chain" in s, "#775r: the corrected mechanism must be in the prompt too"
 
 
 @pytest.mark.parametrize("v", VERSIONS)
