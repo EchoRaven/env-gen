@@ -49,7 +49,13 @@ grep_log() {   # grep_log <label> <pattern> <note>
 # `[main-exit]` is written by main() on every exit path — present in r145 (rc=1), r146 (rc=0) and
 # r147 (watchdog), absent while running. Cheap and unambiguous.
 if [[ -n "$LOG" && -f "$LOG" ]]; then
-    if ! tail -5 "$LOG" | grep -q -- "\[main-exit\]"; then
+    # #756: grep the WHOLE file, not the last 5 lines. `[main-exit]` is printed the moment
+    # main() returns, and asyncio tasks that were already in flight keep flushing AFTER it —
+    # r149 printed it 26 lines from the end, so `tail -5` declared a FINISHED run unfinished
+    # and stamped every number below with the "this is a snapshot" banner. I then read that
+    # banner as "the run was killed" and spent a turn on a death that never happened. A
+    # position-based test for a whole-file fact is the same mistake #717 was written to stop.
+    if ! grep -q -- "\[main-exit\]" "$LOG"; then
         echo "############################################################################"
         echo "#  WARNING: this run has NOT finished — no [main-exit] in the last 5 lines."
         echo "#  Every number below is a SNAPSHOT of a growing log. A zero here means"

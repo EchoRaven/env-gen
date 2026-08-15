@@ -1733,6 +1733,60 @@ right one needed a distribution.
 
 ---
 
+## 73. #756 — r149 was NOT killed, and the three new gates got their first real exercise
+
+**Retracting my own previous turn.** I reported r149 as killed mid-work. It was not. It printed
+
+    [main-exit] main() returned 1
+
+at line 21,062 of 21,088, having run its full 6527.4s to `Status: FAILED`. The 26 lines after the
+marker are asyncio tasks that were already in flight. The crash-forensics file — **Fix #55, which
+already existed and which I should have read before theorising** — records `clean interpreter
+exit pid=1396182` for exactly that pid.
+
+**The cause was my own tooling.** `check_pending_experiments.sh` tested
+`tail -5 "$LOG" | grep [main-exit]`: a POSITION test for a whole-file fact. It stamped a finished
+run with the "this is a snapshot" banner, I read the banner as evidence of a kill, and spent a
+turn on a death that never happened — including a corpus-wide investigation of "94 of 149 runs
+were killed" that rested on it. Fixed to grep the whole file; the banner still fires for a run
+that has printed the marker nowhere, which is what #717 built it for.
+
+Two further corrections fall out. **"This machine kills long tasks" is false**: clean runs reach
+246 minutes and the no-marker population has a MEDIAN of 41 with 24 under half an hour — there is
+no wall, and long runs finish more often, not less. And **"39% die at an LLM call"** was me
+reading one printed example as a pattern: only 1 of 94 has the `AssertionError` storm, and
+`LLM.anthropic` is 39% of last-lines against a 27% base rate — a 1.4x lean, not a cause.
+
+### What a genuinely finished r149 says about the three gates
+
+Read as a completed run, an ABSENCE is finally evidence:
+
+    #752  UI evidence contradicts        LIVE x8   -> blocked the gate 8 times
+    #750  DELIVERY VETOED                NOT SEEN  -> correctly did not fire
+    #751  failed task blocks             NOT SEEN  -> no failed task at the cut
+    #740  console error captured         LIVE x6
+    #748  compose failure cause          LIVE x5
+    #739  UI evidence is thin            LIVE x15
+    #749  owner-scoped delivered reads   DATA clean
+
+**#750 not firing is the result I most wanted.** r149's six visual rounds carry **zero blank
+screens** (live mean 0.62, under the 0.65 bar) while the console reported
+`isAuthenticated not implemented (auto-stub)` on 9 screens. So: console errors present, app
+rendering — and the veto stayed silent. That is exactly the discrimination it was narrowed to
+make, and the narrowing is what made the decision safe to take. A blanket "blackout blocks" rule
+would have had nothing to distinguish here.
+
+**#752 blocked, and blocked correctly.** Eight `validation_ui_evidence_failed` entries, on a run
+whose auth predicate threw on nine screens. r149 cut no release. This is the first end-to-end
+exercise of a gate that this session turned from reporting to blocking, and the app it stopped
+was genuinely defective.
+
+**Cheapest observation.** #750 and #751 are still unfired. #750's silence here is informative
+(the right kind), but neither has yet been seen to BLOCK, and the open question — how many blocks
+are RIGHT — now has exactly one data point, in #752's favour.
+
+---
+
 ## 72. #755 — RETRACTION: "X of X runs released" was every run, because of a bootstrap document
 
 The largest correction of the session, and it lands on numbers I have quoted in five items and in
@@ -1787,11 +1841,11 @@ log dies in any of the 94.
 
 ## 71. r149 was KILLED, and its 108 surviving minutes paid for two fixes (#753, #754)
 
-**The run did not finish.** Launched 16:56, gone 18:44:29 with no `[main-exit]`, no traceback and
-no shutdown sequence — killed mid-work while the frontend lane was running a grep. The proxy was
-alive (12 days), memory was not tight (235G total / 158G available), and no OOM record is
-readable. **I cannot identify what killed it and am not guessing.** It reached 1h48m, produced a
-full tree, brought its containers up healthy, and cut **no release**.
+**RETRACTED by item 73 — the run finished normally.** What this section originally said was that
+r149 had been killed. It had not: it printed `[main-exit] main() returned 1` at line 21,062 of
+21,088, ran for its full 6527s, and exited cleanly. I reached the wrong conclusion because the
+checker's finished-test read only the last 5 lines (#756). Everything below about WHAT the run
+found is unaffected; only the cause of its ending was wrong.
 
 Read under #717's rule — a signature that FIRED is evidence, an absent one is not a conclusion —
 seven of this session's fixes ran for the first time: `#739` x15, `#743` x13, `#752` x8, `#740`

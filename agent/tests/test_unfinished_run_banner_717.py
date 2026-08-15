@@ -64,10 +64,17 @@ def test_every_real_exit_path_suppresses_it(marker):
         assert BANNER not in _run(Path(td), f"12:00 [I] work\n{marker}\n")
 
 
-def test_an_exit_far_above_the_tail_still_counts_as_running(tmp_path):
-    """The marker is the LAST thing main writes; one buried 50 lines up is not an exit."""
+def test_an_exit_far_above_the_tail_STILL_COUNTS_AS_FINISHED(tmp_path):
+    """#756 INVERTS this. It asserted that a marker buried 50 lines up means "still running",
+    on the premise that "the marker is the LAST thing main writes". That premise is false: the
+    marker is printed the instant main() RETURNS, and asyncio tasks already in flight keep
+    flushing after it. r149 printed it 26 lines from the end of a 21,088-line log, the checker
+    called a finished run unfinished, and I read that banner as evidence the run had been
+    KILLED — a whole turn spent on a death that never happened.
+
+    So this test was pinning the defect. The fact is whole-file, and the test now is too."""
     body = "[main-exit] main() returned 0\n" + "".join(f"line {i}\n" for i in range(50))
-    assert BANNER in _run(tmp_path, body)
+    assert BANNER not in _run(tmp_path, body)
 
 
 def test_no_log_at_all_does_not_claim_anything(tmp_path):
