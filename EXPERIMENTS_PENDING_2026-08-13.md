@@ -1733,6 +1733,48 @@ right one needed a distribution.
 
 ---
 
+## 81. #764 — a deterministic repair rewrote every play link in a video app to /tenants
+
+The worst defect found from r149, because it does not advise — **it edits the source.**
+
+`repair_dead_nav_links` (#493) clears the dead-nav-link gate by repointing each dead target at
+"the nearest existing route" by last-segment token overlap. In r149 it wrote:
+
+    components/EpisodeList.jsx:      /watch/ -> /tenants
+    components/HeroBillboard.jsx:    /watch/ -> /tenants
+    components/HeroBillboard.jsx:    /title/ -> /tenants
+    components/HoverPreviewCard.jsx: /watch/ -> /tenants
+
+**`/tenants` in a Netflix clone.** `/watch/:titleId` was declared and wired the whole time —
+`/watch/` is `/watch/${title.id}` with an undefined id, which is exactly the case **#690 was
+written to recognise**. Token overlap found nothing for `watch`, so the positional fallback took
+whatever came first, and every play control in the app now navigates to an unrelated page.
+**A bad message costs a round; this costs the links.**
+
+**The root cause is a duplicated classification.** `repair_dead_nav_links`' own docstring says
+"Classification mirrors `dead_nav_link_remediation`" — mirrored BY HAND. #690 taught one copy and
+not the other, and nothing could notice, because the two live in different modules and no test
+crossed them. So the fix is not another branch: it is **one predicate,
+`is_empty_param_prefix_690`, with two callers.**
+
+One detail that would have made the guard vacuous: the repair has two route sets in scope, and
+`static_routes` **deliberately excludes every `:param` route** ("a `:id` route needs a segment a
+static link can't supply") — which is precisely the set the predicate must search. It reads
+`declared`. That is the #734 failure mode, avoided by checking rather than assuming, and pinned
+by a test.
+
+**The uniqueness guard caught me one commit after it was added.** I numbered this #763; a
+`test_emitted_js_parses_763.py` already existed, and the check added in the previous commit
+failed the suite. Renumbered to #764. That is the property #719 was built for and had never
+tested, working on its first real opportunity.
+
+**Cheapest observation.** On r150, the `deliverability_dead_nav_link fix` line should no longer
+contain a `/watch/` or `/title/` entry at all. If it still lists them, the predicate is reading
+the wrong set; if the line disappears entirely, check that the repair still fires for genuinely
+invented links (`/shop`-shaped) before calling it fixed.
+
+---
+
 ## 80. #761/#762 — the same throwing stub in a second place, and the coupling #760 introduced
 
 **#761 — #753 fixed one of two emitters.** `repair_frontend_missing_local_exports` has its own

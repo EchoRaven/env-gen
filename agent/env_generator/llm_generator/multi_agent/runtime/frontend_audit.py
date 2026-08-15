@@ -528,6 +528,26 @@ def reference_screen_routes(output_dir: Any) -> set:
         return set()
 
 
+def is_empty_param_prefix_690(target: str, declared_routes: Any) -> bool:
+    """#690's test, extracted so the two consumers cannot drift — see #764.
+
+    True when `target` is a parameterised route whose PARAMETER came out empty:
+    `/watch/` where `/watch/:titleId` is declared and wired. The route is fine; the template
+    interpolated an undefined id. It is NOT a routing defect and must not be treated as one.
+
+    #690 taught the MESSAGE path this. `repair_dead_nav_links` (#493) re-implemented the same
+    classification by hand — its docstring says "Classification mirrors
+    dead_nav_link_remediation" — and never learned it, so it repointed `/watch/` at whatever
+    route shared a token, MUTATING the source. r149: `/watch/ -> /tenants` and `/title/ ->
+    /tenants` across four components of a video app. One predicate, two callers, from now on.
+    """
+    raw = str(target or "").split("?", 1)[0].split("#", 1)[0]
+    if not raw.endswith("/") or len(raw) <= 1:
+        return False
+    return any(d.startswith(raw) and ":" in d[len(raw):].split("/", 1)[0]
+               for d in (declared_routes or set()))
+
+
 def dead_nav_link_remediation(target: str, jsx_name: str, declared_pages: set, reference_routes: Optional[set] = None) -> str:
     """#278 — a DECISIVE one-line fix for a dead nav link, ordered by cost.
 
@@ -564,7 +584,7 @@ def dead_nav_link_remediation(target: str, jsx_name: str, declared_pages: set, r
     # Detected from data already in hand: the target ends in "/" and a declared route begins
     # with it followed by a `:param` segment.
     _raw = str(target or "").split("?", 1)[0].split("#", 1)[0]
-    if _raw.endswith("/") and len(_raw) > 1:
+    if is_empty_param_prefix_690(target, declared_pages):   # #764: one predicate, two callers
         _param_routes = sorted(
             d for d in (declared_pages or set())
             if d.startswith(_raw) and ":" in d[len(_raw):].split("/", 1)[0])

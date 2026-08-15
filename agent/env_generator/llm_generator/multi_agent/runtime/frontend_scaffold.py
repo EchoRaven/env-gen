@@ -8492,6 +8492,21 @@ def repair_dead_nav_links(frontend_dir, reference_routes=None) -> Dict[str, obje
             return any(rx.match(t) for rx in matchers)
 
         def _pick_repoint(target: str) -> Optional[str]:
+            # #764: NEVER repoint an empty PARAMETER. `/watch/` is not an invented route — it is
+            # `/watch/${id}` with an undefined id, and `/watch/:titleId` is declared and wired.
+            # #690 established that for the MESSAGE path; this repair re-implemented the same
+            # classification by hand ("Classification mirrors dead_nav_link_remediation") and
+            # never learned it, so it rewrote the SOURCE: r149 turned `/watch/` and `/title/`
+            # into `/tenants` across four components of a video app, because token overlap found
+            # nothing and the fallback did. A bad message costs a round; this costs the links.
+            from .frontend_audit import is_empty_param_prefix_690
+            # `declared` and NOT `static_routes`: static_routes deliberately EXCLUDES every
+            # `:param` route ("a `:id` route needs a segment a static link can't supply"), which
+            # is precisely the set this predicate has to look in. Getting that wrong would make
+            # the guard silently vacuous — the failure mode #734 was written about.
+            if is_empty_param_prefix_690(target, declared):
+                return None
+
             tgt_toks = _nav_seg_tokens(target)
             candidates: List[str] = []
             if tgt_toks:  # (1) nearest existing route by last-segment token overlap
