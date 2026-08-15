@@ -1865,9 +1865,28 @@ to the set, and the tests use an autouse fixture that calls it — clearing both
 copies, since that file already documents the dual-import hazard that makes the set exist twice.
 Tests poking a private global would have hidden the design problem instead of naming it.
 
-**Cheapest observation.** None needed — both are proven by the suite going from 5 red at 4086 to
-green at 4091. The open question is the guard gap: #719 should assert fix numbers are unique, and
-it does not.
+**The guard gap is now closed, and it found a second collision.** #719 asserts uniqueness by TEST
+FILE — the artifact that carries the number in its own name. Two attempts were needed and the
+first one is worth keeping: taking every 3-digit group in a filename produced false positives
+that say something real about the convention — `404` in `test_projected_nested_create_404_498.py`
+is an HTTP STATUS in the description, and `617` in `test_remediation_loop_integration_617_620.py`
+is one fix FAMILY spanning two numbers. **A filename cannot mechanically tell a fix number from a
+number in prose**, so the check is scoped to what the convention guarantees: the name ENDS in its
+fix number.
+
+That found three trailing-number pairs, and they are not alike:
+
+    #620   one fix, two files (the 617+620 integration file and its sibling)   legitimate
+    #557   both R4-core contract-completeness, one fix two aspects             legitimate
+    #500   cjs/esm/umd orphan-brace vs the visual verdict max-latch            A REAL COLLISION
+
+**#500 is a second, older instance of exactly the mistake I just made** — two unrelated changes
+under one number, sitting in the tree unnoticed. It is exempted with its reason rather than
+renamed: both files predate the guard and their records cite their own filenames, so renaming
+would break more than it fixes. Exempted knowingly is not the same as unnoticed.
+
+**Cheapest observation.** None needed for #761/#762 — both are proven by the suite going from 5
+red at 4086 to green at 4092. The uniqueness guard is now the standing answer for the next one.
 
 ---
 
