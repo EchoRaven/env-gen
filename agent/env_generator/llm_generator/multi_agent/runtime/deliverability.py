@@ -18,6 +18,20 @@ _LOG_700 = logging.getLogger(__name__)
 _SAID_700: set = set()
 
 
+def reset_said_700() -> None:
+    """#762: clear #760's say-once memory.
+
+    #760 made the identical-content warning state a group ONCE per run by remembering it in a
+    module-level set. Module state outlives a test, so whichever test reached the detector first
+    silenced every later one — the suite passed file-by-file and failed as a whole, which is the
+    worst failure mode a guard can have because it looks like flakiness rather than coupling.
+
+    A process-lifetime memory is right for a RUN (one generation = one process) and wrong for a
+    test session (hundreds of runs in one process). Rather than have tests poke a private global,
+    the reset is part of the contract."""
+    _SAID_700.clear()
+
+
 # §2 gate-hardening (2026-06-22): the api_smoke RunHub run that sets
 # ``functionally_validated`` probes the BACKEND only and never opens a frontend page, so a
 # real-backend / blank-UI app currently gets the coverage/seed/visual/ui_flow gates waived.

@@ -115,9 +115,9 @@ def test_a_name_that_appears_anywhere_is_not_stubbed():
 
 def _prov() -> str:
     src = inspect.getsource(fs.repair_frontend_missing_local_exports)
-    i = src.index("#760: the SECOND throwing stub")
+    i = src.index("#761: the SECOND throwing stub")
     return " ".join(l.strip().lstrip("#").strip()
-                    for l in src[i:src.index("_empty760 =", i)].split("\n"))
+                    for l in src[i:src.index("_empty761 =", i)].split("\n"))
 
 
 def test_it_records_why_this_one_is_worse():

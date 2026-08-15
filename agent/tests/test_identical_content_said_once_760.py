@@ -17,6 +17,7 @@ group can be announced at most TWICE per run. 108 -> <=2 is the fix; pretending 
 singleton would be the bug.
 """
 import inspect
+import sys
 
 import pytest
 
@@ -24,10 +25,22 @@ from env_generator.llm_generator.multi_agent.runtime import deliverability as dl
 
 
 @pytest.fixture(autouse=True)
-def _clean():
-    dl._SAID_700.clear()
+def _reset_said_700():
+    """#762: #760's memory is module-level and outlives a test. Without this the suite passes
+    file-by-file and fails as a whole — whichever test reaches the detector first silences the
+    rest. Both sys.modules copies are cleared: the dual-import hazard this file already
+    documents means the set exists twice."""
+    for _m in list(sys.modules.values()):
+        _r = getattr(_m, "reset_said_700", None)
+        if callable(_r) and getattr(_m, "__name__", "").endswith("deliverability"):
+            _r()
     yield
-    dl._SAID_700.clear()
+    # #762 again on the way out: a test that leaves the memory populated silences the NEXT
+    # file just as effectively as one that inherits it.
+    for _m in list(sys.modules.values()):
+        _r = getattr(_m, "reset_said_700", None)
+        if callable(_r) and getattr(_m, "__name__", "").endswith("deliverability"):
+            _r()
 
 
 def _emit(monkeypatch, groups, calls=1, tmp=None):

@@ -1805,7 +1805,38 @@ one, and it is the sort of thing that presents as an impossible bug.
 
 ---
 
-## 78. #760 — #753 fixed one of two throwing stubs, and the file said which
+## 79. #762 — a number collision and an order-dependent suite, both mine
+
+Committing item 78 turned the suite red in a way that had nothing to do with its subject, and
+both causes were my own.
+
+**A duplicate fix number.** I numbered the second throwing stub #760 — and #760 was already
+taken, by a fix I wrote EARLIER IN THIS SESSION (`deliverability`'s identical-content warning
+saying the same two things 108 times). Two unrelated changes, one number, in one session.
+Renumbered to **#761**; the earlier #760 keeps its number because its record and tests already
+cite it. What let it happen is that #719's cross-reference guard checks a fix number is
+REACHABLE from the record, not that it is UNIQUE — the guard I built for exactly this family of
+bookkeeping error does not test this property.
+
+**An order-dependent suite, from #760's own design.** #760 remembers each announced group in a
+module-level set so a run states it once. Module state outlives a test, so whichever test reached
+the detector first silenced every later one: **the file passed alone (9/9) and failed in the
+suite (5 red)** — the worst failure mode a guard can have, because it reads as flakiness rather
+than coupling. A process-lifetime memory is right for a RUN (one generation, one process) and
+wrong for a test session (hundreds in one process).
+
+Fixed as a CONTRACT rather than a test hack: `reset_said_700()` is exported and documented next
+to the set, and the tests use an autouse fixture that calls it — clearing both `sys.modules`
+copies, since that file already documents the dual-import hazard that makes the set exist twice.
+Tests poking a private global would have hidden the design problem instead of naming it.
+
+**Cheapest observation.** None needed — both are proven by the suite going from 5 red at 4086 to
+green at 4091. The open question is the guard gap: #719 should assert fix numbers are unique, and
+it does not.
+
+---
+
+## 78. #761 — #753 fixed one of two throwing stubs, and the file said which
 
 Asking the obvious follow-on to #753 — is there another site? — finds one immediately.
 `frontend_scaffold` runs two import/export repair passes that invent a missing export.
