@@ -224,3 +224,55 @@ def test_the_exclusions_are_recorded_as_deliberate():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #758: the declaration is no longer silent --------------------------------------------------
+
+def test_a_disagreement_is_a_WARNING(tmp_path, caplog):
+    """The case item 67 could not answer: the declaration and the guess pick different pages.
+    Every earlier run took the guess and no artifact said so."""
+    import logging
+    refs = _refs(tmp_path, "movies.jpg")
+    pages = [_page("movies", "/movies"),
+             _page("films", "/browse/films", reference_image="movies.jpg")]
+    with caplog.at_level(logging.WARNING, logger=vf.__name__):
+        _map(tmp_path, refs, pages, ["/movies", "/browse/films"])
+    msg = " ".join(r.getMessage() for r in caplog.records)
+    assert "#758 declared reference OVERRULES the name guess" in msg
+    assert "/browse/films" in msg and "/movies" in msg
+
+
+def test_an_agreeing_declaration_is_only_INFO(tmp_path, caplog):
+    """A declaration that matches the guess is provenance, not news."""
+    import logging
+    refs = _refs(tmp_path, "browse_home.jpg")
+    pages = [_page("browse_home", "/browse", reference_image="browse_home.jpg")]
+    with caplog.at_level(logging.INFO, logger=vf.__name__):
+        _map(tmp_path, refs, pages, ["/browse"])
+    recs = [r for r in caplog.records if "#758" in r.getMessage()]
+    assert recs and all(r.levelno == logging.INFO for r in recs), [r.levelname for r in recs]
+
+
+def test_no_declaration_logs_nothing(tmp_path, caplog):
+    import logging
+    refs = _refs(tmp_path, "shows.jpg")
+    with caplog.at_level(logging.INFO, logger=vf.__name__):
+        _map(tmp_path, refs, [_page("shows", "/shows")], ["/shows"])
+    assert not [r for r in caplog.records if "#758" in r.getMessage()]
+
+
+def test_the_guess_is_still_computed_for_the_fallback(tmp_path):
+    """#758 must not have turned the guess off — it is still the path when nothing is declared."""
+    refs = _refs(tmp_path, "browse_home.jpg")
+    got = _map(tmp_path, refs, [_page("browse_home", "/browse")], ["/browse"])
+    assert _route_of(got, "browse_home") == "/browse"
+
+
+def test_it_records_why_the_silence_mattered():
+    import inspect
+    src = inspect.getsource(vf.map_reference_screens)
+    i = src.index("#758: SAY WHEN THE DECLARATION DECIDED")
+    blk = " ".join(l.strip().lstrip("#").strip()
+                   for l in src[i:src.index("_matched_page = _declared_page", i)].split("\n"))
+    assert "r149 — which carried 15 declarations" in blk
+    assert "An improvement nobody can see fired" in blk

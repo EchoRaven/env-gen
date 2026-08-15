@@ -1733,6 +1733,41 @@ right one needed a distribution.
 
 ---
 
+## 75. #758 — #747 shipped silent, so its first live run proved nothing
+
+Closing two of this document's own recorded probes against r149, now that it is known to be a
+FINISHED run.
+
+**#742 — no verdict, and the honest answer is n=2.** The corpus baseline is 449 of 1129
+`affected_endpoint` values parseable (40%). r149 produced **two**, both well-formed. Two samples
+say nothing about a prompt-surface change and I am not recording it as an improvement.
+
+**#747 — the data was there and the effect is unmeasurable.** 15 of r149's 29 ui_page records
+carry `metadata.reference_image`, and #747 was in the build (committed 16:24, run launched
+16:56). So the declaration path had 15 chances to bind a screen — **and #747 logs nothing**, so
+there is no way to tell whether a single binding came from the declaration or from the token
+heuristic that has always been there.
+
+That is the same defect class this session has been closing all along (#722's
+"silence meant three things", #723, #748's captured-and-withheld cause): **an improvement nobody
+can observe firing cannot be evaluated, and item 67's own open question — "do the declaration and
+the guess ever disagree?" — is unanswerable without a line in the log.**
+
+#758 adds it, with the levels chosen to match what each case is worth:
+
+  * **agreement → INFO.** The lane stated what the gate would have guessed; that is provenance.
+  * **disagreement → WARNING.** The declaration and the heuristic pick different pages, so the
+    heuristic has been binding a reference to the WRONG page — silently, in every run before
+    this one. That is the finding item 67 was reaching for, and it now announces itself.
+
+**Cheapest observation.** Two greps on the next run: `#758 declaration bound` counts how many
+screens the lane STATED rather than the gate guessing, and `#758 declaration OVERRULES` is the
+one that matters — every hit is a screen that has been scored against the wrong reference for the
+entire corpus, and the corpus baseline for it is unknowable precisely because the line did not
+exist.
+
+---
+
 ## 74. #757 — why r149 delivered nothing, and a latch I nearly shipped
 
 Reading r149 properly as a FINISHED run, one line explains its whole outcome:

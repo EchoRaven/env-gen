@@ -477,9 +477,30 @@ def map_reference_screens(
                     if _rt and (not known or _rt in known):
                         _declared_page = _pg
                         break
-        _matched_page = _declared_page or (
-            None if (_overlay_by_name or _transient_by_name)
-            else _match_ui_page(_screen_name_tokens(p.stem, stem), pages, known))
+        _guessed_page = (None if (_overlay_by_name or _transient_by_name)
+                         else _match_ui_page(_screen_name_tokens(p.stem, stem), pages, known))
+        # #758: SAY WHEN THE DECLARATION DECIDED, AND WHEN IT OVERRULED THE GUESS. #747 shipped
+        # silent, so r149 — which carried 15 declarations and ran with #747 in its build — left
+        # no way to tell whether a single binding came from the declaration or from the token
+        # heuristic that has always been there. An improvement nobody can see fired is the same
+        # shape as #722/#723/#748, and item 67's own open question ("do the two ever disagree?")
+        # is unanswerable without this line. DISAGREEMENT is the case worth the WARNING: it
+        # means the heuristic has been binding a reference to the wrong page and no artifact
+        # ever said so.
+        if _declared_page is not None:
+            _dr758 = str(_declared_page.get("route") or "")
+            _gr758 = str((_guessed_page or {}).get("route") or "")
+            if _guessed_page is not None and _gr758 != _dr758:
+                _LOG.warning(
+                    "#758 declared reference OVERRULES the name guess for screen '%s': the "
+                    "page that declared it serves %s, token matching would have bound %s. The "
+                    "declaration wins (#747) — and every earlier run took the guess.",
+                    p.stem, _dr758 or "(none)", _gr758 or "(none)")
+            else:
+                _LOG.info(
+                    "#758 declared reference bound screen '%s' -> %s (the lane stated it; "
+                    "no guess needed).", p.stem, _dr758 or "(none)")
+        _matched_page = _declared_page or _guessed_page
         if _matched_page is not None:
             route = str(_matched_page.get("route") or "").strip() or None
         _cl_route = str(_cl.get("route") or "").strip()
