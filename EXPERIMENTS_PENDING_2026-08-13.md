@@ -1733,7 +1733,53 @@ right one needed a distribution.
 
 ---
 
-## 83. r150 RELEASED — and shipped 9 of 12 screens at 0.00. #750 could not see it.
+## 84. I LOOKED AT THE SCREENSHOTS. The app is good; the score is wrong. Retracting item 83's ask.
+
+Item 83 ended by asking for a decision: widen #750 so that "N of M screens at 0.00 in the final
+round" blocks delivery, because r148 and r150 would both have been caught. **That recommendation
+is withdrawn. It would have blocked a good app.**
+
+I had every number and had never opened the image. `browse_home.png`, scored **0.00** in r150's
+final round, is:
+
+  * the NETFLIX wordmark in brand red, on #141414
+  * a full nav — Home / Shows / Movies / Games / New & Popular / My List / Browse by Languages,
+    with Home active, plus search, notifications, a Kids badge and the profile chip
+  * a hero billboard with a real seeded title ("Disclosure Day"), its synopsis, the year, and
+    working Play / More Info buttons
+  * three poster rails — New, series, movie — with real artwork from the provided assets
+
+`movies.png`, also **0.00**, is the same quality: Movies active in the nav, a Genres dropdown,
+hero, rail. Both are 1.4-1.6 MB of rendered page.
+
+**So the eight zeros are a MEASUREMENT failure, and every conclusion that rested on them is
+wrong:**
+
+  * **#750's silence was CORRECT.** Item 83 said the veto "has a shape it cannot see" and implied
+    it needed widening. The opposite is true: it stayed quiet on an app that renders, which is
+    exactly the discrimination it was narrowed to make. Widening it as I proposed would have
+    refused to ship a working Netflix clone.
+  * **The gating average was RIGHT and the live average was WRONG.** #500's high-water merge —
+    which I have criticised all session for "erasing the blackout" — is what kept 0.6778 while
+    the live mean fell to 0.1727. On this run the merge is the only thing that told the truth.
+  * **r150 is the best result of the arc**, not the worst. It released a rendering, seeded,
+    navigable app in 99 minutes.
+
+**#766 is now the leading candidate for the cause** rather than an incidental find: a judge reply
+that parses but carries neither `similarity` nor usable `dimensions` yields a silent 0.0 with no
+`judge_error`. Eight at once, a different subset each round, on good pages, with all three
+judge-error greps at zero — that is the shape. Still not proven: the raw responses are not kept.
+**That is the real gap, and it is cheap to close** — persisting the judge's raw reply for any
+screen scoring 0.00 would settle it in one run.
+
+**The lesson is the method, not the fix.** Twelve turns of this session read scores, logs, stores
+and diffs. The artifact that answered the question in ten seconds was the PNG sitting in the run
+directory the whole time — and it reversed the conclusion, the recommendation, and the sign of
+the result. When the measurement and the thing measured disagree, look at the thing.
+
+---
+
+## 83. r150 RELEASED with 9 of 12 screens at 0.00 — **and the app was FINE** (see item 84)
 
 r150 finished cleanly: `main() returned 0`, `Status: SUCCESS`, 5940s, **v1.0.0 cut**. It is the
 first genuinely successful run of the arc under the new gates, and reading it properly makes it
