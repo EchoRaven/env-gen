@@ -295,8 +295,17 @@ def _bare_fetch_blockers(app_root) -> List[str]:
         # fix reached the gate-read integration tree only after the no-convergence abort).
         try:
             inject_auth_fetch_wrapper(_fe)
-        except Exception:
-            pass
+        except Exception as _rep770:
+            # #770: A REPAIR THAT FAILS SILENTLY REPORTS ITS OWN SYMPTOM. The very next line is
+            # the blocker check this repair exists to clear, so a throw here means the gate
+            # blocks and nothing says the framework already tried and could not. The lane is
+            # then handed a blocker it cannot reconcile with the code in front of it. #769's
+            # class one layer up: the reason was caught and dropped at the `except`.
+            _LOG_700.warning(
+                "#770 auto-repair inject_auth_fetch_wrapper failed (%s: %s) — the blocker check below may now "
+                "report the very defect this was meant to clear, so read it as a CONSEQUENCE "
+                "before dispatching a lane at it.",
+                type(_rep770).__name__, str(_rep770)[:160])
         return bare_authed_fetch_blockers(_fe / "src")
     except Exception:
         return []
@@ -345,8 +354,17 @@ def _invented_field_blockers(app_root) -> List[str]:
         try:
             from .frontend_audit import repair_fabricated_fallbacks
             repair_fabricated_fallbacks(_fsrc)
-        except Exception:
-            pass
+        except Exception as _rep770:
+            # #770: A REPAIR THAT FAILS SILENTLY REPORTS ITS OWN SYMPTOM. The very next line is
+            # the blocker check this repair exists to clear, so a throw here means the gate
+            # blocks and nothing says the framework already tried and could not. The lane is
+            # then handed a blocker it cannot reconcile with the code in front of it. #769's
+            # class one layer up: the reason was caught and dropped at the `except`.
+            _LOG_700.warning(
+                "#770 auto-repair repair_fabricated_fallbacks failed (%s: %s) — the blocker check below may now "
+                "report the very defect this was meant to clear, so read it as a CONSEQUENCE "
+                "before dispatching a lane at it.",
+                type(_rep770).__name__, str(_rep770)[:160])
         return invented_field_fallback_blockers(_fsrc)
     except Exception:
         return []

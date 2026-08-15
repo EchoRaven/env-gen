@@ -1733,6 +1733,40 @@ right one needed a distribution.
 
 ---
 
+## 88. #770 — applying #769's rule on purpose, and bounding it
+
+#769 ended with a rule: **an `except` that neither re-raises nor logs is a decision to never find
+out.** Rather than wait to be bitten a fourth time, it was applied as a sweep.
+
+**Scope first, because the naive version is wrong.** The codebase has **2022 `except` clauses and
+582 (28%) whose body is only `pass`/`continue`**. Fixing all of them would be a mistake:
+"best-effort, never raises" is the deliberate style for scaffolding, and most of those handlers
+are exactly that. The discriminator that made #748/#740/#769 different is that **the swallowed
+failure becomes a SCORE or a GATE INPUT**.
+
+**Applied to the scoring module: nothing found, and that is a result.** `visual_fidelity` has 13
+silent handlers near scoring or capture. Hand-read, every one is defensible — the blank probe
+falls back to "not blank" (`never false-skip`, documented in place) and the image cache falls
+back to the original file. No fourth instance there.
+
+**Applied to the gate modules: two.** Both wrap a source-MUTATING repair, with the very next
+statement being the blocker check that repair exists to clear:
+
+    inject_auth_fetch_wrapper(_fe)      ->  bare_authed_fetch_blockers(...)
+    repair_fabricated_fallbacks(_fsrc)  ->  invented_field_fallback_blockers(...)
+
+A throw meant the gate blocked and nothing said the framework had already tried and could not.
+**The lane is then handed a blocker it cannot reconcile with the code in front of it** — the
+repair was supposed to have fixed precisely that, so the round is spent re-diagnosing a fix that
+never ran. Both now name the repair and the exception type, and say in the line that the blocker
+below may be a consequence rather than a finding.
+
+**Cheapest observation.** `#770 auto-repair` in the checker. A hit is worth more than most: it
+means the NEXT blocker in the log is a symptom, and every round spent on it is wasted. Zero hits
+means the repairs are running, which is the first time that would be knowable either way.
+
+---
+
 ## 87. #769 — the capture threw away its own reason, for the third time this session
 
 Item 86 named the next direction: if the zeros are missing captures, the visual gate's real
