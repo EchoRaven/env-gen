@@ -1038,6 +1038,23 @@ def _stub_empty_value_753(name: str) -> str:
     return "null"
 
 
+_NEGATION_PREFIXES_765 = ("un", "dis", "de", "non", "anti", "not")
+
+
+def _is_inverse_of_765(target: str, candidate: str) -> bool:
+    """#765: is one of these two names the other with a negation prefix bolted on?
+
+    Compared on the NORMALISED forms and only as a whole-remainder match, so `getTitle` vs
+    `getTitles` (the case the containment rule exists for) is untouched while `unrateTitle` vs
+    `rateTitle` is refused. Symmetric: either side may be the negated one.
+    """
+    a, b = str(target or ""), str(candidate or "")
+    if not a or not b or a == b:
+        return False
+    lo, hi = (a, b) if len(a) < len(b) else (b, a)
+    return any(hi == p + lo for p in _NEGATION_PREFIXES_765)
+
+
 def _best_match(missing: str, exported: Set[str]) -> Optional[str]:
     target = _norm(missing)
     if not target:
@@ -1046,6 +1063,31 @@ def _best_match(missing: str, exported: Set[str]) -> Optional[str]:
         if _norm(e) == target:
             return e
     cands = [e for e in exported if _norm(e) and (_norm(e) in target or target in _norm(e))]
+    # #765: NEVER ALIAS AN OPERATION TO ITS INVERSE. The containment rule above is symmetric,
+    # and a negation PREFIX makes the base name a strict substring of its own opposite, so the
+    # repair silently rewired the call to do the reverse:
+    #
+    #     unrateTitle  -> rateTitle          unfollowUser -> followUser
+    #     unlikePost   -> likePost
+    #
+    # This is worse than #753's stub. A stub says on the console that the implementation is
+    # missing and returns an empty value; an inverse alias APPEARS TO WORK — "unlike" likes,
+    # "unfollow" follows — and nothing in the app, the gate or the log contradicts it.
+    #
+    # Only prefixes that negate a whole word, and only when the rest matches EXACTLY: this must
+    # not start refusing honest near-misses like getTitle -> getTitles, which is the case the
+    # containment rule exists for. `disableProfile`/`enableProfile` and `logout`/`login` already
+    # fail containment and never reach here.
+    _rej765 = [e for e in cands if _is_inverse_of_765(target, _norm(e))]
+    if _rej765:
+        # Same shape as #707's: this module has no module-level logger, and adding one would
+        # give the two sys.modules copies (item 78) two loggers with different names.
+        __import__("logging").getLogger(__name__).warning(
+            "#765 refusing to alias `%s` to %s — a negation prefix makes the base name a "
+            "substring of its own opposite, and an inverse alias APPEARS TO WORK. Leaving it "
+            "to the auto-stub (#753), which says the implementation is missing.",
+            missing, ", ".join(sorted(_rej765)))
+        cands = [e for e in cands if e not in _rej765]
     if cands:
         cands.sort(key=lambda e: abs(len(_norm(e)) - len(target)))
         return cands[0]

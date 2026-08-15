@@ -177,6 +177,7 @@ grep_log "#743 open P0 bug at the cut"   "P0 BUG task(s) are still open at the d
 grep_log "#254 downgrade refused"       "refused to downgrade" "was UNREACHABLE for 255 runs (#746) — first sighting tells us whether the r51 guard is load-bearing or historical"
 grep_log "#748 compose failure cause"    "compose up FAILED for run" "216 corpus boot failures recorded the cause in the store and none said why in the log; a hit means the reason travels with the failure now"
 grep_log "#758 declaration overrules"    "declared reference OVERRULES the name guess" "item 67 open question: do the lane declaration and the token guess ever disagree? A hit = the heuristic HAS been binding the wrong page"
+grep_log "#765 inverse alias refused"    "refusing to alias" "the alias repair would have wired an operation to its OPPOSITE (unlike->like). A hit = the lane imported a name api.js does not export, and the near-match was its inverse"
 grep_log "#758 declaration bound"        "declared reference bound screen" "how many screens the lane STATED instead of the gate guessing. r149 carried 15 declarations and logged none of this"
 grep_log "#657 picker stall"            "never got past the PROFILE PICKER" "introduced 08-12, only 5 runs since, 0 hits — TOO YOUNG to call dead. A hit means profile selection does not persist; keep counting"
 grep_log "#750 DELIVERY VETOED"          "DELIVERY VETOED — the app does not render" "user-approved veto: blackout past the refund cap WITH console errors. Would have stopped r148. Any hit = no release cut, deliberately"

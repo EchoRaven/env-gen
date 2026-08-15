@@ -1733,6 +1733,45 @@ right one needed a distribution.
 
 ---
 
+## 82. #765 — sweeping the class #764 belongs to, and the one other member of it
+
+#764 was a repair that MUTATES generated source and picks its replacement by similarity. That is
+a class, so it got swept rather than left as an anecdote: **29 framework functions rewrite
+generated source**, and the question is which of them choose a replacement from candidates.
+
+**The first filter was wrong and is recorded as such.** A regex for `difflib|token|nearest|...`
+returned 11, including `inject_auth_fetch_wrapper` and `repair_auth_enforcement_middleware`. Both
+are deterministic INSERTIONS — a fixed wrapper before `</head>`, a fixed middleware before the
+first route — and the regex had matched the word "token" in their prose. Hand-read, discarded.
+The honest filter is the actual shape (`candidates` / `_best_match` / `difflib`), and it returns
+**exactly two**: `repair_dead_nav_links` (#764) and `repair_frontend_api_exports`.
+
+**The second one aliases an operation to its own inverse.** `_best_match` resolves a name a
+component imports but `api.js` does not export, by SYMMETRIC substring containment — right for
+`getTitle` → `getTitles`, which is what it exists for. But a negation PREFIX makes the base name
+a strict substring of its own opposite:
+
+    unrateTitle  -> rateTitle          unfollowUser   -> followUser
+    unlikePost   -> likePost           deactivateUser -> activateUser
+
+**This is worse than #753's stub, and #753 was already bad enough to fix.** A stub says on the
+console that the implementation is missing and returns an empty value. An inverse alias APPEARS
+TO WORK: "unlike" likes, "unfollow" follows, and nothing in the app, the delivery gate or the log
+contradicts it. It is the quietest defect found this session.
+
+Refused only when the whole remainder matches, so every case the containment rule was built for
+survives — verified in both directions, and `disableProfile`/`enableProfile` and `logout`/`login`
+never reach the rule at all because they fail containment. The prefix list is whole-word
+negations only (`un dis de non anti not`), pinned by a test that `re`/`pre`/`sub`/`over` are NOT
+in it: a loose list would start refusing honest matches, which is the failure mode in the other
+direction.
+
+**Cheapest observation.** `#765 refusing to alias` in the checker. A hit means the lane imported
+a name that does not exist and its nearest match was its own inverse — and before this, that
+alias shipped.
+
+---
+
 ## 81. #764 — a deterministic repair rewrote every play link in a video app to /tenants
 
 The worst defect found from r149, because it does not advise — **it edits the source.**
