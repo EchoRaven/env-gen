@@ -1733,6 +1733,36 @@ right one needed a distribution.
 
 ---
 
+## 77. Mining r149's deviations — one dead end, one near-miss, nothing live
+
+Two angles closed against r149, recorded so neither is re-opened.
+
+**The `deviations` lead is empty for r149.** My own note says `deviations` beats `missing`
+because it carries FUNCTIONAL failures (auth bounces, blank SPAs) in framework-generated text.
+r149 has 65 deviations and **all 65 are judge-written visual critique** — "Header: implementation
+adds an extra 'Browse' nav item", "Nav: active 'Home' lacks the pill background" — with **zero**
+framework route-level entries. That is consistent rather than surprising: r149's app rendered
+(no blank screens), so the detectors that write those texts had nothing to say. Corpus-wide only
+two such detectors ever appear in a persisted verdict — `redirected to /login` (43 across 11
+runs) and `rendered BLANK` (27 across 7) — and both are known classes (#655, #75a/#737).
+
+**A near-miss worth recording as method.** Two other branches write route-level deviations and
+appear in NO verdict: #657's profile-picker stall and the `could not be captured` catch-all. I
+searched for `profile picker` and `who's watching` and got zero — but the actual text is
+`PROFILE PICKER` and `who's-watching`, so **my search was case- and punctuation-sensitive and
+missed a live string**. Re-run correctly, it is still 0 of 116 verdicts and 0 logs.
+
+**And then the age control saved it from being a finding.** #657's text was introduced
+**08-12 23:31, with only 5 runs since**. Zero hits over 5 runs is not evidence of a dead branch;
+it is the same "too young to call" verdict already recorded for #576 and #615. A checker line now
+counts it so a later run settles it — a hit means profile selection does not persist, which is
+#657's whole diagnosis.
+
+**Cheapest observation.** `#657 picker stall` in section A. Until the count of post-08-12 runs is
+meaningfully above 5, its silence means nothing either way.
+
+---
+
 ## 76. #759 — sweeping THIS session's fixes for the defect #758 just found
 
 #758's lesson generalises to my own work, so it was applied to it. For every fix #736-#758:
