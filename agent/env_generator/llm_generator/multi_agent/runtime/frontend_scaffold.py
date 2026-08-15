@@ -1020,6 +1020,24 @@ def _norm(name: str) -> str:
     return s
 
 
+def _stub_empty_value_753(name: str) -> str:
+    """#753: the JS literal an auto-stub should RETURN, inferred from the name it stands in for.
+
+    A stub that throws takes down the whole React tree; one that returns the wrong SHAPE takes
+    down the caller almost as reliably (``rows.map`` on ``null``). The shape is guessed from the
+    name because that is the only signal available: a predicate yields ``false``, a plural or
+    list-ish reader yields ``[]``, everything else ``null``. A wrong guess degrades to the same
+    crash the throw already produced, never to anything worse, and the console.error at the call
+    site says the implementation is MISSING either way.
+    """
+    n = str(name or "")
+    if re.match(r"(is|has|can|should)[A-Z_]", n) or n.lower() in ("is", "has", "can"):
+        return "false"
+    if re.search(r"(list|search|find|all)", n, re.I) or re.search(r"[a-z]s$", n):
+        return "[]"
+    return "null"
+
+
 def _best_match(missing: str, exported: Set[str]) -> Optional[str]:
     target = _norm(missing)
     if not target:
@@ -1095,9 +1113,34 @@ def repair_frontend_api_exports(frontend_dir) -> Dict[str, object]:
                 lines.append(f"export const {name} = {match};")
                 aliased.append((name, match))
             else:
+                # #753: FAIL THE FEATURE, NOT THE PAGE. This emitted a stub that THROWS, and the
+                # comment above already records the same defect once: stubbing apiGet/apiPost
+                # "made every projected page throw 'apiGet not implemented (auto-stub)'", which
+                # was then patched for those two names only. The general case still bites, and
+                # r149 is the worked example — the first run in which the evidence was visible
+                # at all, because #740 only started keeping the browser console this session:
+                #
+                #   #740 the browser reported 2 distinct uncaught error(s): uncaught:
+                #   isAuthenticated not implemented (auto-stub) (on 9 screen(s):
+                #   browse_by_languages, browse_home, games, genre_category ...)
+                #
+                # The costs are not symmetric. A throw takes down the WHOLE React tree, so the
+                # page renders nothing: it cannot be judged, cannot be visually remediated, and
+                # before #750 it shipped. A loud no-op costs one broken feature on a page that
+                # still renders, and the lane still learns because the console.error survives
+                # into #740's capture and into the remediation text.
+                #
+                # NOT the fabricated-fallback rule relaxed. That rule is about an app inventing
+                # product DATA to look complete. This is the framework's own repair for an
+                # import/export drift it just detected, it invents no rows, and it states on
+                # every call that the implementation is MISSING rather than empty. `stubbed` is
+                # still returned to the caller exactly as before.
+                _empty753 = _stub_empty_value_753(name)
                 lines.append(
                     f"export const {name} = async (...args) => {{ "
-                    f"throw new Error('{name} not implemented (auto-stub)'); }};"
+                    f"console.error('[auto-stub] {name} is imported but api.js does not export "
+                    f"it - MISSING IMPLEMENTATION, not an empty result. Returning {_empty753} "
+                    f"so the page still renders.'); return {_empty753}; }};"
                 )
                 stubbed.append(name)
         api_js.write_text(

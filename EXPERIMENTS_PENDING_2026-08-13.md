@@ -1733,6 +1733,58 @@ right one needed a distribution.
 
 ---
 
+## 71. r149 was KILLED, and its 108 surviving minutes paid for two fixes (#753, #754)
+
+**The run did not finish.** Launched 16:56, gone 18:44:29 with no `[main-exit]`, no traceback and
+no shutdown sequence — killed mid-work while the frontend lane was running a grep. The proxy was
+alive (12 days), memory was not tight (235G total / 158G available), and no OOM record is
+readable. **I cannot identify what killed it and am not guessing.** It reached 1h48m, produced a
+full tree, brought its containers up healthy, and cut **no release**.
+
+Read under #717's rule — a signature that FIRED is evidence, an absent one is not a conclusion —
+seven of this session's fixes ran for the first time: `#739` x15, `#743` x13, `#752` x8, `#740`
+x6, `#748` x5, plus `#711`/`#713`/`#723`. Two produced facts nothing could see before.
+
+### #753 — the framework's own repair stub crashed every page that imported it
+
+`#740` kept the browser console for the first time, and it said:
+
+    uncaught: isAuthenticated not implemented (auto-stub) (on 9 screen(s): browse_by_languages,
+    browse_home, games, genre_category ...); uncaught: getActiveProfileId not ...
+
+`repair_frontend_api_exports` reconciles names a component imports from `api.js` against what it
+exports, and gave any unmatched name a stub that THROWS. The function's own comment records the
+same defect once already: stubbing `apiGet`/`apiPost` "made every projected page throw
+'apiGet not implemented (auto-stub)'" — patched for those two names only. **The general case
+still bit, and it took #740 to make it visible at all.**
+
+The costs are not symmetric: a throw takes down the whole React tree, so the page renders
+nothing — unjudgeable, unremediable, and pre-#750 it shipped. Now it logs a `console.error`
+naming the missing implementation and returns a shape inferred from the name (`is*`/`has*` →
+`false`, list-ish → `[]`, else `null`). A wrong guess degrades to the same crash the throw
+already produced, never worse. This is **not** the fabricated-fallback rule relaxed: that rule is
+about an app inventing product DATA, and this invents no rows.
+
+### #754 — a path checked in one directory and used in another
+
+`#748` made 5 boot failures name their cause:
+
+    CRITICAL:podman_compose:missing files: ['generated/netflix-web-r149/docker/docker-compose.yml']
+
+and the file is right there, 3464 bytes. `_resolve_compose_file` verified it with `exists()`
+against the PARENT's cwd and returned the path as given; `start_run` then handed that string to a
+subprocess whose cwd IS `generated_dir`, where a relative path cannot resolve. **The error reads
+as "missing file" and is a cwd mismatch.** Both the compose path and the cwd are now resolved
+from one value. The corpus holds **216 recorded boot failures and not one said why** —
+`compose_stderr` had one writer and zero readers until #748. This is the first defect that
+finding paid for.
+
+**Cheapest observation.** Both fixes need a run that gets further than r149 did. #750/#751 are
+still unverified: r149 never reached a delivery cut, so their absence from its log means "did not
+get there", not "did not fire". The three blocking gates remain unexercised end-to-end.
+
+---
+
 ## 70. #750/#751/#752 — the decision was taken: three gates now BLOCK. Items 56/58/62 CLOSED.
 
 User-approved, all three. Everything found in #736-#749 reported and decided nothing, and the

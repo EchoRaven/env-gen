@@ -46,7 +46,21 @@ def _resolve_compose_file(generated_dir: str) -> Optional[str]:
     for c in candidates:
         try:
             if c.exists():
-                return str(c)
+                # #754: ABSOLUTE, because the caller hands this to a subprocess whose cwd is
+                # `generated_dir`, not ours. When `generated_dir` arrives relative — and some
+                # call paths pass it that way — `exists()` succeeds here (evaluated against OUR
+                # cwd, repo/agent) and the very same string is then unresolvable in the child.
+                # The failure is not "no compose file", it is a path checked in one directory
+                # and used in another, and it reads as the former:
+                #
+                #   compose up FAILED (rc=1) — Cause: CRITICAL:podman_compose:missing files:
+                #   ['generated/netflix-web-r149/docker/docker-compose.yml']
+                #
+                # while `agent/generated/netflix-web-r149/docker/docker-compose.yml` is right
+                # there, 3464 bytes. r149 hit it 5 times; the corpus holds 216 recorded boot
+                # failures and none of them said why until #748 started logging the cause —
+                # this is the first defect that finding paid for.
+                return str(c.resolve())
         except OSError:
             continue
     return None
@@ -222,9 +236,16 @@ class RunHub:
         run = self.record_run(branch=branch, generated_dir=generated_dir, agent=agent)
         run_id = run["id"]
 
+        # #754: resolve the cwd too. Leaving it relative works only while the parent's cwd
+        # happens to be the one it was built against, which is exactly the coupling that made
+        # the compose path fail — same bug, one argument over.
+        try:
+            _gd754 = str(Path(generated_dir).resolve())
+        except Exception:
+            _gd754 = str(generated_dir)
         compose = compose or ComposeLifecycle(
-            cwd=str(generated_dir),
-            compose_file=_resolve_compose_file(str(generated_dir)))
+            cwd=_gd754,
+            compose_file=_resolve_compose_file(_gd754))
         healthcheck = healthcheck or HealthcheckProbe(
             url=base_url.rstrip("/") + "/health", poll_interval_s=2.0, timeout_s=60.0)
         probe_runner = probe_runner or self._default_probe_runner()
