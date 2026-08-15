@@ -47,6 +47,15 @@ def _ui_smoke_pass(validation_results: Any) -> bool:
     )
 
 
+def _ts757(rec: Any) -> float:
+    """#757: a validation record's recency, for superseding an answered failure by name."""
+    for k in ("updated_at", "_updated_at", "created_at", "at"):
+        v = (rec or {}).get(k) if isinstance(rec, dict) else None
+        if isinstance(v, (int, float)):
+            return float(v)
+    return 0.0
+
+
 def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
     """#739: how BROAD is the UI evidence behind ``ui_smoke_pass``?
 
@@ -66,16 +75,37 @@ def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
     page inconsistently (`page`, `route`, `name`), so a missing name is counted as evidence
     without a page rather than dropped.
     """
-    passed: List[str] = []
-    failed: List[str] = []
+    # #757: KEEP ONLY THE LATEST RECORD PER NAME. Validation records are a HISTORY, and #752
+    # made a single `failed` entry block delivery — so a failure that a later run of the same
+    # flow already fixed kept blocking forever, because nothing retires it. r149 is the proof
+    # and it cost the whole run: the gate reported "18 passing UI record(s) while 1 FAILED",
+    # `validation_ui_evidence_failed` was the ONLY failing check for 85 minutes, and the run
+    # ended having delivered nothing. That is not a gate, it is a latch.
+    #
+    # Superseding by name is the same rule the store itself uses (`validation:<task_id>` is
+    # last-write-wins), so this reads the history the way the store means it. A failure that is
+    # still the newest word on its flow blocks, exactly as intended; one that a later pass has
+    # answered does not.
+    _latest757: Dict[str, Any] = {}
     for r in (validation_results or []):
         if not isinstance(r, dict):
             continue
         if (r.get("metadata", {}) or {}).get("check") not in _UI_SMOKE_EVIDENCE_CHECKS:
             continue
+        _key = str(r.get("name") or r.get("task_id") or id(r))
+        _prev = _latest757.get(_key)
+        if _prev is None or _ts757(r) >= _ts757(_prev):
+            _latest757[_key] = r
+    passed: List[str] = []
+    failed: List[str] = []
+    for r in _latest757.values():
         meta = r.get("metadata", {}) or {}
+        # #757: the record's own `name` is the reliable label — r149 printed "passed ? / failed
+        # ?" for all 19 because none of page/route/name was set in metadata, and a gate that
+        # cannot say WHICH page failed cannot be acted on. Names look like
+        # `validation:ui_flow:browse_home`; the last segment is the page.
         page = str(meta.get("page") or meta.get("route") or meta.get("name")
-                   or r.get("name") or "?")
+                   or str(r.get("name") or "").split(":")[-1] or "?")
         # #752: canonicalise the spelling. Readers normally arrive through #193/#236's
         # normaliser, but the raw store carries THREE spellings — `success` 1198, `passed` 310,
         # `failure` 252 — and this function is now load-bearing (#752 blocks on `failed`), so a

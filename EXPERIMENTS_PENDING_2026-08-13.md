@@ -1733,6 +1733,51 @@ right one needed a distribution.
 
 ---
 
+## 74. #757 — why r149 delivered nothing, and a latch I nearly shipped
+
+Reading r149 properly as a FINISHED run, one line explains its whole outcome:
+
+    delivery gate has not gone green in 85min since the contract built
+    (now failing ['validation_ui_evidence_failed'])
+
+**My own #752 was the sole blocker**, for 85 minutes, and the run ended having delivered nothing.
+Two questions follow, and they have different answers.
+
+**Was the block CORRECT? Yes.** r149's store holds 34 validation records: **33 `success` and one
+`failure` — `validation:ui_flow:login_to_browse`, updated 1786758171, the NEWEST record in the
+entire run.** Not a stale entry: the last word on login→browse was "failed", which is exactly
+what `isAuthenticated not implemented (auto-stub)` throwing on 9 screens (#753) produces. The app
+was defective, the gate stopped it, and r149 delivering nothing was the right outcome. That is
+the second data point on "are the blocks right", and it is in favour.
+
+**Could the block ever have been CLEARED? Not reliably — and that is #757.** Validation records
+are a HISTORY and nothing retires one, so a flow that failed early and passed later kept blocking
+forever on the strength of the old entry. A gate that cannot be cleared is a latch, and I rejected
+the other two candidates at 45% and 70% for being exactly that. Superseding by NAME is the store's
+own rule (`validation:<task_id>` is last-write-wins), so the gate now reads the history the way
+the store means it: the newest word on each flow decides.
+
+**I went looking for a latch and found the block was sound.** The hypothesis was wrong and the
+hardening is real — both are recorded, because "I assumed stale, the record said newest" is the
+part worth keeping.
+
+**A second defect, from the same line.** r149's warning read `passed ? / failed ?` — the fallback
+for all 19 records, because none of `page`/`route`/`name` is set in metadata. **A gate that
+cannot say WHICH page failed cannot be acted on.** The record's own `name`
+(`validation:ui_flow:login_to_browse`) carries it and is now used.
+
+**And the blast radius I quoted for #752 was wrong.** Item 70 recorded "6 of 148 runs — 4%, a
+gate". That was measured with `evidence.check`, which is **None** on every record in the raw
+store; the check kind lives in the NAME. Re-measured correctly: **22 of 123 runs (17%)** would
+block, and #757's superseding does not reduce it, because in those runs the failures were never
+answered. The samples are not marginal — r2 fails 11 of 12 flows, r7 fails 4 of 4 — so 17% is
+still a gate rather than a halt, but the number in item 70 is corrected here.
+
+**Cheapest observation.** The gate now names the failing page in its own warning, so the next run
+answers "which flow" without any digging. #750 and #751 remain unfired.
+
+---
+
 ## 73. #756 — r149 was NOT killed, and the three new gates got their first real exercise
 
 **Retracting my own previous turn.** I reported r149 as killed mid-work. It was not. It printed
@@ -1905,7 +1950,7 @@ rather than switched on whole**:
     ENABLED
       #750  blackout past the refund cap AND console errors   would have caught r148
       #751  a task in status `failed`                          20 of 148 runs   (13%)
-      #752  UI evidence that both passes and fails              6 of 148 runs   ( 4%)
+      #752  UI evidence that both passes and fails             22 of 123 runs   (17%, corrected in item 74)
     NOT ENABLED — measured, and a halt rather than a gate
       any open P0 bug (#743)                                   90 of 129 runs   (70%)
       UI evidence MISSING entirely (#671's matrix)             67 of 148 runs   (45%)
