@@ -1733,6 +1733,42 @@ right one needed a distribution.
 
 ---
 
+## 89. #771 — the verdict could not name the image it scored, and a guard found a fourth loss
+
+The second recurring class of this session, swept the way #770 swept the first. #767b and #768b
+were both **fixed-key projections dropping a new field**, on the same path, one function apart.
+
+**The sweep was validated before it was trusted.** A first regex returned 5 hits and found
+NEITHER known instance — the list-comprehension body had grown past its length cap and the
+`.append({...})` form was not matched at all. Rewritten with brace-matching, it finds all three
+`visual_fidelity` sites and 39 in the tree. Most are boundary projections (an API response, a
+preview) that legitimately drop fields; the hazard is a projection in a PIPELINE, which is why
+the one chain that had bitten twice got a key-set comparison instead of 39 audits.
+
+**What the comparison found: the verdict could not name its own evidence.** `verdict.json`
+recorded thirteen fields per screen and neither of the two that matter for checking a score —
+**which screenshot was judged, and against which reference.** Both are on the capture record;
+both projections dropped them.
+
+That cost this session its most decisive step. r150 scored nine screens 0.00 and I spent three
+passes on scores, logs and stores before opening a PNG — which showed a complete Netflix clone
+and reversed the conclusion, the recommendation I had already given, and the sign of the result.
+Finding the right file meant matching mtimes against round timestamps, and **I got it wrong
+once**: the images I first read were from the 0.75 rounds, not the 0.00 one. A path is 60 bytes;
+it turns "look at the image" from an inference into a lookup.
+
+**#771b — the end-to-end key guard found a FOURTH loss on its first run.** `console_errors`
+(#740) is produced at the capture and was never persisted: the browser's own errors, the thing
+that made #753 findable, lived only in a log line. Third field lost on this one path after
+#767's `raw_judge_reply` and #768's `capture_missing`. The guard now fails if any field produced
+at the capture does not reach disk, so there is no fifth.
+
+**Cheapest observation.** None needed for the fix — it is proven at the unit level. What the next
+run gains is that any 0.00 in `verdict.json` now carries its screenshot path, its reference path
+and its console errors, so the check that took three passes here is one `Read`.
+
+---
+
 ## 88. #770 — applying #769's rule on purpose, and bounding it
 
 #769 ended with a rule: **an `except` that neither re-raises nor logs is a decision to never find

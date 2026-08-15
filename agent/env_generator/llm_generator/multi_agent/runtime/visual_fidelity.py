@@ -2934,6 +2934,27 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
             # gating number and it disagreed with the live one; the same miss as #767b, one
             # function later.
             "capture_missing": r.get("capture_missing"),
+            # #771: WHICH IMAGE PRODUCED THIS SCORE. The record could not say. Both paths carry
+            # `screenshot` and `reference` from the capture, and both projections dropped them,
+            # so `verdict.json` gave a number with no way back to the pixels.
+            #
+            # That cost this session its single most decisive step. r150 scored nine screens
+            # 0.00 and I spent three passes on scores, logs and stores before opening a PNG —
+            # which showed a complete Netflix clone and reversed the conclusion, the
+            # recommendation and the sign of the result. Finding the right file took matching
+            # mtimes against round timestamps, and I got it WRONG once: the images I first read
+            # were from the 0.75 rounds, not the 0.00 one.
+            #
+            # A path is 60 bytes. It turns "look at the image" from an inference into a lookup.
+            "screenshot": r.get("screenshot"),
+            "reference": r.get("reference"),
+            # #771b: `console_errors` too — found by the end-to-end key guard below on its FIRST
+            # run, which is the best validation that guard could have had. #740 collects the
+            # browser's own errors and they are what made #753 findable, yet they lived only in
+            # a log line: the third field lost on this one path, after #767's raw_judge_reply
+            # and #768's capture_missing. Empty list rather than None so a reader can tell
+            # "checked, none" from "not recorded".
+            "console_errors": r.get("console_errors") or [],
             **({"raw_judge_reply": r["raw_judge_reply"]} if r.get("raw_judge_reply") else {}),
             "dimensions": r.get("dimensions") or {},
             "deviations": r.get("deviations") or [],

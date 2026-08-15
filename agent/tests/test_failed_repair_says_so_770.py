@@ -67,11 +67,14 @@ def test_neither_site_raises():
 
 
 def test_the_blocker_check_still_runs_after_the_failure():
+    # Anchored on the `return` that ends each handler, not a character count — the eighth
+    # catch by the fixed-width-source-window guard this session, and the window would stop
+    # covering the statement the moment the comment above it grew.
     s = _src()
     i = s.index("#770 auto-repair inject_auth_fetch_wrapper failed")
-    assert "bare_authed_fetch_blockers" in s[i:i + 900]
+    assert "bare_authed_fetch_blockers" in s[i:s.index("return", i) + 60]
     j = s.index("#770 auto-repair repair_fabricated_fallbacks failed")
-    assert "invented_field_fallback_blockers" in s[j:j + 900]
+    assert "invented_field_fallback_blockers" in s[j:s.index("return", j) + 60]
 
 
 # --- provenance ------------------------------------------------------------------------------------
