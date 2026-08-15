@@ -2669,6 +2669,7 @@ async def run_visual_fidelity(
     for screen in judged_screens:
         shot = shots.get(screen["name"])
         if not shot:
+            _no_shot_768 = False
             if screen["name"] in _picker_screens:
                 # #657: the SPA hydrated perfectly — it rendered the profile picker, and the
                 # capture could not get past it within _PROFILE_RESELECT_MAX reselect attempts.
@@ -2714,11 +2715,31 @@ async def run_visual_fidelity(
                         "rejected the session on THIS route only; fix the route's auth "
                         "handling, not its styling")
             else:
-                _dev = f"route {screen['route']} could not be captured"
+                # #768: NO CAPTURE AT ALL — and this scored a hard 0.00 that COUNTED.
+                # r150's final round: 12 screens, 3 captures written, NINE zeros. Exact. The
+                # zeros track missing captures round by round (4 shots -> 0 zeros; 0 shots ->
+                # 7 zeros), so they are not the judge's opinion of the page — the page was
+                # never photographed. And the app is fine: the captures from the 0.65-0.75
+                # rounds are a complete Netflix clone (wordmark, nav, hero with a seeded
+                # title, poster rails, a working title-detail modal, a full-screen player).
+                #
+                # `blank` gets refunded (#75a), excluded from the blocking average (#542a) and
+                # watched by #737/#750. This branch sets none of that, so a screen the harness
+                # failed to photograph drags the gate exactly as if the lane had shipped a
+                # broken page — and #500's merge then erases the evidence, which is why
+                # `could not be captured` appears in 0 of 116 persisted verdicts.
+                _dev = (f"route {screen['route']} produced NO capture this pass — the harness "
+                        "did not photograph it, so there is nothing to judge. This is not a "
+                        "verdict on the page")
+                _no_shot_768 = True
             results.append({"name": screen["name"], "route": screen["route"],
                             "similarity": 0.0, "passed": False, "dimensions": {},
                             "deviations": [_dev],
                             "blank": screen["name"] in _blank_screens,
+                            # #768: a separate flag, NOT folded into `blank` — #657 deliberately
+                            # split the picker OUT of blank and #657b records what that cost, so
+                            # overloading it again would repeat exactly that mistake.
+                            "capture_missing": _no_shot_768,
                             "advisory": bool(screen.get("advisory")),
                             "console_errors": _console740.get(screen["name"]) or [],  # #740
                             "screenshot": None,
@@ -2885,6 +2906,15 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
             "similarity": r.get("similarity"), "passed": r.get("passed"),
             "advisory": r.get("advisory"), "empty_state": r.get("empty_state"),
             "blank": r.get("blank"),
+            # #768b: the THIRD fixed-key projection on this path, and the one that writes
+            # verdict.json. Without these two lines `capture_missing` never reaches the gating
+            # average (only the live one, which reads `results` directly) and #767's
+            # `raw_judge_reply` never reaches disk at all — so #767 would still have recorded
+            # nothing after #767b fixed its first projection. Found because a test asserted the
+            # gating number and it disagreed with the live one; the same miss as #767b, one
+            # function later.
+            "capture_missing": r.get("capture_missing"),
+            **({"raw_judge_reply": r["raw_judge_reply"]} if r.get("raw_judge_reply") else {}),
             "dimensions": r.get("dimensions") or {},
             "deviations": r.get("deviations") or [],
             "fixes": r.get("fixes") or [],
@@ -2992,6 +3022,21 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
             pass
 
         # recompute pass from the merged max scores (blocking, non-advisory, non-blank screens)
+        # #768r — THE EXCLUSION IS WITHDRAWN, and the reason is worth more than the fix was.
+        # I excluded `capture_missing` here on #542a's grounds ("a transient screen never drags
+        # the persisted fidelity"), which would have moved r150's final round from 0.1727 to
+        # 0.6400. #542's own test refused it, correctly: "a canonical page that fails capture is
+        # NOT silently dropped — its 0.0 counts in the blocking average."
+        #
+        # Both positions are right about different causes, and the branch cannot tell them
+        # apart. A page that never LOADS is the app's failure and must count, or the gate passes
+        # a partial exam and ships an app with a dead page — the exact hole this whole session
+        # has been closing. A page the HARNESS failed to photograph is not evidence of anything.
+        # The `else` branch is "no shot, for any reason not otherwise classified", so excluding
+        # it would have bought r150 a better number by reopening #542's hole for everyone.
+        #
+        # So: the flag and the honest deviation text STAY (they cost nothing and they are how
+        # the next reader sees the difference), and the arithmetic does not change.
         _blocking_merged = [s for s in merged
                             if not s.get("advisory") and s.get("blank") is not True]
         # #589: a player screen that lost its framework-emitted control cluster fails the gate
@@ -3020,7 +3065,7 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         # defence against a transient, and flipping it would newly fail runs on a capture
         # artefact. Record the live number ALONGSIDE it so the divergence stops being invisible.
         _live_blocking = [s for s in (results or []) if isinstance(s, Mapping)
-                          and not s.get("advisory") and s.get("blank") is not True]
+                          and not s.get("advisory") and s.get("blank") is not True]  # #768r
         _live_average = (round(sum(_sim(s) for s in _live_blocking) / len(_live_blocking), 4)
                          if _live_blocking else None)
         # #621 — RECORD WHICH CODE STATE THIS SCORE BELONGS TO. #618 showed the persisted

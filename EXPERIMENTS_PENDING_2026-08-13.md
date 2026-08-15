@@ -1733,6 +1733,52 @@ right one needed a distribution.
 
 ---
 
+## 86. The zeros are MISSING CAPTURES — and the fix that followed had to be withdrawn
+
+Applying item 84's lesson properly. I had looked at two PNGs; there are twelve screens, so I
+looked at more — `title_detail` is a complete detail modal with a season selector and three real
+episodes, `player` is a full-screen player with controls and an "Ad 12" badge. **Four of four are
+correct, complete pages.**
+
+**Then the timestamps corrected me again.** Those PNGs are from the 0.65-0.75 rounds, not from
+the round that scored them 0.00 — `browse_home` reads 0.75, 0.75, 0.75, then 0.00 on the final
+round, and its newest capture is 22:23 while that round ran at 22:30. I was comparing across
+rounds, which is the same error as the r149 `tail -5` turn.
+
+**Correlating captures against zeros settles it:**
+
+    round      shots written   zeros
+    22:16:25         4           0
+    22:18:41         0           7
+    22:20:56         2           4
+    22:24:18         5           6
+    22:30:00         3           9      <- 12 screens: 3 captured, 9 zero. Exact.
+
+**A screen that produced no capture scores a hard 0.00.** Not the judge's opinion — the page was
+never photographed. The app is fine; the final round's number describes the harness.
+
+**#768's exclusion is WITHDRAWN (#768r), and #542's test is why.** Excluding `capture_missing`
+from the averages moved r150's final round from 0.1727 to 0.6400 — and #542 asserts the opposite
+invariant: *"a canonical page that fails capture is NOT silently dropped; its 0.0 counts in the
+blocking average."* Both are right about different causes, and the branch **cannot tell them
+apart**: a page that never LOADS is the app's failure and must count, or the gate passes a
+partial exam and ships an app with a dead page — the hole this entire session has been closing.
+**Excluding would have bought r150 a better number by reopening it for everyone.** What ships is
+the flag and an honest deviation text; the arithmetic is unchanged.
+
+**#768b, found because that test failed.** `_persist_verdict` projects a FIXED key set on its way
+to `verdict.json` — a THIRD projection on this path. Without it `capture_missing` never reached
+the gating average, **and #767's `raw_judge_reply` never reached disk at all**: #767 would still
+have recorded nothing after #767b fixed its first projection. Two fixed-key projections in a row,
+and only an assertion about the gating number found the second.
+
+**Cheapest observation.** `capture_missing` is now in `verdict.json` per screen. On the next run,
+count it: if the zeros are mostly uncaptured screens again, the visual gate's real problem is
+capture reliability, not fidelity — and that is a different investigation from every one this
+document has run so far.
+
+---
+
 ## 85. #767 — closing the gap item 84 named: a 0.00 now keeps its own evidence
 
 Item 84 ended by naming the real gap and calling it cheap: **persist the judge's raw reply for

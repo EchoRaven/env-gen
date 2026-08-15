@@ -110,3 +110,25 @@ def test_767b_records_that_it_nearly_shipped_useless():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_767b_was_not_enough_the_verdict_projection_drops_it_too():
+    """#768b. The append into `results` was only the FIRST projection. `_persist_verdict`
+    projects AGAIN on its way to verdict.json, so #767's crumb still reached nothing until that
+    one carried it as well. Two fixed-key projections on one path, and the second was found only
+    because a #768 test asserted the gating average and it disagreed with the live one."""
+    import json
+    src = inspect.getsource(vf._persist_verdict)
+    assert '"raw_judge_reply": r["raw_judge_reply"]' in src
+    assert '"capture_missing": r.get("capture_missing")' in src
+
+
+def test_the_crumb_actually_reaches_disk(tmp_path):
+    """End to end, because two projections in a row is exactly how it silently did not."""
+    import json
+    vf._persist_verdict(tmp_path, passed=False, min_similarity=0.65, summary="t", coverage=None,
+                        results=[{"name": "a", "route": "/a", "similarity": 0.0, "passed": False,
+                                  "advisory": False, "blank": False, "capture_missing": False,
+                                  "raw_judge_reply": "{}", "deviations": [], "dimensions": {}}])
+    v = json.loads((tmp_path / "design" / "visual_gate" / "verdict.json").read_text())
+    assert v["screens"][0]["raw_judge_reply"] == "{}"
