@@ -1840,6 +1840,32 @@ one, and it is the sort of thing that presents as an impossible bug.
 
 ---
 
+## 81. #748's shape does NOT generalise — swept, empty, recorded
+
+The "one of N sites" question paid off twice (#761 from #753, #500 from #762), so it was put to
+#748: **how many other places capture a subprocess's stderr and withhold it?** A tree-wide AST
+sweep for functions that check a `returncode`, hold a `stderr`, and never put it in a log returns
+**31**.
+
+**And the count is noise.** Spot-checking rather than trusting it: `auto_commit._run_git` (6 of
+the 31 are in that file) RETURNS stderr to its caller, which is where #721 already logs it —
+"not logged here" is not "withheld". The strongest-looking candidate,
+`validation_runner._build_with_retry`, turns out to be the EXEMPLAR: it captures stdout+stderr,
+keeps a 3000-character tail, and returns it as `detail` alongside an explanation of what a hung
+npm/uv install looks like.
+
+So the sweep is empty. **#748 was not an instance of a pattern; it was a genuinely unusual site**
+— stderr written into a run RECORD that had one writer and zero readers, while the EVENT everyone
+downstream reacted to carried only the label `compose_up_failed`. That combination is what made
+it invisible, and it does not repeat.
+
+Recorded because an unexamined "31 sites" reads like a backlog. It is not one, and the next
+person to have this idea should not re-derive the same 31.
+
+**Cheapest observation.** None. This is a closed negative.
+
+---
+
 ## 80. #763 — the framework holds the lane to `node --check` and never checks its own JS
 
 Following the guard-quality question one step further: **which numbered test files assert only on
