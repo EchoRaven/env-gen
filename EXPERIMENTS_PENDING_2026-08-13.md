@@ -1733,6 +1733,64 @@ right one needed a distribution.
 
 ---
 
+## 101. What is actually wrong with the pipeline: five screens, and `login` is 73% of it
+
+Asked plainly whether the pipeline still has problems, so it was scored plainly. Four bars per
+run — released, visual gate passed ON MERIT, no frontend-crash signature, no open P0 bug:
+
+    4 bars   0 runs        3 bars  25        2 bars  76        1 bar  43        0 bars  7
+
+**Zero of 151 runs have cleared all four.** The 25 near-misses split cleanly: 14 miss only the
+visual gate (r146, r147, r150 among them), 10 miss only the release (r34-r80), 1 misses only the
+open-P0 bar.
+
+**A regime change I nearly reported, and the correction that killed it.** By era:
+
+    r1-r50     50 runs    released  2%    visual passed 18%
+    r51-r98    48 runs    released  6%    visual passed 56%
+    r99-r151   53 runs    released 49%    visual passed  1%
+
+That looks like delivery was bought with fidelity. **It was not.** The thresholds say why:
+
+    r51-r98    min_similarity == 0.01 in 34 of 45 runs
+    r99-r151   min_similarity == 0.65 in 48 of 48
+
+The old 56% is an artifact of a **disabled bar**. There was no trade: the visual gate has only
+been meaningfully enforced since r99, and under a real bar it passes **1 run in 53**. Delivery
+rose because of the escapes, not because fidelity improved.
+
+**How far away is it, really?** Over the 48 r99+ runs with per-screen data, the median gating
+average is **0.655 — above the 0.65 bar.** Runs fail because `passed` requires EVERY blocking
+screen to clear, not the average:
+
+    0 screens failing   1 run          3 failing  10
+    1 failing           4              4 failing   9
+    2 failing           6              5 failing  11
+
+**And the failures are concentrated in five screens:**
+
+    login                 35 of 48 runs   (73%)
+    browse_by_languages   29              (60%)
+    title_detail          27              (56%)
+    player                22              (46%)
+    games / genre_category 13 each
+
+**`login` is the single biggest obstacle in the pipeline** — the simplest screen in the app,
+blocking three runs in four. Eleven runs are within two screens of passing outright.
+
+**Caveat this session earned the right to state.** Some of these scores are measurement, not
+fidelity: r150 scored a complete, correct Netflix clone at 0.00 (item 84), and #766/#768/#769
+each describe a way a good page reads low. But `login` failing in 73% of runs is too consistent
+for capture noise, and r151's login scored 0.55 with a rendered page — that is a real fidelity
+gap, not a blank.
+
+**Cheapest observation.** The next thing worth doing is not another detector: it is opening
+`login.png` next to its reference for three or four r99+ runs and reading what the judge is
+marking down. Five screens, one of them dominant, is a tractable target — and it is the only
+remaining bar between this pipeline and a run that clears all four.
+
+---
+
 ## 100. Validating #777 end to end — and retiring the fix I set out to build
 
 #777 shipped with a caveat I wrote into it: *"if #776 still fires, the handler is lane-authored
