@@ -3347,6 +3347,38 @@ reasonable. The silence is what let them compose.**
 
 ---
 
+## 147. #817 — the spec was cut at 4000 chars, losing the rule the delivery gate blocks on. 151 of 151 runs.
+
+Sweeping #816's pattern found four other prompt-bound truncations. Three are honestly-named prose
+previews. The fourth was `docs_text[:4000]`, and **every run in the 151-run corpus stages the same
+`spec.md`, every one 5,690 bytes** — 42% over the cut, every time.
+
+What fell past it:
+
+* the per-screen behaviour list — *"clicking a poster opens the title-detail modal"*,
+  *"+ toggles My List"*, *"thumbs set the rating"*;
+* the whole `## Data model (tables)` and `## Seed data` sections;
+* the **Wiring rule** — *"EVERY nav link, button, icon and card must call a real endpoint … no
+  dead links, no inert placeholders, no fabricated data."*
+
+★ **That last line is what `frontend_dead_controls` blocks releases over**, and the analyst writing
+every component's `build_notes` never read it. 4000 was not a considered budget for a 5,690-char
+spec; the real spec now arrives whole, and an oversized one is cut **on a markdown heading** with
+the dropped sections named.
+
+**Two probe errors on the way, both caught before they became claims.** A `head -1` over the
+references directory picked `title_detail.jpg` alphabetically and printed JPEG binary as "the spec
+tail" — the file-location class again. And the sweep's own regex was validated against the pre-fix
+file (it finds `9000` there) before its zero on the current tree was believed.
+
+★★ **The codebase's own guard caught my fix.** `_DOCS_BUDGET_817 = 12000` failed
+`test_tuned_constants_carry_a_rationale_647`: a tuned number must carry the measurement that
+produced it, *next to the number*, not in a docstring further up. That convention is why this
+session's work was possible at all — nearly every item here began by reading a measurement someone
+had left beside a constant. Being held to it is the system working.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

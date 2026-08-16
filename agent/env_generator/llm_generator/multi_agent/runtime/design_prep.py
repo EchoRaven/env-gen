@@ -297,6 +297,44 @@ def _img_part(path: str) -> Optional[Dict]:
         return None
 
 
+# #817: every run in the 151-run corpus stages one `spec.md`, and every one is 5,690 bytes — the
+# previous 4000 cut dropped 1,690 of them, including the Wiring rule and two whole sections.
+# 12000 is 2.1x the observed spec and ~3k tokens, which sits comfortably against the 6000-token
+# reply budget alongside a <=5,450-char compact skeleton (#816) and the manifest.
+_DOCS_BUDGET_817 = 12000
+
+
+def _docs_for_prompt_817(docs_text: str) -> str:
+    """#817: the reference spec, cut at a SECTION boundary and never silently.
+
+    `docs_text[:4000]` dropped 1,690 of r151's 5,690-char `spec.md` — and every run in the corpus
+    stages that same doc, so this fired 151 times out of 151. What fell past the cut was the
+    actionable half: the per-screen behaviour list (*"clicking a poster opens the title-detail
+    modal"*, *"+ toggles My List"*), the whole `## Data model (tables)` and `## Seed data`
+    sections, and the **Wiring rule** — *"EVERY nav link, button, icon and card must call a real
+    endpoint ... no dead links, no inert placeholders, no fabricated data"*, which is precisely
+    what `frontend_dead_controls` blocks releases over. The analyst writing `build_notes` never
+    read it.
+
+    4000 was not a considered budget for a 5,690-char spec. 12,000 fits real specs with margin
+    against a 6000-token reply. Beyond that the cut lands on a markdown heading rather than
+    mid-sentence, and names the sections it dropped (#811).
+    """
+    text = str(docs_text or "")
+    if len(text) <= _DOCS_BUDGET_817:
+        return text
+    import re as _re
+    heads = [m.start() for m in _re.finditer(r"^#+ ", text, _re.M)]
+    cut = max([h for h in heads if h <= _DOCS_BUDGET_817] or [_DOCS_BUDGET_817])
+    dropped = [m.group(0).strip()[:60]
+               for m in _re.finditer(r"^#+ .*$", text, _re.M) if m.start() >= cut]
+    _LOG_813.warning(
+        "design-prep: reference docs are %d chars, over the %d budget — cut at a section "
+        "boundary (%d chars kept). The analyst will NOT see: %s",
+        len(text), _DOCS_BUDGET_817, cut, dropped or ["<unsectioned tail>"])
+    return text[:cut]
+
+
 def _round_region_816(region) -> Optional[List[float]]:
     """A 4-float region rounded for the prompt; None if it is absent or not numeric."""
     try:
@@ -508,7 +546,8 @@ async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
             {"type": "text", "text": "REAL ASSET MANIFEST (map ids onto components): " + manifest},
         ]
         if docs_text:
-            parts.append({"type": "text", "text": "REFERENCE DOCS:\n" + docs_text[:4000]})
+            parts.append({"type": "text", "text": "REFERENCE DOCS:\n"
+                                                  + _docs_for_prompt_817(docs_text)})
         ref = ref_by_name.get(str(s.get("reference") or ""))
         p = _img_part(ref) if ref else None
         if p:
