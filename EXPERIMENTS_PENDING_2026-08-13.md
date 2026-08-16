@@ -8480,3 +8480,100 @@ type` run set, and the two "no tool entry" verdicts on tools that exist.
    three mismatch families above — resolves to a stale annotation, a documented invariant, or a
    runtime guard the checker cannot see. That is a real answer to item 3 rather than a deferral:
    the sweep is cosmetic, and nobody should expect defects to fall out of it.
+
+## 172. #847 — the allocator built to stop collisions could hand out a four-digit number
+
+`tools/ticket.sh` exists because three ticket numbers were re-derived in one session. It allocates
+`max(claimed) + 1`, and **`max` is maximally sensitive to a single bad claim**.
+
+#826's own header records this failing once already: a prose example, `"Your invoice #4021 is
+ready"`, made the first version report **4022**. The fix was to *narrow the sources* — stop
+scanning all source text, scan only the two places a number is DECLARED. That closes every shape
+seen so far. It does not close **prose inside the two survivors**, and both are scanned as whole
+lines. Reproduced against the real document rather than argued:
+
+```
+## 172. #848 — a task body rendering "Your invoice #4021 is ready"     <- one appended heading
+$ tools/ticket.sh   ->   4022
+```
+
+★ **And it is permanent.** #829 made allocation RESERVE by appending to `.tickets`, and `.tickets`
+is itself a scanned source. So one bad read is not a bad number, it is a **poisoned namespace**:
+every later allocation inherits it. Silently — the tool prints a bare number, so `4022` at the
+call site looks exactly like `848`.
+
+This is the session's own class turned on the session's own tooling. A bound with no check against
+what the system actually produces (see #816/#817), whose failure path returns a plausible value
+(see the silent-degradation five), in the one component whose entire job is to be trustworthy.
+
+**The threshold is measured, not chosen.** The real namespace is 767 claims over 1..847; the
+largest *legitimate* gap is **38** (427 → 465) and there is **nothing above 50**. The poison jump
+is **3174**. `_GAP_847 = 100` sits an order of magnitude from both, which is the only reason it is
+defensible — a bare `100` beside four other caps is exactly the shape that let `acceptance[:1500]`
+survive.
+
+**Warn and skip, not refuse.** A refusal wedges allocation on a false positive, and #789 already
+settled that trade: the fail-open was correct there, only its *silence* was the defect. So it
+speaks, names the outlier, prints where it was claimed, and names `_GAP_847` as the override — an
+operator cannot act on "ignored a number", and a real ticket that legitimately jumped has to stay
+distinguishable from a quoted figure. The warning goes to **stderr**, because the caller is
+`n=$(tools/ticket.sh)` and an allocator that prints prose into its own output would be a worse bug
+than the one being fixed.
+
+The walk descends rather than dropping one, since a poisoned ledger accumulates.
+
+**Blast radius held to allocation.** The *check* branch (`ticket.sh 900`) is untouched: answering
+TAKEN for a quoted number is conservative and harmless, and narrowing it would be scope the defect
+never had.
+
+`test_allocator_ignores_a_quoted_number_847.py`, 10 cases. The load-bearing one is
+`test_a_nearby_number_is_still_accepted` — a claim 40 above the top must still WIN, proving this is
+a gap discriminator and not "always ignore the maximum", which would hand out a taken number the
+moment the namespace grew normally.
+
+**Footnote, and it is not a coincidence.** While this was being written the concurrent agent
+allocated **#848** for its item 166. The reservation added in #829 is the only reason that was not
+a fourth collision — which is the argument for repairing this tool rather than filing it as
+cosmetic.
+
+---
+
+### 172b. #847b — and then this write-up broke the fix, which is the finding
+
+The first cut descended from `max` while each step was more than `_GAP_847` above the claim below
+it. **Two adjacent outliers defeat that completely.** The suite caught it within the hour, and the
+input was not contrived — it was *this document*: item 172 names **#4021** (the poison) and
+**#4022** (what the tool answered). Gap 1. The descent stopped at 4022 and allocated **4023**.
+
+★ That adjacency is not an accident of the prose. It is the **general** shape: a poisoned ledger
+reserves N, the next allocation reserves N+1, and from the second bad allocation onward the
+outliers are always adjacent — so the descending guard is *guaranteed* to be defeated by exactly
+the scenario it was written for. It would have held only against a single poisoning that nobody
+ever built on.
+
+Ascending has no such hole. The namespace is dense (767 claims, largest real gap 38), so the top
+of the **first dense run from the bottom** is the ceiling, and outliers are unreachable however
+many there are or however tightly they cluster.
+
+**The lesson is about how the hole was found.** Not by review — I wrote the descending version,
+tested it with two outliers *4979 apart* (`test_two_stacked_outliers_are_both_dropped`), and
+believed it covered clustering. The case that mattered was two outliers **1** apart, and what
+produced it was writing the documentation honestly enough to include the real numbers. A test
+whose adversarial input is chosen by the same person who chose the algorithm inherits that
+person's blind spot.
+
+### 172c. #847c — a heading inside a code fence is a quotation
+
+Item 172 documents the poison by **showing** it, and the shown line begins with `## `, so the
+write-up about the bug reintroduced the bug: `#4021` became a live claim, and #826's own
+`test_the_lookalikes_are_free[4021]` — which asserts a prose invoice number must read FREE — went
+red. The scan now skips fenced blocks, which is #826's stated criterion (*scan only where a number
+is DECLARED*) applied one level deeper. Any document that explains this tool contains this shape.
+
+The prose heading was also reworded off `#4022`. A heading is a declaration site, and a lookalike
+in one is a real defect in the document, not in the scanner.
+
+★ **Three defects, one tool, one hour** — and the tool is 90 lines whose entire purpose is to be
+trustworthy. Two of the three were introduced by *fixing* or *documenting* the first. The general
+form: **a namespace with no allocator is a bug, and an allocator is a component that can be
+wrong** — the second is easy to forget because the first was so visibly painful.

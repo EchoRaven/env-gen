@@ -54,8 +54,41 @@ cd "$(dirname "$0")/.."
 # side effect on a repo artifact is worse than no test: it makes the artifact untrustworthy.
 _TICKETS="${TICKET_LEDGER:-.tickets}"
 
+# #847: the allocator is a monotonic high-water mark, and `tail -1` is maximally sensitive to a
+# single bad claim. #826's header records this happening — a prose example `"Your invoice #4021 is
+# ready"` made it report 4022 — and the fix was to NARROW THE SOURCES. That defends against the
+# shapes already seen. It does not defend against prose inside the two sources that remain: an
+# EXPERIMENTS heading or a commit subject may quote a number, and both are scanned whole.
+#
+# Reproduced, not assumed. One heading appended to the real document:
+#     ## 172. #848 — a task body rendering "Your invoice #4021 is ready"
+#     $ tools/ticket.sh  ->  4022
+#
+# And it is PERMANENT, because allocating writes to `.tickets` and `.tickets` is itself scanned.
+# One bad read poisons every later allocation, silently: the tool prints a bare number with no
+# context, so 4022 looks exactly like 848.
+#
+# The bound is measured, not guessed. The real namespace is 767 claims over 1..847 with a largest
+# legitimate gap of 38 (427 -> 465) and NOTHING above 50; the poison jump is 3174. 100 sits an
+# order of magnitude away from both.
+#
+# It warns and skips rather than refusing. A refusal here wedges allocation over a false positive,
+# which is the worse end (#789: the fail-open was correct, only its silence was the defect). So it
+# names the outlier AND where it was claimed — that line is what lets an operator tell a quoted
+# figure from a real ticket that legitimately jumped, and override.
+_GAP_847=100
+
+_where() {   # where a number was claimed — shared by the check branch and #847's warning
+  grep -n "^## [0-9].*#$1\b" EXPERIMENTS_PENDING_*.md 2>/dev/null | head -3 || true
+  git log --oneline --grep="#$1" 2>/dev/null | head -3 || true
+}
+
 _claimed() {   # every number claimed, one per line
-  { grep -h '^## [0-9]' EXPERIMENTS_PENDING_*.md 2>/dev/null || true
+  { # #847c: a heading inside a FENCED CODE BLOCK is a quotation, not a declaration — which is
+    # #826's own stated criterion, applied one level deeper. Item 172 documents the poison by
+    # SHOWING it, and the shown line begins with `## `, so the write-up about the bug reintroduced
+    # the bug. Any document that explains this tool will contain the same shape.
+    awk 'FNR==1{f=0} /^```/{f=!f; next} !f && /^## [0-9]/' EXPERIMENTS_PENDING_*.md 2>/dev/null || true
     git log --format=%s 2>/dev/null || true
     cat "$_TICKETS" 2>/dev/null || true
     ls agent/tests 2>/dev/null | sed -n 's/^test_.*_\([0-9]\{3,4\}\)\.py$/#\1/p' || true
@@ -69,16 +102,50 @@ if [ $# -ge 1 ]; then
   n="${1#\#}"
   if _claimed | grep -qx "$n"; then
     echo "#$n is TAKEN — claimed in:"
-    grep -n "^## [0-9].*#$n\b" EXPERIMENTS_PENDING_*.md 2>/dev/null | head -3 || true
-    git log --oneline --grep="#$n" 2>/dev/null | head -3 || true
+    _where "$n"
     exit 1
   fi
   echo "#$n is FREE"
   exit 0
 fi
 
-highest="$(_claimed | tail -1)"
+# #847b: walk UP from the bottom, not down from the top.
+#
+# The first cut descended from `max` while each step was more than _GAP_847 above the claim below
+# it. **Two adjacent outliers defeat that completely**, and this write-up produced the case within
+# the hour: EXPERIMENTS item 172 names both #4021 (the poison) and #4022 (what the tool answered),
+# gap 1 — the descent stopped at 4022 and allocated 4023. That is not a contrived input. It is the
+# GENERAL shape of the failure, because a poisoned ledger reserves N and the next allocation
+# reserves N+1: after the second bad allocation the outliers are always adjacent, forever.
+#
+# Ascending has no such hole. The real namespace is dense — 767 claims over 1..847, largest gap 38
+# — so the top of the first dense run IS the ceiling, and anything beyond it is unreachable however
+# many outliers there are or however tightly they cluster.
+#
+# The warning goes to STDERR so `n=$(tools/ticket.sh)` still captures a bare number — an allocator
+# that prints prose into its own output would be a worse bug than the one being fixed.
+mapfile -t _all < <(_claimed)
+[ "${#_all[@]}" -gt 0 ] || _all=(0)
+_i=0
+while [ "$_i" -lt $(( ${#_all[@]} - 1 )) ]; do
+  _gap=$(( ${_all[$((_i + 1))]} - ${_all[$_i]} ))
+  [ "$_gap" -gt "$_GAP_847" ] && break
+  _i=$(( _i + 1 ))
+done
+highest="${_all[$_i]}"
 [ -n "$highest" ] || highest=0
+
+if [ "$_i" -lt $(( ${#_all[@]} - 1 )) ]; then
+  {
+    echo "ticket.sh: IGNORING $(( ${#_all[@]} - _i - 1 )) claim(s) above #$highest — the next is"
+    echo "  #${_all[$((_i + 1))]}, $(( ${_all[$((_i + 1))]} - highest )) higher, and the largest real gap"
+    echo "  in this namespace is 38. Those are quoted numbers, not tickets. Claimed at:"
+    for _j in $(seq $(( _i + 1 )) $(( ${#_all[@]} - 1 )) ); do
+      echo "    #${_all[$_j]}:"; _where "${_all[$_j]}" | sed 's/^/      /'
+    done
+    echo "  If one IS a ticket, raise _GAP_847 or add it to $_TICKETS by hand."
+  } >&2
+fi
 next=$((highest + 1))
 # #829: RESERVE it. A pure read handed the same number to two callers three times.
 printf '#%s reserved %s\n' "$next" "$(date -u +%FT%TZ)" >> "$_TICKETS"
