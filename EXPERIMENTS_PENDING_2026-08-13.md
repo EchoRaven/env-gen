@@ -8865,3 +8865,38 @@ the reusable filter: a value duplicated under two names is usually two concepts;
 duplicated under ONE name is a promise that they are the same thing, and #853 and #854 are both
 what happens when that promise stops holding.
 
+
+## 178. the ENVGEN_* family is exhausted — three sweeps, three clean negatives
+
+Recorded because an unrecorded negative gets re-derived, and this family looked promising enough
+that I ran it three different ways.
+
+**1. Promised but never parsed.** 89 distinct `ENVGEN_*` names mentioned across 163 py files and
+72 docs/prompts/yaml; 71 parsed with a literal name. The 18-name gap is **entirely probe
+artefact**: `ENVGEN_MODEL_`, `ENVGEN_PROVIDER_`, `ENVGEN_MAX_` are *prefixes* the code composes
+(`_env_key(component, "ENVGEN_MODEL_")` → `ENVGEN_MODEL_DESIGN_ENRICH`, and `design_enrich` is a
+registered component), `ALLOWLIST_PATH_ENV` / `_DEBUG_ENV` are read through a variable, and the
+rest appear only in historical HANDOFF docs. **Zero broken operator-facing promises.**
+
+**2. The `bool("0")` truthiness trap** — #562's known bite, so worth checking everywhere. 81 env
+reads; every boolean-looking one uses an explicit value allow-list
+(`.strip().lower() in ("1","true","yes","on")`). **0 of 81.** The classifier was proven first
+against three synthetic bad patterns (bare truthiness, `bool()` wrap, `bool(..., "0")` — all
+flagged) and two good ones (allow-list, `int()` — both safe), because a sweep that returns zero is
+a claim about the sweep.
+
+**3. Documented default vs code default.** 8 reads carry both a literal default and a nearby
+"default …" claim. Two mismatched, **both probe artefacts**, both killed by reading the code:
+
+- `ENVGEN_DESIGN_ANALYST` — the phrase `default-OFF` sits inside a sentence describing a
+  **rejected proposal** (*"NR1 proposed default-OFF from runs on one model …"*); the same comment
+  concludes *"Default ON"* and the code agrees. A context-blind match on a normative phrase.
+- `ENVGEN_VISUAL_MIN` — the docstring says `default 0.65`; my `[0-9]+` stopped at the decimal
+  point and read it as `default 0`. ★ A regex that cannot express the values it is comparing will
+  manufacture disagreements — and it would equally have **missed** a real mismatch on any decimal
+  default, which is the worse half of the same bug.
+
+★ **Closing rate for the family: 178 checks, 0 defects, 4 probe artefacts.** The transferable part
+is that all four artefacts were caught the same cheap way — open the file and read the sentence
+around the match — and none needed a second probe.
+
