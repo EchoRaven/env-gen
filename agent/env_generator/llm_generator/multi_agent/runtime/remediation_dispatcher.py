@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 # FIX #143 — content-based owner routing for docker_up build failures.
 # run-65 M4 (2nd occurrence of the run-52 class): a frontend syntax error
@@ -1046,13 +1046,40 @@ class RemediationDispatcher:
                     _mf = _ui_flow_missing_names(orch)
                     if _mf:
                         _extra = _ui_flow_missing_extra(_mf)
-                task = orch.hubs.workhub.create_task(
-                    title=title,
-                    description=(
-                        f"The `{name}` delivery-gate check FAILED.\n{how}{_extra}\n"
-                        "Delivery stays blocked until a gate tick shows this check "
-                        "green. Fix it, then finish."),
-                    assignee=owner, agent="orchestrator", priority="P0")
+                # #794: re-dispatch NAGS; it must not clone the task. The decline counter
+                # deliberately re-dispatches a still-failing check every few minutes, and each
+                # pass used to create a NEW P0 — r130 accumulated 13 copies of "Make
+                # business_chain pass" ~4 min apart with the last FIVE simultaneously
+                # `in_progress`. Cost: `incomplete_required_tasks` (a delivery blocker count)
+                # inflates with clones of one problem, and an agent can claim copy #9 while
+                # #10-13 sit unclaimed looking like unstarted work. The nag itself is kept —
+                # only the duplicate row goes. Present in 8 of the last 22 corpus runs.
+                _open794 = None
+                try:
+                    for _t in (orch.hubs.workhub.list_tasks() or []):
+                        if (isinstance(_t, Mapping) and str(_t.get("title")) == title
+                                and str(_t.get("status")) in ("pending", "in_progress", "open")):
+                            _open794 = _t
+                            break
+                except Exception:
+                    _open794 = None            # best-effort: on any fault, file as before
+                if _open794 is not None:
+                    task = _open794
+                    try:
+                        orch._logger.info(
+                            "#794: `%s` still failing and an identical task (%s, %s) is already "
+                            "open — re-waking %s instead of filing a duplicate P0.",
+                            name, _open794.get("id"), _open794.get("status"), owner)
+                    except Exception:
+                        pass
+                else:
+                    task = orch.hubs.workhub.create_task(
+                        title=title,
+                        description=(
+                            f"The `{name}` delivery-gate check FAILED.\n{how}{_extra}\n"
+                            "Delivery stays blocked until a gate tick shows this check "
+                            "green. Fix it, then finish."),
+                        assignee=owner, agent="orchestrator", priority="P0")
                 guard[name] = milestone
                 _persist[name] = 0  # reset the decline counter on a (re-)dispatch
                 _gmsg = _create_message(

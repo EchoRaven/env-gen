@@ -2327,6 +2327,45 @@ the gate's verdict was unverified on that axis — read it before believing the 
 
 ---
 
+## 120. #794 — re-dispatch nagged by CLONING the P0, and two thirds of the evidence for it was stale
+
+Started from a measured harm in item 107 (a phantom `player` defect reported in 39 of 40 runs) and
+asked the adjacent question: does a repeated finding file a repeated task? Corpus answer looked
+damning — **114 of 151 runs contain duplicate task titles, worst ×40** — and it was mostly wrong
+to act on:
+
+* the worst offender, `"UI does not match reference designs (visual gate, attempt 1)"` ×14, is
+  **already fixed**. The current title carries `round {N}; judge attempt {A}/3` and is unique per
+  round; r88/r99/r103 predate that. ★ **Nearly reported a fixed bug as live** — the third time this
+  session that a corpus-wide number turned out to be dominated by old builds.
+* most duplicated titles end `completed` (1156) or `cancelled` (380). Re-filing a check that
+  genuinely failed again is **correct**, not waste.
+* the per-milestone `guard[name] = milestone` already prevents the obvious duplication.
+
+**One live shape survived all three filters.** r130 holds **13** copies of `"Make business_chain
+pass (blocks delivery)"` created ~4 minutes apart — not per milestone but per *decline-counter
+re-dispatch*, which deliberately nags a still-failing check — and the last **five are
+simultaneously `in_progress`**. Costs: `incomplete_required_tasks` is a delivery-blocker count and
+it inflates with clones of one problem; and an agent claims copy #9 while #10-13 sit unclaimed,
+looking like unstarted work. Present in 8 of the last 22 runs (r149/r150/r151 clean).
+
+The nag is kept — a declined check needs chasing. Only the duplicate row goes: an identical-title
+task that is still open gets re-woken instead of re-created. Fixed on the shared dispatch table, so
+it covers every gate-level check name, not just `business_chain_failing`. Falls back to filing on
+any lookup fault — **losing a P0 is far worse than a duplicate**, so the failure direction is the
+opposite of #790's on purpose.
+
+**Two of my own errors, both caught by earlier work.**
+* The first cut used `Mapping` without importing it — a `NameError` on the release path, inside a
+  branch that only fires when a check has already failed twice, i.e. the worst place to put one.
+  Caught by importing the module rather than trusting `ast.parse`; **syntax-clean is not
+  import-clean**.
+* `test_the_nag_still_happens` used `s[i:i + 4000]`. The fixed-width-source-window guard failed
+  the suite — **ninth catch this session**. A window that size also silently reaches into the next
+  handler, so it was wrong twice over. Replaced with a real anchor.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
