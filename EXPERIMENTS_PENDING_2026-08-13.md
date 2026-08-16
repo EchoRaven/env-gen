@@ -2696,6 +2696,40 @@ its path, and now a lifetime that did not match its own wording.
 
 ---
 
+## 130. #802 — the last seam category, turned into a permanent guard instead of a one-off probe
+
+The seam pass had three categories left. Two came back clean (ticket-number anchors; new dict keys
+on every return path). The third is **function-level imports**, and it is the one with teeth:
+
+* a module-level import fails loudly at startup;
+* a function-level one fails **only when that branch runs** — and the branches carrying them are,
+  by construction, the rare ones: error handlers, fallbacks, guards.
+
+Both halves of that bit this session. #794's first cut used `Mapping` without importing it — a
+`NameError` on the release path, in a branch that only fires after a check has already failed
+twice, and `ast.parse` called the file clean. And **#789's entire subject is a lazy import
+failing**: `from ..agents.runtime.auto_commit import _OWNERSHIP` raising is what turned the write
+guard off, silently and permanently.
+
+I first checked this as an ad-hoc probe over the nine imports I had added — all resolved. ★ **Then
+the session's own rule applied to the check itself:** a probe I run once guards nothing, and a
+hand-listed set of imports is item 110's trap (a curated list standing in for a semantic question,
+stale the moment someone adds one and forgets).
+
+So it is a suite test that **discovers** them by AST: every `from …` nested inside a function
+anywhere in `runtime/`, resolved for real, with each imported name checked to exist on the target
+(falling back to a submodule import, which is legitimate). **236 found, 236 resolve** — and the
+next lazy import added anywhere in the tree is covered without anyone remembering to.
+
+The non-vacuity assertion (`>= 20 discovered`) is there because a refactor that moves this code
+would otherwise turn the whole test into 0 silent passes — the sixth instrument-zero of this
+session is why that line exists.
+
+**The seam pass is now closed**: anchors clean, return-shapes clean, lifetimes fixed (#801),
+imports guarded (#802).
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
