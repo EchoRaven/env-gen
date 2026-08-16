@@ -4099,6 +4099,55 @@ precisely the position from which it is invisible.
 
 ---
 
+## 169. #843 — the spec has two dialects and the parser knew one; found by auditing my own instrument
+
+Item 167's rule — *a non-vacuity guard that runs through the instrument under test proves nothing
+about the instrument* — pointed at the last shipped-detector dependency in `tools/corpus_audit.py`:
+#774's measurement runs on `extract_contract_from_description`, and that parser had never been
+checked against the raw text it parses.
+
+    - users: id, email, name       colon form            112 of 118 marked slices
+    - users(id, email, name)       PARENTHESISED form      6  (r111, r122)
+
+A slice in the second dialect parses to **zero tables**, so its run is silently not "comparable"
+and drops out of #774 — **neither numerator nor denominator**. #773 taught this pattern an optional
+`table:` prefix; the bracket dialect stayed invisible precisely because the runs using it produced
+no tables, and therefore no evidence that anything was missing.
+
+★ **Two probes were wrong before the third was right**, and both failures are the class being
+fixed:
+
+1. a loose `word(...)` regex called **76 of 188** slices "table-shaped and unparsed" — it was
+   matching prose like *"Build order: (1) data model migrations"*. Item 104's trap, inside the
+   probe auditing a parser.
+2. the hypothesis that the parser wanted **one table per line** — disproved in a single call: the
+   one-per-line synthetic returned `[]` too. The **dialect**, not the layout.
+
+Only the third probe — *slices with an explicit `DATA MODEL:` / `TABLES:` marker where the parser
+found nothing* — was precise, and it found exactly 6. **That probe deliberately does not run
+through the parser**, which is item 167's rule applied rather than restated.
+
+**Effect on the decision it feeds.** #774 moves from 8 of 112 (7%) to **10 of 144 (6%)**, and the
+recent slice from 1 of **7** to **3 of 20**. The rate barely moves; the denominator does — and item
+121 had explicitly flagged 7 as *"too small to read a rate off"*. It is now readable, still with
+**zero false positives**, which is the half of #774's case that matters (item 152).
+
+★★ **A full-suite run is no longer a reliable signal on its own.** Mid-verification the suite
+reported 6 failures, three in files I had never touched — including the other agent's
+`test_unstaged_asset_classes_842.py`. All 33 passed in isolation seconds later: I had run the suite
+**while the other agent was mid-write**, its test file on disk and its code not yet saved. Re-run
+on a quiescent tree: **5,535 passed**. With two agents in one working tree, "green" means green
+*and* `git log` unchanged across the run.
+
+★★★ **And the write of this very item failed once.** The first attempt interpolated a shell
+variable into a Python heredoc containing backticks; the escape mangled a `\u` sequence and the
+whole script raised — while the `git commit` in the same command ran anyway, shipping the code and
+test with **no item**. The record and the change parted company for the third time today (after
+`f0693d8` and the #822 collision). **Chaining a write to a commit means the commit can outlive the
+write.**
+
+---
+
 ## 154. Auditing my own attribution claims — one bad, four sound
 
 The r128 correction was the second time this session I asserted *who did something* without reading
