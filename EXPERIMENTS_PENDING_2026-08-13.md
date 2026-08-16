@@ -9651,3 +9651,48 @@ Nothing in the stuck population is now unexamined. The two live items both need 
 show the fast path no longer fires on an inflated average, #862 to name the silent attendees the
 next time it happens instead of leaving an eighth run to be explained away.
 
+
+## 193. #863 — rooting #862, and correcting the instrument I put in the wrong place
+
+I closed #862 with *"root unknown, needs a run"*. That was premature; the artifacts had more in
+them.
+
+### what the corpus does establish
+
+| | |
+|---|---|
+| kickoff events in the EventHub | **0 in all 7**, ≥3 in every healthy run (3, 3, 6, 6) |
+| `.agent_logs/{Backend,Frontend,Verifier}` | directories created **at startup**, never written |
+| the lanes' `('orchestrator','kickoff_request','high')` subscription | **present and correct** — hypothesis eliminated |
+| design_analyst vs orchestrator end time | DA logs **104–789s AFTER** the orchestrator's last entry, 6 of 7 |
+| `progress_events.jsonl` | exactly `generation_start` + `phase_start`. **No `phase_error`.** |
+
+So the chain is: **`start_kickoff` — the single call site that opens the meeting and broadcasts
+`kickoff_request` — is never reached.** No broadcast, so nothing wakes the three lanes; they are
+constructed and never run a step. The orchestrator lane then idles on *"kickoff coordinator still
+driving M1"*, waiting for something the framework never started.
+
+★ Two facts narrow the remaining unknown hard: **the process outlived the orchestrator lane**
+(design prep kept logging for up to 13 minutes after), and **the workflow did not raise** (no
+`phase_error`, which line 2239 would have emitted). It returned *silently*, somewhere between the
+`phase_start` at orchestrator.py:1157 and the kickoff call at 1521. That is a bounded span, not an
+open question — and it is the last thing here that a run has to answer.
+
+### the correction
+
+★ **#862's warning cannot fire for #862's own class.** I put it inside the kickoff poll loop —
+and in exactly these runs the driver never starts, because `start_kickoff` never ran. That is
+*the same defect #862 documents* about `_derive_missing_essential_sections`: a recovery whose
+precondition is unreachable in the case it was written for. I described that shape, called it the
+third instance of the session, and then committed a fourth one ticket later.
+
+`#863` puts the marker where every run passes: a `PHASE_START` event emitted **before** the call,
+naming the milestone and attendees, wrapped so a throwing progress sink can never become the
+reason kickoff fails to start. With it, *"never reached kickoff"* and *"kickoff ran and failed"*
+stop producing the same two lines in the only artifact that always survives — which is why this
+class went unnoticed for nine days and took an artifact-tree census plus a log dig to find.
+
+**Neither ticket changes behaviour.** `test_it_does_not_change_the_boot_itself` and #862's
+`test_no_behaviour_changed` pin that, because the root is bounded but not yet identified, and
+tuning anything on a bounded-but-unknown root is still a guess.
+

@@ -1518,6 +1518,35 @@ class Orchestrator:
                         "Starting kickoff coordinator (M%s: %s)...",
                         _m_idx, _milestone.get("name", f"M{_m_idx}"),
                     )
+                    # #863: mark this boundary in the PERSISTED progress log.
+                    #
+                    # 7 of 151 corpus runs (r19 r35 r38 r42 r44 r136 r140, over nine days) never
+                    # reach this line. `start_kickoff` is the single call site that opens the
+                    # meeting and broadcasts `kickoff_request`, so nothing wakes backend/frontend/
+                    # verifier: their `.agent_logs` directories are created at startup and never
+                    # written, no DDL, no seed, no frontend, no capture. Measured discriminator —
+                    # kickoff events in the EventHub: 0 in all 7, >=3 in every healthy run.
+                    #
+                    # ★ Their `progress_events.jsonl` holds exactly two lines, `generation_start`
+                    # and `phase_start`, and **no `phase_error`** — so the workflow did not raise,
+                    # it returned silently somewhere between the phase start and here. That is the
+                    # remaining unknown, and this line is what will bound it: with the event
+                    # emitted, "never reached kickoff" and "kickoff ran and failed" stop looking
+                    # identical in the one artifact every run leaves behind.
+                    #
+                    # #862 added a warning for this class inside the kickoff poll loop — which in
+                    # exactly these runs never executes, because the driver is never started. An
+                    # instrument placed where the failure cannot reach it is the same defect as
+                    # the salvage #862 itself documents; this is the correction.
+                    try:
+                        self.progress.emit(
+                            EventType.PHASE_START,
+                            f"Kickoff M{_m_idx}",
+                            {"milestone": _m_idx,
+                             "attendees": ["backend", "frontend", "verifier"]},
+                        )
+                    except Exception:
+                        pass    # observability must never break the boot it observes
                     self._kickoff_handle = run_kickoff.start_kickoff(
                         hubs=self.hubs,
                         milestone_index=_m_idx,
