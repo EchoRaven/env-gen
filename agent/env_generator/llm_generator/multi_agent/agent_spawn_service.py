@@ -19,10 +19,38 @@ from .agents.configurable_agent import create_agent, list_available_agents
 logger = logging.getLogger(__name__)
 
 
-STATIC_CORE_AGENT_TYPES = {
-    "database", "backend", "frontend",
-    "verifier", "knowledge", "orchestrator",
-}
+# #854: this was a second, DIVERGENT copy of `DynamicAgentManager.STATIC_CORE_AGENT_TYPES` —
+# same name, one member short (`design`). Imported so there is one definition; the #853 rule.
+#
+# Adding `design` here is zero-risk: it only tightens the guard below when `requested_type` is
+# literally "design", and across 151 runs no agent of that type was ever spawned (measured from
+# `.agent_logs/` directory names — the roster is orchestrator/backend/frontend/verifier/debugger/
+# knowledge/design_analyst, plus the three test-users).
+#
+# ★ REPORTED, NOT FIXED: that same measurement says BOTH copies are stale against the real
+# roster. The set exists to stop an orchestrator-led dynamic team from re-defining an agent that
+# already exists ("Use send_message(msg_type='task_ready') to the existing static agent instead"),
+# and it lists two types that are never spawned (`design`, `database`) while omitting two that run
+# in 151 of 151 (`debugger`, `design_analyst`). Correcting the roster would make a BLOCKING guard
+# fire on two agents that appear in every run, and item 152 is explicit that a blocking gate turns
+# a false positive into a dead run — so the roster question is left to a human. See EXPERIMENTS
+# item 177.
+# Resolved LAZILY: a module-level import cycles
+# (agent_spawn_service -> team_runtime.manager -> runtime_control -> agent_spawn_service).
+# `__getattr__` (PEP 562) keeps the public module attribute working for any outside reader
+# without importing anything at module load.
+
+
+def _static_core_agent_types_854():
+    """The one definition of the static core roster (see the #854 note above)."""
+    from .team_runtime.manager import DynamicAgentManager
+    return DynamicAgentManager.STATIC_CORE_AGENT_TYPES
+
+
+def __getattr__(name):
+    if name == "STATIC_CORE_AGENT_TYPES":
+        return _static_core_agent_types_854()
+    raise AttributeError(name)
 
 
 @dataclass
@@ -186,8 +214,8 @@ class AgentSpawnService:
                 f"Available profiles: {sorted(available_agent_configs)}"
             )
         if (
-            requested_agent_type in STATIC_CORE_AGENT_TYPES
-            and resolved_config_key in STATIC_CORE_AGENT_TYPES
+            requested_agent_type in _static_core_agent_types_854()
+            and resolved_config_key in _static_core_agent_types_854()
             and requested_agent_type != resolved_config_key
         ):
             raise ValueError(

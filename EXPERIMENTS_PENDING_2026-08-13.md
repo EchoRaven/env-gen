@@ -8793,3 +8793,56 @@ pattern `heal_pipeline.py` already uses for this same constant), the constraint 
 import site where the next editor will hit it, and a test drives the three harnesses so the rule
 fails by name instead of by `ce_pkg`.
 
+
+## 177. #854 — a guard that blocks two agents that never exist and misses two that always do
+
+#853's "no second copy" scanner, generalised: parse every module-level string-set literal in the
+runtime and flag pairs that **overlap heavily but differ**. 163 files, 242 distinct set literals,
+**41 divergence candidates**. Most are legitimate (`_DOC_EXTS` minus `.pdf` for a text-only path;
+`_TRUTHY_STRS` plus `critical`). The strongest signal was the one pair sharing a **name**:
+
+    agent_spawn_service.STATIC_CORE_AGENT_TYPES   {database, backend, frontend, verifier,
+                                                   knowledge, orchestrator}
+    DynamicAgentManager.STATIC_CORE_AGENT_TYPES   {design, database, backend, frontend, verifier,
+                                                   knowledge, orchestrator}
+
+Opening it turned the finding inside out. The set exists to stop an orchestrator-led dynamic team
+from re-defining an agent that already exists — the error says so: *"Use
+send_message(msg_type='task_ready') to the existing static agent instead."* So it should name the
+agents that actually run. Measured from `.agent_logs/` across all 151 runs:
+
+    151x orchestrator  151x backend  151x frontend  151x verifier
+    151x debugger      151x knowledge  151x design_analyst
+     71x browser_test_user   26x api_test_user   1x mcp_test_user
+     design: 0   database: 0
+
+★ **The guard lists two types that were never once spawned (`design`, `database`) and omits two
+that run in every single run (`debugger`, `design_analyst`).** The divergence I went looking for
+was one missing word; the real defect is that both copies describe a roster that does not exist.
+
+**Fixed:** the divergence. One definition now, resolved lazily via PEP 562 `__getattr__` because a
+module-level import cycles (`agent_spawn_service` → `team_runtime.manager` → `runtime_control` →
+back). Corpus-neutral: adding `design` tightens the guard only for a type spawned 0 times in 151.
+
+**Reported, not fixed:** the roster. Adding `debugger` and `design_analyst` makes a **blocking**
+guard fire on two agents present in every run, and item 152 is explicit that a blocking gate turns
+a false positive into a dead run. Whether those two are *meant* to be re-definable inside a
+dynamic team is an intent question the code does not answer. ★ Same disposition as #774, and the
+same reasoning: **the cost of being wrong is asymmetric, so the measurement is mine to produce and
+the decision is not.** The test pins both halves — if someone adds them, it fails and forces this
+note to be updated with the change.
+
+### method note — two probe errors on one claim, neither of which changed the answer
+
+1. The first roster probe searched log **contents** for `"agent_type": "..."` and reported zero
+   across 151 runs. The type is in the **directory name**. Seventh field-location error this
+   session.
+2. The fix extracted only the parenthesised suffix — so `Debugger Agent` keyed as itself and
+   `debugger` read as *absent from a corpus where it runs 151 times*. The names come in three
+   shapes (`Backend Engineer Agent`, `design_analyst`, `API Test-User (api_test_user)`).
+
+Neither changed the finding: the raw census printed `151x Debugger Agent` both times, and I read
+it correctly. But the second one **turned a correct claim into a red test**, which is how it was
+caught — and that is the argument for encoding a measurement as a test rather than a paragraph.
+A number in prose cannot fail.
+
