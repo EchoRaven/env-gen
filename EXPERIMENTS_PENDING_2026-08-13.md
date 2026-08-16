@@ -3152,6 +3152,38 @@ written faster than the rule that governs it.
 
 ---
 
+## 142. #812 — the two "low-value" orphans, finally opened: one was a floor measurement, one was a trap
+
+`dominant_colors` and `pitch_px` were deferred twice as *"orphan, low value"* and *"orphan,
+narrow"*. **Both judgements were made without opening the values.** Opening them:
+
+    top-nav-bar   {"columns": 25, "pitch_px": 7, "rows": 1}
+    page-title    {"columns": 31, "pitch_px": 5, "rows": 2, "row_gap_px": 43}
+    flyout        {"columns": 10, "pitch_px": 6, "rows": 7, "row_gap_px": 57}
+
+★ **`rows` + `row_gap_px` is a real floor measurement.** The profile flyout is *7 items spaced
+57px apart* — the vertical rhythm of a list-like component, on the `layout` dimension, while the
+repair text carried no spacing information at all. Now emitted per component.
+
+★★ **`columns` + `pitch_px` is a trap, and naming it would have been #782 in reverse.** 25
+"columns" at 7px pitch across a top nav is not a layout grid — it is a low-level stripe detector.
+#782 was a *real* field the projector read under the *wrong name*; this would have been a
+*misleading name* handed to a lane as if it meant what it says. Deliberately not emitted, with a
+test asserting it stays out.
+
+**The deferral itself is the lesson.** "Low value" was a guess dressed as a triage decision, and I
+made it twice about the same two fields. The cost of opening them was two minutes; the cost of the
+guess was a floor measurement left unread for the whole session and a trap left one careless step
+from being shipped. **A deferral that has never looked at the thing is not a triage, it is a
+coin-flip with a note attached.**
+
+`dominant_colors` stays unemitted, but now for a stated reason rather than a guess: per-asset
+palettes duplicate ground the design system already covers with a measured page palette (#779's
+`material`, #797's `shadow_scale`), and #680's payload measurement makes unprioritised additions
+actively harmful.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

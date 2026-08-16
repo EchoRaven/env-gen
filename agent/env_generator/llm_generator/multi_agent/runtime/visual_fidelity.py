@@ -4112,11 +4112,28 @@ def _layout_geometry_lines(ds: Optional[Mapping[str, Any]], screen_name: str) ->
                 continue
             bg = (comp.get("colors") or {}).get("bg") if isinstance(
                 comp.get("colors"), Mapping) else None
+            # #812: the measured VERTICAL RHYTHM of a list-like component. design_prep records
+            # `rows` (detected item bands) and `row_gap_px` (the gap between them) per component
+            # — e.g. r151's profile flyout is 7 rows at 57px. Written, never read, and `layout`
+            # is a floor dimension with a repair text that carried no spacing at all.
+            #
+            # Its siblings `columns`/`pitch_px` are DELIBERATELY not emitted: they are a
+            # low-level stripe measure (25 "columns" at 7px pitch across a top nav), not a
+            # layout grid. Handing that to a lane as "columns" would be #782's mistake in
+            # reverse — a plausible NAME whose meaning does not match it.
+            _geo812 = comp.get("geometry") if isinstance(comp.get("geometry"), Mapping) else {}
+            _rhythm = ""
+            try:
+                _n, _gap = _geo812.get("rows"), _geo812.get("row_gap_px")
+                if isinstance(_n, int) and _n > 1 and isinstance(_gap, (int, float)) and _gap > 0:
+                    _rhythm = f", {_n} rows {_gap:.0f}px apart (measured)"
+            except Exception:
+                _rhythm = ""
             rows.append(
                 f"  · {comp.get('id')}: x {x1 * 100:.0f}-{x2 * 100:.0f}% "
                 f"(width {(x2 - x1) * 100:.0f}%), y {y1 * 100:.0f}-{y2 * 100:.0f}% "
                 f"(height {(y2 - y1) * 100:.0f}%)"
-                + (f", bg {bg}" if bg else ""))
+                + (f", bg {bg}" if bg else "") + _rhythm)
         if not rows and not layout:
             return []
         lines = ["LAYOUT GEOMETRY (measured from the reference — match the "
