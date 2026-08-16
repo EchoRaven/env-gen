@@ -4354,6 +4354,42 @@ nobody has written, and it would have named both this and #840 without a run.
 
 ---
 
+## 166. #848 — `title_detail` is a modal with nothing behind it, in 61% of runs
+
+`title_detail` blocks **7 of 7** recent scored runs and floors on `components` every time. Its
+scores are tightly clustered — **0.50, 0.60, 0.60, 0.60, 0.60, 0.62, 0.62** — i.e. consistently a
+few points under the 0.65 bar rather than badly wrong. Something structural is costing it a
+constant amount.
+
+The judged deviation names it: *"Modal appears over a blank page instead of dimmed browse
+content."* Verified in the source rather than taken on trust (item 107): the projected
+`TitleDetailPage` opens with `fixed inset-0 z-50` over `rgba(0,0,0,0.75)` — **modal chrome, a
+75% black scrim, and nothing behind it**. Measured:
+
+    runs with a projected TitleDetailPage                     118
+      ...rendering a full-screen dark scrim over nothing       73  (61%)
+    reached by                                          `path="/title/:id"` — a plain route
+
+★ **The framework's own code says these are two different things.** #509 marks overlay screens
+(`rate_dialog`, `card_hover_preview`, `account_menu`) ADVISORY because route-capture navigates to
+the parent and never opens the overlay — then drives the interaction to score them fairly.
+`title_detail` is **not** advisory: it has a real route, so it is captured directly and scored in
+full. So the projector emits *modal* chrome for a screen the gate treats as a *page*, and the
+scrim dims an empty document.
+
+**Why it is not fixed here.** The reference shows the card over the dimmed browse grid, which is
+also what the real product does — a route that overlays its parent. Making the projected detail
+route render its parent behind the overlay is a real projector feature, not a small edit, and it
+needs a run to validate. The alternative (drop the scrim when the route is standalone) is smaller
+but does not reach the reference either: the complaint is the missing browse content, not the
+scrim.
+
+**What makes this worth recording rather than guessing at.** It is the top blocker screen, the
+cost looks constant across runs, and 61% of the corpus carries the same shape — so it is the
+largest single structural divergence measured on the visual path that nobody has named.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
