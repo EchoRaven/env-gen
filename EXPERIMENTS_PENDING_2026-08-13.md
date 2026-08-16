@@ -1998,6 +1998,60 @@ SQL would 500 the detail read, which is far worse than a missing chip row on the
 
 ---
 
+## 113. #786/#787 — I committed #779's exact defect while fixing #779
+
+#779's finding: `shadow_scale` and `material` are MEASURED from the reference, written to
+`design_system.json`, and **named nowhere in the frontend prompt**. A field with a writer and no
+reader cannot move a score. Fixed by naming them in the lane's build spec.
+
+**#778, added hours later the same day, did the same thing.** It put `copy` on the design-prep
+component schema, wrote a prompt clause demanding verbatim transcription, and carried the field
+through both fixed-key projections — the entire WRITE path, with tests. Then:
+
+    grep 'get("copy")' / '["copy"]' over runtime/    -> nothing
+    grep for a component `copy` field over prompts   -> nothing (only the English word, and `&copy;`)
+
+The transcribed reference text was measured, validated and persisted, and **no consumer ever asked
+for it**. `ui_copy` would have kept scoring as a floor dimension with the fix "shipped". Fixed as
+#786: both prompt versions now name `copy` and say what to do with it (render character for
+character; invent nothing when it is absent), carrying the 9152/84% measurement.
+
+★ The lesson is not "check for readers" — **#779 IS that lesson, written down that same day, and
+it did not transfer to the next change by the same author.** A new field is not done when it is
+produced and tested; it is done when something CONSUMES it. The write path is the easy half **and
+it is the half that has tests**, which is exactly why it feels finished.
+
+**So the class was swept.** Every field in `design_system.json`, checked against both prompts and
+against the framework's own readers. The naive form of that sweep is item 104's trap (a field name
+is a substring of a 300 KB prompt for many reasons), so each candidate was resolved to **exact
+writer/reader FILES**, not counts:
+
+| field | writer | reader | verdict |
+|---|---|---|---|
+| `layout_metrics` (+ `*_px`) | `design_prep.py` | none | **orphan → #787** |
+| `dominant_colors` | `material_prep.py` | none | orphan, low value (palette already supplied) |
+| `pitch_px` | design_prep + material_prep | none | orphan, narrow |
+| `line_height` | — | `frontend_scaffold.py` | **false positive** — an emitted CSS property, a different thing entirely |
+| `color_token` | — | — | not framework-produced; free-form LLM key |
+| `requires_auth` | design_prep | framework | not an orphan |
+
+**#787 fixes the valuable one.** `layout_metrics` is the reference's content bounding box in px and
+viewport fractions, and it is **per screen and genuinely varies** — r151 carries it on 20 of 20
+screens with **15 distinct boxes**: `left_px: 0, width_px: 1918` (full-bleed) versus
+`left_px: 66, width_px: 1786` (~66px gutters, ~93% column). Meanwhile the prompt asks the lane to
+match "content max-width" **by eye**. Named in both prompts now, with the full-bleed case called
+out because that is the one an eyeballed container always gets wrong.
+
+**A half-applied prompt edit nearly shipped.** The clause landed in v3 and threw on v4 because the
+two versions word the #779 passage differently. v3 is default, v4 is opt-in per file (#269), so a
+one-sided clause makes runs silently non-comparable. `test_both_prompt_versions_got_the_same_clause`
+now asserts both markers in both files.
+
+**Cheapest observation next run.** Grep the lane's authored pages for a max-width matching
+`layout_metrics.width_px`, and diff a rendered CTA's text against its component's `copy`.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
