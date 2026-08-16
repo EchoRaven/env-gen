@@ -3685,8 +3685,15 @@ What the failed tasks actually are: 40 of 55 predate r100, owners are frontend 2
 verifier 11, and no title dominates. **Four are Docker-registry or Dockerfile failures** — an
 environment problem assigned to a lane that cannot fix a blocked registry — and r128's is
 `Dockerfile missing in app/backend AND app/frontend` with **no assignee at all**, for a file the
-backend prompt explicitly says is framework-owned and that the lane is forbidden to create. That
-is #820's shape again: **the framework blaming a lane for the framework's own artifact.**
+backend prompt explicitly says is framework-owned and that the lane is forbidden to create.
+
+★ **CORRECTED.** The first version of this paragraph called that *"the framework blaming a lane for
+the framework's own artifact"* — #820's shape. It is not. The task's `created_by` is **`verifier`**:
+a lane agent filed it, unassigned. I asserted the attribution without reading the field, which is
+the same failure this session has catalogued a dozen times in probes and made here in prose. What
+survives the correction is narrower and still true: the Dockerfile *is* framework-owned, so the
+task was unfixable by **anyone it could have been assigned to** — but the framework did not file
+it, and the shape is "an agent filed an unownable task", not "the framework blamed a lane".
 
 **Sweep 2 — tasks nobody owns.** 296 unassigned of 13,645, and **253 sit in a non-terminal state**.
 The titles are not trivia: *"Hero Play button is a DEAD control"*, *"Landing page fails to render —
