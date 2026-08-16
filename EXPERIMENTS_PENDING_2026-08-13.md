@@ -9147,3 +9147,47 @@ The prompt test's first version rendered the template with only `rubric_block` a
 `rubric_block`. #804's lesson exactly: **a prompt test that does not use the caller's arguments is
 testing a template nobody renders.**
 
+
+## 184. the profile avatar (97 runs, 100% of post-r100) — measured, and it needs a design decision
+
+Third class from the long-tail census, run through #857's two-step (does an emitter exist? does
+its markup reach the delivered source?). The answer is different from both previous cases and it
+is worth recording precisely.
+
+**An emitter exists**, and what it emits is a **flat accent-coloured square**:
+
+    <span className="h-8 w-8 rounded" style={{ backgroundColor: accent }} aria-hidden="true" />
+
+**The data for a real avatar exists too**, on the profile/user tables:
+
+| field | runs | rows |
+|---|---|---|
+| `avatar` | **116** | 2229 |
+| `avatar_url` | 27 | 330 |
+
+**And the accessor already covers both** — `_imgOf`'s key list contains `avatar` *and*
+`avatar_url`, so this is not #782's too-narrow-candidate-set trap. Checked before assuming it.
+
+★ **So why it is not a one-line fix.** The render site's own comment says it: *"the projected
+TopNav imports no hooks"*. It is deliberately stateless — no fetch, no `useState`, and the CSS-only
+disclosure menu was built that way on purpose. **There is no profile row in scope**, and the two
+ways to get one both cost something real:
+
+- **fetch a profile in TopNav** — correct data, but it makes a deliberately hook-free component
+  stateful, on every screen, for one image;
+- **use the reference image pool** (`_refImg`, already used for poster placeholders) — hook-free
+  and deterministic, but it paints *a* picture rather than *the user's*, and a multi-profile app
+  has a profile-picker screen where the real avatars do render. Trading correctness for pixels in
+  a component whose whole job is to identify who is signed in.
+
+Recorded rather than guessed at, with the trade-off stated, because choosing wrong here is not
+cheap in either direction. Same disposition as #181 and #854's roster.
+
+**Already handled, and worth separating out:** the avatar *menu* half of this class is done. The
+site's comment records that 44 of 61 delivered chips had no menu state — clicking the caret
+silently signed the user out — and the CSS-only `group-hover` / `group-focus-within` disclosure
+that now ships is the fix. What remains under "profile avatar" is only the image.
+
+**And the adjacent one is already closed:** `is_kids`, the other per-profile flag in this cluster,
+is now rendered by #856's data-driven badge.
+
