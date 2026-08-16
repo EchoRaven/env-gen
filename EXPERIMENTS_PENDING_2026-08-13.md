@@ -3854,6 +3854,43 @@ spelling, stop refining the match and change what you are reading.**
 
 ---
 
+## 160. Applying #826's rule as a sweep — one latent site, zero instances, left alone
+
+#826's rule ("when two things share a spelling, change what you are reading") has three confirmed
+members — #782 (source text vs the emitted artifact), #784/#803 (an FK's name vs its target), #826
+(a token vs its claim site). Run as a query over the framework: **which checks still match by
+token where a structured source exists?**
+
+Most hits were exact set membership (`col in cols` over a set of column names) — not the class.
+**One real candidate**, `route_projector._parent_lookup_col`:
+
+```python
+for col in _NAMED_LOOKUP_COLS:            # username, handle, slug, name, title, code, key, email
+    if col in cols and (col in param or param in col):
+        return col
+```
+
+Bidirectional substring containment between a path parameter and a lookup column — structurally
+the `id`⊂`profile_id` shape, and it decides **which column a nested route binds to**, so a wrong
+bind is a wrong row. `key` is the sharpest edge: a param named `keyword` or `apikey` would claim
+the `key` column.
+
+★ **Measured before acting: zero instances.** Across all 151 runs there are **7 distinct path
+params**, of which exactly **one is not id-like** (`slug`) — and `slug` binds *exactly*. The
+guards ahead of the loop (`_is_id_param`, then an exact `param in cols`) absorb everything the
+corpus actually produces. **No fuzzy bind occurs.**
+
+**Left unchanged, deliberately.** The hazard is real and latent; the rate is 0 of 151. Rewriting a
+binding rule on the read path for a case no app has produced is the kind of motion #783 caught —
+where the obvious fix was worse than the bug — and #812's counter-lesson (open it before deciding)
+is satisfied here by having opened it. Recorded so the next reader inherits the measurement rather
+than the suspicion.
+
+**The sweep is closed**: the rule found one real defect (#820, fixed and verified against the run
+it killed) and one latent site with no instances.
+
+---
+
 ## 154. Auditing my own attribution claims — one bad, four sound
 
 The r128 correction was the second time this session I asserted *who did something* without reading
