@@ -847,8 +847,29 @@ async def enrich_design_system(skeleton: Dict, resolved: Dict, output_dir, llm, 
     try:
         enriched = await _run_analyst(skeleton, resolved, out, llm,
                                       docs_text, max_ref_images, max_asset_images)
-    except Exception:
+    except Exception as exc:
+        # #819: the WIDEST of the silent skips on this path, and the last one uninstrumented.
+        # #813 covers the per-screen call and #815 the per-component join; this discards the
+        # enrichment for EVERY screen at once, which matches the corpus signature far better:
+        # build_notes lands 1 time in 4,006 components across 12 runs, i.e. essentially never
+        # rather than sometimes. "Best-effort, the skeleton still ships" is the right behaviour
+        # and is kept — the defect is that it shipped without a word, while the frontend prompt
+        # kept telling every lane to read fields that were therefore empty.
+        _LOG_813.warning(
+            "design-prep analyst pass FAILED WHOLESALE (%s: %s) — every screen keeps its "
+            "unenriched skeleton, so NO component in this run carries build_notes/typography/"
+            "copy. The measured facts (colors, crops, geometry) still ship.",
+            type(exc).__name__, exc)
         enriched = None
+        _threw819 = True
+    else:
+        _threw819 = False
+    if not enriched and not _threw819:
+        # Only when the call RETURNED empty. Firing this after the wholesale-failure warning too
+        # would report one event as two causes — #815's misdiagnosis, same day, same file.
+        _LOG_813.warning(
+            "design-prep analyst produced NO enrichment for any screen — writing the bare "
+            "skeleton. Expect empty build_notes/typography/copy across the whole run.")
     ds = _merge_enrichment(skeleton, enriched) if enriched else skeleton
     _write_design_system(out / "design", ds)
     return ds

@@ -3426,6 +3426,43 @@ the leading explanation.
 
 ---
 
+## 149. #819 — the FIFTH evaporation point, and the one that fits the numbers
+
+Resuming after a context break, I re-derived #817 from stale context and only found on `git log`
+that the previous session had already shipped it (`e0c7e0b`), plus **#818** and **item 148**. ★ The
+lesson is procedural and cost real time: **after a break, read the log before reading the code** —
+a working tree that looks unfinished may be a session ahead of you.
+
+What the diff actually contained was new, and it is the piece the earlier four were circling.
+Enrichment can evaporate in five places; four were already instrumented — the per-screen call
+(#813), the per-component join (#815), the invalid-JSON input (#816), the empty reply. The fifth is
+the **outermost** handler, which discards the analyst pass for **every screen at once**:
+
+```python
+except Exception:        # the whole pass, silently
+    ...
+```
+
+★ **This one fits the corpus signature far better than the other four.** `build_notes` lands **1
+time in 4,006 components across 12 runs** — that is *essentially never*, not *sometimes*. A
+per-screen or per-component failure would scatter; a wholesale failure explains a near-zero.
+
+"Best-effort, the skeleton still ships" is the right behaviour and is kept. The defect was that it
+shipped **without a word**, while the frontend prompt kept telling every lane to read fields that
+were therefore empty. It now distinguishes the two outermost cases — *the pass threw* versus *the
+pass returned nothing* — and deliberately does not fire both: reporting one event as two causes is
+#815's misdiagnosis, same day, same file.
+
+**A suite failure that was not mine.** The run after this edit reported two failures in
+`test_unconsumed_design_keys_643.py` — pure `inspect.getsource` assertions with no shared state. It
+did not reproduce: after clearing `__pycache__`, two consecutive full runs are **5425 passed,
+RC=0**. `inspect.getsource` resolves a code object's line numbers against the file on disk, so a
+stale `.pyc` returns a *shifted window* of a just-edited file. Worth naming because the instinct is
+to treat any red as your change: **source-inspection tests failing right after you edit the
+inspected file are a skew candidate — clear the cache and re-run before touching code.**
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
