@@ -4198,8 +4198,21 @@ evidence says no: r110 has **2** tables in `models.py` (a degenerate model, the
 `_DEGENERATE_RESOURCES` shape) and r54 has 10 but no `app/database/` directory at all. These are
 runs that never got far enough to have a schema, not runs with a different kind of schema.
 
+**The other exclusion, same answer.** `8 EXCLUDED (unparsed)` on the projected-bare-read audit is
+8 runs whose `app/frontend/src` **exists and is entirely empty** — no files of any extension, no
+repo-root `./src` fallback, and **not one of them reached a terminal event**. All 8 are a subset
+of the 12 above: the framework scaffolded the directory and the run died before the lane wrote
+into it. Both exclusion sets are the same early-killed population, and #821 already measured it at
+62%.
+
 **Recorded as a closed question**, because the alternative is that the next reader re-derives it.
-A negative result about an exclusion is worth exactly as much as the exclusion is loud.
+A negative result about an exclusion is worth exactly as much as the exclusion is loud — and these
+two are printed on every run of the tool, so they would have been re-opened indefinitely.
+
+★ Both were checked the same way and it is the cheap way: **look at what the excluded runs
+actually contain**, then at whether any of them shipped. Neither question needed a probe, and the
+hypothesis that nearly cost a rewrite — *"maybe some apps build their schema through the ORM and
+this audit is blind to a whole valid shape"* — died on one `ls` and one table count.
 
 ---
 
