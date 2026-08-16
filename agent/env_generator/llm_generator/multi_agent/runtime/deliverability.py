@@ -30,6 +30,41 @@ def reset_said_700() -> None:
     test session (hundreds of runs in one process). Rather than have tests poke a private global,
     the reset is part of the contract."""
     _SAID_700.clear()
+    _GATES_ABSENT_792.clear()
+
+# --- #792: a delivery GATE that cannot load must not read as a delivery gate that PASSED -------
+# Each of the blocker gates below is two `try`s: import the audit, then run it. Both handlers
+# returned a bare `[]`, so an ImportError in `backend_audit`/`frontend_audit` — or a fault inside
+# the audit — made the ENTIRE gate disappear and the release path saw "no blockers". That is
+# #789's write-guard failure (a whole enforcer vanishing on an import) sitting on the gates from
+# #154/#173/#175. The permissive default is KEPT — a broken audit must not wedge every release —
+# but it is no longer indistinguishable from a clean scan. Reuses this module's own say-once
+# memory (#760/#762) rather than inventing a third mechanism.
+_GATES_ABSENT_792: list = []
+
+
+def _gate_absent_792(gate: str, exc: BaseException, stage: str) -> None:
+    """Record + announce a delivery gate that could not run. Never raises."""
+    try:
+        note = "%s (%s): %s: %s" % (gate, stage, type(exc).__name__, exc)
+        key = "792:" + gate + ":" + stage
+        if key in _SAID_700:
+            return
+        _SAID_700.add(key)
+        _GATES_ABSENT_792.append(note)
+        _LOG_700.warning(
+            "DELIVERY GATE DID NOT RUN (#792): %s. It is returning NO BLOCKERS, which is the "
+            "permissive default so a broken audit cannot wedge every release — but that is NOT "
+            "evidence the app is clean on this axis. A release cut with this present is "
+            "unverified there.", note)
+    except Exception:
+        pass
+
+
+def gates_absent_792() -> list:
+    """Delivery gates that could not run this process. Empty is the normal, healthy state."""
+    return list(_GATES_ABSENT_792)
+
 
 
 # §2 gate-hardening (2026-06-22): the api_smoke RunHub run that sets
@@ -140,7 +175,8 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
     blank-screen-but-api_smoke-green class) must still block delivery."""
     try:
         from .frontend_audit import ui_page_delivery_blockers
-    except Exception:
+    except Exception as exc:
+        _gate_absent_792("_ui_page_wiring_blockers", exc, "run")
         return []
     workhub = getattr(hub_registry, "workhub", None)
     if workhub is None:
@@ -326,7 +362,8 @@ def _bare_fetch_blockers(app_root) -> List[str]:
         return []
     try:
         from .frontend_audit import bare_authed_fetch_blockers, inject_auth_fetch_wrapper
-    except Exception:
+    except Exception as exc:
+        _gate_absent_792("_bare_fetch_blockers", exc, "import")
         return []
     try:
         _fe = Path(app_root) / "frontend"
@@ -348,7 +385,8 @@ def _bare_fetch_blockers(app_root) -> List[str]:
                 "before dispatching a lane at it.",
                 type(_rep770).__name__, str(_rep770)[:160])
         return bare_authed_fetch_blockers(_fe / "src")
-    except Exception:
+    except Exception as exc:
+        _gate_absent_792("_bare_fetch_blockers", exc, "run")
         return []
 
 
@@ -360,11 +398,13 @@ def _stub_handler_blockers(app_root) -> List[str]:
     AST, recomputed each gate tick, best-effort ``[]``. ``ENVGEN_STUB_HANDLER_GATE=0`` off."""
     try:
         from .backend_audit import stub_handler_blockers
-    except Exception:
+    except Exception as exc:
+        _gate_absent_792("_stub_handler_blockers", exc, "import")
         return []
     try:
         return stub_handler_blockers(Path(app_root) / "backend")
-    except Exception:
+    except Exception as exc:
+        _gate_absent_792("_stub_handler_blockers", exc, "run")
         return []
 
 
@@ -377,7 +417,8 @@ def _invented_field_blockers(app_root) -> List[str]:
     ``ENVGEN_INVENTED_FIELD_GATE=0`` disables."""
     try:
         from .frontend_audit import invented_field_fallback_blockers
-    except Exception:
+    except Exception as exc:
+        _gate_absent_792("_invented_field_blockers", exc, "run")
         return []
     try:
         _fsrc = Path(app_root) / "frontend" / "src"
@@ -407,7 +448,8 @@ def _invented_field_blockers(app_root) -> List[str]:
                 "before dispatching a lane at it.",
                 type(_rep770).__name__, str(_rep770)[:160])
         return invented_field_fallback_blockers(_fsrc)
-    except Exception:
+    except Exception as exc:
+        _gate_absent_792("_invented_field_blockers", exc, "run")
         return []
 
 

@@ -2241,6 +2241,54 @@ reporter is #782's pinning defect wearing a different hat.**
 
 ---
 
+## 118. #792 — three delivery gates could vanish on an import, and the release path read "clean"
+
+The consequence sweep is now **complete across every gate/audit module**, not just the two files
+#790/#791 touched:
+
+| module | permissive silent defaults |
+|---|---|
+| `backend_audit.py`, `coverage_audit.py`, `completeness_audit.py`, `page_build_gate.py`, `user_gates.py`, `test_user_validation.py`, `validation_runner.py` | **0 — clean** |
+| `framework_validation.py` | 3, all `return False` = "no progress detected" — the STRICT answer. Left alone. |
+| `visual_fidelity.py` | 1 |
+| `deliverability.py` | **7, on the release path** |
+
+`deliverability.py`'s blocker gates are each two `try`s — import the audit, then run it — and both
+handlers returned a bare `[]`:
+
+```python
+try:
+    from .backend_audit import stub_handler_blockers
+except Exception:
+    return []                      # the ENTIRE gate disappears on an ImportError
+try:
+    return stub_handler_blockers(...)
+except Exception:
+    return []                      # ...or on any fault inside it
+```
+
+So #154's bare-fetch gate, #173's stub-handler gate and #175's invented-field gate can each vanish
+without a word while the release path reads *no blockers*. ★ **This is #789's write guard again** —
+an entire enforcer lost to an import — except there it was one guard and here it is three gates,
+and one of them (#173) exists because a run shipped `return {"items": []}` as a real endpoint.
+
+The permissive default is KEPT; only its indistinguishability from a clean scan goes. Import-stage
+and run-stage faults are reported **separately**, because "the audit is missing" and "the audit
+crashed" need different fixes.
+
+**Reused this module's own say-once memory (`_SAID_700`, #760) rather than adding a third
+mechanism** — which also means #762's `reset_said_700()` already clears it. That matters more than
+tidiness: #762 exists because module state outlived a test and whichever test ran first silenced
+every later one, so the suite passed file-by-file and failed as a whole. A fourth private
+say-once set would have re-imported that bug.
+
+**Where the class stands after four fixes.** #790 (7 helpers in the gate), #791 (2 evidence-erasing
+scans), #792 (4 gates + 2 stages). The remaining ~560 silent handlers were examined by consequence
+and are **not** defects — best-effort parsing whose default is the honest answer. The sweep is
+finished; what is left is not a backlog.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
