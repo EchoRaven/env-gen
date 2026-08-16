@@ -676,7 +676,16 @@ def compute_completeness(hubs) -> CompletenessReport:
         if registryhub is not None and hasattr(registryhub, "get_endpoints"):
             try:
                 endpoints = registryhub.get_endpoints() or {}
-            except Exception:
+            except Exception as _ep_exc:
+                # #883: zero endpoints makes a COMPLETENESS audit vacuous — nothing registered
+                # means nothing can be missing, so the audit passes by having failed. #792's shape
+                # ("a gate that cannot load must not read as a gate that PASSED") in an audit file
+                # #792 never reached.
+                try:
+                    from .deliverability import _gate_absent_792
+                    _gate_absent_792("completeness_endpoints", _ep_exc, "read")
+                except Exception:
+                    pass
                 endpoints = {}
         table_src = None
         # Prefer registryhub.list_tables (task spec); schema_hub is the same object.

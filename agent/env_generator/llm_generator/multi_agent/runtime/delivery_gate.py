@@ -140,7 +140,12 @@ def _spec_owner_columns_lost_774(hubs: Any) -> List[Dict[str, str]]:
         rows = []
         try:
             rows = [r for r in (hubs.milestones.list_milestones() or []) if isinstance(r, dict)]
-        except Exception:
+        except Exception as _ms_exc:
+            # #883: a failed roadmap read used to read as "the contract expects no tables".
+            # `spec` is built from these rows, so `rows = []` makes every expectation vacuous and
+            # the check downstream passes on nothing. #790's own rule, in #790's own file.
+            _swallowed_790("contract_tables_from_milestones", _ms_exc,
+                           "{} = the contract expects no tables")
             rows = []
         spec: Dict[str, set] = {}
         for r in rows:
