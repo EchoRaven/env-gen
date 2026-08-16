@@ -10417,3 +10417,55 @@ chained to it and ran anyway — the same *"a write chained to a commit can be o
 mirror recorded at item 200, now with a concurrent agent supplying the collision. Chained with
 `&&` this time.
 
+
+## 208. #879 — my own recurring error, turned against the framework
+
+I collapsed *"could not read"* into *"confirmed empty"* three times this session (#864, #873's
+first cut, nearly #872). That is a **shape**, so I scanned for it: 1397 except-handlers across 163
+files, **34** that assign an empty default later tested as a real negative. Most are benign — a
+render that fails falls back to a default template. **One drives a gate:**
+
+```python
+except Exception as _pb_exc:
+    self._logger.error("page-build gate detect failed: %s", _pb_exc)
+    _unbuilt = []
+if _unbuilt:            # the gate's entire decision
+```
+
+A failed detect produces **the same value a healthy scan returns when everything is built**, so
+the gate does not defer and the run proceeds as if every page were done. ★ #790 named this
+exactly — *"a delivery check that ERRORS must not read as a delivery check that PASSED"* — and
+built the reporter for it. **That sweep covered `delivery_gate.py` and `frontend_audit.py` and
+never reached the orchestrator.** The error log stays; what changes is that the failure now
+reaches the run's verdict through #790's aggregator instead of living in a log nobody diffs.
+
+### ★ the concurrent agent reverted my #874, and was right
+
+More important than the fix above. #878 (theirs) reverted #874 with: *"the design stages no
+avatar"*. I verified it independently rather than accepting it:
+
+| | |
+|---|---|
+| avatar/profile in `design["assets"]` — **what the helper reads** | **0 of 151** |
+| avatar/profile in `screens[].components[].crop` — **where I found them** | 139 of 151 |
+| `_avatar_asset_url_874` actually returning a URL | **0 of 151** |
+
+My "139 of 151" came from regex-scanning the **whole design_system document**; the helper reads
+**one field of it**. The crops live under `design/crops/`, are never staged into `public/assets/`
+and are not served — so #874 shipped a **writer with no reader**, and pointing it at the crops
+would have shipped a broken `<img>`.
+
+★ **Ninth field-location error this session — committed inside the ticket where I named the
+eighth.** Item 205 even says *"checked in the right place this time"*; that was true of item 185's
+check and false of #874's, in the same breath. Naming a class does not immunise the next probe
+against it; only re-deriving the number in the code's own terms does, which is what caught it.
+
+★★ And the correction came from **the other agent independently re-deriving my number** — the
+single most effective check applied to my work this session, and not one I applied to myself.
+
+### two agents, one tree, second collision
+
+`#878` was theirs. This time I replaced **my single occurrence**, verified by count — not the
+blanket token replace that rewrote their `#876` an hour earlier. The rule from item 207 held on
+its first test.
+
