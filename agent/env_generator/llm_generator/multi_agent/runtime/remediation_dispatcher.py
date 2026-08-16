@@ -97,6 +97,47 @@ def suppress_verifier_chain_reauthor(name: str, owner: str, chain_rerun_armed: b
                 and chain_rerun_armed)
 
 
+def _uncovered_endpoints_799(orch) -> List[str]:
+    """#799: name the uncovered endpoints. `business_chain_api_coverage`'s body said *"Add steps
+    ... for the uncovered endpoints"* without listing one — while `delivery_gate` already computes
+    exactly that set with `_uncovered_business_endpoints`, using the same `${var}` -> `{x}` collapse
+    `register_verification_chain` validates with. Same defect as #798, same table, one entry over.
+    Best-effort: any fault -> [] and the generic text stands."""
+    try:
+        from .delivery_gate import _uncovered_business_endpoints
+        rh = orch.hubs.registryhub
+        chains = rh.get_verification_chains() or {}
+        authored = [rec for name, rec in (chains.items() if isinstance(chains, dict) else [])
+                    if name != "_meta" and isinstance(rec, dict)]
+        return list(_uncovered_business_endpoints(rh, authored) or [])[:12]
+    except Exception:
+        return []
+
+
+def _red_checklist_checks_799(orch) -> List[str]:
+    """#799: name the RED build check. `verification_checklist_not_ready` listed all four
+    (`build:database`/`docker`/`frontend`/`backend`) and left the lane to work out which is not
+    green — the store holds each one's status. Best-effort: any fault -> []."""
+    try:
+        rows = orch.hubs.codehub.list_checks() or []
+        out: List[str] = []
+        for c in rows:
+            if not isinstance(c, Mapping):
+                continue
+            nm = str(c.get("name") or "")
+            if not nm.startswith("build:"):
+                continue
+            st = str(c.get("status") or "")
+            if st in ("success", "passed", "pass"):
+                continue
+            det = str((c.get("evidence") or {}).get("summary") or "").strip() \
+                if isinstance(c.get("evidence"), Mapping) else ""
+            out.append(f"{nm} = {st or 'never recorded'}" + (f" — {det[:140]}" if det else ""))
+        return out[:6]
+    except Exception:
+        return []
+
+
 def _chain_broken_detail_798(orch) -> List[str]:
     """#798: name the broken step. The `business_chain_failing` task body said "read the broken
     step" and stopped there — while the framework already holds, per chain, exactly which step
@@ -1010,6 +1051,18 @@ class RemediationDispatcher:
                     _persist[name] = 0
                 owner, title, how = spec
                 _extra = ""
+                # #799: two more entries in this table told the lane to go and find something the
+                # framework already computes — the same defect #798 fixed one row up.
+                if name == "business_chain_api_coverage":
+                    _unc799 = _uncovered_endpoints_799(orch)
+                    if _unc799:
+                        _extra = ("\n\nTHE UNCOVERED ENDPOINTS (computed by the same check that "
+                                  "blocked you — cover THESE):\n- " + "\n- ".join(_unc799))
+                elif name == "verification_checklist_not_ready":
+                    _red799 = _red_checklist_checks_799(orch)
+                    if _red799:
+                        _extra = ("\n\nTHE CHECK(S) THAT ARE NOT GREEN right now:\n- "
+                                  + "\n- ".join(_red799))
                 if name == "business_chain_failing":
                     # FIX #148: the failing steps answering the projection's #124
                     # action-endpoint stub 404 need a BACKEND route, not a chain

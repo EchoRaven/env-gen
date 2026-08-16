@@ -2599,6 +2599,39 @@ not just different text.
 
 ---
 
+## 127. #799 — #798's defect, swept across the rest of the dispatch table
+
+#798 fixed one entry by hand. The rule it established — **the task text asks the lane to look up
+something the framework already knows** — was then run as a query over every entry in the
+gate-level dispatch table. Four flagged, **two real**:
+
+| entry | verdict |
+|---|---|
+| `business_chain_missing` | *"NO chain is registered"* — complete as written. **False positive of my filter**: there is no instance to name. |
+| `business_chain_failing` | fixed by #798 |
+| `business_chain_api_coverage` | *"Add steps … for the uncovered endpoints"* — **names none**, while `delivery_gate._uncovered_business_endpoints` computes exactly that set |
+| `verification_checklist_not_ready` | lists all four build checks and leaves the lane to work out **which is red** — the store holds each one's status |
+
+Both fixes **reuse the framework's own computation** rather than re-deriving it (#772: mirrored
+logic drifts) — the coverage helper calls the very function whose result blocked the release,
+including the `${var}` → `{x}` collapse `register_verification_chain` validates steps with. The
+checklist helper names the red check *and its reason* (`build:docker = failure — compose up exited
+1: port 5432 in use`), and distinguishes **`never recorded`** from `failure`, because "missing" and
+"failed" need different fixes and both otherwise read as blank.
+
+**The false positive earned its own test.** `business_chain_missing` is asserted to stay
+unwrapped — same discipline as #790's `_endpoint_validated` and #791's third handler. Three items
+running, the negative case has needed protecting, because a sweep that converts on *shape* rather
+than *consequence* will "fix" it and call that thoroughness.
+
+★ **Where this class stands.** #769/#770 made failures say why; #790/#791/#792/#793 made
+*non-execution* visible; #798/#799 make the *instruction* name its instance. All three are the
+same underlying property — **the system knew, and did not say** — and it has now been swept in the
+gate, the audits, the reporters and the task bodies. The remaining table entries either name their
+instance already or have none to name.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
