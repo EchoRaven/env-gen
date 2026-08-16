@@ -3413,6 +3413,17 @@ artefacts, one shape: **a bound written once against an imagined input, never re
 the real one.** Every remaining prompt-bound truncation in the tree is an honestly-named prose
 preview.
 
+**And the reply budget was checked, not assumed.** The obvious fifth suspect for the vanished
+enrichment is `max_tokens=6000` — a reply truncated mid-JSON is unparseable, which lands in
+#813's silent skip. Estimated against the real screens (24 components × id + a 1-3 sentence
+`build_notes` + a typography object ≈ 7,920 chars ≈ 1,980 tokens on the largest):
+
+    largest estimated reply  ~1,980 tokens        cap  6,000        3x headroom
+
+**Not a cause.** Recorded because removing a hypothesis is worth as much as confirming one, and
+*"probably fine"* is how the other four caps in #818 survived. #816's truncated **input** remains
+the leading explanation.
+
 ---
 
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
