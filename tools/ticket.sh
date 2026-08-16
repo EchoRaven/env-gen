@@ -34,9 +34,30 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# #829: three MORE collisions happened after this allocator existed, and each exposed a source of
+# claims it could not see. All three are now scanned.
+#
+#   1. TEST FILENAMES. `agent/tests/test_<slug>_<NNN>.py` is how a fix is claimed in this repo,
+#      and #719's guard already treats two such files sharing a number as a collision. The
+#      allocator did not — so the two components disagreed about what "claimed" MEANS, and the
+#      allocator handed out a number the guard would later reject. (agent/tests is gitignored,
+#      which is why a git-log scan never saw them.)
+#   2. UNCOMMITTED WORK. A second writer mid-fix has `#NNN` in the working tree and nothing in
+#      the log. Scanning `git diff` + untracked files closes the window between editing and
+#      committing, which is exactly where every collision landed.
+#   3. NO RESERVATION. Allocation was a pure read: two callers seconds apart got the same answer,
+#      three times. Allocating now APPENDS to .tickets, and .tickets is itself scanned, so the
+#      number is taken the moment it is handed out.
+_TICKETS=".tickets"
+
 _claimed() {   # every number claimed, one per line
   { grep -h '^## [0-9]' EXPERIMENTS_PENDING_*.md 2>/dev/null || true
     git log --format=%s 2>/dev/null || true
+    cat "$_TICKETS" 2>/dev/null || true
+    ls agent/tests 2>/dev/null | sed -n 's/^test_.*_\([0-9]\{3,4\}\)\.py$/#\1/p' || true
+    { git diff 2>/dev/null; git diff --cached 2>/dev/null;
+      git ls-files --others --exclude-standard 2>/dev/null | xargs -r grep -h '#[0-9]' 2>/dev/null
+    } | grep -o '#[0-9]\{3,4\}[:)]' || true
   } | grep -o '#[0-9]\{1,4\}' | tr -d '#' | sort -n -u
 }
 
@@ -54,4 +75,7 @@ fi
 
 highest="$(_claimed | tail -1)"
 [ -n "$highest" ] || highest=0
-echo "$((highest + 1))"
+next=$((highest + 1))
+# #829: RESERVE it. A pure read handed the same number to two callers three times.
+printf '#%s reserved %s\n' "$next" "$(date -u +%FT%TZ)" >> "$_TICKETS"
+echo "$next"

@@ -237,8 +237,8 @@ def _imageless_spec_screens_unreachable_823(output_dir: Any) -> List[str]:
     except Exception:
         return []
 
-# #828: `validation:<kind>:<flow>` — the kind as the record NAME carries it.
-_re_828 = re.compile(r"(?:^|:)(" + "|".join(sorted(_UI_SMOKE_EVIDENCE_CHECKS)) + r")(?::|$)")
+# #830: `validation:<kind>:<flow>` — the kind as the record NAME carries it.
+_re_830 = re.compile(r"(?:^|:)(" + "|".join(sorted(_UI_SMOKE_EVIDENCE_CHECKS)) + r")(?::|$)")
 
 
 def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
@@ -275,7 +275,7 @@ def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
     for r in (validation_results or []):
         if not isinstance(r, dict):
             continue
-        # #828: fall back to the record NAME when `metadata.check` is absent. #193/#236 recover
+        # #830: fall back to the record NAME when `metadata.check` is absent. #193/#236 recover
         # the kind from `evidence`, but a writer that puts it ONLY in the name
         # (`validation:ui_flow:landing`) leaves nothing to recover — and 645 UI records across
         # the corpus are in exactly that state, invisible to this detector. 36 runs it calls
@@ -286,11 +286,11 @@ def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
         # refers to. Realised effect on #752's reach: r130+ 3 -> 4 runs (the name-only shape is
         # mostly an OLD writer behaviour); corpus-wide 10 -> 22. If that widening is unwanted,
         # revert this hunk alone — #752's own branch is untouched.
-        _kind828 = (r.get("metadata", {}) or {}).get("check")
-        if not _kind828:
-            _m828 = _re_828.search(str(r.get("name") or ""))
-            _kind828 = _m828.group(1) if _m828 else None
-        if _kind828 not in _UI_SMOKE_EVIDENCE_CHECKS:
+        _kind830 = (r.get("metadata", {}) or {}).get("check")
+        if not _kind830:
+            _m830 = _re_830.search(str(r.get("name") or ""))
+            _kind830 = _m830.group(1) if _m830 else None
+        if _kind830 not in _UI_SMOKE_EVIDENCE_CHECKS:
             continue
         _key = str(r.get("name") or r.get("task_id") or id(r))
         _prev = _latest757.get(_key)

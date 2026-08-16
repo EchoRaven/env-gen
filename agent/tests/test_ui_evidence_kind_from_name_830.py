@@ -1,4 +1,4 @@
-r"""#828: the UI-evidence detector could not see 645 records, and that rejected a gate.
+r"""#830: the UI-evidence detector could not see 645 records, and that rejected a gate.
 
 `_ui_evidence_breadth_739` keys on `metadata.check`. #193/#236 recover that kind from `evidence`
 when a writer nests it — but a writer that puts the kind ONLY in the record NAME
