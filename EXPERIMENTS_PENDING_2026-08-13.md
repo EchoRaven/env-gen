@@ -3541,6 +3541,39 @@ event first**: everything else is being interpreted in the light of whether it s
 
 ---
 
+## 150. #820 — an unsatisfiable nav-link expectation, found uncommitted in the working tree
+
+A modification to `frontend_audit.py` was sitting uncommitted at the end of the session. **I could
+not account for having written it in this context**, so it was verified on its merits rather than
+trusted, and this item records both what checks out and what does not.
+
+**What it changes.** A string literal immediately followed by `+` is the PREFIX of a
+concatenation, not a whole nav target. `navigate('/watch/' + tid)` is correctly parameterised code;
+the extractor captured `/watch/`, stopped at the closing quote, and reported *"a parameterised
+route with an EMPTY parameter"*. **The #566z class** — an unsatisfiable expectation, where every
+correct spelling produces the same capture and the lane cannot make the blocker go away.
+`dead_nav_link_blockers` feeds `deliverability`, so this sits on the release-blocking path.
+
+**Verified by execution**, with and without the guard:
+
+    navigate('/watch/' + tid)   unfixed 1 blocker  ->  fixed 0     the false positive is gone
+    navigate('/watch/')         unfixed 1 blocker  ->  fixed 1     the real defect still caught
+
+**Verified from source.** The comment names two r151 files, and both say what it claims:
+`HoverPreviewCard.jsx:29,72` and `ContinueWatchingRail.jsx:44` really do read
+`navigate('/title/' + tid)` / `navigate('/watch/' + tid)`.
+
+★ **NOT verified: the causal story.** The comment attributes r151's STUCK abort after 75 minutes
+to this. r151's `logs/` holds only `progress_events.jsonl`, which does not carry that message, so
+the abort claim could be neither confirmed nor refuted here. **The false positive is proven; the
+run-level consequence attributed to it is not.** The fix stands on the former, and this paragraph
+exists so the second does not get read as measured.
+
+It arrived with no test; it has eight now, including the two that matter in opposite directions
+(the false positive disappears, the genuine empty target survives).
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
