@@ -3237,6 +3237,36 @@ the comment explaining the fix contains the word ``continue`` in prose. Re-ancho
 
 ---
 
+## 144. #814 — acting on #813's method correction instead of just recording it
+
+#813 found that `ast.parse`, my syntax gate all session, **passes a file Python refuses**: an
+`import` above `from __future__ import annotations`. Recording that is not acting on it. Two
+things followed.
+
+**1. Re-check the session's whole diff with the stronger gate.** 18 changed `.py` files, all
+`compile()`. All 15 changed framework modules import. **Nothing was left behind by the weak gate** —
+which is worth stating plainly, because the alternative was to assume it either way.
+
+**2. Make the stronger gate standing.** A one-off check guards nothing (#786/#793). The whole tree
+is **154 modules in 0.6s**, cheap enough that scoping it to changed files would only re-introduce
+the coverage-narrower-than-its-name problem (#802b/#809). So every module now compiles *and*
+imports in the suite — importing being the stricter of the two, since it runs module-level code
+where a bad decorator, a name missing at class-definition time, or a circular import lives.
+
+★ **The premise is demonstrated, not asserted.** `test_ast_parse_really_is_weaker` shows the gap:
+`ast.parse` accepts the misplaced-`__future__` file and `compile()` raises. If a future Python
+closes that gap the test fails, and the right response is to correct the reasoning above rather
+than delete the test.
+
+★★ **What this deliberately does not claim.** Importing proves a module loads, not that it works,
+and this session's defects were overwhelmingly *behavioural* — silent degradations, wrong
+consequences, empty fields. A green import sweep would have caught **none** of #782–#813. Its value
+is narrow and real: it closes one specific hole, in the gate I was actually using, and it is the
+kind of guarantee that is worth exactly what it costs (0.6s) and no more. Overstating it would make
+it the next thing a reader learns to skip.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
