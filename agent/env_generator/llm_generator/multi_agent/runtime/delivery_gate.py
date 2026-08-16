@@ -20,6 +20,42 @@ import os
 import logging
 
 _LOG_701 = logging.getLogger(__name__)
+
+# --- #790: a delivery check that ERRORS must not read as a delivery check that PASSED ----------
+# Seven helpers in this file swallow an exception and return the RELEASE-PERMITTING answer:
+# `{}` (no unresolved bugs), `[]` (nothing incomplete / nothing uncovered / no blockers) and, in
+# `_chain_touches_business`, `True` (this chain covers business). Each default is deliberate and
+# is KEPT — a gate that hard-fails on a hub hiccup wedges every release, which is #789's trade.
+# What was missing is that the operator, and `validate_delivery_gate`'s own record, could not tell
+# "the check ran and found nothing" from "the check did not run". That is the #737/#769/#788/#789
+# class: not wrong code, but code that stopped working while nothing said so — and #751/#752 were
+# switched from REPORTING to BLOCKING this session on top of two of these very helpers.
+_CHECK_ERRORS_790: List[str] = []
+
+
+def _swallowed_790(where: str, exc: BaseException, defaulting_to: str) -> None:
+    """Record + announce a delivery check that could not run. Never raises."""
+    try:
+        note = "%s: %s (%s) -> defaulted to %s" % (where, type(exc).__name__, exc, defaulting_to)
+        if note not in _CHECK_ERRORS_790:
+            _CHECK_ERRORS_790.append(note)
+            _LOG_701.warning(
+                "DELIVERY CHECK DID NOT RUN (#790): %s. The gate is treating this as the "
+                "PERMISSIVE answer so a hub hiccup cannot wedge every release — but this is NOT "
+                "evidence the check passed. Any release cut with this present is unverified on "
+                "that axis.", note)
+    except Exception:                                    # never let the reporter break the gate
+        pass
+
+
+def check_errors_790() -> List[str]:
+    """Delivery checks that raised this process. Empty is the normal, healthy state."""
+    return list(_CHECK_ERRORS_790)
+
+
+def reset_check_errors_790() -> None:
+    _CHECK_ERRORS_790.clear()
+
 import re
 from typing import Any, Dict, List, Optional
 
@@ -238,7 +274,8 @@ def unresolved_bug_tasks_743(hubs) -> Dict[str, Any]:
         return {}
     try:
         tasks = wh.list_tasks() or []
-    except Exception:
+    except Exception as exc:
+        _swallowed_790("unresolved_bug_tasks_743", exc, "{} = no unresolved bugs")
         return {}
     failed: List[Dict[str, Any]] = []
     open_p0: List[Dict[str, Any]] = []
@@ -589,7 +626,8 @@ def incomplete_required_tasks(hubs) -> List[Dict[str, Any]]:
     sh = getattr(hubs, "schema_hub", None)
     try:
         tasks = wh.list_tasks() or []
-    except Exception:
+    except Exception as exc:
+        _swallowed_790("incomplete_required_tasks", exc, "[] = nothing incomplete")
         return []
 
     def _norm(s: Any) -> str:
@@ -733,7 +771,8 @@ def _declared_critical_flows(hubs) -> List[str]:
         from .flow_coverage import compute_flow_coverage
         rep = compute_flow_coverage(hubs, None)
         return list(getattr(rep, "required", []) or [])
-    except Exception:
+    except Exception as exc:
+        _swallowed_790("_declared_critical_flows", exc, "[] = no declared critical flows")
         return []
 
 
@@ -763,7 +802,8 @@ def _uncovered_business_endpoints(rh, authored_chains: List[Dict[str, Any]]) -> 
                 p = re.sub(r"\$\{[^}]+\}", "{x}", p)
                 covered.add(rh.endpoint_id(str(st.get("method") or "GET"), p))
         return sorted(lbl for eid, lbl in required.items() if eid not in covered)
-    except Exception:
+    except Exception as exc:
+        _swallowed_790("_uncovered_business_endpoints", exc, "[] = every business endpoint covered")
         return []
 
 
@@ -798,7 +838,8 @@ def _chain_touches_business(rh, rec: Dict[str, Any], biz_ids: set) -> bool:
             p = re.sub(r"\$\{[^}]+\}", "{x}", p)
             if rh.endpoint_id(str(st.get("method") or "GET"), p) in biz_ids:
                 return True
-    except Exception:
+    except Exception as exc:
+        _swallowed_790("_chain_touches_business", exc, "True = this chain covers business")
         return True
     return False
 
@@ -911,7 +952,8 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
             pass
     try:
         chains = rh.get_verification_chains() or {}
-    except Exception:
+    except Exception as exc:
+        _swallowed_790("business_chain_blockers", exc, "{} = no chain blockers")
         return {}
     _all_with_steps = [
         rec for name, rec in chains.items()
@@ -1105,7 +1147,8 @@ def noncanonical_business_response_keys(hubs) -> List[Dict[str, Any]]:
         return []
     try:
         endpoints = rh.get_endpoints() or {}
-    except Exception:
+    except Exception as exc:
+        _swallowed_790("noncanonical_business_response_keys", exc, "[] = every response key canonical")
         return []
     _CANONICAL = {"items", "item"}
     _EXEMPT_KINDS = {"auth", "oauth", "infra", "spine", "control_plane", "custom"}
@@ -1958,6 +2001,11 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         "missing_dirs": missing_dirs,
         "invalid_json": invalid_json,
         "failed_checks": failed_checks,
+        # #790: checks that could not RUN. Not a failure (the permissive default stands so a
+        # hub hiccup cannot wedge every release) and NOT evidence of a pass either — a
+        # release cut with this non-empty is unverified on those axes. Travels with the
+        # verdict rather than living only in a log line nobody reads at the cut.
+        "checks_errored_790": check_errors_790(),
         "incomplete_required_tasks": incomplete_tasks,
         "unresolved_bugs": _bugs743,     # #743: reported, never enforced
         "noncanonical_response_keys": noncanonical_response_keys,

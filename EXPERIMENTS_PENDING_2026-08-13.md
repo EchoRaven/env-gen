@@ -2153,6 +2153,50 @@ as the default hypothesis when a metric looks unexpectedly good.
 
 ---
 
+## 116. #790 — swept the silent-degradation class; the gate could not tell "found nothing" from "did not run"
+
+Item 115 named the class and called it the default hypothesis. So it was swept: every `except` in
+`runtime/` whose handler body is `pass` / `continue` / a bare default.
+
+    583 silent handlers        86 that log        418 that do something else
+
+**583 is not a fix list** — most are legitimately best-effort parsing, and blanket-converting them
+would be churn dressed up as rigour. The subset that matters is the one where **the swallowed
+default is the answer that lets the run proceed**, and it concentrates in the highest-stakes file:
+
+| `delivery_gate.py` helper | error → returns | reads as |
+|---|---|---|
+| `unresolved_bug_tasks_743` | `{}` | no unresolved bugs |
+| `incomplete_required_tasks` | `[]` | nothing incomplete |
+| `_uncovered_business_endpoints` | `[]` | every business endpoint covered |
+| `_chain_touches_business` | `True` | this chain covers business |
+| `business_chain_blockers` | `{}` | no chain blockers |
+| `noncanonical_business_response_keys` | `[]` | every response key canonical |
+| `_declared_critical_flows` | `[]` | no declared critical flows |
+| `_endpoint_validated` | `False` | **NOT validated — fails CLOSED, left alone** |
+
+**Seven functions where an exception hands back the release-permitting answer, silently — and
+#751/#752 were switched from REPORTING to BLOCKING this session on top of two of them.** A gate is
+only as good as the evidence it reads, and this gate could not tell *"ran and found nothing"* from
+*"did not run"*.
+
+**The defaults are KEPT.** Hard-failing wedges every release on a hub hiccup — #789's trade,
+reached again independently: **the fail-open is fine, the silence is not.** Each site now records
+the cause and what it defaulted to, warns once with *"this is NOT evidence the check passed"*, and
+— the part that matters — the result carries **`checks_errored_790`**, so the fact travels with the
+verdict instead of living in a log line nobody reads at the cut. (#788's lesson: nobody reads for
+an absence.)
+
+★ **`_endpoint_validated` was deliberately not wrapped.** It returns `False` on error, i.e. the
+strict answer; it does not have the defect. Applying the pattern to it would be cargo-culting, and
+there is a test asserting it stays unwrapped — the sweep has to distinguish *shape* from
+*consequence*, which is item 110's rule pointed back at my own fix.
+
+**Cheapest observation next run.** `checks_errored_790` is `[]` on a healthy run; any entry at a
+release cut means that axis was never verified, whatever the gate said.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
