@@ -369,8 +369,16 @@ _DESC_ENDPOINT_RE = re.compile(
 # because `tables: []` is indistinguishable from "the spec had no tables".
 #
 # Both forms accepted: the `table:` prefix is optional and non-capturing.
+# #843: the spec is written in TWO dialects and this pattern knew one.
+#     - users: id, email, name          <- colon form, 112 of 118 marked slices
+#     - users(id, email, name)          <- PARENTHESISED form, the other 6 (r111, r122)
+# A slice in the second dialect parses to zero tables, so its run is silently not "comparable"
+# and drops out of #774's measurement entirely — neither numerator nor denominator. #773 taught
+# this pattern an optional  prefix; the bracket dialect was never seen because the only
+# runs using it produced no tables and therefore no evidence that anything was missing.
 _DESC_TABLE_RE = re.compile(
-    r"^\s*[-*]\s+(?:table\s*:\s*)?([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.+)$", re.MULTILINE
+    r"^\s*[-*]\s+(?:table\s*:\s*)?([a-zA-Z_][a-zA-Z0-9_]*)"
+    r"(?:\s*:\s*|\s*\()(.+?)\)?\s*$", re.MULTILINE
 )
 
 
