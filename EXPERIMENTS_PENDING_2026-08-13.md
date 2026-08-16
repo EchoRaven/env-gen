@@ -2197,6 +2197,50 @@ release cut means that axis was never verified, whatever the gate said.
 
 ---
 
+## 117. #791 — a blocker scan that throws ERASED the blockers it had already found
+
+#790 handled the delivery gate. The same consequence filter pointed at the files that FEED it:
+
+    validation_runner.py       0 permissive silent defaults — clean
+    framework_validation.py    3, all `return False` for "no progress detected" — the STRICT
+                               answer, not the permissive one. Left alone.
+    frontend_audit.py          the real ones, and a WORSE shape than #790's
+
+```python
+blockers: List[str] = []
+try:
+    ...                 # blockers.append(...) as real defects are found
+except Exception:
+    return []           # <- not a default. The findings already made are DESTROYED.
+```
+
+An exception on file 6 discarded five genuine blockers from files 1-5, and both sites feed
+`deliverability.py` — the release-**blocking** path — which then read the run as clean.
+
+★ **This is a different and worse thing than #790.** There, the swallowed value was at least the
+honest empty answer for a check that never ran. Here the check DID run, DID find defects, and the
+handler threw them away. It is evidence destruction — the same shape as #737's blank capture
+erasing the record, which is the defect that let r148 ship a dead app.
+
+Fixed: return the partial findings, announce the truncation ("absence of further blockers here is
+not evidence there are none"), and expose `scan_errors_791()`.
+
+**One handler in `invented_field_fallback_blockers` was deliberately left alone** — `blockers` does
+not exist at that point, so nothing had been found and `[]` is honest. Distinguishing that from the
+two real cases is the whole job; a sweep that converts on shape rather than consequence would have
+"fixed" it and called that thoroughness. Second time in two items that the negative case needed
+its own test (#790's `_endpoint_validated`).
+
+**And one of my own tests was vacuous.** `test_partial_findings_survive_a_throw` originally just
+called the reporter and asserted the reporter worked — it never exercised a scan, never threw
+mid-loop, and would have passed against the unfixed code. It now builds a two-file frontend, lets
+the first file produce a real blocker, injects the fault inside the per-file match loop, and
+asserts the finding survives — with a separate non-vacuity test proving the scan finds two
+blockers when nothing is injected. **A test named after a behaviour that only exercises the
+reporter is #782's pinning defect wearing a different hat.**
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

@@ -21,6 +21,44 @@ its ``impl.page.<name>`` task through cross-hub sync — exactly how
 from __future__ import annotations
 
 import re
+import logging
+
+_LOG_791 = logging.getLogger(__name__)
+
+# --- #791: a blocker scan that throws must not ERASE the blockers it already found -------------
+# `routed_fallback_page_blockers` and `bare_authed_fetch_blockers` collect into `blockers` inside
+# a try and returned `[]` from the handler — so an exception on file 6 discarded the five real
+# findings from files 1-5, and deliverability.py (the release-BLOCKING path) read "clean". That is
+# strictly worse than a permissive default: it is not falling back, it is destroying evidence,
+# the same shape as #737's blank capture erasing the record. Partial results are now returned,
+# and the truncation is announced — a partial scan is not a clean one.
+_SCAN_ERRORS_791: List[str] = []
+
+
+def _scan_truncated_791(where: str, exc: BaseException, kept: int) -> None:
+    """Record + announce a blocker scan that ended early. Never raises."""
+    try:
+        note = "%s: %s (%s) — kept %d finding(s) already made" % (
+            where, type(exc).__name__, exc, kept)
+        if note not in _SCAN_ERRORS_791:
+            _SCAN_ERRORS_791.append(note)
+            _LOG_791.warning(
+                "BLOCKER SCAN TRUNCATED (#791): %s. The findings so far are RETURNED (they used "
+                "to be discarded, which read as a clean scan on the release-blocking path), but "
+                "the rest of the tree was never examined — absence of further blockers here is "
+                "not evidence there are none.", note)
+    except Exception:
+        pass
+
+
+def scan_errors_791() -> List[str]:
+    """Blocker scans that ended early this process. Empty is the normal, healthy state."""
+    return list(_SCAN_ERRORS_791)
+
+
+def reset_scan_errors_791() -> None:
+    _SCAN_ERRORS_791.clear()
+
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
@@ -713,8 +751,9 @@ def routed_fallback_page_blockers(frontend_src: Any) -> List[str]:
                     f"route {route} renders a framework fallback page (`{comp}`) — "
                     "author the REAL page (reference layout, real fields, real "
                     "controls); cosmetic edits do not count")
-    except Exception:
-        return []
+    except Exception as exc:
+        _scan_truncated_791("routed_fallback_page_blockers", exc, len(blockers))
+        return blockers
     return blockers
 
 
@@ -1268,8 +1307,9 @@ def bare_authed_fetch_blockers(frontend_src: Any, limit: int = 12) -> List[str]:
             blockers.append(
                 f"… and {total - len(blockers)} more bare unauthenticated fetch() call "
                 f"site(s) — the same fix applies to each.")
-    except Exception:
-        return []
+    except Exception as exc:
+        _scan_truncated_791("bare_authed_fetch_blockers", exc, len(blockers))
+        return blockers
     return blockers
 
 
