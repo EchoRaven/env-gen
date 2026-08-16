@@ -3716,6 +3716,38 @@ _NOOP_FIX_CONT_660 = re.compile(r"\b(beyond|once|except|apart|aside|besides|othe
 _NOOP_FIX_HEAD_660 = re.compile(r"^(none|no)\b[\w\s,]*\.?$", re.I)
 
 
+_DEMANDS_INTERACTION_855 = re.compile(r"\bhover\b|\bon mouse|mouseover|:hover")
+
+
+def _unsatisfiable_by_static_capture_855(text: Any, screen_name: Any) -> bool:
+    """#855: does this deviation demand an interaction state the capture can never show?
+
+    #542a already excludes TRANSIENT screens by NAME (`card_hover_preview` and friends) from
+    scoring, because a static route capture cannot open an overlay. It does not help when the
+    screen is an ordinary catalog page whose REFERENCE IMAGE happens to depict a card mid-hover:
+    the judge writes "Missing hover preview card with play/add/like actions" against `my_list`,
+    `remediation_text` hands that to the lane as a concrete instruction, the lane builds a hover
+    card, the next static capture still shows no hover state, and the deviation recurs. That is
+    #566z's unsatisfiable-expectation engine at the visual gate instead of the chain gate.
+
+    Measured over the corpus: **188 of 7763 deviation lines (2.4%)**, concentrated on `my_list`
+    (99) and `browse_by_languages` (80) — 112 run-screens, and the largest semantic deviation
+    class by run count.
+
+    Dropping is safe by the same test #660 used for no-op fixes: **0 screens have ALL of their
+    deviations in this shape, and 0 BLOCKING screens do** — so no screen is ever left without an
+    actionable line. It is dropped from the INSTRUCTIONS only; the verdict record keeps it, and
+    the caller says how many it dropped (an erased finding is #791's defect).
+
+    A deviation on a screen that IS transient/overlay is kept: there the overlay genuinely should
+    render (#509 gives those screens an interaction capture), and 39 of the hover entries are on
+    `card_hover_preview` itself."""
+    t = str(text or "").lower()
+    if not _DEMANDS_INTERACTION_855.search(t):
+        return False
+    return not _screen_is_transient({"name": screen_name})
+
+
 def _is_noop_fix_660(text: str) -> bool:
     t = (text or "").strip()
     return (bool(_NOOP_FIX_HEAD_660.match(t))
@@ -3913,9 +3945,19 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
                 lines.append(f"  FIX: {rec['fix']}")
         devs = r.get("deviations") or []
         if devs:
-            lines.append("Differences (where + what):")
-            for d in devs:
-                lines.append(f"- {d}")
+            # #855: drop the ones a static route capture can never satisfy, and SAY SO.
+            _sname = r.get("screen") or r.get("name")
+            _keep = [d for d in devs if not _unsatisfiable_by_static_capture_855(d, _sname)]
+            _dropped = len(devs) - len(_keep)
+            if _keep:
+                lines.append("Differences (where + what):")
+                for d in _keep:
+                    lines.append(f"- {d}")
+            if _dropped:
+                lines.append(
+                    f"  ({_dropped} further note(s) ask for a HOVER/interaction state. This screen "
+                    "is captured statically, so no change can make them appear — they are recorded "
+                    "in the verdict but are not work. Do not chase them.)")
         fixes = r.get("fixes") or []
         if fixes:
             lines.append("Do these, in order:")

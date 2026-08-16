@@ -8940,3 +8940,64 @@ returned nothing but artefacts. **Static offline mining of this tree is close to
 remaining named work (#774, #854's roster) is a *decision*, not a search, and everything shipped
 since r151 has **zero real-run exposure**. What is left is not another sweep; it is a run.
 
+
+## 180. #855 — the #1 deviation class by run count is one no change can satisfy
+
+**Item 179 said what was left was a run. That was wrong, and the correction is the finding:** I
+had only ever used the corpus as a *denominator* for static findings this turn. `持续优化` says
+mine the RESULTS. Doing that produced the largest single class in the file.
+
+`deviations` has **7763 entries over 119 runs but 7537 distinct strings** — grouped exactly, the
+top template has 41 hits and everything else is unique judge prose. Exact grouping shows nothing.
+Clustering by MEANING (the rule that once had to sum a pagination indicator across five names)
+re-ranks it completely:
+
+| class | entries | runs |
+|---|---|---|
+| **hover preview card** | **160** | **94** |
+| language selector | 117 | 93 |
+| colour / contrast | 110 | 68 |
+| blank / never hydrated | 90 | 55 |
+| auth guard redirect | 43 | **11** |
+
+★ The last row is the instrument checking itself: it reproduces the previously-recorded
+"43 auth-guard rejections over 11 runs" exactly, which is what makes the other four believable.
+
+**The decisive question was WHICH SCREEN.** 121 of 160 (76%) are on `browse_by_languages` and
+`my_list` — ordinary static catalog pages — **not** on `card_hover_preview`. The Netflix reference
+images depict a card mid-hover. The judge faithfully reports the difference. `remediation_text`
+hands it to the lane as a concrete instruction. The lane builds a hover card. The next static
+route capture still shows no hover state. The deviation recurs.
+
+**#542a already knows this** — *"a TRANSIENT interaction-STATE name is one a static route capture
+can NEVER reproduce"* — but it tests the **screen NAME** (`_TRANSIENT_STATE_RE` over
+`card_hover_preview`). `my_list` is a perfectly ordinary name, so the guard never fires on the
+94 runs that need it. **A guard keyed on the name of the screen cannot see an expectation that
+lives in the reference image.** That is #566z's unsatisfiable-expectation engine, at the visual
+gate rather than the chain gate.
+
+**Safety measured the way #660 measured its own drop** — the same file, the same discipline:
+188 of 7763 lines (2.4%) match; **0 of 1404 screen records have ALL their deviations in this shape,
+and 0 blocking screens do.** Nothing is ever left without an actionable line.
+
+Dropped from the **instructions only**. The verdict record keeps every entry and the builder
+prints how many it withheld and why — an erased finding is #791's defect, and a lane that simply
+stops seeing a note will have it re-reported next round as unaddressed. Deviations on a screen
+that IS transient/overlay are **kept**: there the overlay genuinely should render (#509 gives
+those an interaction capture), and 39 of the hover entries are on `card_hover_preview` itself.
+
+★ **What this says about item 179's yield curve.** The curve was real for *static source* sweeps
+and I generalised it one step too far. The results side was not exhausted; it was unvisited this
+turn. **A declining yield in one search space is not evidence about another** — and the honest
+tell was in my own sentence: "I used the corpus only as a denominator."
+
+### the next candidates from the same census, not yet opened
+
+- **language selector, 117 / 93 runs.** Prior evidence points at judge over-claim — a word probe
+  once said "absent", the shape probe found it present in 127/144. Needs a shape probe before any
+  conclusion.
+- **colour / contrast, 110 / 68 runs.** Overlaps `spec_color_deviations`, which is measured
+  separately; check whether the two agree before treating either as ground truth.
+- **89% of deviation lines match none of the 13 clusters.** The cluster set is a first cut, not a
+  partition — the long tail is unexamined.
+
