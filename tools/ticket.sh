@@ -48,7 +48,11 @@ cd "$(dirname "$0")/.."
 #   3. NO RESERVATION. Allocation was a pure read: two callers seconds apart got the same answer,
 #      three times. Allocating now APPENDS to .tickets, and .tickets is itself scanned, so the
 #      number is taken the moment it is handed out.
-_TICKETS=".tickets"
+# #834: overridable so the SUITE does not allocate against the real ledger. The tests for this
+# script call the no-arg form, which RESERVES — so running pytest was appending live ticket
+# numbers to the repo's `.tickets` and the next real allocation skipped past them. A test with a
+# side effect on a repo artifact is worse than no test: it makes the artifact untrustworthy.
+_TICKETS="${TICKET_LEDGER:-.tickets}"
 
 _claimed() {   # every number claimed, one per line
   { grep -h '^## [0-9]' EXPERIMENTS_PENDING_*.md 2>/dev/null || true

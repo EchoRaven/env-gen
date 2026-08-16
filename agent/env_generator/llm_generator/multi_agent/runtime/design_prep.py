@@ -1191,10 +1191,25 @@ def design_system_is_enriched(ds) -> bool:
     if not isinstance(ds, dict):
         return False
     dsys = ds.get("design_system") or {}
-    if any(dsys.get(k) for k in ("type_scale", "radius_scale", "shadow_scale", "iconography")):
-        return True
-    for s in ds.get("screens") or []:
-        for c in (s.get("components") or []) if isinstance(s, dict) else []:
+    # #834: the OR below was `scales non-empty OR any build_notes`, and the scales half now
+    # short-circuits almost every run. #85a was written for run-5/6, where the analyst produced
+    # NOTHING — build_notes 0 AND scales empty — so either signal meant the same thing. The
+    # analyst has since improved asymmetrically: `extract_palette`/`measure_layout` reliably fill
+    # the DOCUMENT-level scales while nothing fills the PER-COMPONENT fields. Measured over the
+    # corpus: 144 of 151 docs are judged enriched and 133 of those carry no per-component
+    # build_notes or typography at all — so the single-shot fallback, whose entire purpose is to
+    # produce them, was suppressed in 88% of runs. That is the root of the 1-in-49,286
+    # build_notes rate, and it sits UPSTREAM of every evaporation point instrumented in
+    # #813/#815/#816/#819, none of which can fire while the fallback never runs.
+    #
+    # The two halves measure different things and both are required. Scales alone are a document
+    # the lane can style from; they are not the per-component build guidance the frontend prompt
+    # directs it to read on every component.
+    # `dsys` (the document-level scales) is still read by callers that want to know whether the
+    # doc has ANY measured styling; it is deliberately no longer sufficient on its own here.
+    _ = dsys
+    for scr in ds.get("screens") or []:
+        for c in (scr.get("components") or []) if isinstance(scr, dict) else []:
             if isinstance(c, dict) and (c.get("build_notes") or c.get("typography")):
                 return True
     return False

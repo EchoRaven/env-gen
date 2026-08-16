@@ -20,6 +20,7 @@ structured:
 
 A number appearing only in a code comment is a *reference*; it does not claim the namespace.
 """
+import os
 import pathlib
 import subprocess
 
@@ -30,9 +31,20 @@ _TOOL = pathlib.Path(__file__).resolve().parents[2] / "tools" / "ticket.sh"
 _ROOT = _TOOL.parent.parent
 
 
-def _run(*args):
+# #834: every no-arg call RESERVES, so a suite that exercises the allocator was appending live
+# numbers to the repo's `.tickets` and pushing the next real allocation past them. A test with a
+# side effect on a repo artifact makes that artifact untrustworthy — worse than having no test.
+# The script honours TICKET_LEDGER for exactly this.
+@pytest.fixture()
+def ledger(tmp_path):
+    return str(tmp_path / "tickets")
+
+
+def _run(*args, ledger=None):
+    env = dict(os.environ)
+    env["TICKET_LEDGER"] = ledger or "/dev/null"
     return subprocess.run(["bash", str(_TOOL), *args],
-                          capture_output=True, text=True, cwd=str(_ROOT))
+                          capture_output=True, text=True, cwd=str(_ROOT), env=env)
 
 
 def test_the_script_parses():
@@ -64,10 +76,29 @@ def test_the_lookalikes_are_free(n, what):
     assert "FREE" in r.stdout
 
 
-def test_the_next_number_is_itself_free():
-    """The allocator must not hand out something it would then call taken."""
-    nxt = _run().stdout.strip()
-    assert _run(nxt).returncode == 0
+def test_allocation_reserves_so_two_callers_cannot_collide(ledger):
+    """★ The contract CHANGED under this test and the test was pinning the old one.
+
+    #829 extended the allocator after three further collisions: it now scans test filenames and
+    the working tree, and — the part that matters here — **allocation APPENDS to `.tickets`**, so
+    a number is taken the moment it is handed out. The original assertion (*"the number it hands
+    out is one it will not then call taken"*) encoded the pure-read semantics and became false by
+    design. That is #782's shape in a test I wrote one turn earlier.
+
+    The property worth guarding is the one reservation exists for: two callers seconds apart must
+    not get the same number. That is what produced three of the four collisions."""
+    a = _run(ledger=ledger).stdout.strip()
+    b = _run(ledger=ledger).stdout.strip()
+    assert a.isdigit() and b.isdigit()
+    assert a != b, f"two consecutive allocations returned {a} — reservation is not working"
+    assert int(b) > int(a)
+
+
+def test_an_allocated_number_reads_as_taken(ledger):
+    """The other half of the same contract: having handed a number out, the allocator must not
+    then tell a second caller it is free."""
+    n = _run(ledger=ledger).stdout.strip()
+    assert _run(n, ledger=ledger).returncode == 1
 
 
 def test_it_says_where_a_taken_number_was_claimed():

@@ -3969,6 +3969,54 @@ probe I have written today.
 
 ---
 
+## 164. #834 — the enrichment guard's OR, and the discovery that a second agent shares this branch
+
+**The fix.** The design phase runs the `design_analyst` AGENT, then per #85a falls back to the
+single-shot enrich if the doc *"parses but was never ENRICHED"*. That guard read
+`scales non-empty OR any build_notes`. #85a was written for run-5/6, where the analyst produced
+**nothing** — both signals meant the same thing. The analyst has since improved asymmetrically:
+`extract_palette` / `measure_layout` reliably fill the DOCUMENT-level scales while nothing fills
+the PER-COMPONENT fields, so the OR short-circuits.
+
+    docs parsed                                  151
+    judged ENRICHED by the old OR                144
+      ...with NO per-component field at all      133   <- the fallback was suppressed here
+    genuinely per-component enriched              11
+
+★ **This sits upstream of the whole thread.** #813 (per-screen call), #815 (the join), #816
+(invalid JSON input) and #819 (the wholesale handler) all instrument a fallback that **in 88% of
+runs was never invoked** — and it answers offline what two earlier items declared needed a live
+run. r151's analyst log settled it: 20 `decompose_reference` + 20 `extract_palette` calls, no
+enrichment step, finishing *"The design system is complete."*
+
+★★ **A SECOND AGENT IS WORKING THIS BRANCH.** The commit log interleaves mine with commits I did
+not write, minutes apart:
+
+    ef9d8bc 05:03  renumber the UI-evidence name fallback off a LIVE collision: #827 was taken
+    8d2a720 05:05  #828 tests, re-created
+    e0f9779 05:08  #829: the allocator could not see three kinds of claim
+    0715195 05:13  #829b: the reservation ledger is per-working-tree state
+    f1a4821 05:19  item 163
+
+It extended my `tools/ticket.sh` mid-turn, rewrote `.tickets`, and its #829 fixes **the exact gap
+that handed me a taken number** (the allocator could not see gitignored test filenames). This
+reframes several of my own items: what I recorded as *"re-derived after a context break"* (#817,
+#820) is at least partly **concurrent duplication**, and `f0693d8` — the commit whose message
+described different work — was plausibly the other agent committing a dirty tree containing my
+files. I attributed all of it to my own staleness, which was the available explanation and not the
+whole one.
+
+**Two defects of mine, found by the collision that followed.** My `#828` collided with the other
+agent's; renumbered to **#834** with the *fixed* allocator. And my `#826` tests **called the no-arg
+allocator, which RESERVES** — so running the suite appended live numbers to the repo's ledger and
+pushed real allocations past them. **A test with a side effect on a repo artifact makes that
+artifact untrustworthy.** `TICKET_LEDGER` now redirects it; the suite leaves `.tickets` byte-identical.
+
+The old assertion (*"the number it hands out is one it will not then call taken"*) also had to go:
+#829's reservation made it false **by design**. That is #782's shape in a test one turn old.
+
+---
+
 ## 154. Auditing my own attribution claims — one bad, four sound
 
 The r128 correction was the second time this session I asserted *who did something* without reading
