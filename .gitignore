@@ -45,3 +45,9 @@ launch_*.sh
 
 # Design-Prep validation fixtures (local-only, like run scripts)
 design_inputs/
+
+# #829: ticket reservations are per-working-tree in-flight state, not repo history. Running the
+# allocator (including from its own tests) appends here, so tracking it would churn the repo and
+# permanently burn numbers on every suite run. The durable record of a claim stays where it was:
+# an EXPERIMENTS heading, a commit subject, or a test filename.
+.tickets
