@@ -4520,7 +4520,7 @@ def _ref_nav_jsx(nav_routes, accent: str, vertical: bool,
         '              <button className="flex items-center gap-1" title="Profile" '
         'aria-label="Profile" aria-haspopup="menu">\n'
         f'                <span className="h-8 w-8 rounded" style={{{{ backgroundColor: \'{accent}\' }}}} aria-hidden="true"></span>\n'
-        "                <span className=\"text-xs opacity-80\" aria-hidden=\"true\">{'\\u25BE'}</span>\n"
+        "                " + _chevron_859("text-xs opacity-80 inline-flex items-center") + "\n"
         "              </button>\n"
         '              <div role="menu" className="absolute right-0 top-full z-50 hidden '
         'min-w-[10rem] rounded border py-1 text-sm group-hover:block group-focus-within:block" '
@@ -5076,7 +5076,8 @@ def _control_bar_432b(comps: List[Dict]) -> str:
             "style={{ borderColor: 'rgba(128,128,128,0.4)', color: 'inherit' }}>\n"
             f"              <option>{lbl}</option>\n"
             "            </select>\n"
-            "            <span className=\"pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs opacity-70\">{'\\u25BE'}</span>\n"
+            "            " + _chevron_859("pointer-events-none absolute right-2 top-1/2 "
+                                              "-translate-y-1/2 inline-flex items-center opacity-70") + "\n"
             "          </span>\n"
             "        </label>\n")
         if len(selects) >= 4:
@@ -5116,6 +5117,30 @@ def _heading_row_858(label: str, control_jsx: str) -> str:
             f'            <h2 className="text-xl font-semibold">{label}</h2>\n'
             + inner +
             "          </div>\n")
+
+
+_CHEVRON_SVG_859 = (
+    "<svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" "
+    "strokeWidth=\"2\" strokeLinecap=\"round\" strokeLinejoin=\"round\" aria-hidden=\"true\">"
+    "<path d=\"M6 9l6 6 6-6\" /></svg>")
+
+
+def _chevron_859(cls: str) -> str:
+    """#859: ONE chevron, drawn, not typed.
+
+    The framework emitted the literal character U+25BE as a dropdown caret at the avatar chip and
+    on every filter <select> — while already emitting a proper stroked SVG chevron on the landing
+    page's language pill. It disagreed with itself, and the typed version renders as a small solid
+    triangle in whatever font the page happens to use, which is not what any reference shows.
+
+    22 runs name it outright (*"get help: implementation uses a ▼ text character; reference uses a
+    chevron-down icon"*, *"avatar dropdown uses '▼' text instead of chevron icon"*), inside a
+    broader icon-shape cluster of 541 entries across 115 runs.
+
+    `currentColor` so it inherits the caret's existing colour and opacity — #551's lesson, that a
+    hard-coded stroke paints invisibly on a theme it did not expect. Same 14px box as the language
+    pill's, so the two carets on one page match."""
+    return f"<span className=\"{cls}\">{_CHEVRON_SVG_859}</span>"
 
 
 def _rewire_fw_nav(page_src: str, comp_name: str, import_rel: str) -> str:

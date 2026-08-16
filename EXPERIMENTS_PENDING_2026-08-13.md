@@ -9243,3 +9243,81 @@ What remains genuinely unaddressed in it is **branded title art** (a per-title l
 needs an asset the corpus does not carry. Not deferred for judgement — deferred for a missing
 input.
 
+
+## 186. #859 — the caret was typed in two places and drawn in a third
+
+**The census, re-measured after #855–#858.** Adding this round's classes to the clusters takes
+coverage of all 7763 deviation lines from **11% to 60%**. The ranking that emerges is the real
+map of the corpus, and every head is now either fixed or recorded:
+
+| class | entries | runs | state |
+|---|---|---|---|
+| hero | 1728 | 118 | item 185 — mostly compound restatements of fixed items |
+| card badge / ribbon | 1505 | 115 | **#856** |
+| profile avatar | 597 | 115 | item 184 — design decision |
+| **icon shape** | **541** | **115** | **#859** |
+| hover preview | 258 | 109 | **#855** |
+| pagination | 234 | 102 | **#857** (present; judge over-claim) |
+| title art / logo | 228 | 100 | missing input, not a defect |
+| genres / filter row | 146 | 87 | **#858** |
+| language selector | 117 | 93 | item 181 |
+
+**The finding.** Inside `icon shape`, 22 runs name the cause outright — *"get help: implementation
+uses a ▼ text character; reference uses a chevron-down icon"*, *"avatar dropdown uses '▼' text
+instead of chevron icon"*. ★ **The framework already knew the answer**: the landing page's
+language pill emits a proper stroked SVG chevron, while the avatar chip and every filter
+`<select>` emitted the literal character U+25BE. It disagreed with itself, and a typed triangle
+renders in whatever font the page happens to use — solid, tiny, and unlike any reference.
+
+One `_chevron_859` helper at both sites, `currentColor` (#551: a hard-coded stroke paints
+invisibly on a theme it did not expect), same 14px box as the pill so two carets on one page
+match. The `<select>` caret keeps its absolute positioning, or it lands on top of the label.
+
+**Deliberately not touched:** the `▲`/`▼` scroll-arrow buttons. The complaint there is *"floating
+▲/▼ scroll arrow buttons appear in implementation but not in reference"* — about their EXISTENCE,
+not their shape. Redrawing them answers a question nobody asked; deleting them is a separate
+decision needing its own evidence.
+
+### method note — self-match #13, and the fix that generalises
+
+The guard `test_no_emitted_code_path_types_a_caret` first excluded prose by skipping lines that
+start with `#`, and immediately matched **`_chevron_859`'s own docstring**, which quotes the
+judge's complaints verbatim. Thirteenth self-match this session.
+
+★ The re-anchor is the transferable part: **exclude prose by PARSING, not by a line prefix.**
+Docstring line ranges come from `ast`, so a quoted ▼ in any future explanation is invisible to the
+scan while an emitted one is not. A prefix test is a guess about where prose lives; the parser
+knows.
+
+The non-vacuity case had the mirror bug — `"\\u25be"` in a Python string is the six characters
+`\u25be`, not the glyph — so the sample exercised neither branch. It now asserts both the literal
+character and the escape text, which is the same "an escape that decays matches nothing" shape as
+#856b, two items apart.
+
+### 186b. two tests were pinning the glyph, and the suite went red exactly as it should
+
+The full run surfaced **three existing tests asserting `"\\u25BE"`** —
+`test_control_bar_renders_select_with_caret`, `test_top_nav_renders_profile_avatar_chip`, and
+`test_the_caret_now_actually_discloses_something` (#653), the third only appearing after the first
+two were fixed and the suite could get far enough to reach it.
+
+★ **Three independent tests pinning one glyph is the exact count that kept #782 alive for 122
+rounds.** Same number, same mechanism, one session apart — which says the shape recurs on its own
+rather than being a one-off. #653's own point is that the caret must DISCLOSE something (its menu
+assertions cover that); the glyph was never its subject.
+
+★ Their INTENT is *"the control has a disclosure affordance"*. Their IMPLEMENTATION is *"the
+output contains this exact escape sequence"*. That is the [a green suite can pin the defect] shape
+verbatim, and it is the third instance this session: while those two were green, the typed
+triangle could not be replaced without breaking them, and the cheapest way to keep the suite green
+was to leave it.
+
+Corrected to assert the concept and the invariant rather than the spelling: the caret must be
+**present** (`d="M6 9l6 6 6-6"`) and must **not be typed**. A future change of icon path will
+break them for a real reason; a change of Unicode escape will not.
+
+★ Worth separating two things that look alike: **the suite going red here was correct behaviour.**
+The tests failed because the code changed under an assertion that was too specific — that is a
+test doing its job badly, not a test failing to do it. The defect was that nothing ever asked
+whether the assertion matched the intent, and #859 is the first time anything did.
+

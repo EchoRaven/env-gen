@@ -60,7 +60,12 @@ def test_the_chip_button_no_longer_logs_you_out_on_click():
 
 def test_the_caret_now_actually_discloses_something():
     chip = _chip(_jsx())
-    assert "\\u25BE" in chip
+    # #859: was `"\\u25BE" in chip` — the THIRD test in this suite asserting the caret's exact
+    # spelling. #653's point is that the caret must DISCLOSE something, which the menu assertions
+    # below cover; the glyph was never the subject. Three independent tests pinning one glyph is
+    # how #782 survived 122 rounds, and this file is the third instance of it in one session.
+    assert 'd="M6 9l6 6 6-6"' in chip, "the caret must be present and drawn"
+    assert "\u25be" not in chip, "a typed caret is the #859 defect"
     assert 'role="menu"' in chip
 
 
