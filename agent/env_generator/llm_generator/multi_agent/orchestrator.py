@@ -3399,7 +3399,32 @@ class Orchestrator:
                         except Exception as _ru_exc:
                             self._logger.debug("referenced-unbuilt detect skipped: %s", _ru_exc)
                 except Exception as _pb_exc:
+                    # #879: a page-build DETECT that failed must not read as "every page is built".
+                    #
+                    # `_unbuilt = []` is the same value a healthy scan returns when everything is
+                    # built, and the `if _unbuilt:` below is the gate's whole decision — so a
+                    # throwing detector silently converts "cannot tell" into "nothing to defer on"
+                    # and the run proceeds. #790 named exactly this ("a delivery check that ERRORS
+                    # must not read as a delivery check that PASSED") and built the reporter for
+                    # it; that sweep covered `delivery_gate.py` and `frontend_audit.py` and did not
+                    # reach here.
+                    #
+                    # Found by turning my OWN recurring error against the framework: this session
+                    # collapsed "could not read" into "confirmed empty" three times (#864, #873,
+                    # and nearly #872), so I scanned for the shape — 1397 except-handlers, 34 that
+                    # assign an empty default later tested as a real negative, and this is the one
+                    # where the value drives a gate rather than a fallback render.
+                    #
+                    # The log line stays (it was already `error`, not silent). What changes is that
+                    # the failure now reaches the run's VERDICT via #790's aggregator instead of
+                    # living only in a log nobody diffs.
                     self._logger.error("page-build gate detect failed: %s", _pb_exc)
+                    try:
+                        from .runtime.delivery_gate import _swallowed_790
+                        _swallowed_790("page_build_detect", _pb_exc,
+                                       "[] = no unbuilt pages, gate does not defer")
+                    except Exception:
+                        pass    # the reporter must never break the gate it reports on
                     _unbuilt = []
                 if _unbuilt:
                     if getattr(self, "_pages_gate_deferred_since", None) is None:
