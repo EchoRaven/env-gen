@@ -299,6 +299,67 @@ def _unstaged_asset_classes_842(output_dir: Any) -> List[str]:
     except Exception:
         return []
 
+# #844: entity KINDS a screen is about, against the kinds the staged dataset actually contains.
+# The sibling of #842 (asset classes), and narrowed the same way: matched on the SCREEN NAME, not
+# on must_have prose. A first cut used the prose and reported `browse_home` 141/142, because its
+# must_have lists the nav labels ("Home, Shows, Movies, Games, New & Popular") -- a nav label is
+# not a content requirement, and it appears on every screen. The screen NAME is the closed,
+# unambiguous signal: a screen called `games` is about games.
+_ENTITY_KINDS_844 = {
+    "game":  (("game", "games"), ("game",)),
+    "show":  (("show", "shows", "series"), ("series", "show", "tv")),
+    "movie": (("movie", "movies", "film"), ("movie", "film")),
+}
+
+
+def _unseeded_entity_kinds_844(output_dir: Any) -> List[str]:
+    """#844: a screen whose subject does not exist in the staged data.
+
+    #840: `games` blocks 71% of recent runs, floors on `components` in 10 of 10, and 9 of 10 carry
+    the deviation *"implementation surfaces a film ... instead of a game"*. The judge is right --
+    `GamesPage` fetches an unscoped `/api/titles`, the API supports `?kind=`, and the staged
+    dataset holds `series` and `movie` and no games. 142 of 143 corpus runs declare a games screen;
+    1 of 143 has a game row.
+
+    ★ And it is unsatisfiable, not merely unfixed: the lane could author game rows in its own
+    seed_data.json, but #807 established the framework dataset REPLACES `titles` wholesale, so
+    they would be deleted before they shipped. No edit the lane can make clears the finding --
+    #566z's class at the data layer.
+
+    Measured over 142 runs this reports `game (screen games)` and nothing else; `show` and `movie`
+    correctly stay silent because those kinds exist, which is what shows the probe discriminates
+    rather than always firing.
+
+    REPORTED, not enforced. [] on any fault.
+    """
+    try:
+        import json as _json
+        import re as _re
+        from pathlib import Path as _P
+        root = _P(output_dir)
+        spec_f = root / "design" / "reference_spec.json"
+        data_f = root / "app" / "backend" / "seed_dataset.json"
+        if not (spec_f.is_file() and data_f.is_file()):
+            return []
+        data = _json.loads(data_f.read_text(encoding="utf-8"))
+        have = {str(row.get("kind", "")).lower()
+                 for tbl in (data.values() if isinstance(data, dict) else [])
+                 if isinstance(tbl, list) for row in tbl if isinstance(row, dict)}
+        if not have:
+            return []                      # nothing staged at all is #807's story, not this one
+        out: List[str] = []
+        for sc in (_json.loads(spec_f.read_text(encoding="utf-8")).get("screens") or []):
+            if not isinstance(sc, dict):
+                continue
+            name = str(sc.get("name") or "").lower()
+            for cls, (words, kinds) in _ENTITY_KINDS_844.items():
+                if any(_re.search(rf"(^|_){w}(_|$)", name) for w in words) \
+                        and not (have & set(kinds)):
+                    out.append(f"{cls} (screen {name})")
+        return out[:6]
+    except Exception:
+        return []
+
 def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
     """#739: how BROAD is the UI evidence behind ``ui_smoke_pass``?
 
@@ -2076,6 +2137,16 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 "flyout panel used as an avatar_url) and the judge correctly reports a blank "
                 "square — on every authenticated screen when the asset is in the shared nav. "
                 "Reported, not enforced.", "; ".join(_noasset842))
+    except Exception:
+        pass
+    try:
+        _nokind844 = _unseeded_entity_kinds_844(output_dir)
+        if _nokind844:
+            logger.warning(
+                "#844 a screen's SUBJECT is not in the staged data: %s. The page can only render "
+                "the wrong entity (#840: the games hero shows a film), and the lane cannot fix it "
+                "-- rows it authors in seed_data.json are replaced wholesale by the dataset "
+                "(#807). Reported, not enforced.", "; ".join(_nokind844))
     except Exception:
         pass
     _bugs743 = unresolved_bug_tasks_743(hubs)
