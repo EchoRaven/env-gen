@@ -2516,6 +2516,49 @@ running the function.
 
 ---
 
+## 125. #797 — the same gap, on both FLOOR dimensions
+
+#796's rule run as a query over every measured field the kickoff prompt names. Occurrences in
+`visual_fidelity.py`, which owns the repair text:
+
+    shadow_scale  0    type_scale  0    radius_scale  0    build_notes  0
+    material      2  -> all `material_prep`, the MODULE. Not the field.
+    copy          7  -> the English word and the dimension key. Not the per-component field.
+
+`_spec_snippet` carries colours; `_layout_geometry_lines` carries geometry (+ #796's content box).
+**Nothing carried style or copy — and those are exactly the two dimensions measured as floors:**
+
+| dimension | measurement | source |
+|---|---|---|
+| `style` | lowest mean of any dimension, **0.615**; `flat` in 79% of 504 notes | #779 |
+| `ui_copy` | **84%** of 9152 text components DESCRIBE the text instead of quoting it | #778 |
+
+Both floors had their ground truth measured, written to `design_system.json`, and named to the
+lane **only at design time**. Absent from every repair round — the round with a concrete score to
+move and the largest input the system produces.
+
+★ **This is the pattern's fourth and sharpest form.** #786: no consumer. #793: three reporters, no
+consumer. #796: a consumer at the wrong moment. #797: a consumer at the wrong moment **for the two
+axes the corpus already identified as the binding constraints**. The fix for #779 and #778 was
+real and incomplete in the same way, and neither was detectable by asking "does this field have a
+reader?" — only by asking *"does the reader see it when it is deciding?"*
+
+`_style_lines_797` emits the measured `material` sentence and paste-ready `box-shadow:` CSS per
+role, with the 0.615/79% measurement in the header so the instruction carries its own evidence.
+`_copy_lines_797` emits each component's verbatim string, and **skips components without one** —
+an absent `copy` means the reference showed no text there, so inventing one is the defect.
+
+Executed, not source-asserted (#782), including twelve malformed-input cases across both helpers,
+because this text is the lane's only repair input and a fault costs a whole round.
+
+**What is left of this thread.** `type_scale`, `radius_scale` and `build_notes` are also absent
+from the repair text. They are NOT being added: no measurement identifies them as a floor, and
+#680 measured this description at a median 57,815 chars with `description` accounting for 77.8%
+of all task bytes — adding unprioritised blocks to it is how the dilution #649 measured gets
+worse. Style and copy earned their place by being the two dimensions the scores point at.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

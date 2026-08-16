@@ -3847,6 +3847,9 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
             # A2: numeric skeleton right after the asset mandate, before the
             # measured colors — structure first, then paint.
             lines.extend(_layout_geometry_lines(_ds, str(r.get("name") or "")))
+            # #797: the other two measured axes the repair round never saw.
+            lines.extend(_style_lines_797(_ds, str(r.get("name") or "")))
+            lines.extend(_copy_lines_797(_ds, str(r.get("name") or "")))
         if _theme_variant_enabled():
             # A2b: theme-variant screens need the RENDER MECHANISM stated, not
             # just the hex values.
@@ -3987,6 +3990,75 @@ def _layout_geometry_enabled() -> bool:
     """A2 kill switch: ENVGEN_LAYOUT_GEOMETRY_FIX=0 drops the geometry block."""
     return str(os.environ.get("ENVGEN_LAYOUT_GEOMETRY_FIX", "1")).strip().lower() \
         not in ("0", "false", "no", "off")
+
+
+def _style_lines_797(ds: Optional[Mapping[str, Any]], screen_name: str) -> List[str]:
+    """#797: the measured SURFACE TREATMENT for one failing screen.
+
+    `style` is the lowest-mean judged dimension (0.615) and `flat` appears in 79% of its notes.
+    #779 found why: `design_system.shadow_scale` (ready-to-paste CSS per role) and
+    `design_system.material` (the surface treatment in words) are measured from the reference,
+    written to the file, and were named nowhere the lane reads — fixed for the KICKOFF prompt.
+    But #796 showed the kickoff prompt is read once at design time while THIS text is read on
+    every repair round, so the measurement was still absent from the round that moves the score.
+    Empty when nothing is measured."""
+    if ds is None:
+        return []
+    try:
+        out: List[str] = []
+        mat = str(ds.get("material") or (ds.get("design_system") or {}).get("material") or "").strip()
+        if mat:
+            out.append("  · MATERIAL (measured): " + mat[:400])
+        scale = (ds.get("shadow_scale")
+                 or (ds.get("design_system") or {}).get("shadow_scale") or [])
+        seen = set()
+        for ent in scale if isinstance(scale, (list, tuple)) else []:
+            if not isinstance(ent, Mapping):
+                continue
+            role, css = str(ent.get("role") or ""), str(ent.get("css") or "")
+            if not css or css in seen:
+                continue
+            # the screen's own roles first; a generic scale entry still applies to any surface
+            if role and screen_name and role not in screen_name and screen_name not in role \
+                    and len(seen) >= 3:
+                continue
+            seen.add(css)
+            out.append(f"  · ELEVATION {role or 'default'}: box-shadow: {css};")
+        if not out:
+            return []
+        return (["MEASURED DEPTH (paste these, do not default to flat — `style` is the weakest "
+                 "dimension at 0.615 mean and `flat` appears in 79% of its notes):"] + out)
+    except Exception:
+        return []
+
+
+def _copy_lines_797(ds: Optional[Mapping[str, Any]], screen_name: str) -> List[str]:
+    """#797: the VERBATIM reference text for this screen's components.
+
+    #778 measured 9152 text components across the corpus and 84% of their notes DESCRIBED the
+    text rather than quoting it, which is why `ui_copy` keeps scoring as a floor; #786 added the
+    transcription to the design-prep schema and named it in the kickoff prompt. Same #796 gap:
+    the repair round never saw it. Empty when no component carries `copy`."""
+    if ds is None:
+        return []
+    try:
+        screen = next((x for x in (ds.get("screens") or [])
+                       if isinstance(x, Mapping) and str(x.get("name") or "") == screen_name), None)
+        if screen is None:
+            return []
+        rows = []
+        for c in (screen.get("components") or [])[:12]:
+            if not isinstance(c, Mapping):
+                continue
+            txt = str(c.get("copy") or "").strip()
+            if txt:
+                rows.append(f"  · {c.get('id') or c.get('name')}: \"{txt[:120]}\"")
+        if not rows:
+            return []
+        return (["REFERENCE COPY (verbatim — render these strings character for character; do "
+                 "not paraphrase, translate or substitute a synonym):"] + rows)
+    except Exception:
+        return []
 
 
 def _layout_geometry_lines(ds: Optional[Mapping[str, Any]], screen_name: str) -> List[str]:
