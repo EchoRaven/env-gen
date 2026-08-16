@@ -64,9 +64,41 @@ def _debug_active(file_path: Path) -> bool:
 _DEBUG_LOG_PATH = Path(f"/tmp/envgen_jsonstore_debug-{os.getpid()}.log")
 
 
-def _debug_emit(record: Dict[str, Any]) -> None:
+def _debug_log_path_866(file_path: Optional[Path] = None) -> Path:
+    """#866: land the forensic log WITH the run, not in /tmp.
+
+    This instrumentation was built for smoke #21 — "the kickoff meeting page vanished from
+    workhub_pages.json between write 1 and write 3" — whose reproduction tests all pass and which
+    the header still records as needing "a production-only condition the tests can't capture".
+
+    Ten weeks later the same shape is still recurring: 7 corpus runs have `shared/hubs/
+    milestones.json` ABSENT while the `.lock` beside it exists, i.e. the store was taken and never
+    written, and the run is a total loss (#864 — `start_kickoff` lives inside the loop over the
+    roadmap). r136 and r140 are 2026-08-11.
+
+    ★ The instrument was never going to close that. It is off by default, which is a choice, but
+    it also wrote to a fixed `/tmp/envgen_jsonstore_debug-<pid>.log` — OUTSIDE the run directory.
+    So even switched on, its evidence does not travel with the artifacts that would explain it,
+    and whoever finds a dead run three days later has the store, the logs, the captures and the
+    agent traces, but not the one file built to answer the question.
+
+    A store's path is `<run>/shared/hubs/<name>.json`, so the run root is derivable — no new
+    argument, no caller change. `/tmp` remains the fallback for a store outside a run tree."""
+    if file_path is not None:
+        try:
+            hubs = file_path.parent
+            if hubs.name == "hubs" and hubs.parent.name == "shared":
+                run_logs = hubs.parent.parent / "logs"
+                run_logs.mkdir(parents=True, exist_ok=True)
+                return run_logs / "jsonstore_debug.jsonl"
+        except Exception:
+            pass
+    return _DEBUG_LOG_PATH
+
+
+def _debug_emit(record: Dict[str, Any], file_path: Optional[Path] = None) -> None:
     try:
-        with open(_DEBUG_LOG_PATH, "a") as f:
+        with open(_debug_log_path_866(file_path), "a") as f:
             f.write(json.dumps(record, default=str) + "\n")
     except Exception:
         pass  # diagnostic must never break production
@@ -125,7 +157,7 @@ class JsonStore:
                     "ts": time.time(), "pid": os.getpid(),
                     "file": str(self.file_path),
                     "op": "load_raw_no_file",
-                })
+                }, self.file_path)   # #866: land it with the run
             return {}
         try:
             with open(self.file_path, "r") as f:
@@ -151,7 +183,7 @@ class JsonStore:
                     "file_size": file_size,
                     "head_bytes": head.decode("utf-8", errors="replace")[:200],
                     "traceback": traceback.format_stack(),
-                })
+                }, self.file_path)   # #866: land it with the run
             return {}
         if isinstance(data, dict) and data.get("type") == "LWWMap":
             return self._unwrap_lwwmap(data)
@@ -267,7 +299,7 @@ class JsonStore:
                         "added": sorted(added),
                         "before_empty": not data,
                         "traceback": traceback.format_stack()[-6:-1],
-                    })
+                    }, self.file_path)   # #866: land it with the run
             self._save_raw(new_raw)
         return new_data
 

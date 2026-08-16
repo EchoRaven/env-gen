@@ -9792,3 +9792,55 @@ unavailable")` landed on the **new error line** rather than the branch head, so 
 self-match-class error this session, and the same lesson each time — **anchor on something only
 the code site has, never on a phrase the fix itself may repeat.**
 
+
+## 196. #866 — the forensic log for this exact bug was written outside the run
+
+Chasing #864's remaining unknown into the store layer turned up something better than the answer:
+**the framework already built the instrument for this failure, ten weeks ago, and it cannot help.**
+
+`json_store` carries instrumentation for **smoke #21 (2026-06-03)** — *"the kickoff meeting page
+vanished from `workhub_pages.json` between create_meeting (write 1) and the orchestrator's
+'Meeting not found' diagnosis (write 3)"* — and its header still says *"multi-thread /
+multi-process / asyncio reproduction tests all PASS — the bug needs a production-only condition
+the tests can't capture."*
+
+★ **The same shape is still recurring.** 7 corpus runs have `shared/hubs/milestones.json` absent
+while the `.lock` beside it exists — taken and never written — and #864 established that costs the
+whole run. r136 and r140 are **2026-08-11**, ten weeks after the note was written.
+
+**Why the instrument could never have closed it.** It is off by default, which is defensible for a
+per-write JSONL trace. But it wrote to a fixed `/tmp/envgen_jsonstore_debug-<pid>.log`, *outside
+the run directory* — so even switched on, its evidence does not travel with the artifacts that
+would explain it. Whoever opens a dead run three days later has the store, the logs, the captures
+and the agent traces, and not the one file built to answer the question.
+
+A store's path is `<run>/shared/hubs/<name>.json`, so the run root is derivable: no new argument,
+no caller change, `/tmp` retained for a store outside a run tree. **Still off by default** — #866
+changes where the evidence lands, not whether it is collected.
+
+### what the store layer does and does not explain
+
+Read while I was there, and worth recording so it is not re-read:
+
+- `_save_raw` is **correct**: tmp file + `fsync` + `os.replace`, and it does **not** swallow. A
+  write failure propagates.
+- So the swallow is at the **call site** — `except Exception: logger.warning("milestone store seed
+  failed")` — which is precisely where #864 added the readback.
+- `_load_raw` returns `{}` for a missing file, and the module's own comment names the danger:
+  *"if this fires + the next `update()` saves an empty dict, the meeting page vanishes."* That is
+  the documented mechanism for content disappearing, and it is only visible under the debug flag.
+
+**The production trigger is still unidentified.** But the chain is now: an unexplained store write
+that does not land → a silent warning (now an error, #864) → an empty roadmap → a loop body that
+never runs → no kickoff → three lanes that never wake → a 3-minute total loss with no exception.
+Every link but the first is closed, and the first now has a trace that will survive with the run
+that produces it.
+
+### method note
+
+`test_only_the_shared_hubs_shape_is_treated_as_a_run` first listed `shared/hubs/x.json` as a
+NON-run shape. Under a tmpdir that path *is* `/tmp/tmpXXX/shared/hubs/x.json` — a valid run rooted
+at the tmpdir. **The test was wrong and the code was right.** The rule is positional relative to
+the file rather than anchored to any absolute prefix, deliberately, because runs live wherever the
+caller puts them; that is now its own case instead of a deleted one.
+
