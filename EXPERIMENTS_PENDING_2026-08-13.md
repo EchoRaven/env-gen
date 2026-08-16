@@ -2442,6 +2442,45 @@ table**: without "89 of 151 runs carry any UI record", a 0% and a real 0% are in
 
 ---
 
+## 123. The era split, finished — the two REJECTED gate candidates stay rejected
+
+Items 121/122 re-measured the three decision-driving numbers attached to *enabled* checks. The set
+is only closed once the two **rejected** candidates are re-measured too: if #743 or #671 had
+decayed on recent builds, the "that is a halt, not a gate" verdict would no longer hold and two
+more gates could come off the bench.
+
+Same method — shipped normaliser, shipped detector, non-vacuity first (141 of 151 runs carry a
+task `priority` field; 89 of 151 carry any UI record):
+
+| slice | runs | #743 open P0 bug | #671 no UI evidence at all |
+|---|---|---|---|
+| ALL | 151 | 56% | 41% |
+| r100+ | 52 | 48% | **26%** |
+| r130+ | 22 | **54%** | **27%** |
+| r145+ | 7 | 14% | 14% |
+
+**#743 stays rejected.** 54% at r130+ (n=22) is a halt by any reading — no decay at all. The 14%
+at r145+ is one run in seven and is not a rate.
+
+**#671 genuinely improved** — 41% corpus-wide down to ~27% on both the r100+ (n=52) and r130+
+(n=22) slices, which is a real trend on usable denominators, not noise. But **a quarter of recent
+runs still ship with no UI evidence whatsoever**, so it is still far above anything that should be
+switched on without the owner's say-so. Recorded as measured, not proposed.
+
+★ **A correction to item 122's framing.** I wrote that the era split had gone *"3-for-3 against the
+corpus-wide reading"*. With these two it is 3 of 5 — and both new ones **agree** with the corpus
+reading. The honest rule is not *"corpus numbers mislead"*; it is **"corpus numbers are not
+predictive in either direction, so the split has to be run"**. #794 found a figure describing a
+dead defect, #774/#751/#752 found figures understating live ones, and #743/#671 found figures that
+were simply right. Three outcomes from five measurements is the actual shape of it.
+
+**This closes the era-split sweep.** Every corpus-wide number in this document that drives a
+gate decision has now been split: #774, #751, #752 (enabled) and #743, #671 (rejected). No
+verdict changed; two were re-based on smaller margins than they were made on, and the remaining
+figures in the document are descriptive rather than decision-driving.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
