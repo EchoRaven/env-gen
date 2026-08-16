@@ -3754,6 +3754,43 @@ the reliable predictor of an unchecked claim.
 
 ---
 
+## 157. #822/#823 — making the un-backed numbers re-runnable, and the answer changed twice
+
+Item 156's audit, re-run on the **correct** slice (items 108-156, verified by asserting it contains
+both `#782` and `#821`): 28 distinct `N of M` claims. ★ My first pass marked 15 of them
+"tool-backed" by checking whether the numerator appears anywhere in `corpus_audit.py` — which for
+`2`, `5`, `9`, `1` is a coincidental substring. **Item 104's token-anywhere trap, inside my own
+audit.** That figure is withdrawn.
+
+Reading it properly: the tool backs link tables, bare reads, spec owner columns, gate decisions and
+terminal state. It does **not** back the three clusters that justify this session's most invasive
+code — the design-prep field census (#813/#815/#816/#819) and the seed-orphan counts
+(#807/#807b/#808). Both are now audits.
+
+★★ **And the corpus-wide answer changed twice.**
+
+*First:* across all 151 runs and **49,286 components**, `build_notes` lands **938 times**, not
+1-in-4,006. So it has worked — my 12-run sample had caught a bad stretch, and the era split looked
+like steady improvement collapsing at r145 (1% → 6% at r130+ → 0% at r145+).
+
+*Then, per run:* that reading is also wrong. The distribution is **bimodal**, not gradual —
+
+    fill rate    0%: 144 runs    1-20%: 1    21-79%: 1    >=80%: 4
+
+The "6% at r130+" was **one run (r139, 111/111) carrying the average**. 146 of 151 runs sit at one
+extreme or the other.
+
+★★★ **That prioritises the five instrumented evaporation points.** All-or-nothing is the signature
+of the **wholesale** handler (#819) — a per-screen failure (#813) or a per-component join miss
+(#815) would produce a spread, and only two runs in the corpus show one. **#819's log line is the
+one to read first on the next run**, and the other four are secondary. Four runs prove the pass
+*can* fully succeed (r93, r110, r131, r139), so nothing here is structurally broken.
+
+**#823 also came out larger than measured:** 7 of 143 runs would strand dependent rows, worst
+**r138 with 159** — more than r145's 93, which was the case I built #807b/#808 around.
+
+---
+
 ## 154. Auditing my own attribution claims — one bad, four sound
 
 The r128 correction was the second time this session I asserted *who did something* without reading

@@ -334,8 +334,83 @@ def audit_terminal_state(runs: List[pathlib.Path]) -> None:
               + ", ".join(f"{k} x{v}" for k, v in top))
 
 
+def audit_design_prep_enrichment(runs: List[pathlib.Path]) -> None:
+    """#822: the per-component fields the frontend prompt tells the lane to read.
+
+    `build_notes` is `required` in design_prep's own schema and the prompt demands "1-3 concrete
+    sentences from the SCREENSHOT". `crop` reaches `design_system.json` from the SKELETON path;
+    `build_notes` / `typography` / `copy` only reach it through the analyst enrichment. Comparing
+    the two is what localised the failure to the enrichment (#813/#815/#816/#819) rather than to
+    the design phase as a whole -- and it justified five shipped changes without being re-runnable
+    until now.
+    """
+    comps = seen = 0
+    got = {"crop": 0, "build_notes": 0, "typography": 0, "copy": 0}
+    for run in runs:
+        ds = _load(run / "design" / "design_system.json")
+        if not isinstance(ds, dict) or not isinstance(ds.get("screens"), list):
+            continue
+        seen += 1
+        for screen in ds["screens"]:
+            for c in (screen.get("components") or []) if isinstance(screen, dict) else []:
+                if not isinstance(c, dict):
+                    continue
+                comps += 1
+                for k in got:
+                    if c.get(k):
+                        got[k] += 1
+    if not comps:
+        print(f"  {'#822 enrichment fields per component':<44} n/a   (no design_system.json parsed)")
+        return
+    for k in ("crop", "build_notes", "typography", "copy"):
+        note = "   <- SKELETON path" if k == "crop" else "   <- analyst enrichment"
+        _report(f"#822 components carrying `{k}`", seen, comps, got[k], note)
+
+
+def audit_seed_orphans(runs: List[pathlib.Path]) -> None:
+    """#823: dependent rows the framework-owned dataset would strand.
+
+    The dataset REPLACES a table wholesale. When its ids do not share an id space with the lane's
+    (r145 keyed titles on TEXT slugs against integer 1..60), every dependent row is orphaned --
+    93 across 5 tables in that run. #807b refuses the swap when a majority would be stranded and
+    #808 aligns the id TYPE at staging; this counts how often either can bite.
+    """
+    seen = affected = 0
+    worst = ("", 0)
+    for run in runs:
+        base = _load(run / "app" / "backend" / "seed_data.json")
+        ds = _load(run / "app" / "backend" / "seed_dataset.json")
+        if not isinstance(base, dict) or not isinstance(ds, dict):
+            continue
+        seen += 1
+        stranded = 0
+        for table, rows in ds.items():
+            if not (isinstance(rows, list) and rows and isinstance(rows[0], dict)):
+                continue
+            new_ids = {r.get("id") for r in rows if isinstance(r, dict)}
+            stem = table[:-1] if table.endswith("s") else table
+            for dt, drows in base.items():
+                if dt in ds or not (isinstance(drows, list) and drows):
+                    continue
+                if not isinstance(drows[0], dict):
+                    continue
+                fk = f"{stem}_id"
+                if fk not in drows[0]:
+                    continue
+                stranded += sum(1 for d in drows
+                                if isinstance(d, dict) and d.get(fk) is not None
+                                and d.get(fk) not in new_ids)
+        if stranded:
+            affected += 1
+            if stranded > worst[1]:
+                worst = (run.name, stranded)
+    _report("#823 runs whose dataset would strand rows", seen, seen, affected,
+            f"   worst: {worst[0]} with {worst[1]} row(s)" if worst[1] else "")
+
+
 _AUDITS = (audit_link_tables, audit_projected_bare_reads, audit_spec_owner_columns,
-           audit_gate_decisions, audit_terminal_state)
+           audit_gate_decisions, audit_terminal_state,
+           audit_design_prep_enrichment, audit_seed_orphans)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
