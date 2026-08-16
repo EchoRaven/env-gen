@@ -9191,3 +9191,55 @@ that now ships is the fix. What remains under "profile avatar" is only the image
 **And the adjacent one is already closed:** `is_kids`, the other per-profile flag in this cluster,
 is now rendered by #856's data-driven badge.
 
+
+## 185. #858 — the control bar was present, correct, and in the wrong place
+
+The last two long-tail candidates, both opened.
+
+### `genres dropdown` — 144 entries / 86 runs → #858
+
+Third-largest class in the corpus, on `movies` (70 / 68 runs) and `shows` (66 / 64):
+
+> *"header: implementation has a **second row** for genres; reference places 'tv shows' title +
+> genres [on one line]"* · *"reference shows large 'movies' title left with genres dropdown"*
+
+★ **The complaint is never "missing".** `_control_bar_432b` works — it exists *because* controls
+used to be dropped entirely. Only its **placement** was wrong. That is why this class survived
+every sweep I ran: **a presence probe cannot see a placement defect**, and presence is what all
+the earlier probes measured. `#652` and `#856` were both "nothing emits this"; this one is the
+opposite shape and needed a different question.
+
+`_render_reference_page` concatenated `top_jsx + control_jsx + main_jsx`, and the heading lives
+*inside* `main_jsx`, so the order rendered as **nav → controls → title → grid** against a
+reference of **title + controls on one line → grid**.
+
+`_heading_row_858` folds them into one flex row at all three heading branches (they emitted the
+identical `<h2>` string), and the standalone row is skipped. ★ The skip is detected **from the
+rendered markup** (`_MERGED_CTL_CLS_858 in main_jsx`), not from a flag — so a branch that does not
+merge still gets its own row, and the controls can never render twice. A screen with no filter
+control gets the bare `<h2>` byte-for-byte as before.
+
+**The seam broke it, exactly where memory says seams break things.** The replaced line was
+followed by an **implicitly concatenated** string literal, so swapping a literal for a call gave
+`SyntaxError: Perhaps you forgot a comma?` at all three sites at once. Not in the logic — at the
+boundary the edit introduced. `compile()` caught it (#814), and the test now pins it.
+
+### `hero missing` — 404 entries / 106 runs, and mostly already answered
+
+The largest class by raw entries, and opening it shows why raw entries mislead. The texts are
+**compound restatements of items already fixed**:
+
+> *"hero: missing branded title art, **top 10 badge** with '#1 in tv shows today'"* — #435 / #856
+> *"hero right side: missing **tv-14 age rating chip** and **pagination dots**"* — #782 / #652
+
+`pagination dots` is *verifiably present* in 7 of 7 post-#652 delivered frontends (item 183), and
+the rating chip has `_ratingOf`. So a large part of this class is the over-claim #857 now
+constrains, arriving bundled with a real item so that it reads as one finding. **A compound
+deviation inherits the credibility of its truest clause** — which is the same half-true shape
+recorded for the judge's `missing` lists, and the argument for #857 being scoped to the whole
+field rather than to a phrase.
+
+What remains genuinely unaddressed in it is **branded title art** (a per-title logo image), which
+needs an asset the corpus does not carry. Not deferred for judgement — deferred for a missing
+input.
+

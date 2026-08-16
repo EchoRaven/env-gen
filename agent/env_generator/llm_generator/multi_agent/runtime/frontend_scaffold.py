@@ -5086,6 +5086,38 @@ def _control_bar_432b(comps: List[Dict]) -> str:
             + "      </div>\n")
 
 
+_MERGED_CTL_CLS_858 = "mb-4 flex flex-wrap items-center justify-between gap-4"
+
+
+def _heading_row_858(label: str, control_jsx: str) -> str:
+    """#858: the page title and the screen's filter controls share ONE row.
+
+    `_control_bar_432b` (which fixed controls being dropped entirely) emits a standalone
+    right-aligned row, and `_render_reference_page` concatenates `top_jsx + control_jsx +
+    main_jsx` — so the controls render on their own line ABOVE a heading that lives inside
+    `main_jsx`. The rendered order is nav, controls, title, grid.
+
+    Every reference puts the two on one line, title left and control right, and the judge says so
+    in **144 entries across 86 runs** — the third-largest class in the corpus, on `movies`
+    (70/68 runs) and `shows` (66/64): *"implementation has a second row for genres; reference
+    places 'tv shows' title + genres [inline]"*, *"reference shows large 'movies' title left with
+    genres dropdown"*. Note the complaint is never "missing" — #432b works; only its PLACEMENT
+    was wrong, which is why a presence probe would have called this class clean.
+
+    Returns the bare `<h2>` unchanged when the screen has no controls, so every screen without a
+    filter is byte-identical. The caller must then skip the standalone row (see `_ctl_merged_858`)
+    or the controls would render twice."""
+    if not control_jsx.strip():
+        return f'          <h2 className="mb-4 text-xl font-semibold">{label}</h2>\n'
+    inner = control_jsx.replace(
+        '<div className="flex flex-wrap items-center justify-end gap-4 px-6 pt-4">',
+        '<div className="flex flex-wrap items-center justify-end gap-4">')
+    return (f'          <div className="{_MERGED_CTL_CLS_858}">\n'
+            f'            <h2 className="text-xl font-semibold">{label}</h2>\n'
+            + inner +
+            "          </div>\n")
+
+
 def _rewire_fw_nav(page_src: str, comp_name: str, import_rel: str) -> str:
     """#440: swap the projector's MARKED inline nav ({/* fw-nav:start */}…{/* fw-nav:end
     */}) for a lane/agent-authored nav component <comp_name/> + its import — recovers
@@ -6972,8 +7004,8 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
                     break
         main_jsx = (
             _grid_section_open
-            + f"          <h2 className=\"mb-4 text-xl font-semibold\">{label}</h2>\n"
-            "          {error ? <p className=\"mb-4 text-sm opacity-70\">{error}</p> : null}\n"
+            + _heading_row_858(label, control_jsx)
+          + "          {error ? <p className=\"mb-4 text-sm opacity-70\">{error}</p> : null}\n"
             f"          <div className=\"{_grid_div_cls}\" style={{{{ {_grid_gap_sty}gridTemplateColumns: 'repeat({_gcols}, minmax(0, 1fr))' }}}}>\n"
             "            {_padN(rows, 8).map((row, i) => (\n"
             "              <div key={(row && row.id) || i} className=\"overflow-hidden" + _grid_card_r_cls
@@ -7010,8 +7042,8 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
                     f"style={{{{ backgroundColor: '{accent}', color: '#ffffff' }}}}>{_action}</button>\n")
         main_jsx = (
             _grid_section_open
-            + f"          <h2 className=\"mb-4 text-xl font-semibold\">{label}</h2>\n"
-            "          {error ? <p className=\"mb-4 text-sm opacity-70\">{error}</p> : null}\n"
+            + _heading_row_858(label, control_jsx)
+          + "          {error ? <p className=\"mb-4 text-sm opacity-70\">{error}</p> : null}\n"
             f"          <div className=\"{_grid_div_cls}\" style={{{{ {_grid_gap_sty}gridTemplateColumns: 'repeat({cols}, minmax(0, 1fr))' }}}}>\n"
             "            {rows.map((row, i) => (\n"
             "              <div key={(row && row.id) || i} className=\"overflow-hidden" + _grid_card_r_cls + " text-center\" "
@@ -7157,8 +7189,8 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
                 "          </div>\n")
         main_jsx = (
             _grid_section_open
-            + f"          <h2 className=\"mb-4 text-xl font-semibold\">{label}</h2>\n"
-            "          {error ? <p className=\"mb-4 text-sm opacity-70\">{error}</p> : null}\n"
+            + _heading_row_858(label, control_jsx)
+          + "          {error ? <p className=\"mb-4 text-sm opacity-70\">{error}</p> : null}\n"
             + body +
             "          {rows.length === 0 && !error ? <p className=\"mt-6 text-sm opacity-50\">Loading\\u2026</p> : null}\n"
             "        </section>\n")
@@ -7386,7 +7418,12 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
              f"style={{{{ {_root_bg_css}, color: '{text}' }}}}>\n"
              + left_jsx +
              "      <main className=\"flex min-w-0 flex-1 flex-col\">\n"
-             + top_jsx + control_jsx + main_jsx +
+             # #858: only the branches that build a page heading fold the controls into it.
+             # Detected from the rendered markup rather than a flag, so a branch that does
+             # NOT merge still gets its standalone row and the controls never render twice.
+             + top_jsx
+             + ("" if _MERGED_CTL_CLS_858 in main_jsx else control_jsx)
+             + main_jsx +
              "      </main>\n"
              + right_jsx +
              "    </div>\n")
