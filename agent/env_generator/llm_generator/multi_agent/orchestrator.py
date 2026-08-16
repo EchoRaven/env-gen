@@ -152,6 +152,13 @@ FWVAL_NO_DELIVER_ABORT_S = int(os.environ.get("ENVGEN_NO_DELIVER_ABORT_S", "4500
 # validation (a re-authoring), reset the stuck counter — but count the churn, BOUNDED by
 # this cap so a verifier that oscillates FOREVER (never converging) still aborts (no
 # livelock). Env-gated. ~this-many re-authorings of room before giving up on the verifier.
+# #870: ceiling on the milestone-planning LLM call. One chat completion; the neighbouring bounded
+# awaits in this file use 5-10s for hub round-trips and KICKOFF_TIMEOUT_SEC+600 for a whole
+# meeting, so 300s is generous for a single call and still finite. Env-overridable because the
+# right value is model- and gateway-dependent.
+_MILESTONE_PLAN_TIMEOUT_S_870 = max(
+    30.0, float(os.environ.get("ENVGEN_MILESTONE_PLAN_TIMEOUT_S") or "300"))
+
 FWVAL_CHAIN_CHURN_CAP = max(2, int(os.environ.get("ENVGEN_CHAIN_CHURN_CAP") or "8"))
 # FIX #186 (tiktok-r2): the api_smoke stuck ladder keyed only on (failure_set,
 # chain_sig) — blind to APP-SOURCE edits, so it STUCK-ABORTed ~20s before the
@@ -1267,9 +1274,40 @@ class Orchestrator:
                     try:
                         from .runtime.reference_materials import plan_milestones
                         from .runtime.llm_overrides import get_component_llm as _gcl
-                        _planned = await plan_milestones(
-                            _gcl(self, "milestone_plan") or self.llm, raw_req,
-                            getattr(self, "_reference_spec", None) or {})
+                        # #870: BOUND this await. It was the only unbounded one on the path.
+                        #
+                        # `plan_milestones` ends in a bare `await client.chat(...)` — no
+                        # `wait_for`, no timeout — and the caller's try/except catches exceptions,
+                        # not hangs. Everything downstream is behind it: `set_roadmap` (#864's
+                        # readback), the per-milestone loop, and `start_kickoff` inside that loop.
+                        # The kickoff receipts a few hundred lines below ARE bounded
+                        # (asyncio.wait_for at 1710/1751/1909); this one, which runs first, was
+                        # not — so a hang here means even those timeouts never get to run.
+                        #
+                        # It fits the 7 dead runs (r19 r35 r38 r42 r44 r136 r140) point for point:
+                        # no `milestones.json` (the write is after this line) but a `.lock` in 5 of
+                        # them (an earlier `list_milestones()` read created it and found nothing);
+                        # design_analyst still logging 104-789s AFTER the orchestrator's last entry
+                        # (a separate task, unaffected); the orchestrator lane idling on "kickoff
+                        # still in flight" (it is, forever); and no `phase_error`, because a hang
+                        # raises nothing.
+                        #
+                        # On timeout this falls into the EXISTING `_planned = None` path, which
+                        # #865 just made a real single-milestone fallback rather than a log line.
+                        # The two compose: #865 made the fallback real, #870 makes it reachable.
+                        _planned = await asyncio.wait_for(
+                            plan_milestones(
+                                _gcl(self, "milestone_plan") or self.llm, raw_req,
+                                getattr(self, "_reference_spec", None) or {}),
+                            timeout=_MILESTONE_PLAN_TIMEOUT_S_870,
+                        )
+                    except asyncio.TimeoutError:
+                        self._logger.error(
+                            "milestone planning TIMED OUT after %.0fs — falling back to a single "
+                            "milestone (#870). Unbounded, this hung the whole run before "
+                            "start_kickoff and cost every lane.",
+                            _MILESTONE_PLAN_TIMEOUT_S_870)
+                        _planned = None
                     except Exception as exc:
                         self._logger.error("milestone planning raised: %s", exc)
                         _planned = None

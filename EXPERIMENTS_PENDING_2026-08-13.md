@@ -9975,6 +9975,52 @@ condition; a *nesting path between them* is not demonstrated. This is a safety n
 cause — and after item 198's correction I am not going to call it the first link again.
 
 **One of the three remains open**: a cross-thread lock-order inversion, where the flock holder
-blocks on something else. That one is not statically decidable and is the kind of thing #866's
-trace — now landing with the run — exists to catch.
+blocks on something else. ★ **Two thirds of it turned out to be decidable after all** (item 200):
+0 of 100 mutators do blocking work while holding the lock, and 0 of 47 store call sites sit inside
+an `async def`, so the blocking `flock` is never taken on the event-loop thread. Both detectors
+were proven against a synthetic offender first.
+
+
+## 200. #870 — the only unbounded await on the path, and the whole run was behind it
+
+Item 199 left one mechanism as *"not statically decidable"*. Two thirds of it were:
+
+| | |
+|---|---|
+| mutators doing blocking work while holding the lock | **0 of 100** (detector proven on a `time.sleep` mutator) |
+| store calls inside an `async def` — a blocking `flock` on the event loop | **0 of 47** |
+
+So the store layer has no statically-reachable way to produce the lost write. That redirected the
+search to the other branch — **the write was never attempted** — and there the answer was one read
+away.
+
+`plan_milestones` ends in a bare `await client.chat(...)`: no `wait_for`, no timeout. The caller's
+`try/except` catches **exceptions, not hangs**. Behind that await sit `set_roadmap` (#864's
+readback), the per-milestone loop, and `start_kickoff` **inside** it.
+
+★ **The kickoff receipts below it ARE bounded** — `asyncio.wait_for` at orchestrator.py:1710,
+1751, 1909. Seven such uses in the tree, and the one await that gates the entire run was the
+omission. A hang there means even those timeouts never get to run.
+
+**It fits the 7 dead runs point for point:**
+
+| observed | explained by a hang here |
+|---|---|
+| no `milestones.json` | the write is *after* this line |
+| a `.lock` in 5 of 7 | an earlier `list_milestones()` read created it and found nothing |
+| design_analyst logging 104–789s **after** the orchestrator's last entry | separate task, unaffected |
+| the orchestrator idling on *"kickoff still in flight"* | it is, forever |
+| **no `phase_error`** | a hang raises nothing |
+| 3–4 min, references present, no DDL, no frontend | design prep finished; nothing after it began |
+
+★ **Best-supported candidate of the chain — and still a candidate.** After item 198's correction I
+am not calling it the cause: **a hang leaves no artifact**, so the corpus can show the fit and
+never the fact. Run 152 decides which. Either way the timeout is right, because an unbounded await
+in front of the entire pipeline is a defect independent of whether it has fired.
+
+On timeout it falls into the **existing** `_planned = None` path — which #865 made a real
+single-milestone fallback three tickets ago. ★ **#865 made the fallback real; #870 makes it
+reachable.** Neither is safe alone: timing out into a branch that assigns nothing would reproduce
+#864's empty roadmap, which is the total loss this is meant to prevent. `test_the_fallback_it_
+lands_in_is_the_real_one` pins the pair.
 
