@@ -2879,7 +2879,7 @@ still 85%; and how many link tables would leak if the safety rule were relaxed.
 
 ---
 
-## 135. #807 — replacing a seed table wholesale orphaned 93 rows across 5 tables, and #803 is what made it visible
+## 135. #807 — replacing a seed table wholesale orphaned 93 rows across 5 tables, and #803 is what made it visible  — **superseded in part by #807b/#807c (item 136)**
 
 Found by asking what **#803 would actually render**. Folding a many-to-many into the detail read is
 worth nothing if the link rows point at titles that do not exist.
@@ -2919,6 +2919,44 @@ nothing**, which is the half that matters more.
 adjacent string literals, so it exists at runtime and not in the source. Rewritten to capture the
 actual printed line. #782's lesson, arriving in a new disguise: **check the behaviour, not the
 text that produces it.**
+
+---
+
+## 136. #807b/#807c — pruning was the wrong answer, and my two fixes cancelled each other out
+
+Following #807 one question further: **why** were r145's 93 rows orphaned? Not a few stale links —
+the lane keyed `titles` on **TEXT slugs** (`'tv-stranger-signals'`, `id TEXT PRIMARY KEY`, with
+every dependent declared `title_id TEXT ... REFERENCES titles(id)`), while the dataset supplies
+**integer ids 1..60**. The two sources never shared an id space.
+
+★ **That makes pruning the wrong answer.** It is honest, but it leaves a 60-title catalogue with
+zero episodes, my-list, ratings and continue-watching. **Refusing the swap** keeps the lane's 20
+titles *with* all 93 dependent rows — a smaller app that actually works. **Realism is worth less
+than coherence**, and the framework was trading the second for the first without noticing.
+
+`#807b` refuses a table swap when it would orphan a **majority** of the dependent rows. Majority,
+not any: a few unresolved rows are genuinely stale links (prune them), a majority means the id
+spaces differ. It names both shapes in the log, which is what makes the diagnosis immediate:
+*"lane ids look like 'tv-stranger-signals', dataset ids like 1"*.
+
+**Then the two fixes cancelled out.** The refusal protected 93 rows and the prune immediately
+deleted all 93 — because it still compared them against the dataset the refusal had just rejected.
+**Only visible by executing the merge**; the code reads correctly.
+
+**And the first repair of that was worse than the bug.** Sourcing the live-id set from `merged`
+instead of `real` turned a swap-orphan cleanup into a general referential-integrity pruner over the
+lane's entire seed: run against the corpus it **deleted valid rows in 3 of 4 runs** — r151 and r150
+lost every `my_list` / `ratings` / `continue_watching` row to a `user_id` check with nothing to do
+with the dataset. Caught in one command, because the merge was being executed against real runs at
+every step rather than reasoned about.
+
+Final behaviour, executed across five runs: **r145 refuses and keeps 20 titles + all 93
+dependents; r147/r149/r150/r151 swap as before and lose nothing.**
+
+★ **Three defects in a row from one change, all in the interaction rather than the logic** — #807
+with #807b, then #807c with the whole lane seed. The seam pass (#801) said the failures are at
+boundaries I introduce; this item is that at speed, and the only reason none of it shipped is that
+**every intermediate state was run against the real corpus instead of read**.
 
 ---
 
