@@ -10517,3 +10517,44 @@ code was right, and its own documentation had answered the question before I ask
 time this session that reading the thing I was about to change would have been faster than
 probing it.
 
+
+## 210. #882 — the nine triaged, and the answer is an inconsistency
+
+#881 listed nine silent decision-driving swallows for triage. Triaged:
+
+| | sites |
+|---|---|
+| benign by design | `run_kickoff:1861` (two-path lookup), `material_prep:717` (falls to the non-image path, as its own comment says) |
+| already logged | `messaging:1653` (warning + plain-text fallback), `orchestrator:2075` (error) |
+| **silent, fails OPEN** | `messaging:170`, `codehub/service:1175`, `visual_fidelity:3639`, `workflow_policies:516` |
+| **silent, fails CLOSED** | `workflow_policies:1977` — `has_retro = False` makes the gate **block** |
+
+★ **The most useful result is the last two rows.** The same codebase makes **opposite** choices for
+the same shape, both silently: eight sites fail open, one fails closed, and nothing at any of them
+says which. **Reading the handler is the only way to learn whether a hub hiccup means "ship it" or
+"block it"** — and that is a property an operator needs at 2am, not one they should have to derive.
+
+### the one fixed
+
+`messaging:170`'s `_pre_finalize = False` on error reads as *kickoff IS finalized*, which turns the
+F2b retention guard OFF and re-enables the wake-storm it exists to prevent — the one that cost r3
+**146 idle stop-cycles**. The permissive default is kept; only its indistinguishability from a
+healthy "kickoff is done" was the defect. Say-once per agent, since it runs on every inbox message.
+
+The other four open ones and the fail-closed one are recorded above with their direction, which is
+the part that was missing before.
+
+### method, twice in one file
+
+- The test anchored on the bare token `has_retro = False` and hit an **ordinary initialisation**
+  several occurrences earlier — the shortcut this session keeps punishing.
+- It then used a fixed-width source window, which **the repo's own guard caught**.
+
+### ★ and a 16-failure run that was not mine
+
+Mid-turn the suite reported 16 failures across files I had not touched. `git status` showed the
+other agent mid-edit in `completeness_audit.py` and `delivery_gate.py`. The final run was
+**bracketed by a HEAD check**: with two agents in one tree, *green* means green **and** the tree
+did not move underneath it. Recorded because the first instinct on 16 red tests is to look at your
+own diff, and that would have been the wrong place.
+
