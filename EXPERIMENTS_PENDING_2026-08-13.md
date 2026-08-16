@@ -2995,6 +2995,44 @@ prevented; #807b contains it where it cannot.**
 
 ---
 
+## 138. #809 — the root of the whole seed chain was a sentence in the backend prompt that had stopped being true
+
+#808 fixed the type, #807b contains the value mismatch, #807 prunes stragglers. One link further:
+**why did r145's lane author 20 slug-keyed titles at all?** Because the prompt told it to, and told
+it something false while doing so:
+
+> *"...only YOU know the domain semantics, **so the framework cannot invent good values for you**."*
+
+The framework **does**. `seed_dataset.json` carries 60 real design-prep titles and the loader
+merges it OVER the lane's file, replacing covered tables wholesale. And `seed_dataset` appeared
+**zero times** in either backend prompt.
+
+So the lane authored a seed believing it was the sole source of truth, chose slug primary keys as
+a reasonable design, and the framework then replaced its titles with integer-keyed rows — orphaning
+93 dependent rows across 5 tables. ★ **Every fix in the #807 chain was downstream of a prompt
+sentence that had stopped being true** — #788's class exactly, and the second time this session
+that a false prompt claim turned out to be a root cause rather than a wording nit.
+
+The clause now states the fact and the actionable consequence: a real dataset may be staged, it
+replaces covered tables wholesale, its ids are **integer surrogates**, so give every content table
+an integer surrogate PK — and it says what happens if you do not, including that #807b's protection
+means shipping *your placeholder titles instead of the real ones: a worse app, reached safely*.
+
+★★ **#804 caught my own edit on its first real use — and then its own gap.** The clause was in the
+file and the render test failed, exactly as designed. Chasing it produced three findings in a row:
+
+1. `_render_all_macros` skipped every macro whose name starts with `_`. `backend_agent.j2` keeps
+   its ownership rules in **`_ownership_block`**, so #804's coverage was narrower than claimed
+   from the moment it was written. Widened to skip only Jinja internals.
+2. My line-number attribution of the clause to `_ownership_block` was **wrong** — it actually
+   renders inside `backend_system_prompt` (78,426 chars, v3). Enumerating the macros and looking
+   settled it; reasoning about line numbers had not.
+3. The real failure: `_render_all_macros` returns `(out, failed)`, and the new test wrote
+   `marker in _render_all_macros(...)` — a membership test **against the tuple**, silently False.
+   A new caller for a signature I had changed myself two items earlier. **The seam, again.**
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
