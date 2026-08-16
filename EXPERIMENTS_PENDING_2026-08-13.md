@@ -9606,3 +9606,48 @@ warning names the 240s floor, so the operator sees why nothing recovered.
 - The guard was right both times, including about the assertion-message slice — a width in a
   failure message goes stale exactly like a width in an assertion.
 
+
+## 192. the stuck-population census, closed — and the headline number corrected
+
+The last unexamined slice (the 17 that stop at the frontend) turns out not to be a class at all,
+and opening it corrects the number I have been quoting.
+
+**The 17 are bounded in time.** r1, r4–r8, r10–r14, r17, r23, r26, r28, r55, r73 — every one
+between **2026-07-31 and 08-05**, none in the 78 runs since. They ran 12–88 minutes with up to
+1985 orchestrator entries and up to 13 captures: real work, not a stall. The only "empty lane" in
+15 of 17 is the **Debugger**, which is spawned on demand — empty is its normal state.
+
+★ **So the era split, applied to the whole population, moves the headline:**
+
+| | pre-2026-08-05 (n=82) | since (n=69) |
+|---|---|---|
+| **completed** | 12 (**15%**) | **45 (65%)** |
+| zero kickoff lanes started (#862's class) | 5 (6%) | 2 (3%) |
+
+**"62% killed" is a corpus-wide average that mixes an immature first week with a much healthier
+recent half.** The recent half completes **65%** of the time. I stated the 62% figure as the
+dominant fact about this pipeline *after* items 183 and 188 had already established that a
+corpus-wide rate is misleading for anything that changed recently — the third time this session
+that the right move was to split first, and the first time I got to apply it to my own headline.
+
+**What survives the split**, and it is the reason #862 was worth writing:
+
+- **#862's class recurs.** 6% → 3%: halved, not gone, and the two recent instances (r136, r140)
+  are 2026-08-11. That is the only failure mode in the stuck population that is still live and
+  still un-rooted.
+- **#861's class is the bulk.** 70 of the 94 non-completed runs reach the visual gate and never
+  terminate; the release escape reading #500's merged average is the one concrete defect found in
+  it.
+- **The 17 are closed.** Early-week immaturity, zero recurrence in 78 runs. No fix is owed.
+
+### census, final
+
+    94 non-completed
+      70  stuck at the visual gate      -> #861 (fixed, unverified)
+      17  frontend, all pre-08-05       -> no recurrence; closed
+       7  zero kickoff lanes started    -> #862 (instrumented, root unknown, 3% and live)
+
+Nothing in the stuck population is now unexamined. The two live items both need run 152: #861 to
+show the fast path no longer fires on an inflated average, #862 to name the silent attendees the
+next time it happens instead of leaving an eighth run to be explained away.
+
