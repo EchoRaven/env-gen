@@ -8846,3 +8846,22 @@ it correctly. But the second one **turned a correct claim into a red test**, whi
 caught — and that is the argument for encoding a measurement as a test rather than a paragraph.
 A number in prose cannot fail.
 
+### the sweep's closing rate
+
+All 41 candidates triaged; the two that looked most like #854 were opened and both are clean:
+
+- **`page_build_gate._AUTH_ROUTES` vs `frontend_scaffold._auth`** differ by `/logout`. Not a
+  divergence — they answer different questions ("pages the framework already built" vs "auth-ish
+  routes a literal link may resolve to"), and `/logout` is an action, not a page. Measured:
+  **0 of 151 runs register `/logout` as a ui_page** (57 distinct routes registered).
+- **`_IMG_EXTS` vs `_IMAGE_EXTS`** differ by `.bmp`. **Zero `.bmp` files exist anywhere in the
+  corpus**; references are 3020 `.jpg` plus 151 `.md`. Inert.
+
+The rest are legitimate scope differences (`_DOC_EXTS` minus `.pdf` for a text-only extractor;
+`_TRUTHY_STRS` plus `critical`; `_UNIQUE_FIELDS` minus `title`, which is not unique).
+
+★ **1 real finding from 41 candidates**, and it was the single pair that shared a NAME. That is
+the reusable filter: a value duplicated under two names is usually two concepts; a value
+duplicated under ONE name is a promise that they are the same thing, and #853 and #854 are both
+what happens when that promise stops holding.
+
