@@ -2765,6 +2765,45 @@ unselected, **not emitted**.
 
 ---
 
+## 132. #804 — the prompt edits were the last source-asserted change; now they execute
+
+#803's lesson (*a testing gap described as a validation gap*) run over everything shipped this
+session. Nearly all of it already had an executable proof — #782/#783 under node, #803 against
+SQLite, #784/#789–#793/#796–#799 against real fixtures. **The prompt edits did not.** They were
+asserted with `"<marker>" in file.read_text()`, and every one was applied by **raw Python string
+surgery on a Jinja2 template** — five times across `v3` and `v4`, without ever rendering the
+result. A string-patched `.j2` can fail to parse, or parse and land the text in a block that never
+executes, or parse and render while a *sibling* macro breaks. A substring check on the source sees
+none of that.
+
+**Result: all 18 templates parse, and all five clauses reach the rendered output in both versions**
+— 115,980 chars (v3) and 108,553 (v4).
+
+★ **Getting there took four wrong turns, and every one produced a number that looked like a
+finding.** They are worth listing because the pattern is now unmistakable:
+
+| attempt | what it reported | what it actually was |
+|---|---|---|
+| bare `Environment().render()` | *"no loader for this environment"* | the templates `include` |
+| with a loader | **31 chars** — looks like total collapse | the body lives in `{% macro %}`; the framework calls `render_macro` |
+| catching only `TypeError` | every clause **MISSING**, both versions | macros raise `UndefinedError` for a missing declared parameter — correct behaviour |
+| hand-listed kwarg sets | five templates "failing" | item 110's trap again: a curated list standing in for a semantic question |
+
+Then a fifth: introspecting `macro.arguments` gives parameter **names**, not **types**, so a macro
+expecting a dict got `"<prior_decisions>"` and raised `'str object' has no attribute 'get'`. **That
+assertion was withdrawn rather than propped up.** Faking type knowledge to make it pass would have
+produced a test that fails for reasons that are not defects — precisely what this session has spent
+most of its time deleting. The test asserts what it can prove: every template parses, every
+template produces output (as a macro set *or* a plain body — the `vision/` prompts are not
+macro-shaped, which was the curated-shape assumption one final time), and every clause survives
+rendering in both versions.
+
+**Eighth and ninth instrument-zeros of the session.** Both were caught by the standing rule rather
+than by noticing anything, which is now the only reliable defence: *a zero is a claim about the
+instrument until the instrument is shown to find something.*
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
