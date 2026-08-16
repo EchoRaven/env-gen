@@ -3463,6 +3463,42 @@ inspected file are a skew candidate — clear the cache and re-run before touchi
 
 ---
 
+## 149. #819 — the widest silent skip on the design-prep path, and the one that best fits the data
+
+Four items chased where the enrichment vanished — the per-screen call (#813), the per-component
+join (#815), the truncated input (#816) — and one eliminated the reply budget. **The sixth
+candidate sits above all of them:**
+
+```python
+try:
+    enriched = await _run_analyst(...)
+except Exception:
+    enriched = None
+ds = _merge_enrichment(skeleton, enriched) if enriched else skeleton
+```
+
+**Any** exception anywhere in `_run_analyst` discards the enrichment for **every screen at once**.
+★ That fits the corpus signature better than the others: `build_notes` lands **1 time in 4,006
+components across 12 runs** — *essentially never*, not *sometimes*. Per-screen failures would
+scatter; a wholesale drop is what "never" looks like.
+
+*"Best-effort, the skeleton still ships"* is the right behaviour and is kept — the measured facts
+(colors, crops, geometry) are worth more than nothing, and design-prep runs before every lane. The
+defect was that it shipped **without a word**, while the frontend prompt kept telling every lane to
+read fields that were therefore empty.
+
+Two modes are reported **separately**: the call *threw*, versus the call *returned nothing*. The
+first cut fired both for one event — #815's misdiagnosis, in the same file on the same day — and
+its own test caught it. The warning also states what still ships, because *"everything is broken"*
+would be false and would get the line ignored.
+
+**The path is now fully instrumented.** Six candidates: wholesale failure (#819), per-screen call
+(#813), empty reply (#813), the id join (#815), truncated input (#816 — **fixed**, it was
+genuinely broken), reply budget (**eliminated**, 3× headroom). Whichever is live, **the next run
+names it in one line** instead of writing a mute skeleton for 4,006 components.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
