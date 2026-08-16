@@ -1733,6 +1733,46 @@ right one needed a distribution.
 
 ---
 
+## 103. #779 — the framework measured the depth and told nobody
+
+#778 took `copy`, the most frequent floor. This takes `style`, the **lowest-scoring dimension in
+the entire gate** (mean 0.615 over 48 r99+ runs) and the second-most-frequent floor on `login`.
+
+**The complaint is one word.** Across 504 judged screens, `flat` appears in **399 style notes —
+79%**, and the direction is consistent:
+
+    "Reference has dark red gradient background fading to black... Implementation is flat solid
+     black with a bordered card."
+    "Reference uses a subtle red radial gradient... Implementation uses a fl[at]..."
+
+    flat 79%   rounded 53%   surface 46%   card 39%   pill 22%   gradient 18%
+
+**And the framework already measures exactly what is missing.** r151's `design_system.json`:
+
+    shadow_scale  [{"role": "card_hover_preview",
+                    "css": "0 20px 40px -8px rgba(0,0,0,.75), 0 8px 24px -4px rgba(0,0,0,.5)",
+                    "usage": "the enlarged card that pops up on hover in a rail"}, ...]
+    material      "FLAT dark chrome throughout — not a wallpaper/translucent material. Top nav is
+                   TRANSPARENT at the top of a hero page ... OPAQUE #141414 after ~50px of
+                   scroll; this is a scroll transition, NOT a translucency."
+
+Paste-ready CSS, and a paragraph that answers the exact question the judge keeps marking down.
+**The frontend prompt named neither.** `shadow_scale` occurs only in `design_prep.py` (writer) and
+`design_analyst.j2` (the prompt requesting it) — **a measured field with a writer and zero
+readers**, #746's class. `radius_scale`, for contrast, is named in five places including the
+frontend prompt, and `radius`/`rounded` complaints are correspondingly less dominant than `flat`.
+
+Both prompt versions carry it now. v4's anchor differs from v3's — the patch script reported
+`v4: 未找到锚点,跳过` and would have shipped a half-fix if I had stopped at "1 file changed".
+#775 is the entry that made me look.
+
+**Cheapest observation.** Next run: does `flat` still appear in 79% of style notes, and does
+`style`'s mean move off 0.615? Both are one query. If the tokens arrive and nothing moves, style
+joins copy in #664's class — but unlike copy, this one was genuinely never delivered, so a null
+result here is more informative than usual.
+
+---
+
 ## 102. #778 — the design system never asked what the words were
 
 Item 101 said the next step was to open `login.png` beside its reference and read what the judge
