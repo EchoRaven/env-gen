@@ -2404,6 +2404,44 @@ filename. The rule keeps paying; the underlying mistake keeps recurring.
 
 ---
 
+## 122. #795 — the two gates I switched ON this session were sized on figures that understate recent builds
+
+#774's re-measurement (item 121) showed the era split can overturn a corpus-wide number in either
+direction. The obvious next target is not another detector but **the two switches already thrown**:
+#751 and #752 went from REPORTING to BLOCKING this session, and their blast radius was quoted
+corpus-wide.
+
+Re-measured with the **shipped** normaliser (`_canon_validation_status` + `_flatten_validation_metadata`,
+#193/#236) feeding the **shipped** `_ui_evidence_breadth_739` — not a re-implementation (#772) —
+with a non-vacuity check first (89 of 151 runs carry any UI record at all):
+
+| slice | runs | #751 failed-task | #752 contradicted UI |
+|---|---|---|---|
+| ALL | 151 | 13% | 6% |
+| r130+ | 22 | **18%** | **13%** |
+| r145+ | 7 | 28% | 28% |
+
+**#752 was approved on "6 of 148 → 4%, a gate". On the r130+ slice it is 13%** — three times
+higher — and #751 is 18% against the 13% quoted. Neither approaches the rates that disqualified
+the rejected candidates (#743's 70%, #671's 45%), so **the calls stand**; but the margin is
+materially smaller than the numbers they were made on, and that is worth knowing by whoever owns
+the switch. The r145+ denominator is 7 and is quoted only for direction, not as a rate.
+
+★ **The direction of the error is the point.** #794 found a corpus figure describing a defect that
+no longer occurs. #774 and this item found the opposite: corpus figures that UNDERSTATE what
+recent builds do. Neither direction is the default — the era split has to be run. Every
+decision-driving number in this document that was measured corpus-wide should be read with that,
+and the three re-measured so far (#774, #751, #752) went 3-for-3 against the corpus-wide reading.
+
+**And the measurement needed two attempts.** Feeding raw `codehub_checks.json` rows straight to
+`_ui_evidence_breadth_739` returned **0% on every slice**. The raw store spells status `success`
+and nests the check kind under `evidence` — #193/#236 normalise both, and the shipped detector is
+written for the normalised shape. The zero was the instrument again (sixth time this session), and
+what caught it was the rule rather than the observation. **A non-vacuity line now precedes the
+table**: without "89 of 151 runs carry any UI record", a 0% and a real 0% are indistinguishable.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

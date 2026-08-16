@@ -1954,6 +1954,23 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # wrong. That is the same escape any structural blocker already has.
     if _bugs743.get("failed_count"):
         failed_checks.append("unresolved_failed_tasks")
+    # #795 (2026-08-16): BOTH figures above are corpus-wide and BOTH understate recent builds.
+    # Re-measured by build era with the SHIPPED normaliser (#193/#236 flatten) rather than a
+    # hand-written re-implementation (#772), with a non-vacuity check (89 of 151 runs carry any
+    # UI record at all):
+    #
+    #     slice     runs   #751 failed-task   #752 contradicted UI
+    #     ALL        151        13%                  6%
+    #     r130+       22        18%                 13%
+    #     r145+        7        28%                 28%
+    #
+    # #752 was approved on "4%, a gate"; on the r130+ slice it is 13%. Neither reaches the
+    # rates that disqualified the rejected candidates (#743's 70%, #671's 45%), so the calls
+    # stand -- but the margin is smaller than the numbers they were made on. The r145+
+    # denominator is 7, too small to read a rate off alone. #794 is why this was re-run: a
+    # corpus-wide figure can describe a defect that no longer occurs -- and here the opposite
+    # was true, which is exactly why it has to be measured rather than assumed either way.
+
     incomplete_tasks = incomplete_required_tasks(hubs)
     # §4: when a milestone slice is provided (intermediate milestone), defer structural tasks
     # for a clearly out-of-slice endpoint — an intermediate milestone is gated on ITS OWN
