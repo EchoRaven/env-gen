@@ -263,6 +263,47 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
                     "#615 the shared endpoint(s) already accept filters the contract declares: "
                     "%s — a route-derived filter is available, the pages just do not pass one.",
                     "; ".join(f"{k} takes {', '.join(v)}" for k, v in sorted(_f708.items())))
+                # #780: FILE IT. Everything above is a log line, and the lane does not read the
+                # log. r151 computed all of it — "6 routes render identical content: /browse,
+                # /browse/languages, /games, /movies, /new, /shows" and "/api/titles takes genre,
+                # kind, language — the pages just do not pass one" — printed it ONCE in a
+                # 116-minute run, and filed nothing. 136 tasks existed; none was this.
+                #
+                # This is #748/#740/#769/#770's family with the stakes raised: those discarded a
+                # CAUSE, and this discards a FIX. The framework has the route list, the endpoint,
+                # and the exact parameter names the endpoint accepts.
+                #
+                # Gated on `_f708` deliberately. Without declared filters the finding is "these
+                # pages look alike", which #615's own comment refuses to act on ("at 32/45 it
+                # would wedge nearly every run"). WITH them it is a one-line change per page, and
+                # naming the parameter is what makes it a task rather than an observation.
+                #
+                # Deduped by #760's key, so one task per distinct group per process, and
+                # create_task's own #672 twin-check catches a repeat across processes.
+                try:
+                    _routes780 = ", ".join(_g.get("routes") or [])
+                    _params780 = "; ".join(f"{k} accepts {', '.join(v)}"
+                                           for k, v in sorted(_f708.items()))
+                    workhub.create_task(
+                        title=f"Pass a route-derived filter on: {_routes780}"[:180],
+                        description=(
+                            f"These {len(_g.get('routes') or [])} routes render IDENTICAL "
+                            f"content because each calls {', '.join(_g.get('endpoints') or [])} "
+                            f"with no query parameter: {_routes780}.\n\n"
+                            f"The contract already declares the filters: {_params780}.\n\n"
+                            "Fix: give each page the parameter its own route implies (e.g. a "
+                            "/movies page passes the kind that means film, /browse/languages "
+                            "passes language) and label its rows from that grouping. Judges "
+                            "report duplicated row titles on 39% of runs for exactly this "
+                            "reason — different rows, one repeated heading, because there is no "
+                            "grouping to name them from."),
+                        assignee="frontend", agent="deliverability", priority="P1",
+                        kind="fidelity")
+                except Exception as _t780:
+                    _LOG_700.warning(
+                        "#780 could not file the route-filter task (%s: %s) — the finding above "
+                        "is therefore log-only again, which is the defect #780 exists to fix.",
+                        type(_t780).__name__, str(_t780)[:120])
             _LOG_700.warning(
                 "#615 %d routes render identical content: %s — all fetch only %s (components: "
                 "%s). Not a blocker; a nav destination that shows the same list as its siblings "

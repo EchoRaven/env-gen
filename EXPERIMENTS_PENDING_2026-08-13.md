@@ -1733,6 +1733,49 @@ right one needed a distribution.
 
 ---
 
+## 105. #780 — the framework computed the fix and wrote it to a log nobody reads
+
+Item 104 ended pointing at item 54, the oldest open thread. It turns out the framework already
+solved it and then threw the answer away. r151 printed both halves, **once**, in a 116-minute run:
+
+    #615 6 routes render identical content: /browse, /browse/languages, /games, /movies,
+         /new, /shows — all fetch only /api/titles
+    #615 the shared endpoint(s) already accept filters the contract declares: /api/titles takes
+         genre, kind, language — a route-derived filter is available, the pages just do not
+         pass one.
+
+**That is not a diagnosis, it is a fix.** The route list, the endpoint and the exact parameter
+names, all computed. r151 carried **136 tasks and none of them was this.**
+
+So it is #748/#740/#769/#770's family with the stakes raised: those discarded a CAUSE; this
+discards a FIX. The finding now becomes a P1 task for the frontend lane naming the routes, the
+endpoint, the available parameters and what to do with them.
+
+**Gated on `_f708`, deliberately.** Without declared filters the finding is "these pages look
+alike", which #615's own comment refuses to act on — *"at 32/45 it would wedge nearly every
+run"*. With them it is a one-line change per page, and **naming the parameter is what turns an
+observation into a task.** Deduped by #760's key so it files once per distinct group, with
+create_task's #672 twin-check covering repeats across processes, and a failure to file says so
+rather than silently reverting to log-only.
+
+It also closes the loop on item 104's finding: judges report duplicated row titles in 39% of
+runs — different rows, one repeated heading — because a page that passes no filter has no
+grouping to name its rows from.
+
+**Three of my own over-loose checks in one sitting, all caught.** The token probe that reported
+5 of 6 controls "present" by matching words anywhere in a 300KB blob (item 104); a test boundary
+I hand-typed with guessed indentation; and `assert "raise" not in blk` matching my own comment's
+*"with the stakes raised"* — the third over-loose substring after #765 and #774, fixed the way
+#706 did it, at statement level.
+
+**Cheapest observation.** `#780 route-filter task filed` in the checker. A hit means the lane was
+told, in a task, with parameter names. What happens next is item 54's actual question, unanswered
+since the beginning of this document: **the lane has never yet acted on this information in any
+form.** If it does not act on a P1 task naming the exact parameters, the answer is #664's, and
+the remaining lever is enforcement rather than communication.
+
+---
+
 ## 104. browse_by_languages is NOT a plumbing gap — and the judge is not always right
 
 Item 101's second-biggest blocker (60% of runs). #778 and #779 both turned out to be plumbing —
