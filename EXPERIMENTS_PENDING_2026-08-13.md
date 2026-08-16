@@ -2804,6 +2804,52 @@ instrument until the instrument is shown to find something.*
 
 ---
 
+## 133. #805 — nine measurement errors in one session, all in throwaway code; the measurements now live in a tool
+
+The instrument-zero count reached **nine**, which makes it the most frequent single failure of the
+session — more frequent than any framework defect class. Every one was in ad-hoc analysis written
+fresh in a shell heredoc, and every one produced a confident number about my probe rather than
+about the system:
+
+    milestone_registry.json        the file is `milestones.json`        -> "0 comparable runs"
+    list(d.values())               includes the `_meta` bootstrap doc   -> "0 failing chains"
+    raw codehub_checks rows        need #193/#236's normaliser first    -> "0% contradicted UI"
+    CREATE TABLE under app/backend the DDL is in app/database/init/     -> "0% year mismatch"
+    columns unioned across tables  hides titles.release_year            -> undercount
+    a hand-written candidate set   omitted duration_minutes/_seconds    -> "2%" for a real 17%
+    a bare `Environment().render()`  the body lives in `{% macro %}`    -> "31 chars"
+
+★ **The project's own probe harness does not have this defect.** All 55 `grep_log` patterns in
+`check_pending_experiments.sh` still match live framework strings. (Verifying that produced a
+*tenth* error in the same family: a first pass called 7 patterns "missing" because it searched for
+whole literals while log strings are f-string-assembled. Every fragment was present.)
+
+**So the difference is not care at the moment of writing.** The checker is committed, re-run and
+reviewed; a heredoc is written once under time pressure and never seen again. Nine rule-catches
+say the rule is not the fix — the *location* is.
+
+`tools/corpus_audit.py` now holds the session's re-runnable measurements — the link-table
+label-vs-per-user split (#803), projected bare field reads (#782/#783), and the spec owner-column
+loss (#774) — with two properties enforced **by construction** rather than by remembering:
+
+* every line prints its **denominator**; `_report` will not imply a rate without one;
+* every line prints how many runs the probe **actually saw**, so a zero with a low `saw` count
+  reads as an instrument problem on its face.
+
+`--since N` makes the era split one flag away, because #794 found a corpus figure describing a
+dead defect while #774/#751/#752 found figures understating live ones — **neither direction is the
+default**.
+
+**It reproduces the session's numbers through a different code path**, which is the point of
+writing it twice: 139 safe / 103 actor-touching link tables, and `--since 145` gives #774 at
+**1 of 7 (14%)**, matching item 121 exactly.
+
+One number it surfaces that was not measured before: **122 of 143 runs (85%) still contain a bare
+projected field read** — every build predating #782. That is the baseline the next run has to
+break, and it is now a single command rather than a heredoc.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
