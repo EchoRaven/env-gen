@@ -10107,3 +10107,61 @@ Every LLM call that gates the whole run now has a finite total, and every fallba
 one the code already had. **None of it is verified against a run**, and the cause of the 7 dead
 runs is still a candidate rather than a fact.
 
+
+## 202. #872 — the same uncapped retry loop, on the population that actually dies there
+
+#870 bounded planning, #871 the reference compile. Sweeping the **post-kickoff** path (31 awaited
+calls after `start_kickoff`) leaves one that matters more than both, because it sits where most
+runs end.
+
+★ **70 of the 94 non-completed corpus runs reach the visual gate and never terminate** (item 190);
+r151 sat there 116 minutes. The judge call was bare:
+
+```python
+resp = await client.chat([Message.user_multimodal(parts)], temperature=0.0, max_tokens=8000)
+```
+
+One completion is capped at 240s; the retry count is not; and **this runs once per SCREEN — ~12
+per round**. The gate's escapes (`escape_s` wall-clock, attempt cap, plateau) are evaluated only
+**between** rounds by `_visual_release_decision`, so **a long round cannot be escaped from while
+it runs**. Every other timeout in that module is a browser, HTTP or compose bound; the judge had
+none.
+
+**No new branch was needed** — `asyncio.TimeoutError` is an `Exception`, so it lands in the
+handler three lines below and becomes the existing `judge_error` verdict, which #142 already
+treats as TRANSIENT and refuses to cache. Third time in three tickets that the timeout lands on a
+path the code already takes; that is what has made all three safe.
+
+**Bounded, not solved.** A 12-screen round is now ≤ 12 × 300s = 60 min instead of unbounded.
+
+★ **The per-ROUND cap is not merely deferred — it would be actively harmful, and I only found the
+real reason by going back to check my own deferral.** I wrote *"partial verdicts change what
+`coverage` means"*, which is vague enough to be wrong. The code is not vague:
+
+    616:  visual_gate_verdict FAILS any OWNED screen left unjudged
+    1113: if unjudged: {"passed": False, "reason": "N declared screen(s) were never judged …"}
+          "an owned screen that was never judged is a FAILURE, not a skip"
+
+A per-round budget that stops starting screens leaves the tail out of `results`, and an absent
+screen is `unjudged`. **It would convert a SLOW run into a PERMANENTLY FAILING one** — the same
+tail dropped every round, failing on it every round.
+
+★ **And that boundary is exactly why #872 is safe.** `judged` is `{r["name"] for r in results}` —
+a screen counts if it appears **at all**. A timeout returns a real verdict
+(`similarity: 0.0, judge_error: True`), so the screen is *judged with a bad score*, not skipped,
+and #142 refuses to cache it. **Judged-and-0.0 is recoverable next round; unjudged is not.**
+`test_a_timed_out_screen_stays_in_the_results` pins it, because breaking it — "why record a
+verdict for a screen we gave up on?" — looks exactly like an optimisation.
+
+### the seam, caught by an older guard
+
+#647's *"every tuned constant carries a measured rationale"* test went red — and **not for my
+constant**. Inserting the `#872` comment block between `#644`'s rationale and
+`_VIEWPORT_FALLBACK_H_644` **orphaned that rationale**: the guard walks upward from a number
+through contiguous comment lines, and my block became what it found. The number I added was fine;
+the number I displaced was not.
+
+★ Errors cluster at the seam I introduce, and this is the sharpest instance of it this session:
+**the damage was to a neighbour, not to the change.** An older guard, written for an unrelated
+reason, is what noticed. Constant moved below the one it displaced, with the reason recorded there.
+

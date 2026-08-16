@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import asyncio as _asyncio
 import os
 import re
 import subprocess
@@ -216,6 +217,13 @@ _VIEWPORT = dict(_CV646)
 # `capture_viewport_644` is retained as the aspect calculation, unused by the capture path, so
 # whichever direction a future run's data supports can be wired without re-deriving this.
 _VIEWPORT_FALLBACK_H_644 = 900
+
+# #872: ceiling on ONE judge call including its re-rolls. `utils.llm` caps a completion at 240s
+# (FIX #187) but nothing caps the retry count. Per SCREEN, so a round of ~12 is bounded at
+# 12 x this rather than unbounded. Env-overridable. Placed AFTER the constant above, not before
+# it: inserting between #644's rationale and its number orphaned that rationale and #647's guard
+# caught it — a seam, not a logic error.
+_JUDGE_TIMEOUT_S_872 = max(30.0, float(os.environ.get("ENVGEN_JUDGE_TIMEOUT_S") or "300"))
 
 
 def _references_dir_644(anywhere: Any) -> Optional[Path]:
@@ -2223,8 +2231,26 @@ async def judge_screen_pair(llm: Any, screen: Mapping[str, Any], screenshot_path
         # ample headroom so the JSON never truncates. temp=0 + JSON-only instruction
         # means it emits only what the verdict needs, capped here. Generalizable
         # (every judge call, every app) — measurement integrity.
-        resp = await client.chat([Message.user_multimodal(parts)],
-                                 temperature=0.0, max_tokens=8000)
+        # #872: bound the judge call. Same family as #870/#871, on the biggest population.
+        #
+        # `utils.llm` caps one completion at 240s (FIX #187) and its retry layer re-rolls with no
+        # cap on the count, so a single screen is 240s x N. This runs ONCE PER SCREEN — ~12 per
+        # round — and the visual gate's escapes (`escape_s` wall-clock, attempt cap, plateau) are
+        # evaluated only BETWEEN rounds by `_visual_release_decision`. A round that runs long
+        # therefore cannot be escaped from: 70 of the 94 non-completed corpus runs reach the
+        # visual gate and never terminate, and r151 sat here for 116 minutes.
+        #
+        # A timeout needs no new branch: `asyncio.TimeoutError` is an `Exception`, so it lands in
+        # the handler three lines below and becomes the existing `judge_error` verdict — which
+        # #142 already treats as TRANSIENT and refuses to cache, so the screen is re-judged rather
+        # than pinned at 0.0. Timing out lands on a path the code already takes.
+        #
+        # Calibrated like #870/#871: above one 240s watchdog so an honest slow call still
+        # completes, below two so the uncapped re-rolls cannot stack.
+        resp = await _asyncio.wait_for(
+            client.chat([Message.user_multimodal(parts)],
+                        temperature=0.0, max_tokens=8000),
+            timeout=_JUDGE_TIMEOUT_S_872)
         return _parse_verdict(getattr(resp, "content", "") or "")
     except Exception as exc:
         # judge_error marks a TRANSIENT failure — #142 must never cache it
