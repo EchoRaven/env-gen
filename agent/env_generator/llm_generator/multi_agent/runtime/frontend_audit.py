@@ -560,6 +560,28 @@ def _route_matchers(app_jsx: str) -> List:
     return matchers
 
 
+# #820: a string literal immediately followed by `+` is the PREFIX of a concatenation, not the
+# whole nav target. `navigate('/watch/' + tid)` is correctly parameterised code; the extractor
+# captured `/watch/` and stopped at the closing quote, so it was reported as "a parameterised
+# route with an EMPTY parameter" — a defect that does not exist and that the lane cannot fix,
+# because every correct spelling produces the same capture.
+#
+# r151 died of this. It aborted STUCK after 75 minutes and 2 coordination ticks with:
+#     nav link `/title/` (HoverPreviewCard.jsx) is a parameterised route with an EMPTY parameter
+#     nav link `/watch/` (ContinueWatchingRail.jsx) ...
+# Both files are lane-authored and both lines read `navigate('/title/' + tid)`. The abort message
+# offered two hypotheses — a lane-phase desync, or "a framework artifact regenerated every cycle"
+# — and the truth was neither: an unsatisfiable expectation, the #566z class, where the remedy
+# the gate demands cannot exist.
+#
+# The template-literal spellings were already excluded by the character class; `+` was not.
+_CONCAT_AFTER_820 = re.compile(r"\s*\+")
+
+
+def _is_concat_prefix_820(text: str, end: int) -> bool:
+    """True when the literal ending at ``end`` is followed by ``+`` — i.e. the id IS supplied."""
+    return bool(_CONCAT_AFTER_820.match(text, end))
+
 def _norm_nav_target(target: str) -> str:
     return (str(target or "").split("?", 1)[0].split("#", 1)[0].rstrip("/")) or "/"
 
@@ -725,6 +747,8 @@ def dead_nav_link_blockers(frontend_src: Any, limit: int = 20,
                 continue
             for m in pat.finditer(text):
                 target = m.group(1).strip()
+                if _is_concat_prefix_820(text, m.end()):
+                    continue          # `navigate('/watch/' + id)` — the id is supplied
                 # skip protocol-relative, root, and non-absolute-ish noise
                 if not target.startswith("/") or target.startswith("//"):
                     continue

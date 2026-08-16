@@ -3499,6 +3499,48 @@ names it in one line** instead of writing a mute skeleton for 4,006 components.
 
 ---
 
+## 150. #820 — r151 aborted STUCK on a defect that does not exist
+
+Reading r151's `progress_events.jsonl` — which I had been analysing all session without ever
+opening — shows the run **never delivered**:
+
+    STUCK — aborted without delivery after 2 coordination ticks: the delivery gate has not gone
+    green in 75min ... now failing
+      deliverability_other: nav link `/title/` (HoverPreviewCard.jsx) is a parameterised route
+                            with an EMPTY parameter
+      deliverability_other: nav link `/watch/` (ContinueWatchingRail.jsx) ...
+      unresolved_failed_tasks
+
+Both files are **lane-authored**, and both lines are **correct**:
+
+```js
+if (tid) navigate('/title/' + tid);
+navigate('/watch/' + tid)
+```
+
+The nav-target extractor is a regex that stops at the closing quote, so `navigate('/watch/' + tid)`
+yields the target `/watch/` — which the diagnosis then accurately describes as a parameterised
+route with an empty parameter. ★ **The check was faithful; its input was wrong.** The character
+class already excluded the template-literal spellings (`{`, `}`, `$`); `+` concatenation — the
+idiom this lane used — was not.
+
+★★ **The blocker was unfixable by construction.** Every correct spelling of that link produces the
+same capture, so no lane edit could ever clear it. That is the #566z class — *an unsatisfiable
+authored expectation is the engine of the oscillation* — and here it cost the whole run. The abort
+message offered two hypotheses, *"a lane-phase desync"* or *"a framework artifact regenerated every
+cycle"*, and the truth was neither.
+
+Verified against the run that died: with the shipped behaviour restored, exactly those two
+blockers; with the fix, **zero**. A genuinely empty `navigate('/watch/')` is still reported, and so
+is a comma — concatenation is the only thing excluded.
+
+★★★ **The finding was one file away the entire session.** I read r151's captures, its DDL, its
+seed, its chains, its tasks and its design system — and never its progress log, so I analysed a
+failed run as though it were a normal one. **When a corpus run is the subject, read its terminal
+event first**: everything else is being interpreted in the light of whether it shipped.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
