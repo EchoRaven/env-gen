@@ -297,6 +297,58 @@ def _img_part(path: str) -> Optional[Dict]:
         return None
 
 
+def _round_region_816(region) -> Optional[List[float]]:
+    """A 4-float region rounded for the prompt; None if it is absent or not numeric."""
+    try:
+        out = [round(float(x), 3) for x in (region or [])]
+    except (TypeError, ValueError):
+        return None
+    return out or None
+
+
+def _skeleton_for_prompt_816(screen: Dict) -> str:
+    """#816: the JOIN KEYS and context the analyst needs, and nothing else.
+
+    The skeleton was serialised whole and cut at 9000 chars. Measured on r151: **7 of 20 screens
+    exceed it**, median overflow 2,733 — and a JSON object cut mid-structure is INVALID JSON, so
+    the analyst was asked to "enrich THESE components by id" from a malformed document. Components
+    past the cut have ids it never saw, which is a fourth way the enrichment evaporates (after the
+    call #813, the join #815, and the empty reply).
+
+    The analyst's job is to ADD `build_notes`/`typography`/`copy` per id. It does not need crop
+    paths, full colour dicts, geometry or six-decimal regions echoed back at it. Projecting to
+    id/role/state/region/bg takes the largest screen from 13,563 to 4,491 chars — every screen now
+    fits, with room to spare, and the JSON it sees is always well-formed.
+    """
+    compact = {
+        "name": screen.get("name"),
+        "layout": screen.get("layout"),
+        "components": [
+            {k: v for k, v in (
+                ("id", c.get("id")),
+                ("role", c.get("role")),
+                ("state", c.get("state")),
+                # A non-numeric region must not take design-prep down: it runs before any lane,
+                # so an exception here costs the whole visual pipeline. My own test caught this.
+                ("region", _round_region_816(c.get("region"))),
+                ("bg", (c.get("colors") or {}).get("bg")
+                 if isinstance(c.get("colors"), dict) else None),
+            ) if v not in (None, "", [])}
+            for c in (screen.get("components") or []) if isinstance(c, dict)
+        ],
+    }
+    out = json.dumps(compact, indent=1)
+    if len(out) > 9000:
+        # Still bounded, but no longer silent (#811): a screen this large means the projection
+        # needs revisiting, not that the analyst should be handed a broken document.
+        _LOG_813.warning(
+            "design-prep: screen %r is %d chars even COMPACTED and will be cut at 9000 — the "
+            "components past the cut have ids the analyst never sees, so their build_notes/"
+            "typography/copy cannot come back.", screen.get("name"), len(out))
+        out = out[:9000]
+    return out
+
+
 _SCREEN_PROMPT = (
     "You are a senior UI engineer writing BUILD NOTES for a faithful clone of ONE screen.\n"
     "You get: the screen's MEASURED skeleton (component ids + measured colors — ground "
@@ -452,7 +504,7 @@ async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
             {"type": "text", "text": _SCREEN_PROMPT},
             {"type": "text", "text": ("SCREEN '" + str(s.get("name")) + "' skeleton "
                                       "(measured facts — enrich THESE components by id):\n"
-                                      + json.dumps(s, indent=1)[:9000])},
+                                      + _skeleton_for_prompt_816(s))},
             {"type": "text", "text": "REAL ASSET MANIFEST (map ids onto components): " + manifest},
         ]
         if docs_text:

@@ -3306,6 +3306,47 @@ than none**, and the only reason neither version shipped is that the empty case 
 
 ---
 
+## 146. #816 — the analyst was handed INVALID JSON on 7 of 20 screens
+
+The fourth evaporation point for the design-prep enrichment, after the call (#813), the join
+(#815) and an empty reply. The skeleton was serialised whole and cut:
+
+```python
+json.dumps(s, indent=1)[:9000]
+```
+
+Measured on r151: **7 of 20 screens exceed 9000 chars**, median overflow 2,733, largest
+`new_and_popular` at 13,563.
+
+★ **A JSON object cut mid-structure is not valid JSON.** So on a third of the screens the analyst
+was told *"enrich THESE components by id"* and handed a malformed document — and every component
+past the cut carries an id it never saw. That alone is sufficient to produce either branch already
+instrumented: a non-dict reply (#813) or an answer keyed on invented ids (#815). **Three items
+chasing where the enrichment vanished, and the input was broken before the model read it.**
+
+**The fix is not a bigger cut** — the 6000-token reply budget is the real constraint — **it is to
+send only what the analyst needs.** Its job is to ADD `build_notes`/`typography`/`copy` per id; it
+does not need crop paths, colour dicts, geometry or six-decimal regions echoed back:
+
+    largest screen   13,563 -> 5,450 chars        every screen fits, with room
+    total           178,958 -> 61,386  (34%)      zero invalid JSON
+    join keys        every skeleton id present in the prompt, on every screen
+
+The residual cut stays as a backstop but is no longer silent (#811), and it now says the thing that
+matters: *components past the cut have ids the analyst never sees.*
+
+**My own test caught a robustness hole before it shipped.** A non-numeric `region` made `float()`
+raise inside the projection — and design-prep runs **before any lane**, so an exception there costs
+the entire visual pipeline, not one screen. Hardened.
+
+★★ **What the four items together say.** #813, #815 and #816 are one failure with three faces:
+the framework asked a model to enrich 4,006 components, handed a third of them a broken document,
+joined the answer on a key it may never have received, and reported none of it — while the frontend
+prompt kept directing every lane to read the fields that never arrived. **Each layer was individually
+reasonable. The silence is what let them compose.**
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
