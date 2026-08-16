@@ -1733,6 +1733,134 @@ right one needed a distribution.
 
 ---
 
+## 108. #782 — the projected metadata row read BARE field names (FIXED)
+
+Item 107 called the `title_detail` deviation half-false and left the true half as "#664's class,
+told-not-built". **That was wrong.** The lane built the row exactly as instructed; the framework
+emitted a row that could not read the app's data.
+
+```js
+{[cur.year, cur.maturity_rating, _fmtDur(cur.duration || cur.runtime)] ...}   // was
+{cur.genres || cur.genre ? ... String(cur.genre).split(/,\s*/) ...}           // was
+```
+
+r151's `titles` table has **none** of `year`, `duration`, `runtime`, `genres`, `genre`. It has
+`release_year`, `duration_min`, and a `title_genres` join. So the row collapsed to
+`maturity_rating` plus the literal `HD` badge — **precisely what the capture shows**: TV-14 and HD
+present, year/runtime/genres absent. The judge was right about those four; nobody had asked why.
+
+**The tell.** These were the only bare reads on the page. `_imgOf` tries 18 keys, `_titleOf` 10,
+`_subOf` 12, `_videoOf` 6, `_backdropOf` 6 — because *the projector cannot know the app's column
+names*. Two sites broke that invariant, and `_metaOf` sat defined-but-unused on the same page.
+
+**Corpus** (122 runs whose projected page reads these fields):
+
+| | runs | effect |
+|---|---|---|
+| a table aliases YEAR (`release_year`…) | 17 (13%) | year chip silently absent |
+| a table aliases DURATION (`duration_min`…) | 5 (4%) | runtime chip absent |
+| genres live in a JOIN table | 120 (98%) | **genre block absent — NOT fixed, see 109** |
+
+**Fix.** `_yearOf` / `_durOf` / `_genresOf` in `_REF_HELPERS_JS`, in the file's own idiom, wired
+into both call sites (hero + detail). `_durOf` also removes a unit guess: `_fmtDur` infers
+seconds-vs-minutes from magnitude, so a 320-**minute** film formatted as `5m`; `_durOf` knows the
+unit from the key name. `created_at` is deliberately excluded from `_yearOf` — every row has one
+and it is the INSERT time, so it would print a confident wrong year on every app in the corpus.
+
+**THREE tests were pinning this defect in place.** Not one — the full suite named every site:
+
+    test_frontend_hero_cta.py    :: test_hero_metadata_row_is_data_driven      "cur.year" in out
+    test_cluster_lift_551.py     :: test_551_fmtdur_helper_present_and_used    "_fmtDur(cur.duration || cur.runtime)" in out
+    test_frontend_episode_list.py:: test_episode_jsx_is_data_driven_...        "ep.duration || ep.runtime" in out
+
+★ **All three were written to check the right thing and expressed it in a way that forbade the
+fix.** Each one's intent is "this row is data-driven, not hard-coded literals" — correct, and
+still true after #782. But each expressed that intent by asserting *the exact spelling of a field
+name*, which silently converts a fallback-list invariant into a prohibition on ever adding
+fallbacks. Three independent authors reached for the same shortcut. This is the #717 pattern at
+scale, and it is why the defect survived 122 runs: the suite was green the whole time, and
+*getting greener* — every new test made the row harder to fix.
+
+The replacements assert the accessor, plus an explicit negative (`"cur.year" not in out`) so the
+bare read cannot come back, and the new tests **execute the emitted JS under node** against r151's
+real record shape rather than grepping for substrings, with non-vacuity checks (the old
+expressions really did yield `""`).
+
+**A same-shape trap caught in my own test.** The first version of the negative assertion failed —
+against my own comment, which necessarily quotes the string it forbids. Comment lines are stripped
+before the check now. Third occurrence of that today.
+
+**And the episode site was nearly missed twice.** It was only found because the suite failed on
+`test_551`, whose *adjacent* line named it. Then its prevalence probe reported **2%** — wrong, the
+candidate set omitted `duration_minutes` and `duration_seconds`. Enumerating actual spellings:
+`duration` 115, `duration_minutes` 19, `duration_min` 4, `duration_seconds` 1 → **24 of 139 = 17%**.
+Same set-membership class as `id` ⊂ `profile_id`. Enumerate; do not guess the candidate set.
+
+**Measurement caveat, for the next reader.** The first cut of the corpus probe reported `0%` for
+the year mismatch. It was searching `app/backend` for `CREATE TABLE`; the DDL lives in
+`app/database/init/01_init.sql`, so it matched 2 OAuth tables and 17 columns. **The zero was a
+probe artifact** — the same field-location class that has produced ~10 wrong numbers this session.
+A second cut unioned columns across all tables, which hides a `titles.release_year` behind any
+other table's `year`; the per-table figure above is the honest one.
+
+**Cheapest observation next run.** `grep -c 'cur\.year' app/frontend/src/pages/*.jsx` → 0, and the
+`title_detail` capture shows a year chip beside TV-14.
+
+---
+
+## 109. The genre block is dead in 98% of runs and #782 cannot fix it
+
+The projected detail page renders a genre chip row from `cur.genres`. In **120 of 122 runs the
+detail payload carries no genre field at all** — genres are a normalised `title_genres` join, and
+r151's detail handler is `SELECT {_TITLE_COLS} FROM titles WHERE id = :tid` with no join.
+The relation exists and is used for *filtering* (`?genre=`) and for `/api/genres/{id}/titles`, but
+never for the record the detail page holds. `_genresOf` returns `[]` and the block renders nothing.
+`test_the_join_table_case_is_still_empty_and_that_is_item_109` states that boundary as a passing
+test so no later reader assumes #782 covered it.
+
+This is not a frontend bug and no accessor can fix it: **the data is not in the response.**
+
+**Why it is not fixed here.** The fix is for the projected detail endpoint to aggregate labels from
+child tables reached by a join — i.e. teach the route projector that a pure link table
+(`<parent>_<child>` carrying only two FKs) should be folded into the parent record as an array of
+the child's display column. That is a change to what every projected detail endpoint SELECTs, on
+the read path, in a session that has already found two route-precedence changes to be safety
+changes (#568, #569). It wants its own run to validate, not a tail-end edit.
+
+**Sizing it first — and the sizing found a trap.** The check was "count pure link tables
+(a table whose whole body is two FKs) and see how often the child has an unambiguous display
+column". The answer looked like a green light:
+
+    runs containing >=1 pure link table         139 of 139  (100%)
+    pure link tables found                      242
+      ...whose child has name/title/label       242  (100%)
+
+**100% / 100%, and the rule it endorses is unsafe.** The 242 tables are exactly two shapes:
+
+    139  title_genres  (title_id, genre_id)     <- a label relation; folding it in is correct
+    103  my_list       (profile_id, title_id)   <- a PER-USER relation
+
+`my_list` satisfies the structural test perfectly — two FKs, nothing else, and `profiles` has a
+`name` column so the display-column check passes too. Folding it into the title record would
+attach **the names of the profiles that saved a title** to a public detail response: a read-path
+owner-scoping leak, the #569 class, shipped by a rule whose own metric read 100%.
+
+So the aggregation rule needs an owner-FK exclusion (`profile_id`, `user_id`, `account_id`,
+`member_id`, `owner_id`, `tenant_id`, …) before it folds anything, and **42% of the candidates in
+this corpus are on the wrong side of that line**. That is the difference between a one-line
+projector change and one that needs its own validation run.
+
+★ The general lesson is worth more than the number: **a structural test that scores 100% has not
+been validated — it has only failed to distinguish anything.** Both shapes here are structurally
+identical; only the *meaning* of the FK separates a chip row from a privacy leak.
+
+**Generality note.** This is not a genres problem. Any normalised many-to-many the reference shows
+as chips — tags, categories, cast, skills, ingredients, topics — is invisible to every projected
+detail page for the same reason. `cast_list` renders in r151 only because it happens to be a flat
+`TEXT` column on `titles`.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

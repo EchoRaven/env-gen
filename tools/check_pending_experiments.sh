@@ -548,3 +548,8 @@ if log and os.path.isfile(log):
 else:
     say("n/a", "#754 compose path resolves", "no run log given")
 PY
+
+# --- #782: the projected metadata row must never go back to bare field reads -------------------
+sig "#782 year chip present"      "cur\.year"                     "$FRONTEND_SRC" absent
+sig "#782 duration via accessor"  "ep\.duration \|\| ep\.runtime" "$FRONTEND_SRC" absent
+sig "#782 accessors emitted"      "const _yearOf"                 "$FRONTEND_SRC" present
