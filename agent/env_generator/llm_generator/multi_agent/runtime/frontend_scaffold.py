@@ -4714,6 +4714,68 @@ _GENERIC_SEC_WORD_432 = re.compile(
     + r"|of|for|from|the|a|an|and)$", re.I)
 
 
+_BREADCRUMB_TAIL_860 = re.compile(r"\s*[>\u203a\u00bb\u2192/|]+\s*$")
+
+
+def _quoted_title_860(text: str) -> str:
+    """#860: the quoted-title capture treated an APOSTROPHE as a closing quote.
+
+    The old pattern was one character class serving as both delimiter and body-exclusion:
+    ``['‘’“”"]([^'‘’“”"]{2,60})['‘’“”"]``. Any curated caption containing a contraction was
+    therefore cut at the contraction. Measured over the corpus design systems — these are the
+    headings the framework SHIPPED, not a hypothetical:
+
+        "thumbs-down icon with caption 'We won't suggest this to you again'"  -> 'We won'   144 runs
+        "thumbs-up icon with caption 'We'll show you more like this'"         -> 'We'       144 runs
+        "double thumbs-up icon with caption 'We know you're a true fan!'"     -> 'We know'  141 runs
+
+    ★ The quoted branch is otherwise RIGHT and must stay verbatim: the same measurement shows the
+    titles it ships are overwhelmingly real curated copy — 'Browse by Languages' (147 runs),
+    'Only on Netflix', 'New on Netflix', 'My List', 'Your Next Watch', 'TV Comedies'. An earlier
+    draft of this fix ran the quoted candidate through #432/#459's rejection filters and would
+    have deleted all of those; the corpus is what stopped it.
+
+    Two rules, both delimiter-shaped rather than content-shaped:
+
+    1. The closing delimiter must MATCH the opening one — typographic pairs are unambiguous, and a
+       straight ``'`` closes only when the next character is not a letter, which is exactly what
+       distinguishes ``won't`` from a closing quote.
+    2. A trailing breadcrumb chevron is stripped: r95-style roles read
+       ``breadcrumb ('TV Shows >') and page H1 '…'`` and shipped the arrow as part of the heading
+       (142 runs). No heading ends in a bare separator.
+
+    ★ NOT fixed, and recorded instead: in that same breadcrumb role the FIRST quoted span wins, so
+    the breadcrumb beats the page H1. Which of two quoted spans is the title is a judgement the
+    text does not settle, and guessing it would trade a visible-but-correct heading for a wrong
+    one."""
+    PAIRS = {"\u2018": "\u2019", "\u201c": "\u201d", '"': '"'}
+    for i, ch in enumerate(text):
+        close = PAIRS.get(ch)
+        if close is not None:
+            j = text.find(close, i + 1)
+            if j > i + 1:
+                cand = text[i + 1:j].strip()
+                if 2 <= len(cand) <= 60:
+                    return _BREADCRUMB_TAIL_860.sub("", cand).strip()
+            continue
+        if ch == "'":
+            j = i + 1
+            while True:
+                j = text.find("'", j)
+                if j < 0:
+                    break
+                nxt = text[j + 1:j + 2]
+                if nxt.isalpha():       # a contraction: won't / We'll / you're
+                    j += 1
+                    continue
+                break
+            if j > i + 1:
+                cand = text[i + 1:j].strip()
+                if 2 <= len(cand) <= 60:
+                    return _BREADCRUMB_TAIL_860.sub("", cand).strip()
+    return ""
+
+
 def _section_title_221(text) -> str:
     """A rail's header text: a quoted section title, else the noun phrase after
     'rail/carousel/row of …'. #432: peel a leading GENERIC media descriptor
@@ -4725,9 +4787,9 @@ def _section_title_221(text) -> str:
     no product literals."""
     text = str(text or "")
     # a QUOTED title is curated copy — return it verbatim (preserve its casing)
-    m = re.search(r"['‘’“”\"]([^'‘’“”\"]{2,60})['‘’“”\"]", text)
+    m = _quoted_title_860(text)
     if m:
-        return m.group(1).strip()
+        return m
     m = re.search(
         r"\b(?:rail|carousel|row|list|grid|section|shelf)\s+of\s+(.+?)"
         r"(?:\s+(?:titles|items|videos|posters|shows|movies)\b|[.;]|$)",

@@ -9321,3 +9321,59 @@ The tests failed because the code changed under an assertion that was too specif
 test doing its job badly, not a test failing to do it. The defect was that nothing ever asked
 whether the assertion matched the intent, and #859 is the first time anything did.
 
+
+## 187. #860 — every heading was cut at its first apostrophe, and the corpus killed the fix I meant to write
+
+The seven remaining OPEN classes, all triaged. Two are missing components needing a build
+(`search`/bell icons, 221 entries / 48 runs; `title art`, a per-title logo the corpus has no asset
+for). Two are judgement calls (`nav order/extra` — the login page's invented *"new here? create an
+account"* link, 38 of 51 runs; removing it may break a registration chain). Three led here.
+
+**The visible defect** was developer placeholder text shipping as user-facing row headings, 36
+runs: *"row titles are placeholder text ('page title', 'hover preview card')"*, *"section headings
+use placeholder text ('top10 shows title')"*. Feeding those through `_section_title_221` located
+the branch immediately — unquoted forms are correctly rejected by #432/#459, but **a QUOTED span
+returns verbatim, bypassing every filter**, and #459's own comment says so: *"Quoted titles
+returned earlier are unaffected."*
+
+★ **The obvious fix would have been a disaster, and one query proved it.** Before applying
+#432/#459's rejections to the quoted branch I listed the quoted titles that actually ship:
+
+    'Browse by Languages' 147 runs | 'Recently Added' 121 | 'TV Shows' 147 | 'My List' 145
+    'Only on Netflix' 131 | 'New on Netflix' 111 | 'Your Next Watch' 113 | 'TV Comedies' 134
+
+They are overwhelmingly **real curated copy**. The filter would have deleted all of them. The
+hypothesis was reasonable, cheap to test, and wrong — **the third time this turn that listing real
+values beat filtering them** (cf. #181's 99%, item 177's roster).
+
+**And listing them is what exposed the actual bug.** Sitting in that same list:
+
+| runs | shipped heading | the role it came from |
+|---|---|---|
+| 144 | `'We won'` | `thumbs-down icon with caption 'We won't suggest this to you again'` |
+| 144 | `'We'` | `thumbs-up icon with caption 'We'll show you more like this'` |
+| 141 | `'We know you'` | `double thumbs-up icon with caption 'We know you're a true fan!'` |
+| 142 | `'TV Shows >'` | `breadcrumb ('TV Shows >') and page H1 'Sports TV Shows'` |
+
+The pattern was **one character class doing two jobs** — `['‘’“”"]([^'‘’“”"]{2,60})['‘’“”"]` — so
+the apostrophe in a contraction closed the span. Both new rules are **delimiter-shaped, not
+content-shaped**, which is why no legitimate title can be caught by them: the close must match the
+open, and a straight `'` closes only when the next character is not a letter. A trailing breadcrumb
+chevron is stripped.
+
+**Recorded, not fixed:** in that breadcrumb role the FIRST quoted span wins, so the breadcrumb
+beats the page H1. Which of two quoted spans is the title is not settled by the text.
+
+### method note — the test case was the bug, twice over
+
+`'Kids' Shows'` looked like a case the fix should handle, so I asserted the human reading. A
+plural possessive is **genuinely ambiguous** and a greedy rule would resolve it — checking the
+corpus first showed `s' ` occurs **1483 times** and is almost entirely *a title ending in a plural
+noun plus its closing quote*: `'TV Shows'` 290, `'Select Your Preferences'` 258, `'Movies'` 189,
+`'Episodes'` 185, `'Games'` 166. **Stopping there is required**; greedy would have swallowed the
+rest of the sentence on every one.
+
+★ And the probe that produced that number needed correcting too: `[A-Za-z]+s'\s` matches a
+possessive and a closing quote **identically**. The count was only usable because I read the
+matches instead of trusting the total — the same discipline that turned this whole item around.
+
