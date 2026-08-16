@@ -2421,7 +2421,7 @@ with a non-vacuity check first (89 of 151 runs carry any UI record at all):
 | r130+ | 22 | **18%** | **13%** |
 | r145+ | 7 | 28% | 28% |
 
-★★ **CORRECTED AGAIN (item 165).** The #752 column above is wrong, and so was the "correction"
+★★ **CORRECTED AGAIN (item 167).** The #752 column above is wrong, and so was the "correction"
 this item made: both were computed with `_ui_evidence_breadth_739` **before #830 fixed it**. That
 detector keyed only on `metadata.check` and could not see 645 records whose kind sat in the record
 NAME. Re-run against the fixed detector:
@@ -3986,7 +3986,7 @@ probe I have written today.
 
 ---
 
-## 164. #834 — the enrichment guard's OR, and the discovery that a second agent shares this branch
+## 166. #834 — the enrichment guard's OR, and the discovery that a second agent shares this branch
 
 **The fix.** The design phase runs the `design_analyst` AGENT, then per #85a falls back to the
 single-shot enrich if the doc *"parses but was never ENRICHED"*. That guard read
@@ -4034,9 +4034,9 @@ The old assertion (*"the number it hands out is one it will not then call taken"
 
 ---
 
-## 165. Reconciling with the other agent — its #830 invalidates three of my numbers
+## 167. Reconciling with the other agent — its #830 invalidates three of my numbers
 
-The concurrent agent (item 164) found that `_ui_evidence_breadth_739` keyed only on
+The concurrent agent (item 166) found that `_ui_evidence_breadth_739` keyed only on
 `metadata.check` and **could not see 645 records** whose kind sat in the record NAME, and fixed it
 as **#830**. That detector is the one I used for every UI-evidence figure in this session, so its
 correction propagates straight into my items:
@@ -4072,6 +4072,30 @@ of a thread it was also in. Neither of us saw the other's work in progress, whic
 ticket collisions and at least two duplicated investigations — and also produced this: **two
 independent passes over the same corpus caught each other's blind spots.** The cost was real; so
 was the redundancy.
+
+---
+
+## 168. The collision moved from ticket numbers to ITEM numbers
+
+#826 built an allocator for ticket numbers and #829 hardened it. Both of us then collided on the
+other namespace nobody was guarding: **EXPERIMENTS item numbers**. The file briefly held two
+`## 164.` and two `## 165.` — my `#834` and reconciliation against the other agent's `#840` games
+finding and `#841` avatar finding. Mine are renumbered **166/167**; theirs keep 164/165, since
+they were committed first and are cross-referenced from their own commits.
+
+★ **The allocator does not cover this, and extending it would be the wrong move.** A ticket number
+identifies a *fix* and must be unique across code, tests and history — a real namespace, worth a
+tool. An item number is a *position in one file*, and two agents appending to the same file will
+collide on it however it is allocated, because the collision is in the write, not in the choice.
+The fix for that is not a better number; it is that whoever notices renumbers, which is what
+happened here in about a minute.
+
+★★ **Worth stating plainly: the redundancy is paying for itself.** In the same window the other
+agent's `#830` corrected three of my measurements (item 167) and my `#834` landed upstream of a
+thread it was working. Four ticket collisions and two duplicated investigations is the cost; two
+independent passes catching each other's blind spots is what it bought. I would not have found
+`_ui_evidence_breadth_739`'s blindness — I was *using* that detector as my ground truth, which is
+precisely the position from which it is invisible.
 
 ---
 
