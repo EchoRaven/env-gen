@@ -237,6 +237,10 @@ def _imageless_spec_screens_unreachable_823(output_dir: Any) -> List[str]:
     except Exception:
         return []
 
+# #827: `validation:<kind>:<flow>` — the kind as the record NAME carries it.
+_re_827 = re.compile(r"(?:^|:)(" + "|".join(sorted(_UI_SMOKE_EVIDENCE_CHECKS)) + r")(?::|$)")
+
+
 def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
     """#739: how BROAD is the UI evidence behind ``ui_smoke_pass``?
 
@@ -271,7 +275,22 @@ def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
     for r in (validation_results or []):
         if not isinstance(r, dict):
             continue
-        if (r.get("metadata", {}) or {}).get("check") not in _UI_SMOKE_EVIDENCE_CHECKS:
+        # #827: fall back to the record NAME when `metadata.check` is absent. #193/#236 recover
+        # the kind from `evidence`, but a writer that puts it ONLY in the name
+        # (`validation:ui_flow:landing`) leaves nothing to recover — and 645 UI records across
+        # the corpus are in exactly that state, invisible to this detector. 36 runs it calls
+        # "no UI evidence" have ui_flow records, up to 13 of them.
+        #
+        # This is a DETECTOR BUG, not a policy change: #752 blocks on "UI evidence that both
+        # passes and fails", and the detector has not been seeing all the evidence that policy
+        # refers to. Realised effect on #752's reach: r130+ 3 -> 4 runs (the name-only shape is
+        # mostly an OLD writer behaviour); corpus-wide 10 -> 22. If that widening is unwanted,
+        # revert this hunk alone — #752's own branch is untouched.
+        _kind827 = (r.get("metadata", {}) or {}).get("check")
+        if not _kind827:
+            _m827 = _re_827.search(str(r.get("name") or ""))
+            _kind827 = _m827.group(1) if _m827 else None
+        if _kind827 not in _UI_SMOKE_EVIDENCE_CHECKS:
             continue
         _key = str(r.get("name") or r.get("task_id") or id(r))
         _prev = _latest757.get(_key)

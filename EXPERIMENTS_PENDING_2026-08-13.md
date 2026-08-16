@@ -3627,9 +3627,16 @@ its own broken step, #799 to name its uncovered endpoints, and #811 to say what 
 those three landed on the corpus's leading killer is checkable rather than lucky — but note the
 denominator honestly: 5 of 32 aborts, and 32 aborts is itself only 21% of runs.
 
-**An observability gap, recorded and deliberately not fixed.** For the 94 killed runs the log holds
-exactly two events — `generation_start` and `phase_start: Agent Workflow` — and nothing until the
-end, so **the majority outcome has no phase attribution at all**. `EventType` already defines
+**An observability gap, recorded and deliberately not fixed.** For the 94 killed runs
+`progress_events.jsonl` holds exactly two events — `generation_start` and `phase_start: Agent
+Workflow` — and nothing until the end.
+
+★ **CORRECTED (item 162).** The sentence that followed said *"the majority outcome has no phase
+attribution at all"*. That is **false**. `.agent_logs/` carries a timestamped, event-typed log per
+agent — for r151: verifier 2,874 lines, frontend 2,652, orchestrator 1,599, with the last frontend
+event at `03:10:23`, the second the run aborted. Attribution exists at far finer than tick
+granularity; it is `progress_events.jsonl` that is thin, not the run that is unreadable. I asserted
+the absence twice without opening the directory. `EventType` already defines
 `FILE_START`, `TOOL_CALL`, `THINK_START`, `REFLECT_*`; the multi-agent path emits none of them.
 Wiring them is a feature, not a defect fix, and it is invasive — recorded here with the measurement
 so the decision is available rather than assumed.
@@ -3918,9 +3925,47 @@ Deliberately narrow, and each narrowing has a reason:
 * wrapped so it can never raise — it runs on the release path, and **telemetry must not be able to
   fail a delivery decision**.
 
-It does not close the gap: a run killed *between* gate ticks still has a hole, and nothing reports
-which agent was active. It converts "no attribution" into "attribution at tick granularity", which
-is the part that was costing post-mortems.
+It does not close the gap: a run killed *between* gate ticks still has a hole.
+
+★ **CORRECTED (item 162).** This paragraph also claimed *"nothing reports which agent was
+active"*. **`.agent_logs/` does**, richly. What #827 actually adds is narrower and still worth the
+four lines: the **gate's verdict per tick**, in the file the monitor reads, next to the terminal
+event — none of which the agent logs carry. The justification I wrote for it was inflated.
+
+---
+
+## 162. `.agent_logs/` was there the whole time — the fourth asserted absence
+
+Chasing #827's residual (*"nothing reports which agent was active"*) meant looking for an
+agent-activity funnel to instrument. Before building one I listed the run directory, which is the
+step that should have come first, and found:
+
+    .agent_logs/Verifier Agent/…jsonl          2,874 lines
+    .agent_logs/Frontend Engineer Agent/…      2,652
+    .agent_logs/Orchestrator Agent/…           1,599
+    .agent_logs/Backend Engineer Agent/…         976
+    run_budget.json                            ticks, elapsed, status="stuck_abort"
+
+Timestamped, event-typed, per agent. r151's last frontend event is `03:10:23` — the second the run
+aborted. ★ **Agent attribution exists at far finer than tick granularity.** What is thin is
+`progress_events.jsonl`; the run is not unreadable.
+
+**Two claims corrected in place**, both mine, both asserted without opening the directory:
+
+* item 151 (#821): *"the majority outcome has no phase attribution at all"* — **false**;
+* item 161 (#827): *"nothing reports which agent was active"* — **false**.
+
+#827 still earns its four lines, on a narrower basis: it puts the **gate's verdict per tick** into
+the file the monitor reads, beside the terminal event, which the agent logs do not carry. The
+justification I wrote for it was inflated, and inflating a justification is how a reader later
+discovers the thing does less than advertised.
+
+★★ **Fourth asserted absence this session, and the shape is now unmistakable.** #820's finding was
+one unread file away; item 150 said a message "was not carried" by a log that carries it; item 156
+catalogued that; and here I did it twice more in the same thread — *while writing the item about
+having done it*. The instrument-zero rule ("a zero is a claim about the instrument") has a sibling
+that is costing more: **an absence is a claim about where you looked.** `ls` is cheaper than every
+probe I have written today.
 
 ---
 
