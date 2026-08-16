@@ -10057,3 +10057,53 @@ reachable.** Neither is safe alone: timing out into a branch that assigns nothin
 #864's empty roadmap, which is the total loss this is meant to prevent. `test_the_fallback_it_
 lands_in_is_the_real_one` pins the pair.
 
+
+## 201. #871 — the same uncapped retry loop, one phase earlier, gathering two of them
+
+#870's mechanism generalises, so I swept the rest of the **pre-kickoff critical path** — the span
+between the workflow's `phase_start` and `start_kickoff`. Six awaited calls; the sweep is only
+worth anything because it separates the honoured claims from the empty ones:
+
+| awaited on the pre-kickoff path | bound |
+|---|---|
+| `_appr_decision` | internal — returns approved on timeout/error, by contract |
+| `author_milestone_detail` | **internal, and the claim is honoured** — `timeout_s=240.0`, *"NEVER hangs the run — the timeout is a hard safety cap"*, enforced by `while waited < timeout_s` |
+| `_await_prior_milestone_delivery_drained`, `_generate_docker`, `_respawn_core_lanes` | not LLM calls |
+| **`_compile_reference_materials`** | **none, end to end** |
+
+Inside the last one:
+
+```python
+spec, _ = await asyncio.gather(
+    compile_reference_spec(...),        # vision LLM call
+    precompute_component_specs(...),    # vision LLM call
+)
+```
+
+Each **completion** is capped at 240s; the retry count is not; and `gather` waits for the slower
+branch. ★ It runs **before** milestone planning, so a stall costs design prep, the roadmap,
+kickoff and every lane — #870's total loss, one step earlier.
+
+**The fallback already existed three lines below** — an unusable spec logs *"continuing without"*
+and the run proceeds — which is exactly what makes a ceiling safe: timing out lands on a path the
+code already takes. Same calibration as #870 (above one watchdog, below two), same
+relationship-not-number assertion in the test.
+
+★ **Recording the confirmation matters as much as the finding.** `author_milestone_detail` claims
+*"NEVER hangs the run"* **and enforces it**. This session has found the opposite so often that the
+pattern could become a prior; a sweep that cannot tell an honoured claim from an empty one is
+worthless, and this one found both on the same path.
+
+### the pre-kickoff path, now
+
+    reference compile (2 vision calls, gathered)   -> #871  ceiling, falls to "continuing without"
+    design prep                                     (design_analyst; completed in all 7 dead runs)
+    milestone planning                             -> #870  ceiling, falls to #865's real fallback
+    set_roadmap                                    -> #864  readback, error + PHASE_ERROR on empty
+    per-milestone loop -> start_kickoff            -> #863  marker in the persisted log
+    lanes wake                                     -> #862  silent attendees named
+
+Every LLM call that gates the whole run now has a finite total, and every fallback it lands in is
+one the code already had. **None of it is verified against a run**, and the cause of the 7 dead
+runs is still a candidate rather than a fact.
+

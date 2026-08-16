@@ -27,6 +27,7 @@ from typing import Optional  # noqa: E402  (used above the file's own typing imp
 
 import base64
 import json
+import os as _os
 import os
 import re
 
@@ -716,6 +717,13 @@ class ReferenceCompileResult:
     spec_summary: Optional[str] = None
 
 
+# #871: ceiling on the reference compile INCLUDING its re-rolls. `utils.llm` caps one completion
+# at 240s (FIX #187) but nothing caps the retry count, and this gathers two such calls. Same
+# calibration as #870's planning ceiling: above one watchdog, below two. Env-overridable.
+_REF_COMPILE_TIMEOUT_S_871 = max(
+    30.0, float(_os.environ.get("ENVGEN_REF_COMPILE_TIMEOUT_S") or "300"))
+
+
 async def compile_reference_materials(
     raw_req: str,
     *,
@@ -755,10 +763,35 @@ async def compile_reference_materials(
         # writes design/component_specs/* regardless of whether the spec compile yields
         # anything usable (the two artifacts serve different lanes).
         import asyncio as _asyncio
-        spec, _ = await _asyncio.gather(
-            compile_reference_spec(llm, images, docs, raw_req),
-            precompute_component_specs(images, output_dir=output_dir, llm=llm, logger=logger),
-        )
+        # #871: bound the pair. Same shape as #870, one phase earlier.
+        #
+        # Both are vision LLM calls. `utils.llm._llm_hard_timeout` caps each COMPLETION at 240s,
+        # but its retry layer re-rolls after every cancel with no cap on the count ("a cancelled
+        # slow call is retried, not lost"), so each branch is 240s x N — and `gather` waits for
+        # the slower one. This runs BEFORE milestone planning, so a stall here costs design prep,
+        # the roadmap, kickoff and every lane, exactly as #870's did one step later.
+        #
+        # The fallback already exists and is three lines below: an unusable spec logs
+        # "continuing without" and the run proceeds. That is what makes a ceiling safe here —
+        # timing out lands on a path the code already takes, not on a new one.
+        #
+        # Calibrated against the 240s watchdog like #870: one full attempt per branch (they run
+        # concurrently, so the pair does not need double), and the second re-roll truncated.
+        try:
+            spec, _ = await _asyncio.wait_for(
+                _asyncio.gather(
+                    compile_reference_spec(llm, images, docs, raw_req),
+                    precompute_component_specs(images, output_dir=output_dir,
+                                               llm=llm, logger=logger),
+                ),
+                timeout=_REF_COMPILE_TIMEOUT_S_871,
+            )
+        except _asyncio.TimeoutError:
+            logger.error(
+                "Reference compile TIMED OUT after %.0fs (#871) — continuing without a spec. "
+                "Unbounded, its retry loop ran ahead of milestone planning and cost the run.",
+                _REF_COMPILE_TIMEOUT_S_871)
+            spec = None
         if not spec or not any(spec.get(k) for k in
                                ("screens", "endpoints", "entities", "mcp_tools")):
             logger.info("Reference spec compile produced nothing usable — continuing without.")
