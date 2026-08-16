@@ -3267,6 +3267,45 @@ it the next thing a reader learns to skip.
 
 ---
 
+## 145. #815 — "needs a live call" was half true; the JOIN was diagnosable offline
+
+#813 filed its root cause as *"needs a live design-prep call, cannot be settled offline."* That is
+the sentence item 112 used before #803 retired it — **a testing gap described as a validation
+gap** — so it deserved one more push. It turned out to be **half** true.
+
+The *call* does need an LLM. The *merge that consumes its answer* does not:
+
+```python
+e_comps = {c.get("id"): c for c in es["components"]}
+for c in s["components"]:
+    ec = e_comps.get(c.get("id"))
+    if not ec:
+        continue          # every enrichment for this component, gone
+```
+
+**Both sides join on `id`.** The skeleton has them (`top-nav-bar`, `page-title`). If the analyst
+answers with its own (`nav_bar`, `title`), every component misses, the screen keeps a bare
+skeleton, and nothing says so — while the frontend prompt still tells the lane to read
+`build_notes`/`typography` on each. That is the **second** place the enrichment can evaporate, and
+it fits the corpus signature: `build_notes` lands 1 time in 4,006 while `crop`, which reaches
+`design_system.json` from the skeleton rather than through this merge, lands 92%.
+
+Which of the two is happening still needs a run. **Knowing which no longer does**: #813 made the
+call audible, #815 makes the join audible, and one line now separates them —
+*"NONE of the 2 enriched component(s) matched … the analyst answered with ids like `['nav_bar',
+'title']` while the skeleton uses `['top-nav-bar', 'page-title']`."* ★ **The diagnosis is the
+comparison**: "the join missed" sends a reader looking; the two id shapes side by side ends the
+investigation in the log line.
+
+★★ **My own test caught a misdiagnosis in the reporting — twice.** An *empty* enrichment (the
+analyst returned no components) is #813's event, not a join mismatch, and the first cut reported it
+as *"ids like `[]`"* — one failure presented as two causes, sending the next reader after a naming
+problem that does not exist. Fixed; then the same test failed again because the `elif` fell outside
+the new guard and the empty case merely moved from WARNING to INFO. **A wrong explanation is worse
+than none**, and the only reason neither version shipped is that the empty case had its own test.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

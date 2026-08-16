@@ -575,16 +575,46 @@ def _merge_enrichment(skeleton: Dict, enriched: Dict) -> Dict:
             if es.get(_ck) is not None:
                 s[_ck] = es[_ck]
         e_comps = {c.get("id"): c for c in (es.get("components") or []) if isinstance(c, dict)}
+        # #815: this join is by `id` on BOTH sides, and a miss is a silent `continue`. Measured
+        # over 12 runs and 4,006 components, `build_notes` lands 1 time and `typography` 0 —
+        # while `crop`, which comes from the skeleton rather than through this merge, lands 92%.
+        # #813 made the CALL audible; this makes the JOIN audible, which is the other place the
+        # enrichment can evaporate. If the analyst answers with its own ids (`nav_bar` for the
+        # skeleton's `top-nav-bar`) every component misses and the screen keeps a bare skeleton,
+        # with nothing anywhere saying so. Reported per screen, once.
+        _matched815 = _missed815 = 0
         for c in s.get("components") or []:
             ec = e_comps.get(c.get("id"))
             if not ec:
+                _missed815 += 1
                 continue
+            _matched815 += 1
             # #778: `copy` MUST be in this list. It is the third fixed-key projection on this
             # path, and #767b/#768b/#771 were each a field added at one end and dropped here.
             for k in ("role", "build_notes", "state", "copy", "typography", "assets", "crop"):
                 if ec.get(k) is not None:
                     c[k] = ec[k]
             # measured colors are immutable — c["colors"] is never replaced
+        # An EMPTY enrichment is #813's event (the call produced nothing), not a join mismatch.
+        # Reporting it here too would present one failure as two causes and send the next reader
+        # after an id-naming problem that does not exist — my own test caught this, twice: the
+        # `elif` below has to be inside the same guard, or the empty case just moves to INFO.
+        if not e_comps:
+            pass
+        elif _missed815 and not _matched815:
+            _LOG_813.warning(
+                "design-prep merge: NONE of the %d enriched component(s) for screen %r matched "
+                "the skeleton by id — the analyst answered with ids like %s while the skeleton "
+                "uses %s. Every build_notes/typography/copy for this screen is discarded here, "
+                "and the frontend prompt still tells the lane to read them.",
+                _missed815, s.get("name"),
+                sorted(e_comps)[:3] or "[]",
+                [c.get("id") for c in (s.get("components") or [])][:3])
+        elif _missed815:
+            _LOG_813.info(
+                "design-prep merge: %d of %d component(s) on screen %r matched by id; %d "
+                "enrichment(s) discarded.",
+                _matched815, _matched815 + _missed815, s.get("name"), _missed815)
     return ds
 
 
