@@ -8670,3 +8670,55 @@ between them; the other two were confirmations — `_fmtDur`'s magnitude guess i
 is the point: an unrecorded negative gets re-derived, and #644 had already written its own down,
 which is why that one cost two minutes instead of an afternoon.
 
+
+## 175. #852 — a comment that names its own enforcer, and the enforcer does not exist
+
+#851's sweep, continued. Four claims opened; **two were real gaps, two were confirmations**, and
+recording which is which is the deliverable.
+
+**Gap 1 — the fictional gate.** `database_scaffold.SPINE_TABLE_RECORDS` carried:
+
+> These column names are drift-gated against `_TENANCY_SPINE_SQL` by `test_database_scaffold` so
+> the manifest can never silently diverge from the DDL the AS actually reads/writes.
+
+**No test file referenced `SPINE_TABLE_RECORDS` or `_TENANCY_SPINE_SQL`.** #788's shape, sharpened
+by *naming* the enforcer — a named test is worse than an unnamed one, because it stops the next
+reader from checking. Measured before fixing: **0 of 4 tables have drifted**, so the claim's
+content was true and only its mechanism was fictional. Why it matters if it ever isn't: the
+orchestrator registers this manifest with RegistryHub/SchemaHub, so a lane querying the schema is
+*told* those columns exist — a divergence hands the lane correct-looking code against a column
+that isn't there, which is #528's shape (a data-layer mismatch starving every page with a 500).
+
+**Gap 2 — the no-wakeup lever.** "``framework_decision`` must never appear in
+DEFAULT_SUBSCRIPTIONS (a live sub would reintroduce the wakeup it exists to avoid)". True today, 0
+violations across 49 subs, and load-bearing: inbox_only is the ONLY no-wakeup lever (priority does
+not gate the wakeup — #25's blocking finding) and the wake-storm it prevents cost r3 **146 idle
+stop-cycles**. No test. ★ The test asserts the complement too — the event must still be delivered
+inbox_only to backend and frontend — because a bare absence check also passes if the subscription
+is deleted outright, which silences the notice instead of routing it.
+
+**Confirmation 1 — the two comments that contradict each other.** `backend_skeleton.py` says at
+L1737 that "the infra writers below **guarantee** a seed_data.json ALWAYS exists (empty `{}`)" and
+at L3271 that "the framework **deliberately does NOT write** seed_data.json". Reading the code
+resolves it: L3271 means the *content*, and `_ensure_seed_json(be, amplify=True)` three lines
+below creates the empty file so the Dockerfile's `*.json` glob has a match. The code is coherent;
+only the pair reads as a contradiction, so L3271 now says content-vs-existence out loud.
+
+**Confirmation 2 — "the file is guaranteed to EXIST".** `deliverability.py` infers from that
+guarantee that *absent-or-empty means the lane hasn't authored data yet*. Corpus: **7 of 151 runs
+have `app/backend/` but no `seed_data.json`** — and all 7 are the early-killed class (r19, r35,
+r38, r42, r44, r136, r140), dead before the skeleton write, where the gate never evaluates. The
+inference holds on every run that can reach it. Third time this session that same 7-run set has
+explained an anomaly (items 171, 174, here).
+
+★ **Rate for the whole comment sweep so far: 822 normative lines → 4 opened → 1 code fix (#850),
+2 missing enforcers, 3 confirmations.** The productive filter was not the wording; it was asking
+*is this claim machine-checkable, and is it on something that blocks?* A "must never" about a
+frozenset or a module constant can be tested in ten lines. A "must never" about intent cannot.
+
+**And one method failure, the twelfth of the session.** The new test asserted a bare token
+(`test_database_scaffold``) was absent from the comment block, and matched **its own explanation
+of the fix** three lines below. Re-anchored to parse the *active claim sentence* and assert the
+named file exists on disk — which is strictly better than either version, because it now fails if
+anyone renames the enforcer without renaming the claim.
+

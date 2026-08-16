@@ -960,8 +960,13 @@ CREATE INDEX IF NOT EXISTS idx_oauth_codes_client_id ON oauth_authorization_code
 # contract is COMPLETE — a frontend/backend lane that queries the schema sees
 # tenants/users/oauth_* as first-class registered tables, not implicit magic.
 # These column names are drift-gated against ``_TENANCY_SPINE_SQL`` by
-# ``test_database_scaffold`` so the manifest can never silently diverge from the
-# DDL the AS actually reads/writes.
+# ``test_stated_invariants_have_an_enforcer_852`` so the manifest can never silently diverge
+# from the DDL the AS actually reads/writes.
+#
+# #852: that sentence used to name ``test_database_scaffold``, and **no such gate existed** —
+# no test file referenced `SPINE_TABLE_RECORDS` or `_TENANCY_SPINE_SQL`. #788's shape, sharpened
+# by naming the enforcer: a named test stops the next reader from checking. The claim's CONTENT
+# was true (0 of 4 tables had drifted); only its mechanism was fictional.
 SPINE_TABLE_RECORDS = [
     {"name": "tenants", "columns": [
         {"name": "id", "type": "text", "primary_key": True},

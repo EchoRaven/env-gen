@@ -3268,8 +3268,11 @@ def write_backend_skeleton(
     w("seed_data.py", render_seed_data(tables, _bootstrap_spec))  # framework LOADER (code; embeds _SEED fallback)
     import json as _json_bs
     w("user_bootstrap.json", _json_bs.dumps(_bootstrap_spec, indent=2, ensure_ascii=False))  # FIX #72: create_user reads this
-    # The framework deliberately does NOT write seed_data.json — that DATA file is the
-    # backend agent's to AUTHOR with domain-aware values. Shipping a COMPLETE default here
+    # The framework deliberately does not write seed_data.json's CONTENT — that DATA file is
+    # the backend agent's to AUTHOR with domain-aware values. (#852: read this together with
+    # `_ensure_seed_json` three lines below, which DOES create the file as empty ``{}``
+    # only-if-absent so the Dockerfile's ``*.json`` glob has a match. The two comments read as a
+    # contradiction; the code is coherent, and the distinction is content vs existence.) Shipping a COMPLETE default here
     # anchored the agent to placeholder content (live 2026-06-29: it kept the framework's
     # "Getting Started"/"Project Overview" subjects + generic bodies instead of authoring
     # real ones). So we ship only the LOADER, whose embedded _SEED is the runtime fallback
