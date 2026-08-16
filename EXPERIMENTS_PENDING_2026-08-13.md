@@ -10165,3 +10165,51 @@ the number I displaced was not.
 **the damage was to a neighbour, not to the change.** An older guard, written for an unrelated
 reason, is what noticed. Constant moved below the one it displaced, with the reason recorded there.
 
+
+## 203. #873 — auditing my own deferrals, and the first one's reason was false
+
+#872's re-audit worked, so I turned it into a sweep: **take every "recorded, not fixed" decision
+from this session and push its stated reason against the code.** The first one checked did not
+survive.
+
+Item 187 deferred the invented login links because *"removing it may break a registration chain"*.
+**The corpus refutes it flatly:**
+
+| | |
+|---|---|
+| verification chains scanned | **3813** across 140 runs |
+| chains referencing the link | **0** |
+| registration steps | **4431, every one over the API** (`/register`) |
+| test-user / log files referencing it | **0 of 151** |
+
+Chains register over HTTP; they do not click links.
+
+### what the template actually hardcodes
+
+    "This page is protected to verify you are not a bot. Learn more."      cosmetic
+    "Questions? Contact support"                                          cosmetic
+    "New here? Create an account"                                         FUNCTIONAL
+
+★ **#540 established the rule for this exact template** — *"no product literals — every copy
+string is read from the spec"* — and these two escaped it. #454/#443/#445/#652 all gate on the
+design's own enumeration; this one gated nothing. The judge calls them invented on login in **38
+of the 51 runs** of the `nav order/extra` class.
+
+★ **The register toggle stays.** The judge flags it too, but `isRegister` has no other trigger —
+it is the only UI path into register mode, and dropping it would delete a capability to win
+pixels. Functional vs cosmetic is the line the rest of the file already respects. **So the
+deferral was right and its reason was wrong**, which is a distinction worth keeping separate:
+a correct call can rest on a false premise and stay correct only by luck.
+
+### ★ the correction #540's own test forced
+
+My first cut returned empty strings whenever nothing matched — and `test_540_byte_identical_
+without_spec` went red, because its contract is *"when the spec carries none of these signals the
+caller keeps the existing template (byte-identical)"*.
+
+It was right. **No information is not information saying no.** An absent design was being
+reinterpreted as a design that rejected the lines. Only a design that actually *describes* the
+auth screen gets to withhold them; a design that says nothing keeps them. Same distinction #864
+draws between *"cannot confirm"* and *"confirmed empty"*, and the second time in this session that
+a fix's first cut collapsed those two.
+
