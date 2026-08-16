@@ -3572,6 +3572,62 @@ exists so the second does not get read as measured.
 It arrived with no test; it has eight now, including the two that matter in opposite directions
 (the false positive disappears, the genuine empty target survives).
 
+**And the whole input space was then swept, not just the reported case.** #820 fixed one spelling;
+soundness means *every* correct spelling clears and *every* real defect stays. Executed:
+
+| spelling | blockers |
+|---|---|
+| `` navigate(`/watch/${tid}`) `` | 0 |
+| `navigate('/watch/' + tid)` | 0 ← #820 |
+| `<Link to={'/watch/' + tid}/>` | 0 |
+| `` <Link to={`/watch/${tid}`}/> `` | 0 |
+| `navigate(dest)` | 0 |
+| `navigate('/watch/')` — **genuinely empty** | **1** |
+| `<Link to='/nope'/>` — **genuinely dead** | **1** |
+
+★ The sibling extractors had already learned this: `_API_URL_BOUNDARY_631` treats `+` and `${` as
+boundaries, and `_PAGE_FETCH_RE_615` captures the following character and rejects
+`{`/`?`/`$`/`+`. **The nav extractor was the one that had not** — three implementations of the same
+idea, two correct. That is the argument for sweeping an input space rather than patching a report:
+the reported case was the concatenation, and there was no way to know from the report alone whether
+the template-literal spelling was handled.
+
+---
+
+## 151. #821 — how runs actually END, the question the whole session never asked
+
+#820's lesson, applied to all 151 runs instead of one. Every run's terminal event, censused:
+
+| | corpus | r130+ |
+|---|---|---|
+| reached `generation_complete` **successfully** | **25 / 151 (16%)** | 7 / 22 (31%) |
+| completed but NOT successful | 32 (21%) | 5 (22%) |
+| **killed before any terminal event** | **94 (62%)** | 10 (45%) |
+
+★ **The dominant outcome is not failure, it is being killed mid-flight** — and the era split shows
+real movement: success nearly doubles on recent builds while the killed share falls from 62% to
+45%. Neither number existed before this item; the session had been reasoning off release records,
+which count something different and count it more kindly.
+
+**What the aborts blame**, from the messages themselves:
+
+    business_chain_failing x5   deliverability_ui_flow_failed x2
+    deliverability_ui_page_unwired x2   deliverability_other x2 (both r151, #820)
+
+★★ `business_chain_failing` **leads run deaths**, and it is exactly the task #798 taught to name
+its own broken step, #799 to name its uncovered endpoints, and #811 to say what it capped. That
+those three landed on the corpus's leading killer is checkable rather than lucky — but note the
+denominator honestly: 5 of 32 aborts, and 32 aborts is itself only 21% of runs.
+
+**An observability gap, recorded and deliberately not fixed.** For the 94 killed runs the log holds
+exactly two events — `generation_start` and `phase_start: Agent Workflow` — and nothing until the
+end, so **the majority outcome has no phase attribution at all**. `EventType` already defines
+`FILE_START`, `TOOL_CALL`, `THINK_START`, `REFLECT_*`; the multi-agent path emits none of them.
+Wiring them is a feature, not a defect fix, and it is invasive — recorded here with the measurement
+so the decision is available rather than assumed.
+
+Added to `tools/corpus_audit.py`, so the census is one command and era-splittable (#805/#806).
+
 ---
 
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote

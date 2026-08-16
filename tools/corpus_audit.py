@@ -286,8 +286,56 @@ def audit_gate_decisions(runs: List[pathlib.Path]) -> None:
     _report("#671 no UI evidence at all     [rejected]", seen, seen, no_ui)
 
 
+def audit_terminal_state(runs: List[pathlib.Path]) -> None:
+    """#821: how each run actually ENDED — the question I analysed a whole corpus without asking.
+
+    `logs/progress_events.jsonl` records `generation_start`, `phase_start`, and then a terminal
+    `generation_complete` / `generation_error`. Reading r151's showed it never delivered: it
+    aborted STUCK on a blocker that could not exist (#820). I had read that run's captures, DDL,
+    seed, chains, tasks and design system first, and interpreted all of them as if it had shipped.
+
+    Corpus-wide the picture is starker than any release count: most runs do not reach a terminal
+    event at all -- they are killed mid-workflow, and the log emits nothing between `phase_start`
+    and the end, so there is no phase attribution for them.
+    """
+    ok = failed = killed = nolog = 0
+    causes: Dict[str, int] = {}
+    for run in runs:
+        f = run / "logs" / "progress_events.jsonl"
+        if not f.is_file():
+            nolog += 1
+            continue
+        evs = []
+        for line in f.read_text(encoding="utf-8", errors="ignore").splitlines():
+            try:
+                evs.append(json.loads(line))
+            except Exception:
+                pass
+        done = next((e for e in evs if e.get("type") == "generation_complete"), None)
+        err = next((e for e in evs if e.get("type") == "generation_error"), None)
+        if done is not None:
+            if (done.get("data") or {}).get("success"):
+                ok += 1
+            else:
+                failed += 1
+        else:
+            killed += 1
+        if err:
+            for name in re.findall(r"'([a-z_]+):?[^']*'", str(err.get("message"))[:600]):
+                causes[name] = causes.get(name, 0) + 1
+    total = ok + failed + killed
+    _report("#821 reached generation_complete OK", total + nolog, total, ok)
+    _report("#821 completed but not successful", total + nolog, total, failed)
+    _report("#821 killed before any terminal event", total + nolog, total, killed,
+            "   (log is silent between phase_start and the end)")
+    if causes:
+        top = sorted(causes.items(), key=lambda kv: -kv[1])[:4]
+        print("      -> named in abort messages: "
+              + ", ".join(f"{k} x{v}" for k, v in top))
+
+
 _AUDITS = (audit_link_tables, audit_projected_bare_reads, audit_spec_owner_columns,
-           audit_gate_decisions)
+           audit_gate_decisions, audit_terminal_state)
 
 
 def main(argv: Optional[List[str]] = None) -> int:

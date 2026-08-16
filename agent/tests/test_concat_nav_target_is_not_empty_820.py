@@ -77,6 +77,27 @@ def test_the_helper_is_pure_and_cheap():
     assert fa._is_concat_prefix_820("", 99) is False
 
 
+@pytest.mark.parametrize("body,expect", [
+    ("<a onClick={() => navigate(`/watch/${tid}`)}/>", 0),
+    ("<a onClick={() => navigate('/watch/' + tid)}/>", 0),
+    ("<Link to={'/watch/' + tid}/>", 0),
+    ("<Link to={`/watch/${tid}`}/>", 0),
+    ("<a onClick={() => navigate(dest)}/>", 0),
+    ("<a onClick={() => navigate('/watch/')}/>", 1),
+    ("<Link to='/nope'/>", 1),
+])
+def test_the_whole_input_space_is_sound(body, expect):
+    """★ #820 fixed one spelling; soundness means EVERY correct spelling clears and EVERY real
+    defect stays. The sibling extractors had already learned this — `_API_URL_BOUNDARY_631` treats
+    `+` and `${` as boundaries and `_PAGE_FETCH_RE_615` rejects a following `{?$+`. The nav
+    extractor was the one that had not: three implementations of one idea, two correct.
+
+    Sweeping the space rather than patching the report is the point — the report named the
+    concatenation, and said nothing about whether template literals were handled."""
+    got = _blockers("export default function C(){ return %s }" % body)
+    assert len(got) == expect, got
+
+
 def test_the_source_claim_in_the_comment_holds():
     """The comment cites two r151 files by name; if they are present they must say what it says."""
     gen = pathlib.Path(__file__).resolve().parents[1] / "generated" / "netflix-web-r151"
