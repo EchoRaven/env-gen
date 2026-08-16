@@ -189,7 +189,10 @@ def _imageless_spec_screens_unreachable_823(output_dir: Any) -> List[str]:
     is routed `/latest`; `landing` is `/`). Those screens do not need a structural check: the
     visual gate already covers them. Checking only the IMAGELESS ones removes the entire class of
     vocabulary noise. Measured over 142 checkable runs it reports `profiles` (22) and `search` (1)
-    and nothing else — 15% of runs shipped with no reachable who's-watching screen.
+    and nothing else. ★ The RELEASED gap is 2 runs, not 22: of the 22 reported, 21 built a
+    frontend at all and only 2 also cut a tagged release. An earlier draft of this docstring
+    said "15% of runs shipped" — that counted runs which never released, inflating it ~11x.
+    The check is unchanged; the number beside it was wrong (#647's rule turned on itself).
 
     Reachability is judged over routes AND page component names, stemmed by the same
     `_route_tokens_728` the framework already uses, so `/profiles` and `ProfilesPage.jsx` both

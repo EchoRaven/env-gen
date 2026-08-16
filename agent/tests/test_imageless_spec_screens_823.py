@@ -3,7 +3,10 @@ r"""#823: the one screen class nothing checks — and two wrong versions before 
 #822: a spec screen with no reference image is absent from `design_system.json`, so the visual
 gate never captures, scores or blocks on it (`profiles`, 150 of 150 runs). #788: nothing compares
 the spec's `screens` list to the built UI. For exactly those screens there is **no check at all**,
-and 22 of 142 corpus runs (15%) shipped with no reachable who's-watching screen.
+and 22 of 142 corpus runs report one. ★ Of those 22, only **2** both built a frontend and cut a
+tagged release — an earlier draft said "15% shipped", which counted aborted runs and overstated
+it ~11x. r136 and r140 have zero pages and last event `phase_start`; they never shipped anything.
+The real released gap is r150: 14 pages, a tagged release, and no ProfilesPage among them.
 
 ★ **Two earlier versions were withdrawn, and why is the point.**
 
