@@ -176,12 +176,38 @@ _ROUTE_WRAPPERS = frozenset({
 })
 
 
+def _span_truncated_810(where: str, n: int) -> None:
+    """#810: a bounded-slice fallback fired, so the caller is parsing a FRAGMENT.
+
+    `_tag_span`, `_element_span` and `_balanced_call_span` all scan for a balanced delimiter and
+    fall back to a fixed-width slice when the source is unbalanced. The fallback is correct — the
+    alternative is reading to end-of-file — but it was silent, and `_balanced_call_span` feeds
+    `bare_authed_fetch_blockers`, i.e. the release-BLOCKING path. A truncated span there means the
+    audit judged a call site it only half saw, in either direction: a missed blocker or an
+    invented one.
+
+    Reuses #791's say-once list rather than adding a fourth reporting mechanism (#792's lesson),
+    which also means it already reaches the delivery gate through #793's merge.
+    """
+    try:
+        note = "%s: unbalanced source, parsed a bounded %d-char fragment" % (where, n)
+        if note not in _SCAN_ERRORS_791:
+            _SCAN_ERRORS_791.append(note)
+            _LOG_791.warning(
+                "AUDIT PARSED A FRAGMENT (#810): %s. The scan could not find the closing "
+                "delimiter, so this verdict rests on a truncated span -- treat a finding here, "
+                "or the absence of one, as unconfirmed.", note)
+    except Exception:
+        pass
+
+
 def _tag_span(app_jsx: str, pidx: int) -> str:
     """The full ``<Route ...>`` tag enclosing the ``path=`` at ``pidx`` — bounded by the
     first ``>`` at brace-depth 0, so a ``>`` inside ``element={...}`` (a JS expression, or
     a nested ``<Wrapper><Page/></Wrapper>``) does NOT truncate the tag."""
     start = app_jsx.rfind("<Route", 0, pidx)
     if start == -1:
+        _span_truncated_810("_tag_span:no-<Route>-before", 200)
         start = max(0, pidx - 200)
     depth, i = 0, start
     while i < len(app_jsx):
@@ -193,6 +219,7 @@ def _tag_span(app_jsx: str, pidx: int) -> str:
         elif ch == ">" and depth == 0:
             return app_jsx[start:i + 1]
         i += 1
+    _span_truncated_810("_tag_span", 400)
     return app_jsx[start:start + 400]
 
 
@@ -1127,6 +1154,7 @@ def _balanced_call_span(text: str, open_idx: int) -> str:
             if depth == 0:
                 return text[open_idx:i + 1]
         i += 1
+    _span_truncated_810("_balanced_call_span", 600)
     return text[open_idx:open_idx + 600]
 
 

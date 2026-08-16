@@ -3080,6 +3080,44 @@ code it guards.**
 
 ---
 
+## 140. #810 — the guard-coverage sweep, finished: three legitimate windows that said nothing
+
+Running #802b's question over the last guard, the fixed-width-source-window checker. **Its scope
+is right** — flat `tests/test_*.py`, and the tests directory is flat — but it polices *test
+assertions only*, and the framework has three windows of its own, all in `frontend_audit.py`:
+
+    _tag_span             a 400-char forward slice from the tag start    unbalanced <Route ...>
+    _tag_span             a 200-char BACKWARD slice from the match       no `<Route` before it
+    _balanced_call_span   a 600-char forward slice from the open paren   unbalanced parens
+
+★ **They are legitimate, and that is the finding.** Unlike the nine window errors I made in tests —
+where a window stood *in place of* an anchor — each of these is a bounded fallback taken **after**
+a proper balanced scan, only when the source is genuinely malformed; the alternative is reading to
+end-of-file. **The defect was never the window. It was the silence.**
+
+`_balanced_call_span` feeds `bare_authed_fetch_blockers` (#791) — the release-**blocking** path. A
+truncated span there means the audit judged a call site it only half saw, and the error runs both
+ways: **a missed blocker, or an invented one.** The note says both.
+
+The third window — the **backward** 200-char slice when no `<Route` precedes the match — was
+missed on the first read of the file and only found by enumerating the sites rather than skimming
+them.
+
+**Reuses #791's say-once list rather than a fourth mechanism** (#792's lesson), so it already
+reaches the delivery gate through #793's merge and is already cleared by #762's reset. No new
+wiring, and no new state to forget.
+
+**Tenth self-match of the session, and the most on-the-nose.** The new test's docstring quoted the
+three slice expressions verbatim — so the fixed-width-window guard flagged *this very file*.
+Documentation matching the thing it documents. Reworded in prose.
+
+**The guard-coverage sweep is now closed**: #804 widened (private macros), #802 widened (whole
+tree, which found a dead validation and two non-existent agent types), the window guard confirmed
+correctly scoped with its blind spot handled here, and `corpus_audit` built with denominators and
+non-vacuity from the start.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
