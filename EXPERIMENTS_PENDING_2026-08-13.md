@@ -10353,3 +10353,67 @@ deferrals were the right call and stayed. It is that **the reason I record is we
 decision it supports**, and a wrong reason is what a future reader inherits. A deferral is a claim
 like any other; it should be measured before it is written down, not after.
 
+
+## 207. #877 — #864 committed the error it was the reference example for
+
+Last of the deferral audit. #864 verifies the roadmap landed; on a readback exception it did:
+
+```python
+except Exception as _ms_read_err:
+    _seeded = []                                  # a FAILED read
+...
+if not _seeded:
+    logger.error("... store reads back EMPTY")    # reported as a CONFIRMED empty store
+```
+
+★ **#864's own comment cites the distinction and #873 named it** — *"no information is not
+information saying no"* — and #864 then committed the error it was the reference example for.
+Third instance this session of a first cut merging the two.
+
+It matters exactly where it fires: a run whose roadmap is fine but whose readback hiccuped is told
+*"MILESTONE ROADMAP DID NOT LAND"* **at the moment someone is reading the log to diagnose a dead
+run**. A misdiagnosis inside a diagnostic is worse than no diagnostic.
+
+Two branches now — different severities, messages and payloads (`read_back: 0` vs
+`read_back: None, unverifiable: True`). Neither aborts, and this ticket is *why*: **a false
+positive is possible**, which was #864's stated premise all along. Auditing turned that premise
+from an assumption into a mechanism.
+
+### the deferral audit, complete
+
+    item 187 invented login links   REFUTED    -> #873
+    item 184 profile avatar         REFUTED    -> #874
+    item 187 breadcrumb vs H1       REFUTED    -> #875
+    item 185 branded title art      CONFIRMED  -> only `netflix-wordmark` is staged, 149/151
+    #181     language selector      CONFIRMED  -> pages are lane-owned BY CONTRACT: the
+                                                 framework-owned frontend list is main.jsx /
+                                                 vite.config.js / nginx / lockfile, and page
+                                                 components are deliberately absent
+    #864     "does not abort"       REFINED    -> #877 here, plus the concurrent #876
+
+Six checked: **three reasons refuted, two confirmed, one refined.** ★ The pattern is not that the
+deferrals were wrong — four of six instincts held — but that **the reasons recorded beside them
+were unmeasured guesses**. A deferral is a claim like any other; I had been writing them as if
+exempt.
+
+### ★ two agents, one tree — a hazard neither of us had hit
+
+`tools/ticket.sh` handed me **877** because #876 was already reserved. I had already written #876
+into the code, so I ran a blanket `876 → 877` replace over `orchestrator.py` — and **the other
+agent's #876 block was already in the working tree**. The replace rewrote their references into
+mine. Repaired by restoring their two strings exactly.
+
+Their commit then swept up my uncommitted `#877` orchestrator edit: `git add -A` in a shared tree
+takes whatever is dirty, including someone else's half-finished work. The code landed under their
+message; only the test needed committing separately.
+
+**The rule:** in a shared tree a blanket string replace is a write to *everyone's* work — and a
+ticket renumber is exactly when you reach for one. Replace the occurrences you authored, verified
+by count, never the token.
+
+★ And a second-order slip worth naming: this write-up first asserted `'## 206.' not in s`, which
+**the other agent had just used**. The assertion fired, the `git commit` on the next line was not
+chained to it and ran anyway — the same *"a write chained to a commit can be outlived by it"*
+mirror recorded at item 200, now with a concurrent agent supplying the collision. Chained with
+`&&` this time.
+
