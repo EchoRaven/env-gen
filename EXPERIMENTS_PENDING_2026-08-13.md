@@ -3669,6 +3669,44 @@ did that unprompted, and the framework's response was to block on it.
 
 ---
 
+## 153. Sweeping #820's class — it is rare, and two scary numbers shrank on inspection
+
+#820 found a blocker no lane could clear. The obvious question is how many more there are. Two
+sweeps, and **both came back smaller than they first looked** — which is the result worth
+recording, because acting on either first impression would have been wrong.
+
+**Sweep 1 — failed tasks whose evidence says the code was already correct.** 55 failed tasks across
+21 runs; the keyword signature matches **2**, and only **one is genuine** (r151's; the other is
+"blocked on another task", a different thing). So #820's class is **rare, not systemic** — one
+confirmed instance in 55. ★ I should not generalise from r151, and the probe is prose keyword
+matching (item 104's trap), so it cannot rule out differently-worded cases either.
+
+What the failed tasks actually are: 40 of 55 predate r100, owners are frontend 24 / backend 13 /
+verifier 11, and no title dominates. **Four are Docker-registry or Dockerfile failures** — an
+environment problem assigned to a lane that cannot fix a blocked registry — and r128's is
+`Dockerfile missing in app/backend AND app/frontend` with **no assignee at all**, for a file the
+backend prompt explicitly says is framework-owned and that the lane is forbidden to create. That
+is #820's shape again: **the framework blaming a lane for the framework's own artifact.**
+
+**Sweep 2 — tasks nobody owns.** 296 unassigned of 13,645, and **253 sit in a non-terminal state**.
+The titles are not trivia: *"Hero Play button is a DEAD control"*, *"Landing page fails to render —
+'Cn is not a function' TypeError"*, *"poster cards are non-interactive"*. That looks alarming, and
+the decisive question is whether they block or vanish.
+
+★★ **Neither, and that is why it is not the defect it appears to be.** `incomplete_required_tasks`
+covers only structural kickoff kinds (`implement_endpoint` / `implement_table` /
+`validate_api_smoke`); ad-hoc `task_*` are **deliberately excluded** — *"governed by their own
+gates (visual deferral, deliverability)"*. So these are **records, not work orders**, and their
+findings are re-derived every tick by the gates that own them (`frontend_dead_controls` does
+exactly that for the dead-control titles above). 2% of tasks, carrying no mechanism.
+
+**Deliberately not built.** An unassigned task is inert by design here, so a guard on it would be
+noise. What would make it a defect is if a finding existed *only* as an unowned task with no gate
+re-deriving it — that is the check worth writing if this ever looks live again, and it is not the
+check I would have written from the first impression.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
