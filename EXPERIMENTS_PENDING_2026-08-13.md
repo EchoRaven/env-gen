@@ -2052,6 +2052,54 @@ now asserts both markers in both files.
 
 ---
 
+## 114. #788 — the prompt told the lane a spec was enforced; nothing enforced it
+
+Item 113's sweep was for *fields with no reader*. Running the same question one level up — at the
+artefact rather than the field — found something worse than an orphan: a **claim of enforcement
+with no enforcer**. The frontend prompt said, in both versions:
+
+> BINDING SPEC: read design/reference_spec.json before designing; its screens + must_have lists
+> are **enforced by user gates at delivery**.
+
+Every reader of `must_have`, exhaustively:
+
+    reference_materials.py:208    the LLM prompt that WRITES it into reference_spec.json
+    hub_tools.py:2488/2536/2544   the kickoff tool that ACCEPTS it and stores it on the page dict
+    frontend_audit.py:952/959     reads it ONLY to decide whether a page is a MAP (`_is_map_page`)
+
+Nothing compares it to the built UI — not the delivery gate, not the visual gate, not the audit.
+`.user_gates.json` is a real mechanism (`live_monitor_server.py`) and does not read it either.
+
+**The claim is half true, and the false half is the half that reads as a checklist.** `screens`
+IS enforced — just not by a "user gate": the visual-fidelity gate captures and scores every screen
+in the spec, so a screen the lane never builds is photographed blank and takes a blocking zero.
+`must_have` — an LLM-extracted, per-screen list of the visible features the source materials
+support — is collected and thrown away.
+
+**Fixed by making the prompt true, not by building the checker.** Enforcing `must_have` means
+deciding whether "season selector" is present in a built app, and item 104 measured what that
+costs: a carefully-written word probe called **5 of 6 controls present**, including all three the
+judge had flagged. The one component that can answer it honestly is the judge, which looks at
+pixels — and it already scores this ground under COMPONENT COMPLETENESS. So the prompt now says
+what is actually true: `screens` is scored (with the blocking-zero consequence spelled out, which
+is a stronger incentive than the false claim was), `must_have` is guidance, and **where the two
+disagree the reference image wins (#781)** — a precedence that matters because `must_have` may be
+extracted from DOCUMENTS while #781 binds the judge to the IMAGE.
+
+★ **Generalised rule.** Item 113's sweep asked "does this field have a reader". This item is the
+sharper form: **an instruction that asserts a consequence is a claim about the code, and it decays
+silently** — no test fails when the enforcer is removed or was never written, and the lane cannot
+tell. Worth sweeping the prompts for other asserted consequences ("blocks release", "is audited",
+"is rejected") and confirming each has a live enforcer.
+
+**Deliberately NOT done: wiring `must_have` into the judge prompt.** It looks like the elegant fix
+— give the judge the extracted checklist — and item 107 is why not: the judge already over-claims
+`missing` (three verified cases, one costing 39 of 40 runs a phantom `player` defect). Handing it a
+second list of things to look for is the most direct way to make that worse. If it is ever tried,
+the measurement to watch is the `missing` count per screen before and after, not the score.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
