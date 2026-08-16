@@ -2850,6 +2850,35 @@ break, and it is now a single command rather than a heredoc.
 
 ---
 
+## 134. #806 — the four gate-decision numbers, moved out of a markdown table into the tool
+
+#805 promoted three measurements into `tools/corpus_audit.py`. The four that most needed it were
+still prose: **#751 and #752 are LIVE switches**, and #743/#671 are the rejected candidates whose
+rejection has to stay re-checkable. A reader had to trust an EXPERIMENTS table or re-derive by
+hand — and re-deriving by hand is what produced nine wrong numbers this session.
+
+    slice     #751 failed-task  #752 contradicted UI  #743 open P0  #671 no UI evidence
+    ALL             13%                 6%                56%             41%
+    r130+           18%                13%                54%             27%
+
+**Both slices reproduce items 122 and 123 exactly, through a different code path** — which is the
+point of writing a measurement twice. The tool uses the **shipped** normaliser
+(`_canon_validation_status` + `_flatten_validation_metadata`) feeding the **shipped**
+`_ui_evidence_breadth_739`, never a re-implementation (#772), because feeding raw store rows
+straight to the detector returns 0% on every slice: the raw store spells status `success` and
+nests the check kind under `evidence`.
+
+Each line carries its switch state — `[ENABLED]` / `[rejected]` — so the number and the decision
+it justifies cannot drift apart in a reader's head. #752's line also reports **its own
+denominator separately** (89 of 151 runs carry any UI record at all): a rate over all runs would
+understate it, and a rate over none would be an instrument zero wearing a percentage sign.
+
+**What the tool now answers in one command**, that previously took a heredoc and a careful reader:
+is a gate's blast radius what we thought; has it decayed; is the projected-page regression baseline
+still 85%; and how many link tables would leak if the safety rule were relaxed.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

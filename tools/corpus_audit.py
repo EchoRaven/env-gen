@@ -228,7 +228,66 @@ def audit_spec_owner_columns(runs: List[pathlib.Path]) -> None:
             "   (every corpus hit so far is profile_id)")
 
 
-_AUDITS = (audit_link_tables, audit_projected_bare_reads, audit_spec_owner_columns)
+def audit_gate_decisions(runs: List[pathlib.Path]) -> None:
+    """The four numbers that drive live gate switches (#751/#752 enabled, #743/#671 rejected).
+
+    Until now these lived only as a markdown table in EXPERIMENTS_PENDING — which is the same
+    throwaway-measurement problem one level up: a reader has to trust the prose or re-derive it by
+    hand, and re-deriving by hand is what produced nine wrong numbers this session.
+
+    Uses the SHIPPED normaliser and the SHIPPED detector rather than re-implementing either
+    (#772: mirrored logic drifts from the check that actually blocks). Feeding raw store rows
+    straight to `_ui_evidence_breadth_739` returns 0% on every slice, because the raw store spells
+    status `success` and nests the check kind under `evidence` -- #193/#236 normalise both.
+    """
+    try:
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent"))
+        from env_generator.llm_generator.multi_agent.runtime.hub_registry import (
+            _canon_validation_status as canon, _flatten_validation_metadata as flat)
+        from env_generator.llm_generator.multi_agent.runtime.delivery_gate import (
+            _ui_evidence_breadth_739 as breadth)
+    except Exception as exc:
+        print(f"  {'gate decisions (#751/#752/#743/#671)':<44} n/a   (framework import: {exc})")
+        return
+
+    openish = {"pending", "in_progress", "open", "todo", "new"}
+    seen = saw_ui = 0
+    failed_task = contradicted = open_p0 = no_ui = 0
+    for run in runs:
+        tasks_doc = _load(run / "shared" / "hubs" / "workhub_tasks.json")
+        checks_doc = _load(run / "shared" / "hubs" / "codehub_checks.json")
+        if tasks_doc is None or checks_doc is None:
+            continue
+        seen += 1
+        tasks = _records(tasks_doc)
+        if any(str(t.get("status")) == "failed" for t in tasks):
+            failed_task += 1
+        if any(str(t.get("status")) in openish
+               and str((t.get("metadata") or {}).get("priority")
+                       or t.get("priority") or "").upper() == "P0"
+               and str((t.get("metadata") or {}).get("kind") or t.get("kind") or "") == "bug"
+               for t in tasks):
+            open_p0 += 1
+        recs = [{"name": c.get("name", ""), "status": canon(c.get("status", "error")),
+                 "metadata": flat(c.get("evidence") or {}), "updated_at": c.get("updated_at", 0)}
+                for c in _records(checks_doc)]
+        b = breadth(recs)
+        if b.get("passed_records") or b.get("failed_records"):
+            saw_ui += 1
+        else:
+            no_ui += 1
+        if b.get("failed_records"):
+            contradicted += 1
+
+    _report("#751 a task in status failed   [ENABLED]", seen, seen, failed_task)
+    _report("#752 UI evidence contradicted  [ENABLED]", saw_ui, seen, contradicted,
+            f"   ({saw_ui} carry any UI record at all)")
+    _report("#743 an open P0 bug at the cut [rejected]", seen, seen, open_p0)
+    _report("#671 no UI evidence at all     [rejected]", seen, seen, no_ui)
+
+
+_AUDITS = (audit_link_tables, audit_projected_bare_reads, audit_spec_owner_columns,
+           audit_gate_decisions)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
