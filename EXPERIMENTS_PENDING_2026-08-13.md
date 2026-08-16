@@ -9844,3 +9844,66 @@ at the tmpdir. **The test was wrong and the code was right.** The rule is positi
 the file rather than anchored to any absolute prefix, deliberately, because runs live wherever the
 caller puts them; that is now its own case instead of a deleted one.
 
+
+## 197. #867 — the first link: a mutator that read the store back hung the run forever
+
+The link every ticket from #862 onward had to leave open, closed.
+
+`JsonStore.update()` runs **caller-supplied `mutator(view)` while holding the file lock**, and the
+lock was:
+
+```python
+with open(lock_path, "a+") as lock_file:              # CREATES the .lock
+    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)    # blocks: no LOCK_NB, no timeout
+```
+
+`flock` is per **open file description**. A second `_file_lock()` on the same store in the same
+thread opens a NEW fd and blocks against the lock that thread already holds. `self._lock` is an
+`RLock` and does not stop it. The wait is unbounded.
+
+★ **The hazard was known and enforced nowhere.** `milestone_registry._reindex` carries the warning
+verbatim — *"never call back into `self._store` / `self._all()` here (JsonStore.update already
+holds the file lock; re-entering it self-deadlocks on a second flock fd)"*. **One function
+observes a rule that binds every mutator in the codebase**, including ones written by people who
+will never open that file. The purest instance of this session's dominant class, on its
+highest-stakes invariant.
+
+**It matches the corpus signature exactly:**
+
+| observed in 7 runs | produced by |
+|---|---|
+| `.lock` present, `milestones.json` absent | `open()` creates the lock; `flock` blocks before any write |
+| no exception anywhere | it is blocked, not failing |
+| the run looks idle and dies in 3–4 minutes | the caller never returns |
+| other agents keep logging afterwards | only the blocked thread is stuck |
+
+★ And it explains **smoke #21's ten-week-old note** — *"multi-thread / multi-process / asyncio
+reproduction tests all PASS; the bug needs a production-only condition the tests can't capture"*.
+The condition is a **re-entrant mutator**, and a test mutator does not re-enter. The tests were
+right; they were testing the wrong shape.
+
+**The fix makes the lock re-entrant per instance and says so.** Re-entering is safe once detected
+— the outer frame holds the exclusive lock — but the mutator is still a latent bug, because it
+reads a half-written state. So it proceeds *and* logs an error once per store with the caller's
+stack. Cross-instance and cross-process exclusion is untouched: the guard keys on the instance, so
+two `JsonStore` objects on one path still serialise, and weakening that would trade a hang for
+corruption.
+
+Proven end-to-end rather than argued: a mutator calling `st.value()` inside `st.update()` used to
+never return; it now completes, writes, and names its own caller.
+
+### the chain, complete
+
+    a mutator re-enters the store            -> #867  (was: unbounded hang)
+      .lock created, nothing written
+      -> the seed's silent warning           -> #864  (now an error + PHASE_ERROR)
+      -> an empty roadmap                    -> #865  (the claimed fallback now real)
+      -> the loop body never runs
+      -> start_kickoff never called          -> #863  (marker in the persisted log)
+      -> three lanes never wake              -> #862  (silent attendees named)
+      -> 3-minute total loss, no exception
+      and the forensic trace, if enabled     -> #866  (now lands with the run)
+
+Six tickets, one failure. **Every link is now either fixed or instrumented**, and the one that
+started it — *"root unknown, needs a run"* in item 193 — turned out to be four reads away.
+

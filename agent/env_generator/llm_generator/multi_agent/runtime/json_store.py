@@ -141,13 +141,56 @@ class JsonStore:
 
     @contextmanager
     def _file_lock(self):
+        """#867: re-entrant for THIS thread, because the alternative is an unbounded hang.
+
+        `flock` is per open file description, so a second `_file_lock()` on the same store in the
+        same thread opens a NEW fd and blocks against the lock this thread already holds —
+        forever. `self._lock` is an RLock and does not stop it.
+
+        The hazard is known: `milestone_registry._reindex` carries the warning verbatim — *"never
+        call back into `self._store` / `self._all()` here (JsonStore.update already holds the file
+        lock; re-entering it self-deadlocks on a second flock fd)"*. ★ One function observes the
+        rule and **nothing enforces it**. Any mutator anywhere that reads the store back deadlocks
+        the run, and `update()` runs caller-supplied `mutator(view)` while holding the lock, so
+        the rule binds code that lives nowhere near this file.
+
+        Its signature is exactly what 7 corpus runs show: `open(lock_path, "a+")` CREATES the
+        `.lock`, then `flock` blocks before anything is written — `.lock` present, `.json` absent,
+        no exception, and a run that appears idle. It is also why smoke #21's note says the
+        reproduction tests all pass and the bug "needs a production-only condition the tests can't
+        capture": a test mutator does not re-enter.
+
+        Re-entering is SAFE once detected — the outer frame already holds the exclusive lock, so
+        the inner critical section is protected. What it must not do is stay silent: the mutator
+        doing it is still a latent bug (it reads a half-written state), so it is reported once per
+        store with the caller's stack."""
+        depth = getattr(self, "_flock_depth_867", 0)
+        if depth:
+            if not getattr(self, "_said_reentry_867", False):
+                self._said_reentry_867 = True
+                import traceback as _tb
+                logger.error(
+                    "JsonStore RE-ENTRANT file lock on %s — a mutator called back into the store "
+                    "while update() held the lock. Before #867 this DEADLOCKED the run (.lock "
+                    "present, file never written, no exception). Proceeding under the outer lock; "
+                    "fix the mutator to use only the MapView it is given. Caller:\n%s",
+                    self.file_path.name, "".join(_tb.format_stack()[-6:-1]),
+                )
+            self._flock_depth_867 = depth + 1
+            try:
+                yield
+            finally:
+                self._flock_depth_867 -= 1
+            return
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         lock_path = self.file_path.with_suffix(self.file_path.suffix + ".lock")
         with open(lock_path, "a+") as lock_file:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            self._flock_depth_867 = 1
             try:
                 yield
             finally:
+                self._flock_depth_867 = 0
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def _load_raw(self) -> Dict[str, Any]:
