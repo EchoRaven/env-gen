@@ -1733,6 +1733,49 @@ right one needed a distribution.
 
 ---
 
+## 106. #781 — a whole blocking screen was failing on chrome its reference does not have
+
+Working down item 101's blocker list. `login` gave #778 and #779, `browse_by_languages` gave
+item 104 and #780. The last two are `title_detail` (56%) and `player` (46%), and they split.
+
+**`title_detail` is #664's class.** Every keyword the judge marks — cast, episode, meta, tag,
+genre, mute, volume — appears in the decomposition, in all 53 runs. Told, not built. Same as
+browse_by_languages.
+
+**`player` is something else entirely.** Its judge notes are dominated by `scrub` — **39 of 40
+records** — plus *"missing skip-back and skip-forward buttons"* and *"missing next-episode and
+CC/subtitles icons"*. Its decomposition has eight components and none of them is a scrubber, in
+53 of 53 runs, which looked like a decomposition gap.
+
+**Then I opened the reference.** It is an AD playing: back arrow, flag/report, an `Ad 12` badge,
+pause, volume, *"All American begins after ads"*, fullscreen. **A Netflix ad view has no
+scrubber, no skip, no CC, no next-episode.** The decomposition found exactly what is there. The
+judge is scoring against its prior of what a Netflix player looks like.
+
+**The instructions invited it.** They say *"Weigh component completeness and layout most
+heavily"* and never define completeness — and for a screen from a famous product, an undefined
+completeness bar is the model's training data. It is now defined: completeness is what the
+REFERENCE shows, a control the reference lacks is not missing, a partial state (ad, modal,
+loading) is scored as that state, and nothing goes in `missing` that cannot be pointed to in the
+first image. That last clause matters because `missing` feeds remediation tasks — an invented
+entry costs the lane a round chasing a control that should not exist.
+
+**Second judge error in one sitting.** Item 104 found the first: `browse_by_languages` marked
+down for one language dropdown when the page has two `<select>`s and the screenshot shows both.
+**A deviation is evidence, not ground truth** — and #778's case rested partly on deviations, so
+this caveat reaches backwards.
+
+**What it means for item 101's scorecard.** Some of the "five screens blocking every run" are
+blocked by judge error rather than app defect. `player` at 46% is the clearest: 39 of 40 records
+complain about a scrubber that is not in the reference and not in the app, and the app is right.
+
+**Cheapest observation.** Next run: does `scrub` still appear in `player`'s notes, and does
+`player` clear 0.65? It is the cleanest before/after in the document — the app does not need to
+change for this one to move, which also makes it the sharpest test of whether a judge prompt
+clause does anything at all.
+
+---
+
 ## 105. #780 — the framework computed the fix and wrote it to a log nobody reads
 
 Item 104 ended pointing at item 54, the oldest open thread. It turns out the framework already

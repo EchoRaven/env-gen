@@ -2021,7 +2021,23 @@ _JUDGE_INSTRUCTIONS = (
     "design for the '{name}' screen; the SECOND image is a screenshot of the "
     "implemented app at route '{route}'.\n"
     "IGNORE differences in user-generated content (different photos, usernames, "
-    "counts) and empty states caused by missing data — judge the DESIGN.\n\n"
+    "counts) and empty states caused by missing data — judge the DESIGN.\n"
+    # #781: SCORE THE IMAGE, NOT THE PRODUCT. `player` fails the bar in 46% of runs and the
+    # complaint is always the same chrome: `scrub` appears in 39 of 40 judged records, alongside
+    # "missing skip-back and skip-forward buttons", "missing next-episode and CC/subtitles
+    # icons". Its reference shows an AD playing — back arrow, flag, "Ad 12", pause, volume,
+    # "All American begins after ads", fullscreen — and a Netflix ad view HAS no scrubber, no
+    # skip, no CC, no next-episode. The framework's own decomposition finds exactly those 8
+    # components and no more, in 53 of 53 runs, so the decomposition is right and the judge is
+    # scoring against its prior of what a Netflix player looks like.
+    #
+    # "Weigh component completeness most heavily" invites precisely that, because completeness
+    # was never defined. It is defined here.
+    "COMPLETENESS IS DEFINED BY THE REFERENCE IMAGE, NOT BY THE PRODUCT. A control the "
+    "reference does not show is NOT missing — even when the real product has it, and even when "
+    "the screen is instantly recognisable. If the reference is a partial or transient state (an "
+    "ad playing, a modal open, a loading view), score the implementation against THAT state. "
+    "Never list under `missing` an element you cannot point to in the first image.\n\n"
     "Assess each dimension (these are your evaluation criteria):\n"
     "{rubric_block}\n\n"
     "Then judge OVERALL similarity holistically (1.0 = a user would take the "
