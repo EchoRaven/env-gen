@@ -3118,6 +3118,40 @@ non-vacuity from the start.
 
 ---
 
+## 141. #811 — the third form of the silence class: caps. Four of six candidates were my probe, not the code
+
+The "says nothing" class has now been swept in three forms: swallowed exceptions (#790–#792),
+truncated parses (#810), and finally **caps** — a scan that stops early while the reader takes the
+list for the whole. The codebase already states the rule (#680: *"no silent caps — log what was
+dropped"*), so the question is whether it follows it.
+
+Six candidates. ★ **Four were my probe, not the code** — the consequence filter matters more than
+the pattern every single time:
+
+| site | verdict |
+|---|---|
+| `deliverability.py:514` | **not a defect** — the message leads with `{len(report.missing)} critical UI flow(s) missing`; the count is stated and only the enumeration is capped. The correct pattern. |
+| `remediation_dispatcher.py:689` | **not a defect** — same shape, `{len(blockers)} declared ui_page(s)` precedes the list |
+| `remediation_dispatcher.py:136` | **cannot bite** — my #799's cap is 6 and there are only 4 build checks |
+| `frontend_scaffold.py:4662` | **not a findings list** — up to 3 CTA verbs |
+| `visual_fidelity.py:4257` | real, minor: an advisory showing 20 of N with no N |
+| `remediation_dispatcher.py:179` | **real — mine, from #798, two items ago** |
+
+★ **The clearest defect in the sweep was the one I had just written.** #798 exists precisely
+because the task told the verifier to look up something already recorded; capping the list at 8
+without saying so re-creates that in miniature — **the verifier fixes the 8 it was shown, re-runs,
+and the chain is still red for reasons the task never mentioned.** It now appends *"… and 12 more
+broken step(s)"*, and says nothing when nothing was dropped, because a note on every task is a note
+nobody reads (#793's correction).
+
+**Where the silence class stands.** Exceptions, parses, caps — all three swept, all three reusing
+one say-once list that reaches the delivery gate through #793. What the sweep keeps demonstrating
+is not that the framework is careless: **four of six candidates were fine, and the two that were
+not were both mine from this session.** The pattern is not in the old code; it is in *new* code
+written faster than the rule that governs it.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

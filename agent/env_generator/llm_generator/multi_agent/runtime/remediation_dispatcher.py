@@ -176,7 +176,15 @@ def _chain_broken_detail_798(orch) -> List[str]:
             if not (lr.get("steps") or []):
                 for b in (lr.get("broken") or []):
                     out.append("%s -> broken: %s" % (name, str(b)[:200]))
-        return out[:8]
+        # #811: say what was dropped. #798 exists because the task told the verifier to go and
+        # look up something already written down; a silent cap re-creates that in miniature --
+        # the verifier fixes 8 steps, re-runs, and the chain is still red for reasons the task
+        # never mentioned. #680's rule ("no silent caps") applied to my own fix from two items
+        # ago; the codebase already uses this exact idiom in bare_authed_fetch_blockers.
+        if len(out) > 8:
+            return out[:8] + ["… and %d more broken step(s) — the same reading applies to each; "
+                              "this list is capped to keep the task readable" % (len(out) - 8)]
+        return out
     except Exception:
         return []
 

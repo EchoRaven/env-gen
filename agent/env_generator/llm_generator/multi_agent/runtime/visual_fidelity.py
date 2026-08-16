@@ -4253,7 +4253,11 @@ def _asset_usage_advisory(output_dir: Any, exclude: Optional[set] = None,
         rows = [u for u in unused if (u.get("component"), u.get("asset")) not in excl]
         if not rows:
             return ""
-        out = ["\n## Real assets not used (advisory — use the STAGED asset, do not draw it):"]
+        # #811: state the denominator. An advisory that silently shows 20 of 40 reads as "these
+        # are the ones", and the lane fixes the visible half.
+        _hdr = ("\n## Real assets not used (advisory — use the STAGED asset, do not draw it)"
+                + (" — showing 20 of %d:" % len(rows) if len(rows) > 20 else ":"))
+        out = [_hdr]
         for u in rows[:20]:
             out.append(f"- component `{u['component']}` should render real asset "
                        f"`{u['asset']}` → reference `/assets/{u['file']}` "
