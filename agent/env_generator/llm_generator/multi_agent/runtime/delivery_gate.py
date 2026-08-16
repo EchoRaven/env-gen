@@ -241,6 +241,64 @@ def _imageless_spec_screens_unreachable_823(output_dir: Any) -> List[str]:
 _re_830 = re.compile(r"(?:^|:)(" + "|".join(sorted(_UI_SMOKE_EVIDENCE_CHECKS)) + r")(?::|$)")
 
 
+# #842: the asset CLASSES a screen's `must_have` asks for, against what design-prep actually staged.
+# Each entry is (words that name the class in must_have prose, directory names that satisfy it).
+# A closed vocabulary on both sides is what makes this sound -- #823 withdrew two versions that
+# tried to match SCREEN names against ROUTE names, which are two open vocabularies. Asset classes
+# are a short fixed list, and the staged side is a handful of directory names.
+_ASSET_CLASSES_842 = {
+    "avatar":   (("avatar", "avatars"), ("avatar", "profile")),
+    "poster":   (("poster", "posters"), ("poster",)),
+    "backdrop": (("backdrop", "backdrops", "hero image", "still"), ("backdrop", "still")),
+    "logo":     (("logo", "logos", "wordmark"), ("brand", "logo")),
+    "icon":     (("icon", "icons"), ("icon",)),
+    "video":    (("clip", "trailer", "video", "playback"), ("video", "clip")),
+}
+
+
+def _unstaged_asset_classes_842(output_dir: Any) -> List[str]:
+    """#842: an asset class the spec asks for and design-prep never stages.
+
+    #841: `profiles` must_have says "profile avatars grid" and `account_menu` says "profile avatar
+    dropdown", while the staged categories are backdrops | brand | fonts | icons | posters | video
+    — no avatars, in 150 of 150 corpus runs. The lane, owning seed_data.json and having nothing to
+    point at, filled `avatar_url` with a CROP OF A FLYOUT PANEL, and the judge correctly reports a
+    blank square on my_list, new_and_popular and movies. The avatar sits in the shared top nav, so
+    it costs `components` on every authenticated screen.
+
+    Nothing compared the two lists before: #788 found `must_have` is never machine-checked, and
+    this is the half of it that can be checked without semantics — a closed vocabulary on both
+    sides. Measured over 150 runs it reports `avatar` and nothing else; an earlier cut also
+    reported `logo`, which was a false positive (the wordmark is staged under `brand/`).
+
+    REPORTED, not enforced. Returns ``["<class> (asked by <screen>)", ...]``; [] on any fault.
+    """
+    try:
+        import json as _json
+        from pathlib import Path as _P
+        root = _P(output_dir)
+        spec_f = root / "design" / "reference_spec.json"
+        adir = root / "design" / "assets"
+        if not (spec_f.is_file() and adir.is_dir()):
+            return []
+        staged = {d.name.lower() for d in adir.iterdir()}
+        out: List[str] = []
+        seen: set = set()
+        for sc in (_json.loads(spec_f.read_text(encoding="utf-8")).get("screens") or []):
+            if not isinstance(sc, dict):
+                continue
+            txt = " ".join(str(x) for x in (sc.get("must_have") or [])).lower()
+            for cls, (words, dirs) in _ASSET_CLASSES_842.items():
+                if cls in seen or not any(w in txt for w in words):
+                    continue
+                if any(any(dn in sd for sd in staged) for dn in dirs):
+                    continue
+                seen.add(cls)
+                out.append(f"{cls} (asked by {sc.get('name')})")
+        return out[:6]
+    except Exception:
+        return []
+
 def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
     """#739: how BROAD is the UI evidence behind ``ui_smoke_pass``?
 
@@ -2007,6 +2065,17 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 "UI (#788), so a missing one ships unnoticed — 22 of 142 corpus runs (15%%) had "
                 "no reachable profiles screen. Reported, not enforced.",
                 len(_unreach823), "; ".join(_unreach823))
+    except Exception:
+        pass
+    try:
+        _noasset842 = _unstaged_asset_classes_842(output_dir)
+        if _noasset842:
+            logger.warning(
+                "#842 the SPEC asks for asset class(es) design-prep never staged: %s. The lane has "
+                "nothing to point at, so it substitutes whatever is nearest (#841: a crop of a "
+                "flyout panel used as an avatar_url) and the judge correctly reports a blank "
+                "square — on every authenticated screen when the asset is in the shared nav. "
+                "Reported, not enforced.", "; ".join(_noasset842))
     except Exception:
         pass
     _bugs743 = unresolved_bug_tasks_743(hubs)
