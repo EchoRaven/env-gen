@@ -3769,6 +3769,23 @@ def _comp_kind_221(comp) -> str:
     return best if scores[best] > 0 else "panel"
 
 
+# #850: `_fmtDur` takes an explicit unit, because clamping the VALUE to force a unit corrupts it.
+#
+# `_fmtDur` guesses: `n >= 300 ? seconds : minutes`. That guess is unavoidable for a bare
+# `duration` column and it is RIGHT on 100 of the 102 corpus runs that have one (only r105 and
+# r118 straddle the boundary), so it stays.
+#
+# But `_durOf`'s first branch reads `duration_sec` / `duration_seconds` / `length_sec` /
+# `runtime_sec` — fields whose unit is stated IN THE NAME. It suppressed the guess with
+# `_fmtDur(Math.max(n, 300))`, which forces the seconds branch by **rewriting any value below
+# 300**. A 180-second track renders "5m". Not a wrong guess — an unconditional lie, on the one
+# branch where nothing had to be guessed.
+#
+# Zero live instances: 2348 `duration_seconds` values across 151 runs, minimum 720. This is a
+# GENERALITY fix, and the reason it is worth making where `_parent_lookup_col`'s 0-instance fuzzy
+# bind was not: that one would have replaced a correct behaviour with a guess, this one replaces a
+# guess with the known answer. For a music, podcast or short-video app — the framework's whole
+# point — sub-300s is the common case, and every track under five minutes would read "5m".
 _REF_HELPERS_JS = """
 const _url = (u) => { if (typeof u !== 'string' || !u) return u; if (u.startsWith('/') || u.startsWith('http') || u.startsWith('data:') || u.indexOf('://') > -1) return u; return '/' + u.replace(/^[./]+/, ''); };
 const _imgOf = (r) => { for (const k of ['thumbnail_url','image_url','avatar_url','banner_url','photo_url','cover_url','poster_url','poster','still','cover','banner','backdrop','backdrop_url','still_url','image','thumbnail','avatar']) { if (r && r[k]) return _url(r[k]); } const u = r && r.url; if (typeof u === 'string' && /\\.(png|jpe?g|webp|gif|svg)(\\?|$)/i.test(u)) return _url(u); return null; };
@@ -3779,9 +3796,9 @@ const _metaOf = (r) => Object.keys(r || {}).filter((k) => !['id','password','pas
 const _videoOf = (r) => { for (const k of ['video_url','media_url','playback_url','stream_url','video','src']) { const v = r && r[k]; if (typeof v === 'string' && v) return _url(v); } const u = r && r.url; if (typeof u === 'string' && /\\.(mp4|webm|mov|m3u8)(\\?|$)/i.test(u)) return _url(u); return null; };
 const _countsOf = (r) => Object.keys(r || {}).filter((k) => /(count|likes|views|shares|saves|comments|followers|plays)$/i.test(k) && typeof r[k] === 'number').slice(0, 5);
 const _railSlice = (rows, n, i) => { const arr = rows || []; const p = Math.ceil((arr.length || 0) / (n || 1)) || 1; const s = arr.slice(i * p, (i + 1) * p); return s.length ? s : arr; };
-const _fmtDur = (d) => { if (d == null || d === '') return ''; if (typeof d === 'string' && /[a-z]/i.test(d)) return d; const n = Number(d); if (!isFinite(n) || n <= 0) return ''; const s = n >= 300 ? n : n * 60; const h = Math.floor(s / 3600); const m = Math.round((s % 3600) / 60); return h ? (h + 'h ' + m + 'm') : (m + 'm'); };
+const _fmtDur = (d, u) => { if (d == null || d === '') return ''; if (typeof d === 'string' && /[a-z]/i.test(d)) return d; const n = Number(d); if (!isFinite(n) || n <= 0) return ''; const s = (u === 's') ? n : (u === 'm') ? n * 60 : (n >= 300 ? n : n * 60); const h = Math.floor(s / 3600); const m = Math.round((s % 3600) / 60); return h ? (h + 'h ' + m + 'm') : (m + 'm'); };
 const _yearOf = (r) => { for (const k of ['year','release_year','air_year','pub_year','published_year','launch_year','season_year']) { const v = r && r[k]; if (v) return String(v); } for (const k of ['release_date','air_date','published_at','released_at','first_aired','premiere_date']) { const v = r && r[k]; const m = (typeof v === 'string') && v.match(/\\b(1[89]\\d\\d|20\\d\\d)\\b/); if (m) return m[1]; } return ''; };
-const _durOf = (r) => { for (const k of ['duration_sec','duration_seconds','length_sec','runtime_sec']) { const n = Number(r && r[k]); if (isFinite(n) && n > 0) return _fmtDur(Math.max(n, 300)); } for (const k of ['duration_min','runtime_min','length_min','duration_minutes','runtime_minutes']) { const n = Number(r && r[k]); if (isFinite(n) && n > 0) { const h = Math.floor(n / 60); const m = Math.round(n % 60); return h ? (h + 'h ' + m + 'm') : (m + 'm'); } } for (const k of ['duration','runtime','length']) { const v = r && r[k]; if (v) return _fmtDur(v); } return ''; };
+const _durOf = (r) => { for (const k of ['duration_sec','duration_seconds','length_sec','runtime_sec']) { const n = Number(r && r[k]); if (isFinite(n) && n > 0) return _fmtDur(n, 's'); } for (const k of ['duration_min','runtime_min','length_min','duration_minutes','runtime_minutes']) { const n = Number(r && r[k]); if (isFinite(n) && n > 0) { const h = Math.floor(n / 60); const m = Math.round(n % 60); return h ? (h + 'h ' + m + 'm') : (m + 'm'); } } for (const k of ['duration','runtime','length']) { const v = r && r[k]; if (v) return _fmtDur(v); } return ''; };
 const _ratingOf = (r) => { for (const k of ['maturity_rating','content_rating','age_rating','parental_rating','certification','rating_label','rating_age','maturity']) { const v = r && r[k]; if (v) return String(v); } return ''; };
 const _genresOf = (r) => { for (const k of ['genres','genre','genre_names','categories','category','tags','labels']) { const v = r && r[k]; if (!v) continue; const a = Array.isArray(v) ? v : String(v).split(/\\s*[,|/]\\s*/); const out = a.map((g) => (g && typeof g === 'object') ? (g.name || g.title || g.label || g.slug || '') : String(g)).filter(Boolean); if (out.length) return out; } return []; };
 """

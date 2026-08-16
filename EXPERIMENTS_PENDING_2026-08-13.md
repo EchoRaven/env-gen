@@ -8577,3 +8577,39 @@ in one is a real defect in the document, not in the scanner.
 trustworthy. Two of the three were introduced by *fixing* or *documenting* the first. The general
 form: **a namespace with no allocator is a bug, and an allocator is a component that can be
 wrong** — the second is easy to forget because the first was so visibly painful.
+
+
+## 173. #850 — the branch that did not have to guess was the one that lied
+
+`_fmtDur` guesses a duration's unit from its magnitude: `n >= 300 ? seconds : minutes`. For a bare
+`duration` column that guess is unavoidable, and it is **right on 100 of the 102 corpus runs that
+have one** — only r105 and r118 straddle the boundary. It stays.
+
+`_durOf`'s first branch is different: it reads `duration_sec`, `duration_seconds`, `length_sec`,
+`runtime_sec` — fields whose **unit is stated in the name**. It suppressed the guess with
+`_fmtDur(Math.max(n, 300))`, forcing the seconds branch by *rewriting any value below 300*. A
+180-second track renders **"5m"**.
+
+★ Not a wrong guess. An **unconditional rewrite of the data**, on the one branch where nothing had
+to be guessed. And #782's own test file states the principle it violates — *"`_durOf` knows the
+unit from the key name, so it does not have to guess"* — three characters from the clamp. The
+suite was green because every `duration_sec` case it tested was 5400.
+
+**Zero live instances**, and that is the honest headline: 2348 `duration_seconds` values across
+151 runs, **minimum 720**. This never fired on Netflix.
+
+So why fix it when `route_projector._parent_lookup_col`'s 0-instance fuzzy bind was deliberately
+left alone? **The direction of travel.** That change would have replaced a correct behaviour with
+a guess; this one replaces a guess with the known answer, and the diff is a parameter. For a
+music, podcast or short-video app — the framework's entire point is that it is not a Netflix
+generator — sub-300s is the *common* case and every track under five minutes read "5m".
+
+`_fmtDur(d, u)` now takes an explicit unit; the magnitude guess is the default and is unchanged.
+10 new cases in `test_projected_metadata_accessors_782.py` (52 total), including a non-vacuity
+case that reproduces `Math.max(180, 300)` rather than asserting what it used to do, and one
+pinning the bare-`duration` guess so the blast radius stays where it belongs.
+
+**How it was found** is the transferable part: not by reading the helper, but by grepping for
+`max(` over the runtime while looking for #847's shape — *a value taken as an upper/lower bound
+with nothing checking it against what the system actually produces*. Same query, different file.
+
