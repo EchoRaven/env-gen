@@ -2421,6 +2421,23 @@ with a non-vacuity check first (89 of 151 runs carry any UI record at all):
 | r130+ | 22 | **18%** | **13%** |
 | r145+ | 7 | 28% | 28% |
 
+★★ **CORRECTED AGAIN (item 165).** The #752 column above is wrong, and so was the "correction"
+this item made: both were computed with `_ui_evidence_breadth_739` **before #830 fixed it**. That
+detector keyed only on `metadata.check` and could not see 645 records whose kind sat in the record
+NAME. Re-run against the fixed detector:
+
+| slice | #752 contradicted UI | runs carrying any UI record |
+|---|---|---|
+| ALL | **22 of 151 (14%)** — not 6% | **125**, not 89 |
+| r130+ | **4 of 22 (18%)** — not 13% | 20 |
+
+So #752 was approved on *"6 of 148 → 4%, a gate"*, this item revised it to 6%/13%, and the true
+figures are **14% corpus-wide and 18% on recent builds** — level with #751 and more than four times
+the number it was approved on. ★ **Both of my revisions moved in the same direction and both
+understated it**, because I re-measured with the shipped detector (correctly, per #772) without
+asking whether the detector itself was sound. *Use the shipped code* and *verify the shipped code*
+are different instructions; I followed the first and skipped the second.
+
 **#752 was approved on "6 of 148 → 4%, a gate". On the r130+ slice it is 13%** — three times
 higher — and #751 is 18% against the 13% quoted. Neither approaches the rates that disqualified
 the rejected candidates (#743's 70%, #671's 45%), so **the calls stand**; but the margin is
@@ -4077,6 +4094,43 @@ r148 released a dead app with `landing + login` passing. This is the other half 
 bug fix — unlike #830, where the detector was failing to implement a policy already approved. The
 switch stays with whoever owns the gate. What has changed is that the number it was rejected on
 was wrong, and the false-positive question now has an answer.
+
+---
+
+## 164. #840 — the `games` screen cannot pass, because the staged dataset has no games
+
+`games` blocks 5 of 7 recent runs (71%, the third-worst screen). It has never been examined. Its
+floor dimension is `components` in **10 of 10** scored runs (0.55–0.70), and **9 of 10** carry the
+same deviation:
+
+> *"Hero content type: implementation surfaces a film ('Disclosure Day' with synopsis, TV-14,
+> TOP 10 #1) instead of a game with logo art + tag chips (Game • Sports • 1-4 Players • 10+ Min)"*
+
+★ **The judge is right, and no styling fix reaches it.** Traced:
+
+    GamesPage.jsx fetches   /api/titles          — unscoped
+    the API supports        ?kind=               — custom_routes: `t.kind = :kind`
+    the staged dataset has  series 32, movie 28  — and zero games
+
+Corpus-wide:
+
+    runs with a staged dataset               143
+      ...whose SPEC declares a games screen  142
+      ...containing any `game`-kind row        1
+    kinds present: series 143 | movie 143 | game 1
+
+★★ **And it is unsatisfiable, not merely unfixed.** The lane owns `seed_data.json` and could author
+game rows — but #807 established that the framework-owned dataset **replaces `titles` wholesale**.
+So the chain closes: the lane authors games → the merge replaces titles with series+movies → the
+games vanish → the judge reports a film → the screen blocks. There is no edit the lane can make
+that clears this. That is the #566z class (#820's shape) at the DATA layer rather than the
+detector layer, and it is costing a 71% blocker on every run.
+
+**Two candidate fixes, neither taken here.** (a) `GamesPage` passes `?kind=game`, which is correct
+and immediately makes the page *empty* rather than wrong — arguably worse for the score. (b) the
+staged dataset carries game rows when the spec declares a games screen, which is the real fix and
+is a design-prep change. Both need the owner's call, and (b) needs a run to validate; recorded
+with the measurement so the choice is available rather than assumed.
 
 ---
 
