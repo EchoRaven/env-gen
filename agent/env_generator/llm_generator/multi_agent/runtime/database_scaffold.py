@@ -281,7 +281,9 @@ def normalize_table_schema(schema: Any) -> Dict[str, Any]:
     return {"columns": normalize_columns(schema)}
 
 
-_MISSING_TABLE_FIXED_KINDS = {"auth", "oauth", "infra", "spine"}
+# #853: was a fourth hand-listed copy of the fixed surface, identical to the three others and
+# missing the same `control`/`control_plane`/`health`. Imported, not re-listed.
+from .kickoff.contract import FIXED_ENDPOINT_KINDS as _MISSING_TABLE_FIXED_KINDS
 _MISSING_TABLE_SPINE = {"users", "tenants"}
 
 

@@ -966,7 +966,32 @@ def normalize_steps(steps: Any) -> "tuple[List[Dict[str, Any]], List[str]]":
     return out, errors
 
 
-_FIXED_ENDPOINT_KINDS = {"auth", "oauth", "infra", "spine"}
+# #853: was a divergent LOCAL COPY — `{"auth", "oauth", "infra", "spine"}`, a strict subset of
+# `kickoff.contract.FIXED_ENDPOINT_KINDS`, missing `control`, `control_plane` and `health`.
+#
+# `control_surface_kind_for_path`'s docstring asserts that `"control"` "is a member of
+# FIXED_ENDPOINT_KINDS, so EVERY GATE THAT POINTS THERE SKIPS IT". This gate did not point there,
+# so the claim was false for the one consumer that auto-authors chain steps: a `POST /api/<col>`
+# tagged `control` would fall through the skip below and get a synthetic business-create step with
+# a generated body, expecting 200/201. A control-plane POST answers that with a 400 — and this
+# file's own comments record where that leads: "business_chain fails forever -> the milestone can
+# never deliver".
+#
+# Zero live exposure, measured: the 6 control-surface endpoints the framework registers
+# (/health, /api/v1/reset, /api/v1/tenants x3, /api/v1/admin/init-tenant — 864 records over 144
+# runs) all carry `kind=infra`, which BOTH sets contain. The `control` tag is a fallback for a
+# LANE-drafted control path, and in 151 Netflix runs no lane drafted one. So this import is
+# provably behaviour-identical on the whole corpus and matters only for the apps the framework
+# exists to generalise to — a CMS or dashboard clone whose lane does draft an admin surface.
+#
+# Imported rather than re-listed, because the defect was the second copy, not its contents.
+#
+# ★ Imported LAZILY, inside `synthesize_default_chain`, not at module level. Three tests
+# (test_chain_string_keys / _notnull_recovery / _control_plane_probe) load this file by exec'ing
+# its source into a synthetic `ce_pkg`, hand-stubbing each module-level relative import — so a new
+# one here fails as `ModuleNotFoundError: No module named 'ce_pkg.kickoff'`, which names neither
+# this file nor the constraint. That constraint was nowhere written down; it is now. Same lazy
+# pattern heal_pipeline.py already uses for this exact constant.
 
 
 def _default_chain_body(ep: Mapping[str, Any]) -> Dict[str, Any]:
@@ -1065,6 +1090,12 @@ def _missing_write_defect_chain(
     return {"name": "framework_missing_write_paths", "steps": steps}
 
 
+def _fixed_endpoint_kinds_853():
+    """The one definition of the runtime-owned fixed surface (see the #853 note above)."""
+    from .kickoff.contract import FIXED_ENDPOINT_KINDS
+    return FIXED_ENDPOINT_KINDS
+
+
 def synthesize_default_chain(
     endpoints: List[Mapping[str, Any]],
     *,
@@ -1112,7 +1143,7 @@ def synthesize_default_chain(
         # a business COLLECTION create: POST /api/<col> with no path param
         if m != "POST" or not p.startswith("/api/") or "{" in p or ":" in p:
             continue
-        if _kind(e) in _FIXED_ENDPOINT_KINDS:
+        if _kind(e) in _fixed_endpoint_kinds_853():
             continue
         col = p
         var = re.sub(r"[^a-z0-9]+", "_", col.strip("/").lower()) + "_id"

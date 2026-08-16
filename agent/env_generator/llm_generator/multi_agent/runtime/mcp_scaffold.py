@@ -45,7 +45,12 @@ from typing import Any, Dict, List
 # Endpoint kinds that are NOT business operations (the orchestrator-registered
 # fixed surface). Anything with one of these kinds is excluded from the MCP tool
 # projection — they are protocol/infra, driven by the harness/UI, not the agent.
-_NON_BUSINESS_KINDS = frozenset({"auth", "oauth", "infra", "spine"})
+# #853: this said "the orchestrator-registered fixed surface" and then re-listed a SUBSET of it,
+# missing `control`/`control_plane`/`health`. The consequence here is the sharpest of the four
+# copies: a `control` endpoint would be projected as an MCP TOOL, handing an agent `reset` or
+# `init-tenant`. Zero live exposure (the 864 real control-surface records all carry `infra`),
+# but "excluded from the tool projection" has to mean the whole surface it names.
+from .kickoff.contract import FIXED_ENDPOINT_KINDS as _NON_BUSINESS_KINDS
 
 
 def _endpoint_kind(ep: Dict[str, Any]) -> str:

@@ -1392,7 +1392,13 @@ def noncanonical_business_response_keys(hubs) -> List[Dict[str, Any]]:
         _swallowed_790("noncanonical_business_response_keys", exc, "[] = every response key canonical")
         return []
     _CANONICAL = {"items", "item"}
-    _EXEMPT_KINDS = {"auth", "oauth", "infra", "spine", "control_plane", "custom"}
+    # #853: this one is a deliberate VARIANT (it adds "custom"), so it is composed rather than
+    # replaced. But it listed `control_plane` and NOT `control` — and `control` is the tag
+    # `control_surface_kind_for_path` actually emits, so the variant exempted the spelling that
+    # never occurs and missed the one that does. Composing from the canonical set makes that
+    # class of omission impossible while keeping the intent.
+    from .kickoff.contract import FIXED_ENDPOINT_KINDS as _FIXED_KINDS_853
+    _EXEMPT_KINDS = set(_FIXED_KINDS_853) | {"custom"}
     bad: List[Dict[str, Any]] = []
     for k, v in endpoints.items():
         if k == "_meta" or not isinstance(v, dict):

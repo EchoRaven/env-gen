@@ -66,7 +66,9 @@ def is_valid_transition(artifact: str, frm: str, to: str) -> bool:
 
 
 # ── endpoint kind (business vs the runtime-owned fixed surface) ────────────────
-_FIXED_KINDS = frozenset({"auth", "oauth", "infra", "spine"})
+# #853: was a hand-listed copy of the same set, missing `control`/`control_plane`/`health`.
+# Six modules re-listed this surface and all six omitted the same three. Imported, not re-listed.
+from .kickoff.contract import FIXED_ENDPOINT_KINDS as _FIXED_KINDS
 
 
 def endpoint_kind(rec: Mapping[str, Any]) -> str:

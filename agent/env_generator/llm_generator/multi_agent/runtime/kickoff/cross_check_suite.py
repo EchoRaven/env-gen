@@ -129,7 +129,9 @@ from .schema_tolerance import (  # noqa: E402
 # targets for a UI call, but are NOT business endpoints, so the "every endpoint
 # needs a UI consumer" rule does not apply to them. This is read from the
 # REGISTERED `kind` attribute (set at construction) — never a hardcoded path list.
-_FIXED_KINDS = frozenset({"auth", "oauth", "infra", "spine"})
+# #853: was a hand-listed copy of the same set, missing `control`/`control_plane`/`health`.
+# Six modules re-listed this surface and all six omitted the same three. Imported, not re-listed.
+from .contract import FIXED_ENDPOINT_KINDS as _FIXED_KINDS
 
 
 def _param_agnostic(method_path: str) -> str:

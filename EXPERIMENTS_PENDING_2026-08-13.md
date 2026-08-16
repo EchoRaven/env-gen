@@ -8722,3 +8722,74 @@ of the fix** three lines below. Re-anchored to parse the *active claim sentence*
 named file exists on disk — which is strictly better than either version, because it now fails if
 anyone renames the enforcer without renaming the claim.
 
+
+## 176. #853 — six copies of one constant, five names, all missing the same three members
+
+`kickoff.contract.control_surface_kind_for_path` promises:
+
+> ``"control"`` is a member of `FIXED_ENDPOINT_KINDS`, so **every gate that points there skips it**.
+
+Six modules do not point there. Each hand-lists `{"auth", "oauth", "infra", "spine"}` — a strict
+subset of the canonical seven, **missing `control`, `control_plane` and `health`** — and each one's
+own comment names the whole surface it is failing to cover:
+
+| module | local name | what its comment calls it |
+|---|---|---|
+| `chain_executor` | `_FIXED_ENDPOINT_KINDS` | (skip for business-create chain authoring) |
+| `database_scaffold` | `_MISSING_TABLE_FIXED_KINDS` | (missing-table exemption) |
+| `mcp_scaffold` | `_NON_BUSINESS_KINDS` | "the orchestrator-registered fixed surface" |
+| `lifecycle` | `_FIXED_KINDS` | "the runtime-owned fixed surface" |
+| `kickoff/cross_check_suite` | `_FIXED_KINDS` | "the runtime-owned FIXED surface" |
+| `delivery_gate` | `_EXEMPT_KINDS` | deliberate variant — adds `custom` |
+
+★ **Six copies, five distinct names.** That is why it survived: grepping the *constant* finds one
+site, and only grepping the *literal* finds all six. The name was never the thing they shared.
+
+**Consequences, per site, if a `control` endpoint ever exists:**
+- `chain_executor` authors a synthetic business-create step against a control-plane POST with a
+  generated body expecting 200/201. It answers 400. This file's own comment says where that
+  goes: *"business_chain fails forever → the milestone can never deliver."*
+- `mcp_scaffold` — the sharpest — projects it as an **MCP tool**, handing an agent `reset` or
+  `init-tenant`.
+- `delivery_gate`'s variant is its own small lesson: it listed **`control_plane` but not
+  `control`**, exempting the spelling that never occurs and missing the one
+  `control_surface_kind_for_path` actually emits. Composed from the canonical set now, so its
+  extra member survives and that class of omission cannot recur.
+
+**Zero live exposure, measured before touching anything.** The framework registers exactly 6
+control-surface endpoints — `/health`, `/api/v1/reset`, `POST`+`GET /api/v1/tenants`,
+`DELETE /api/v1/tenants/{id}`, `/api/v1/admin/init-tenant`, 864 records across 144 runs — and
+**every one carries `kind=infra`**, which all six copies contain. The `control` tag is the
+auto-tag's *fallback for a lane-drafted* control path, and no lane drafted one in 151 Netflix
+runs. So all six edits are provably behaviour-identical on the corpus, and matter only for what
+the framework exists to generalise to: a CMS or dashboard clone whose lane does draft an admin
+surface. Same direction-of-travel argument as #850 — replacing a guess with the known answer.
+
+The test asserts **"there is no second copy"**, not "the copies agree": agreement can be restored
+by hand and diverge again, which is precisely what six modules did.
+
+### method notes
+
+★ **A zero can be right for the wrong reason, twice in a row.** The first exposure probe read
+`kind` at the top level of the endpoint record and reported `{'': 4194}` — every kind empty. The
+field lives under `metadata.kind`; `chain_executor._kind` reads exactly that. **Sixth
+field-location error this session**, and the rule that catches it is already written down: *dump a
+real record before reporting any zero*. Doing so also re-surfaced the `_meta` bootstrap doc, the
+other standing trap in these registry files.
+
+★ **Do not count offenders off a truncated failure message.** The scanner's first run displayed
+three offenders and I wrote "three more copies". pytest had **elided the repr** — the giveaway is
+`'delivery_gate.py:1395 _...'` — and two more were behind the ellipsis. The fix is procedural:
+re-run to a *clean* scan rather than reading a count out of a red assertion.
+
+★ **#814's gate did not catch the import I broke, and the reason is worth keeping.** The
+module-level `from .kickoff.contract import ...` collapsed three tests at COLLECTION time with
+`ModuleNotFoundError: No module named 'ce_pkg.kickoff'` — they load `chain_executor.py` by
+exec'ing its source into a synthetic package, hand-stubbing each module-level relative import.
+`test_every_module_compiles_and_imports_814` imports every module **the normal way**, so it was
+green throughout. Its docstring already disclaims proving behaviour; the sharper limit is that
+**a gate models one way of loading a module, and this repo has two**. The import is now lazy (the
+pattern `heal_pipeline.py` already uses for this same constant), the constraint is written at the
+import site where the next editor will hit it, and a test drives the three harnesses so the rule
+fails by name instead of by `ce_pkg`.
+
