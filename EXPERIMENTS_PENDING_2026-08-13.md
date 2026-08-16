@@ -4177,6 +4177,32 @@ allocating**, minus the excuse.
 
 ---
 
+## 171. The exclusions #846 made visible, examined — they are legitimate
+
+`12 EXCLUDED (no DDL parsed)` is the kind of line that sits in a report as a permanent suspicion
+unless someone opens it. Opened:
+
+    12 runs have ZERO .sql files — not a parser gap, the DDL simply does not exist
+      10  no terminal event at all      (killed early — #821's 62% class)
+       2  reached generation_complete   with success: False  (r54, r110)
+      12  carry `create_all` in main.py, so the schema would be ORM-created at boot
+
+★ **No run missing its DDL was ever declared successful.** The gate held. Excluding them from a
+DDL-shaped audit is correct — what was wrong was not *saying* so, which is exactly the distinction
+#846 drew and all it needed to fix.
+
+**One thing the check nearly became.** `create_all` in every one of them raised the question
+whether some apps legitimately build their schema through the ORM rather than init SQL — in which
+case a DDL-only audit would be structurally blind to them, #843's lesson one layer up. The
+evidence says no: r110 has **2** tables in `models.py` (a degenerate model, the
+`_DEGENERATE_RESOURCES` shape) and r54 has 10 but no `app/database/` directory at all. These are
+runs that never got far enough to have a schema, not runs with a different kind of schema.
+
+**Recorded as a closed question**, because the alternative is that the next reader re-derives it.
+A negative result about an exclusion is worth exactly as much as the exclusion is loud.
+
+---
+
 ## 154. Auditing my own attribution claims — one bad, four sound
 
 The r128 correction was the second time this session I asserted *who did something* without reading
