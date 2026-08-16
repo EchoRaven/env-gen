@@ -100,12 +100,29 @@ def test_the_detector_matches_the_shape_it_claims():
 
 
 def test_the_two_seed_floors_now_carry_their_measurement():
-    """#647 — the ones this sweep actually measured, rather than annotating blind."""
+    """#647 — the ones this sweep actually measured, rather than annotating blind.
+
+    ★ #851 rewrote this from LITERALS to SHAPE. It used to assert `"p10 **5**, median 12, p90 32"`
+    and `"median **119**"`, which freezes the numbers: re-measuring on a larger corpus is then a
+    test failure, so the cheapest way to keep the suite green is to leave a stale measurement in
+    place. The intent is "the constant carries a measurement", and the implementation was "the
+    constant carries THIS measurement" — the same gap that let a spelling assertion pin #782 for
+    122 runs.
+
+    What a rationale must have is a **sample size** and a **distribution**, both of which can be
+    refreshed without touching this file."""
     import inspect
+    import re
     from env_generator.llm_generator.multi_agent.runtime import seed_audit
-    flat = " ".join(inspect.getsource(seed_audit).replace("#", " ").split())
-    assert "p10 **5**, median 12, p90 32" in flat
-    assert "median **119**" in flat
+    src = inspect.getsource(seed_audit)
+    flat = " ".join(src.replace("#", " ").split())
+    for floor, need in (("_DEFAULT_MIN_ROWS", ("p10", "median")),
+                        ("_MIN_AUTHORED_TOTAL_ROWS", ("median", "runs"))):
+        i = src.index(floor + " =")
+        block = src[max(0, src.rindex("\n\n", 0, i)):i]
+        assert all(w in block for w in need), (floor, block)
+        assert re.search(r"\b\d{2,}\b", block), f"{floor}: a rationale needs a sample size"
+    assert "p10" in flat and "median" in flat
 
 
 if __name__ == "__main__":  # pragma: no cover

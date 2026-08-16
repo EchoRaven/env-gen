@@ -8613,3 +8613,60 @@ pinning the bare-`duration` guess so the blast radius stays where it belongs.
 `max(` over the runtime while looking for #847's shape — *a value taken as an upper/lower bound
 with nothing checking it against what the system actually produces*. Same query, different file.
 
+
+## 174. #851 — a hard gate justified by a claim its own generality goal falsifies
+
+Found by sweeping **normative claims in code comments** — #788's "a prompt sentence asserting a
+consequence is a claim about the code that decays silently", pointed at comments instead of
+prompts. 822 such lines in `runtime/`; the one worth opening was on a **blocking** gate:
+
+> this hard-gate set must never collide with legitimate vocabulary
+
+`_HARD_MARKER_WORDS` is `lorem ipsum placeholder dummy asdf qwerty xxxx foo baz qux example_user`.
+The claim is **false as written**, and the counter-examples are precisely the non-Netflix domains
+this framework exists to generate: `qwerty` is keyboard vocabulary, `placeholder` is *form*
+vocabulary, `foo` is a band name, `dummy` is a crash-test noun. A generality goal that falsifies
+its own gate's justification is not a coincidence — it is what happens when a word list is
+sanity-checked against the app in front of you.
+
+**What actually makes it safe** is the `>= 2 DISTINCT words in ONE table` rule, and **nothing
+tested it**. That is the real gap: item 152 established that a blocking gate turns a false
+positive into a *dead run*, so the guard's shape matters more than its trigger count.
+
+**Exposure: 0 of 151 runs** contain even one of these words in any seed row (probe self-checked —
+it finds `foo/ipsum/lorem/qwerty` in synthetic text and correctly declines `food`, `foobar`,
+`latest`). So the false-positive record is not clean, it is **empty**, and the comment now says
+so. An untriggered gate's precision is a prediction.
+
+`test_seed_hard_gate_needs_two_words_851.py`, 11 cases, all of them the guard's only evidence:
+one marker alone never fires, two markers in *different* tables never combine, the same word 40
+times is one marker, `foo`/`baz`/`qux` never hit `food`/`bazaar`/`quixotic`, and `lorem-ipsum`
+still counts as two.
+
+### 174b. the same sweep found a test freezing a measurement
+
+`test_the_two_seed_floors_now_carry_their_measurement` asserted the string literals
+`"p10 **5**, median 12, p90 32"` and `"median **119**"`. Its **intent** is *the constant carries a
+measurement*; its **implementation** is *the constant carries THIS measurement*. Re-measuring on a
+bigger corpus is then a test failure, so the cheapest way to stay green is to leave the number
+stale — the suite actively rewards decay. Same gap that let a spelling assertion pin #782 for 122
+runs, and it surfaced the moment I tried to refresh the numbers.
+
+Rewritten to assert **shape**: a rationale block must name a sample size and a distribution.
+
+Both floors then re-measured, and both **confirmed wider than #647 found them**:
+
+| | #647 (43 runs) | #851 (151 runs) |
+|---|---|---|
+| rows per table | p10 5, median 12, p90 32, max 124 | p10 **5**, median 12, p90 51, max 143 |
+| tables below the bar of 5 | 3% | **1.2%** |
+| total rows per run | median 119, max 285 | median **145**, max 357 |
+| runs below the floor of 10 | 3 of 43 | 7 of 151 — **all early-killed, zero authored** |
+| smallest seed anyone authored | not measured | **60**, six times the floor, zero near-misses |
+
+★ Three sweeps in a row (`max(` clamps, `capture_viewport_644`, this) produced **one** code fix
+between them; the other two were confirmations — `_fmtDur`'s magnitude guess is right on 100 of
+102 runs, and the 320px viewport floor never binds in 158 reference sets. Recording the negatives
+is the point: an unrecorded negative gets re-derived, and #644 had already written its own down,
+which is why that one cost two minutes instead of an afternoon.
+

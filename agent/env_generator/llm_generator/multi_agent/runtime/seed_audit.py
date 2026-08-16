@@ -88,10 +88,10 @@ class SeedReport:
         }
 
 
-# #647: measured over the 43 delivered `seed_data.json` files (323 seeded tables, 10 distinct
-# names): rows per table are p10 **5**, median 12, p90 32, max 124. The bar sits exactly on p10 —
-# only **3%** of real tables fall below it, and just 2 fall below 3. Calibrated, not guessed; the
-# number simply had no rationale recorded until this sweep.
+# #647, re-measured at #851 over 144 runs (2500 seeded tables, 12 distinct names — 3.5x #647's
+# sample): rows per table are p10 **5**, median 12, p90 51, max 143. The bar still sits exactly on
+# p10, and the share of real tables below it FELL from 3% to **1.2%** (6 below 3). Calibrated, not
+# guessed — and now confirmed on a larger corpus rather than left at its original sample.
 _DEFAULT_MIN_ROWS = 5
 _PLACEHOLDER_THRESHOLD = 0.5
 
@@ -212,14 +212,32 @@ def audit_seed_data(hub_registry) -> SeedReport:
 #     every row).
 # ---------------------------------------------------------------------------
 
-# #647: total seeded rows per run are median **119** (min 0, max 285) across 43 runs, so this
-# floor separates "the lane authored nothing" from real data with a wide margin — only **3 of 43**
-# runs fall below it, and those are the genuinely empty ones.
+# #647, re-measured at #851 across **151** runs: total seeded rows per run are median **145**
+# (max 357). 144 runs authored a seed at all and their MINIMUM is **60** — six times the floor,
+# with **zero near-misses** (no run lands between 10 and 20). The 7 runs below it authored nothing
+# whatsoever, and all 7 are the early-killed class (#821): r19, r35, r38, r42, r44, r136, r140 —
+# the same population as the audit exclusions in EXPERIMENTS item 171. The floor separates "the
+# lane authored nothing" from real data with a margin that got WIDER on the larger sample.
 _MIN_AUTHORED_TOTAL_ROWS = 10
 
 # Strict subset of _PLACEHOLDER_WORDS that is placeholder in ANY domain. The
 # full set stays for the ADVISORY registration audit (waived once functionally
-# validated); this hard-gate set must never collide with legitimate vocabulary.
+# validated).
+#
+# #851: the claim here used to read "this hard-gate set must never collide with legitimate
+# vocabulary". That is FALSE AS WRITTEN, and the counter-examples are exactly the non-Netflix
+# domains this framework exists to generate: `qwerty` is keyboard vocabulary (a typing tutor, a
+# peripherals store), `placeholder` is form vocabulary (a CMS, a form builder), `foo` is a band
+# name, `dummy` is a crash-test noun. A blocking gate justified by an assertion that its own
+# generality goal falsifies is #788's shape.
+#
+# What is actually true, and what makes it safe, is the **>=2 DISTINCT words in ONE table** rule
+# below — a false positive needs two independent collisions in the same table, not one. That rule
+# is the protection, and until #851 nothing tested it.
+#
+# Exposure, measured: **0 of 151 runs** contain even ONE of these words in any seed row. So the
+# false-positive record is not "clean", it is EMPTY — the gate has never fired, and any claim
+# about its precision is a prediction. Stated that way on purpose.
 _HARD_MARKER_WORDS = frozenset({
     "lorem", "ipsum", "placeholder", "dummy", "asdf", "qwerty", "xxxx",
     "foo", "baz", "qux", "example_user",
