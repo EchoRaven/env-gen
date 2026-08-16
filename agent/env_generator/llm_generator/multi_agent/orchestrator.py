@@ -1392,12 +1392,33 @@ class Orchestrator:
                 # This does not abort — the root of the empty roadmap is still unidentified and
                 # aborting on an unknown root trades one silent failure for a louder wrong one. It
                 # makes the state legible at the moment it becomes unrecoverable.
+                # #877: "could not read" is not "read back empty".
+                #
+                # This block previously set `_seeded = []` when the readback RAISED and then
+                # reported "store reads back EMPTY" — collapsing a failed read into a confirmed
+                # empty store, at exactly the moment someone is reading the log to diagnose.
+                # ★ #864's own comment cites the distinction and #873 names it ("no information is
+                # not information saying no"); #864 then committed the error it was the reference
+                # example for. Third instance this session of a first cut merging the two.
+                _read_ok = True
                 try:
                     _seeded = list(self.hubs.milestones.list_milestones() or [])
                 except Exception as _ms_read_err:
-                    _seeded = []
-                    self._logger.warning("milestone store readback failed: %s", _ms_read_err)
-                if not _seeded:
+                    _seeded, _read_ok = [], False
+                    self._logger.error(
+                        "MILESTONE ROADMAP UNVERIFIABLE: seeded %d milestone(s) and the store "
+                        "readback RAISED (%s). The roadmap may be fine — this says only that the "
+                        "check could not run, which is #790/#792's shape one level up (#877).",
+                        len(milestones), _ms_read_err)
+                    try:
+                        self.progress.emit(
+                            EventType.PHASE_ERROR, "Milestone roadmap",
+                            {"seeded": len(milestones), "read_back": None,
+                             "unverifiable": True, "ticket": 877},
+                        )
+                    except Exception:
+                        pass
+                if _read_ok and not _seeded:
                     self._logger.error(
                         "MILESTONE ROADMAP DID NOT LAND: seeded %d milestone(s), store reads back "
                         "EMPTY. start_kickoff runs inside the per-milestone loop, so this run will "
@@ -1405,13 +1426,37 @@ class Orchestrator:
                         "wake (#864). Corpus: 7 of 151 runs died exactly here.",
                         len(milestones),
                     )
-                    try:
-                        self.progress.emit(
-                            EventType.PHASE_ERROR, "Milestone roadmap",
-                            {"seeded": len(milestones), "read_back": 0, "ticket": 864},
-                        )
-                    except Exception:
-                        pass
+                    # #877: a TERMINAL event too, not just a phase one.
+                    #
+                    # Auditing #864's "does not abort" deferral: its stated reason was that
+                    # "aborting on an unknown root trades one silent failure for a louder wrong
+                    # one". ★ That assumed a non-abort path exists. It does not — `set_roadmap`
+                    # is called exactly ONCE in the whole codebase, there is no retry, and #864's
+                    # own message says the consequence out loud: no kickoff meeting, and lanes
+                    # that never wake. The run is already lost; what the deferral preserved was
+                    # not the run, it was the SILENCE.
+                    #
+                    # Still not raising. The enclosing handler (orchestrator.py:1137-2490) routes
+                    # an exception into `_enter_project_phase('implement', …)` — remediation that
+                    # cannot help when no lane was ever woken. Emitting the terminal event
+                    # directly gets the diagnostic without the futile phase.
+                    #
+                    # What this buys: `progress_events.jsonl` for the 7 dead runs holds exactly
+                    # `generation_start` + `phase_start` and NOTHING else, which is why the corpus
+                    # census read them as "killed, cause unknown" for nine days. A
+                    # `generation_error` makes the same state a NAMED failure in the one artifact
+                    # every run leaves behind.
+                    for _evt, _label in ((EventType.PHASE_ERROR, "Milestone roadmap"),
+                                         (EventType.GENERATION_ERROR,
+                                          "milestone roadmap did not land — no kickoff will open "
+                                          "and no lane will wake (#864/#876)")):
+                        try:
+                            self.progress.emit(
+                                _evt, _label,
+                                {"seeded": len(milestones), "read_back": 0, "ticket": 876},
+                            )
+                        except Exception:
+                            pass
 
                 for _m_idx, _milestone in enumerate(milestones, start=1):
                     # Human-in-the-loop approval (ask mode): pause before STARTING

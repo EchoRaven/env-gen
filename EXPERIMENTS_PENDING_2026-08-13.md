@@ -10308,3 +10308,48 @@ and item 185's were both sound — it is that **the reasons I recorded were gues
 measured**, while the deferrals themselves were instincts that mostly held. Still unchecked:
 `#181`'s language selector and the `#862`/`#864`/`#865` "does not abort" decisions.
 
+
+## 206. #876 — the fifth deferral: it preserved silence, not the run
+
+#864 declined to abort on an empty roadmap: *"aborting on an unknown root trades one silent
+failure for a louder wrong one."*
+
+★ **That assumes a non-abort path exists.**
+
+| | |
+|---|---|
+| `set_roadmap` call sites in the entire codebase | **1** (orchestrator.py:1370) |
+| retries or recovery paths | **none** |
+| what #864's own error message says | *"this run will open no kickoff meeting and its lanes will never wake"* |
+
+The run is already lost when the readback comes back empty. **What the deferral preserved was not
+the run — it was the silence.** My own error message contradicted my own justification, three
+tickets apart, in the same block of code.
+
+**Still not raising**, for a reason that survives checking: the enclosing handler
+(orchestrator.py:1137–2490) routes an exception into `_enter_project_phase('implement', …)` —
+remediation that cannot help when no lane was ever woken. So the terminal event is emitted
+directly instead.
+
+**What it buys.** `progress_events.jsonl` for the 7 dead runs holds exactly `generation_start` +
+`phase_start` and nothing else. That is why the corpus census classified them as *"killed, cause
+unknown"* for nine days, and why finding them needed an artifact-tree census plus a log dig. A
+`generation_error` makes the same state a **named failure in the one artifact every run leaves
+behind** — which is the whole difference between item 190's investigation and a one-line answer.
+
+### the deferral audit, complete
+
+| deferral | stated reason | verdict |
+|---|---|---|
+| item 187 — invented login links | *"may break a registration chain"* | **refuted** — 3813 chains, 0 use it (#873) |
+| item 184 — profile avatar | *"hooks, or a random picture"* | **false dichotomy** — 139/151 stage one (#874) |
+| item 185 — branded title art | *"the corpus has no such asset"* | **holds** — only `netflix-wordmark`, 149 runs (#875) |
+| item 187 — breadcrumb vs H1 | *"the text does not settle it"* | **too strong** — 160 of 458 carry a cue (#875) |
+| #864 — does not abort | *"trades silence for a wrong abort"* | **refuted** — there is no other path (#876) |
+| #774, #854 roster, #181 | awaiting a run or a human | **not mine to settle** |
+
+★ **Five audited, one survived.** The pattern is not that I defer too readily — three of the five
+deferrals were the right call and stayed. It is that **the reason I record is weaker than the
+decision it supports**, and a wrong reason is what a future reader inherits. A deferral is a claim
+like any other; it should be measured before it is written down, not after.
+

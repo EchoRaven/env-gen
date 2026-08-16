@@ -26,10 +26,16 @@ failed")`. Failing open there is a reasonable choice. **Nobody checked the resul
 | the planner returned `[]` and wiped the default | an empty list is falsy, so `milestones` keeps the M1 synthesized at orchestrator.py:1038 |
 | the in-loop re-sync emptied it | that branch only calls `mark_status`; it never reassigns |
 
-**This does not abort.** The reason the roadmap is empty is still unidentified, and aborting on an
-unknown root trades one silent failure for a louder wrong one. It makes the state legible at the
-moment it becomes unrecoverable — in the log *and* in `progress_events.jsonl`, which for these
-runs holds two lines and no error at all.
+**This does not abort** — but ★ the reason first given here was wrong, and #876 corrected it. I
+wrote *"aborting on an unknown root trades one silent failure for a louder wrong one"*, which
+assumes a non-abort path exists. It does not: `set_roadmap` is called exactly **once** in the
+codebase, with no retry, and this file's own message says the consequence — no kickoff, no lanes.
+The run is already lost. What that deferral preserved was not the run, it was the **silence**.
+
+Not raising is still right, for a different reason: the enclosing handler routes an exception into
+`_enter_project_phase('implement', …)`, remediation that cannot help when no lane was ever woken.
+So #876 emits the terminal `generation_error` directly instead — the state becomes classifiable in
+`progress_events.jsonl`, which for these 7 runs held two lines and no error at all.
 """
 import inspect
 import re
@@ -77,10 +83,16 @@ def test_the_message_says_what_it_costs():
 
 def test_it_also_reaches_the_persisted_log():
     """`progress_events.jsonl` is the only artifact every run leaves. For these 7 it holds two
-    lines and no error — the run looked clean in the one place anyone would look."""
+    lines and no error — the run looked clean in the one place anyone would look.
+
+    #876 extended this: the block now emits a TERMINAL `generation_error` as well, so the state is
+    classifiable and not merely annotated, and the payload stamp moved to 876 with it. Asserting
+    the stamp by exact value was this test pinning a number rather than a property — it is now
+    checked as "a ticket stamp is present"."""
     b = _block()
     assert "EventType.PHASE_ERROR" in b
-    assert '"ticket": 864' in b
+    assert "EventType.GENERATION_ERROR" in b, "#876"
+    assert re.search(r'"ticket": 8\d\d', b), b
 
 
 def test_the_readback_cannot_itself_break_the_run():
@@ -92,9 +104,11 @@ def test_the_readback_cannot_itself_break_the_run():
 
 
 def test_it_does_not_abort():
-    """★ Deliberate. The root of the empty roadmap is bounded but unidentified; aborting on an
-    unknown root trades a silent failure for a louder wrong one. If someone later makes this
-    fatal, this test fails and the reasoning has to be revisited rather than quietly reversed."""
+    """★ Still deliberate, on #876's corrected reasoning: raising reaches a handler that starts a
+    remediation phase which cannot help when no lane was ever woken. The original reason given
+    here — "aborting on an unknown root trades a silent failure for a louder wrong one" — assumed
+    a non-abort path exists, and there is none. If someone later makes this fatal, this test fails
+    and the reasoning gets revisited rather than quietly reversed."""
     b = _block()
     assert "raise" not in b
     assert "return" not in b
