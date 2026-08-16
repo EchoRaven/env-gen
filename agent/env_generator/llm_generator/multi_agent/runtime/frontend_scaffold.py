@@ -3799,6 +3799,9 @@ const _railSlice = (rows, n, i) => { const arr = rows || []; const p = Math.ceil
 const _fmtDur = (d, u) => { if (d == null || d === '') return ''; if (typeof d === 'string' && /[a-z]/i.test(d)) return d; const n = Number(d); if (!isFinite(n) || n <= 0) return ''; const s = (u === 's') ? n : (u === 'm') ? n * 60 : (n >= 300 ? n : n * 60); const h = Math.floor(s / 3600); const m = Math.round((s % 3600) / 60); return h ? (h + 'h ' + m + 'm') : (m + 'm'); };
 const _yearOf = (r) => { for (const k of ['year','release_year','air_year','pub_year','published_year','launch_year','season_year']) { const v = r && r[k]; if (v) return String(v); } for (const k of ['release_date','air_date','published_at','released_at','first_aired','premiere_date']) { const v = r && r[k]; const m = (typeof v === 'string') && v.match(/\\b(1[89]\\d\\d|20\\d\\d)\\b/); if (m) return m[1]; } return ''; };
 const _durOf = (r) => { for (const k of ['duration_sec','duration_seconds','length_sec','runtime_sec']) { const n = Number(r && r[k]); if (isFinite(n) && n > 0) return _fmtDur(n, 's'); } for (const k of ['duration_min','runtime_min','length_min','duration_minutes','runtime_minutes']) { const n = Number(r && r[k]); if (isFinite(n) && n > 0) { const h = Math.floor(n / 60); const m = Math.round(n % 60); return h ? (h + 'h ' + m + 'm') : (m + 'm'); } } for (const k of ['duration','runtime','length']) { const v = r && r[k]; if (v) return _fmtDur(v); } return ''; };
+const _BADGE_KEYS = ['is_new','is_kids','is_top10','is_trending','is_featured','is_live','is_original','is_exclusive','is_premium','is_sale','is_on_sale','is_remote','is_free','recently_added','coming_soon','new_release','featured','trending','kids'];
+const _badgeLabel = (k) => k.replace(/^is_/, '').split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+const _badgesOf = (r) => { const out = []; for (const k of _BADGE_KEYS) { const v = r && r[k]; if (v === true || v === 1 || v === '1' || (typeof v === 'string' && v.toLowerCase() === 'true')) { out.push(_badgeLabel(k)); } } return out; };
 const _ratingOf = (r) => { for (const k of ['maturity_rating','content_rating','age_rating','parental_rating','certification','rating_label','rating_age','maturity']) { const v = r && r[k]; if (v) return String(v); } return ''; };
 const _genresOf = (r) => { for (const k of ['genres','genre','genre_names','categories','category','tags','labels']) { const v = r && r[k]; if (!v) continue; const a = Array.isArray(v) ? v : String(v).split(/\\s*[,|/]\\s*/); const out = a.map((g) => (g && typeof g === 'object') ? (g.name || g.title || g.label || g.slug || '') : String(g)).filter(Boolean); if (out.length) return out; } return []; };
 """
@@ -5717,6 +5720,36 @@ def _type_scale_style_438(design: Mapping[str, Any], roles, max_px=None) -> str:
     return ""
 
 
+def _card_flag_badge_856(accent: str) -> str:
+    """#856: a REST-VISIBLE status badge on a catalog card, driven by the ROW DATA.
+
+    The largest deviation class in the whole corpus by a wide margin — **1505 entries across 115
+    of 119 runs, 19.4% of every deviation line** — is card badges/ribbons, and it was invisible
+    until the long tail was clustered by meaning (`recently added` 105 runs, `kids badge` 97,
+    `new season` 94, `new episode` 88, `top badge` 85, `live now` 80 …). One class, dozens of
+    wordings.
+
+    #435 already emits a RANK numeral, but it is gated on the ROW HEADING ("Top 10"), so it can
+    only ever mark a ranked rail. Nothing renders a PER-CARD status, and the data for it is
+    present: **`is_kids` is on catalog rows in 134 of 144 runs (2515 rows)**, plus a long tail of
+    `is_trending`, `is_featured`, `recently_added`, `is_top10`, `added_at`.
+
+    ★ Product-agnostic by construction: the LABEL IS DERIVED FROM THE COLUMN NAME (`is_kids` →
+    "Kids", `recently_added` → "Recently Added"), so a shop's `is_on_sale` renders "On Sale" and a
+    job board's `is_remote` renders "Remote". No product literals, and the key list is a
+    multi-key fallback in the #782 shape rather than a schema assumption.
+
+    Only strict booleans count (`true`/`1`/`"true"`), never an arbitrary string — otherwise a
+    `status: "active"` column would stamp every card. Renders nothing when a row carries no flag,
+    so a dataset without them is byte-identical.
+
+    Top-RIGHT, because #435's rank numeral owns top-left and the two co-occur on ranked rails."""
+    return ("                {(_badgesOf(row)[0]) ? <span className=\"absolute right-1 top-1 z-10 "
+            "rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide\" "
+            f"style={{{{ backgroundColor: '{accent}', color: '#ffffff' }}}}>"
+            "{_badgesOf(row)[0]}</span> : null}\n")
+
+
 def _card_rank_badge_435(hdr: str, accent: str) -> str:
     """#435: a REST-VISIBLE rank numeral on cards of a 'Top N' ranked rail (the
     judge's 'Add TOP 10 badges' miss; the visual gate scores STATIC screenshots so
@@ -6944,9 +6977,9 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             f"          <div className=\"{_grid_div_cls}\" style={{{{ {_grid_gap_sty}gridTemplateColumns: 'repeat({_gcols}, minmax(0, 1fr))' }}}}>\n"
             "            {_padN(rows, 8).map((row, i) => (\n"
             "              <div key={(row && row.id) || i} className=\"overflow-hidden" + _grid_card_r_cls
-            + (" relative" if _grank else "") + "\" "
+            + " relative\" "          # #856: always relative — the flag badge is absolute too
             "style={{ " + _grid_card_r_sty + "backgroundColor: 'rgba(128,128,128,0.12)' }}>\n"
-            + (_grank or "") +
+            + (_grank or "") + _card_flag_badge_856(accent) +
             "                {(_imgOf(row) || _refImg(i)) ? <img src={_imgOf(row) || _refImg(i)} alt=\"\" className=\"w-full object-cover\" style={{ aspectRatio: '" + _card_aspect + "' }} /> : null}\n"
             "                <div className=\"px-3 py-2\">\n"
             "                  <div className=\"truncate text-sm font-medium\">{_titleOf(row)}</div>\n"

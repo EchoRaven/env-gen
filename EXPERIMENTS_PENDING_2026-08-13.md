@@ -9042,3 +9042,57 @@ with the numbers rather than guessed at — same disposition as #774 and #854's 
 (#834) was the attractive one, and it was false.** A chain that explains a finding is not evidence
 for it; 99% was one query away the whole time.
 
+
+## 182. #856 — the corpus's largest deviation class had no emitter, and its data was already there
+
+Opening the candidate item 180 left standing: **89% of deviation lines matched none of my 13
+hand-written clusters.** So I stopped hand-writing clusters — that hand-written list is *why* the
+biggest class was invisible — and let phrase frequency name them. Every top phrase by run count
+was one thing:
+
+    recently added 105 runs | profile avatar 97 | kids badge 97 | new season 94 | new episode 88
+    top badge 85 | live now 80 | today's top 75 | pagination dots 77 | genres dropdown 88
+
+★ Summed as ONE class, **card badges/ribbons are 1505 entries across 115 of 119 runs — 19.4% of
+every deviation line in the corpus.** An order of magnitude above `hover preview card` (160/94),
+which my keyword pass had confidently ranked #1 one item earlier. Concentrated on `shows` (244),
+`browse_home` (230), `new_and_popular` (203), `movies` (187).
+
+**#435 already emits a rank numeral — gated on the ROW HEADING** ("Top 10"), so it can only ever
+mark a ranked rail. **Nothing rendered a per-card status.** And the data was there the whole time:
+
+| field | runs carrying it |
+|---|---|
+| `is_kids` | **134 of 144** (2515 rows) — and the judge reports it missing on 97 |
+| `is_trending` | 10 |
+| `created_at` / `added_at` / `is_featured` / `recently_added` / `is_top10` | 1–5 each |
+
+★ **Product-agnostic by construction: the label is derived from the COLUMN NAME.** `is_kids` →
+"Kids", `recently_added` → "Recently Added", so a shop's `is_on_sale` renders "On Sale" and a job
+board's `is_remote` renders "Remote" from the same code. That is #782's multi-key-fallback shape,
+not a schema assumption, and it is what makes this a framework capability rather than a Netflix
+hack. Tested that way too — three non-media cases execute under node.
+
+Only strict booleans count (`true`/`1`/`"true"`). A `status: "active"` column would otherwise
+stamp every card in the catalog — #782's lesson inverted: a plausible NAME whose VALUE is not what
+the badge means. A row with no flag renders nothing, so the 10 runs without such a column are
+byte-identical.
+
+### 182b. #856b — a non-raw docstring ate a regex, and now a guard catches the class
+
+`_badgeLabel` returned `"kids"` instead of `"Kids"`. `_REF_HELPERS_JS` is a **non-raw**
+triple-quoted Python string, so `/\b\w/g` written with single backslashes is consumed at import:
+node received a literal BACKSPACE and 0x17, and the regex silently stopped matching. The
+neighbouring helpers only survive because they were written with doubled backslashes — an
+invariant nothing enforced.
+
+It bit twice in ninety seconds: the *repair script's own search string* then failed to match,
+because `"...\b\w..."` in a normal Python string is also backspace. Both times the symptom was a
+**silent non-match**, never an error.
+
+Fixed by removing the regex (`split('_').map(...)` has no backslash to lose), then generalised:
+`test_no_helper_contains_a_control_character` fails if anything in the block carries a control
+character, whatever a future author writes. ★ The specific bug is less useful than the shape —
+**an escape that decays turns a working expression into one that matches nothing, and matching
+nothing looks exactly like "the feature is off".**
+
