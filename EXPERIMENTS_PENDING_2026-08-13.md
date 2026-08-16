@@ -9001,3 +9001,44 @@ tell was in my own sentence: "I used the corpus only as a denominator."
 - **89% of deviation lines match none of the 13 clusters.** The cluster set is a first cut, not a
   partition — the long tail is unexamined.
 
+
+## 181. the language selector (#2 class, 117 / 93 runs) — opened, hypothesis refuted, not fixed
+
+Second candidate from item 180's census. Opened far enough to be actionable by whoever takes it,
+and stopped short of a change I could not verify this turn.
+
+**Where it lands:** 84 of 115 entries (73%) are on `landing` — the one screen whose builder
+(`_landing_page_src`) actually emits a language pill. 25 more on `browse_by_languages`. By
+complaint: 49 "missing entirely", 41 about the icon, 27 other.
+
+**Hypothesis, and it was wrong.** The pill is gated on `_want_lang = _lc_has(r"language\b|…")`,
+and `_lc` is built from `screen["components"]` — design-system text. That is #834's chain exactly
+(the enrichment fallback suppressed in 133 of 151 runs → thin components), so I expected a low
+mention rate. **Measured: 150 of 151 runs DO mention "language" in the landing components (99%).**
+`_want_lang` is true and the pill is emitted. Hypothesis dead.
+
+**What the shape probe found instead** (memory's rule: probe the emitter's markup in the DELIVERED
+source, never the judge's vocabulary):
+
+| marker | present in delivered frontends |
+|---|---|
+| the framework's exact pill markup | **15 / 143 (10%)** |
+| its chevron `path` | 27 / 143 (19%) |
+| any `English` label at all | **74 / 143 (52%)** |
+
+So the framework emits it and the **lane's rewrite drops it in roughly half the runs** — 52%
+retained against 84 of 143 runs reporting it missing is very nearly complementary. Unlike the
+`hover preview card` class, the judge here is largely **right**, and unlike the earlier
+`language dropdown` check (word probe "absent", shape probe "present in 127/144") this one used
+the emitter's own markers and still found a real gap.
+
+**Why it stops here.** The fix has to distinguish *scaffold the lane is expected to replace* from
+*element the lane must preserve*, and `_landing_page_src` is a projected page, not the shipped
+one. Choosing wrong either pins lane-owned markup or keeps blessing a page that lost the element.
+That needs a run to settle, and everything shipped since r151 has zero real-run exposure. Recorded
+with the numbers rather than guessed at — same disposition as #774 and #854's roster.
+
+★ The transferable half: **the hypothesis that connected this to an already-fixed root cause
+(#834) was the attractive one, and it was false.** A chain that explains a finding is not evidence
+for it; 99% was one query away the whole time.
+
