@@ -112,6 +112,19 @@ def _spec_owner_columns_lost_774(hubs: Any) -> List[Dict[str, str]]:
         runs where a spec column is missing                 20   -- all RENAMES
         runs losing an OWNER column                          8   -- 7%, every one profile_id
 
+    Re-measured 2026-08-16 SPLIT BY BUILD ERA, because three corpus figures this session turned
+    out to be dominated by old builds and to describe already-fixed defects (#794). This one does
+    NOT decay -- it is live, and if anything denser recently:
+
+        ALL     112 comparable   8 hits   7%
+        r100+    18 comparable   2 hits  11%
+        r145+     7 comparable   1 hit   14%   <- that hit is r150, two runs before this writing
+
+    All 8 are `profile_id` on my_list/ratings/continue_watching; no false positive in 112 runs.
+    Blocking would have stopped r150, which shipped the cross-profile leak this check exists for.
+    Still REPORTED, not enforced: the switch is the user's call, and the recent-slice denominator
+    is 7 runs, which is too small to read a rate off on its own.
+
     A rename is the dominant shape and is benign: the spec says `poster`, the app ships
     `poster_url`. Token overlap separates them, EXCLUDING the token `id` — every table has an
     `id`, so a bare substring test reads `profile_id` as a rename of `id` and reports zero. That

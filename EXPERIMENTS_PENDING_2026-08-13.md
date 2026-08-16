@@ -2366,6 +2366,44 @@ opposite of #790's on purpose.
 
 ---
 
+## 121. #774's pending decision, re-measured by build era — the defect is LIVE, not historical
+
+#794 established that a corpus-wide number can be dominated by old builds and describe an
+already-fixed defect (three instances this session). That directly threatened the one open
+decision on the table: **should #774 block?** Its evidence was *"7%, 8 of 111, zero false
+positives"* — a corpus-wide figure, never split by era.
+
+Re-measured with the detector's own logic run over each run's `milestones.json` +
+`registryhub_tables.json`:
+
+| slice | comparable | hits | rate |
+|---|---|---|---|
+| ALL | 112 | 8 | 7% |
+| r100+ | 18 | 2 | 11% |
+| **r145+** | **7** | **1** | **14%** |
+
+★ **It does not decay.** The recent hit is **r150 — two runs before this writing** — and r150 is
+precisely the run that motivated the check: it shipped `my_list`, `ratings` and
+`continue_watching` keyed on `user_id` while its own spec said `profile_id`, so two profiles on an
+account shared all three. This is the **opposite** of #794's outcome, and it is why the era split
+has to be run rather than assumed in either direction.
+
+All 8 hits are `profile_id` on the same three tables. **No false positive in 112 comparable runs.**
+
+**What this does and does not settle.** It removes the "the data is stale" objection and shows
+blocking would have stopped a run that shipped a real cross-profile leak. It does **not** settle
+the rate: the recent-slice denominator is **7 runs**, far too small to read 14% off honestly, and
+the check depends on `extract_contract_from_description`, so a future spec-parsing change is the
+plausible route to a first false positive. The switch stays the user's call; the evidence now
+travels in the detector's own docstring so the decision does not have to be re-derived.
+
+**Fifth field-location error this session.** The first version of this probe read
+`milestone_registry.json` — the file is `milestones.json` — and returned `comparable runs: 0`.
+Caught by my own rule (*a zero is a claim about the instrument*) rather than by noticing the
+filename. The rule keeps paying; the underlying mistake keeps recurring.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
