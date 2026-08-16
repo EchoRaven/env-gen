@@ -2632,6 +2632,34 @@ instance already or have none to name.
 
 ---
 
+## 128. #800 — my own #794 left the wake message saying something the owner cannot do
+
+The "system knew and did not say" sweep had covered the gate, the audits, the reporters and the
+task bodies. The remaining surface is the one the lane reads **first**: the wake message.
+
+It said, on every dispatch:
+
+    URGENT: delivery is blocked on the `{name}` gate check. Claim task {id} and fix it NOW.
+
+For a first dispatch that is correct. But **#794 — mine, two items ago — made the re-dispatch
+re-wake an EXISTING task instead of cloning it**, and on that path the task is typically already
+`in_progress` and already **held by the very agent being messaged**. So the most-repeated wake in
+the system told an owner to claim what it already holds: an instruction it cannot follow, on the
+message it reads before anything else.
+
+It also omitted the single fact a re-dispatch carries that a first dispatch does not — **the work
+already done has not cleared the check**. The re-wake now says exactly that, and points at the
+task body, which after #798/#799 names the failing instance.
+
+★ **The pattern of my own errors this session is stable enough to state.** Every one has been at
+a *boundary I introduced*: a new branch (#800's second path), a new import (#794's `Mapping`), a
+new docstring (#798 breaking four anchors by citing `#794`), a new probe (seven instrument-zeros).
+The fix itself has held up each time; what fails is the seam between the fix and everything that
+was already there. **Re-reading the diff for seams is a different pass from re-reading it for
+correctness**, and it is the one that keeps paying.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

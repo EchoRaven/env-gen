@@ -1189,8 +1189,21 @@ class RemediationDispatcher:
                 _gmsg = _create_message(
                     source_agent_id="orchestrator", target_agent_id=owner,
                     content=(
-                        f"URGENT: delivery is blocked on the `{name}` gate check. Claim "
-                        f"task {(task or {}).get('id')} and fix it NOW, then finish."),
+                        # #800: #794 made the re-dispatch re-wake an EXISTING task instead of
+                        # cloning it — but this message still said "Claim task X", and on that
+                        # path the task is typically already `in_progress` and already held by
+                        # this very agent. Telling an owner to claim what it holds is an
+                        # instruction it cannot follow, on the wake it reads FIRST; and it hides
+                        # the one fact that matters on a re-dispatch, which is that the work it
+                        # already did has not cleared the check. Same class as #798/#799 one
+                        # layer out: the system knew, and did not say.
+                        (f"URGENT: delivery is STILL blocked on the `{name}` gate check — the "
+                         f"work on task {(task or {}).get('id')}, which you already hold, has "
+                         f"not cleared it. Re-read the task body (it names the failing "
+                         f"instance), fix it NOW, then finish.")
+                        if _open794 is not None else
+                        (f"URGENT: delivery is blocked on the `{name}` gate check. Claim "
+                         f"task {(task or {}).get('id')} and fix it NOW, then finish.")),
                     msg_type="task_ready", priority="urgent", persist=True,
                     tags=[name, "remediation"])
                 # CRITICAL (v11 root cause, mirrors framework_validation.py:587): the
