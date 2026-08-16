@@ -10469,3 +10469,51 @@ single most effective check applied to my work this session, and not one I appli
 blanket token replace that rewrote their `#876` an hour earlier. The rule from item 207 held on
 its first test.
 
+
+## 209. #881 — both of my silence sweeps left a swallow inside a file they swept
+
+The #879 sweep, finished. All 34 swallowed-empty-then-tested sites classified by whether the value
+drives a **decision** or a **fallback render**: **11 decision-driving, 23 fallback**. #879 was one.
+This is the one that gates delivery, and its handler was **bare** — no log, no record at all:
+
+```python
+except Exception:
+    _issues = []          # byte-identical to "the seed is fine"
+if _issues:
+    blockers.append("authored seed quality: …")
+```
+
+★ **#792 lives in this file and exists for exactly this.** It wired the two audit imports directly
+above and never reached this one.
+
+★★ **The pattern is worth more than the fix.** #790 swept `delivery_gate.py` and left the
+orchestrator's page-build detect — found only now, as #879. #792 swept `deliverability.py` and
+left this. **Both of my silence sweeps left a decision-driving swallow inside a file they had
+swept.** Sweeping a *file* is not sweeping its *handlers*: the sweep followed the sites I was
+already looking at, which is the same failure mode as #862's instrument, placed where I was
+looking instead of where the failure was.
+
+### the other nine, for triage
+
+All silent. "Decision-driving" is a keyword screen over the `if` body — a screen, not a verdict —
+so these are listed rather than claimed:
+
+    agents/runtime/messaging.py:170          _pre_finalize = False
+    agents/runtime/messaging.py:1653         rendered = None
+    orchestrator.py:2075                     nudged = []
+    runtime/hubs/codehub/service.py:1175     status_out = ''
+    runtime/kickoff/run_kickoff.py:1861      task = None
+    runtime/material_prep.py:717             entry = None
+    runtime/visual_fidelity.py:3639          _want = None
+    workflow_policies.py:1977                has_retro = False
+    workflow_policies.py:516                 touched = []
+
+### method note — the module's own docstring had the answer
+
+My first test cleared `_GATES_ABSENT_792` directly and stayed red: the say-once key lives in a
+**second** global, `_SAID_700`. The reset function's docstring says it outright — *"Rather than
+have tests poke a private global, the reset is part of the contract."* **The test was wrong, the
+code was right, and its own documentation had answered the question before I asked it.** Third
+time this session that reading the thing I was about to change would have been faster than
+probing it.
+

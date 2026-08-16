@@ -790,7 +790,17 @@ def compute_deliverability(hub_registry, app_root,
             try:
                 from .seed_audit import audit_authored_seed
                 _issues = audit_authored_seed(_data)
-            except Exception:
+            except Exception as _sa_exc:
+                # #881: this handler was BARE — no log, no record. A seed audit that raised
+                # produced `[]`, which is byte-identical to "the seed is fine", and the gate
+                # shipped on it.
+                #
+                # ★ #792 is in THIS FILE and exists for exactly this ("a delivery GATE that cannot
+                # load must not read as a delivery gate that PASSED"). It wired the two audit
+                # imports above and did not reach this one — the same miss #879 found for #790,
+                # which swept `delivery_gate.py` and left the orchestrator's page-build detect
+                # behind. **Both sweeps left a decision-driving swallow inside a file they swept.**
+                _gate_absent_792("authored_seed_quality", _sa_exc, "audit")
                 _issues = []
             if _issues:
                 blockers.append(
