@@ -3033,6 +3033,53 @@ file and the render test failed, exactly as designed. Chasing it produced three 
 
 ---
 
+## 139. #802b — the guard I built two items ago covered 64% of what its name implied, and widening it found a dead validation
+
+#809 ended by finding that #804's coverage was narrower than claimed. The obvious next question is
+whether **the other guards from this session have the same gap**, and #802 did:
+
+    function-level framework imports, by area
+        runtime/        235      <- all #802 scanned
+        agents/          35
+        top level        94      <- includes orchestrator.py
+        ----------------------
+        total           364      -> #802 covered 64%
+
+★ **The excluded top level is `orchestrator.py`, where #793 had just added a lazy import** — the
+guard omitted the file whose defect motivated it. Widened to the whole `multi_agent` tree.
+
+**It immediately found a real one.** `team_runtime/parallel_runtime/profiled.py:486`:
+
+```python
+try:
+    from ..agents.configurable_agent import list_available_agents   # -> team_runtime.agents
+    available = set(list_available_agents())
+except Exception:
+    available = set()
+```
+
+From that package `..agents` is `team_runtime.agents`, **which does not exist**. So the import
+raised on *every* call, `available` was permanently empty, and the check below it —
+`if not available or candidate in available` — always took its first branch and returned the first
+keyword match **unvalidated**. A dead validation, silent since it was written, wrapped in the same
+bare `except` this session has been cataloguing all day.
+
+**And the validation had something to catch.** With the import fixed (three levels up), two of the
+eight keyword targets turn out never to have been registered agent types: **`database`** and
+**`design`** (the real names are `backend` and `design_analyst`). They had been shipping a name
+nothing resolves — exactly what that check existed to prevent, prevented from preventing it by a
+single missing dot.
+
+**One self-inflicted error on the way.** The first correction put the explanatory comment *inside*
+the tuple lines, swallowing the separating commas. Caught by `ast.parse` before anything ran.
+
+★ **The compounding shape.** #793 added a lazy import → #802 guarded lazy imports but not that
+file → #809 showed guards can be narrower than their names → widening #802 found a defect older
+than any of them. **Each guard's own coverage is a claim that needs checking, exactly like the
+code it guards.**
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

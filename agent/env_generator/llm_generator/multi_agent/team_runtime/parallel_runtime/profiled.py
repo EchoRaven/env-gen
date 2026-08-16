@@ -459,6 +459,9 @@ class ProfiledParallelExecutionSupport:
         ]
         text = " ".join(text_parts).lower()
 
+        # #802b: `database` and `design` were NOT registered agent types. The check
+        # below would have caught them -- but its import was broken, so it never ran
+        # and these two shipped a name nothing resolves. Mapped to the real types.
         keyword_candidates = [
             ("frontend", "frontend"),
             ("ui", "frontend"),
@@ -466,11 +469,11 @@ class ProfiledParallelExecutionSupport:
             ("backend", "backend"),
             ("api", "backend"),
             ("express", "backend"),
-            ("database", "database"),
-            ("postgres", "database"),
-            ("sql", "database"),
-            ("design", "design"),
-            ("architect", "design"),
+            ("database", "backend"),
+            ("postgres", "backend"),
+            ("sql", "backend"),
+            ("design", "design_analyst"),
+            ("architect", "design_analyst"),
             ("test", "verifier"),
             ("task", "verifier"),
             ("knowledge", "knowledge"),
@@ -483,7 +486,14 @@ class ProfiledParallelExecutionSupport:
         ]
 
         try:
-            from ..agents.configurable_agent import list_available_agents
+            # #802b: was `..agents`, which from this package resolves to
+            # `team_runtime.agents` -- a module that does not exist. The import therefore
+            # raised on EVERY call and `available` was always empty, so the check below
+            # (`not available or candidate in available`) always took its first branch and
+            # returned the first keyword match WITHOUT validating that the agent type exists.
+            # A dead validation, silent since it was written, in a file the first version of
+            # the lazy-import guard did not scan. The real module is three levels up.
+            from ...agents.configurable_agent import list_available_agents
 
             available = set(list_available_agents())
         except Exception:
