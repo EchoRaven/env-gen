@@ -166,7 +166,22 @@ class AgentMessaging:
             try:
                 from .preconditions import kickoff_finalized_signal
                 _pre_finalize = not kickoff_finalized_signal(getattr(self, "_hubs", None), self)
-            except Exception:
+            except Exception as _kf_exc:
+                # #882: a FAILED check here reads as "kickoff IS finalized", which turns the F2b
+                # retention guard OFF and re-enables the wake-storm it exists to prevent — the one
+                # that cost r3 146 idle stop-cycles of model quota. `False` is the permissive
+                # default and that is the right choice (a hub hiccup must not wedge every lane),
+                # but it was indistinguishable from a healthy "kickoff is done".
+                #
+                # Say-once per agent: this runs on every inbox message, so a per-message line
+                # would drown the log (#845's defect).
+                if not getattr(self, "_said_kf_882", False):
+                    self._said_kf_882 = True
+                    self._logger.warning(
+                        "[%s] kickoff-finalized check FAILED (%s: %s) — treating kickoff as "
+                        "finalized, so F2b retention is OFF and messages will wake this lane. "
+                        "That is the permissive default, NOT evidence kickoff finished (#882).",
+                        self.agent_id, type(_kf_exc).__name__, _kf_exc)
                 _pre_finalize = False
             if _pre_finalize:
                 self._logger.debug(
