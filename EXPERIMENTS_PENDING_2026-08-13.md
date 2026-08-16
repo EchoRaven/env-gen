@@ -9751,3 +9751,44 @@ call (reachable, but only says *"we got here"*), #864 puts it at the preconditio
 fails and can name the cost. ★ Two placements were wrong before one was right, and each was wrong
 in the same way: **I instrumented where I was looking, not where the failure was.**
 
+
+## 195. #865 — the fifth finding from item 194, fixed
+
+Item 194 surfaced it and left it: the `else` after milestone planning logs *"Milestone planning
+unavailable — single milestone"* **and assigns nothing**.
+
+`plan_milestones`' own contract is *"None on any failure (**caller falls back to a single
+milestone**)"*. The caller does not. It is correct today only because an M1 is synthesized ~230
+lines earlier, at a site this branch never mentions and which is easy to remove without noticing.
+
+★ **A promise kept by coincidence at a distance** — and unusually for that class, the cost is
+already measured. #864 established that `start_kickoff` runs **inside** the loop over
+`milestones`, so an empty list is a total loss with no exception anywhere; 7 corpus runs died
+exactly that way. This branch is **not** what emptied the list in those runs (a `None` from the
+planner leaves the default intact), but it is the one place that *claims* to guarantee the
+invariant those runs violated, and it did not.
+
+The guard now assigns the milestone the log has always described, using the **same slice
+expression** as the original synthesis so the two paths cannot diverge, and an actual violation is
+an `error` naming `start_kickoff` rather than the `warning` that let 7 runs pass unnoticed. The
+surviving warning now prints the count, so it can no longer describe a fallback that did not
+happen.
+
+**No behaviour change today** — the guard is a no-op wherever the invariant already holds, which
+is every corpus run that got this far. `test_it_only_fires_when_the_invariant_is_broken` pins that
+the assignment stays inside the guard, because a fallback that overwrote a real roadmap would be a
+much worse bug than the one being fixed.
+
+★ One case is defensive rather than descriptive: `test_an_empty_planner_result_still_keeps_the_
+default` pins `if _planned:` against a future `if _planned is not None:`. That refactor looks like
+a tightening and would route an empty list straight into `milestones`, re-creating #864's total
+loss through the exact door #865 just closed.
+
+### method note
+
+The verification probe for this change was itself wrong first: `src.index("Milestone planning
+unavailable")` landed on the **new error line** rather than the branch head, so the check reported
+`fallback now real: False` on a patch that was correct. Re-anchored on the ticket marker. Fifteenth
+self-match-class error this session, and the same lesson each time — **anchor on something only
+the code site has, never on a phrase the fix itself may repeat.**
+

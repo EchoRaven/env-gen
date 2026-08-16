@@ -1280,8 +1280,34 @@ class Orchestrator:
                             len(milestones),
                             [f"{m['name']}@{m['version']}" for m in milestones])
                     else:
+                        # #865: HONOUR the fallback this line claims.
+                        #
+                        # `plan_milestones`' contract is "None on any failure (caller falls back to
+                        # a single milestone)". This branch logged the fallback and assigned
+                        # nothing — correct today only because line ~1038 synthesized an M1 some
+                        # 230 lines earlier, which is not mentioned here and is easy to remove.
+                        # A promise kept by coincidence at a distance is the class this whole
+                        # session has been about; #864 is what an empty `milestones` costs
+                        # (start_kickoff runs INSIDE the loop over it, so the run is a total loss
+                        # with no exception anywhere).
+                        #
+                        # No behaviour change today: the guard below is a no-op whenever the
+                        # invariant already holds, which is every corpus run that got this far.
+                        if not milestones:
+                            milestones = [{
+                                "name": "M1",
+                                "version": "1.0.0",
+                                "description_slice": (
+                                    requirements[0] if requirements else goal),
+                            }]
+                            self._logger.error(
+                                "Milestone planning unavailable AND the milestone list was "
+                                "EMPTY — synthesizing the single milestone this path has always "
+                                "claimed to fall back to (#865). Without it start_kickoff, which "
+                                "runs inside the per-milestone loop, would never execute.")
                         self._logger.warning(
-                            "Milestone planning unavailable — single milestone.")
+                            "Milestone planning unavailable — single milestone (%d).",
+                            len(milestones))
 
                 # MILESTONES AS FIRST-CLASS STATE (2026-06-24): seed the roadmap into
                 # hubs.milestones so it is queryable/persistent and the orchestrator can
