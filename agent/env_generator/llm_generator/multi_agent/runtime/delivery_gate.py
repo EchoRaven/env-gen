@@ -175,6 +175,65 @@ def _spec_owner_columns_lost_774(hubs: Any) -> List[Dict[str, str]]:
     return out
 
 
+def _imageless_spec_screens_unreachable_823(output_dir: Any) -> List[str]:
+    """#823: a spec screen the visual gate CANNOT cover, and the app has no way to reach.
+
+    #822 established that a screen declared in `reference_spec.json` with no reference image is
+    absent from `design_system.json` and therefore never captured, scored or blocked on —
+    `profiles` in 150 of 150 corpus runs. #788 established that nothing compares the spec's
+    `screens` list to the built UI. So for exactly those screens there is no check at all.
+
+    ★ The narrowing is what makes this sound. Two earlier attempts asked "does `route_hint` exist
+    as a literal path" and "does any route share tokens with the screen" — both reported screens
+    that ARE built, because the spec's names and the app's route vocabulary differ (`new_and_popular`
+    is routed `/latest`; `landing` is `/`). Those screens do not need a structural check: the
+    visual gate already covers them. Checking only the IMAGELESS ones removes the entire class of
+    vocabulary noise. Measured over 142 checkable runs it reports `profiles` (22) and `search` (1)
+    and nothing else — 15% of runs shipped with no reachable who's-watching screen.
+
+    Reachability is judged over routes AND page component names, stemmed by the same
+    `_route_tokens_728` the framework already uses, so `/profiles` and `ProfilesPage.jsx` both
+    count. No App.jsx → `["<unknown: no App.jsx>"]`, never `[]`: a blind probe must not read as a
+    clean one (8 corpus runs are in that state).
+
+    REPORTED, not enforced — that switch is #774's class of decision.
+    """
+    try:
+        import json as _json
+        import re as _re
+        from pathlib import Path as _P
+        from .frontend_audit import _route_tokens_728 as _tok
+        root = _P(output_dir)
+        spec_f = root / "design" / "reference_spec.json"
+        refs = root / "design" / "references"
+        if not (spec_f.is_file() and refs.is_dir()):
+            return []
+        app_f = root / "app" / "frontend" / "src" / "App.jsx"
+        if not app_f.is_file():
+            return ["<unknown: no App.jsx to check reachability against>"]
+        app = app_f.read_text(encoding="utf-8", errors="ignore")
+        have: set = set()
+        for _p in _re.findall(r"""path=["']([^"']+)["']""", app):
+            have |= _tok(_p)
+        pages = root / "app" / "frontend" / "src" / "pages"
+        for _f in (pages.glob("*.jsx") if pages.is_dir() else []):
+            have |= _tok(_f.stem)
+        imgs = {f.stem for f in refs.iterdir()
+                if f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")}
+        out: List[str] = []
+        for sc in (_json.loads(spec_f.read_text(encoding="utf-8")).get("screens") or []):
+            if not isinstance(sc, dict):
+                continue
+            name = str(sc.get("name") or "")
+            if not name or name in imgs:
+                continue                       # the visual gate covers this one
+            want = _tok(name) | _tok(sc.get("route_hint"))
+            if want and not (want & have):
+                out.append(f"{name} (route_hint {sc.get('route_hint') or '-'})")
+        return out[:8]
+    except Exception:
+        return []
+
 def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
     """#739: how BROAD is the UI evidence behind ``ui_smoke_pass``?
 
@@ -1914,6 +1973,18 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 "them. Reported, not enforced.",
                 "; ".join(f"{x['table']}.{x['column']} (has: {x['has'] or 'no *_id'})"
                           for x in _lost774[:6]))
+    except Exception:
+        pass
+    try:
+        _unreach823 = _imageless_spec_screens_unreachable_823(output_dir)
+        if _unreach823:
+            logger.warning(
+                "#823 the SPEC declares %d screen(s) with no reference image AND no way to reach "
+                "them in the app: %s. The visual gate cannot cover an imageless screen (#822: "
+                "`profiles` in 150 of 150 runs) and nothing else compares the spec to the built "
+                "UI (#788), so a missing one ships unnoticed — 22 of 142 corpus runs (15%%) had "
+                "no reachable profiles screen. Reported, not enforced.",
+                len(_unreach823), "; ".join(_unreach823))
     except Exception:
         pass
     _bugs743 = unresolved_bug_tasks_743(hubs)

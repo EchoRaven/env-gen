@@ -335,7 +335,7 @@ def audit_terminal_state(runs: List[pathlib.Path]) -> None:
 
 
 def audit_design_prep_enrichment(runs: List[pathlib.Path]) -> None:
-    """#822: the per-component fields the frontend prompt tells the lane to read.
+    """#824: the per-component fields the frontend prompt tells the lane to read.
 
     `build_notes` is `required` in design_prep's own schema and the prompt demands "1-3 concrete
     sentences from the SCREENSHOT". `crop` reaches `design_system.json` from the SKELETON path;
@@ -364,11 +364,11 @@ def audit_design_prep_enrichment(runs: List[pathlib.Path]) -> None:
         return
     for k in ("crop", "build_notes", "typography", "copy"):
         note = "   <- SKELETON path" if k == "crop" else "   <- analyst enrichment"
-        _report(f"#822 components carrying `{k}`", seen, comps, got[k], note)
+        _report(f"#824 components carrying `{k}`", seen, comps, got[k], note)
 
 
 def audit_seed_orphans(runs: List[pathlib.Path]) -> None:
-    """#823: dependent rows the framework-owned dataset would strand.
+    """#825: dependent rows the framework-owned dataset would strand.
 
     The dataset REPLACES a table wholesale. When its ids do not share an id space with the lane's
     (r145 keyed titles on TEXT slugs against integer 1..60), every dependent row is orphaned --
@@ -404,7 +404,7 @@ def audit_seed_orphans(runs: List[pathlib.Path]) -> None:
             affected += 1
             if stranded > worst[1]:
                 worst = (run.name, stranded)
-    _report("#823 runs whose dataset would strand rows", seen, seen, affected,
+    _report("#825 runs whose dataset would strand rows", seen, seen, affected,
             f"   worst: {worst[0]} with {worst[1]} row(s)" if worst[1] else "")
 
 

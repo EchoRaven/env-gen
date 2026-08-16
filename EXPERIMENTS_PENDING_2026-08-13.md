@@ -3754,7 +3754,7 @@ the reliable predictor of an unchecked claim.
 
 ---
 
-## 157. #822/#823 — making the un-backed numbers re-runnable, and the answer changed twice
+## 157. #824/#825 — making the un-backed numbers re-runnable, and the answer changed twice
 
 Item 156's audit, re-run on the **correct** slice (items 108-156, verified by asserting it contains
 both `#782` and `#821`): 28 distinct `N of M` claims. ★ My first pass marked 15 of them
@@ -3786,8 +3786,35 @@ of the **wholesale** handler (#819) — a per-screen failure (#813) or a per-com
 one to read first on the next run**, and the other four are secondary. Four runs prove the pass
 *can* fully succeed (r93, r110, r131, r139), so nothing here is structurally broken.
 
-**#823 also came out larger than measured:** 7 of 143 runs would strand dependent rows, worst
+**#825 also came out larger than measured:** 7 of 143 runs would strand dependent rows, worst
 **r138 with 159** — more than r145's 93, which was the case I built #807b/#808 around.
+
+---
+
+## 158. A commit whose message describes different work — and the third ticket collision
+
+`f0693d8` contains **exactly** item 157 and the two new audits (`EXPERIMENTS +37`,
+`tools/corpus_audit.py +77`) and carries the **previous session's `#822` message**, about a spec
+screen with no reference image — a change whose code lives in `design_prep.py` and was committed
+separately and earlier. I issued no commit between writing those files and finding them already
+in `HEAD`, and the author is the repo's service identity, so something auto-committed the dirty
+tree and reused a queued message.
+
+★ **Cause aside, the effect is the class this session has been chasing all day: the record and the
+reality disagree.** A reader running `git log` sees a spec-screen fix and gets a corpus-audit
+extension. That is #788's shape (a claim with no backing) applied to version control, and it is
+worth stating plainly rather than quietly re-committing over.
+
+★★ **Third ticket collision after a context break.** #817 and #820 were re-derived; `#822` and
+`#823` were *taken* — both already used by the previous session, `#822` for the spec-screen drop
+(4 references in code) and `#823` in code as well. Mine are renumbered **#824** (the enrichment
+field census) and **#825** (the seed-orphan count), verified free before use.
+
+**What actually protects against this** is not a resolution to check the log — I have now failed
+that three times in one session. It is that ticket numbers are a **namespace with no allocator**:
+every collision here happened because the number was chosen from memory of what the last one was.
+The cheap fix is mechanical — `grep -c "#NNN"` across code and the log before claiming a number,
+which is what caught this one and which took two seconds.
 
 ---
 
