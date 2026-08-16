@@ -1809,7 +1809,7 @@ other table's `year`; the per-table figure above is the honest one.
 
 ---
 
-## 109. The genre block is dead in 98% of runs and #782 cannot fix it
+## 109. The genre block is dead in 98% of runs and #782 cannot fix it  — **RESOLVED by #803 (item 131)**
 
 The projected detail page renders a genre chip row from `cur.genres`. In **120 of 122 runs the
 detail payload carries no genre field at all** — genres are a normalised `title_genres` join, and
@@ -2727,6 +2727,41 @@ session is why that line exists.
 
 **The seam pass is now closed**: anchors clean, return-shapes clean, lifetimes fixed (#801),
 imports guarded (#802).
+
+---
+
+## 131. #803 — item 109 built, and the blocker that parked it retired without a run
+
+Item 109 was parked twice. Item 112 checked four cheaper routes and closed all of them, leaving
+one stated risk: *"whether the emitted SQL is correct across schemas the corpus does not contain
+— emitting bad SQL would 500 the detail read, far worse than a missing chip row."*
+
+★ **That was never a risk that needed a generation run.** It needed the SQL executed. These tests
+run the emitted statement against a real SQLite database through SQLAlchemy — the same move that
+verified #782's accessors under node instead of grepping for them. The blocker was a testing gap
+described as a validation gap, and it survived two write-ups because "needs a run" sounded like a
+property of the change rather than of my method.
+
+**What ships.** `_link_label_reads_803` finds label relations reachable through a pure link table
+and `_link_label_sql_803` emits the read; the projected item handler folds the results into the
+payload. With no relation present the handler is **byte-identical** to before, which is every app
+without a join table.
+
+**The safety rule is the design, and it is `#784`'s rule.** A pure link table is *structurally
+indistinguishable* from a per-user relation — 242 in the corpus, 139 `title_genres` and 103
+`my_list (profile_id, title_id)` — and folding the latter in would attach **the names of the
+profiles who saved a title** to a public detail response (#569's class). Membership is decided by
+**what the FK points at**, never by its name. A test encodes why: `curations (title_id,
+curator_id → users)` is refused, and asserts non-vacuously that `curator_id` appears on no
+owner-name list in the framework, so a name-based guard really would have let it through.
+
+A failing label read yields `[]`, never a 500 — **the chip row is worth strictly less than the
+page it sits on**.
+
+**Executed, not asserted:** the SQL returns `["Drama", "Thriller"]` for title 1 and `["Kids"]` for
+title 2, empty for an unrelated id, with the id bound rather than interpolated. Plus the negative
+end-to-end: `my_list` and `profile` appear nowhere in the generated handler source — not merely
+unselected, **not emitted**.
 
 ---
 

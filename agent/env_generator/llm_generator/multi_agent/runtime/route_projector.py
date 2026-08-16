@@ -690,6 +690,74 @@ def _owner_fk(child_meta: Dict[str, Any], exclude: Tuple[str, ...] = ()) -> Opti
 _NARROW_OWNER_FK_NAMES = ("profile_id",)
 
 
+# #803 (item 109): fold a normalised many-to-many into the detail read.
+#
+# The projected detail page renders a chip row from `cur.genres`. In 120 of 122 corpus runs the
+# payload carries no genre field at all -- genres are a `title_genres` join and the detail handler
+# is `SELECT <cols> FROM titles WHERE id = :id`. #782 fixed the frontend accessor; no accessor can
+# invent a field the response does not carry, so the block still rendered nothing. This is the
+# backend half.
+#
+# It is NOT a genres feature. Any normalised many-to-many the reference shows as chips -- tags,
+# categories, skills, ingredients, topics -- is invisible to every projected detail page for the
+# same reason.
+#
+# ** The safety rule is the whole design. ** A "pure link table" (two FKs, nothing else) is
+# structurally indistinguishable from a per-user relation: this corpus holds 242 of them, 139
+# `title_genres` and 103 `my_list (profile_id, title_id)`. Folding the latter in would attach the
+# names of the profiles who saved a title to a PUBLIC detail response -- a read-path owner-scoping
+# leak, the #569 class, shipped by a rule whose own coverage metric reads 100%. So membership is
+# decided by what the FK POINTS AT, never by its name: #784 learned that the hard way when a
+# name-based guard missed `recipient_id` precisely because it was not on the list.
+_ACTOR_TABLES_803 = ("users", "user", "profiles", "profile", "accounts", "account",
+                     "members", "member", "customers", "customer", "tenants", "tenant")
+_LABEL_COLS_803 = ("name", "title", "label", "slug", "code")
+_HOUSEKEEPING_803 = ("id", "created_at", "updated_at", "created_time", "updated_time")
+
+
+def _link_label_reads_803(table: str, models: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Label relations reachable from ``table`` through a pure link table, actor tables excluded.
+
+    Returns ``[{"field", "link", "self_fk", "other_fk", "child", "label"}]``; empty on anything
+    ambiguous, missing or actor-touching. Pure function of the parsed models -- no I/O.
+    """
+    out: List[Dict[str, str]] = []
+    try:
+        for lname, lmeta in (models or {}).items():
+            if not isinstance(lmeta, dict):
+                continue
+            cols = [c for c in (lmeta.get("cols") or []) if c not in _HOUSEKEEPING_803]
+            fks = lmeta.get("fks") or {}
+            if len(cols) != 2 or any(c not in fks for c in cols):
+                continue                              # not a PURE link table
+            targets = {c: str(fks[c]) for c in cols}
+            if any(t in _ACTOR_TABLES_803 for t in targets.values()):
+                continue                              # #784: decided by target, not by name
+            self_fk = next((c for c, t in targets.items() if t == table), None)
+            if self_fk is None:
+                continue
+            other_fk = next(c for c in cols if c != self_fk)
+            child = targets[other_fk]
+            cmeta = (models or {}).get(child)
+            if not isinstance(cmeta, dict):
+                continue
+            label = next((c for c in _LABEL_COLS_803 if c in (cmeta.get("cols") or [])), None)
+            if not label:
+                continue                              # nothing to show; a bare id row is noise
+            out.append({"field": child, "link": lname, "self_fk": self_fk,
+                        "other_fk": other_fk, "child": child, "label": label})
+    except Exception:
+        return []
+    return sorted(out, key=lambda r: r["field"])
+
+
+def _link_label_sql_803(rel: Mapping[str, str]) -> str:
+    """The read for one label relation. Identifiers come from the parsed ORM (Python identifiers
+    by construction); the only runtime value is bound as ``:_lid``."""
+    return ("SELECT c.{label} FROM {link} l JOIN {child} c ON c.id = l.{other_fk} "
+            "WHERE l.{self_fk} = :_lid ORDER BY c.{label}").format(**rel)
+
+
 def _read_owner_fk_777(child_meta: Dict[str, Any], owner_fk: Optional[str]) -> Optional[str]:
     """#777: for a READ, the NARROWEST owner the table declares wins.
 
@@ -1134,9 +1202,29 @@ def _generate_handler(method: str, path: str, auth: bool, models: Dict[str, Dict
                 f'    if getattr(obj, "{read_owner_fk}", None) != _fw_owner_val(type(obj), "{read_owner_fk}", user):',  # #777
                 '        raise HTTPException(status_code=404, detail="not found")',
             ]
-        body_lines += [
-            f"    return {{\"item\": {_serialize_expr('obj', cols)}}}",
-        ]
+        # #803: fold normalised label relations into the item payload. When there are none the
+        # emitted handler is byte-identical to before.
+        _links803 = _link_label_reads_803(table, models) if table else []
+        if _links803:
+            body_lines.append("    _labels = {}")
+            for _rel in _links803:
+                body_lines += [
+                    "    try:",
+                    f"        _labels[\"{_rel['field']}\"] = [r[0] for r in db.execute("
+                    f"text(\"{_link_label_sql_803(_rel)}\"), "
+                    f"{{\"_lid\": getattr(obj, \"id\", None)}}).fetchall()]",
+                    "    except Exception:",
+                    # a label read must never turn a working detail page into a 500 — the chip row
+                    # is worth strictly less than the page.
+                    f"        _labels[\"{_rel['field']}\"] = []",
+                ]
+            body_lines += [
+                f"    return {{\"item\": {{**{_serialize_expr('obj', cols)}, **_labels}}}}",
+            ]
+        else:
+            body_lines += [
+                f"    return {{\"item\": {_serialize_expr('obj', cols)}}}",
+            ]
     elif (cls and m == "DELETE" and not _ends_in_param(path) and parent_ctx
           and _target_fk(meta, parent_table, parent_singular)):
         # CHILD-COLLECTION TOGGLE-OFF: DELETE /api/<parent>/{parent_id}/<child>
