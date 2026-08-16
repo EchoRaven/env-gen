@@ -3184,6 +3184,59 @@ actively harmful.
 
 ---
 
+## 143. #813 — opening the last declined item found a whole design-prep phase producing nothing
+
+#812's rule (*a deferral that never looked is a coin-flip*) pointed at the last one: `type_scale`,
+`radius_scale` and `build_notes`, declined on payload grounds **without opening them**. Opening
+them changed the verdict a third time.
+
+`type_scale` and `radius_scale` are measured and paste-ready — `hero_title_h1` at 44px/700/1.05
+line-height/-0.01em, and `{card: 4, modal: 8, pill: 999}`, which is the corner-radius scale the
+prompt names as a scored STYLE sub-criterion. But `build_notes` opened onto something much larger:
+
+    12 recent runs, 4,006 components
+        crop          3,675   (92%)   <- from the SKELETON path
+        build_notes       1   (0.02%)
+        typography        0
+    component_specs/*.json, 318 components:   build_notes 0, typography 0
+
+★ `build_notes` is `"required": ["id", "build_notes"]` in design_prep's **own schema**, and its
+prompt demands *"1-3 concrete sentences from the SCREENSHOT"*. It arrives essentially never, while
+`crop` — produced by the skeleton path rather than this call — arrives 92% of the time. **The
+enrichment call is the part that yields nothing**, and the frontend prompt directs the lane to read
+`build_notes`/`typography` on **every** component: pointed at fields empty 4,005 times out of
+4,006. #788's class at component granularity.
+
+And it could not say so:
+
+```python
+try:
+    doc = await _chat_ladder(...)
+except Exception:
+    doc = None
+if not isinstance(doc, dict):
+    continue
+```
+
+**#769's exact shape on a measurement path.** A transport error, a non-dict reply and a
+6000-token truncation all land in the same silent skip. The cause needs a live design-prep call and
+cannot be settled offline; what is fixed is that the next run **names it per screen**, separating
+"the call threw" from "the model returned a list", and states the downstream consequence rather
+than just "failed".
+
+★★ **A method correction that reaches backwards.** `ast.parse` has been my syntax gate all
+session, and it **passed** the first cut of this fix, which placed `import logging` above
+`from __future__ import annotations`. `ast.parse` does not enforce `__future__` placement —
+`compile()` does, and importing the module does. **A gate that accepts a file Python will refuse is
+a gate with a hole in it.** Every "SYNTAX OK" printed this session was weaker than it read; the
+ones that mattered were also import-checked, but the habit was wrong and is now corrected in a
+test.
+
+**Eleventh self-match**, and the most literal yet: the test anchored on `index("continue", i)`, and
+the comment explaining the fix contains the word ``continue`` in prose. Re-anchored on code.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

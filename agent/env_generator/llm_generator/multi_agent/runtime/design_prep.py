@@ -15,6 +15,10 @@ a run. Env-agnostic.
 
 from __future__ import annotations
 
+import logging
+
+_LOG_813 = logging.getLogger(__name__)
+
 import json
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -460,9 +464,27 @@ async def _run_analyst(skeleton: Dict, resolved: Dict, output_dir: Path, llm,
             parts.append(p)
         try:
             doc = await _chat_ladder(client, [Message.user_multimodal(parts)], max_tokens=6000)
-        except Exception:
+        except Exception as exc:
+            # #813: this was `except Exception: doc = None` followed by a bare `continue` — the
+            # #769 shape on a MEASUREMENT path. Measured over 12 recent runs and 4,006
+            # components: `build_notes` is populated 1 time and `typography` 0 times, while
+            # `crop` (which comes from the skeleton, not from here) is populated 3,675 times.
+            # So this enrichment yields essentially nothing and has never said why — and the
+            # frontend prompt meanwhile directs the lane to read `build_notes`/`typography` on
+            # every component. Whether the cause is a transport error, a non-dict reply or a
+            # 6000-token truncation, the next run now names it per screen instead of leaving a
+            # silently unenriched skeleton.
+            _LOG_813.warning(
+                "design-prep screen enrichment FAILED for %r (%s: %s) — this screen keeps its "
+                "unenriched skeleton, so its components will carry NO build_notes/typography/"
+                "copy and the frontend prompt points the lane at fields that will be empty.",
+                s.get("name"), type(exc).__name__, exc)
             doc = None
         if not isinstance(doc, dict):
+            if doc is not None:
+                _LOG_813.warning(
+                    "design-prep screen enrichment returned %s, not an object, for %r — same "
+                    "consequence: an unenriched skeleton.", type(doc).__name__, s.get("name"))
             continue
         # tolerate both {components:[...]} and a full-doc {design_system,screens} shape
         dsx = doc.get("design_system") if isinstance(doc.get("design_system"), dict) else {}
