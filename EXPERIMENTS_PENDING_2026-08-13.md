@@ -4000,6 +4000,38 @@ exactly why asserting one is indefensible.
 
 ---
 
+## 163. #839 — #671 was rejected on a number a broken detector produced. It is now the best gate candidate on the table.
+
+Item 123 recorded #671 (*no UI evidence at all*) as **staying rejected**: 41–45% of runs had none,
+and "a quarter of recent runs still ship with no UI evidence whatsoever" is a halt, not a gate. I
+wrote that. **The figure came from a detector that could not see 645 records** (#830):
+`_ui_evidence_breadth_739` keyed only on `metadata.check`, and a writer that put the kind in the
+record NAME left nothing for #193/#236 to recover.
+
+    runs with NO UI evidence      62  ->  26      (45% -> 17%)
+
+17% is the order of #751's 13%, which was approved. So the rejection rested on a figure ~2.6x too
+high — and the deciding question was never asked of the corrected data. Asking it now:
+
+    #671 would block                                  26 of 151  (17%)
+      ...of those, runs that DID cut a tagged release   0
+      ...runs that never released anyway               26
+
+★ **Zero false blocks in 151 runs.** Every run it would stop was already going nowhere. That is a
+better profile than #774 (7%, 0 FP) and than #751 (13%) which is already enabled.
+
+**What it is not.** Blocking those 26 would not have made them release; the check does not fix
+anything. It fires early on runs already heading nowhere, which is worth exactly what an early,
+accurate signal is worth — and #739's whole point was that `ui_smoke_pass` is existential and
+r148 released a dead app with `landing + login` passing. This is the other half of that.
+
+**Still not switched on.** #671 was explicitly rejected, so enabling it is a policy change, not a
+bug fix — unlike #830, where the detector was failing to implement a policy already approved. The
+switch stays with whoever owns the gate. What has changed is that the number it was rejected on
+was wrong, and the false-positive question now has an answer.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
