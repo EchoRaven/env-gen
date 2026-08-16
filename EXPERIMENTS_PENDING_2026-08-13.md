@@ -10251,3 +10251,60 @@ that did not survive.
   parenthesised conditional needs an explicit `+`; without it the module is a `SyntaxError`. #858
   hit this, #874 hit it again, and `compile()` (#814) caught both. It is now noted at the site.
 
+
+## 205. #875 — two more deferrals audited: one reason refuted, one confirmed
+
+### item 185 (branded title art) — reason SURVIVES
+
+The first deferral this sweep has confirmed. Checked in the right place this time
+(`design["assets"]`, not the filesystem — #874's lesson): the only title-art-ish asset staged
+anywhere is **`netflix-wordmark`, in 149 of 151 runs**, and `_brand_logo_url` already renders it.
+There is **no per-title branded art** (a "The Hawk" logo) in the corpus. *"Deferred for a missing
+input"* holds.
+
+### item 187 (breadcrumb vs page H1) — reason REFUTED
+
+#860 recorded it as unfixable: *"which of two quoted spans is the title is a judgement the text
+does not settle."* Measured:
+
+| | |
+|---|---|
+| roles with 2+ quoted spans | **458** |
+| …carrying a positional cue (`H1` / `page title` / `section title` / `heading`) | **160 (35%)** |
+
+The text settles it in a third of the ambiguous cases, and the current first-wins rule gets those
+wrong — it ships the breadcrumb.
+
+★ **And the obvious rules are both wrong**, which is the interesting part:
+
+    breadcrumb ('TV Shows >') and page H1 'Sports TV Shows'   cue BEFORE its span
+    'Episodes' section title on left with season selector …   cue AFTER its span
+
+*"Take the span after the cue"* picks the season selector in the second. So I wrote *"take the
+span nearest the cue"* — and **the test caught that too**: in
+`breadcrumb 'Home >' and section title 'Action Movies'` the cue sits *between* them, 15 characters
+from one and 16 from the other, and the right answer is the **far** one.
+
+The rule is **adjacency, not distance**: a cue with nothing but whitespace before it labels the
+PRECEDING span; otherwise it announces the NEXT one. Two wrong rules before the right one, both
+killed by a case rather than by review.
+
+### and #860's own test was pinning the defect
+
+It asserted `'TV Shows'` — the breadcrumb — because that is what first-wins produced, in a file
+whose write-up had already named the behaviour as unresolved. **A test can encode a known-wrong
+outcome as an expectation and keep it alive**; that is the fourth instance this session, after the
+`▼` glyph's three.
+
+### the deferral audit so far
+
+    item 187 invented login links   reason REFUTED   -> #873
+    item 184 profile avatar         reason REFUTED   -> #874
+    item 187 breadcrumb vs H1       reason REFUTED   -> #875
+    item 185 branded title art      reason CONFIRMED -> stands
+
+Four checked, three refuted. ★ The pattern is not that my deferrals were wrong — #874's caution
+and item 185's were both sound — it is that **the reasons I recorded were guesses I never
+measured**, while the deferrals themselves were instincts that mostly held. Still unchecked:
+`#181`'s language selector and the `#862`/`#864`/`#865` "does not abort" decisions.
+

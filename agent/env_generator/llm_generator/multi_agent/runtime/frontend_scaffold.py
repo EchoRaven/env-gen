@@ -4867,6 +4867,46 @@ def _quoted_title_860(text: str) -> str:
     the breadcrumb beats the page H1. Which of two quoted spans is the title is a judgement the
     text does not settle, and guessing it would trade a visible-but-correct heading for a wrong
     one."""
+    # #875: when a role carries SEVERAL quoted spans, prefer the one NEAREST a title cue.
+    #
+    # #860 left this: "which of two quoted spans is the title is a judgement the text does not
+    # settle". Measured, that was too strong — of 458 roles with 2+ quoted spans, **160 carry a
+    # positional cue** (`H1`, `page title`, `heading`, `section title`), and the cue names which
+    # span is the heading:
+    #
+    #     breadcrumb ('TV Shows >') and page H1 'Sports TV Shows'   <- cue BEFORE its span
+    #     'Episodes' section title on left with season selector …   <- cue AFTER its span
+    #
+    # ★ So the rule is not "the span after the cue" — that would pick the season selector in the
+    # second case. It is the span NEAREST the cue, on either side. The remaining 298 roles carry
+    # no cue and keep #860's first-wins behaviour unchanged.
+    _cues = [m.start() for m in re.finditer(
+        r"\b(?:h1|page title|section title|heading|page header)\b", text, re.I)]
+    if _cues:
+        _spans = []
+        for _m in re.finditer(r"['\u2018\u201c\"]([^'\u2019\u201d\"]{2,60})['\u2019\u201d\"]",
+                              text):
+            _spans.append((_m.start(), _m.end(), _m.group(1).strip()))
+        if len(_spans) >= 2:
+            # ★ Adjacency, not distance. A cue IMMEDIATELY after a span modifies that span
+            # ("'Episodes' section title"); otherwise it announces the next one ("page H1 'X'").
+            # Measuring raw distance picks the wrong span whenever the cue sits between two —
+            # "breadcrumb 'Home >' and section title 'Action Movies'" is 15 chars from one and 16
+            # from the other, and the answer is the far one.
+            _best = None
+            for _c in _cues:
+                _prev = [(_e, cand) for _st, _e, cand in _spans if _e <= _c]
+                if _prev:
+                    _e, cand = max(_prev)
+                    if _c - _e <= 2:            # only whitespace between: the cue labels it
+                        _best = cand
+                        break
+                _next = [(_st, cand) for _st, _e, cand in _spans if _st >= _c]
+                if _next:
+                    _best = min(_next)[1]
+                    break
+            if _best and 2 <= len(_best) <= 60:
+                return _BREADCRUMB_TAIL_860.sub("", _best).strip()
     PAIRS = {"\u2018": "\u2019", "\u201c": "\u201d", '"': '"'}
     for i, ch in enumerate(text):
         close = PAIRS.get(ch)

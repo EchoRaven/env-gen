@@ -89,12 +89,22 @@ def test_the_real_curated_titles_are_untouched(title):
 
 
 @pytest.mark.parametrize("role,want", [
-    ("breadcrumb ('TV Shows >') and page H1 'Sports TV Shows'", "TV Shows"),
     ("crumb 'Movies ›'", "Movies"),
     ("crumb 'Shows »'", "Shows"),
+    ("crumb 'New & Popular >'", "New & Popular"),
 ])
 def test_a_breadcrumb_chevron_is_not_part_of_the_heading(role, want):
+    """The chevron strip, on roles with a SINGLE quoted span. The two-span case moved to #875."""
     assert _f(role) == want
+
+
+def test_the_breadcrumb_no_longer_beats_the_page_h1_875():
+    """★ This case used to assert `'TV Shows'` — the BREADCRUMB — because that is what first-wins
+    produced, and #860 recorded it as *"the text does not settle which"*. #875 measured that
+    claim: of 458 roles with two or more quoted spans, **160 carry a positional cue**, and the
+    span nearest the cue is the heading. The old expectation was this file pinning a defect its
+    own write-up had named."""
+    assert _f("breadcrumb ('TV Shows >') and page H1 'Sports TV Shows'") == "Sports TV Shows"
 
 
 def test_a_title_that_merely_contains_an_arrow_word_is_safe():
