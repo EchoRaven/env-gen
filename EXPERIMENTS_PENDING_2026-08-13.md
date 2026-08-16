@@ -1733,6 +1733,51 @@ right one needed a distribution.
 
 ---
 
+## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
+
+Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
+stop calling it a surprise.
+
+**1. `browse_by_languages`** — *"only one 'language' dropdown; reference shows two"*. The built
+page has two `<select>` elements and the capture shows both, top-right, labelled "Original
+Language" and "Language". **False.** (The same note's "Select Your Preferences" claim is true —
+0 occurrences in the source. Half right is the hard kind.)
+
+**2. `player`** — `scrub` in 39 of 40 records, plus missing skip/CC/next-episode. The reference
+is an **ad playing**; none of that chrome exists in it. **False, and it costs a 46% blocker.**
+
+**3. `title_detail`** — *"entire meta block missing (year, seasons, HD, rating, tags,
+description, cast, genres)"*. The capture shows **TV-14, an HD badge, the full synopsis, and a
+Season 1 selector with four episodes**. Four of the eight named items are present. Genuinely
+absent: year, cast, genres, tags — and the API returns all of them (`_TITLE_COLS` includes
+`release_year`, `cast_list`, `director`; the schema has `genres`/`title_genres`). **Half wrong,
+and the true half is #664's class.**
+
+**Why this reaches backwards.** #778's case rested partly on judge deviations. Its core evidence
+survives — the 84%-of-components measurement is from `design_system.json`, not from the judge —
+but the framing "the judge says copy is the floor, so fix copy" now carries a caveat: **a
+deviation is evidence, not ground truth.** Every conclusion in this document drawn from a
+deviation alone should be read with that.
+
+**Why it matters operationally.** `missing` feeds remediation tasks. An invented entry costs the
+lane a round building a control that should not exist — and on `player` that has been happening
+in 39 of 40 runs. #781's clause targets exactly this (*"Never list under `missing` an element you
+cannot point to in the first image"*), and it is the only fix here: the apps were right.
+
+**Deliberately not built: an automated over-claim detector.** The obvious move is to check each
+`missing` entry against the built source. Item 104 is why not — that exact probe, written
+carefully, reported 5 of 6 controls "present" by matching word tokens anywhere in a 300KB
+concatenation, including all three the judge had flagged. A noisy checker over a noisy signal
+produces confident nonsense. Three hand-verified cases are worth more, and #781 addresses the
+cause rather than measuring the symptom.
+
+**Cheapest observation.** After #781, the three are one query each: does `player` still mention
+`scrub`; does `browse_by_languages` still claim one dropdown; does `title_detail` still list HD
+and description as missing. All three are the app being right and the judge being wrong, so all
+three should move without the lane touching anything.
+
+---
+
 ## 106. #781 — a whole blocking screen was failing on chrome its reference does not have
 
 Working down item 101's blocker list. `login` gave #778 and #779, `browse_by_languages` gave
