@@ -4034,6 +4034,47 @@ The old assertion (*"the number it hands out is one it will not then call taken"
 
 ---
 
+## 165. Reconciling with the other agent — its #830 invalidates three of my numbers
+
+The concurrent agent (item 164) found that `_ui_evidence_breadth_739` keyed only on
+`metadata.check` and **could not see 645 records** whose kind sat in the record NAME, and fixed it
+as **#830**. That detector is the one I used for every UI-evidence figure in this session, so its
+correction propagates straight into my items:
+
+| figure | mine (broken detector) | corrected |
+|---|---|---|
+| #752 contradicted UI, corpus | 10 of 151 (6%) | **22 of 151 (14%)** |
+| #752, r130+ | 3 of 22 (13%) | **4 of 22 (18%)** |
+| runs carrying any UI record (my non-vacuity line) | 89 | **125** |
+| #671 no UI evidence | 62 (41%) | **26 (17%)** — the other agent's finding |
+
+★ **#752 was switched ON, by me, on a number four times too small.** It was approved as
+*"6 of 148 → 4%, a gate"*; item 122 revised that to 6%/13% and called the margin *"smaller than
+the numbers they were made on"*; the true figures are **14% and 18%**. Both of my revisions moved
+the same way and both undershot.
+
+★★ **The method failure is specific and worth naming.** Item 122 makes a point of using the
+**shipped** normaliser and the **shipped** detector rather than a re-implementation (#772's rule),
+and treats that as sufficient rigour. It is not: *use the shipped code* and *verify the shipped
+code* are different instructions. Re-implementing would have drifted; using it inherited its
+blind spot — and the non-vacuity check I added ("89 of 151 carry any UI record") was **itself
+computed by the blind detector**, so it could not catch it. A non-vacuity guard that runs through
+the instrument under test proves nothing about the instrument.
+
+**What changes.** `tools/corpus_audit.py` picks the fix up automatically — it imports the shipped
+detector rather than copying it, which is the one thing that worked here. The corrected numbers
+are now what it prints. The **switch decisions themselves are unchanged and are not mine to
+revisit**: #751 and #752 are enabled, #671 and #743 remain rejected, and #671's case is materially
+stronger than when I looked (17%, and **0 of the 26 runs it would block ever cut a release**).
+
+★★★ **On working alongside another agent.** Its finding corrected mine; mine (#834) sits upstream
+of a thread it was also in. Neither of us saw the other's work in progress, which produced four
+ticket collisions and at least two duplicated investigations — and also produced this: **two
+independent passes over the same corpus caught each other's blind spots.** The cost was real; so
+was the redundancy.
+
+---
+
 ## 154. Auditing my own attribution claims — one bad, four sound
 
 The r128 correction was the second time this session I asserted *who did something* without reading
@@ -4131,6 +4172,44 @@ and immediately makes the page *empty* rather than wrong — arguably worse for 
 staged dataset carries game rows when the spec declares a games screen, which is the real fix and
 is a design-prep change. Both need the owner's call, and (b) needs a run to validate; recorded
 with the measurement so the choice is available rather than assumed.
+
+---
+
+## 165. #841 — no avatar is ever staged, so every authenticated screen carries a blank square
+
+#840 found one screen (`games`) that cannot pass because the data it needs is not staged. Sweeping
+the deviations for that signature instead of guessing found the same shape, wider:
+
+    my_list          "Profile area: missing Kids badge and avatar image (impl shows empty red square)"
+    new_and_popular  "Header profile shows placeholder square instead of avatar image"
+    movies           "Profile avatar: implementation shows a blank colored square"
+
+Three screens, one cause — and the avatar lives in the **shared top nav**, so it depresses
+`components` on every authenticated screen rather than one.
+
+Traced:
+
+    seed `profiles` rows DO carry avatar_url
+      ...its value is  /assets/crops/account_menu__profile-menu-flyout.png
+                       — a design-prep CROP OF A WHOLE FLYOUT PANEL, not an avatar
+    staged asset categories:  backdrops | brand | fonts | icons | posters | video
+    avatar assets staged:     0
+    avatar entries in the design_system manifest: 0
+
+Meanwhile the spec's own `must_have` requires them: `profiles` — *"profile avatars grid"*;
+`account_menu` — *"profile avatar dropdown | Kids profile entry"*.
+
+★ **The lane is not at fault and neither is the judge.** The lane owns `seed_data.json`, was told
+to author realistic data (#809), had no avatar to point at, and chose the closest-looking file in
+`design/crops/`. The judge correctly reports a blank square. The gap is that **the spec requires an
+asset class the staging pipeline never produces**, and nothing compares the two — which is #788
+(`must_have` is never machine-checked) meeting #822 (spec and pipeline disagree about what exists).
+
+**Not fixed here.** Staging avatars is a design-prep change and needs a run to validate, exactly
+like #840(b). What is now available is the measurement and the causal chain, so the choice is a
+choice rather than an assumption. ★ The cheap partial: `must_have` names the asset classes a
+screen needs, and the staged manifest lists what exists — comparing those two lists is a check
+nobody has written, and it would have named both this and #840 without a run.
 
 ---
 
