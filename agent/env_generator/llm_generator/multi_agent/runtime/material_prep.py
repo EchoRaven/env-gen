@@ -950,6 +950,78 @@ def _is_trending_col(name: str) -> bool:
         or "trending" in n or "popularity" in n
 
 
+def align_dataset_id_types(dataset, schema) -> Dict[str, List]:
+    """#808 — coerce each dataset row's PK (and same-named FK columns) to the TYPE the generated
+    model declares for it.
+
+    The staging pipeline already aligns dataset field NAMES to the model's columns (#483) and
+    fills a declared ranking column (#552). It never checked the PK's TYPE. design-prep emits
+    integer ids; a lane that declares ``id TEXT PRIMARY KEY`` (r145: `titles.id` is `text`, with
+    every dependent `title_id TEXT REFERENCES titles(id)`) therefore receives integers into a text
+    column, and every row in the app's dependent tables is left pointing at an id space that no
+    longer exists -- 93 rows across 5 tables in that run.
+
+    #807b refuses the whole swap when that happens, which protects the app but throws away the
+    real domain data. This is the root-cause half: make the ids the right TYPE at staging so the
+    two sources can agree in the cases where the values would match.
+
+    ADDITIVE + BEST-EFFORT, deliberately narrow:
+      * only columns the schema marks ``pk``, plus ``<singular>_id`` columns naming another table
+        whose PK was coerced -- never a free-form data column;
+      * only int<->str, the mismatch design-prep can actually produce; nothing else is touched;
+      * unknown table, unknown column or unparsable schema -> row returned untouched.
+    Matching types (the common case) -> byte-identical output.
+    """
+    if not isinstance(dataset, dict) or not isinstance(schema, dict):
+        return dataset
+    out: Dict[str, List] = {}
+    pk_type: Dict[str, str] = {}
+    for _t, _cols in schema.items():
+        if not isinstance(_cols, dict):
+            continue
+        for _c, _meta in _cols.items():
+            if isinstance(_meta, dict) and _meta.get("pk"):
+                pk_type[str(_t)] = str(_meta.get("type") or "")
+                break
+
+    def _coerce(val, want):
+        if want in ("text", "varchar", "string") and isinstance(val, int) \
+                and not isinstance(val, bool):
+            return str(val)
+        if want in ("integer", "bigint", "smallint") and isinstance(val, str) \
+                and val.strip().lstrip("-").isdigit():
+            return int(val)
+        return val
+
+    for table, rows in dataset.items():
+        if not isinstance(rows, list):
+            out[table] = rows
+            continue
+        cols = schema.get(table) if isinstance(schema.get(table), dict) else {}
+        new_rows = []
+        for row in rows:
+            if not isinstance(row, dict):
+                new_rows.append(row)
+                continue
+            r = dict(row)
+            for col, val in list(r.items()):
+                meta = cols.get(col) if isinstance(cols, dict) else None
+                want = ""
+                if isinstance(meta, dict) and meta.get("pk"):
+                    want = str(meta.get("type") or "")
+                elif str(col).endswith("_id"):
+                    stem = str(col)[:-3]
+                    for cand in (stem + "s", stem, stem + "es"):
+                        if cand in pk_type:
+                            want = pk_type[cand]
+                            break
+                if want:
+                    r[col] = _coerce(val, want)
+            new_rows.append(r)
+        out[table] = new_rows
+    return out
+
+
 def model_schema_from_models_py(models_py_path) -> Dict[str, Dict[str, Dict]]:
     """Parse the generated ``models.py`` → ``{table: {col: {type, nullable, pk}}}`` by
     regex (no import/subprocess — same rationale as ``model_columns_from_models_py``:

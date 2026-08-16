@@ -1776,10 +1776,19 @@ def _ensure_seed_dataset(be: Path, output_dir: Any) -> bool:
             # fingerprint stays stable (no re-seed loop).
             try:
                 from .material_prep import (model_schema_from_models_py,
-                                            enrich_ranking_seed)
+                                            enrich_ranking_seed,
+                                            align_dataset_id_types)
                 _schema = model_schema_from_models_py(be / "models.py")
                 if _schema:
                     real = enrich_ranking_seed(real, _schema)
+                    # #808: and align the ID TYPES. #483 aligned field NAMES and #552 fills a
+                    # ranking column; nothing checked that design-prep's integer ids match a PK
+                    # the lane declared TEXT. r145 declared `titles.id TEXT` with every dependent
+                    # `title_id TEXT REFERENCES titles(id)`, so the swap left 93 rows across 5
+                    # tables pointing at an id space that no longer existed. #807b refuses the
+                    # swap when that happens -- which protects the app but discards the real
+                    # domain data. This is the root-cause half.
+                    real = align_dataset_id_types(real, _schema)
             except Exception:
                 pass
             import json as _json

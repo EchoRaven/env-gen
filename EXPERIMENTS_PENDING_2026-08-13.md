@@ -2960,6 +2960,41 @@ boundaries I introduce; this item is that at speed, and the only reason none of 
 
 ---
 
+## 137. #808 — the staged dataset's ids never matched the PK type the lane declared
+
+#807b protects the app by **refusing** the dataset swap when it would orphan a majority of
+dependents. That is a mitigation: it throws away the real domain data the dataset exists to
+provide. Following the chain one link further asks why the ids disagree at all.
+
+The staging pipeline already aligns dataset field **names** to the model's columns (#483) and
+fills a declared ranking column (#552). **Nothing checked the PK's type.** design-prep emits
+integer ids; r145 declared `titles.id TEXT PRIMARY KEY` with every dependent
+`title_id TEXT NOT NULL REFERENCES titles(id)`. Measured directly:
+
+    r145   titles.id declared `text`      dataset ids [1, 2, 3]      -> now ['1', '2', '3']
+    r151   titles.id declared `integer`   dataset ids [1, 2, 3]      -> unchanged
+
+**Deliberately narrow, because a seed corrupted by an over-eager coercion is worse than a typed
+mismatch** — that is #264's lesson restated, and #264 is in this same function:
+
+* only columns the schema marks `pk`, plus `<singular>_id` columns naming a table whose PK was
+  coerced. A `year` of `2019` stays an integer; a `name` is never touched.
+* only int↔str, the one mismatch design-prep can actually produce. `"tv-stranger-signals"` is not
+  forced into an integer column, and `True` is not treated as `1`.
+* unknown table, unknown column or unparsable schema → returned untouched; matching types →
+  byte-identical.
+
+**What it does and does not fix.** It removes the type mismatch, so an app with a TEXT PK now
+receives correctly-typed ids — which matters most in the common case where the lane seeded no
+titles of its own and the dataset lands cleanly. It does **not** make r145's slugs equal `"1"`, so
+#807b still refuses there, correctly: those are different id *values*, not just different types,
+and reconciling them would mean inventing associations.
+
+The two halves are complementary and both are needed: **#808 prevents the mismatch where it can be
+prevented; #807b contains it where it cannot.**
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
