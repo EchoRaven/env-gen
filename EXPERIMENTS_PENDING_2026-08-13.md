@@ -3630,6 +3630,45 @@ Added to `tools/corpus_audit.py`, so the census is one command and era-splittabl
 
 ---
 
+## 152. The full causal chain for r151's death — and the first live evidence of #751
+
+r151's abort named three blockers: two phantom nav links (#820) and `unresolved_failed_tasks`,
+which is **#751 — the gate I switched from REPORTING to BLOCKING this session**. Its single failed
+task, in full:
+
+> **"Delivery blocker: guard empty-id nav links in ContinueWatchingRail.jsx + HoverPreviewCard.jsx"**
+> *evidence:* `ContinueWatchingRail.jsx:40-41 resolves tid from title_id/t.title_id/t.id/row.id,
+> **returns null when none resolve (skips render)**. HoverPreviewCard.jsx **guards missing id
+> before onClick nav**.*
+
+★ **The lane investigated, found the code already correct, and failed the task — which is the
+honest answer.** It cannot fix a defect that does not exist. So the chain is:
+
+1. the extractor mis-reads `navigate('/title/' + tid)` → a phantom blocker (#820);
+2. the framework files a remediation task for the phantom;
+3. the lane reads the code, finds the guards already present, and **fails the task**;
+4. **#751 blocks delivery on that failed task**;
+5. the gate never goes green → STUCK at 75 minutes, no delivery.
+
+★★ **#751 behaved exactly as designed and still helped kill the run.** That is not an argument
+against it — an unresolved failed task IS a real signal, and the lane's `failed` here was more
+informative than a silent stall would have been. It is a decisive argument that **a gate blocking
+on failed tasks is only as good as the tasks the framework files.** The fix belongs at the source
+(#820), not at the gate.
+
+★★★ **And it bears directly on the one decision still open.** #774's switch is the same shape:
+a check that would block on a finding. The evidence here is that when the finding beneath a
+blocking gate is wrong, the gate converts a cosmetic false positive into a **dead run** — which is
+why #774's zero-false-positives-in-112-runs matters more than its 7-14% rate. The rate decides how
+often it fires; the false-positive record decides what happens when it does.
+
+**Also worth noting what the lane did right.** Given an impossible task it did not fabricate a fix,
+did not silently mark it complete, and left machine-readable evidence naming the exact lines and
+the guard it found. Every framework-side lesson this session has been about saying why; the lane
+did that unprompted, and the framework's response was to block on it.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
