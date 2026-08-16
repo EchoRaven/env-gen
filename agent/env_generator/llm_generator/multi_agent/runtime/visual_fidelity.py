@@ -2056,9 +2056,19 @@ _JUDGE_INSTRUCTIONS = (
     '  "empty_state": <true|false — true when the implementation shows an EMPTY/'
     "placeholder state (e.g. 'No items yet') because its data is missing, so the "
     "reference's real design skeleton never rendered and cannot be judged>,\n"
-    '  "deviations": ["<WHERE on the screen + WHAT differs, ordered by impact, '
-    'e.g. \'header: implementation centers the logo; reference left-aligns it '
-    'next to search\'>", ...],\n'
+    # #857: #781 restrained `missing` and stopped there, so the same over-claim simply moved to
+    # `deviations` — which is the field `remediation_text` turns into the lane's concrete to-do
+    # list (see #855). Measured: #652's rail position indicator is emitted (gate fires 7/7) and
+    # its markup is verifiably PRESENT in the delivered source of all 7 post-#652 runs, yet 5 of
+    # those 7 still carry a "pagination dots missing" deviation. The rate did not move: 74%
+    # before the fix, 71% after. A shipped fix whose metric does not move is not always a broken
+    # fix — here the instrument was reporting a component it could point to in neither image.
+    '  "deviations": ["<WHERE on the screen + WHAT differs, ordered by impact. ANCHOR EVERY '
+    'ENTRY IN THE IMAGES: for \'X is missing\' you must be able to point to X in the FIRST '
+    'image, and for \'X is wrong/extra\' you must be able to point to X in the SECOND. If you '
+    'cannot point to it in either, it is not a deviation — do not infer it from what the real '
+    'product usually has. e.g. \'header: implementation centers the logo; reference '
+    'left-aligns it next to search\'>", ...],\n'
     '  "fixes": ["<ordered TO-DO list for the implementer: the smallest set of '
     'concrete edits that would make a user mistake this screen for the '
     'reference>", ...],\n'

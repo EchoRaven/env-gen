@@ -9096,3 +9096,54 @@ character, whatever a future author writes. ★ The specific bug is less useful 
 **an escape that decays turns a working expression into one that matches nothing, and matching
 nothing looks exactly like "the feature is off".**
 
+
+## 183. #857 — #781 restrained `missing`, and the over-claim moved one field over
+
+Found by asking a **verification** question rather than a search question, which is a different
+move from everything else this turn: *did a shipped fix move its own metric?*
+
+`#652` emits the rail/carousel position indicator — the corpus's most persistent missing
+component (~140 reports, ~100% persistent, no channel had ever emitted one). It shipped
+**2026-08-12 22:34** and **7 runs executed after it** (r145–r151).
+
+★ Split on the **ship time**, not a round run number. My first cut used `r >= 100` and reported
+"persists, 70% → 81%" — but r100 ran 2026-08-06, six days before the fix, so that split compared
+two populations that were both pre-fix. #795's rule, and I broke it before I applied it.
+
+    pagination-indicator deviation    before #652: 92/124 (74%)    after: 5/7 (71%)
+
+**It did not move.** And the fix is not broken — verified at both ends:
+
+| | |
+|---|---|
+| gate fires (the design enumerates an indicator) | **7 of 7** |
+| emitter markup present in the DELIVERED source | **7 of 7** (`h-1 w-1 rounded-full` / `h-0.5 w-4`) |
+
+The component is on the page and the judge calls it absent in 5 of those 7.
+
+**`#781` had already fixed this class** — *"Never list under `missing` an element you cannot point
+to in the first image"* — and scoped it to `missing`. `deviations` carried no such constraint, so
+the behaviour simply moved one field over. ★ **A guard written for one field is a guard for one
+field**, and the neighbouring field was the more expensive one: `remediation_text` turns
+`deviations` into the lane's concrete to-do list (#855), so an unanchored entry spends a round
+rebuilding something already present.
+
+The rule is now symmetric, because a deviation is a claim about BOTH images: *"X is missing"* must
+be pointable in the reference, *"X is wrong/extra"* in the implementation, and neither may be
+inferred from what the real product usually has. It demands **pointing, not silence** — a judge
+told merely to report less would hide real defects, and the original "WHERE + WHAT differs"
+instruction is kept verbatim.
+
+★ **What this says about the three "unmoved metric" items still open.** #774, #854's roster and
+#181 are all waiting on a run. This one shows the third possibility that neither "the fix works"
+nor "the fix is broken" covers: **the fix works and the instrument does not notice.** Before
+concluding from a flat metric after a run, check whether the thing being measured is the thing
+that changed — 7-of-7 present in the delivered source was two greps.
+
+### method note
+
+The prompt test's first version rendered the template with only `rubric_block` and died on
+`KeyError: 'name'`. The real call site (`visual_fidelity.py:2206`) passes `name`, `route` and
+`rubric_block`. #804's lesson exactly: **a prompt test that does not use the caller's arguments is
+testing a template nobody renders.**
+
