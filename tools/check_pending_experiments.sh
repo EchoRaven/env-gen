@@ -549,7 +549,24 @@ else:
     say("n/a", "#754 compose path resolves", "no run log given")
 PY
 
-# --- #782: the projected metadata row must never go back to bare field reads -------------------
-sig "#782 year chip present"      "cur\.year"                     "$FRONTEND_SRC" absent
-sig "#782 duration via accessor"  "ep\.duration \|\| ep\.runtime" "$FRONTEND_SRC" absent
-sig "#782 accessors emitted"      "const _yearOf"                 "$FRONTEND_SRC" present
+# 9. #782 the projected metadata row reads via fallback accessors, not bare field names
+python3 - "$RUN" <<'PY'
+import glob,os,sys
+pages=glob.glob(os.path.join(sys.argv[1],'app/frontend/src/pages/*.jsx'))
+if not pages:
+    print(f"{'n/a':<9} {'9 #782 metadata accessors':<46} no projected pages"); raise SystemExit
+bare=[os.path.basename(f) for f in pages
+      if any(t in open(f,encoding='utf-8',errors='ignore').read()
+             for t in ('cur.year','ep.duration || ep.runtime','cur.duration || cur.runtime'))]
+emitted=[f for f in pages if 'const _yearOf' in open(f,encoding='utf-8',errors='ignore').read()]
+if bare:
+    print(f"{'STILL':<9} {'9 #782 metadata accessors':<46} {len(bare)} page(s) still read bare "
+          f"field names {bare[:3]} — 13% of runs alias year, 17% of episode tables alias duration")
+elif not emitted:
+    print(f"{'n/a':<9} {'9 #782 metadata accessors':<46} no reference-structured page in this run")
+else:
+    # Presence of the accessor is NOT presence of the chip: it still needs the column to exist.
+    # Read the title_detail capture for the verdict; this only says the fix reached the build.
+    print(f"{'GONE':<9} {'9 #782 metadata accessors':<46} {len(emitted)} page(s) use "
+          f"_yearOf/_durOf/_genresOf — now LOOK at title_detail.png for a year chip beside the rating")
+PY
