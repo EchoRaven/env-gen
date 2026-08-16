@@ -203,11 +203,46 @@ class KickoffDriver:
                     return self._orch._kickoff_fallback_or_reconcile(
                         kickoff_handle, _synth, "initial_stall",
                     )
+                # #862: NAME the attendees, and say when NOBODY has spoken.
+                #
+                # This line reported a COUNT, and "3 missing" reads identically whether three
+                # lanes are slow or three lanes never started. 7 of 151 corpus runs (r19, r35,
+                # r38, r42, r44, r136, r140 — spread over 9 days, so not one bad afternoon) are
+                # the second case: `.agent_logs/` shows backend, frontend, verifier and debugger
+                # with EMPTY directories while orchestrator, knowledge and design_analyst logged
+                # normally. The orchestrator then idles on `ACTION_STATUS: stop` reporting
+                # "endpoints=0, tasks=0" and the run ends after 3-4 minutes having built nothing:
+                # no DDL, no seed, no frontend, no capture.
+                #
+                # ★ The framework already has the salvage for this — `_derive_missing_essential_
+                # sections` reconstructs a silent essential lane's section from the milestone
+                # slice — but it is reached only through the stall escape above, which cannot fire
+                # before KICKOFF_INITIAL_STALL_MIN_SEC (240s). Five of those seven runs were over
+                # at or before 240s. The recovery exists and its precondition is unreachable in
+                # the case it was written for.
+                #
+                # Nothing here changes that; tuning the floor without knowing why the lanes never
+                # spawned would be a guess. What this does is make the state legible: the class
+                # was invisible until an artifact-tree census turned it up, because every poll
+                # printed the same count a healthy slow kickoff prints.
+                _names = ", ".join(sorted(str(m) for m in (_synth.get("missing") or []))) or "-"
+                _nobody = (_initial_fewest_missing is not None
+                           and _initial_fewest_missing >= len(expected_attendees))
+                if _nobody and elapsed >= 60.0 and not getattr(self, "_said_silent_862", False):
+                    self._said_silent_862 = True
+                    self._orch._logger.warning(
+                        "Kickoff: NO attendee has recorded anything after %.0fs — missing %s "
+                        "(of %s expected). This is the shape of a lane that never started "
+                        "rather than one that is slow; check .agent_logs for empty per-agent "
+                        "directories. The stall escape cannot act before %.0fs (#862).",
+                        elapsed, _names, len(expected_attendees),
+                        run_kickoff.KICKOFF_INITIAL_STALL_MIN_SEC,
+                    )
                 self._orch._logger.info(
                     "Kickoff phase=initial (round %d, poll %s, %.0fs); "
                     "waiting for attendees to record initial proposals "
-                    "(%s missing, %s polls since progress).",
-                    cur_round, poll_count, elapsed, _missing, stalled_polls,
+                    "(%s missing: %s, %s polls since progress).",
+                    cur_round, poll_count, elapsed, _missing, _names, stalled_polls,
                 )
                 await asyncio.sleep(run_kickoff.KICKOFF_POLL_INTERVAL_SEC)
                 continue

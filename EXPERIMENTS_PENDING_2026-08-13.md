@@ -9554,3 +9554,55 @@ against the unpatched file. Same family as *"chaining a write to a commit means 
 outlive the write"*, one step removed: **a write chained to a background job fails where nobody is
 looking.** Redone in the foreground, count verified before writing.
 
+
+## 191. #862 — the seven runs I explained away three times
+
+Item 190 opened the largest slice of the stuck population and left two. This is the smaller and
+sharper one: **the 7 runs that stop at the backend having built nothing** — r19, r35, r38, r42,
+r44, r136, r140, spread over **nine days** (2026-08-02 → 08-11), so not one bad afternoon.
+
+★ **These are the same seven that surfaced all session as audit "exclusions"** — item 171 (no
+DDL), item 174 (below the seed floor), item 175 (no `seed_data.json`). Three times I confirmed the
+exclusion was legitimate and moved on. Three times the *right* answer to "why is this run
+excluded" was **"because it is broken in a way nothing reports"**.
+
+**The signature is uniform**, and visible the moment you look at `.agent_logs/`:
+
+    logged normally : Orchestrator, Knowledge, Design Analyst
+    EMPTY directory : Backend Engineer, Frontend Engineer, Verifier, Debugger
+
+The three kickoff attendees never started. The orchestrator then idles on repeated
+`ACTION_STATUS: stop` — *"kickoff coordinator still driving M1 contract synthesis"*, *"registry
+endpoints=0, tasks=0"* — and the run ends after **3.0–4.3 minutes** with no DDL, no seed, no
+frontend, no capture. A healthy run is **116 minutes / 1599 orchestrator entries**; these have 46.
+
+### the framework has the salvage, behind a door these runs never reach
+
+`_derive_missing_essential_sections` reconstructs a silent essential lane's section from the
+milestone slice — written for precisely this failure. It is reached only through the stall escape,
+which cannot fire before `KICKOFF_INITIAL_STALL_MIN_SEC` = **240s**, and **five of the seven runs
+were over at or before 240s**. ★ The recovery exists and its precondition is unreachable in the
+case it was written for — the third instance of that shape this session (#542a's name-keyed guard
+in #855, #781's field-scoped guard in #857).
+
+**I did not touch the floor.** Why the lanes never spawned is unknown, and tuning a timeout on an
+unknown root is the guess this whole session has been about refusing. #862 is observation only,
+and `test_no_behaviour_changed` pins the stall condition byte-for-byte.
+
+### what #862 changes
+
+The poll line reported a **count**. *"3 missing"* reads identically whether three lanes are slow
+or three never started — which is exactly why a 5% failure class stayed invisible until an
+artifact-tree census turned it up. It now **names** the missing attendees, and warns **once** when
+no attendee has recorded anything at all, because that state cannot resolve by waiting. The
+warning names the 240s floor, so the operator sees why nothing recovered.
+
+### method notes
+
+- ★ **Two self-matches on one file, and the second was in prose.** The test first used
+  fixed-width source windows and tripped the repo's own guard; the rewrite then tripped it again
+  because the explanatory docstring **quoted the forbidden form**. Fourteenth self-match this
+  session. The rule has to extend to prose: *do not write the token you are forbidding.*
+- The guard was right both times, including about the assertion-message slice — a width in a
+  failure message goes stale exactly like a width in an assertion.
+
