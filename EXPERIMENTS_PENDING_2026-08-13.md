@@ -3714,6 +3714,37 @@ check I would have written from the first impression.
 
 ---
 
+## 154. Auditing my own attribution claims — one bad, four sound
+
+The r128 correction was the second time this session I asserted *who did something* without reading
+the field that says so; the first dozen were in probes, this one was in committed prose. A failure
+that crosses from tooling into the written record is worth a targeted audit rather than a resolution
+to be careful.
+
+Every claim of the form *"the lane / the framework / the analyst / the verifier {authored, filed,
+wrote, chose, keyed, answered} …"* in this session's items — **5 found**:
+
+| claim | verdict |
+|---|---|
+| *"once the verifier authored real chains…"* | **not mine** — a quoted pre-existing comment |
+| #782: *"the lane built the row as instructed; the **framework** emitted a row that could not read the app's data"* | **sound** — `TitleDetailPage.jsx` line 1 is `// framework-projected page`, and the emitter is in `frontend_scaffold.py` |
+| #807b: *"the **lane** keyed `titles` on TEXT slugs"* | **sound** — r145's registryhub declares `titles.id` as `{"type": "text", "primary_key": true}`; the lane's own contract drove the DDL |
+| #809: *"the lane … chose slug primary keys"* | **sound**, same evidence |
+| #815: *"the analyst answered with ids like `['nav_bar', 'title']`"* | **sound as written** — introduced by *"which of the two is happening still needs a run"* and presented as the line the new log emits, not as an observation |
+| item 153: *"the framework blaming a lane for its own artifact"* (r128) | **WRONG — corrected.** `created_by` is `verifier`; a lane agent filed it |
+
+★ **Four of five hold, and the one that failed is the one I did not check.** The pattern is not
+carelessness about attribution in general — it is that I verify when the claim feels load-bearing
+and assert when it feels like colour. The r128 line felt like colour and was doing the work of a
+conclusion.
+
+**What makes this cheap enough to be worth doing.** Attribution in this corpus is a *field*, not an
+inference: `created_by`, `assignee`, `registered_by`, and the `// framework-projected` marker in
+generated source. Any claim about who did something is one lookup from being settled, which is
+exactly why asserting one is indefensible.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
