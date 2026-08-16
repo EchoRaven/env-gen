@@ -152,10 +152,11 @@ FWVAL_NO_DELIVER_ABORT_S = int(os.environ.get("ENVGEN_NO_DELIVER_ABORT_S", "4500
 # validation (a re-authoring), reset the stuck counter — but count the churn, BOUNDED by
 # this cap so a verifier that oscillates FOREVER (never converging) still aborts (no
 # livelock). Env-gated. ~this-many re-authorings of room before giving up on the verifier.
-# #870: ceiling on the milestone-planning LLM call. One chat completion; the neighbouring bounded
-# awaits in this file use 5-10s for hub round-trips and KICKOFF_TIMEOUT_SEC+600 for a whole
-# meeting, so 300s is generous for a single call and still finite. Env-overridable because the
-# right value is model- and gateway-dependent.
+# #870: ceiling on the milestone-planning call INCLUDING its re-rolls. `utils.llm` already caps a
+# single completion at 240s (FIX #187's watchdog, `min(config.timeout, 600)`), but its retry layer
+# re-rolls after each cancel with no cap on the count — so the total is unbounded. 300s allows one
+# full attempt and truncates the second; planning is optional (the fallback is a single milestone)
+# so further re-rolls buy little. Env-overridable because the watchdog itself is.
 _MILESTONE_PLAN_TIMEOUT_S_870 = max(
     30.0, float(os.environ.get("ENVGEN_MILESTONE_PLAN_TIMEOUT_S") or "300"))
 
@@ -1274,15 +1275,27 @@ class Orchestrator:
                     try:
                         from .runtime.reference_materials import plan_milestones
                         from .runtime.llm_overrides import get_component_llm as _gcl
-                        # #870: BOUND this await. It was the only unbounded one on the path.
+                        # #870: bound the RETRY LOOP behind this await.
                         #
-                        # `plan_milestones` ends in a bare `await client.chat(...)` — no
-                        # `wait_for`, no timeout — and the caller's try/except catches exceptions,
-                        # not hangs. Everything downstream is behind it: `set_roadmap` (#864's
-                        # readback), the per-milestone loop, and `start_kickoff` inside that loop.
-                        # The kickoff receipts a few hundred lines below ARE bounded
-                        # (asyncio.wait_for at 1710/1751/1909); this one, which runs first, was
-                        # not — so a hang here means even those timeouts never get to run.
+                        # ★ Corrected from the first write-up, which said "no timeout, hangs
+                        # forever". The single call IS bounded: `utils.llm._llm_hard_timeout`
+                        # (FIX #187) caps one completion at `min(config.timeout=240s, cap=600s)`
+                        # = 240s by default. What is NOT bounded is what sits above it — its own
+                        # docstring: *"The retry layer re-rolls after the cancel, so a cancelled
+                        # slow call is retried, not lost."* Nothing caps the number of re-rolls,
+                        # so total planning time is 240s x N.
+                        #
+                        # That fits the dead runs better than a hang did: they lasted 3.0-17.2
+                        # minutes, and 17.2 min is about four 240s attempts. Everything downstream
+                        # waits behind it — `set_roadmap` (#864's readback), the per-milestone
+                        # loop, and `start_kickoff` inside that loop — and the kickoff receipts a
+                        # few hundred lines below, which ARE bounded (asyncio.wait_for at
+                        # 1710/1751/1909), never get to run.
+                        #
+                        # 300s is chosen AGAINST the 240s watchdog, not from neighbouring style:
+                        # it allows one full attempt and cuts the second short. Planning is
+                        # optional — the fallback is a perfectly good single milestone — so
+                        # spending more of the run's budget on re-rolls buys little.
                         #
                         # It fits the 7 dead runs (r19 r35 r38 r42 r44 r136 r140) point for point:
                         # no `milestones.json` (the write is after this line) but a `.lock` in 5 of

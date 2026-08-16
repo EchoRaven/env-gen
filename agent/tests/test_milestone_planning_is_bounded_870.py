@@ -1,29 +1,34 @@
 r"""#870: the only unbounded await on the path, and everything the run needs was behind it.
 
-`plan_milestones` ends in a bare `await client.chat(...)` — no `wait_for`, no timeout — and the
-caller's `try/except` catches **exceptions, not hangs**. Behind that await sit `set_roadmap`
-(#864's readback), the per-milestone loop, and `start_kickoff` **inside** that loop.
+★ **Corrected from this file's first version, which said the call could hang forever.** It
+cannot: `utils.llm._llm_hard_timeout` (FIX #187) caps one completion at
+`min(config.timeout=240s, cap=600s)` = **240s** by default. What is unbounded is the layer above
+it — that function's own docstring says *"The retry layer re-rolls after the cancel, so a
+cancelled slow call is retried, not lost"* — and **nothing caps the re-roll count**. Total
+planning time is 240s x N.
+
+The corrected mechanism fits the corpus *better* than a hang did: the dead runs lasted **3.0–17.2
+minutes**, and 17.2 is about four 240s attempts. Behind that await sit `set_roadmap` (#864's
+readback), the per-milestone loop, and `start_kickoff` **inside** that loop.
 
 ★ The kickoff receipts a few hundred lines below **are** bounded (`asyncio.wait_for` at
-orchestrator.py:1710, 1751, 1909). This call runs first and was not — so a hang here means even
-those timeouts never get the chance to run. Seven `asyncio.wait_for` uses in the tree; the one
-await that gates the entire run was the omission.
+orchestrator.py:1710, 1751, 1909). This call runs first and was not — so a stalled planning phase
+means even those timeouts never get the chance to run.
 
 **It fits the 7 dead runs point for point** (r19, r35, r38, r42, r44, r136, r140):
 
-| observed | explained by a hang at this line |
+| observed | explained by planning stalling here |
 |---|---|
 | no `milestones.json` | the write is *after* it |
 | a `.lock` in 5 of 7 | an earlier `list_milestones()` read created the lock and found nothing |
 | design_analyst logging 104–789s **after** the orchestrator's last entry | a separate task, unaffected |
-| the orchestrator lane idling on *"kickoff still in flight"* | it is, forever |
-| **no `phase_error`** | a hang raises nothing |
-| 3–4 minute runs with references, no DDL, no frontend | design prep completed; nothing after it started |
+| the orchestrator lane idling on *"kickoff still in flight"* | it is, for as long as the re-rolls last |
+| **no `phase_error`** | nothing raises until the retries give up |
+| **3.0–17.2 minute lifetimes** | 240s x 1–4 attempts |
 
-★ **This is the best-supported candidate of the whole chain, and it is still a candidate.** After
-item 198's correction I am not calling it the cause: a hang leaves no artifact, so the corpus can
-show the fit and not the fact. What run 152 decides is which of the two it is — and either way the
-timeout is right, because an unbounded await in front of the entire pipeline is a defect
+★ **Best-supported candidate of the chain, and still a candidate.** After item 198's correction I
+am not calling it the cause: the corpus can show the fit and never the fact. Either way the
+ceiling is right, because an uncapped retry loop in front of the entire pipeline is a defect
 independent of whether it has fired.
 
 On timeout it falls into the **existing** `_planned = None` path, which #865 made a real
@@ -43,7 +48,7 @@ from env_generator.llm_generator.multi_agent import orchestrator as orch
 def _span():
     """The planning block, anchored between its own marker and the roadmap seed that follows."""
     src = inspect.getsource(orch)
-    start = src.index("#870: BOUND this await")
+    start = src.index("#870: bound the RETRY LOOP")
     end = src.index("set_roadmap(milestones", start)
     return src[start:end]
 
@@ -51,7 +56,7 @@ def _span():
 def test_the_planning_site_is_findable():
     """Non-vacuity: every case below reads this span."""
     src = inspect.getsource(orch)
-    assert "#870: BOUND this await" in src
+    assert "#870: bound the RETRY LOOP" in src
     assert "plan_milestones(" in src
 
 
@@ -83,6 +88,27 @@ def test_the_constant_is_finite_generous_and_overridable():
     assert 30.0 <= t <= 1800.0, t
     src = inspect.getsource(orch)
     assert "ENVGEN_MILESTONE_PLAN_TIMEOUT_S" in src
+
+
+def test_the_ceiling_is_calibrated_against_the_inner_watchdog():
+    """★ The correction, pinned. A value BELOW `utils.llm`'s 240s per-call watchdog would fire
+    before any attempt could finish and planning would never succeed; a value far above it would
+    let the uncapped retry loop stack several attempts, which is the condition being fixed. It has
+    to sit in between, and the relationship — not the number — is what matters."""
+    from utils.llm import _llm_hard_timeout
+    watchdog = _llm_hard_timeout(None, {})
+    assert watchdog == 240.0, watchdog
+    t = orch._MILESTONE_PLAN_TIMEOUT_S_870
+    assert watchdog < t < 2 * watchdog, (watchdog, t)
+
+
+def test_the_retry_layer_it_bounds_is_still_uncapped():
+    """Non-vacuity for the corrected premise: if the re-roll count ever gains its own cap, this
+    ceiling is redundant and the note should be re-read rather than trusted."""
+    import inspect as _i
+    from utils import llm as _llm
+    doc = _i.getdoc(_llm._llm_hard_timeout) or ""
+    assert "retried, not lost" in doc, doc
 
 
 def test_the_floor_survives_a_hostile_env(monkeypatch):

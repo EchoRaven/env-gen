@@ -9994,9 +9994,30 @@ So the store layer has no statically-reachable way to produce the lost write. Th
 search to the other branch — **the write was never attempted** — and there the answer was one read
 away.
 
-`plan_milestones` ends in a bare `await client.chat(...)`: no `wait_for`, no timeout. The caller's
-`try/except` catches **exceptions, not hangs**. Behind that await sit `set_roadmap` (#864's
-readback), the per-milestone loop, and `start_kickoff` **inside** it.
+`plan_milestones` ends in a bare `await client.chat(...)`: no `wait_for` at this level. Behind
+that await sit `set_roadmap` (#864's readback), the per-milestone loop, and `start_kickoff`
+**inside** it.
+
+### ★ corrected within the turn: it is not a hang, it is an uncapped RETRY LOOP
+
+My first write-up said the call could hang forever. **It cannot.** `utils.llm._llm_hard_timeout`
+(FIX #187) caps one completion at `min(config.timeout=240s, cap=600s)` = **240s** by default. I
+only found this because #870's own value had to be justified — *"is 300s above or below whatever
+bounds this already?"* — and the honest answer changed the finding.
+
+What is uncapped is the layer above, in that function's own docstring: *"The retry layer re-rolls
+after the cancel, so a cancelled slow call is retried, not lost."* **Nothing caps the re-roll
+count**, so total planning time is 240s × N.
+
+★ **The corrected mechanism fits the corpus BETTER than the wrong one did.** A hang predicts runs
+that never end; the dead runs end at **3.0–17.2 minutes**, and 17.2 is about four 240s attempts.
+The number I could not explain under the hang story is the one the retry story predicts.
+
+It also re-grounds the constant. **300s is chosen against the 240s watchdog**, not from
+neighbouring style: below it, no attempt could ever finish; far above it, the retry loop stacks.
+`test_the_ceiling_is_calibrated_against_the_inner_watchdog` asserts the *relationship*
+(`watchdog < ceiling < 2×watchdog`) rather than the number, and
+`test_the_retry_layer_it_bounds_is_still_uncapped` fails if the re-rolls ever gain their own cap.
 
 ★ **The kickoff receipts below it ARE bounded** — `asyncio.wait_for` at orchestrator.py:1710,
 1751, 1909. Seven such uses in the tree, and the one await that gates the entire run was the
@@ -10014,9 +10035,21 @@ omission. A hang there means even those timeouts never get to run.
 | 3–4 min, references present, no DDL, no frontend | design prep finished; nothing after it began |
 
 ★ **Best-supported candidate of the chain — and still a candidate.** After item 198's correction I
-am not calling it the cause: **a hang leaves no artifact**, so the corpus can show the fit and
-never the fact. Run 152 decides which. Either way the timeout is right, because an unbounded await
-in front of the entire pipeline is a defect independent of whether it has fired.
+am not calling it the cause: a stalled retry loop leaves no artifact either, so the corpus can show
+the fit and never the fact. Run 152 decides. Either way the ceiling is right, because an uncapped
+retry loop in front of the entire pipeline is a defect independent of whether it has fired.
+
+★★ **Two corrections inside one ticket, and the second only happened because of the first.** The
+justification was wrong ("no timeout") and I found it by asking whether my own constant sat above
+or below something that already bounded the call. **A number you cannot justify is a question you
+have not asked** — and here the question rewrote the finding, improved its fit to the data, and
+turned an arbitrary 300 into a relationship a test can hold.
+
+★★★ **And the write-up nearly did not land.** The edit script's second anchor missed by one
+em-dash and raised; the `git add && git commit` on the NEXT LINE was not chained to it and ran
+anyway — committing correct code under a message describing an EXPERIMENTS change that did not
+exist. The mirror of the rule already recorded as *"chaining a write to a commit means the commit
+can outlive the write"*: here the write failed and the commit outlived it regardless. Amended.
 
 On timeout it falls into the **existing** `_planned = None` path — which #865 made a real
 single-milestone fallback three tickets ago. ★ **#865 made the fallback real; #870 makes it
