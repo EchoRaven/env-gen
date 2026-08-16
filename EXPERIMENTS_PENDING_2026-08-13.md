@@ -1951,6 +1951,53 @@ the fixed-key-projection class again (#771/#778).
 
 ---
 
+## 112. item 109 has no cheap path — every alternative checked and eliminated
+
+Item 109 was parked as "needs its own validation run". That was a judgement call; this is the
+evidence. Four cheaper routes were checked and all four are closed:
+
+**1. Is the projected handler even the one serving the page?** Yes — but not for the reason the
+code appears to give. Reading `_custom_route_overrides_projected`, a public registered resource
+like `titles` falls past both `return False` branches to `return _is_get`, which reads as *lane
+wins* — i.e. #528 unimplemented for public resources. **Executing the real function on r151's real
+sets returns `False` (projected wins).** `titles` IS matched, because
+`_NESTED_CHILD_RESOURCES` — despite its name — holds **every registered resource**, built from all
+`tables` plus singular/plural variants. Documented at the declaration site (#785); renaming was
+not worth the churn across generated artifacts, but the misreading is now called out where it
+happens. ★ Two route-precedence SAFETY bugs (#568, #569) were found by reading these same
+branches, so a set whose name contradicts its contents is a live hazard, not a style nit.
+
+**2. Render the flat cast/crew columns instead — cheap and no join?** **Refuted by measurement.**
+Across 139 content tables: `language` 116 (83%), `director` 5 (4%), `cast_list` 4 (3%), `cast` 1.
+r151 happens to have `cast_list`; the corpus does not. Building this would reach ~4 runs. Dropped
+before it was written. (`_metaOf` is unused *on the detail page* but is called 108 times elsewhere,
+so it is not dead code.)
+
+**3. Copy the episodes pattern — a second, failure-tolerant fetch from the frontend?** The pattern
+is proven (`fetch('/api/titles/{id}/episodes').catch(() => {})` already ships in the page), but
+**there is no route to call.** `/episodes` exists because episodes carry a direct `title_id` FK;
+genres need two hops through `title_genres`, and the projector's nested-child emission handles one.
+
+**4. Join client-side from the link table?** **No `/api/title_genres` route exists at all** — not
+projected, not lane-authored. `/api/genres` returns the full list with no title association. There
+is no client-visible path to the title↔genre relation.
+
+**Conclusion.** The only fix is backend: the projected detail read must aggregate labels across a
+link table. The safety rule for it is now settled and reuses #784's predicate — **classify by what
+the FK POINTS AT, not by its name**:
+
+    pure link tables                             242
+      SAFE   (no FK to users/profiles/accounts)  139   all `title_genres`
+      UNSAFE (an FK reaches an actor table)      103   all `my_list`
+      unparsed                                     0
+
+A clean split with no residue, and it is the same rule that #784 needed after a name-based guard
+missed `recipient_id`. What still needs a run is not *which* tables to fold in — that is decided —
+but whether the emitted SQL is correct across schemas the corpus does not contain. Emitting bad
+SQL would 500 the detail read, which is far worse than a missing chip row on the same screen.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

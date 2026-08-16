@@ -1214,6 +1214,15 @@ _CUSTOM_ROUTES_INCLUDE = '''
 # Registered business RESOURCE names (table names + singular/plural variants) — used to
 # tell a NESTED child-resource route (/<parent>/{id}/tasks) the projector handles from a
 # nested ACTION verb (/<parent>/{id}/like) it does not. Injected from the contract.
+# #785 (naming, not behaviour): despite the name this set holds EVERY registered resource
+# (each table name plus its singular/plural variants), not just nested children — see the
+# builder, which iterates all `tables`. The name describes the USE SITE (telling a nested
+# child-RESOURCE route from a nested ACTION verb) rather than the contents.
+# This matters because it is what implements #528's "projected wins for GET on ALL registered
+# resources": reading the precedence branches alone suggests public resources fall through to
+# `return _is_get` (lane wins), and they do not — `titles` is in this set. That misreading was
+# made once while auditing, and #568/#569 were both route-precedence SAFETY bugs found by
+# reading exactly these branches, so the trap is worth naming here.
 _NESTED_CHILD_RESOURCES = set(__NESTED_CHILD_RESOURCES__)
 # #77 (outlook run-64): resources the framework POSITIVELY marked per-user-PRIVATE-TO-READ
 # (a cross-user GET-denial chain proved it) AND whose model has a SINGLE, UNAMBIGUOUS owner
