@@ -10213,3 +10213,41 @@ auth screen gets to withhold them; a design that says nothing keeps them. Same d
 draws between *"cannot confirm"* and *"confirmed empty"*, and the second time in this session that
 a fix's first cut collapsed those two.
 
+
+## 204. #874 — the second deferral audited, and its reason was a false dichotomy
+
+Continuing #873's sweep over my own *"recorded, not fixed"* decisions. Item 184 deferred the
+profile avatar (597 deviation entries / 115 runs) like this:
+
+> fetch a profile → the hook-free TopNav becomes stateful; or use the reference image pool → it
+> paints *a* picture rather than *the user's*.
+
+**Both premises are true. The dichotomy is not.** ★ The framework already has a third path and
+uses it for the logo: `_brand_logo_url` renders a **design-staged asset**, hook-free, from
+`design["assets"]`. I enumerated two options and missed the one sitting forty lines away in the
+same function I was reading.
+
+**Measured: 139 of 151 runs stage an avatar-ish asset** — `account_menu__profile-switcher.png`
+(44), `account_menu__profile-menu-trigger.png` (36), and others. They are crops of the reference's
+own profile tile, so this is neither a random picture nor a state fetch: **it is what the
+reference shows, which is what the visual gate scores.**
+
+Same selection shape as `_brand_logo_url`, same failure mode — `""` when nothing is staged, so the
+accent square is byte-identical on the 12 runs without one.
+
+★ **Still a placeholder semantically**, and item 184's trade-off is unchanged and unclaimed: a
+multi-profile app's real avatar comes from the signed-in profile row, which this cannot know. What
+changed is only that the cheap option was never actually "a random picture" — the deferral's
+*reason* was wrong even where its caution was reasonable. Second deferral audited, second reason
+that did not survive.
+
+### two errors on the way, both already named in this session
+
+- **Eighth field-location error.** The first search for staged avatars read the **filesystem**
+  (`app/frontend/public/assets`) and returned zero across 151 runs — those dirs exist and are
+  empty. `_brand_logo_url` reads `design["assets"]`, a data structure. *151 runs with a directory
+  and zero files is a claim about the probe*, and that rule is what caught it.
+- **Third instance of one seam.** Swapping an implicitly-concatenated string literal for a
+  parenthesised conditional needs an explicit `+`; without it the module is a `SyntaxError`. #858
+  hit this, #874 hit it again, and `compile()` (#814) caught both. It is now noted at the site.
+

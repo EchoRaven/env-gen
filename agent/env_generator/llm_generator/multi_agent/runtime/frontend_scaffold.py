@@ -4073,6 +4073,52 @@ def _brand_logo_url(design) -> str:
     return ""
 
 
+def _avatar_asset_url_874(design) -> str:
+    """#874: the profile chip's served avatar image, from the design's OWN staged assets.
+
+    Item 184 measured this class (597 deviation entries / 115 runs) and deferred it on a false
+    dichotomy: *"fetch a profile → the hook-free TopNav becomes stateful; or use the reference
+    image pool → it paints A picture rather than THE user's."* Both premises hold. The dichotomy
+    does not — **the framework already has a third path and uses it for the logo**:
+    `_brand_logo_url` renders a design-staged asset, hook-free, from `design["assets"]`.
+
+    Measured: **139 of 151 corpus runs stage an avatar-ish asset** — `account_menu__profile-
+    switcher.png` (44), `account_menu__profile-menu-trigger.png` (36), and friends. These are
+    crops of the reference's own profile tile, so this is neither a random picture nor a state
+    fetch: it is what the reference shows, which is exactly what the visual gate scores.
+
+    Same selection shape as `_brand_logo_url` (id/file token match over staged images, preference
+    ordered) and the same failure mode: `""` when nothing is staged, so the accent square the chip
+    renders today survives untouched on the 12 runs without one.
+
+    ★ Still a placeholder in the SEMANTIC sense — a multi-profile app's real avatar comes from the
+    signed-in profile row, which this cannot know. Item 184's trade-off is unchanged and unclaimed;
+    what changed is that the cheap option was never actually "a random picture"."""
+    assets = [a for a in ((design or {}).get("assets") or []) if isinstance(a, dict)]
+    imgs = [a for a in assets
+            if str(a.get("type") or "").lower() in ("svg", "png", "webp", "jpg", "jpeg")]
+
+    def _served(a) -> str:
+        sp = str(a.get("staged_path") or "")
+        if sp.startswith("public/"):
+            return "/" + sp[len("public/"):]
+        f = str(a.get("file") or "")
+        return "/assets/" + f.split("/assets/")[-1] if "/assets/" in f else ""
+
+    def _txt(a) -> str:
+        return (f"{a.get('id','')} {a.get('file','')}").lower().replace(
+            "-", " ").replace("_", " ").replace("/", " ")
+
+    # ordered: an explicit avatar beats a profile switcher beats a generic profile crop
+    for pref in ("avatar", "profile switcher", "profile menu trigger", "profile"):
+        for a in imgs:
+            if re.search(rf"\b{pref}\b", _txt(a)):
+                u = _served(a)
+                if u:
+                    return u
+    return ""
+
+
 def _brand_mark_jsx(design, app: str, dark: bool = False) -> str:
     """#424: the brand mark for the LOW-fidelity TEMPLATE screens (login 0.15,
     landing 0.20) — the visual judge flagged 'no header; reference shows the brand
@@ -4581,12 +4627,19 @@ def _ref_nav_jsx(nav_routes, accent: str, vertical: bool,
     # itself sets none and a transparent dropdown would paint over the page content.
     _menu_bg = (((design or {}).get("design_system") or {}).get("palette") or {})
     _menu_bg = _menu_bg.get("bg") or _menu_bg.get("background") or "#141414"
+    _avatar_874 = _avatar_asset_url_874(design)      # #874: '' when the design stages none
     _avatar_jsx = (
         '            <div className="relative group">\n'
         '              <button className="flex items-center gap-1" title="Profile" '
         'aria-label="Profile" aria-haspopup="menu">\n'
-        f'                <span className="h-8 w-8 rounded" style={{{{ backgroundColor: \'{accent}\' }}}} aria-hidden="true"></span>\n'
-        "                " + _chevron_859("text-xs opacity-80 inline-flex items-center") + "\n"
+        # #874: an image when the design staged one, else the accent square as before. The `+`
+        # matters: the neighbours are IMPLICITLY concatenated literals, and swapping one for a
+        # parenthesised expression without it is a SyntaxError -- the same seam #858 hit, third
+        # time in this session.
+        + (f'                <img src="{_avatar_874}" alt="" className="h-8 w-8 rounded '
+           'object-cover" />\n' if _avatar_874 else
+           f'                <span className="h-8 w-8 rounded" style={{{{ backgroundColor: \'{accent}\' }}}} aria-hidden="true"></span>\n')
+        + "                " + _chevron_859("text-xs opacity-80 inline-flex items-center") + "\n"
         "              </button>\n"
         '              <div role="menu" className="absolute right-0 top-full z-50 hidden '
         'min-w-[10rem] rounded border py-1 text-sm group-hover:block group-focus-within:block" '
