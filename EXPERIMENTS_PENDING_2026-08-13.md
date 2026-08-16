@@ -2100,6 +2100,59 @@ the measurement to watch is the `missing` count per screen before and after, not
 
 ---
 
+## 115. #789 — the consequence sweep came back clean, except for a guard that can switch itself off
+
+Item 114 asked for a sweep: every prompt claim asserting a CONSEQUENCE, checked for a live
+enforcer. Twelve claim patterns across all `.j2` files, ten distinct claims resolved:
+
+| claim | enforcer | verdict |
+|---|---|---|
+| `frontend_dead_controls` / `frontend_navigable` will fail your release | `framework_validation.py`, `validation_runner.py` | live |
+| a renamed sibling leaves the page an unwired stub and BLOCKS release | `workflow_policies.py`, `framework_validation.py` | live |
+| a missing/under-covering chain blocks delivery | `delivery_gate.py` | live |
+| marking a page complete with `defined` components will be rejected | `workhub/service.py` | live |
+| auth keys in a section decision are rejected as non-contract | `kickoff/section_substance.py` | live |
+| a static-mock / placeholder page is REJECTED | `delivery_gate.py`, `frontend_audit.py` | live |
+| a component ignoring a mapped asset is flagged | `visual_fidelity.py` | live |
+| a page importing a page — the audit flags it | `frontend_audit.py:431` | live |
+| framework-owned writes are denied + discarded | `path_routed_workspace.py:646` | **live, but can vanish** |
+| `must_have` is enforced at delivery | — | **false → #788** |
+
+**Two of these first came back EMPTY and were wrong.** The write-guard and page-imports-page probes
+found nothing because my grep patterns were too narrow — the real names are
+`_framework_owned_routes` and an inline `re.findall(... pages/(\w+) ...)`. Both are load-bearing.
+That is the fourth time this session a too-narrow candidate set produced a confident zero
+(`id`⊂`profile_id`, `duration_minutes`, `recipient_id`, now these). **A zero is a claim about the
+probe until the probe is shown to find anything.**
+
+**#789 is what the tenth row means.** The write guard's loader ends:
+
+```python
+except Exception:
+    _FW_OWNED_MAP_CACHE = []        # silent AND sticky
+```
+
+Each property is defensible alone; together they are a way for the guard to switch itself off
+permanently. **Silent**: no log, while the backend prompt tells the lane "the write is denied +
+discarded" for `main.py`/`models.py`/`Dockerfile`/`pyproject`. **Sticky**: the failure is CACHED —
+and the failure mode is not hypothetical, because this function is lazy *precisely because it can
+be reached during module load* ("Lazy + cached to avoid a module-load cycle"). A call at that
+moment raises, caches `[]`, and leaves every framework-owned file writable for the rest of the
+process, after the cycle has resolved.
+
+The fail-open is deliberate and is **kept** — never wedge writes. Only its visibility and
+permanence change: success is cached, failure is not (so a load-time miss self-heals on the next
+call), and the degradation is announced once, naming the consequence rather than just "degraded".
+
+★ **The class, now with five members** (#737, #769, #770, #788, #789): the recurring defect in
+this framework is not *"the code is wrong"* — it is ***"the code stopped working and nothing said
+so."*** #737 consumed a blackout as evidence of stability; #769 lost 9 of 12 captures to a bare
+`except: continue` and reported a HARNESS number as an app score; #770's failed repair said
+nothing; #788 asserted an enforcer that never existed; #789 can lose one mid-run. Worth treating
+as the default hypothesis when a metric looks unexpectedly good.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

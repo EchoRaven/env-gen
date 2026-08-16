@@ -23,6 +23,7 @@ accept it without changes.
 
 from __future__ import annotations
 
+import logging as _logging
 from pathlib import Path
 from typing import FrozenSet, Iterable, List, Optional, Tuple, Union
 
@@ -61,6 +62,7 @@ def _lane_writers(lane: str) -> FrozenSet[str]:
 
 
 _FW_OWNED_MAP_CACHE: Optional[List[Tuple[str, FrozenSet[str]]]] = None
+_FW_OWNED_WARNED = False   # #789: announce the degradation once, not per write
 
 
 def _framework_owned_routes() -> List[Tuple[str, FrozenSet[str]]]:
@@ -76,8 +78,27 @@ def _framework_owned_routes() -> List[Tuple[str, FrozenSet[str]]]:
                 (prefix, fw_owned)
                 for (_lane, (prefix, fw_owned, _lane_owned)) in _OWNERSHIP.items()
             ]
-        except Exception:
-            _FW_OWNED_MAP_CACHE = []
+        except Exception as exc:
+            # #789: this used to be a SILENT and STICKY fail-open, and the two combined into a
+            # real (not hypothetical) way for the guard to switch itself off for good. This
+            # function is lazy precisely BECAUSE it can be reached during module load — a call at
+            # that moment raises, cached `[]`, and left every framework-owned file writable for
+            # the rest of the process, after the cycle resolved, with no log line anywhere. The
+            # prompt meanwhile tells the lane "the write is denied + discarded" (#788's shape,
+            # but with a live enforcer that can vanish). Now only SUCCESS is cached, so a
+            # load-time miss self-heals on the next call, and the degradation is announced once.
+            # Still fail-open by design — the trade is unchanged, only its visibility.
+            global _FW_OWNED_WARNED
+            if not _FW_OWNED_WARNED:
+                _FW_OWNED_WARNED = True
+                _logging.getLogger(__name__).warning(
+                    "WRITE GUARD DEGRADED (#789): the framework-owned ownership map could not be "
+                    "loaded (%s: %s), so writes to framework-owned files are NOT being denied. "
+                    "Failing open on purpose (never wedge writes); retrying on the next call. If "
+                    "this repeats, the lane can overwrite main.py/models.py/Dockerfile and the "
+                    "prompt's \"the write is denied + discarded\" is false.",
+                    type(exc).__name__, exc)
+            return []
     return _FW_OWNED_MAP_CACHE
 
 
