@@ -2879,6 +2879,49 @@ still 85%; and how many link tables would leak if the safety rule were relaxed.
 
 ---
 
+## 135. #807 — replacing a seed table wholesale orphaned 93 rows across 5 tables, and #803 is what made it visible
+
+Found by asking what **#803 would actually render**. Folding a many-to-many into the detail read is
+worth nothing if the link rows point at titles that do not exist.
+
+The seed loader merges the framework-owned `seed_dataset.json` OVER the lane's base seed, and the
+dataset **replaces a table wholesale**. #264 handled the one column-level consequence it had hit
+(a scope column the dataset omits). **Nothing checked referential integrity after the swap.**
+
+Measured across the 7 most recent runs — **1 of 7 (r145)**, and not just genres:
+
+    title_genres       35 of 35 orphaned        my_list            18 of 18
+    episodes           18 of 18                 ratings            12 of 12
+    continue_watching  10 of 10
+
+★ **93 rows across 5 tables**, silently referencing titles that no longer exist. That run shipped
+with no episodes, no my-list, no ratings, no continue-watching — reading exactly like *"the lane
+forgot to seed"*, **the phantom seeding bug #264's own comment warns about**, one layer up from
+where #264 was looking.
+
+**My own change is what surfaced it.** Before #803 nothing joined through those rows, so the
+orphaning was invisible; #803 turns it into an empty chip row on every detail page. That is the
+seam pattern again (#800/#801) — a fix is fine and the thing it newly touches is not.
+
+**PRUNE, never remap.** A remap invents associations that were in neither source, and an invented
+association is worse than an empty row because it is indistinguishable from real data. Dropping a
+stale link loses nothing visible — a dangling `episodes` row with `title_id: 99` never appears
+under titles 1–60 — and it converts a silent emptiness into a **named, logged cause**
+(#769/#770's rule): *"pruned 35 of 35 title_genres row(s) whose title_id no longer resolves after
+the dataset replaced title — a stale link is dropped, never remapped."*
+
+**Verified by generating the seeder and executing its merge against the real corpus**, not by
+asserting on the template string: r145 prunes 93 rows across 5 tables; **r147, r150 and r151 prune
+nothing**, which is the half that matters more.
+
+**One more source-vs-behaviour catch.** `test_the_prune_announces_itself` first asserted
+`"no longer resolves" in src` and failed against working code — the sentence is assembled from two
+adjacent string literals, so it exists at runtime and not in the source. Rewritten to capture the
+actual printed line. #782's lesson, arriving in a new disguise: **check the behaviour, not the
+text that produces it.**
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
