@@ -66,8 +66,12 @@ def test_the_veto_dominates_every_escape(label, kw):
 def test_the_veto_dominates_the_fast_release_path_too():
     """#558's fast path fires before every time floor, so it is the one that must be checked
     explicitly rather than assumed to be covered by the others."""
+    # #861 added a second condition to the fast path: the LIVE average must clear the bar as well
+    # as #500's merged one. Without it this baseline defers for the WRONG reason and the veto
+    # assertion below proves nothing — which is exactly what the non-vacuity line caught.
     fast = dict(deferred_since=None, attempts=0, total_judgments=0, now=1.0,
-                blocking_average=0.9, avg_min=0.65, avg_stable_rounds=99, coverage_ok=True)
+                blocking_average=0.9, blocking_average_live=0.9,
+                avg_min=0.65, avg_stable_rounds=99, coverage_ok=True)
     assert _D(**fast) == "fast_release", "non-vacuity: this really does fast-release"
     assert _D(app_dead=True, **fast) == "defer"
 

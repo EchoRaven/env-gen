@@ -9468,3 +9468,89 @@ For that run, in order, and each one a two-minute check rather than an investiga
 7. The remediation body — no *"missing hover preview card"* on a static screen (#855), and the
    `deviations` anchor rule holding (#857).
 
+
+## 190. #861 — the release escape read the high-water merge, not what the app scored
+
+I told the user the 62% killed population was the dominant vein and that I had walked past it three
+times. This is what was in it.
+
+### the census I had been citing all session was wrong
+
+**25 success / 32 failed / 94 killed** came from `logs/progress_events.jsonl`. That file holds
+**4-5 lines even for r134** (which validated multi-milestone) and **r148** (which cut a release).
+My first pass over it reported *"all 94 killed runs: last event `phase_start`, 2 events, 0
+minutes"* — a description of the FILE, not of the runs. Too uniform to be real, which is what
+prompted the check.
+
+Rebuilt from the artifact tree, the picture **inverts**:
+
+| furthest stage reached, of the 94 non-completed | |
+|---|---|
+| **visual_gate** | **70 (74%)** |
+| frontend | 17 |
+| backend only | 7 |
+
+★ **They do not die early. 74% reach visual judging and then never terminate.** The dominant
+failure mode of this pipeline is the visual/delivery loop failing to converge — which is r151's
+death exactly, and which I had been describing as an early-crash problem.
+
+    best similarity p50    completed 0.78     stuck 0.62      (the bar is 0.65)
+
+The stuck population's *best* screen sits just under the bar.
+
+### the defect
+
+`verdict.json` carries two averages, and #558's fast-release escape reads the wrong one:
+
+| | |
+|---|---|
+| runs recording both (r145–r151; `_live` is a recent field) | 7 |
+| **`blocking_average` ≥ 0.65 while `blocking_average_live` < 0.65** | **5 of 7** — r146, r147, r148, r150, r151 |
+| median `merged − live` | **+0.068**, max **+0.505** |
+
+`blocking_average` is **#500's high-water merge across judged rounds**; `blocking_average_live` is
+what the current capture scored. ★ **The framework already knows the difference and uses it
+elsewhere** — `better_state_available_641` ranks candidate states on `_live` and says why:
+*"`blocking_average` is #500's [merge]"*. The escape took the other one.
+
+**r148 is in that list, and r148 released v1.0.0 with the SPA throwing on every route.** #750's
+`app_dead` veto catches the *rendering* half of that failure; #861 catches the *score* half — the
+number the release decision read was never the number the app earned.
+
+★ **The fix cannot cost a release**, and #558's own docstring is the proof: fast_release is *"a
+strict SUBSET of the states the wall-clock escape would eventually release anyway"*. Declining it
+delays; it never prevents. That is also why an absent `_live` declines rather than falling back —
+falling back would reinstate the defect for every pre-`_live` gate result, and declining is free.
+
+### two things this leaves behind
+
+- **`blocking_average_live` is recorded in only 7 of the 46 verdicts that carry the merged
+  value.** For the other 39 the erasure is un-auditable — not a defect, but it means the corpus
+  can measure this only on the newest runs, and the 5-of-7 rate rests on n=7.
+- The other half of the stuck population — the 17 that reached the frontend and the 7 that
+  reached only the backend — is **still unexamined**. This item opened the largest slice, not the
+  whole thing.
+
+### 190b. the suite pushed back three times, and each time it was right
+
+Ten tests failed on this change. **None of them was pinning a defect** — the distinction from
+#186b matters:
+
+- **8 in `test_visual_avg_fast_release_558.py`.** Its `_result` / `_decide` fixtures predate #618,
+  so they omitted `blocking_average_live` entirely. That is not a wrong assertion; it is a fixture
+  that stopped mirroring production. Both now default the live value to the merged one — the
+  honest case these tests are actually about — and the file gained one case asserting the #861
+  interaction, so the next author who finds the fast path quiet sees why from #558's side.
+- **1 in `test_gates_that_block_750_751_752.py`**, and it is the best-written test of the three:
+  its failing line was the **non-vacuity** half, *"non-vacuity: this really does fast-release"*.
+  Without it the veto assertion would have kept passing while deferring for an entirely different
+  reason. ★ A guard test that refuses to pass vacuously is what turns a silent weakening into a
+  red line.
+
+★ **And one process failure of my own.** The first attempt at that fix used 8-space indentation
+against a 4-space file, so its `assert s.count(a)==1` raised — but the patch and the test run were
+in one **backgrounded** command, so the failure went to a log I did not read and the suite ran
+against the unpatched file. Same family as *"chaining a write to a commit means the commit can
+outlive the write"*, one step removed: **a write chained to a background job fails where nobody is
+looking.** Redone in the foreground, count verified before writing.
+
