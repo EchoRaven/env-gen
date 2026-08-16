@@ -21,6 +21,8 @@ ground truth during kickoff and implementation.
 """
 
 from __future__ import annotations
+
+import logging
 from typing import Optional  # noqa: E402  (used above the file's own typing import)
 
 import base64
@@ -236,6 +238,40 @@ def _parse_spec(text: str) -> Dict[str, Any]:
 _SPEC_LIST_KEYS = ("screens", "endpoints", "entities", "mcp_tools", "acceptance")
 
 
+# #818: measured over all 150 corpus reference_specs. The other four briefing sections sit far
+# under their caps (screens 206, endpoints 395, entities 100, mcp_tools 0 — medians); `acceptance`
+# is the only one that overflows, and it overflows in 150 of 150 runs: median 2,156, max 3,202
+# against a 1,500 cut. 4000 clears the observed maximum with ~25% margin.
+_ACCEPTANCE_BUDGET_818 = 4000
+
+
+def _acceptance_line_818(acceptance) -> str:
+    """The acceptance criteria, cut on an ITEM boundary and never silently.
+
+    These are the machine-checkable criteria the run is judged against, and a mid-sentence cut at
+    1,500 chars removed the tail of them from every briefing in the corpus — 150 of 150. Same
+    shape as #817 one artefact over: a cap that was never sized against the thing it caps.
+    """
+    items = [str(x) for x in (acceptance or [])]
+    out = " | ".join(items)
+    if len(out) <= _ACCEPTANCE_BUDGET_818:
+        return out
+    kept: List[str] = []
+    n = 0
+    for it in items:
+        if n + len(it) + 3 > _ACCEPTANCE_BUDGET_818:
+            break
+        kept.append(it)
+        n += len(it) + 3
+    dropped = len(items) - len(kept)
+    logging.getLogger(__name__).warning(
+        "reference briefing: %d of %d acceptance criteria dropped (%d chars over the %d "
+        "budget) — the briefing states only the first %d, so a lane reading it cannot see the "
+        "rest.", dropped, len(items), len(out), _ACCEPTANCE_BUDGET_818, len(kept))
+    return " | ".join(kept) + f" | … and {dropped} more acceptance criterion(s) — see " \
+                              f"design/reference_spec.json"
+
+
 def _spec_nonempty(spec: Mapping[str, Any]) -> bool:
     """A spec is usable when it carries at least one buildable signal (the
     callers' own emptiness test — acceptance criteria alone don't count)."""
@@ -435,7 +471,7 @@ def spec_summary_for_requirements(spec: Mapping[str, Any]) -> str:
         lines.append("Required MCP tools: " + "; ".join(
             str(t.get("name")) for t in spec["mcp_tools"] if isinstance(t, Mapping))[:800])
     if spec.get("acceptance"):
-        lines.append("Acceptance: " + " | ".join(map(str, spec["acceptance"]))[:1500])
+        lines.append("Acceptance: " + _acceptance_line_818(spec["acceptance"]))
     lines.append("Full spec: design/reference_spec.json; documents: design/references/.")
     return "\n".join(lines)
 

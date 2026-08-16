@@ -3379,6 +3379,42 @@ had left beside a constant. Being held to it is the system working.
 
 ---
 
+## 148. #818 — one wrong cap beside four correct ones, cutting the acceptance criteria in 150/150 runs
+
+#817 fixed the reference doc on the design-prep path. The **same doc** is read again by
+`reference_materials`, which renders a briefing from the extracted spec — five sections, five caps.
+Measured over every corpus spec:
+
+    section      cap    overflowing runs   median   max
+    screens     1500          0/150           206     206
+    endpoints   2000          0/150           395     395
+    entities    2000          0/150           100     100
+    mcp_tools    800          0/150             0       0
+    acceptance  1500        150/150         2,156   3,202
+
+★ **Exactly one section is mis-sized, and it is the machine-checkable criteria the run is judged
+against** — cut mid-sentence, in every run in the corpus.
+
+★★ **Why it survived is the interesting part: four correct numbers next to one wrong one reads as
+a considered scheme.** Nothing about `[:1500]` looks careless when `[:2000]` and `[:800]` sit
+beside it and never bind. The only way to tell them apart is to measure each against what the
+system actually produces — which is what #811's sweep did for caps on *findings*, and what this
+does for caps on *inputs*. A cap is a claim about the size of its input, and four of these five
+were true.
+
+4,000 clears the observed maximum with ~25% margin; all 150 specs now pass through whole. Past that
+the cut lands on an **item** boundary and states how many criteria were dropped and where to read
+them — **a criterion sliced in half is worse than one omitted, because it still looks like an
+instruction.**
+
+**Where the input-truncation sweep now stands.** #816 (invalid JSON to the analyst, 7/20 screens),
+#817 (the spec's actionable half, 151/151 runs), #818 (the acceptance criteria, 150/150). Three
+artefacts, one shape: **a bound written once against an imagined input, never re-checked against
+the real one.** Every remaining prompt-bound truncation in the tree is an honestly-named prose
+preview.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
