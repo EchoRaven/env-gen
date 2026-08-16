@@ -8900,3 +8900,43 @@ a claim about the sweep.
 is that all four artefacts were caught the same cheap way — open the file and read the sentence
 around the match — and none needed a second probe.
 
+
+## 179. the "dead set members" sweep does not automate — and the turn's yield curve
+
+**The idea:** #853 was found by noticing that a set's members (`control`, `control_plane`,
+`health`) never occur in the artifact the set is matched against. Generalise it — index the corpus
+vocabulary, then flag every literal set with a high dead-member fraction.
+
+**It produced zero findings and three corpus mismatches**, all of the same kind:
+
+| set | I searched | it is actually matched against |
+|---|---|---|
+| 9 of the top 12 hits were `__all__` | hub JSON | nothing — they are Python symbol names |
+| `_ERR_MARKERS` (17/18 "dead") | `logs/*.jsonl` | a build log string passed in **at runtime**, never persisted |
+| the rest | one artifact family | whichever family that particular set describes |
+
+★ **The pairing is the whole method, and the pairing is hand-chosen.** #853 worked because I
+matched *endpoint kinds* against the *endpoint registry* — the one place those strings can appear.
+A generic "index everything, diff everything" version measures each set against a corpus it was
+never going to appear in, and every result is an artefact. This is not a sweep that can be run;
+it is a question that can be asked once you already know where a vocabulary lives.
+
+Also worth keeping: `_ERR_MARKERS` is **not measurable offline** (the log it scans is a runtime
+argument), and it **fails safe** — no marker match returns the log TAIL rather than nothing. Not a
+defect, and not a deferral either: there is nothing to defer.
+
+### the turn's yield curve
+
+| sweep | opened | code fixes | confirmations | probe artefacts |
+|---|---|---|---|---|
+| numeric clamps on data | 3 | **1** (#850) | 2 | 0 |
+| normative comments (822 → 108 checkable) | 4 | **1** (#851) + 2 enforcers (#852) | 3 | 0 |
+| duplicated literal sets (41 candidates) | 3 | **2** (#853, #854) | 2 | 0 |
+| `ENVGEN_*` (178 checks, three angles) | 18 | 0 | all | 4 |
+| dead set members (180 sets) | 12 | 0 | — | 3 |
+
+★ The curve is real and it is monotonic: the first three sweeps each returned a fix, the last two
+returned nothing but artefacts. **Static offline mining of this tree is close to exhausted** — the
+remaining named work (#774, #854's roster) is a *decision*, not a search, and everything shipped
+since r151 has **zero real-run exposure**. What is left is not another sweep; it is a run.
+
