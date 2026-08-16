@@ -9423,3 +9423,48 @@ test also came out **backwards** from my hypothesis (lane-authored navs carry th
 the time, framework-marked ones 55%), which was the signal that the population, not the mechanism,
 was doing the work.
 
+
+## 189. the census, re-scored against the newest runs — and the limit of what offline analysis can settle
+
+Item 188 established that a corpus-wide rate is a misleading default for anything fixed recently.
+Applying that to the whole census: every class re-scored on the **7 runs newer than the most
+recent framework commit any run saw** (2026-08-12 22:34 → r145–r151).
+
+| class | pre | post (n=7) | |
+|---|---|---|---|
+| auth guard | 9% | **0%** | gone |
+| search/bell | 52% | **29%** | reduced — and item 188 shows 45/45 present, so the residue is over-claim |
+| language selector | 72% | **57%** | reduced |
+| hero / badge / icon / genres / avatar / spacing / title-art | 75–90% | 100% | unchanged |
+
+★ **The bottom row cannot be read as a failure, and saying why is the point.** Those seven runs
+predate **#855–#860 in their entirety** — every fix this session shipped after r151 finished. The
+table can only evaluate work landed before 2026-08-12, and everything it *can* evaluate shows
+reduction or elimination.
+
+n=7 is small and the percentages are noisy; the ordering is worth more than the values.
+
+### what this measures, finally
+
+**The census is exhausted as an offline instrument.** Coverage went 11% → 60% and every head is
+now fixed (#855–#860), verified-already-fixed (#652 via item 183, search/bell via item 188), or
+recorded with its trade-off (#181 language, item 184 avatar, item 185 title art, item 187's
+breadcrumb-vs-H1, item 187's invented login link). Nothing in the ranked table is unexamined.
+
+★ And the last row states a **measured** limit rather than an asserted one, which is the
+difference from my two earlier exhaustion claims (items 179 and 187, both retracted within a
+turn). It is not *"I think there is nothing left"* — it is: **the only population that could
+falsify this session's fixes does not exist yet.** Six fixes, ~150 test cases, zero runs. The next
+useful bit of information is not another query over these 151 runs; it is run 152.
+
+For that run, in order, and each one a two-minute check rather than an investigation:
+
+1. `#819` / `#813` log lines — confirm design-prep's enrichment fallback now fires (#834).
+2. `did_not_run_793`, `checks_errored_790` in the verdict — the silence reporters' first exposure.
+3. `title_detail.png` — a year chip (#782) and a `Kids`/status badge (#856) on catalog cards.
+4. `movies` / `shows` — the page title and the genres control on ONE row (#858).
+5. Any `<select>` or the avatar chip — a drawn chevron, not a `▼` (#859).
+6. Any rail heading — no `'We won'`, no `'TV Shows >'` (#860).
+7. The remediation body — no *"missing hover preview card"* on a static screen (#855), and the
+   `deviations` anchor rule holding (#857).
+
