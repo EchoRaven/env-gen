@@ -2481,6 +2481,41 @@ figures in the document are descriptive rather than decision-driving.
 
 ---
 
+## 124. #796 — the measurement reached the DESIGN prompt and not the REPAIR text
+
+#787 closed `layout_metrics`' orphan status by naming it in both kickoff prompts. Then the
+consumer question got asked one step further: **the kickoff prompt is read once, at design time.**
+What the lane reads on *every repair round* is `remediation_text()` — and its LAYOUT GEOMETRY
+block carried per-component regions only.
+
+So the measurement was present when designing and **absent when fixing**, which is the round that
+matters for a layout deviation: by then the lane has a concrete score to move and is reading the
+largest single object the system produces (median 57,815 chars, per #680's measurement) for
+instructions.
+
+★ **"Has a reader" is not one question, it is one per moment the reader reads.** #786's rule
+("done when something CONSUMES it") is satisfiable by a single consumer while the value is still
+missing from the path that matters. This is the third variation on that rule in this session —
+#786 (no consumer at all), #793 (three reporters with no consumer), and now a consumer at the
+wrong *time*.
+
+**The fix** prepends the measured content box to the geometry block: `x 3-96% (width 93%)`, and
+names the **full-bleed** case explicitly (`left 0, width 100%` → *no max-width container*), which
+is the one an implied container always gets wrong. Per-component regions only imply the wrapper;
+r151 carries **15 distinct boxes across 20 screens**, so it cannot be inferred once and reused.
+
+Tested by **executing** `_layout_geometry_lines` rather than asserting on its source (#782's
+lesson), including six malformed-input cases — this text is the lane's only repair input and a
+fault in it costs a whole round — plus a cross-check that the prompt and the repair text now name
+the same measurement, so the lane is not told two different things at two different moments.
+
+**Two errors in my own tests, both arithmetic/indexing rather than logic:** `0.0344 + 0.9302` is
+`0.9646` (I asserted 97%), and `out[0]` is the block HEADER, not the first row. Neither was a code
+defect — but both would have been silent if the tests had asserted on source text instead of
+running the function.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

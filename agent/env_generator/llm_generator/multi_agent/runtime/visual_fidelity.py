@@ -4009,6 +4009,25 @@ def _layout_geometry_lines(ds: Optional[Mapping[str, Any]], screen_name: str) ->
             return []
         rows: List[str] = []
         layout = str(screen.get("layout") or "").strip()
+        # #796: lead with the screen's measured CONTENT BOX. #787 named `layout_metrics` to the
+        # lane in the kickoff prompt, but the lane reads THIS text on every repair round — so the
+        # measurement was present when designing and absent when fixing, which is the round that
+        # matters for a layout deviation. Per-component regions below only imply the container;
+        # the full-bleed case (left 0, width 100%) is the one an implied container gets wrong,
+        # and r151 carries 15 distinct boxes across its 20 screens, so it is not one global value.
+        _lm796 = screen.get("layout_metrics")
+        if isinstance(_lm796, Mapping):
+            try:
+                _l = float(_lm796.get("left")); _w = float(_lm796.get("width"))
+                rows.append(
+                    "  · CONTENT BOX (measured): x %.0f-%.0f%% (width %.0f%%)%s — set THIS "
+                    "screen's container/gutters to match; it is measured per screen and the "
+                    "screens differ." % (
+                        _l * 100, (_l + _w) * 100, _w * 100,
+                        " = FULL-BLEED, no max-width container" if _w >= 0.99 and _l <= 0.01
+                        else ""))
+            except Exception:
+                pass
         for comp in (screen.get("components") or [])[:10]:
             if not isinstance(comp, dict):
                 continue
