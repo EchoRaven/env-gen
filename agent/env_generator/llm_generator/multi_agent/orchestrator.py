@@ -3709,6 +3709,7 @@ class Orchestrator:
         return noncanonical_business_response_keys(self.hubs)
     def _validate_delivery_gate(self) -> Dict[str, Any]:
         from .runtime.delivery_gate import validate_delivery_gate
+        from ..progress import EventType as _ProgressEventType
         import logging as _lg
         # §4 (env-gated, default-off): on an INTERMEDIATE milestone, scope the structural-task
         # gate to THIS milestone's declared endpoints so it isn't blocked on later-milestone
@@ -3747,6 +3748,25 @@ class Orchestrator:
         except Exception:                    # a reporter must never break the gate it reports on
             _did_not_run = list(_gate793.get("checks_errored_790") or [])
         _gate793["did_not_run_793"] = _did_not_run
+        # #827: leave a trail. `progress_events.jsonl` records `generation_start`, a single
+        # `phase_start: Agent Workflow`, and then nothing until the run ends — so for the 94 of
+        # 151 corpus runs killed mid-workflow (62%, #821) the log holds exactly two lines and the
+        # MAJORITY outcome has no phase attribution at all. `EventType` already defines
+        # FILE_START / TOOL_CALL / REFLECT_* and the multi-agent path emits none of them; wiring
+        # those through every agent is a feature and invasive. This is the minimal version: the
+        # gate funnel already runs on every coordination tick and every call site passes through
+        # it, so one line here turns a silent 75 minutes into a per-tick record of what the gate
+        # was still failing on — which is exactly what r151's post-mortem needed and had to
+        # reconstruct from the abort message.
+        try:
+            self.progress.emit(
+                _ProgressEventType.VERIFICATION_START,
+                "delivery gate tick",
+                {"ok": bool(_gate793.get("ok")),
+                 "failed_checks": list(_gate793.get("failed_checks") or [])[:6],
+                 "did_not_run": len(_did_not_run)})
+        except Exception:                    # never let telemetry break the gate
+            pass
         if _did_not_run:
             (getattr(self, "_logger", None) or _lg.getLogger("DeliveryGate")).warning(
                 # #801: "this tick" was false. The three reporters are RUN-lifetime records

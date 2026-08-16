@@ -3891,6 +3891,39 @@ it killed) and one latent site with no instances.
 
 ---
 
+## 161. #827 — the deferred observability gap, done in its minimal form
+
+Item 151 measured it and deliberately left it: **94 of 151 runs (62%) are killed mid-workflow**,
+and for every one the log holds exactly two lines — `generation_start` and one
+`phase_start: Agent Workflow`. **The majority outcome has no phase attribution at all.** I recorded
+that as "a feature, not a defect fix, and invasive", which was true of the version I was imagining:
+wiring `FILE_START` / `TOOL_CALL` / `THINK_START` / `REFLECT_*` through every agent.
+
+★ **There is a version that is neither.** The delivery-gate funnel already runs on every
+coordination tick, and #793 established that all six call sites pass through it. One emit there
+turns a silent 75 minutes into a per-tick record of what the gate was still failing on — no agent
+touched, no new plumbing, and it lands in the file the monitor already reads.
+
+**r151 is why this is worth the four lines.** Its post-mortem (#820, item 152) had to be
+reconstructed from a single abort message that *happened* to name the two blockers. Had it not,
+those 75 minutes would have been unreadable. The finding came from luck in the message format, not
+from a log designed to answer the question.
+
+Deliberately narrow, and each narrowing has a reason:
+
+* `ok`, the first six `failed_checks`, and #793's `did_not_run` count — **the verdict**, because a
+  bare heartbeat proves the process was alive and nothing else;
+* capped at six, because the gate ticks for over an hour and an unbounded list would make the log
+  the largest artifact of a killed run (#680/#811's lesson);
+* wrapped so it can never raise — it runs on the release path, and **telemetry must not be able to
+  fail a delivery decision**.
+
+It does not close the gap: a run killed *between* gate ticks still has a hole, and nothing reports
+which agent was active. It converts "no attribution" into "attribution at tick granularity", which
+is the part that was costing post-mortems.
+
+---
+
 ## 154. Auditing my own attribution claims — one bad, four sound
 
 The r128 correction was the second time this session I asserted *who did something* without reading
