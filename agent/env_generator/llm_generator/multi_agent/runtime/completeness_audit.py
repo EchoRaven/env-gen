@@ -146,7 +146,25 @@ _PLAYBACK_STATE_TOKENS = frozenset({
     "timecode", "watched", "played", "viewed", "seen", "watchtime",
 })
 
-_WRITE_METHODS = frozenset({"POST", "PUT", "PATCH"})
+# #885: DELETE belongs here. `route_projector` defines `_WRITE_METHODS` under the SAME NAME for
+# the SAME concept and includes it; this copy was a strict subset, and the omission changed three
+# decisions in this file:
+#
+#   :537  `"GET" in methods and not (methods & _WRITE_METHODS)`  -> a GET+DELETE resource read as
+#         READ-ONLY
+#   :574  `if methods & _WRITE_METHODS: continue`                -> a flow backed only by DELETE
+#   :628  (same)                                                    was not "write-backed", so the
+#                                                                   audit reported a FALSE GAP
+#
+# A "remove from my list" / "delete profile" / "cancel subscription" flow is exactly the shape,
+# and this audit files remediation tasks — a false gap costs a lane a round.
+#
+# Zero live exposure, measured with this module's OWN loader rather than a reimplementation of it
+# (#880's rule, after three probes of mine failed at three different extraction steps): 151 runs,
+# 128 with a feature inventory, 1811 flows, 232 mutation flows, and **0** backed only by DELETE.
+# So this is provably behaviour-identical on the corpus and matters for the apps the framework
+# exists to generalise to. Same disposition as #850 and #853.
+_WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 # Fallback spine set (framework-owned identity/tenancy tables) if the canonical
 # import is unavailable — these are NOT app features and are always excluded.
