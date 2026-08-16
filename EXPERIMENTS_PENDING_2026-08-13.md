@@ -4148,6 +4148,35 @@ write.**
 
 ---
 
+## 170. #846 — #843's shape was in my own tool, in five places
+
+#843 was a parser that returned nothing for a dialect it did not know, so those runs became
+silently "not comparable" and left **both** the numerator and the denominator. That shape is not
+specific to a parser. Every audit in `tools/corpus_audit.py` is written the same way:
+
+    if not tables:
+        continue
+
+so every one of them can lose runs the same way, and the printed rate looks healthy on a quietly
+shrunken base. Made visible:
+
+    pure link tables            probe saw 139 run(s), 12 EXCLUDED (no DDL parsed)
+    projected bare field reads  probe saw 143 run(s),  8 EXCLUDED (unparsed)
+
+★ **Those are my own published numbers.** I wrote "139" and "143" without ever stating they were
+out of 151 — the same omission #843 exposed in someone else's code, sitting in the tool I built to
+prevent exactly this. `_report` now takes `skipped` and prints it, and stays silent when nothing
+was dropped so it does not become the line readers skip (#793).
+
+★★ **Fifth ticket collision, and the first one the allocator caught before a commit.** I ran
+`tools/ticket.sh`, got **846**, then wrote **844** into the code from memory a minute later — and
+844 had just been claimed by the other agent (`9478a81`). The allocator existed for exactly this
+and I still bypassed it by hand; what saved the commit was checking the number afterwards rather
+than trusting it. **Allocating and then not using what you were given is the same failure as never
+allocating**, minus the excuse.
+
+---
+
 ## 154. Auditing my own attribution claims — one bad, four sound
 
 The r128 correction was the second time this session I asserted *who did something* without reading

@@ -360,6 +360,34 @@ def _unseeded_entity_kinds_844(output_dir: Any) -> List[str]:
     except Exception:
         return []
 
+# #845: say-once for STANDING facts. #842 fires on 150 of 150 corpus runs and #844 on 141 of 150 --
+# because the gaps they name (no avatar staged, no game data) are properties of how this app is
+# STAGED, not per-run defects. `validate_delivery_gate` runs at every tick, so each would log
+# dozens of identical warnings per run. That is exactly the failure #793 was corrected for: a line
+# that fires on healthy runs is a line the reader learns to skip, and I shipped two of them.
+#
+# The standing fact belongs in the record (EXPERIMENTS items 164/165) and in ONE warning per
+# process. Reused shape, not a new mechanism (#792's lesson): a module-level set, cleared by the
+# same reset the other reporters use.
+_SAID_845: set = set()
+
+
+def _say_once_845(key: str, logger: Any, msg: str, *args: Any) -> None:
+    """Log once per process for a fact that does not change between ticks. Never raises."""
+    try:
+        if key in _SAID_845:
+            return
+        _SAID_845.add(key)
+        logger.warning(msg, *args)
+    except Exception:
+        pass
+
+
+def reset_said_845() -> None:
+    """#762's rule: module state outlives a test, so whichever test ran first would silence every
+    later one."""
+    _SAID_845.clear()
+
 def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
     """#739: how BROAD is the UI evidence behind ``ui_smoke_pass``?
 
@@ -2119,7 +2147,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     try:
         _unreach823 = _imageless_spec_screens_unreachable_823(output_dir)
         if _unreach823:
-            logger.warning(
+            _say_once_845("823", logger,
                 "#823 the SPEC declares %d screen(s) with no reference image AND no way to reach "
                 "them in the app: %s. The visual gate cannot cover an imageless screen (#822: "
                 "`profiles` in 150 of 150 runs) and nothing else compares the spec to the built "
@@ -2131,7 +2159,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     try:
         _noasset842 = _unstaged_asset_classes_842(output_dir)
         if _noasset842:
-            logger.warning(
+            _say_once_845("842", logger,
                 "#842 the SPEC asks for asset class(es) design-prep never staged: %s. The lane has "
                 "nothing to point at, so it substitutes whatever is nearest (#841: a crop of a "
                 "flyout panel used as an avatar_url) and the judge correctly reports a blank "
@@ -2142,7 +2170,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     try:
         _nokind844 = _unseeded_entity_kinds_844(output_dir)
         if _nokind844:
-            logger.warning(
+            _say_once_845("844", logger,
                 "#844 a screen's SUBJECT is not in the staged data: %s. The page can only render "
                 "the wrong entity (#840: the games hero shows a film), and the lane cannot fix it "
                 "-- rows it authors in seed_data.json are replaced wholesale by the dataset "

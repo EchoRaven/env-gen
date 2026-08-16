@@ -118,14 +118,23 @@ def _ddl_refs(run: pathlib.Path) -> Dict[str, Dict[str, str]]:
     return out
 
 
-def _report(title: str, saw: int, total: int, hits: int, note: str = "") -> None:
-    """Print one measurement. Refuses to imply a rate without its denominator, and leads with the
-    non-vacuity count."""
+def _report(title: str, saw: int, total: int, hits: int, note: str = "",
+            skipped: int = 0) -> None:
+    """Print one measurement. Refuses to imply a rate without its denominator, leads with the
+    non-vacuity count, and — #846 — names how many runs were EXCLUDED.
+
+    #843 is why `skipped` exists. `extract_contract_from_description` returned nothing for a spec
+    dialect it did not know, so those runs were silently not "comparable": they left the numerator
+    AND the denominator, and the rate looked healthy on a quietly shrunken base. Every audit here
+    has the same shape (`if not tables: continue`), so every audit can lose runs the same way.
+    An exclusion that is not printed is a denominator nobody can check.
+    """
     if total <= 0:
         print(f"  {title:<44} n/a   (no comparable runs — probe found nothing to measure)")
         return
     pct = 100 * hits // total
-    print(f"  {title:<44} {hits:>4}/{total:<4} ({pct:>3}%)   probe saw {saw} run(s){note}")
+    excl = f", {skipped} EXCLUDED (unparsed)" if skipped else ""
+    print(f"  {title:<44} {hits:>4}/{total:<4} ({pct:>3}%)   probe saw {saw} run(s){excl}{note}")
 
 
 # --------------------------------------------------------------------------- audits
@@ -134,10 +143,11 @@ def audit_link_tables(runs: List[pathlib.Path]) -> None:
     """#803's rule: a pure link table is a LABEL relation only if neither FK reaches an actor
     table. Structurally the two shapes are identical — this is the split that makes the
     difference between a chip row and a public leak of who saved what."""
-    safe = unsafe = seen = 0
+    safe = unsafe = seen = skipped = 0
     for run in runs:
         tables, refs = _ddl_tables(run), _ddl_refs(run)
         if not tables:
+            skipped += 1          # #846: an unparsed DDL is an EXCLUSION, not a zero
             continue
         seen += 1
         for name, cols in tables.items():
@@ -154,7 +164,8 @@ def audit_link_tables(runs: List[pathlib.Path]) -> None:
                 safe += 1
     total = safe + unsafe
     print(f"  {'pure link tables (label vs per-user)':<44} "
-          f"{safe:>4} safe / {unsafe} actor-touching   probe saw {seen} run(s)")
+          f"{safe:>4} safe / {unsafe} actor-touching   probe saw {seen} run(s)"
+          + (f", {skipped} EXCLUDED (no DDL parsed)" if skipped else ""))
     if total:
         print(f"      -> folding the actor-touching ones into a public detail read is #569's "
               f"class ({100 * unsafe // total}% of candidates)")
@@ -162,10 +173,11 @@ def audit_link_tables(runs: List[pathlib.Path]) -> None:
 
 def audit_projected_bare_reads(runs: List[pathlib.Path]) -> None:
     """#782/#783: the projected pages must not read bare field names. Any hit is a regression."""
-    seen = hits = 0
+    seen = hits = skipped = 0
     for run in runs:
         pages = list((run / "app" / "frontend" / "src").rglob("*.jsx"))
         if not pages:
+            skipped += 1          # #846
             continue
         seen += 1
         for f in pages:
@@ -174,7 +186,7 @@ def audit_projected_bare_reads(runs: List[pathlib.Path]) -> None:
                 hits += 1
                 break
     _report("projected pages with a bare field read", seen, seen, hits,
-            "   (post-#782 builds should be 0)")
+            "   (post-#782 builds should be 0)", skipped=skipped)
 
 
 def audit_spec_owner_columns(runs: List[pathlib.Path]) -> None:
