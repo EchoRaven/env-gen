@@ -9904,6 +9904,45 @@ never return; it now completes, writes, and names its own caller.
       -> 3-minute total loss, no exception
       and the forensic trace, if enabled     -> #866  (now lands with the run)
 
-Six tickets, one failure. **Every link is now either fixed or instrumented**, and the one that
-started it — *"root unknown, needs a run"* in item 193 — turned out to be four reads away.
+Six tickets, one failure. **Every link is now either fixed or instrumented.**
+
+★ **CORRECTED by item 198.** The line above originally read *"the root … turned out to be four
+reads away"*, and calling #867 "the first link" was an overclaim. The signature match is real; I
+did not check whether the mechanism is **reachable**, and a static scan of all 100 mutators says
+it is not. #867 is a safety net over a path nothing currently takes. The lost write still has no
+confirmed mechanism.
+
+
+## 198. #868 — the rule becomes an enforcer, and #867 gets corrected
+
+`JsonStore.update()` runs caller-supplied `mutator(view)` while holding the file lock, so a
+mutator that calls back into the store deadlocks. That rule lived in **one docstring**
+(`milestone_registry._reindex`) and bound every mutator in the codebase.
+
+**Scanned: 100 resolvable `update(<mutator>)` sites across 163 modules. Zero re-enter.**
+
+★ **Which corrects item 197.** I called #867 *"the first link"* of the chain that kills 7 corpus
+runs. The signature match is genuine — `open()` creates the `.lock`, `flock` blocks before any
+write, no exception, a run that looks idle — but **I never checked whether the mechanism is
+reachable**, and statically it is not. #867 is a safety net over a path nothing currently takes,
+not a demonstrated cause. Sixth retraction this session, and the same shape as the others: a
+mechanism that *explains* an observation is not evidence that it *produced* it — the lesson item
+181 already recorded, applied to a much more satisfying story.
+
+**Still out of the scan's reach**, recorded so a green test is not read as more than it is:
+an indirect path through a helper that eventually touches the store; a second `JsonStore` instance
+for the same file in the same thread (#867's guard keys on the instance and would not help); a
+cross-thread lock-order inversion where the holder blocks on something else.
+
+**The discriminator, and the false positive that shaped it.** A call on `self` inside a mutator is
+safe **iff it threads the mutator's own view as its first argument** — `self.helper(m, …)` is a
+helper operating on the MapView it was handed and cannot reach the store. The first cut flagged
+`eventhub`'s `self._set_and_prune_events(m, …)`, which is precisely the safe form; an earlier and
+looser cut (grepping `.get(` / `.value()`) flagged that one and **four other correct mutators**,
+because those markers match the MapView API as well as the store's. Both times **the test was
+wrong and the code was right** — the third time this session that a probe's first answer was about
+the probe.
+
+The value of the test is unchanged by the zero: it is the difference between a rule written down
+once and a rule that fails a build.
 
