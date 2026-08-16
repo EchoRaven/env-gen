@@ -1293,6 +1293,48 @@ class Orchestrator:
                     self.hubs.milestones.set_roadmap(milestones, agent="orchestrator")
                 except Exception as _ms_seed_err:
                     self._logger.warning("milestone store seed failed: %s", _ms_seed_err)
+                # #864: VERIFY the seed. A roadmap that did not land is fatal downstream, and it
+                # was a warning.
+                #
+                # `start_kickoff` — the only call that opens the meeting and broadcasts
+                # `kickoff_request` — lives INSIDE the loop over `milestones` below. An empty or
+                # unwritten roadmap therefore costs the whole run silently: no meeting, so nothing
+                # wakes backend/frontend/verifier, so no DDL, no seed, no frontend, no capture.
+                #
+                # Measured over the corpus, and it is a perfect discriminator:
+                #
+                #     shared/hubs/milestones.json    7 dead runs: ABSENT (5 have only the .lock,
+                #                                    so the store was touched and never written)
+                #                                    healthy runs: 1, 1, 2, 3 entries
+                #
+                # Those 7 are r19 r35 r38 r42 r44 r136 r140 — nine days apart, 3-6% of runs, total
+                # loss each time. The `except` above already fails open by design; what was missing
+                # is anyone checking the RESULT, which is #790/#792's shape exactly: a step that
+                # could not do its job reading like a step that did.
+                #
+                # This does not abort — the root of the empty roadmap is still unidentified and
+                # aborting on an unknown root trades one silent failure for a louder wrong one. It
+                # makes the state legible at the moment it becomes unrecoverable.
+                try:
+                    _seeded = list(self.hubs.milestones.list_milestones() or [])
+                except Exception as _ms_read_err:
+                    _seeded = []
+                    self._logger.warning("milestone store readback failed: %s", _ms_read_err)
+                if not _seeded:
+                    self._logger.error(
+                        "MILESTONE ROADMAP DID NOT LAND: seeded %d milestone(s), store reads back "
+                        "EMPTY. start_kickoff runs inside the per-milestone loop, so this run will "
+                        "open no kickoff meeting and its backend/frontend/verifier lanes will never "
+                        "wake (#864). Corpus: 7 of 151 runs died exactly here.",
+                        len(milestones),
+                    )
+                    try:
+                        self.progress.emit(
+                            EventType.PHASE_ERROR, "Milestone roadmap",
+                            {"seeded": len(milestones), "read_back": 0, "ticket": 864},
+                        )
+                    except Exception:
+                        pass
 
                 for _m_idx, _milestone in enumerate(milestones, start=1):
                     # Human-in-the-loop approval (ask mode): pause before STARTING

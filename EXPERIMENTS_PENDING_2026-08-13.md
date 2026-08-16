@@ -9696,3 +9696,58 @@ class went unnoticed for nine days and took an artifact-tree census plus a log d
 `test_no_behaviour_changed` pin that, because the root is bounded but not yet identified, and
 tuning anything on a bounded-but-unknown root is still a guess.
 
+
+## 194. #864 — the roadmap seed was write-and-hope, and an empty roadmap costs the whole run
+
+Item 193 bounded #862's root to *"a silent return between orchestrator.py:1157 and 1521"*. Reading
+that span closes most of it.
+
+★ **`start_kickoff` lives INSIDE the loop over `milestones`.** So an empty roadmap is not a
+degraded run — it is a total loss, and the failure is structurally silent: no meeting is opened,
+so nothing wakes backend/frontend/verifier, so there is no DDL, no seed, no frontend, no capture,
+and no exception anywhere.
+
+**The discriminator is perfect and was sitting in the artifacts the whole time:**
+
+| | `shared/hubs/milestones.json` |
+|---|---|
+| 7 dead runs | **absent** — and 5 have only the `.lock`, so the store was *touched* and never written |
+| healthy runs | 1, 1, 2, 3 entries |
+
+The seed is already wrapped — `except Exception: logger.warning("milestone store seed failed")`.
+Failing open there is defensible. **Nobody checked the result.** That is #790/#792's shape exactly:
+*a step that could not do its job reads like a step that did.*
+
+### four hypotheses eliminated with evidence
+
+Recorded so the next reader does not re-derive them:
+
+| hypothesis | why it is dead |
+|---|---|
+| the lanes' `kickoff_request` subscription is missing | present and correct for all three lanes (checked against the live table) |
+| the milestone approval gate skipped every milestone | **no approval store in any run** → mode defaults to `auto` → `request_decision` always approves |
+| the planner returned `[]` and wiped the default | an empty list is **falsy**, so `milestones` keeps the M1 synthesized at line 1038 |
+| the in-loop re-sync emptied it | that branch only calls `mark_status`; it never reassigns `milestones` |
+
+★ And a fifth, from the code rather than the artifacts: the `else` after planning logs
+*"Milestone planning unavailable — single milestone"* **and assigns nothing**. It is correct today
+only because line 1038 already synthesized one — the log describes a fallback that does not exist
+in that branch. Not the cause here, but it is the same class as everything else in this session: a
+sentence asserting a consequence with no code behind it.
+
+### what #864 does, and does not
+
+It reads the store back and, on empty, logs an **error** naming the cost, and emits a
+`PHASE_ERROR` into `progress_events.jsonl` — the only artifact every run leaves, which for these
+7 holds two lines and no error at all.
+
+**It does not abort.** The reason the roadmap comes back empty is bounded but still unidentified,
+and aborting on an unknown root trades one silent failure for a louder wrong one.
+`test_it_does_not_abort` pins that so the decision is revisited rather than quietly reversed.
+
+**Instrument progression across three tickets, and the lesson in it:** #862 put the detector in
+the kickoff poll loop (unreachable — the driver never starts), #863 moved it before the kickoff
+call (reachable, but only says *"we got here"*), #864 puts it at the precondition that actually
+fails and can name the cost. ★ Two placements were wrong before one was right, and each was wrong
+in the same way: **I instrumented where I was looking, not where the failure was.**
+
