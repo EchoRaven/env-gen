@@ -2289,6 +2289,44 @@ finished; what is left is not a backlog.
 
 ---
 
+## 119. #793 — I committed #786's defect three more times, in the three fixes that followed it
+
+#786's rule, written earlier in this same session, in my own words: *a field is not done when it
+is produced and tested; it is done when something CONSUMES it. The write path is the easy half AND
+the half that has tests, which is why it feels finished.*
+
+Then I applied the rule to my own diff and asked who reads the three reporters #790/#791/#792 had
+just added:
+
+    checks_errored_790   readers: delivery_gate.py   (its own definition + the result key)
+    scan_errors_791()    readers: frontend_audit.py  (its own definition)
+    gates_absent_792()   readers: NONE ANYWHERE
+
+**Three for three.** Each had a full write path, a say-once memory, a warning line, a reset for
+tests, and its own test file — everything that makes a change feel complete. `checks_errored_790`
+was even placed in the delivery gate's returned dict, and **no caller reads that key**, so it
+travelled exactly as far as the log line it was supposed to improve on.
+
+★ **The rule was fresh, written by me, in this session, about this exact mistake — and it did not
+fire while I made it three more times.** What caught it was not remembering the rule; it was going
+back and *running the rule as a query against my own diff*. That is the transferable part: a
+lesson recorded is not a lesson applied, and the cheap way to close the gap is to re-run the
+last-derived rule against the last change before committing it. (#786 says the same about #779,
+which makes this the second confirmed instance of the same meta-failure — the first cost one
+field, this one cost three.)
+
+**The consumer.** `_validate_delivery_gate` in the orchestrator is the single funnel all six gate
+call sites pass through. All three reporters merge there into `did_not_run_793`, which rides in the
+returned dict *and* produces one operator-visible line at the tick where a release may be cut:
+*"N DELIVERY CHECK(S) DID NOT RUN this tick — the gate's verdict is UNVERIFIED on these axes,
+whatever it says."* Silent when everything ran, because a line that fires on healthy runs is
+filtered out by the reader and becomes decoration.
+
+**Cheapest observation next run.** `did_not_run_793` is `[]` at the release cut. Any entry means
+the gate's verdict was unverified on that axis — read it before believing the release.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

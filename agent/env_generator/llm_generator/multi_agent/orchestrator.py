@@ -3723,7 +3723,7 @@ class Orchestrator:
                 or re.findall(r"(/api/[A-Za-z0-9_./{}:-]+)", _slice)
             if _paths:
                 _scope = {"endpoint_paths": sorted(set(_paths))}
-        return validate_delivery_gate(
+        _gate793 = validate_delivery_gate(
             self.output_dir, self.hubs,
             getattr(self, "_session_start_ts", 0.0),
             getattr(self, "_logger", None) or _lg.getLogger("DeliveryGate"),
@@ -3731,6 +3731,28 @@ class Orchestrator:
             get_validation_results=self._get_validation_results,
             get_validation_summary=self._get_validation_summary,
             milestone_scope=_scope)
+        # #793: the three "did not run" reporters (#790 gate helpers, #791 blocker scans,
+        # #792 delivery gates) had NO consumer — each was a writer with zero readers, which is
+        # exactly the #779/#786 defect they were written in the same session as. Adding a signal
+        # is not the same as surfacing it. This is the single funnel all six
+        # `_validate_delivery_gate()` call sites pass through, so merging here reaches every gate
+        # tick: the facts ride in the returned dict AND get one operator-visible line at the tick
+        # where a release may be cut.
+        try:
+            from .runtime.frontend_audit import scan_errors_791
+            from .runtime.deliverability import gates_absent_792
+            _did_not_run = (list(_gate793.get("checks_errored_790") or [])
+                            + list(scan_errors_791() or [])
+                            + list(gates_absent_792() or []))
+        except Exception:                    # a reporter must never break the gate it reports on
+            _did_not_run = list(_gate793.get("checks_errored_790") or [])
+        _gate793["did_not_run_793"] = _did_not_run
+        if _did_not_run:
+            (getattr(self, "_logger", None) or _lg.getLogger("DeliveryGate")).warning(
+                "%d DELIVERY CHECK(S) DID NOT RUN this tick (#793) — the gate's verdict is "
+                "UNVERIFIED on these axes, whatever it says: %s",
+                len(_did_not_run), "; ".join(_did_not_run[:6]))
+        return _gate793
     def _validate_contract_alignment(self) -> Dict[str, Any]:
         from .runtime.delivery_gate import validate_contract_alignment
         return validate_contract_alignment(self.output_dir, self.hubs)
