@@ -172,6 +172,7 @@ def _skeleton_components(spec: Optional[Dict], im=None) -> List[Dict]:
             "assets": [],              # analyst maps real assets here
             "role": c.get("role") or "",
             "state": c.get("state") or "",
+            "copy": "",                # #778 — filled by the screen pass below
             "crop": c.get("crop"),
             "build_notes": "",
         })
@@ -299,6 +300,11 @@ _SCREEN_PROMPT = (
     "For EVERY component id in the skeleton, submit one entry with:\n"
     " - build_notes (REQUIRED, 1-3 concrete sentences from the SCREENSHOT: geometry, "
     "paddings/spacing, icon shapes, borders/dividers, states — what a dev needs to copy it)\n"
+    " - copy: if the component shows TEXT, transcribe it VERBATIM — the exact heading, "
+    "label, placeholder, button caption, link text or notice, character for character, "
+    "including punctuation. Do NOT describe it ('muted secondary text', 'static'): the clone "
+    "is scored against the reference on COPY, and a description cannot be typed into JSX. "
+    "Empty string only when the component genuinely renders no text.\n"
     " - typography (role sizes/weights you can read), and assets (manifest ids this "
     "component should render).\n"
     "Also submit layout (one line) and the GLOBAL scales estimated from the screenshot: "
@@ -339,6 +345,13 @@ _SCREEN_TOOL = [{
                     "properties": {
                         "id": {"type": "string"},
                         "build_notes": {"type": "string"},
+                        # #778: the literal words on the component, transcribed. Without a slot
+                        # the model has nowhere to put them — 84% of 9152 text components across
+                        # 53 runs carry a DESCRIPTION ("static", "collapsed, default value")
+                        # instead of the string, and `copy` is the most frequent scoring floor on
+                        # `login`, which blocks 73% of runs. The 15% that do quote are burying it
+                        # in build_notes prose, which is the tell that the slot was missing.
+                        "copy": {"type": "string"},
                         "typography": {"type": "object"},
                         "assets": {"type": "array", "items": {"type": "string"}},
                     },
@@ -544,7 +557,9 @@ def _merge_enrichment(skeleton: Dict, enriched: Dict) -> Dict:
             ec = e_comps.get(c.get("id"))
             if not ec:
                 continue
-            for k in ("role", "build_notes", "state", "typography", "assets", "crop"):
+            # #778: `copy` MUST be in this list. It is the third fixed-key projection on this
+            # path, and #767b/#768b/#771 were each a field added at one end and dropped here.
+            for k in ("role", "build_notes", "state", "copy", "typography", "assets", "crop"):
                 if ec.get(k) is not None:
                     c[k] = ec[k]
             # measured colors are immutable — c["colors"] is never replaced

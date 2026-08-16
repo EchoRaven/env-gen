@@ -1733,6 +1733,54 @@ right one needed a distribution.
 
 ---
 
+## 102. #778 — the design system never asked what the words were
+
+Item 101 said the next step was to open `login.png` beside its reference and read what the judge
+marks down, rather than build another detector. Done, and it led somewhere fixable.
+
+**The judge's own breakdown for r151's login (0.62):**
+
+    layout 0.75   components 0.70   style 0.70   color 0.85
+    typography 0.80   iconography 0.70   copy 0.50   <- the floor
+
+    "Heading copy differs: 'Sign in' vs 'Enter your info to sign in' plus missing subheading"
+    "Footer is missing Netflix House, Netflix Shop columns and the toll-free phone header"
+
+The structure is right. It loses on **words that are legible in the reference image**.
+
+**Corpus, not one run.** Across 48 r99+ runs with per-dimension login scores, `copy` is the most
+frequent floor (15), ahead of `style` (12); `style` has the lowest mean (0.615) and `copy` is
+third (0.669). So it is two dimensions, not one — and copy is the one with a mechanical cause.
+
+**A correction on the way.** I first concluded the framework never extracts reference copy. It
+does: `Enter your info to sign in`, `Continue`, `Get Help`, `Netflix House`, `1-844-569-7700` are
+all in r151's `design_system.json`. What is true is narrower and measurable — the extraction is
+**inconsistent**:
+
+    signin-heading      state='Enter your info to sign in' shown     quoted
+    signin-subheading   state=muted secondary text                   described
+
+Over 53 r99+ runs: **9152 text-bearing components, 1441 quote a literal (15%), 7711 describe
+(84%)** — `page-title: static`, `language-filter-dropdown: collapsed, default value`.
+
+**The cause is that there was nowhere to put a string.** `_SCREEN_PROMPT` asks per component for
+`build_notes` (geometry, padding, icons, borders), `typography` and `assets`, and the function
+schema has exactly those slots. **It never asks what the component says.** The 15% that quote are
+burying the string inside `build_notes` prose, which is the tell.
+
+Three changes: a `copy` slot in the schema, a prompt clause demanding VERBATIM transcription that
+names the failure it replaces (*"Do NOT describe it ('muted secondary text', 'static')"*), and
+**both fixed-key projections** carrying it. That third one is the habit this session paid for
+three times — #767b, #768b and #771 were each a field added at one end and dropped by a
+projection, and this path has two.
+
+**Cheapest observation.** Next run, the same query: of the text-bearing components, what fraction
+carry a quoted literal? Baseline **15%**. And the number that matters downstream is `login`'s
+`copy` dimension, mean 0.669 over 48 runs — if the words arrive and copy does not move, the lane
+is ignoring them and this becomes #664's class rather than a plumbing gap.
+
+---
+
 ## 101. What is actually wrong with the pipeline: five screens, and `login` is 73% of it
 
 Asked plainly whether the pipeline still has problems, so it was scored plainly. Four bars per
