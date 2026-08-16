@@ -242,6 +242,35 @@ def build_skeleton_design_system(resolved: Dict, output_dir,
             "components": _skeleton_components(specs.get(stem), im),
         })
 
+    # #822: a screen the SPEC declares but no reference image covers is dropped here, silently.
+    # The skeleton is built from the reference IMAGES, so `reference_spec.json` can require a
+    # screen this pipeline will never see. Measured on r140+: `profiles` is declared in 11 of 11
+    # runs, has no reference image in any of them, and therefore appears in NO design_system, NO
+    # visual_gate capture and NO verdict — never photographed, never scored, never blocking. For
+    # a streaming clone that is the who's-watching picker, the first screen after login.
+    #
+    # It also corrects #788, which recorded the spec's `screens` list as ENFORCED because "the
+    # visual gate captures and scores every screen in it, so an unbuilt one takes a blocking
+    # zero". True only for screens WITH a reference image; silent for the rest.
+    #
+    # Nothing is invented here — a screen cannot be visually scored against an image that does
+    # not exist. What changes is that the gap is stated instead of inferred from an absence.
+    try:
+        _spec822 = json.loads((out / "design" / "reference_spec.json").read_text(
+            encoding="utf-8")) if (out / "design" / "reference_spec.json").is_file() else {}
+        _want822 = {str(x.get("name")) for x in (_spec822.get("screens") or [])
+                    if isinstance(x, dict) and x.get("name")}
+        _have822 = {str(x.get("name")) for x in screens if isinstance(x, dict)}
+        _missing822 = sorted(_want822 - _have822)
+        if _missing822:
+            _LOG_813.warning(
+                "design-prep: the reference SPEC declares %d screen(s) with no reference image, "
+                "so they are absent from design_system.json and the visual gate will never "
+                "capture, score or block on them: %s. The spec's `screens` list is enforced only "
+                "for screens that HAVE an image.", len(_missing822), _missing822)
+    except Exception:
+        pass
+
     return {
         "design_system": {
             "palette": palette,

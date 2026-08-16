@@ -3499,7 +3499,7 @@ names it in one line** instead of writing a mute skeleton for 4,006 components.
 
 ---
 
-## 150. #820 — r151 aborted STUCK on a defect that does not exist
+## 155. #820's causal story, MEASURED — closing the question item 150 left open
 
 Reading r151's `progress_events.jsonl` — which I had been analysing all session without ever
 opening — shows the run **never delivered**:
@@ -3568,6 +3568,14 @@ to this. r151's `logs/` holds only `progress_events.jsonl`, which does not carry
 the abort claim could be neither confirmed nor refuted here. **The false positive is proven; the
 run-level consequence attributed to it is not.** The fix stands on the former, and this paragraph
 exists so the second does not get read as measured.
+
+★★ **CORRECTED by item 155 — and the reason above was wrong.** `progress_events.jsonl` DOES carry
+it: the `generation_error` event holds the full abort message, naming
+`deliverability_other: nav link '/title/' (HoverPreviewCard.jsx)`, the `/watch/` twin, and
+`unresolved_failed_tasks`. The file has five lines and the message is in the fourth. The causal
+story is now **measured, not attributed** — see item 155, which also traces the failed task that
+tripped #751. The caution in this paragraph was right in kind and wrong in fact: the evidence was
+present, one `json.loads` away.
 
 It arrived with no test; it has eight now, including the two that matter in opposite directions
 (the false positive disappears, the genuine empty target survives).
@@ -3711,6 +3719,38 @@ exactly that for the dead-control titles above). 2% of tasks, carrying no mechan
 noise. What would make it a defect is if a finding existed *only* as an unowned task with no gate
 re-deriving it — that is the check worth writing if this ever looks live again, and it is not the
 check I would have written from the first impression.
+
+---
+
+## 156. Two probes that sampled the wrong thing, both caught before they were reported
+
+Item 154's audit ("verify when load-bearing, assert when it feels like colour") pointed next at
+this session's **numbers**. Extracting every `N of M` claim from my items produced 102 hits — and
+the sample was **wrong**.
+
+★ **The slice was inverted.** I insert new items immediately before the `## 107.` anchor, and
+reasoned that everything above it was therefore mine. The document is in **ascending order** and
+`## 107.` sits at line 3748, *after* 154 — so `s[:index("## 107.")]` is items **1 through 154**,
+overwhelmingly other sessions' work. The sample looked wrong on inspection (`0 of 2606 hero crops`,
+`17 of 28 delivered navs`) before any conclusion was drawn from it, which is the only reason this
+is a note and not a retraction.
+
+★★ **And the same check surfaced a duplicate.** Two headings numbered `## 150.`, both `#820`: mine,
+and the **previous session's**, which had found the same uncommitted `frontend_audit.py` change and
+verified it independently. That is the second time after a context break I re-derived work already
+done (#817 was the first). Renumbered to 155 and cross-linked.
+
+**The duplicate turned out to be worth having**, for one reason: item 150 explicitly recorded what
+it could *not* establish — *"the abort claim could be neither confirmed nor refuted here"* — and
+this session established exactly that, by reading the `generation_error` event. Its stated reason
+(*"`progress_events.jsonl` does not carry that message"*) was **wrong**: the file has five lines and
+the message is in the fourth. Corrected in place.
+
+★★★ **Both errors are the same shape as the ones being audited.** The attribution error asserted a
+field it could have read; the slice error asserted a document order it could have checked; item
+150's caution asserted an absence it could have parsed. **Three claims, three lookups, none taken.**
+The audit did not find carelessness about evidence — it found that *"this part is just framing"* is
+the reliable predictor of an unchecked claim.
 
 ---
 
