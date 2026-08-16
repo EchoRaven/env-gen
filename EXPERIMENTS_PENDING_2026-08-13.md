@@ -2660,6 +2660,42 @@ correctness**, and it is the one that keeps paying.
 
 ---
 
+## 129. #801 — the seam pass, run as a pass; my #793 line claimed a stale failure was current
+
+Item 128 ended with a rule rather than a check: *re-reading the diff for SEAMS is a different pass
+from re-reading it for correctness.* Ran it as an actual pass over the session's 24 commits,
+looking only at boundaries introduced:
+
+**Ticket-number anchors — clean.** The suite's existing convention is
+`index("#NNN: <sentence>")` — number **plus** a sentence, which is collision-proof. My #794 tests
+were the only bare-number anchors, and #798 had already forced those to be fixed.
+
+**New module-level state — one real defect.** Four new module globals
+(`_CHECK_ERRORS_790`, `_SCAN_ERRORS_791`, `_GATES_ABSENT_792`, `_FW_OWNED_WARNED`), all with reset
+sites. But their **lifetime** never got checked against the sentence #793 prints:
+
+    "%d DELIVERY CHECK(S) DID NOT RUN this tick (#793) …"
+
+The reporters are **run-lifetime** records (one generation = one process). Demonstrated: one
+failing tick, then 49 healthy ones, and the record is still there — so after a single failure that
+line repeated on **every remaining tick of the run**, each time asserting the failure had just
+happened.
+
+★ Cumulative is the **right** semantics here and is kept: at a release cut the question is *"was
+this axis ever unverified?"*, not *"is it unverified this second"*. Only the label was wrong. It
+now reads *"HAVE NOT RUN at some point this run — cumulative, not necessarily this tick"*. **A
+signal that overstates is how a reader learns to skip it** — which would have cost the whole
+#790–#793 chain its value, having been built precisely so an operator would not skip it.
+
+**What the seam pass is actually for.** Every error of mine this session sat at a boundary I
+introduced, and *none* of them was in the logic of the fix. The correctness pass asks "does this
+do the right thing?" and the answer kept being yes. The seam pass asks a different question —
+"what did this change assume about everything already here?" — and the answers were: a name that
+was not imported, a docstring that broke four anchors, a branch whose message no longer matched
+its path, and now a lifetime that did not match its own wording.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

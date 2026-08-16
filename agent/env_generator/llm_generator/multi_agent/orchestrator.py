@@ -3749,8 +3749,16 @@ class Orchestrator:
         _gate793["did_not_run_793"] = _did_not_run
         if _did_not_run:
             (getattr(self, "_logger", None) or _lg.getLogger("DeliveryGate")).warning(
-                "%d DELIVERY CHECK(S) DID NOT RUN this tick (#793) — the gate's verdict is "
-                "UNVERIFIED on these axes, whatever it says: %s",
+                # #801: "this tick" was false. The three reporters are RUN-lifetime records
+                # (one generation = one process), so after a single failure this line repeated
+                # every tick for the rest of the run, each time claiming the failure had just
+                # happened. Cumulative is the RIGHT semantics for a release cut — the question
+                # at the cut is "was this axis ever unverified", not "is it unverified right
+                # now" — so the record stays and only the label is corrected. A signal that
+                # overstates is how a reader learns to skip it.
+                "%d DELIVERY CHECK(S) HAVE NOT RUN at some point this run (#793) — cumulative, "
+                "not necessarily this tick. Any release cut while this is non-empty is "
+                "UNVERIFIED on these axes, whatever the gate says: %s",
                 len(_did_not_run), "; ".join(_did_not_run[:6]))
         return _gate793
     def _validate_contract_alignment(self) -> Dict[str, Any]:
