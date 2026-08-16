@@ -18,6 +18,7 @@ import fcntl
 import json
 import logging
 import os
+import threading
 import time
 import traceback
 from contextlib import contextmanager
@@ -28,6 +29,10 @@ from typing import Any, Callable, Dict, Optional
 logger = logging.getLogger(__name__)
 
 _META_KEY = "_meta"
+
+# #869: (resolved path, thread id) -> nesting depth. Module-level because two JsonStore INSTANCES
+# on one file must share it; keyed by thread so cross-thread exclusion is unaffected.
+_FLOCK_DEPTH_869: Dict[Any, int] = {}
 
 
 # Round 8h Stage 2 follow-up — smoke #21 forensic instrumentation.
@@ -164,7 +169,25 @@ class JsonStore:
         the inner critical section is protected. What it must not do is stay silent: the mutator
         doing it is still a latent bug (it reads a half-written state), so it is reported once per
         store with the caller's stack."""
-        depth = getattr(self, "_flock_depth_867", 0)
+        # #869: key the re-entry guard on (resolved path, thread), not on the instance.
+        #
+        # #867 stopped a store deadlocking against ITSELF. It could not stop two JsonStore objects
+        # on the SAME FILE in the same thread, and that pair exists:
+        #
+        #     registryhub.py:239      JsonStore(hub_dir / "registryhub_verification_chains.json")
+        #     chain_executor.py:3178  JsonStore(project_dir / CHAINS_STORE_RELPATH)   # same file
+        #
+        # There is no store cache anywhere — 46 construction sites, each building its own — so any
+        # module that reaches for a hub file directly gets a second handle. `flock` is per open
+        # file description, so instance B in the same thread blocks on instance A's lock exactly
+        # as a second fd on one instance did, and #867's instance-keyed depth reads 0 for B.
+        #
+        # A path key covers both. Cross-THREAD and cross-PROCESS exclusion is untouched: the depth
+        # map is keyed by thread id, so another thread still takes the real flock and still waits,
+        # which is the mutual exclusion the store depends on. Only same-thread nesting — which can
+        # never be anything but a hang — is short-circuited.
+        _key_869 = (str(self.file_path.resolve()), threading.get_ident())
+        depth = _FLOCK_DEPTH_869.get(_key_869, 0)
         if depth:
             if not getattr(self, "_said_reentry_867", False):
                 self._said_reentry_867 = True
@@ -176,21 +199,21 @@ class JsonStore:
                     "fix the mutator to use only the MapView it is given. Caller:\n%s",
                     self.file_path.name, "".join(_tb.format_stack()[-6:-1]),
                 )
-            self._flock_depth_867 = depth + 1
+            _FLOCK_DEPTH_869[_key_869] = depth + 1
             try:
                 yield
             finally:
-                self._flock_depth_867 -= 1
+                _FLOCK_DEPTH_869[_key_869] -= 1
             return
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         lock_path = self.file_path.with_suffix(self.file_path.suffix + ".lock")
         with open(lock_path, "a+") as lock_file:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            self._flock_depth_867 = 1
+            _FLOCK_DEPTH_869[_key_869] = 1
             try:
                 yield
             finally:
-                self._flock_depth_867 = 0
+                _FLOCK_DEPTH_869.pop(_key_869, None)
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def _load_raw(self) -> Dict[str, Any]:

@@ -9930,9 +9930,9 @@ mechanism that *explains* an observation is not evidence that it *produced* it �
 181 already recorded, applied to a much more satisfying story.
 
 **Still out of the scan's reach**, recorded so a green test is not read as more than it is:
-an indirect path through a helper that eventually touches the store; a second `JsonStore` instance
-for the same file in the same thread (#867's guard keys on the instance and would not help); a
-cross-thread lock-order inversion where the holder blocks on something else.
+an indirect path through a helper that eventually touches the store; ~~a second `JsonStore`
+instance for the same file in the same thread~~ (**closed by #869, item 199**); a cross-thread
+lock-order inversion where the holder blocks on something else.
 
 **The discriminator, and the false positive that shaped it.** A call on `self` inside a mutator is
 safe **iff it threads the mutator's own view as its first argument** — `self.helper(m, …)` is a
@@ -9945,4 +9945,36 @@ the probe.
 
 The value of the test is unchanged by the zero: it is the difference between a rule written down
 once and a rule that fails a build.
+
+
+## 199. #869 — the second of item 198's three unreached mechanisms, closed
+
+Item 198 listed three shapes its scan could not judge. One of them was checkable, and it turned
+out not to be hypothetical:
+
+    registryhub.py:239      JsonStore(hub_dir / "registryhub_verification_chains.json")
+    chain_executor.py:3178  JsonStore(project_dir / CHAINS_STORE_RELPATH)     # the same file
+
+★ **There is no store cache anywhere** — 46 construction sites, each building its own handle. Any
+module that reaches for a hub file directly gets a second one, and that is one line of code away
+in all 46 places. `flock` is per open file description, so instance B blocks on instance A's lock
+in the same thread exactly as a second fd on one instance did, and **#867's instance-keyed depth
+reads 0 for B**.
+
+The guard is now keyed on **(resolved path, thread id)**. Cross-thread and cross-process exclusion
+is deliberately untouched — another thread still takes the real `flock` and still waits, which is
+the mutual exclusion the store depends on — and a case asserts it: a worker thread blocks until
+the outer write releases, then both writes are present. Only same-thread nesting is
+short-circuited, and same-thread nesting can never be anything but a hang.
+
+Proven the same way as #867: two handles, one file, nested in one thread — used to never return;
+now completes, writes, drains the depth map, and names its caller.
+
+★ **Same disposition as #868 requires me to state.** Two handles on one file is a real, current
+condition; a *nesting path between them* is not demonstrated. This is a safety net, not a proven
+cause — and after item 198's correction I am not going to call it the first link again.
+
+**One of the three remains open**: a cross-thread lock-order inversion, where the flock holder
+blocks on something else. That one is not statically decidable and is the kind of thing #866's
+trace — now landing with the run — exists to catch.
 
