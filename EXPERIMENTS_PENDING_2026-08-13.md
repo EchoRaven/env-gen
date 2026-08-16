@@ -1733,6 +1733,48 @@ right one needed a distribution.
 
 ---
 
+## 104. browse_by_languages is NOT a plumbing gap — and the judge is not always right
+
+Item 101's second-biggest blocker (60% of runs). #778 and #779 both turned out to be plumbing —
+the framework had the data and never handed it over — so the same question was asked here, and
+the answer is different.
+
+**The decomposition is correct, in 53 of 53 runs.** The judge complains that the screen has one
+language dropdown where the reference has two, plus a missing "Select Your Preferences" label.
+r151's `design_system.json` lists, by id: `preferences-label`, `original-language-dropdown`,
+`original-language-menu`, `language-dropdown`, `language-options-menu`. **Everything the judge
+says is missing was decomposed and handed to the lane.** Not #778's shape.
+
+**And then the judge turns out to be wrong about the dropdowns.** The built page contains two
+`<select>` elements, and the screenshot shows both rendered, top-right, labelled "Original
+Language" and "Language". The deviation *"only one 'language' dropdown; reference shows two"* is
+false. **This matters beyond one screen: #778's case was built partly on judge deviations, and
+they are mostly right but not uniformly so — a deviation is evidence, not ground truth.**
+"Select Your Preferences" IS genuinely absent (0 occurrences in the built source), so the same
+note is half right, which is the harder kind of wrong to notice.
+
+**What IS real, and it is worth its own line.** The capture shows four content rails carrying two
+titles between them — `Browse by Languages`, `Browse by Languages`, `THE CRASH`, `THE CRASH` —
+with visibly different posters under each. Different content, repeated labels. Across r99+ runs
+the judge raises duplicated row/section titles in **19 of 48 (39%)**. That is the row-level cousin
+of #615's identical-content routes, and it points back at item 54: a page that never passes a
+filter has no distinct groupings to name, so it names them all the same.
+
+**A false positive of my own, caught by opening the file.** Before any of this I ran a "are the
+decomposed controls present in the built source" probe and it reported 5 of 6 found, including
+all three the judge flagged. It was splitting `original-language-dropdown` into
+`['original','language','dropdown']` and requiring each token to appear ANYWHERE in a 300KB
+concatenation of every JSX file. All three appear somewhere; none appear together.
+`grep -ri "Select Your Preferences"` returns zero. **A checker built on that probe would have
+reported everything present, always** — the #734 class, avoided only because the result looked
+too good and got checked against the actual file.
+
+**Cheapest observation.** Duplicated row titles, 39% baseline, is the measurable one. It needs no
+new detector: the judge already reports it, and the query above counts it. What it needs is the
+filter question from item 54 answered — which remains the oldest open thread in this document.
+
+---
+
 ## 103. #779 — the framework measured the depth and told nobody
 
 #778 took `copy`, the most frequent floor. This takes `style`, the **lowest-scoring dimension in
