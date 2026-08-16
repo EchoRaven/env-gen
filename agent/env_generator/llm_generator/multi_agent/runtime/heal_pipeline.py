@@ -1016,6 +1016,14 @@ class HealPipeline:
             from .handler_fk_repair import repair_handler_fk_aliases
             res = repair_handler_fk_aliases(_P(out_dir) / "app" / "backend")
             fixed = res.get("fixed") or []
+            # #784: a model the repair REFUSED to guess on. Silence here used to mean both
+            # "nothing was broken" and "something was broken and I picked an actor at random".
+            for amb in (res.get("ambiguous") or []):
+                orch._logger.warning(
+                    "handler FK-alias repair DECLINED (ambiguous owner): %s carries more than "
+                    "one owner-ish FK, so a broken reference cannot be resolved to an actor "
+                    "without guessing. Left as an AttributeError 500 on purpose — a loud failure "
+                    "beats a silent wrong-owner query.", amb)
             if fixed:
                 orch._logger.warning(
                     "By-construction handler FK-alias repair: rewrote %s handler "

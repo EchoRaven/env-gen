@@ -1907,6 +1907,50 @@ made #782's episode probe report 2% when the answer was 17%.
 
 ---
 
+## 111. #784 — applying item 110's rule found a repair that guesses which user you are
+
+Item 110's rule (*a fix that generalises by matching a SHAPE is rarely made correct by the shape*)
+was then pointed at every shape-matching site in the runtime. One stood out:
+`repair_handler_fk_aliases`, whose docstring states a precondition **the code never checked**:
+
+> "...but the model has a **single** owner FK, rewrite it to that FK"
+
+`_owner_fk` returns the FIRST match in `_OWNER_FK_NAMES` order, so on a model with two owner-ish
+columns it does not resolve the ambiguity — it hides it. `_OWNER_FK_NAMES` contains *directional
+halves* (`sender_id`, `follower_id`, `from_user_id`), so on `messages(sender_id, recipient_id)` a
+broken `Message.user_id` inside an INBOX handler is rewritten to `sender_id`. **The endpoint then
+returns the caller's SENT mail, 200 OK, and no chain step notices** — a wrong-owner read
+introduced by a repair whose entire purpose is to prevent a 500.
+
+**Scope, stated honestly.** The repair has **never fired in this corpus** — no run log contains its
+message; it was built for an instagram run. 48 of 1671 tables (2%) carry two owner-ish columns and
+**every one is `user_id` + `profile_id`**, not a directional pair, so the harmful case cannot be
+demonstrated on real data here — only constructed. This is not a fix for an observed failure; it is
+the code being made to honour its own documented contract on a surface where owner-scoping changes
+have twice turned out to be safety changes (#568, #569).
+
+The repair now **declines** rather than guesses, leaving a loud `AttributeError` 500 — and says so
+in the log, because a repair that quietly does nothing is indistinguishable from one with nothing
+to do (#769/#770's rule).
+
+**★ The guard's FIRST version was the same mistake it was written to prevent.** It counted how many
+`_OWNER_FK_NAMES` members the model carried — and `messages` has exactly one (`sender_id`), because
+**the dangerous counterpart `recipient_id` is precisely the name not on the list**. The test caught
+it. The working guard counts columns by what they POINT AT (`ForeignKey("users.id")`,
+`ForeignKey("profiles.id")` — real generated models declare these), which is the meaning rather
+than the shape. Third time in two items that a curated list stood in for a semantic question.
+
+**And the fixture hid it once more.** The first synthetic model used bare `Column(Integer)` with no
+`ForeignKey`, so there were no targets to read and the guard could only fall back to names — the
+very thing under test. **Shape your fixtures like the real artefact**; a simplified fixture removed
+exactly the signal the fix depends on.
+
+Also normalised: two early returns were `{"fixed": []}` while the third gained `"ambiguous"`, so a
+caller reading `res["ambiguous"]` would `KeyError` on precisely the paths where nothing happened —
+the fixed-key-projection class again (#771/#778).
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to
