@@ -3782,6 +3782,7 @@ const _railSlice = (rows, n, i) => { const arr = rows || []; const p = Math.ceil
 const _fmtDur = (d) => { if (d == null || d === '') return ''; if (typeof d === 'string' && /[a-z]/i.test(d)) return d; const n = Number(d); if (!isFinite(n) || n <= 0) return ''; const s = n >= 300 ? n : n * 60; const h = Math.floor(s / 3600); const m = Math.round((s % 3600) / 60); return h ? (h + 'h ' + m + 'm') : (m + 'm'); };
 const _yearOf = (r) => { for (const k of ['year','release_year','air_year','pub_year','published_year','launch_year','season_year']) { const v = r && r[k]; if (v) return String(v); } for (const k of ['release_date','air_date','published_at','released_at','first_aired','premiere_date']) { const v = r && r[k]; const m = (typeof v === 'string') && v.match(/\\b(1[89]\\d\\d|20\\d\\d)\\b/); if (m) return m[1]; } return ''; };
 const _durOf = (r) => { for (const k of ['duration_sec','duration_seconds','length_sec','runtime_sec']) { const n = Number(r && r[k]); if (isFinite(n) && n > 0) return _fmtDur(Math.max(n, 300)); } for (const k of ['duration_min','runtime_min','length_min','duration_minutes','runtime_minutes']) { const n = Number(r && r[k]); if (isFinite(n) && n > 0) { const h = Math.floor(n / 60); const m = Math.round(n % 60); return h ? (h + 'h ' + m + 'm') : (m + 'm'); } } for (const k of ['duration','runtime','length']) { const v = r && r[k]; if (v) return _fmtDur(v); } return ''; };
+const _ratingOf = (r) => { for (const k of ['maturity_rating','content_rating','age_rating','parental_rating','certification','rating_label','rating_age','maturity']) { const v = r && r[k]; if (v) return String(v); } return ''; };
 const _genresOf = (r) => { for (const k of ['genres','genre','genre_names','categories','category','tags','labels']) { const v = r && r[k]; if (!v) continue; const a = Array.isArray(v) ? v : String(v).split(/\\s*[,|/]\\s*/); const out = a.map((g) => (g && typeof g === 'object') ? (g.name || g.title || g.label || g.slug || '') : String(g)).filter(Boolean); if (out.length) return out; } return []; };
 """
 
@@ -6643,7 +6644,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
                 # #782: read via the fallback accessors, not bare `cur.year`/`cur.duration` — the
                 # projector cannot know the app's column names, which is why every other accessor
                 # in _REF_HELPERS_JS is a multi-key list.
-                "            {cur && (_yearOf(cur) || cur.maturity_rating || _durOf(cur)) ? <div className=\"mt-2 flex flex-wrap items-center gap-3 text-sm font-medium\" style={{ color: '#ffffff', opacity: 0.85 }}>{[_yearOf(cur), cur.maturity_rating, _durOf(cur)].filter(Boolean).map((m, mi) => <span key={mi}>{m}</span>)}</div> : null}\n"
+                "            {cur && (_yearOf(cur) || _ratingOf(cur) || _durOf(cur)) ? <div className=\"mt-2 flex flex-wrap items-center gap-3 text-sm font-medium\" style={{ color: '#ffffff', opacity: 0.85 }}>{[_yearOf(cur), _ratingOf(cur), _durOf(cur)].filter(Boolean).map((m, mi) => <span key={mi}>{m}</span>)}</div> : null}\n"
                 + _rank_line
                 + _btns +
                 "          </div>\n"
@@ -7196,7 +7197,7 @@ def _render_reference_page(name: str, page: Mapping[str, Any], screen: Dict[str,
             # #782: same fallback accessors as the hero. Measured on the corpus: 13% of runs name
             # the column `release_year` and 4% `duration_min`, and every one of those rendered a
             # metadata row with the chip silently absent.
-            "          {cur && (_yearOf(cur) || cur.maturity_rating || _durOf(cur)) ? <div className=\"mb-3 flex flex-wrap items-center gap-3 text-sm font-medium opacity-80\">{[_yearOf(cur), cur.maturity_rating, _durOf(cur)].filter(Boolean).map((m, mi) => <span key={mi}>{m}</span>)}<span className=\"rounded border px-1.5 text-xs\" style={{ borderColor: 'rgba(255,255,255,0.4)' }}>HD</span></div> : null}\n"
+            "          {cur && (_yearOf(cur) || _ratingOf(cur) || _durOf(cur)) ? <div className=\"mb-3 flex flex-wrap items-center gap-3 text-sm font-medium opacity-80\">{[_yearOf(cur), _ratingOf(cur), _durOf(cur)].filter(Boolean).map((m, mi) => <span key={mi}>{m}</span>)}<span className=\"rounded border px-1.5 text-xs\" style={{ borderColor: 'rgba(255,255,255,0.4)' }}>HD</span></div> : null}\n"
             "          {cur && _subOf(cur) ? <p className=\"text-sm leading-relaxed opacity-90\">{_subOf(cur)}</p> : null}\n"
             # #446: the reference detail modal shows a genres/tags panel — render genre
             # chips from the entity's own fields (data-driven, generalizable, no fetch).

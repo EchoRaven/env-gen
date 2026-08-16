@@ -1767,7 +1767,8 @@ seconds-vs-minutes from magnitude, so a 320-**minute** film formatted as `5m`; `
 unit from the key name. `created_at` is deliberately excluded from `_yearOf` — every row has one
 and it is the INSERT time, so it would print a confident wrong year on every app in the corpus.
 
-**THREE tests were pinning this defect in place.** Not one — the full suite named every site:
+**FOUR tests were pinning this defect in place.** Not one — the full suite named every site
+(the fourth, `test_frontend_detail_modal.py`, surfaced during #783's sweep — see item 110):
 
     test_frontend_hero_cta.py    :: test_hero_metadata_row_is_data_driven      "cur.year" in out
     test_cluster_lift_551.py     :: test_551_fmtdur_helper_present_and_used    "_fmtDur(cur.duration || cur.runtime)" in out
@@ -1858,6 +1859,51 @@ identical; only the *meaning* of the FK separates a chip row from a privacy leak
 as chips — tags, categories, cast, skills, ingredients, topics — is invisible to every projected
 detail page for the same reason. `cast_list` renders in r151 only because it happens to be a flat
 `TEXT` column on `titles`.
+
+---
+
+## 110. #783 — sweeping #782's whole class, and the fix that would have been worse than the bug
+
+#782 fixed three sites found by reading one screenshot. A defect found that way is an instance,
+not a class, so the emitted JSX was swept for every bare property read. Four candidates survived
+the obvious filters, and **only one was a real defect** — the negatives are recorded here so the
+class is not swept again.
+
+| candidate | corpus | verdict |
+|---|---|---|
+| `cur.maturity_rating` | 2 of 139 content tables spell it `rating_label` / `rating_age` | **real, fixed (#783)** |
+| `cur.top10_rank` | 133 of 139 carry `top10_rank`; the other 6 have no rank column at all | **not a defect** — never aliased |
+| `cur.episodes` | not a DDL column | **already handled** — the page falls back to a separate `/episodes` fetch |
+| `.ok` / `.status` / `.json` | — | fetch-response properties, not app data |
+
+★ **The interesting part is that the obvious fix here is worse than the bug.** 117 of 139 content
+tables carry **both** `maturity_rating` and `rating` — and `rating` is the average score. A
+fallback list built the natural way (`maturity_rating`, `rating`, `avg_rating`, …) would print
+**`4.2` where `TV-14` belongs, in 117 of 139 runs**, to repair a defect that affects 2. The
+accessor therefore covers only certification-shaped keys and every numeric-average spelling is
+asserted to return `""`.
+
+**This is item 109's `my_list` trap again, in a different subsystem.** Both times the candidates
+were *structurally* indistinguishable — a link table is a link table, a rating column is a rating
+column — and only their **meaning** separated the correct behaviour from a harmful one. Two
+independent sightings in one session is enough to state it as a rule:
+
+> ★ When a fix generalises by *matching a shape*, the shape is almost never the thing that makes
+> it correct. Enumerate the real values the shape admits and check what each one MEANS before
+> widening. `100%` on a structural test, and a plausible-looking fallback list, are the two ways
+> this has bitten so far.
+
+**A fourth pinning test turned up too** — `test_frontend_detail_modal.py` asserted
+`"cur.maturity_rating" in out`. Item 108 said three; it is **four**, i.e. every single site of
+this defect had a test holding it in place. Corrected there.
+
+**Sweep method, for reuse.** Regex the emitted JSX for `\b(cur|ep|r|row|rec|it|item)\.<field>`,
+drop JS builtins and fetch-response keys, then for each surviving field **enumerate the actual
+column spellings across the corpus DDL** rather than guessing a candidate set — guessing is what
+made #782's episode probe report 2% when the answer was 17%.
+
+**Cheapest observation next run.** `title_detail.png` shows a year chip and a runtime chip beside
+`TV-14`, and no bare `cur.` read survives `tools/check_pending_experiments.sh` probe 9.
 
 ---
 
