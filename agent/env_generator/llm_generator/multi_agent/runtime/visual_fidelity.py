@@ -3030,7 +3030,34 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                 for s in (_pj.get("screens") or []):
                     if isinstance(s, dict) and s.get("name") is not None:
                         prior_by_name[s["name"]] = s
-        except Exception:
+        except Exception as _pv_exc:
+            # #884: an UNREADABLE prior verdict is not "there is no prior verdict".
+            #
+            # `if _pp.is_file()` above already separates the two, so reaching this handler means
+            # the file EXISTS and could not be parsed — and `{}` then does two things silently:
+            #
+            #   1. #500's high-water merge stops merging, so every screen takes THIS round's live
+            #      score and a previously-passing screen can regress.
+            #   2. the carry-over loop below ("prior screens absent from this possibly-partial
+            #      capture") carries nothing — so a screen this round did not capture simply
+            #      VANISHES from the verdict.
+            #
+            # ★ (2) is the dangerous one. #872 established that `visual_gate_verdict` FAILS any
+            # owned screen left unjudged — "an owned screen that was never judged is a FAILURE,
+            # not a skip" — and it is not recoverable within the round. So a corrupt verdict.json
+            # silently converts a partial capture into a gate FAILURE, in the file where 70 of the
+            # 94 non-completed corpus runs die.
+            #
+            # This is the direction the usual analysis misses: the empty default is not a
+            # permissive pass here, it is a silent fail. Announced once; the data cannot be
+            # recovered from an unparseable file, so the fix available is to stop it being silent.
+            if not globals().get("_said_prior_884"):
+                globals()["_said_prior_884"] = True
+                _LOG.error(
+                    "PRIOR VERDICT UNREADABLE (%s: %s) — #500's high-water merge is disabled for "
+                    "this round and any screen not captured now will be MISSING from the verdict, "
+                    "which #872 shows the gate scores as a failure rather than a skip (#884).",
+                    type(_pv_exc).__name__, _pv_exc)
             prior_by_name = {}
 
         merged: List[Dict[str, Any]] = []

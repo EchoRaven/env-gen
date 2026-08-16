@@ -10558,3 +10558,50 @@ other agent mid-edit in `completeness_audit.py` and `delivery_gate.py`. The fina
 did not move underneath it. Recorded because the first instinct on 16 red tests is to look at your
 own diff, and that would have been the wrong place.
 
+
+## 211. #884 — the census's blind spot was the gate where most runs die
+
+#883 (the concurrent agent) turned the swallowed-default class into a baseline scanner over eight
+**gate/audit files**. ★ **`visual_fidelity.py` is not one of them** — and it is the gate where
+**70 of the 94 non-completed runs die**. Applying #883's own criteria to the three uncovered files:
+
+    visual_fidelity.py        12 silent empty-default handlers
+    workflow_policies.py       5
+    hubs/codehub/service.py    2
+
+Third time this session that a class sweep missed sites because **the file list followed where the
+author was already looking** — #790 missed the orchestrator, #792 missed its own file, #883's
+`_GATES` misses the visual gate.
+
+### the one that matters
+
+```python
+try:
+    if _pp.is_file():            # separates "no prior" from "unreadable prior"
+        ... prior_by_name[s["name"]] = s
+except Exception:
+    prior_by_name = {}           # silent
+```
+
+Reaching that handler means the file **exists and could not be parsed**. Then:
+
+1. #500's high-water merge stops merging — a previously-passing screen can regress.
+2. ★ the carry-over loop below carries **nothing**, so a screen this round did not capture
+   **vanishes from the verdict**.
+
+**(2) is fatal.** #872 established that `visual_gate_verdict` fails any owned screen left
+unjudged — *"an owned screen that was never judged is a FAILURE, not a skip"* — and it cannot be
+recovered within the round. **A corrupt `verdict.json` silently converts a partial capture into a
+gate failure.**
+
+★ **This is the direction the whole census kept missing.** Every other site's empty default read as
+a *permissive pass*; this one reads as a *silent fail*. The scanner's discriminator — "which
+direction does empty point" — is right, and both directions are live.
+
+### the bug in the fix, caught before it shipped
+
+The first cut called `logger.error(...)`. **This module has no `logger`; it uses `_LOG`.** A
+`NameError` inside an `except` propagates, so the fix would have turned an unreadable verdict into
+a crashed merge — strictly worse than the silence it was replacing. `compile()` does not catch an
+undefined name. Reading the module's own logging convention does, and it took one grep.
+
