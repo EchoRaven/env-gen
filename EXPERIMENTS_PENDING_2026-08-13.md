@@ -9377,3 +9377,49 @@ rest of the sentence on every one.
 possessive and a closing quote **identically**. The count was only usable because I read the
 matches instead of trusting the total — the same discipline that turned this whole item around.
 
+
+## 188. `search` (221 entries / 48 runs) was not "needs a build" — it was already built and it works
+
+Item 187 filed the largest remaining OPEN class as *"needs a build"*. That was a guess, and it was
+wrong. Opening it properly closes the class.
+
+The framework does emit the utility cluster. Rendering the nav **end-to-end through the real entry
+point** across every corpus design system:
+
+    search present 150/151        bell present 150/151
+
+And the era split — the discipline #795 set and item 183 had to re-learn — settles it. `#454` /
+`#551` (inline `currentColor` SVG chrome, replacing an `<img>` that painted black on a dark nav)
+entered the tree **2026-08-06 21:59**:
+
+| | before the fix | after |
+|---|---|---|
+| `aria-label="Search"` in the delivered frontend | 64/98 (65%) | **45/45 (100%)** |
+| `aria-label="Notifications"` | 59/98 (60%) | **45/45 (100%)** |
+
+**Every one of the 48 complaining runs predates the fix.** Same shape as #652/pagination in item
+183: a working fix whose metric looks flat because the corpus is dominated by pre-fix runs. ★ Two
+classes in two items now resolved by splitting on ship time — which makes the corpus-wide rate a
+**misleading default statistic** for anything fixed in the last three weeks, and the split the
+default first move rather than an afterthought.
+
+### three instrument errors in one investigation, all caught, all worth the pattern
+
+1. **A word probe on generated markup.** `'search' in out` said the gate fired in 149/151 — but it
+   matches `aria-label="Search"`, a class name, anything. Exactly the trap recorded for the judge's
+   `missing` lists, and I walked into it on my own code.
+2. **Marker extraction that assumed one SVG shape.** I collected `d="…"` attributes to fingerprint
+   the emitter and found only two paths, both the bell — concluding *"no search icon is emitted"*.
+   ★ **A magnifier is `<circle>` + `<line>`; it has no `d` attribute at all.** The emitter was
+   correct and my fingerprint could not see it.
+3. **Calling with the wrong arguments.** I invoked `_nav_chrome_454(ds, skip=set(), force=set())`
+   while the real caller passes a populated `skip` (utilities the asset channel already covers) and
+   `force`. #804's lesson, third occurrence this session: **a probe that does not use the caller's
+   arguments measures a code path nobody runs.**
+
+Each produced a confident wrong intermediate — *"the gate fires"*, *"no search is emitted"*, *"the
+#440 nav swap is the culprit"* — and each died on looking at the actual output. The correlation
+test also came out **backwards** from my hypothesis (lane-authored navs carry the chrome 84% of
+the time, framework-marked ones 55%), which was the signal that the population, not the mechanism,
+was doing the work.
+
