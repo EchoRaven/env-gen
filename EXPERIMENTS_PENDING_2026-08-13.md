@@ -2559,6 +2559,46 @@ worse. Style and copy earned their place by being the two dimensions the scores 
 
 ---
 
+## 126. #798 — the most re-filed task in the corpus asked the verifier to look up data already on disk
+
+The consumer-timing rule applied to the verifier lane. `business_chain_failing`'s body reads:
+*"read the broken step, fix the chain (or bug_create for the endpoint it exposed), then re-run
+run_validation."* **It names no step.**
+
+Meanwhile `registryhub_verification_chains.json` records, per chain, `last_result.broken` plus a
+per-step row carrying `action` / `method` / `path` / `status` / `ok` / `kind` / `note` / `expect`.
+
+    runs with real chains                              140
+    runs with >=1 failing chain                         30
+      ...of those, the last_result payload exists       30   (all of them)
+
+And `"Make business_chain pass (blocks delivery)"` is **the most re-filed title in the corpus** —
+13 copies in r130 alone (#794). ★ So the single most-repeated instruction in the system was a
+lookup request for data already written down. Only the #148 action-404 case was specialised; every
+other failure got the generic sentence.
+
+The task body now carries the step: `auth_round_trip -> step 'protected read': GET /api/profiles
+returned 500, expected [200] — AttributeError: 'Profile' has no attribute user_id`. Got **and**
+expected, because "it returned 500" is a lookup and "it returned 500 where [200] was expected" is
+a diagnosis. Capped at 8 (#680: this description is already the largest object the system
+produces). The action-404 branch keeps precedence — it re-routes the task to a different *lane*,
+not just different text.
+
+**Two of my own errors, one class each, both already catalogued.**
+* `list(d.values())` over the chains file includes the `_meta` bootstrap document, so the first
+  "chain" inspected had keys `['last_modified_at','last_modified_by','version']` and the probe
+  reported **0 failing chains across 140 runs**. Byte-for-byte the #755 shape, where a bootstrap
+  `{"version": 1}` was counted as a release. Seventh instrument-zero this session; caught by the
+  rule, not by reading the keys.
+* My new helper's docstring cites `#794`, and it sits **earlier in the file** than #794's code —
+  so `s.index("#794")` in four existing tests silently relocated to a docstring and one failed
+  against working code. Third self-match of the session (after the comment quoting `cur.year`, and
+  `"raise" not in blk` matching "stakes raised"). **Anchor tests on a sentence from the code site,
+  never on a bare ticket number**: ticket numbers are cross-referenced by design, so they are
+  guaranteed to reappear.
+
+---
+
 ## 107. Three verified judge inaccuracies in one sitting — the pattern, not the anecdote
 
 Item 104 found one. #781 found the second. `title_detail` is the third, and three is enough to

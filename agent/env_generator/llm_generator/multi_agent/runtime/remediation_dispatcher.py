@@ -97,6 +97,49 @@ def suppress_verifier_chain_reauthor(name: str, owner: str, chain_rerun_armed: b
                 and chain_rerun_armed)
 
 
+def _chain_broken_detail_798(orch) -> List[str]:
+    """#798: name the broken step. The `business_chain_failing` task body said "read the broken
+    step" and stopped there — while the framework already holds, per chain, exactly which step
+    broke and why.
+
+    `registryhub_verification_chains.json` records `last_result.broken` plus a per-step row with
+    `action` / `method` / `path` / `status` / `ok` / `kind` / `note` / `expect`. Measured over the
+    corpus: **30 of 140 runs carry at least one failing chain, and all 30 have that payload.**
+    Meanwhile `"Make business_chain pass (blocks delivery)"` is the most re-filed title in the
+    corpus (13 copies in r130 alone, #794) — so the single most-repeated instruction in the system
+    was asking the verifier to go and find something already written down.
+
+    Same `_extra` mechanism as #284's ui_flow names and #148's action-404 list. Best-effort: any
+    fault → [] and the generic text stands.
+    """
+    try:
+        chains = orch.hubs.registryhub.get_verification_chains() or {}
+        out: List[str] = []
+        for name, rec in (chains.items() if isinstance(chains, dict) else []):
+            if name == "_meta" or not isinstance(rec, dict):
+                continue
+            lr = rec.get("last_result") or {}
+            for st in (lr.get("steps") or []):
+                if not isinstance(st, Mapping) or st.get("ok") is True:
+                    continue
+                got = st.get("status")
+                exp = st.get("expect")
+                note = str(st.get("note") or "").strip()
+                out.append(
+                    "%s -> step %r: %s %s returned %s, expected %s%s" % (
+                        name, str(st.get("action") or "?"),
+                        str(st.get("method") or "?"), str(st.get("path") or "?"),
+                        got if got is not None else "no response",
+                        exp if exp else "a 2xx",
+                        (" — " + note[:160]) if note else ""))
+            if not (lr.get("steps") or []):
+                for b in (lr.get("broken") or []):
+                    out.append("%s -> broken: %s" % (name, str(b)[:200]))
+        return out[:8]
+    except Exception:
+        return []
+
+
 def _chain_action_404s(orch) -> List[str]:
     """Re-derive the #124-stub broken steps from the chain registry's
     last_result (the gate-level failed_checks carry names only — same
@@ -989,6 +1032,14 @@ class RemediationDispatcher:
                             "status=implemented; if a registration is junk/obsolete, "
                             "deprecate it via registryhub_deprecate_endpoint instead:"
                             "\n- " + "\n- ".join(_act[:8]))
+                    else:
+                        # #798: the general case — name the step the framework already knows broke,
+                        # instead of telling the verifier to go and look it up.
+                        _brk798 = _chain_broken_detail_798(orch)
+                        if _brk798:
+                            _extra = ("\n\nTHE BROKEN STEP(S), from the chain registry's own "
+                                      "last_result — fix THESE, do not re-author the chain:\n- "
+                                      + "\n- ".join(_brk798))
                 # #70(b) (netflix r76, 2026-08-05): if the framework armed a deterministic chain
                 # RE-RUN this tick (maybe_rerun_unrun_chains → orch._chain_rerun_armed) AND this
                 # blocker is STILL owned by the verifier (i.e. the action-404 re-route above did
