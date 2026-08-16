@@ -3818,6 +3818,42 @@ which is what caught this one and which took two seconds.
 
 ---
 
+## 159. #826 — an allocator, because three collisions in one session is a namespace problem
+
+`#817` and `#820` were re-derived after a context break; `#822` and `#823` were simply taken. Each
+was found only after the code and the write-up existed under the wrong number. *"Check the log
+first"* was written down after the first and **failed twice more** — this session's own lesson
+about rules versus locations (#786/#793/#802), demonstrated on itself a fourth time.
+
+★★ **The first two versions of the allocator were wrong in the way this repo catalogues most
+often.** Scanning all source for `#NNN` matched a CSS hex colour (`.empty { color: #999; }`) and a
+prose example (*"Your invoice #4021 is ready"*), and reported the next free ticket as **4022**.
+Tightening the regex chased the symptom: **`#999` and a ticket number are the same token**, and no
+pattern separates them — which is the same wall #782's `cur.year` and item 104's word probe hit.
+
+What separates them is not the token but **where a number is CLAIMED** rather than referenced —
+two places, both structured:
+
+    EXPERIMENTS headings   `## 150. #820 — an unsatisfiable nav-link expectation`
+    commit subjects        `#824/#825: renumber the new audits off a collision`
+
+A number in a code comment is a *reference* and does not claim the namespace. Narrowing to the
+declaration sites makes the question answerable exactly; the regex version could only make it
+narrower and still wrong.
+
+Verified on the cases that produced it: the four real collisions read TAKEN with their claim site,
+the two lookalikes read FREE, and the number it hands out is one it will not then call taken. Its
+own ticket, **#826**, was allocated by running it.
+
+★★★ **The general shape, since it recurs.** Three times this session a check failed because the
+thing being matched was *textually identical* to the thing being excluded — `id`⊂`profile_id`,
+`#999`⊂tickets, a word in prose vs a word in code. In every case the fix was not a better pattern
+but a **different source**: the FK's target instead of its name (#784/#803), the claim site instead
+of the token, the emitted artifact instead of the source text (#782). **When two things share a
+spelling, stop refining the match and change what you are reading.**
+
+---
+
 ## 154. Auditing my own attribution claims — one bad, four sound
 
 The r128 correction was the second time this session I asserted *who did something* without reading
