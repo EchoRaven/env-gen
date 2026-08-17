@@ -10827,3 +10827,44 @@ agent mid-edit across five runtime modules. **I did not chase any of it.** My ow
 passed in isolation; ninety seconds later the full suite was green under a clean bracket. Before
 item 213 that would have been an hour of looking at my own diff.
 
+
+## 218. the choke-point lesson has a boundary, and measuring found it
+
+I ended the last item with an open thread I had written myself: *"the choke point for total time
+including retries is the retry layer, so a fourth unbounded LLM call still stacks the same way."*
+The obvious next move was to hoist #870/#871/#872's 300s ceiling into `utils.llm`.
+
+**Measured first, over 186,926 real inter-response gaps from the corpus agent logs:**
+
+| | |
+|---|---|
+| p50 / p90 / p99 | **2s / 7s / 36s** |
+| steps longer than 300s | **165 (0.1%)** |
+| steps longer than 720s — the whole retry budget | **58** |
+
+★ A global 300s ceiling would cut **165 real steps**, and the 58 past 720s cannot be retry
+stacking at all — the budget does not reach that far, so they are legitimately long single
+operations. **The choke point is the wrong place for this ceiling.**
+
+### the refinement
+
+> **Gate at the choke point when the INVARIANT is uniform. Gate per-site when the correct VALUE
+> differs by caller.**
+
+`dockerfile_lint` is uniform — *no Dockerfile may use BuildKit-only syntax* is the same rule for
+every writer, so one gate at `write_workspace_file` is strictly better than N prompts. A timeout is
+not uniform: 300s is right for a one-shot planning call that has a single-milestone fallback, and
+fatal for an agent step whose tail legitimately reaches 3011s.
+
+So `#870`/`#871`/`#872` were right to be per-site — **for a reason I had not articulated until the
+measurement forced it.** I had them filed as an instance of my own worst habit; they are the
+counter-example that bounds it.
+
+★★ **Two turns, two corrections in opposite directions, both from measuring rather than
+reasoning.** #890 corrected "uncapped" to "capped at ~12 minutes" and made the per-site ceilings
+look like a mistake; this measurement corrected that and made them right again. Neither correction
+was reachable by re-reading the code — the first needed the retry config, the second needed
+186,926 real durations. **A design rule with no measured boundary is a slogan**, and I was one
+commit away from applying this one straight through a 0.1% tail that would have broken the
+agent loop.
+
