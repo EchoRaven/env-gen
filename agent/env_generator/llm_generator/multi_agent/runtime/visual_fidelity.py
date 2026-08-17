@@ -233,6 +233,30 @@ _VIEWPORT_FALLBACK_H_644 = 900
 # package and hand-stub each module-level relative import, so a new one there fails at
 # collection with `No module named '<pkg>.stage_contract'` (#853/#889 hit this too).
 # Calling it per use also means the ceiling tracks a config change without a restart.
+def _spent_verdict_892(screen: Mapping[str, Any]) -> Dict[str, Any]:
+    """#892: the verdict a screen gets when the round budget ran out before it was judged.
+
+    ★ Extracted so it can be EXECUTED. Every one of #892's original seven assertions read the
+    source text (`assert '"judge_error": True' in block`), and the round budget is
+    `max(_judge_timeout_s_872(), env)` — the env var can only RAISE it — so nothing in a test or in
+    the field could ever reach this path. A mechanism whose only checks are string matches on code
+    that never runs is the exact shape this session has been finding in other people's tickets.
+
+    The shape is load-bearing, which is why it deserves a real test. `judged = {r["name"] for r in
+    results}` counts a screen that appears AT ALL, so this record is what keeps a budget-spent
+    round RECOVERABLE: skipping the screen leaves it `unjudged`, and an unjudged owned screen fails
+    the verdict outright. `judge_error` + `similarity: 0.0` is the state #142 refuses to cache, so
+    the screen is re-judged next round rather than frozen at zero.
+    """
+    return {
+        "name": screen["name"], "route": screen["route"],
+        "similarity": 0.0, "dimensions": {},
+        "deviations": ["not judged this round: the round budget was spent (#892)"],
+        "summary": "round budget spent", "judge_error": True,
+        "advisory": bool(screen.get("advisory")),
+    }
+
+
 def _judge_timeout_s_872() -> float:
     from .stage_contract import llm_ceiling_898
     return llm_ceiling_898("ENVGEN_JUDGE_TIMEOUT_S")
@@ -2823,12 +2847,7 @@ async def run_visual_fidelity(
                 "and the gate's escapes can run. They are NOT skipped: an unjudged owned screen "
                 "fails the verdict outright (#892).", _round_budget_892)
         if _spent_892:
-            results.append({
-                "name": screen["name"], "route": screen["route"],
-                "similarity": 0.0, "dimensions": {},
-                "deviations": ["not judged this round: the round budget was spent (#892)"],
-                "summary": "round budget spent", "judge_error": True,
-                "advisory": bool(screen.get("advisory"))})
+            results.append(_spent_verdict_892(screen))
             continue
         shot = shots.get(screen["name"])
         if not shot:

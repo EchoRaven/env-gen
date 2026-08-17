@@ -13182,3 +13182,48 @@ the cheap half of the experiment.
 3. The auth branch stays out of it. A dead login wedges the whole chain, the framework's form is
    deliberately wired, and r134's lane alternative (`<AuthShell><AuthForm/></AuthShell>`) has never
    been scored either. If the first experiment pays off, that is the second one.
+
+## 262. ★ #915 — item 260 said "unverifiable without a run". That was wrong for #892.
+
+Item 260 parked the #872/#889/#892 ceilings as *"unverifiable without a run that actually stalls"*.
+Checking rather than repeating it:
+
+    ticket  test file                                    assertions that DRIVE code
+    #872    test_the_judge_call_is_bounded_872.py        1  — and it is `issubclass(
+                                                              asyncio.TimeoutError, Exception)`,
+                                                              a fact about Python, not this code
+    #889    ..._design_ladder_is_bounded_889.py          6
+    #892    ..._round_budget_is_spent_as_verdicts_892.py **0**
+
+★ **#892's mechanism had never been executed by anything.** All seven assertions read source text
+(`assert '"judge_error": True' in block`), and the budget is `max(_judge_timeout_s_872(), env)` — the
+env var can only RAISE it — so no test and no operator could reach the path at all.
+
+That matters because of what the record is FOR. `judged = {r["name"] for r in results}` counts a
+screen that appears at all; skipping a budget-spent screen leaves it `unjudged`, and an unjudged
+owned screen fails the verdict outright. The whole ticket is "emit a verdict instead of skipping",
+and whether the emitted verdict has the right shape was checked only by grepping the source.
+
+**#915** extracts `_spent_verdict_892(screen)` so the path can be run, and rewrites the tests to
+drive it: the verdict counts as judged (asserted through the consumer's own set-comprehension),
+`advisory` survives (`True`/absent/`0`), the deviation names the cause and the ticket, and one
+remaining source assertion keeps the loop honest about calling the helper.
+
+★ **The tell was free and I nearly missed it: three of the old tests went red on a pure extraction
+that changed no behaviour.** A test that breaks when you move a literal, and cannot break when the
+value is wrong, is testing where the text lives.
+
+### the class, measured across the suite
+
+A crude sweep (files using `inspect.getsource` with no call into their subject): **135 test files**.
+Three of three sampled confirmed by hand — e.g. `test_the_visual_defer_check_that_failed_open_888`
+has 8 tests, all `src.count(...)` / `"return []" in t`.
+
+★ Not all 135 are defective, and the number should not be waved around as if they were. Asserting a
+rationale exists, or pinning a guard's *shape* where the behaviour needs a live run, is legitimate —
+several of this session's own tickets do it deliberately. The narrower, real finding is:
+
+**when source text is the ONLY check, the mechanism has never run.** A refactor then fails the test
+while a wrong value passes it. Worth a targeted pass on the tickets whose mechanism is load-bearing
+and cheap to drive — #872's timeout verdict is the obvious next one, and it is the same extraction
+shape #915 just used.

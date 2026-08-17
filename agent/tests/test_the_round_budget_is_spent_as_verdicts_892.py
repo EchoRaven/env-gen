@@ -39,27 +39,48 @@ def test_the_budget_exists():
 
 
 def test_it_records_a_verdict_instead_of_skipping():
-    """★ The safety property, and the entire difference from the version #872 refused."""
-    span = _span()
-    i = span.index("if _spent_892:")
-    block = span[i:]
-    assert "results.append" in block
-    assert '"judge_error": True' in block
-    assert '"similarity": 0.0' in block
-    assert block.rstrip().endswith("continue")
+    """★ The safety property, and the entire difference from the version #872 refused.
+
+    ★ REWRITTEN as behaviour. Every assertion in this file used to read source TEXT, and the round
+    budget is `max(_judge_timeout_s_872(), env)` — the env var can only RAISE it — so nothing in a
+    test or in the field could ever reach this path. The mechanism had never been executed. The
+    verdict is now built by `_spent_verdict_892`, so it can be."""
+    v = vf._spent_verdict_892({"name": "player", "route": "/watch/:id"})
+    assert v["judge_error"] is True
+    assert v["similarity"] == 0.0
+    assert v["dimensions"] == {}
 
 
-def test_the_recorded_screen_keeps_its_identity():
-    """It must carry `name` — that is the only field `judged` looks at, so a verdict without it
-    is a skip wearing a verdict's clothes."""
-    span = _span()
-    assert '"name": screen["name"]' in span
-    assert '"route": screen["route"]' in span
+def test_the_recorded_screen_counts_as_JUDGED():
+    """★ The property the whole ticket exists for, asserted against the consumer's own expression.
+    `judged = {r["name"] for r in results}` counts a screen that appears AT ALL — so a record
+    without `name` is a skip wearing a verdict's clothes, and an unjudged owned screen fails the
+    verdict outright."""
+    v = vf._spent_verdict_892({"name": "player", "route": "/watch/:id"})
+    judged = {r["name"] for r in [v]}
+    assert "player" in judged
+    assert v["route"] == "/watch/:id"
 
 
 def test_advisory_status_is_preserved():
     """An advisory screen recorded as blocking would change the verdict's arithmetic."""
-    assert '"advisory": bool(screen.get("advisory"))' in _span()
+    assert vf._spent_verdict_892({"name": "s", "route": "/s", "advisory": True})["advisory"] is True
+    assert vf._spent_verdict_892({"name": "s", "route": "/s"})["advisory"] is False
+    assert vf._spent_verdict_892({"name": "s", "route": "/s", "advisory": 0})["advisory"] is False
+
+
+def test_the_deviation_says_why_and_names_the_ticket():
+    """It reaches the judge-missing-list analysis and the remediation prompt; "" would read as a
+    screen that was judged and found perfect."""
+    v = vf._spent_verdict_892({"name": "s", "route": "/s"})
+    assert v["deviations"] and "budget" in v["deviations"][0]
+    assert "892" in v["deviations"][0]
+    assert v["summary"]
+
+
+def test_the_loop_uses_the_helper():
+    """Non-vacuity for the tests above: they are only meaningful if the round loop calls this."""
+    assert "results.append(_spent_verdict_892(screen))" in _span()
 
 
 def test_the_budget_is_at_least_one_full_judge_call():
