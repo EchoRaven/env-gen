@@ -12699,3 +12699,67 @@ the false blocker. Corrected here, in `frontend_audit`'s comment, and in the #90
 What #906 is actually worth, restated: it removes a third and fourth copy of a predicate whose premise
 #905 disproved, and it closes the fake-map check's blind spot for route-less map surfaces. It fixes no
 observed blocker. That is a smaller claim, and it is the true one.
+
+## 252. ★★★ r153 ships `GET /api/my-list` returning every account's rows (#908)
+
+Found by auditing the delivered app after a green gate — #569's rule. r153 is the arc's best run
+(multi-milestone validated, 2 tags, 146/146 chains, 30/30 endpoints) and its backend serves:
+
+    @app.get("/api/my-list")
+    def _projected_get_api_my_list_7(db=Depends(get_db), user=Depends(get_current_user)):
+        rows = db.query(MyList).limit(100).all()      # every profile's rows, to any caller
+
+    @app.post("/api/my-list", ...)                    # …beside a write that 403s a foreign
+                                                      #   profile_id (_fw_owns → _fw_owner_val)
+
+`GET /api/continue-watching` is identical in the same tree. The lane's OWN owner-scoped handler —
+`SELECT id FROM profiles WHERE id=:pid AND user_id=:uid` then 403 — was **dropped** by
+`_custom_route_overrides_projected`, whose #528 premise is that the projected read is owner-safe.
+
+### three doors, all open at once
+
+| gate | why it did not close |
+|---|---|
+| contract flag `owner_scoped_reads` | `my_list.metadata == {}` — the draw simply omitted it |
+| `_is_per_user_sub_entity_fk` (#566y) | reads `meta["fks"]`; r153's model is `profile_id = Column(Integer)` — no `ForeignKey` |
+| `_is_user_content_relation` (#598) | same `fks` dependency, and there is no direct `user_id` here |
+
+`_parse_models` builds `fks` from `Column(..., ForeignKey("users.id"))`, and **its own docstring**
+says models omitting it are *"common in LLM-written ORMs"* and *"still wire correctly"*. They wire
+correctly and they leak. The DDL agrees: `"profile_id" INTEGER`, no `REFERENCES` on any business
+table (only the platform's own `users`/`oauth_*` carry them).
+
+★ **The evidence standard was inconsistent between two functions ten lines apart.** `_owner_fk`
+accepts a column NAME as proof of ownership — that is the *only* reason `profile_id` counts as an
+owner at all (`_OWNER_FK_NAMES`, N-P0-2) — while the function that decides what that same column
+MEANS accepted only a parsed FK. #908 resolves the parent by the standard the owner was resolved by:
+`profile_id` → a table named `profiles`, which must itself carry a direct user principal.
+
+### sizing it honestly — the era split matters
+
+162 projected reads ship unfiltered on a table with a recognised owner column, but a raw count is
+misleading: **157 predate the fix for their own shape.**
+
+    r<131          157   before #566y/#598 — expected
+    r131             1   continue_watching, profile_id→profiles   #566y's OWN motivating run
+    r141             2   my_list / c_w, user_id→users             #598's
+    ★ r153           2   my_list / c_w, profile_id→(undeclared)   still open until #908
+
+Blast radius measured across all 143 parsed backends: **exactly three (table, owner) verdicts
+change** — `my_list`, `ratings`, `continue_watching` in r153. `posts.author_id` stays opt-in,
+`profiles.user_id` unchanged, `title_genres.title_id` unchanged.
+
+### ★ my fix shipped the very bug this session is about, and an existing test caught it
+
+The first version resolved the parent from `models` alone without checking that the CHILD declares
+the column, so `_is_per_user_sub_entity_fk({}, "profile_id", models)` returned **True** — an empty
+`child_meta` ("I know nothing about this table") answered as if it were data. #566y's own test
+asserted exactly that case and went red.
+
+That is the **third** empty-input-read-as-a-value in this session — #902 (blank route as the site
+root), #907 (empty cache as an empty source tree), and now this, inside the fix for the other two.
+The class is not a coincidence of one API; it is a default reflex worth distrusting: **an empty
+container is not a fact about the world.**
+
+★ Also worth keeping: this is the one time all session an existing test caught a real defect in my
+change rather than pinning an old one. The suite's guards are not uniformly decorative.
