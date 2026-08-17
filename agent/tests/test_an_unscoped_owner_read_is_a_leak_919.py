@@ -159,6 +159,59 @@ def test_it_shares_the_projector_s_ownership_decision():
     assert "_is_per_user_sub_entity_fk" in src and "_is_user_content_relation" in src
     assert "_owner_fk" in src
 
+# --------------------------------------------------------------------------- generator vs gate
+
+_PROJ_MODELS = {
+    "users": {"cls": "User", "cols": ["id", "email"], "fks": {}},
+    "profiles": {"cls": "Profile", "cols": ["id", "user_id", "name"], "fks": {}},
+    "my_list": {"cls": "MyList", "cols": ["id", "profile_id", "title_id"], "fks": {}},
+    "continue_watching": {"cls": "ContinueWatching",
+                          "cols": ["id", "profile_id", "title_id"], "fks": {}},
+    "titles": {"cls": "Title", "cols": ["id", "name"], "fks": {}},
+}
+
+
+def test_the_gate_is_silent_on_the_projector_s_own_output():
+    """★ The invariant that makes BLOCKING safe, and the one #908 broke.
+
+    This gate blocks, and the corpus holds 159 instances of the shape it blocks on. If the
+    generator still emitted an unscoped read, #919 would wedge every run — so the two are run
+    against each other here: project the handlers, feed them to the gate, require silence.
+
+    ★ Precisely what it covers, because the obvious claim is wrong: this catches a ONE-SIDED
+    drift — the projector stops emitting the filter while the gate still recognises the
+    ownership, or the reverse. It does NOT catch a both-sided regression: disabling #908 makes
+    both blind and this test stays green (verified). That direction is covered by
+    `test_the_r153_leak_is_caught`, which uses a hand-written leak and never touches the
+    projector — so the pair is complete only because the two tests fail on different things.
+    """
+    from env_generator.llm_generator.multi_agent.runtime import route_projector as rp
+
+    d = Path(tempfile.mkdtemp()) / "app" / "backend"
+    d.mkdir(parents=True)
+    (d / "models.py").write_text(_MODELS + """
+class ContinueWatching(Base):
+    __tablename__ = "continue_watching"
+    id = Column(Integer, primary_key=True)
+    profile_id = Column(Integer)
+    title_id = Column(Integer)
+""", encoding="utf-8")
+    (d / "main.py").write_text("\n".join(
+        rp._generate_handler("GET", path, True, _PROJ_MODELS, i)
+        for i, path in enumerate(["/api/my-list", "/api/continue-watching", "/api/titles"])
+    ), encoding="utf-8")
+
+    assert ba.unscoped_owner_read_findings(d) == [], (
+        "the projector emitted a read this gate blocks on — blocking would wedge every run")
+
+
+def test_the_projector_really_does_emit_the_filter():
+    """Non-vacuity for the test above: silence must come from a SCOPED read, not from the gate
+    failing to see the handler at all."""
+    from env_generator.llm_generator.multi_agent.runtime import route_projector as rp
+    block = rp._generate_handler("GET", "/api/my-list", True, _PROJ_MODELS, 0)
+    assert ".filter(" in block and "_fw_owner_val" in block, block[:300]
+
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

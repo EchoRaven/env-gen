@@ -13666,3 +13666,38 @@ with its own copy would drift from the generator the same way. A test asserts th
 
 Three defects, three axes, none of which existed when the session started. Each was found by hand
 first; each now has a check that finds it without one.
+
+## 273. ★ validating the gate I just made blocking — the risk I shipped, checked
+
+#919 blocks, and the corpus holds **159 instances of the shape it blocks on**. If the generator
+still emitted an unscoped read, #919 would not be a gate — it would be a wedge on every run. That
+risk arrived with the change and had to be closed before r154, not after.
+
+Run the post-#908 projector and feed its own output to the gate:
+
+    rp._generate_handler("GET", "/api/my-list", …)
+      → db.query(MyList).filter(getattr(MyList, "profile_id")
+                                == _fw_owner_val(MyList, "profile_id", user)).limit(100).all()
+    ba.unscoped_owner_read_findings(<that tree>)  →  0 findings
+
+★ **The gate is silent on the framework's own output, so blocking is safe.** The 159 corpus
+instances are pre-#908 artifacts; a new run cannot produce them from the projector. A LANE handler
+still can, and blocking there is the point.
+
+Kept as a regression test, because the pairing is the invariant: **the generator and the gate must
+agree about what is private.** #908 was exactly the two disagreeing.
+
+### ★ and the claim I wrote about that test was wrong
+
+I first wrote *"a drift on either side fails this test rather than a release."* It does not.
+Disabling #908 makes BOTH sides blind and the invariant test stays **green** — verified, not
+reasoned. What actually fails then is `test_the_r153_leak_is_caught`, which uses a hand-written leak
+and never touches the projector.
+
+    one-sided drift (projector stops filtering, gate still knows)  → the invariant test fails
+    both-sided regression (the shared decision itself breaks)      → the hand-written-leak test fails
+
+The pair is complete only because the two fail on different things, and the docstring now says so.
+An overstated claim in a test is the same defect class this session has spent its time on — a check
+whose description promises more than it delivers — and it lasted about four minutes here because it
+was checked instead of asserted.
