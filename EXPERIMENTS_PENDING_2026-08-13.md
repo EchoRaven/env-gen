@@ -12286,3 +12286,61 @@ wrong `_PKG_ROOT` is undetectable in exactly the same way.
 
 Expect it to go red on the 4 (or 6, with the module-level pair) until item 241's fixes land. **That is
 the test working for the first time.**
+
+
+## 244. the brand-new #895 guard has two blind spots and misses all six live offenders
+
+Item 243 found #802's guard *certifies* the defect. Its companion — `tests/test_top_level_modules_are_not_relative_895.py`,
+written **today** for exactly this class — is much better built:
+
+| | |
+|---|---|
+| `_ROOT = env_generator/llm_generator` | ★ the **correct runtime root**, the thing #802 got wrong |
+| `test_the_scan_sees_the_tree`: `assert files >= 100` | non-vacuity |
+| `test_the_scanner_would_catch_the_r152_line` | ★ **a real calibration on a known positive** |
+| `test_a_legitimate_sibling_relative_import_is_not_flagged` | a negative control |
+
+Right root, non-vacuous, calibrated — and it still flags **none** of the six live offenders, for two
+independent reasons.
+
+### blind spot 1 — a hand-maintained list
+
+    _TOP_LEVEL = ("progress", "checkpoint", "context", "utils")
+    root = (n.module or "").split(".")[0]
+    if root in _TOP_LEVEL:  out.append(...)
+
+All six are `from ...tools.…`. **`tools` is not in the list, so not one is flagged.**
+
+★★ The irony is documented verbatim in the guard this one supplements. #802's docstring opens:
+
+> *"This test **discovers** the imports by AST rather than listing them. A hand-maintained list is the
+> `_OWNER_FK_NAMES` trap from item 110 — a curated set standing in for a semantic question, which goes
+> stale the moment someone adds the tenth entry and does not update it."*
+
+The new guard **is** that list — and not stale-in-future: **already incomplete on the day it was
+written**, because `tools` is a top-level package in the same root with six live offenders importing
+from it.
+
+### blind spot 2 — the filename exclusion
+
+    if f.name.startswith("test_"): continue
+
+`multi_agent/runtime/test_user_runner.py` and `test_user_validation.py` are **runtime modules, not
+tests**. Even after adding `tools` to `_TOP_LEVEL`, the guard would still miss **two of the six**.
+★ This is the identical exclusion that made my own sweep under-report in item 236 — a naming coincidence
+silently deleting production code from the survey. Two of us wrote it independently, one day apart.
+
+### APPLY-READY
+
+Replace the name list with the semantic question, which needs no list at all:
+
+    # CPython: bits = package.rsplit('.', level-1); error iff len(bits) < level
+    # i.e. "beyond top-level package" iff package_depth < level
+    if pkg_depth < node.level:  offender
+    else: resolve base + module against the tree; absent → offender
+
+That is item 236's calibrated scan; it finds all six **plus** the reverted #895 line. For the exclusion,
+skip only files under a `tests/` **directory**, never by filename.
+
+★ **Keep both calibration tests.** They are what will make this guard trustworthy once the predicate is
+right — and they are precisely what #802 lacks.
