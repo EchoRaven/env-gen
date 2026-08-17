@@ -2541,7 +2541,30 @@ async def run_visual_fidelity(
                             if _sf738.exists():
                                 _prev738 = json.loads(
                                     _sf738.read_text(encoding="utf-8")) or {}
-                        except Exception:
+                        except Exception as _sb_exc:
+                            # #887: same shape as #884, one function away. `_sf738.exists()`
+                            # above already separates "first round, no prior" — which the probe's
+                            # docstring calls a legitimate never-stale state — from "the file is
+                            # there and will not parse". This handler collapsed them back.
+                            #
+                            # `_served_build_is_stale_738` returns False on an empty `prev`
+                            # (`if not (_pc and _pb): return False`), so an unreadable
+                            # served_build.json reads as **NOT STALE** — a false all-clear on the
+                            # one probe that exists because, in its own words, "#715 cannot see
+                            # this case: the routes are unchanged, so it reports the build clean".
+                            # That is the mechanism recorded as letting r148 release v1.0.0 with
+                            # the SPA throwing on every route.
+                            #
+                            # The permissive default stays (a corrupt stamp must not block a
+                            # capture); what it must not be is indistinguishable from round one.
+                            if not globals().get("_said_sb_887"):
+                                globals()["_said_sb_887"] = True
+                                _LOG.error(
+                                    "SERVED-BUILD STAMP UNREADABLE (%s: %s) — #738's stale-bundle "
+                                    "check is DISABLED for this round and will report the build "
+                                    "clean, which is exactly the blind spot it was written to "
+                                    "cover (#887).",
+                                    type(_sb_exc).__name__, _sb_exc)
                             _prev738 = {}
                         if _served_build_is_stale_738(_prev738, _fe738, _bundle738):
                             _LOG.warning(

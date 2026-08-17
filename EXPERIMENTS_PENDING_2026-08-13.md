@@ -10605,3 +10605,36 @@ The first cut called `logger.error(...)`. **This module has no `logger`; it uses
 a crashed merge — strictly worse than the silence it was replacing. `compile()` does not catch an
 undefined name. Reading the module's own logging convention does, and it took one grep.
 
+
+## 212. #887's landing — two repo guards caught me, and both were right
+
+The served-build stamp fix (#887) shipped, and two existing guards fired on the way in. Recording
+them because in both cases **the guard was right and my instinct was to think it was noise.**
+
+### #719 caught a ticket-number collision — with myself
+
+`test_no_fix_number_is_used_for_TWO_different_fixes` flagged two files claiming `#887`. The cause:
+this fix was written in a stretch of work that got interrupted, shipped labelled `#885` (colliding
+with the one-name-one-value ticket committed minutes earlier), and when I renumbered it I created a
+**second** test file for a finding that already had one.
+
+★ **Seventh collision of the session and the first with myself.** #829's allocator prevents
+collisions between agents; it cannot prevent one between two of my own uncommitted edits, because
+neither is in the ledger yet. The duplicate file is deleted — the surviving one is better anyway,
+carrying the full triage of the 18 handlers by what the CONSUMER does with the empty value.
+
+### #738's test counted a literal my change legitimately altered
+
+`test_a_fault_never_breaks_the_capture` asserts `b.count("except Exception:") >= 2`. Naming the
+exception so it can be logged — `except Exception as _sb_exc:` — dropped the count to 1.
+
+★ **The guard is still there; the assertion was counting a string, not a property.** As written it
+would have blocked *making a silent handler loud*, which is the opposite of what a
+"faults never break the capture" test is for. Now matches `except Exception(?: as \w+)?:`.
+
+That is the fourth time this session a test asserted a **literal** where it meant a **property**
+(#851's frozen measurement, #860's pinned span choice, #864's ticket stamp, this). Every one was
+written by someone trying to be precise. ★ **Precision about the wrong thing is how a suite starts
+defending the status quo** — and the tell is always the same: the assertion names a token instead
+of a consequence.
+

@@ -113,7 +113,12 @@ def test_the_state_survives_between_rounds():
 
 def test_a_fault_never_breaks_the_capture():
     b = _block()
-    assert b.count("except Exception:") >= 2
+    # #887: count GUARDED HANDLERS, not the bare literal. Naming the exception
+    # (`except Exception as _sb_exc:`) so it can be logged does not remove a guard, but an
+    # exact-string count reads it as one — the test would have blocked making a silent handler
+    # loud, which is the opposite of what it is for.
+    import re as _re
+    assert len(_re.findall(r"except Exception(?: as \w+)?:", b)) >= 2, b
 
 
 def test_it_decides_nothing():
