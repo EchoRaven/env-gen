@@ -11149,3 +11149,60 @@ and re-confirmed still true (`step_runner.py:146` still initialises the set and 
 
 Naming them beats bucketing them: the failure mode of the last two items was a bucket label standing
 in for a check.
+
+
+## 224. the two cross-module claims I named but had not tested — both honoured, one imprecise
+
+Item 223 named two testable claims and left them undone, which is the same failure it had just
+criticised one paragraph earlier. Done here. **24 of 47 now checked; every testable claim in the set
+is resolved.**
+
+### 1. `business_chain_blockers` — *"the synthesized DEFAULT chain is NEVER stored in the chain registry"*
+
+The claim is about the **synthesizer**, not this function, so it is unfalsifiable where it is written.
+Traced instead:
+
+    register_verification_chain(...)   ONE call site in the whole tree:
+                                       tools/hub_tools.py:1786 — the AGENT-FACING tool
+    synthesize_default_chain(...)      called once, chain_executor.py:1289, whose caller RETURNS it
+                                       to the executor as a fill-in; never stored
+
+★ **Honoured.** No framework path registers the synthesized default, so an empty
+`get_verification_chains()` really does prove the verifier registered nothing — which is what the
+gate leans on.
+
+### 2. `_visual_release_decision` — *"a strict SUBSET of the states the wall-clock escape would eventually release anyway, so it can NEVER ship an app the escape would not, only sooner"*
+
+★ **Honoured, and by the right structure.** `if app_dead: return "defer"` is the **first** statement,
+so #750's veto dominates `fast_release` — the one path that can fire before any time floor. That is
+precisely the r148 shape (released v1.0.0 with the SPA throwing on every authenticated route), and the
+ordering is what makes the guarantee real rather than asserted. Every other escape is time- or
+count-based and eventually fires for any non-dead state, so the fast path only ever moves a release
+earlier.
+
+★ **One real imprecision, worth recording because it is load-bearing prose.** `fast_release`'s
+condition does **not** include `deferred_since is not None`, but the wall-clock escape does:
+
+    fast_release:   avg_release and coverage_ok and avg >= avg_min and _live_ok and stable_rounds
+    wall-clock:     deferred_since is not None and (now - deferred_since) > escape_s
+
+So when `deferred_since is None` the fast path can fire and the wall-clock escape cannot. The accurate
+statement is *"a subset of the states **some** escape would release"* — `total_judgments >= total_cap`
+and `attempts >= attempt_cap` carry no `deferred_since` precondition and cover that case. Harmless
+today. It stops being harmless if either count-based cap is ever removed, at which point the prose
+flips from imprecise to false without anything touching the sentence.
+
+★★ **And the sentence is load-bearing in a second place:** #861's comment justifies declining the fast
+path with *"Refusing here cannot cost a release. #558's own docstring establishes that fast_release is
+'a strict SUBSET…'"* — one docstring cited as evidence for another. The code does support it, so the
+conclusion stands; but a chain of prose citations is exactly how a claim survives after the code under
+it moves. The check above is the first time it was verified against the code rather than against the
+other docstring.
+
+### where the 47 stand
+
+    24  checked      1 broken (item 222), 3 imprecise prose, 20 honoured
+    13  rationale, not testable promises — named individually in item 223
+    10  historical narrative about bugs that WERE (past tense, already fixed)
+
+Nothing testable in this set is left open.
