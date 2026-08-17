@@ -9438,6 +9438,20 @@ def _ensure_framework_auth_pages(ui_pages: List[Dict[str, Any]]) -> List[Dict[st
 _STRUCT_KINDS_583 = ("<ul", "<li", "<table", "<h2", "<h3", "<form", "<video", "<img", "<section")
 
 
+def _env_flag_914() -> bool:
+    """#914: is the projector allowed to defer to a component-based lane page?
+
+    OFF unless ``ENVGEN_DEFER_TO_LANE_PAGE`` is set to a truthy value. Read per call rather than
+    captured at import so a run can be started with it either way without a reload, and so a test
+    can flip it with `monkeypatch.setenv`. Never raises — a missing/odd env must mean OFF, not a
+    crash inside the page-writing loop."""
+    try:
+        return str(os.environ.get("ENVGEN_DEFER_TO_LANE_PAGE", "")).strip().lower() in {
+            "1", "true", "yes", "y", "on"}
+    except Exception:
+        return False
+
+
 def _stale_thin_projection_583(existing: str, cand: str) -> bool:
     """#583 — is this marked page a STALE THIN projection rather than a refined floor?
 
@@ -9731,7 +9745,43 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                         # while rendering the SAME screen with its 17 now-present components
                         # yields 83 lines WITH them (executed both ways). Six other
                         # hypotheses were eliminated first — see HANDOFF 5.0r.
-                        if (_cand_ok and
+                        # #914: the lane page this would replace pulls in its OWN components.
+                        # That test is not new — it is `_stale_thin_projection_583`'s own first
+                        # condition, in its own words: *"the existing file imports NOTHING from
+                        # `../components/` — a lane that refined a page pulls its own components
+                        # in; a bare projection does not"*. #583 applies it only to a page the
+                        # projector already marked; for a LANE page, where it is the more obvious
+                        # question, nothing asks it at all.
+                        #
+                        # DEFAULT OFF. Replaying all 1269 net-deleting clobbers in the corpus:
+                        # 537 (42%) replaced a page that imports `../components/`, 732 (58%) a
+                        # stub or generic layout — which is exactly what the projector was built
+                        # for (r92: 11 StubPages; r93: 3 routes against an 11-screen reference;
+                        # r7/r8: per-screen 0.10-0.15 against a 0.65 bar). Flipping the default
+                        # is not mine to do: EVERY fidelity score in the arc was earned by the
+                        # projection, and the lane's pages have never been rendered to a camera,
+                        # so "the lane's is better" is as untested as "the projection's is". The
+                        # other direction has a scar too — #566j, r117/r120: clobbering a real
+                        # 230-line lane page wedged deliverability into a 75-min no-deliver abort.
+                        #
+                        # ★ Off, it still LOGS. A run with the flag unset therefore measures the
+                        # exposure for free — how many pages the rule would have kept, and which —
+                        # with byte-identical output. That is the cheap half of the experiment.
+                        _lane_real_914 = bool(
+                            _cand_ok and not _marked and "../components/" in (_existing or ""))
+                        _defer_914 = _lane_real_914 and _env_flag_914()
+                        if _lane_real_914:
+                            try:
+                                __import__("logging").getLogger(__name__).warning(
+                                    "LANE PAGE WITH OWN COMPONENTS: %s — %d lines importing "
+                                    "../components/ vs a %d-line projection. %s (#914; set "
+                                    "ENVGEN_DEFER_TO_LANE_PAGE=1 to keep the lane's).",
+                                    comp, len((_existing or "").splitlines()),
+                                    len((_cand or "").splitlines()),
+                                    "KEEPING the lane's page" if _defer_914 else "replacing it")
+                            except Exception:
+                                pass
+                        if (_cand_ok and not _defer_914 and
                                 (not _marked
                                  or _stale_thin_projection_583(_existing, _cand))):
                             # #910: say what this costs. `not _marked` means "the existing page is

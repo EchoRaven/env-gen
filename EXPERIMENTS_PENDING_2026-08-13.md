@@ -13140,3 +13140,45 @@ Genuinely outside this vein and still open, unchanged:
   forward, but those runs left two log lines and no artifact that names the mechanism. Nothing left
   to read; only a reproduction would settle it.
 - **User decisions** #774 (report → block?), #854 roster, #181 language selector, item 184 avatar.
+
+## 261. #914 — the decision, implemented and switched OFF
+
+Item 260 said the whole remaining vein converges on one question: *should a framework page writer
+defer to a substantially richer, component-based lane page?* Answering it needs a run; **preparing
+it does not**, so the rule is now in the code, default OFF, and it reports even while off.
+
+★ The test is not invented. It is `_stale_thin_projection_583`'s own first condition, verbatim:
+
+    "the existing file imports NOTHING from `../components/` — a lane that refined a page pulls
+     its own components in; a bare projection does not"
+
+#583 applies it only to a page the projector already marked. For a LANE page — where it is the more
+obvious question — nothing asks it at all.
+
+    replaying all 1269 net-deleting clobbers in the corpus
+      replaced a page importing ../components/   537   42%   real lane work
+      replaced a stub / generic layout           732   58%   the projector's actual purpose
+    top pages the rule would keep: TitleDetailPage x187, BrowseHomePage x92, LoginPage x79
+
+**Why it ships off.** Every fidelity score in the arc was earned by the PROJECTION — the lane's
+pages have never been rendered to a camera — so *"the lane's is better"* is exactly as untested as
+*"the projection's is"*. Both directions have scars: for the projector, r92's 11 StubPages, r93's 3
+routes against an 11-screen reference, r7/r8 at 0.10–0.15 per screen against a 0.65 bar; against it,
+#566j — r117/r120, where clobbering a real 230-line lane page wedged deliverability into a 75-minute
+no-deliver abort.
+
+**Off, it still logs.** A run with `ENVGEN_DEFER_TO_LANE_PAGE` unset is byte-identical to today and
+measures the exposure for free: which pages the rule would have kept, and how big each was. That is
+the cheap half of the experiment.
+
+### the experiment, when it is wanted
+
+1. One run, flag unset — read the `LANE PAGE WITH OWN COMPONENTS` lines. Costs nothing, changes
+   nothing, and tells us whether this run's lane pages are the rich kind at all.
+2. One run with `ENVGEN_DEFER_TO_LANE_PAGE=1`, compared against r153's per-screen baseline
+   (`browse_home` 0.80, `languages` 0.60, `new_and_popular` 0.62, `login` 0.60, `player` 0.35).
+   Watch two things: whether the kept pages score higher, and whether
+   `deliverability_ui_page_unwired` appears — that is #566j's signal.
+3. The auth branch stays out of it. A dead login wedges the whole chain, the framework's form is
+   deliberately wired, and r134's lane alternative (`<AuthShell><AuthForm/></AuthShell>`) has never
+   been scored either. If the first experiment pays off, that is the second one.
