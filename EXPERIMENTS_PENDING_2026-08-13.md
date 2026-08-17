@@ -10907,3 +10907,60 @@ is also the visual window's anchor (*"ran every visual window to the 3600s ancho
 Not opened here — it needs the run's other artifacts, and this item is already a retraction rather
 than a finding. Recorded so it is a lead rather than a thing I noticed and lost.
 
+
+## 220. "advertised default with no reader" is a weak signal — the discriminator is whether an enforcer exists elsewhere
+
+Chasing r122 (item 219) ended in the codebase's own comment: #566l already names it — *"the r122
+run_validation 20-min hang"*. I had filed it as an unexamined lead without grepping `r122`, where
+the answer was sitting in a source comment. ★ **Grep the run id before calling a run a mystery.**
+
+Reading #566l's fix turned up one thing it left behind, so I swept for the class.
+
+### the sweep
+
+| scan | result |
+|---|---|
+| **A.** every `ENVGEN_*` constant, read anywhere but its own definition? | **1 candidate, a false positive.** Not a class — a single instance. |
+| **B.** every parameter never referenced in its own body | 140 — but almost all are *interface conformance*: `__exit__(exc_type, exc, tb)`, `log_message(format)`, `_dump_asyncio_tasks(signum, frame)`, and the uniform `(tool_name, tool_args)` predicate signature shared by every `preconditions.py` guard. Legitimate. |
+| **B'.** …restricted to a **non-trivial default** + never read + no caller passes it | **7** |
+
+### the 7, and why the count is not the finding
+
+| site | verdict |
+|---|---|
+| `runtime_tools.py:245` `record_failure(cooldown_seconds=300)` | ★ **not a defect.** The cooldown is enforced in `should_skip(key, cooldown_seconds=300)`, which *does* read it, and the live caller passes it there (`docker_tools.py:333`). Vestigial parameter, working behaviour. |
+| `validation_runner.py:639` `run_smoke_validation(up_timeout=_DOCKER_UP_TIMEOUT)` | ★★ **the only one with live behavioural impact** — below. |
+| `runhub/service.py:222` `start_run(timeout_s=300)` | a **trap**, not yet a bug: the sole caller (`run_tools.py:67`) omits it and the real bound is a hardcoded `timeout_s=60.0` on the healthcheck. The day someone passes `timeout_s=600` they silently get 60. |
+| `generator_memory.py:351` `compress(min_importance=0.4)` | signature *and* docstring promise importance-based retention (*"2. Scores importance"*); the body is recency + category. But `_categorize_messages` / `_extract_code_anchor` / `_derive_remaining_work` are a **second, live** retention mechanism — so the effect is not "decisions dropped like chatter", it is **two mechanisms built, one wired**. `MessageImportanceScorer` is reachable only through three wrapper methods with zero callers (`score_message_importance`: 0). Dead subsystem + a lying signature; not a live regression. |
+| `log_tools.py`, `verification_tools.py`, `system_tools.py` | uniform `execute(...)` tool signatures — conformance. |
+
+★★ **The discriminator, which is the actual product of this sweep:** *no reader in the body* is a
+weak signal on its own. What separates harmless from harmful is **whether an enforcer exists
+somewhere else**. `record_failure` has one, so the promise is kept and the parameter is only
+clutter. `up_timeout` has none, so the promise is broken *and* the bound it named is gone. Same
+shape as #883's "which direction does empty point" — same construct, opposite consequence, and only
+the consumer tells them apart.
+
+### the one live instance (NOT fixed — the edit was declined; recorded, not smuggled in)
+
+`up_timeout` occurs **exactly once** in `validation_runner.py`: its own declaration at line 639.
+After #566l split build from up, `build` uses `_DOCKER_BUILD_TIMEOUT` and `up` uses
+`_UP_ONLY_TIMEOUT`; nothing reads the parameter. Line 43 still advertises
+*"Override with ENVGEN_DOCKER_UP_TIMEOUT"* — **a documented operator knob that does nothing**, so an
+operator tightening a boot would see no change and look elsewhere.
+
+And the bound moved the wrong way. #566l's own stated aim is *"FAIL-FAST … instead of burning the
+whole cap"*, but with `_BUILD_RETRIES = 1`:
+
+    need build:  2 x 900 (build) + 240 (up)                    = 2040s
+    skip build:  240 (up, fails) + 2 x 900 (rebuild) + 240     = 2280s
+    replaced:    a hard 1200s cap
+
+**The mean improved (unchanged source skips the build entirely); the WORST CASE grew to ~1.9x the
+cap it replaced**, and the only knob documented to contain it is the dead one. Both halves are one
+fact: the ceiling stopped being expressible.
+
+The obvious repair is to make `up_timeout` a real whole-boot budget — a monotonic deadline threaded
+through `_build_with_retry` and both `up` calls, so the documented env var works again and the total
+is bounded by the number it names. **Not applied: the edit was declined.** Recorded here so the
+choice is deliberate rather than forgotten.
