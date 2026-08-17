@@ -11302,3 +11302,59 @@ characterising what it says.**
 
 That the correction landed inside the very item recording the rule is not a coincidence worth
 smoothing over — it is the measurement of how strong the pull is.
+
+
+## 227. statement ORDER is a safety mechanism here, it is pinned 74 times, and the one break had zero tests
+
+Opening the owner-scoping cluster of the "by construction" citations (the highest-stakes of the ~30
+item 225 left unread — my own memory records that this exact area shipped a live leak in r134).
+
+### the claim, verified end to end
+
+`route_projector.py` — *"a table that is per-user-private BY CONSTRUCTION is private whatever the
+contract says or forgets"* (#633). It holds, **and it holds because of statement order**:
+
+    if _explicit_public and _owner_scoped: _owner_scoped = False   # contract says public
+    if _structurally_private_resource_633(...): _owner_scoped = True   # #633 overrides it
+    auth = resolve_endpoint_auth(...) or _owner_scoped                 # #271 forces auth
+    _generate_handler(method, path, auth, models, i, response_key, _owner_scoped, ...)
+
+Each step is load-bearing. Owner-scoping an **unauthenticated** endpoint is meaningless — there is no
+actor to filter by, `owner_fk` is `None`, and the filter is *silently dropped* (that is #271's own
+recorded leak). So #633 must set `_owner_scoped` **before** the `or _owner_scoped` that forces auth,
+and after the `_explicit_public` clear that would otherwise win. Move any one of the three and the
+`GET /api/search` over `continue_watching` leak (#569, 4 of 45 delivered backends) comes back.
+
+### ★ three order-dependent safety properties verified today
+
+| property | order that carries it |
+|---|---|
+| a dead app cannot ship | `if app_dead: return "defer"` is the **first** statement, so it dominates `fast_release` — the only path that fires before any time floor |
+| a structurally-private read cannot go anonymous | the three lines above |
+| a kickoff turn always signals its waiter | ★ **broken** — the `return` sits 41 lines **above** the `finally` (item 222) |
+
+### ★★ the finding: the pinning culture is strong and purely reactive
+
+    74  source-index ORDER assertions   (assert src.index(A) < src.index(B))
+    48  distinct test files carrying one
+
+This codebase already knows that order is a safety mechanism and pins it deliberately —
+`assert src.index("if app_dead:") < src.index('return "fast_release"')`,
+`test_structural_privacy_forces_auth_633.py`, `src.index("if _parent is None:") < src.index("try:")`,
+drop-before-fill in #575. That is a mature practice, and it is why the two claims above are safe.
+
+But every one of those 74 pins exists because **someone was burned first**. And:
+
+    grep -rn "mark_detail_authored|detail_authored" tests/   →   0 hits
+
+The one broken ordering has **no pin and no test of any kind**. It was never recognised as
+load-bearing, so the reactive mechanism never reached it.
+
+★ That is the argument for item 222's scan as a standing tool rather than a one-off: *"a `return`
+lexically above a `try/finally`, discriminated by what the `finally` is FOR"* is a **proactive**
+discovery mechanism for exactly the class the 74 pins protect reactively. Run over the tree it
+returned 16 sites, 15 provably safe (the `finally` releases a resource not yet acquired, or restores
+state not yet set) and **1 broken** — the only one whose `finally` signals an external waiter.
+
+A reactive pin protects the orderings someone already broke. The scan finds the ones nobody has
+broken yet.
