@@ -11658,3 +11658,51 @@ This is the same shape as item 231's zeros and as #792's `_gate_absent_792`: **a
 fire and a check that fired and passed are indistinguishable from the outside.** The fix for all five
 is the same — either wire them or announce them as unavailable; do not leave them in the vocabulary
 reading clean. **Not applied: code edits are declined at present.**
+
+
+## 233. the other nine gates are clean of this class — and the known positive caught two broken versions of my own scan
+
+Item 232 found 5 unfireable checks in `delivery_gate.py`. The same question belongs to every other
+gate: `deliverability`, `frontend_audit`, `backend_audit`, `completeness_audit`, `seed_audit`,
+`flow_coverage`, `framework_validation`, `page_build_gate`, `visual_fidelity`.
+
+**Result: no new structurally-unreachable block site anywhere.** The finding is the process.
+
+### three versions of the instrument, two of them wrong
+
+I had a known positive — `projection_errors` at `delivery_gate.py:1908` — and used it as calibration.
+It failed the first two:
+
+| version | what it did | verdict |
+|---|---|---|
+| **v1** — filter accumulators by name (`blockers\|failed_checks\|failures\|…`) | reported `backend_audit`, `completeness_audit`, `flow_coverage`, `framework_validation`, `page_build_gate` = **0 sites** | ★ **those modules accumulate into `out`, `served`, `routes`, `handlers`, `seen`, `pages`, `critical_flows`. Their zero was MY REGEX's zero.** |
+| **v2** — drop the filter, analyse names module-wide | reported `delivery_gate.py` = **0 unreachable** | ★ **for a file I had just proven has 2.** `projection_errors` is a hardcoded `{}` in one function and `gate.get(...)` in another; module-wide merging erased it |
+| **v3** — function-scoped, counting `AugAssign`/`.append`/subscript-store/loop targets as writes | finds the known positive ✔, plus 3 hits in `frontend_audit.sync_ui_page_statuses` | those 3 are false: `ok, missing = audit_ui_page(...)` is **tuple unpacking**, an `ast.Assign` whose target is a `Tuple`, so the write was invisible and only the later `ok = False` was seen |
+
+### ★★ the lesson
+
+**Without the known positive I would have reported v1's zeros — or v2's — as "the gates are clean".**
+Both were my instrument failing silently, and both produced the most reassuring possible output.
+
+That is *"no information is not information saying no"* pointed at my own tooling, and it is the third
+distinct form it took today: v1 was a **scope** error (the regex never reached five modules), v2 was a
+**field-location** error (same name, different bindings), v3's false positives were a **shape** error
+(one of Python's several assignment forms unhandled).
+
+★ The codebase already encodes the fix. #883's test opens with `test_the_scan_sees_the_tree`:
+
+    assert total >= 100, "the AST walk has drifted"
+
+— a **non-vacuity assertion with a denominator**, so a matcher that stops working is distinguishable
+from a clean tree. I have been writing that discipline into committed tests all session and **not**
+applying it to the ad-hoc scans I reason from. Every scan in items 225–232 should have been
+calibrated against a known instance before its zero was believed; the two that were (#883's baseline,
+and this one) held, and the two that were not (v1, v2) were wrong.
+
+**Rule: a scan that reports zero is worth nothing until it has found something you already know is
+there.**
+
+### what this leaves
+
+The 5 unfireable checks of item 232 stand as the complete set for this class. Nine further gate
+modules were examined with a calibrated instrument and are clean.
