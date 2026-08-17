@@ -12605,3 +12605,32 @@ I claimed the required set was empty in 100% of runs (no page is ever marked `cr
 only a fragment of `_extract_required_flows` and missed the contract-derived fallback below it. What
 refuted it was an **artifact** — an r132 event listing 12 tracked pages and 4 missing. Reading half a
 function and generalising from the half is the same error as reading half a record.
+
+## 249. #906 — the same predicate, a third copy; and a size check on 248's claim
+
+`frontend_audit.ui_page_delivery_blockers` open-coded the same `route.startswith("/")` filter twice
+(the per-page "declared but unusable" audit and the #166 fake-map check), carrying the claim *"A
+genuinely-declared page always carries a '/'-anchored route"* that item 248's 644 records refute. Both
+now call the shared `_is_navigable_page`.
+
+Measured before changing it: including those pages yields **1** hard blocker across 153 runs, and it
+is true (r112, `NotFoundPage` genuinely absent at `src/pages/NotFoundPage.jsx`). No false positives.
+The map half is not measurable on this corpus — netflix has no map surfaces — which is the argument
+for sharing rather than fixing one copy.
+
+★ The import is MODULE-LEVEL on purpose. A function-local import inside that block would raise inside
+the `except Exception: pass` wrapping it and silently disable every ui_page blocker — #827's shape,
+which cost r152 a wedge. `flow_coverage` imports nothing from the package, so there is no cycle.
+
+### ★ sizing item 248 honestly
+
+"Swallowed 24 recorded failures" is accurate about the gate and would be misleading as a claim about
+shipped defects. Checking every affected run's release store (keyed by tag; `_meta` is not a release —
+reading it as one is what first made r116 look like it had shipped):
+
+    runs with an IGNORED failing ui_flow on a real page   8   r2 r24 r25 r46 r92 r116 r120 r144
+    ★ of those, runs that RELEASED anyway                 0
+
+So the hole is real and the gate was blind, but **no bad release is attributable to it**. Those 8 runs
+failed to deliver for other reasons. The value of #905 is coverage the gate did not have (r153's
+required set was 4 of 12 pages), not a shipped-bug count.

@@ -69,6 +69,12 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 # `/channel/:channelId` (PROPOSAL #18: the frontend route check was the last
 # brittle byte-equality match in an otherwise param-tolerant pipeline).
 from .route_projector import _express_to_fastapi, _norm_path
+# #906: the canonical "is this record a real, deliverable page?" test, shared with the ui_flow gate
+# so the two cannot drift apart again — this module open-coded its own copy and #905 disproved the
+# premise both copies rested on. Module-level on purpose: `flow_coverage` imports nothing from the
+# package (no cycle), and a function-local import here would raise INSIDE the `except Exception:
+# pass` that wraps the ui_page audit, silently disabling every blocker it produces (#827's shape).
+from .flow_coverage import _is_navigable_page
 
 # Tokens that prove a page does real work (a handler or an API call), used by both the
 # dead-controls check and the "declared apis but built nothing" stub check.
@@ -1099,8 +1105,16 @@ def ui_page_delivery_blockers(frontend_src: Any, workhub: Any) -> List[str]:
             # deliverable page — it has no App.jsx route to wire, so skip it here instead
             # of letting a route-less garbage entry permanently inflate ui_page_unwired
             # (smoke-notes 2026-06-19: a 'login_page' entry with route='' did exactly that).
-            # A genuinely-declared page always carries a '/'-anchored route.
-            if not isinstance(page, dict) or not str(page.get("route") or "").strip().startswith("/"):
+            #
+            # ★ #906: the last line of that reasoning used to read *"A genuinely-declared page
+            # always carries a '/'-anchored route"*, and the corpus says otherwise —
+            # `register_ui_page(route: str = "")` defaults to empty and **644 records across 153
+            # runs are real pages under `src/pages/` with no route** (#905). They were skipped
+            # here too, so "declared but unusable" never looked at them. Use the shared test:
+            # a component file stays skipped (#47's class, and #243's), a page file does not.
+            # Measured before changing: including them yields ONE hard blocker in 153 runs, and
+            # it is true (r112, `NotFoundPage` genuinely absent) — no false positives.
+            if not isinstance(page, dict) or not _is_navigable_page(page):
                 continue
             _ok, missing = audit_ui_page(src, page, _src_cache=cache)
             hard = [m for m in missing if _is_hard_miss(m)]
@@ -1111,9 +1125,12 @@ def ui_page_delivery_blockers(frontend_src: Any, workhub: Any) -> List[str]:
         # library anywhere, the map is a fake background — block delivery on every map page
         # (one static scan, not per-page). "declared but unusable" prefix so it routes to the
         # frontend lane like the other ui_page blockers.
+        # #906: same predicate, same reason — a map surface registered without a route was
+        # exempt from the fake-map check entirely. Not measurable on this corpus (netflix has no
+        # map pages), which is exactly why it should not stay divergent from the line above.
         _map_pages = [n for n, p in pages.items()
                       if isinstance(p, dict)
-                      and str(p.get("route") or "").strip().startswith("/")
+                      and _is_navigable_page(p)
                       and _is_map_page(n, p)]
         if _map_pages and not _frontend_uses_map_lib(src):
             for _mn in _map_pages:

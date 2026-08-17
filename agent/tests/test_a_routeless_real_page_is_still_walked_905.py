@@ -105,6 +105,36 @@ def test_the_required_set_actually_grows_for_a_routeless_page_set():
     assert "top_action_bar" not in required, required
 
 
+def test_the_frontend_audit_shares_the_predicate_rather_than_copying_it():
+    """★ #906. The same test was open-coded a third time in `frontend_audit`, carrying the claim
+    *"A genuinely-declared page always carries a '/'-anchored route"* — which the 644 refute. Two
+    copies of one concept drift; this asserts there is one.
+
+    Measured before the change: including those pages in the audit yields ONE hard blocker across
+    153 runs, and it is true (r112, `NotFoundPage` genuinely absent). No false positives."""
+    from env_generator.llm_generator.multi_agent.runtime import frontend_audit as fa
+    assert fa._is_navigable_page is _is_navigable_page
+    src = inspect.getsource(fa.ui_page_delivery_blockers)
+    assert src.count("_is_navigable_page(") == 2, "both the audit loop and the map check"
+    assert 'str(page.get("route") or "").strip().startswith("/")' not in src
+
+
+def test_the_shared_import_is_module_level():
+    """★ A function-local import here would raise inside the `except Exception: pass` that wraps
+    the ui_page audit and silently disable every blocker it produces — #827's exact shape, which
+    cost r152. Module level fails loudly at import instead.
+
+    ★ Asserted through the AST. The first version compared source offsets against `"def "`, which
+    the module DOCSTRING contains — anchoring on a bare substring that prose can quote, for the
+    nth time this session."""
+    import ast
+    from env_generator.llm_generator.multi_agent.runtime import frontend_audit as fa
+    tree = ast.parse(inspect.getsource(fa))
+    top = [n for n in tree.body if isinstance(n, ast.ImportFrom) and n.module == "flow_coverage"]
+    assert top, "the import must be a MODULE-LEVEL statement, not nested in a function"
+    assert any(a.name == "_is_navigable_page" for n in top for a in n.names)
+
+
 def test_missing_is_suppressed_on_a_validated_app():
     """★ The safety argument, asserted rather than claimed. Widening the required set is only
     responsible because a MISSING record is already waived on a functionally-validated app — if
