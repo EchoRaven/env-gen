@@ -333,6 +333,60 @@ def _component_resolves(name: str, frontend_src: Path,
 _JSX_TAG_909 = re.compile(r"<([A-Z]\w*)")
 
 
+_IMPORT_918 = re.compile(r"""from\s+['"](\.[^'"]+)['"]""")
+
+
+def _page_closure_918(page: Mapping[str, Any], src_cache: Dict[str, str]) -> Dict[str, str]:
+    """#918: every file a page can actually REACH — its own source plus everything it imports or
+    renders, transitively.
+
+    Distinct from `_rendered_components_909` on purpose. #909 asks *"does the page render the
+    components it declares"*; this asks *"can the page reach the APIs it declares"*, and the API
+    call usually lives in `services/api.js`, which a page IMPORTS rather than renders. Following
+    only JSX tags therefore reports every page as unreachable — that was the first version of this,
+    and `profiles` (which does call `/api/profiles`, through `api.js`) read as 0 of 2.
+
+    Cache-only and total: never touches disk, never raises. Keys are normalised through
+    `Path(...).resolve()` on BOTH sides — the second version of this failed because the cache is
+    keyed on the caller's walk (relative) while `(parent / spec).resolve()` is absolute, so no
+    import ever matched and the noise looked like signal.
+    """
+    out: Dict[str, str] = {}
+    try:
+        files = {}
+        for _k, _v in (src_cache or {}).items():
+            try:
+                files[Path(_k).resolve()] = _v
+            except Exception:
+                continue
+        by_stem = {p.stem: p for p in files}
+        _rel = str(page.get("path") or "").replace("\\", "/")
+        stem = Path(_rel).stem if _rel else str(page.get("component") or "")
+        start = by_stem.get(stem)
+        if start is None:
+            return out
+        stack, seen = [start], set()
+        while stack:
+            p = stack.pop()
+            if p in seen or p not in files:
+                continue
+            seen.add(p)
+            text = files[p]
+            out[str(p)] = text
+            for m in _IMPORT_918.finditer(text):
+                q = (p.parent / m.group(1)).resolve()
+                for cand in (q, q.with_suffix(".jsx"), q.with_suffix(".js")):
+                    if cand in files:
+                        stack.append(cand)
+                        break
+            for tag in _JSX_TAG_909.findall(text):
+                if tag in by_stem:
+                    stack.append(by_stem[tag])
+    except Exception:
+        return {}
+    return out
+
+
 def _rendered_components_909(frontend_src: Path, page: Mapping[str, Any],
                              src_cache: Dict[str, str]) -> set:
     """#909: the components a page actually renders, following the tree TRANSITIVELY.
@@ -1099,6 +1153,44 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
             # `missing` would flip the page to `defined` on the next tick (#891's rule — the run
             # is not wrong here, the description is), and re-projecting is a separate decision
             # with its own risk. This only ends the silence.
+            # #918: CAN A USER REACH THIS PAGE'S DECLARED APIs FROM THIS PAGE?
+            #
+            # The sibling question to #909, and the one that catches the case #909 alone does not
+            # name. r153 registers `title_detail` with five APIs including
+            # `GET /api/titles/{id}/episodes`; the endpoint exists, `services/api.js` calls it,
+            # `EpisodeList` renders it — and the page the record points at is the #910 projection,
+            # a 166-line file importing nothing but React. Every existing check passes: the API is
+            # implemented, the component is implemented, and #912 finds the call SOMEWHERE in src.
+            # None of them asks whether THIS page can make it.
+            #
+            #     corpus: 1534 pages declare an API; 735 of 2472 declared references (30%) are
+            #     unreachable from the page's own closure, and 696 pages (45%) are ISLANDS whose
+            #     closure is the file itself — the same 45% #909 measures from the other side.
+            #
+            # Reported only, total-miss only, out of `ok` — same disposition as #909: a page
+            # reaching 2 of 3 is a partial, and folding this into `ok` would flip half the pages
+            # to `defined` every tick.
+            _apis_918 = [str(a).split()[-1] for a in (page.get("apis_used") or []) if "/" in str(a)]
+            if _apis_918:
+                _reach = _page_closure_918(page, cache)
+                _blob = "\n".join(_reach.values())
+                _unreachable = []
+                for _a in _apis_918:
+                    _segs = re.split(r"\{[^}]+\}|:[A-Za-z_]\w*", _a)
+                    _pat = r"[^/\n]{0,80}".join(re.escape(s) for s in _segs).rstrip("/")
+                    if _pat and not re.search(_pat, _blob):
+                        _unreachable.append(_a)
+                if _unreachable and len(_unreachable) == len(_apis_918):
+                    out.setdefault("api_unreachable", {})[name] = _unreachable
+                    try:
+                        _LOG_791.warning(
+                            "API UNREACHABLE FROM ITS PAGE: ui_page `%s` declares %d API(s) and "
+                            "NONE is reachable from the page's own import/render closure (%d "
+                            "file(s)): %s. The call may exist elsewhere in src — a user on this "
+                            "page still cannot make it (#918).",
+                            name, len(_unreachable), len(_reach), ", ".join(_unreachable[:4]))
+                    except Exception:
+                        pass
             _decl_909 = [str(c) for c in (page.get("components") or []) if str(c) in comp_status]
             if _decl_909:
                 _used_909 = _rendered_components_909(frontend_src, page, cache)

@@ -13580,3 +13580,45 @@ What remains is not minable from the existing results:
 
 Item 269 closed the last thread that WAS minable (the 7 dead runs). Everything above needs either a
 generation run or a decision — neither of which is more digging.
+
+## 271. ★★ #918 — the axis the gates were missing, built
+
+The assessment named a category with no gate: *"the gates measure things that stay true while the
+app is not what was asked for"*. #908 (a cross-user leak), #909 (components built and orphaned) and
+#913 (a feature shipped unreachable) all passed everything. Naming it is not building it, so:
+
+**#918 asks the one question none of the existing checks ask — can a user ON THIS PAGE reach the
+APIs this page declares?**
+
+r153's `title_detail` is the worked example. It declares five APIs including
+`GET /api/titles/{id}/episodes`. The endpoint is implemented (backend audit ✓), `EpisodeList` is
+implemented (component rollup ✓), `services/api.js` calls it (#912 ✓) — and the page the record
+points at is the #910 projection, a 166-line file importing nothing but React. **Zero of five
+reachable.** Every gate green; no user can see an episode.
+
+    corpus: 1534 pages declare an API
+    ★ 735 of 2472 declared references (30%) unreachable from the page's own closure
+    ★ 696 pages (45%) are ISLANDS — the closure is the file itself
+      the same 45% #909 measures from the component side: one population, two readings
+
+Same disposition as #909: reported out of band (`out["api_unreachable"]`), total-miss only, never
+folded into `ok`, never raises.
+
+### ★ it took two instrument failures to get a number worth reporting
+
+    v1  followed only JSX tags   → `services/api.js` is IMPORTED, not rendered, so every page
+                                   read as unreachable — 7 of 10 "flagged", all noise
+    v2  followed imports         → unchanged, still 7 of 10: the cache is keyed on the caller's
+                                   relative walk while `(parent/spec).resolve()` is absolute, so
+                                   no import ever matched
+    v3  normalised both sides    → profiles 7 files / 2 of 2 reachable, login 2 of 2,
+                                   ★ title_detail 1 file / 0 of 5
+
+`profiles` is the fixture that catches both failures, and it is in the test file for that reason.
+Ninth and tenth instrument errors this session — and the pattern holds: **each one made the
+instrument report MORE, not less.** A probe that flags 70% of everything is not a finding; it is a
+broken probe wearing one.
+
+★ Worth stating for the next pass: two of the three defects in this category (#908 privacy, #913
+reachability) are still not covered by any automated axis. #918 covers the third and names the
+shape; a page-level privacy axis is the obvious sibling and does not exist yet.
