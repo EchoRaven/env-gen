@@ -10740,3 +10740,42 @@ would *not* have found #888: its consumer is a stamped attribute (`_visual_defer
 lexical `if`. The eye would not have established that the other three are safe. The eye finds what
 a pattern cannot express; the mechanism bounds what the eye skipped.
 
+
+## 216. shell/infra generation — two clean negatives, and the codebase's answer to my own worst habit
+
+Opened because this turn's own process bug (a backtick in a commit message triggering shell
+substitution and silently eating a word) pointed at a checkable question: **does the framework
+build shell commands or infra files from data?** It generates Dockerfiles, compose files, nginx
+configs and runs subprocesses.
+
+**Negative 1 — no shell.** `shell=True` call sites: **0 of 163 files**. The three
+interpolation-shaped subprocess calls are all **argv list concatenation**
+(`['git'] + list(args)`, `self._base_args() + ['up', '-d', …]`), which never reaches a shell.
+
+**Negative 2 — Dockerfile writes are gated.** `dockerfile_lint.enforce_dockerfile_classic_compat`
+is imported into `tools/canonical_file_tools/shared.py` and runs inside `write_workspace_file`,
+verified wired.
+
+★ **And that second one is the finding, though it is not a defect.** Its docstring:
+
+> *Integration point: `write_workspace_file` … Gating Dockerfile writes here means **EVERY agent +
+> EVERY tool path** that ends in a Dockerfile write is covered in one place — **no per-agent
+> prompt to maintain, no missed code path.***
+
+That is the exact correction to **my most-repeated error of this session**, stated plainly in the
+codebase before I made the error four times:
+
+    #790  swept delivery_gate.py        -> missed the orchestrator's page-build detect (#879)
+    #792  swept deliverability.py       -> missed the seed audit in its own file (#881)
+    #862  instrumented the poll loop    -> which never runs in the failure it was for (#863)
+    #883  scoped _GATES by filename     -> missed visual_fidelity.py, the gate most runs die in (#884)
+
+Every one is the same shape: **I gated at the sites I was reading, not at the choke point every
+path must cross.** `dockerfile_lint` gates at the choke point *and says why*. The pattern was
+available the whole time.
+
+★★ The probe needed correcting first, which is its own instance of the same thing: the first pass
+matched *any* file that mentions "Dockerfile" and found 77 "interpolation sites" — almost all log
+strings and prompt text. Narrowing to the actual **writers** left 4, of which 1 is the lint itself.
+**A sweep scoped by "files that mention X" is the filename-scoped `_GATES` mistake in miniature.**
+
