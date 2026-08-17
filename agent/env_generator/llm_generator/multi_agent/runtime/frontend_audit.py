@@ -484,7 +484,24 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         segs = re.split(r"\{[^}]+\}|:[A-Za-z_]\w*", api)
         if not any(s.strip("/") for s in segs):
             continue
-        pat = r"[^/'\"`\s)]*".join(re.escape(s) for s in segs).rstrip("/")
+        # #912: the wildcard standing in for a path param used to be `[^/'"`\s)]*` — it excluded
+        # quotes, whitespace and `)`. That matches `${postId}` and `'+id+'` and rejects the
+        # SAFEST spelling of the same call:
+        #
+        #     '/api/titles/' + encodeURIComponent(id) + '/episodes'
+        #                    ^^^^^^^^^^^^^^^^^^^^^^^^^^ quotes, spaces AND parens
+        #
+        # r153 declared `/api/titles/{id}/episodes`, `services/api.js:200` calls it exactly that
+        # way, and the audit reported *"never referenced in frontend src"*. Measured over the
+        # corpus: **136 of 2476 declared API references (5.5%) are false** — `/api/genres/{id}/
+        # titles` and `/api/titles/{id}/rating` the recurring pair, both written with a
+        # `' + var + '` concatenation.
+        #
+        # A soft miss does not block, but it feeds `pages_pending` and the remediation prompt, so
+        # the lane is told to wire a call it already wrote — the churn class #910b measures. The
+        # honest expression of "one path segment, however it is spelled" is "anything but a
+        # slash", bounded so a pathological line cannot backtrack.
+        pat = r"[^/\n]{0,80}".join(re.escape(s) for s in segs).rstrip("/")
         if pat and not re.search(pat, all_src):
             missing.append(f"declared API `{api}` never referenced in frontend src")
     if comp_file_text and _page_dead_controls(comp_file_text):

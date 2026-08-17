@@ -13002,3 +13002,55 @@ path, an unknown path, or a `/`-rooted route stays a page.
 
 ★ Errors at boundaries I introduce, for the third time this session. The rule earns its keep:
 re-read the diff for SEAMS as a separate pass from re-reading it for logic.
+
+## 258. #912 — the audit rejected the safest way to write the call (and item 256's remainder, closed)
+
+Found by re-running today's `ui_page_delivery_blockers` over **r153's already-released tree**: 0 hard
+blockers, 1 soft miss — *"declared API `/api/titles/{id}/episodes` never referenced in frontend
+src"*. It is referenced, at `services/api.js:200`:
+
+    '/api/titles/' + encodeURIComponent(id) + '/episodes'
+
+The probe replaces each `{param}` with a wildcard, and the wildcard was ``[^/'"`\s)]*`` — quotes,
+whitespace and `)` all excluded. It matches `${postId}` and `'+id+'` and rejects the spelling that
+percent-encodes the value, i.e. the correct one.
+
+    declared API references checked        2476
+    ★ falsely "never referenced"            136   5.5%
+    still reported after the fix             98   the check keeps its power
+
+The recurring pair is `/api/genres/{id}/titles` and `/api/titles/{id}/rating`, both written
+`'/api/genres/' + genreId + '/titles'`. A soft miss does not block, but it feeds `pages_pending` and
+the remediation prompt — the lane is told to wire a call it already wrote, which is the churn class
+#910b measures. The wildcard is now `[^/\n]{0,80}`: "one path segment, however it is spelled",
+bounded so a minified bundle cannot make it backtrack. Both directions are tested — a genuinely
+absent API still fails, and `/api/a/{id}/b` still refuses to match `/api/a/x/y/b`.
+
+★ **The episodes feature is complete and unreachable.** Tracing that one soft miss also confirmed
+#909's cost concretely: r153 ships the endpoint, `EpisodeList`, and a `TitleDetailModal` that wires
+them — and **no page renders TitleDetailModal**, so no user can ever see a show's episodes. The
+feature was built, tested and orphaned.
+
+### item 256's remainder, closed with evidence
+
+Of the 77 same-named `pages/`+`components/` pairs:
+
+    8    now prevented by #911 (component records)
+    65   the orphaned-login residue of #910b — the lane's component-based login page, never
+         rendered; the fix is the user decision already recorded
+    2    both copies genuinely imported (r120, r149) — the "two UIs, one name" harm already
+         documented in item 257
+    1    no matching registry record
+    ★ 0  imports that resolve to the WRONG copy — all 92 imports of a duplicated stem across the
+         corpus resolve correctly, so the duplication is not a build hazard
+
+### also checked, clean
+
+- **Seed volume.** `seed_data.json` (18 titles in r153) and `seed_dataset.json` (60) are merged by
+  the F2 dual-source path, not one-or-the-other. #807b refuses the swap when it would break the id
+  space: **7 of 145 runs**, shipping 16–43 titles instead of 60 — deliberate, and r145 is the run
+  the rule was written for.
+- **nginx.** `/api|/auth|/oauth|/.well-known` proxied, `/assets/` immutable, `/` SPA fallback with
+  `no-store`. r153 captured 12 screens through it, so the config is proven by the run itself.
+- **Frontend/backend endpoint agreement in r153.** 11 distinct `/api` paths called, 17 served, 0
+  unmatched.
