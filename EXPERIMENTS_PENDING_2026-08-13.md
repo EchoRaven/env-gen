@@ -11811,3 +11811,61 @@ EXECUTES every function-local import with the method's real package context* —
 
 Three of us-authored instruments failed this way in one day. The rule is not "be careful"; it is
 **every new check needs a demonstration that it can fail.**
+
+
+## 236. #895 has four more instances outside the gate — the browser self-heal is dead at every runtime call site
+
+r152's #895 fixed one broken function-local relative import and guarded *"every function-local import
+**in the gate**"*. That is a sweep scoped to where the author was looking — this session's own
+recurring class. Run tree-wide, with the reverted #895 line as the calibration:
+
+    files scanned: 258     function-local relative imports: 381
+    CALIBRATION (#895 `from ..progress` in multi_agent/orchestrator): ★ beyond top-level package ✔
+    ★ BROKEN: 4
+
+    multi_agent/runtime/scaffolder.py:119            from ...tools.file_tools import FRAMEWORK_SCRATCH_DIRS
+    multi_agent/runtime/visual_fidelity.py:1788      from ...tools.browser._bootstrap import heal_missing_browser
+    multi_agent/runtime/test_user_runner.py:768      from ...tools.browser._bootstrap import heal_missing_browser
+    multi_agent/runtime/test_user_validation.py:505  from ...tools.browser._bootstrap import heal_missing_browser
+
+Package is `multi_agent.runtime` (depth 2); `level=3` needs depth ≥ 3. Verified by execution:
+`ImportError: attempted relative import ...`. The runtime root is `env_generator/llm_generator` — proven
+by `orchestrator.py:48`'s bare `from progress import (`.
+
+### ★★ three of the four are one line, and it is a recovery path
+
+`heal_missing_browser` is #234's *"heal a missing browser binary once in-process, then retry"*. At all
+three runtime call sites the import sits **inside the `except Exception as _launch_exc:` handler**, so
+when the browser binary is actually missing:
+
+    launch fails → handler runs → ImportError raised INSIDE the handler
+                 → the heal never runs AND the real launch error is replaced by a confusing one
+
+**The self-heal has never been able to run in the visual gate's capture path, `test_user_runner`, or
+`test_user_validation`.** The only call site that works is `tools/browser/_manager.py:99`, which uses
+`from ._bootstrap import` — same package, level 1.
+
+★ The fourth is quieter. `scaffolder.py:119` wraps the bad import in `try/except` with a hardcoded
+fallback, so the import **always** fails and the fallback **always** wins. Its docstring says *"The
+list is imported from the prune-set … so **the two cannot drift**."* They are not linked at all — they
+are two independent literals. They happen to be identical today
+(`(".agents", ".agent_logs", "worktrees", ".memory")`), so nothing is broken yet; the promise is what
+is false. Same shape as [grep-the-literal-not-the-constant].
+
+### ★ the instrument needed four fixes, and the calibration caught every one
+
+| | error | it reported |
+|---|---|---|
+| v1 | resolved against the **filesystem** root, not the runtime root | 0/366 |
+| v2 | right root, but treated an empty base as valid | 0/366, and **passed the known positive** |
+| v3 | CPython's real rule (`len(pkg) < level`) | 2 — calibration ✔ |
+| v4 | dropped `name.startswith("test_")` — ★ **`test_user_runner.py`, `test_user_validation.py`, `test_user_squad.py` are RUNTIME modules, not tests** | **4** |
+
+v4 is the one worth keeping: an exclusion filter that silently deleted production code from the
+survey because of a naming coincidence. v1 and v2 were caught only because I had a known positive to
+demand; v4 was caught only because a hit I found by hand (`test_user_validation.py:505`, spotted while
+grepping callers) was **missing from my own scan's output**.
+
+**Two independent oracles, both necessary.** The calibration proves the detector works; the hand-found
+instance proves the *population* was complete. A scan can pass the first and fail the second, which is
+exactly what v3 did.
