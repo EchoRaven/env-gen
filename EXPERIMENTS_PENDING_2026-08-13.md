@@ -13471,3 +13471,57 @@ site root, #907's empty cache as an empty source tree, #908's empty `child_meta`
 from new territory. "Neither produces nor suppresses a blocker" was true and irrelevant — the
 function's output is the RECORD, and a false record is how r148 shipped. The dismissal named the
 wrong axis.
+
+## 269. ★ the 7 dead runs: mechanism identified from artifacts, and already handled — item 260 was wrong
+
+Item 260 parked this as *"those runs left two log lines and no artifact that names the mechanism.
+Nothing left to read; only a reproduction would settle it."* Both halves are false. Checking instead
+of repeating it, in the same move that paid off in #917:
+
+    each dead run:  555 files, 7 `.agent_logs/` directories
+
+And those directories answer the question directly. Identical in r19, r136 and r140:
+
+    Design Analyst      1 file, 40KB      ran
+    Knowledge Agent     1 file,  8KB      ran
+    Orchestrator        1 file, 24KB      ran
+    ★ Backend / Frontend / Verifier / Debugger    0 files, 0KB   never emitted a line
+
+The orchestrator log names its own state:
+
+    r19    finish({'message': 'Cold start persists — 0 milestones, empty …'})
+    r136   finish({'message': 'KICKOFF still in flight. Inbox unchanged; …'})
+           "Cannot deliver. Registry is empty, no code exists, kickoff still in …"
+    …then dozens of `ACTION_STATUS: stop / Nothing to communicate.`, one every ~4s
+    r136 tokens climb 16,699 → 24,324 in sixty seconds of doing nothing
+
+The store state settles the class for all seven:
+
+    milestones.json   ABSENT in 7/7   (5 of them with only a .lock — touched, never written)
+    kickoff documents 0 in 7/7
+
+So the chain is complete and every link is evidenced: the roadmap seed fails silently →
+`start_kickoff` (inside the milestone loop) never runs → no kickoff document → no `kickoff_request`
+→ the four lanes never spawn → the orchestrator idles on `ACTION_STATUS: stop`, burning tokens,
+until the run ends.
+
+★ **And it is already handled.** #864 reads the roadmap back and #876 emits a terminal
+`GENERATION_ERROR` — verified present: `MILESTONE ROADMAP DID NOT LAND: seeded %d milestone(s),
+store reads back …`. The run now dies loudly at the cause instead of idling for four minutes, which
+also retires the token-burn as a consequence of this cause.
+
+### ★ #862's recorded gap does NOT apply here
+
+#862's comment says the salvage (`_derive_missing_essential_sections`) *"is reached only through the
+stall escape, which cannot fire before `KICKOFF_INITIAL_STALL_MIN_SEC` (240s), and five of those
+seven runs were over at or before 240s — the recovery exists and its precondition is unreachable in
+the case it was written for."*
+
+I was about to lower that floor for the `_nobody` case. The artifacts stop it: **`kickoff_docs = 0`
+in all seven**, so the kickoff never produced anything for the salvage to reconstruct from, and the
+poll loop's floor was never the binding constraint. #862 declined to tune the floor *"without
+knowing why the lanes never spawned"* — now that the why is known, the answer is that tuning it
+would have fixed nothing. The gap is real for some other cause; no run in this corpus is that cause.
+
+★ Two dismissals of mine overturned in two turns by the same method — re-read the claim, then go and
+look. "Nothing left to read" was a statement about my attention, not about the artifacts.
