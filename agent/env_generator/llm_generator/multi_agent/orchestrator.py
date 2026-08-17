@@ -3995,7 +3995,12 @@ class Orchestrator:
         return noncanonical_business_response_keys(self.hubs)
     def _validate_delivery_gate(self) -> Dict[str, Any]:
         from .runtime.delivery_gate import validate_delivery_gate
-        from ..progress import EventType as _ProgressEventType
+        # #895: was `from ..progress import` — `progress` is a TOP-LEVEL module, not a sibling
+        # of `llm_generator`, so this raised `attempted relative import beyond top-level package`
+        # EVERY time the delivery gate ran. It killed r152 at 30 minutes, in `_validate_delivery_
+        # gate` — i.e. the gate could never pass, on any run, since it was introduced today.
+        # Line 48 of this same file already imports it correctly.
+        from progress import EventType as _ProgressEventType
         import logging as _lg
         # §4 (env-gated, default-off): on an INTERMEDIATE milestone, scope the structural-task
         # gate to THIS milestone's declared endpoints so it isn't blocked on later-milestone

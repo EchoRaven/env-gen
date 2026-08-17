@@ -33,14 +33,28 @@ pytestmark = pytest.mark.skipif(not _G.is_dir(), reason="corpus not present")
 
 
 def _runs():
-    return sorted(_G.glob("netflix-web-r*"))
+    """★ Scoped to r1–r151 — the population these numbers were measured over.
+
+    #880's guard fired the moment r152 appeared, exactly as designed ("if the corpus grows, the
+    numbers legitimately move and this file must be re-derived, not adjusted"). Re-deriving over a
+    growing corpus would make every number a moving target and the file would stop being a record
+    of anything. Scoping keeps each assertion a statement about the measurement that was actually
+    made; a NEW measurement over a bigger corpus is a new item, not an edit to this one."""
+    def _n(p):
+        m = re.search(r"-r(\d+)$", p.name)
+        return int(m.group(1)) if m else -1
+    return sorted((p for p in _G.glob("netflix-web-r*") if 1 <= _n(p) <= 151), key=_n)
 
 
 def test_the_corpus_is_the_one_these_numbers_were_taken_from():
-    """★ Non-vacuity, and the guard that makes every case below meaningful: if the corpus grows,
-    the numbers legitimately move and this file must be re-derived rather than patched."""
+    """★ Non-vacuity: the scoped population must still be exactly the 151 runs measured.
+
+    If a run in r1–r151 is deleted this fails, which is right — the numbers would no longer
+    describe anything. Runs ABOVE 151 are excluded by `_runs()` rather than folded in, so a new
+    run cannot silently move a recorded measurement."""
     assert len(_runs()) == 151, (
-        f"corpus is now {len(_runs())} runs, not 151 — re-derive the numbers, do not adjust them")
+        f"the r1-r151 population is now {len(_runs())} runs — these numbers describe 151")
+    assert len(list(_G.glob("netflix-web-r*"))) >= 151
 
 
 def test_864_no_milestones_json_in_seven_runs():

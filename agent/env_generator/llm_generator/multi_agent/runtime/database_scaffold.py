@@ -1211,17 +1211,31 @@ def write_database_scaffold(output_dir: Path, tables: Dict[str, Any]) -> Dict[st
 
     schema_sql = init_dir / "01_init.sql"
     schema_sql.write_text(render_schema_sql(tables), encoding="utf-8")
-    # #891: a schema with no tables is a silent empty database. The file is written either way, so
-    # nothing downstream can tell "the contract had no tables" from "the contract had tables".
-    if not (tables or {}):
-        try:
-            from .stage_contract import require_stage_output_891
+    # #896: verify the ARTIFACT, not the input.
+    #
+    # ★ The first cut checked `if not tables:` — the argument that came IN. r152 proved why that
+    # is worthless: `write_database_scaffold` was called with 12 tables, returned normally, this
+    # reported "ok", and **no .sql file exists anywhere in that run tree** (r151 has three). The
+    # producer-side check said fine while the consumer-side one (#891, in the backend skeleton)
+    # correctly reported the DDL missing five minutes later.
+    #
+    # A check that reads its own input and calls it an output is the silent-degradation class this
+    # whole session has been mining — built, this time, by the instrumentation meant to catch it.
+    try:
+        from .stage_contract import require_stage_output_891
+        _landed = schema_sql.is_file() and schema_sql.stat().st_size > 0
+        if not (tables or {}):
             require_stage_output_891(
                 "database scaffold", "any registered table", present=False,
                 detail="01_init.sql was written with ZERO tables — the app will start with an "
                        "empty database and every query will fail at runtime.")
-        except Exception:
-            pass
+        elif not _landed:
+            require_stage_output_891(
+                "database scaffold", f"{schema_sql}", present=False,
+                detail=f"write_text() returned for {len(tables)} table(s) and the file is not on "
+                       "disk — this is the 'write that does not land' class (r152).")
+    except Exception:
+        pass
     return {
         "schema_sql": schema_sql,
         "table_count": len(tables or {}),

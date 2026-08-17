@@ -277,7 +277,10 @@ volumes:
         try:                                             # #894: stage timeline
             from .stage_contract import record_stage_894
             from progress import EventType as _ET894      # top-level module, not a sibling
-            record_stage_894("database_scaffold", "tables", tables, ok=bool(tables),
+            _sql894 = Path(orch.output_dir) / "app" / "database" / "init" / "01_init.sql"
+            record_stage_894("database_scaffold", "tables", tables,
+                             # #896: ok means THE FILE LANDED, not "tables were passed in".
+                             ok=bool(tables) and _sql894.is_file(),
                              progress=getattr(orch, "progress", None),
                              event_type=_ET894.PHASE_START)
         except Exception:
