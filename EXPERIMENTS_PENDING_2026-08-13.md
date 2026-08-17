@@ -13100,3 +13100,43 @@ did the lane-authored half surface. With both guards disabled, 6 of 10 now fail.
 Same shape as #905's `/pages/` discriminator: **a fix aimed one producer to the left of the
 defect.** The routine that catches it is cheap and mechanical — disable the change, re-run its own
 tests, and require that they go red.
+
+## 260. ★ status: the delivered-artifact vein, worked out — what is left and why
+
+Re-ran today's full page audit over **r153's released tree** with every fix from this session:
+
+    HARD blockers : 0
+    soft findings : 1   — the dead route `/browse?title=:id` (#913b now names it)
+
+The 136 false *"never referenced"* are gone (#912); component drift moved to its own channel
+(#909's `component_drift`, 14 pages on r153). That is the whole remaining output of a vein that
+produced thirteen tickets, each found by pulling the previous one's leftover:
+
+    #902/#903/#904  blank route → the LANDING screen        590 pages, 111 runs
+    #905/#905b      the ui_flow gate exempted real pages     643 pages, 24 failures unseen
+    #906            a third copy of the same predicate
+    #907            an empty _src_cache read as an empty tree
+    #908            GET /api/my-list returned every account's rows
+    #909            70% of authored components never rendered
+    #910/#910b      the projection clobber, 4414 cycles, silent
+    #911/#911b      a nav bar wired as a page; exempt only on proof
+    #912            the audit rejected the safest way to write the call
+    #913/#913b      a route with a query string can never match
+
+★ **Everything still open in this vein converges on ONE decision**, and it is not mine to take:
+*should a framework page writer defer to a substantially richer, component-based lane page?* The
+projection clobber (#910), the unconditional auth overwrite (#910b), the 70% orphan rate (#909), the
+65 orphaned `components/LoginPage.jsx` copies, and the unreachable episodes feature are all the same
+question wearing different clothes. It has a measured payoff (`player` scored 0.35 with four
+orphaned components) and a measured risk (the projection's markup is what every visual score in the
+arc was earned on). Taking it silently would be the worst option; all five sites now say what they
+are doing, which is what turns it into a decision instead of a default.
+
+Genuinely outside this vein and still open, unchanged:
+
+- **#872 / #889 / #892 ceilings** — correctly silent in r153 (nothing stalled). Unverifiable without
+  a run that actually stalls; a green run is not evidence they work.
+- **The 7 dead runs' un-spawned kickoff attendees** — #864/#876 made the state legible going
+  forward, but those runs left two log lines and no artifact that names the mechanism. Nothing left
+  to read; only a reproduction would settle it.
+- **User decisions** #774 (report → block?), #854 roster, #181 language selector, item 184 avatar.
