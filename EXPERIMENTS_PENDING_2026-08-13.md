@@ -10964,3 +10964,57 @@ The obvious repair is to make `up_timeout` a real whole-boot budget — a monoto
 through `_build_with_retry` and both `up` calls, so the documented env var works again and the total
 is bounded by the number it names. **Not applied: the edit was declined.** Recorded here so the
 choice is deliberate rather than forgotten.
+
+
+## 221. the loud promises are kept; the silent ones are broken — a clean sweep that redirects the search
+
+Item 220 ended on a discriminator: a defaulted parameter with no reader is harmless when an
+enforcer exists elsewhere and harmful when none does. The natural next question is whether the
+codebase's **explicit** promises hold up. They do — and that negative result is the finding.
+
+### the sweep
+
+`NEVER` / `ALWAYS` / `GUARANTEE(S|D)` / `CANNOT` / `IMPOSSIBLE` in comments and docstrings:
+
+    158 hard-claim sites   (NEVER 104, ALWAYS 33, CANNOT 11, GUARANTEE* 8, IMPOSSIBLE 2)
+     47 of them are FUNCTION docstring claims — a named promise about a named unit
+
+Classified by what is actually promised, only a handful are mechanically checkable, and every one
+of those is **honoured**:
+
+| claim | site | verdict |
+|---|---|---|
+| *"NEVER raises"* | `visual_fidelity._drive_overlay_open` | ✔ body is a single `try` / `except Exception` |
+| *"NEVER raises, NEVER corrupts a lane file"* | `frontend_scaffold.project_missing_ui_routes` | ✔ same shape |
+| *"NEVER hangs the run"* | `run_kickoff.author_milestone_detail` | ✔ verified under #871: `timeout_s=240.0`, `while waited < timeout_s` |
+| *"GUARANTEED collision-free"* | `mcp_scaffold._resolve_tool_names` | ✔ single exit |
+| *"GUARANTEES the check clears"* | `framework_validation.maybe_emit_schema_sql` | ✔ fall-through unreachable (try-body and handler both end in `return`) |
+| *"can NEVER mask a real leak"* | `chain_executor._reverify_denial_via_fresh_intruder` | ✔ total, **and the caller's polarity matches** |
+
+★ **Two of these I nearly reported as defects.** A crude "last statement is not a `Return`" heuristic
+flagged both `maybe_emit_schema_sql` and `_reverify_denial_via_fresh_intruder` as falling off the end
+into an implicit `None`. Both are single-`try` functions whose try-body *and* handler each end in
+`return`, so the fall-through is unreachable. On the leak one I went further and checked the call
+site, because the docstring's promise is a security claim: `... and not _reverify_denial_via_fresh_intruder(...)`
+suppresses the finding (`kind = "skipped"`) **only** when re-verification returns `False` — a fresh
+intruder who was DENIED, i.e. the original 2xx was a probe artifact. A real leak returns `True`,
+`not True` is `False`, the suppression does not fire, and the leak stands. Exactly as documented.
+
+### ★★ what the clean result is worth
+
+The bugs found across this whole session are **not** in loudly-stated promises. When an author
+writes `NEVER` in capitals, they were thinking about the failure mode at that moment and they
+enforced it. Every broken promise found instead lived somewhere **silent** — a default parameter
+value nobody ever restated in prose:
+
+    up_timeout = _DOCKER_UP_TIMEOUT     no reader, and the bound it named is gone
+    min_importance = 0.4                no reader, retention is category + recency
+    timeout_s = 300                     no reader, the real bound is a hardcoded 60s
+
+**Loud promises are kept; silent ones are broken.** That is why scan B' (defaulted parameter with no
+reader) produced the one live defect and this scan produced none — and it says where the next review
+pass should spend its effort: not on auditing the assertions the code makes about itself, but on the
+values it carries without comment. An unstated default is not reviewed, because there is nothing to
+review it against.
+
+This line of inquiry is closed with evidence rather than abandoned.
