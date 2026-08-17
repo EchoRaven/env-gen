@@ -11358,3 +11358,64 @@ state not yet set) and **1 broken** — the only one whose `finally` signals an 
 
 A reactive pin protects the orderings someone already broke. The scan finds the ones nobody has
 broken yet.
+
+
+## 228. #528 is correct, and its correctness rests on a set whose NAME misdescribes it — with nothing pinning the construction
+
+Continuing into the `backend_skeleton` cluster of "by construction" citations (#528 route precedence —
+my own memory flags *"a route-precedence change is a safety change"*, #566y/#568).
+
+### the near-miss
+
+`_custom_route_overrides_projected` returns **True = lane wins**, False = projected wins (confirmed at
+the tail: `return True  # actions / search / novel → custom wins`). The collection branch ends:
+
+    if _is_get and seg in _DEGENERATE_RESOURCES:                     return True    # #568
+    if _is_get and (seg in _NESTED_CHILD_RESOURCES
+                    or seg in _OWNER_SCOPED_RESOURCES):              return False   # projected
+    return _is_get
+
+`return _is_get` hands a GET to the **lane**. #528's comment says the projected read *"MUST win for GET
+on these two shapes for ALL registered resources — not just the owner-scoped ones"*. Those read as a
+contradiction, and `/api/titles` losing projected-wins is precisely the Part-A ceiling (a lane raw-SQL
+500 that data-starved every page).
+
+**It is not a contradiction.** The builder:
+
+    for _t in (tables or {}):
+        _nested_resources |= {_n, _n + "s", _n.rstrip("s")}
+
+★ **`_NESTED_CHILD_RESOURCES` does not contain nested child resources. It contains EVERY registered
+table**, plus singular/plural variants. So the second `if` catches every registered resource and
+projected wins; `return _is_get` only ever fires for **unregistered** collections — `/api/search`,
+which names no table — where lane-wins is the documented, intended behaviour. The code is right.
+
+### ★★ the finding: correctness resting on a misnamed set, and the construction is unpinned
+
+Three tests touch this and **none of them pins the builder**:
+
+| test | what it actually pins |
+|---|---|
+| `test_projected_wins_standard_get_528.py` | **hand-builds** `_NESTED_CHILD_RESOURCES = {"titles", …}` and execs the function — pins the FUNCTION's logic given the set. Its docstring states the semantics (*"= all registered tables (+ variants)"*) but nothing verifies the builder produces it |
+| `test_degenerate_model_projected_read_568.py` | **does** render the real template and extract the emitted sets — but every content assertion is about `_DEGENERATE_RESOURCES` |
+| `test_kebab_resource_projected_guard_566w.py:116` | asserts the source *string* contains `_fw_resource_seg(segs[0]) in _NESTED_CHILD_RESOURCES` — text, not contents |
+
+    grep -rn "NESTED_CHILD_RESOURCES" tests/ | grep assert   →   1 hit, and it is the source-text one
+
+So narrowing that loop to actual nested children — **which the name openly invites** — leaves all three
+green and silently reverts `/api/titles` to lane raw SQL. A rename or a "the set doesn't match its
+name, let me fix it" cleanup is a **safety regression with no failing test**.
+
+★ This is the mirror of [a-green-suite-can-pin-the-defect]: there, three tests kept a defect alive for
+122 runs by asserting the exact spelling of a field. Here the suite would not notice the defect
+arriving. Same root — **the tests assert the shape of the code, not the property the code exists to
+produce.** The property is one line: every registered table must be in the set the precedence check
+consults.
+
+### method note — the discipline held this time
+
+I flagged `return _is_get` as an inversion and, unlike the #411 slip one item ago, **did not state it
+as a finding before checking the other side.** I wrote the suspicion as conditional (*"unless the set
+is populated with all registered resources"*) and went to the builder. It was a different set than I
+guessed (`_NESTED_CHILD_RESOURCES`, not `_OWNER_SCOPED_RESOURCES`) but the same shape. Two items after
+naming the rule, it works when actually applied.
