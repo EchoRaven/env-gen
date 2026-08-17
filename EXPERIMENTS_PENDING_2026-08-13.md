@@ -11080,3 +11080,72 @@ stall, not a hang.
 I declared this line exhausted while 45 of 47 claims were unopened, and the very next pass through
 them produced a live defect and overturned the generalisation. *Sorting an item into "other" is not
 the same as checking it* — the bucket name was doing the work the check should have done.
+
+
+## 223. finishing the sweep item 222 said was finished — 22 of 47, and the count is stated because that is the whole point
+
+Item 221 claimed the hard-claim sweep was exhausted at 6 of 47. Item 222 corrected that and checked
+5 more, finding the `mark_detail_authored` bypass. That still left ~36 unopened, and my own method
+note applies to me twice over, so this pass works through the rest of the *testable* ones.
+
+**Checked so far: 22 of 47.** 1 broken (item 222), 2 overstated prose, 19 honoured.
+
+### newly verified honoured
+
+| claim | how it holds |
+|---|---|
+| `repair_fabricated_fallbacks` — *legitimate defaults NEVER rewritten* | calls the shared `_is_fabricated_fallback_literal` at all **3** rewrite sites |
+| `reconcile_integration_seed` — *NEVER overwrites a non-empty seed* | `if _rows(integ) > 0:` early-exits |
+| `reconcile_integration_frontend_pages` — *NEVER clobbers a real page* | `if not _is_stub(...): continue  # integration already real → never clobber` |
+| `map_reference_screens` — *`*_menu`/`*_dropdown` NEVER promoted* | promotion gated on `_OVERLAY_NAME_RE` |
+| `extract_palette` — *measured, NEVER guessed* | exactly two exits: the measured dict, or an error dict. No fallback palette |
+| `synthesize_missing_create_endpoints` — *only an already-writable resource* | `writable` built from observed POST/PATCH/PUT/DELETE; create requires `col in writable` |
+| `_is_definitive_stub_page` — *a real page is NEVER matched* | `if len(text.encode()) >= _DEFINITIVE_STUB_MAX_BYTES: return False` |
+| `enforce_completeness` — *warn is ALWAYS advisory* | `blocking_check_ids("error")` — warn cannot reach `failed_checks` |
+| `_abort_grace_should_defer` — *keyed on the progress signature, NEVER the reason string* | below |
+
+**Overstated prose, not defects:** `_build_contract`'s *"NEVER empty"* is really "never empty when a
+description exists and extraction yields something"; `_me_user_model`'s *"ALWAYS"* is a semantic rule
+(a `/me` path means the caller) and the function still returns `None` when no users-like model exists.
+
+### ★ the documented knob that IS real — so item 220's dead knob stays a single instance
+
+`ENVGEN_COMPLETENESS_ENFORCE` is the same *shape* as `ENVGEN_DOCKER_UP_TIMEOUT`: an env switch on a
+gate, advertised in a docstring. This one is wired. `_enforce` guards **both** effects — the
+`heal_state_write_endpoints` call (which writes `main.py` and registers endpoints) and the
+`failed_checks.append` loop — so `=0` computes and logs the oracle and contributes nothing,
+**byte-identical exactly as documented**.
+
+That is the second independent data point (with scan A returning only a false positive) that the dead
+`up_timeout` knob is **an instance, not a class**. Worth stating: it means no guard is warranted, and
+building one would have been the "sweep scoped to where the author was looking" mistake in reverse.
+
+### ★★ two method rules earned here
+
+1. **A pattern miss is not evidence of absence.** I flagged `_abort_grace_should_defer` as suspicious
+   because grepping its body for `signature|reason` returned **0 lines** — but its parameters are
+   named `sig_at_latch` / `sig_now`. The function was correct all along. Had I reported on the grep,
+   that would have been the tenth field-location error of this session.
+
+2. **For a PURE predicate, the docstring's claim binds at the CALL SITE, not in the body.**
+   `_abort_grace_should_defer` is side-effect-free and takes the signatures as arguments, so *"keyed
+   on the progress signature, NEVER the reason string"* is unfalsifiable inside the function — it is a
+   claim about what the caller passes. Checked there (orchestrator.py:2137): it passes
+   `_fwval_abort_progress_sig` and `_deliver_progress_sig()`, both signatures. And the reader-with-no-
+   writer risk (`getattr(..., None)` → `sig_at_latch is None` → never defers → the whole ABORT-GRACE
+   mechanism silently inert) is closed too: the attribute is written at orchestrator.py:3288 and reset
+   at 1663.
+
+### what is still unchecked, and why — stated rather than bucketed
+
+~15 remaining LIVE sentences are **rationale rather than testable promises**: they explain why a
+detector exists (`_self_targeted_social_user_action`, `_oauth_authorize_lacks_pkce`), quote another
+module's principle (`projected_routes`), or describe a consequence (`add_worktree`). Two are genuinely
+testable but need cross-module work I have not done: `business_chain_blockers`' *"the synthesized
+DEFAULT chain is NEVER stored in the registry"* is a claim about the synthesizer, not this function,
+and `_visual_release_decision`'s *"can NEVER ship an app the escape would not"* is a subset argument
+over two release paths. `_run_hub_sync_stage`'s *"THIS STAGE HAS NEVER RUN"* is #702, already recorded
+and re-confirmed still true (`step_runner.py:146` still initialises the set and nothing adds to it).
+
+Naming them beats bucketing them: the failure mode of the last two items was a bucket label standing
+in for a check.
