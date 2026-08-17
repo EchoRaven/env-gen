@@ -13525,3 +13525,58 @@ would have fixed nothing. The gap is real for some other cause; no run in this c
 
 ★ Two dismissals of mine overturned in two turns by the same method — re-read the claim, then go and
 look. "Nothing left to read" was a statement about my attention, not about the artifacts.
+
+## 270. re-ranked on the corrected axis — and the vein is worked out
+
+#917 came from a dismissal that named the wrong axis: I ranked `_persist_verdict` last because it
+*"neither produces nor suppresses a blocker"*, when what mattered is that its output IS the record.
+Applying the corrected axis to all 50 source-only subjects:
+
+    subjects whose output becomes a PERSISTED RECORD                          10
+      _persist_verdict            → #917 (found)      run_visual_fidelity   → the gate itself
+      execute_chain               → checked below     capture_route_screenshots
+      scaffold_pages_from_contract → #910/#911/#913    project_missing_routes
+      _render_reference_page      → #902/#903          compile_reference_materials → #871
+      _ensure_seed_dataset        → item 258 (clean)   _debug_emit
+
+The one not yet examined on that axis was the chain path, where a false record is the sharpest risk
+(*"a step that PASSES can be the bug"*, #566x). Driven and read:
+
+    classify_endpoint_failure   2xx→ok, 3xx→broken, None→broken, 5xx w/o projected traceback→broken,
+                                5xx w/ one→framework_defect                                  correct
+    the gate on framework_defect  NOT folded into green — returns its own blocking reason
+                                  `business_chain_framework_defect` (#272 separates for
+                                  ATTRIBUTION, not for gating)                               correct
+    #510's never-run chains       "indeterminate, not a failure" — and the two guards it leans on
+                                  both exist: the >=1-passing check and
+                                  `business_chain_api_coverage`                              verified
+
+Nothing to fix. Second consecutive clean pass, both with validated instruments.
+
+### ★ the vein is worked out
+
+Stated plainly, because the standing directive asks for it and the evidence now supports it rather
+than my patience running out:
+
+- **r153's released tree**: 0 hard blockers, and four planted defects (missing component, unwired
+  route, stub handler, invented field) each caught — the zero is a measurement.
+- **r148's three mechanisms**: #737 driven with an old-behaviour control, #738 driven across 8
+  shapes, #887 announces its blind spot. Plus #917, the fourth, found and closed this session.
+- **every clean zero reported this session** has hits or a planted control behind it (item 266).
+- **the source-only class**: 135 files, 45 drivable subjects, all driven with degenerate inputs (0
+  fail-open), the load-bearing ones driven with domain-shaped inputs (#916, #917 found), and the
+  remainder re-ranked on the corrected axis and checked (above).
+
+What remains is not minable from the existing results:
+
+1. **#914's projector-deference decision** — implemented, default OFF, logging while off. Settling
+   it needs one run with the flag unset (free, byte-identical) and, if warranted, one with it on
+   against r153's per-screen baseline. It is a calibration question, and the corpus cannot answer it
+   because the lane's pages have never been rendered to a camera.
+2. **The auth branch of the same question** — deliberately second, for the same reason.
+3. **#872/#889/#892 in the field** — the mechanisms are now driven in tests; whether a real stall
+   hits them needs a run that stalls.
+4. **User decisions**: #774 (report → block?), #854 roster, #181 language selector, item 184.
+
+Item 269 closed the last thread that WAS minable (the 7 dead runs). Everything above needs either a
+generation run or a decision — neither of which is more digging.
