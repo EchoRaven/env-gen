@@ -12867,3 +12867,47 @@ text: with the broken call, 3 of 6 cases go red. The same test written as `asser
 CLOBBER" in inspect.getsource(...)` would have passed against code that cannot execute. That is the
 fourth time this session the difference between "the string is present" and "the code runs" decided
 whether a check was real.
+
+## 255. #910b — the auth branch is the one that provably loops; and a retraction
+
+Following #910's clobber to the merge side. On r153's and r134's delivered git histories the two
+sides alternate, and for an AUTH page the loop is exact:
+
+    r134  app/frontend/src/pages/LoginPage.jsx — 41 cycles, two byte-identical states
+        framework delivery …  72 lines  md5 fcf49670   (a self-contained inline auth form)
+        merge agent/frontend  11 lines  md5 ecc4faba   (<AuthShell><AuthForm/></AuthShell>)
+
+Corpus: **4414 lane-write → framework-rewrite cycles across 96 runs**; worst single file r120
+`TitleDetailPage.jsx` at 65. 1269 framework commits net-deleted >50 lines from a page — **161,384
+net lines** of lane page work.
+
+The auth branch cannot converge by construction: `if _is_auth_page(comp, page) or not
+target.exists()` is unconditional, the lane branch never receives the framework's write, so every
+merge restores the lane's copy and every tick overwrites it again. #910 announced the design-screen
+clobber and **missed this branch entirely** — the one place where the loop is guaranteed. #910b
+covers it, and only when the replacement actually differs (the scaffold is idempotent and runs every
+tick; #899 already paid for the lesson that a no-change line buries the informative one).
+
+★ The justification in the code — *"the lane consistently ships a dead/unwired login"* — is right
+for a dead login and is not a description of r134's page, which delegates to two real components.
+Same user decision as #910; this only ends the silence.
+
+### ★ RETRACTED: "8 runs shipped a stub page"
+
+I measured "delivered file much smaller than a version in its own history" and reported 8 shipped
+stubs. **Every one is legitimate**:
+
+    r104/105/113/120/138  TitleDetailPage.jsx  11 lines  #534's deliberate wiring — it mounts the
+                                                         lane's TitleDetailModal
+    r137  NewPopularPage.jsx   3 lines   an intentional re-export of NewAndPopularPage.jsx
+    r14   SignupPage.jsx       6 lines   an intentional <Navigate to="/login" mode=register>
+    r117  GenreCategoryPage.jsx 20 lines a real projected page using BrowsePageShell
+
+Zero shipped stubs. ★ And the file my heuristic ranked as the worst offender — the 11-line
+`TitleDetailPage` — is the ONLY page in those trees that renders a lane component, i.e. the single
+counter-example to #909's orphaning. **Small is not stub; the smallest file in the tree was the
+healthiest one.** A size heuristic cannot see delegation, and delegation is what good code looks
+like.
+
+Also retracted on the way: the same metric first counted merge bookkeeping as re-authoring. Checking
+content hashes (not line counts) is what turned a suspicion into the exact two-state cycle above.

@@ -129,5 +129,80 @@ def test_the_announcement_cannot_break_the_scaffold():
     assert 'getLogger(__name__)' in block
 
 
+
+# --------------------------------------------------------------------------- #910b
+
+def _run_auth(existing_body: str, caplog):
+    """The AUTH branch — unconditional, and the one that provably loops."""
+    fe = Path(tempfile.mkdtemp()) / "app" / "frontend"
+    pages = fe / "src" / "pages"
+    pages.mkdir(parents=True)
+    (pages / "LoginPage.jsx").write_text(existing_body, encoding="utf-8")
+    orig_load = fs._load_design_for_projection
+    fs._load_design_for_projection = lambda _fd: _DESIGN
+    try:
+        with caplog.at_level(logging.WARNING,
+                             logger="env_generator.llm_generator.multi_agent.runtime"
+                                    ".frontend_scaffold"):
+            fs.scaffold_pages_from_contract(fe, [
+                {"name": "login", "route": "/login", "component": "LoginPage",
+                 "apis_used": [], "path": "app/frontend/src/pages/LoginPage.jsx"},
+            ])
+    finally:
+        fs._load_design_for_projection = orig_load
+    return [r.getMessage() for r in caplog.records if "AUTH PAGE OVERWRITE" in r.getMessage()]
+
+
+_R134_LANE_LOGIN = """import React from 'react';
+import AuthShell from '../components/AuthShell';
+import AuthForm from '../components/AuthForm';
+
+export default function LoginPage() {
+  return (
+    <AuthShell>
+      <AuthForm />
+    </AuthShell>
+  );
+}
+"""
+
+
+def test_the_unconditional_auth_overwrite_is_announced(caplog):
+    """★ r134's real shape. Its LoginPage.jsx alternates between exactly two byte-identical
+    states for 41 cycles — this 11-line component-based page and the framework's 72-line inline
+    form — and #910's announcement covered only the design-screen branch, not this one."""
+    warnings = _run_auth(_R134_LANE_LOGIN, caplog)
+    assert warnings, "the unconditional overwrite must say so"
+    assert "LoginPage" in warnings[0]
+    assert "component tag" in warnings[0]
+
+
+def test_an_empty_or_absent_auth_page_is_not_reported(caplog):
+    """Writing the auth form where there was nothing is the branch doing its job — reporting it
+    would fire on every clean run and stop being read (#845)."""
+    assert not _run_auth("", caplog)
+
+
+def test_rewriting_an_identical_page_is_not_reported(caplog):
+    """The scaffold is idempotent and runs every delivery tick; only a real REPLACEMENT is news.
+    #899 learned this the expensive way — 34 of r153's 35 stage lines were the same no-change
+    entry."""
+    fe = Path(tempfile.mkdtemp()) / "app" / "frontend"
+    (fe / "src" / "pages").mkdir(parents=True)
+    orig_load = fs._load_design_for_projection
+    fs._load_design_for_projection = lambda _fd: _DESIGN
+    spec = [{"name": "login", "route": "/login", "component": "LoginPage", "apis_used": [],
+             "path": "app/frontend/src/pages/LoginPage.jsx"}]
+    try:
+        fs.scaffold_pages_from_contract(fe, spec)          # first write
+        with caplog.at_level(logging.WARNING,
+                             logger="env_generator.llm_generator.multi_agent.runtime"
+                                    ".frontend_scaffold"):
+            fs.scaffold_pages_from_contract(fe, spec)      # idempotent re-run
+    finally:
+        fs._load_design_for_projection = orig_load
+    assert not [r for r in caplog.records if "AUTH PAGE OVERWRITE" in r.getMessage()]
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

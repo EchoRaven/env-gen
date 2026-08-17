@@ -9610,6 +9610,35 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                 _body = _project_page_component(comp, page, nav_routes=nav_routes,
                                                 design=design,
                                                 get_endpoints=_all_get_endpoints(ui_pages))
+                # #910b: this branch is UNCONDITIONAL for an auth page, so unlike the
+                # design-screen path below it can never converge — and #910's announcement did
+                # not cover it. r134's LoginPage.jsx alternates between exactly two
+                # byte-identical states for **41 cycles**: the lane's
+                # `<AuthShell><AuthForm/></AuthShell>` (11 lines, component-based) and this
+                # projection (72 lines, a self-contained inline form). The lane branch never
+                # receives this write, so every merge restores its copy and every tick overwrites
+                # it again. Corpus: 4414 such cycles across 96 runs.
+                #
+                # The justification above — *"the lane consistently ships a dead/unwired login"* —
+                # is right for a genuinely dead login. It is not a description of r134's page,
+                # which delegates to two real components. Whether the unconditional overwrite
+                # should yield to a component-based auth page is the same user decision as #910;
+                # this only makes the loop visible instead of costing 41 silent lane ticks.
+                # Never raises: observability must not break the scaffold it observes.
+                try:
+                    if target.exists():
+                        _prev_910b = target.read_text(encoding="utf-8")
+                        if _prev_910b.strip() and _prev_910b != (_body or ""):
+                            __import__("logging").getLogger(__name__).warning(
+                                "AUTH PAGE OVERWRITE: %s — replacing the existing %d-line page "
+                                "(%d component tag(s)) with the framework's %d-line auth form. "
+                                "This branch is unconditional, so a lane that keeps re-authoring "
+                                "this page will loop (#910b).",
+                                comp, len(_prev_910b.splitlines()),
+                                len(set(re.findall(r"<([A-Z]\w*)", _prev_910b))),
+                                len((_body or "").splitlines()))
+                except Exception:
+                    pass
             else:
                 # #221 AUTHORITATIVE STRUCTURED FLOOR: a ui_page covered by a MEASURED
                 # design screen must ship the REFERENCE-STRUCTURED projection (measured
