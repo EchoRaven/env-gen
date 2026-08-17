@@ -10677,3 +10677,38 @@ that changes least is not a stability check.
 internally consistent (all four references, plus the say-once variable) rather than assuming a
 correct fix, which is the same discipline that caught my own `876 → 877` sweep damaging theirs.
 
+
+## 214. #888 — the census's other blind spot: the function boundary
+
+#881–#887 swept `except: x = <empty>` **inline**. That sweep structurally cannot see the identical
+collapse across a **function boundary** — a helper that returns an empty value from an except arm,
+where the caller has no way to tell *"nothing found"* from *"the check failed"*.
+
+Swept: **186 functions** do this. Nearly all are best-effort helpers where empty is the right
+answer; the discriminator is the same one #883 found — **which direction does empty point**. Three
+are gate-shaped:
+
+| | direction |
+|---|---|
+| `_all_business_endpoints_have_route_code` → `False` | the gate stays **shut** — fail-closed, safe |
+| `missing_required_args_634` → `[]` | the call proceeds and raises inside; the agent gets the raw Python error instead of the friendly one — degraded, not dangerous |
+| **`_visual_delivery_defer_active` → `False`** | **"not deferring", which is what PERMITS `deliver_project`** |
+
+★ The last one's own docstring says why it exists: **run-32**, where *"the LLM called
+deliver_project at 1406s into a 3600s window → loop exited → lanes terminated"*. **A fault in the
+check re-creates the exact failure the check was written to prevent.**
+
+**The default is not changed.** `True` is arguably right here — and unlike the general case it
+could not wedge forever, since the #112 window bounds it — but that is a behaviour change on a
+release path, unverifiable without a run, and the rule this session has held to is not to guess on
+an unverified root. `test_the_permissive_default_is_deliberate_and_unchanged` pins it so a later
+change of direction is a decision rather than drift.
+
+### method — a message assertion that broke on line wrapping
+
+The test first matched the log's wording as a joined phrase against **source text**. The string is
+wrapped across two source lines (`"…which PERMITS "` + `"deliver_project. …"`), so
+`PERMITS deliver_project` exists only in the runtime-concatenated value. **Matching a message
+against source is a check that breaks on line wrapping rather than on behaviour** — asserted as
+fragments instead.
+

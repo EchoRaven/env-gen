@@ -2646,7 +2646,33 @@ class Orchestrator:
                 plateau_rounds=getattr(gate, "plateau_rounds", 0),
                 last_judgment_at=getattr(gate, "last_judgment_at", None),
                 **_visual_fast_release_args(gate)) == "defer"
-        except Exception:
+        except Exception as _vd_exc:
+            # #888: a fault here silently PERMITS delivery.
+            #
+            # The census that produced #881-#887 looked at `except: x = <empty>` INLINE. This is
+            # the same collapse across a FUNCTION BOUNDARY, which that sweep cannot see: 186
+            # functions return an empty value from an except arm while also returning real data,
+            # and the caller cannot tell the two apart. Nearly all are best-effort helpers where
+            # empty is the right answer. This one is a gate.
+            #
+            # `False` means "the visual gate is NOT deferring", which is exactly what lets
+            # `deliver_project` through — and this function's whole reason for existing, per its
+            # own docstring, is run-32: the LLM called deliver_project at 1406s into a 3600s
+            # window, the loop exited, the lanes were terminated. **A fault in the check
+            # re-creates the failure the check was written to prevent.**
+            #
+            # The default is NOT changed. Returning True instead would be the conservative
+            # direction here (the #112 window bounds it, so it could not wedge forever), but that
+            # is a behaviour change on a release path I cannot verify without a run, and this
+            # session's rule is not to guess on an unverified root. What changes is that it stops
+            # being indistinguishable from an honest "not deferring".
+            if not getattr(self, "_said_vd_888", False):
+                self._said_vd_888 = True
+                self._logger.error(
+                    "VISUAL-DEFER CHECK FAILED (%s: %s) — reporting NOT DEFERRING, which PERMITS "
+                    "deliver_project. That is the permissive default, not evidence the visual "
+                    "gate is done; a release cut now is unverified on that axis (#888).",
+                    type(_vd_exc).__name__, _vd_exc)
             return False
 
     @staticmethod
