@@ -10712,3 +10712,31 @@ wrapped across two source lines (`"…which PERMITS "` + `"deliver_project. …"
 against source is a check that breaks on line wrapping rather than on behaviour** — asserted as
 fragments instead.
 
+
+## 215. the function-boundary class, closed — and an empty sweep is the point
+
+#888 was found **by eye**: I read the 186 silent-empty-returning functions and picked three that
+*looked* gate-shaped. That is precisely the selection bias this session has punished over and over
+(#862's instrument, #790's file list, #883's `_GATES`), so I mechanised the discriminator — for
+each function, find callers that use the result inside an `if` whose body gates something.
+
+**Four hits. All four clear on reading the consumer:**
+
+| | |
+|---|---|
+| `get()` ×52 | **false positive** — a generic dict `.get()` matched by name |
+| `_component_resolves()` ×2 | `False` on error = *"does not resolve"* → **fail-closed** |
+| `_deliver_progress_sig()` ×1 | returns `None`, and the consumer handles it **explicitly**: `if sig_at_latch is None or sig_now is None: return False` — no grace, the abort proceeds. Correct and deliberate. |
+| `_frontend_uses_map_lib()` ×1 | `False` → a blocker is **added**. Over-blocking, not a false pass; costs a wasted lane round and self-clears. |
+
+★ **So the class is bounded: one real defect (#888) and zero more.** That is worth recording
+precisely because **an empty sweep is the only evidence that a class is covered rather than merely
+swept** — and after #790 missed the orchestrator, #792 missed its own file, and #883 missed the
+visual gate, "I swept it" had stopped meaning anything on its own. This is the first sweep in many
+turns that came back empty.
+
+★★ **And it settles which method was doing the work — neither alone.** The mechanical version
+would *not* have found #888: its consumer is a stamped attribute (`_visual_defer_check`), not a
+lexical `if`. The eye would not have established that the other three are safe. The eye finds what
+a pattern cannot express; the mechanism bounds what the eye skipped.
+
