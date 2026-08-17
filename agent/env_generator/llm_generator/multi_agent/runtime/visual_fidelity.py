@@ -3415,7 +3415,26 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
             "blocking_average": _blocking_average,  # #542a: Part-A over BLOCKING screens only
             # #618: what THIS capture scored, before the best-of merge
             "blocking_average_live": _live_average,
-            "summary": summary, "coverage": coverage, "screens": merged,
+            # ★ #921: the scope label belongs on the DOCUMENT, which is this dict.
+            #
+            # #901 added it — to the dict `run_visual_fidelity` RETURNS, while
+            # `_persist_verdict(..., coverage=_coverage, ...)` receives the unlabelled original.
+            # Its own stated purpose was *"the artifact a human opens should not need the source
+            # to disambiguate it"*, and `verdict.json` IS that artifact: **121 of 121 delivered
+            # verdicts carry a coverage block and NONE carries the label.** r153's still reads
+            # `"unjudged": ["browse_home_rows", "card_hover_preview", …]` directly above a
+            # `screens` list where both of those carry scores — the exact contradiction #901 was
+            # written to explain, unexplained.
+            #
+            # #903's shape, in my own ticket: a value computed correctly and handed to the wrong
+            # object. Every one of #901's six assertions read the SOURCE, where the string does
+            # exist, so nothing caught it until the file was driven (#920's sweep).
+            "summary": summary,
+            "coverage": {**(coverage if isinstance(coverage, dict) else {}),
+                         "scope": "this round's captures; `screens` above is #500's merge across "
+                                  "rounds, so a screen may carry a score here and still appear "
+                                  "in `unjudged` — the two fields describe different sets"},
+            "screens": merged,
         }
         if _unstable_893:
             _verdict["judge_unstable_893"] = _unstable_893

@@ -13740,3 +13740,43 @@ and that is what the test now says.
 
 Same error shape as item 273's overstated docstring, one turn later: **the claim was about the
 subject, the evidence was about the fixture.**
+
+## 275. ★★ #921 — #901 shipped its label to the wrong object, and 121 of 121 documents prove it
+
+#920's sweep over my own test files found one with **zero calls into its subject**:
+`test_the_verdict_document_says_its_scope_901.py`, six tests, six source assertions. Driving it took
+one call and overturned the ticket.
+
+    _persist_verdict(d, coverage={"judged": 2, "owned": 3}, …)
+      → verdict.json  "coverage": {"judged": 2, "owned": 3}      ← no scope label
+
+Two writers build a coverage block. `run_visual_fidelity` adds the label to the dict it **RETURNS**;
+`_persist_verdict(..., coverage=_coverage, ...)` receives the **unlabelled original** and writes the
+document. #901's stated purpose was *"the artifact a human opens should not need the source to
+disambiguate it"* — and `verdict.json` is that artifact:
+
+    delivered verdict.json with a coverage block   121
+    ★ carrying the scope label                       0
+
+r153's still reads `"unjudged": ["browse_home_rows", "card_hover_preview", …]` directly above a
+`screens` list where both of those carry scores. **The exact contradiction #901 was written to
+explain, still unexplained, in every delivered run.**
+
+★ #903's shape — a value computed correctly and handed to the wrong object — inside my own ticket,
+and every one of its six assertions read the source, where the string does exist. Nothing could have
+caught it except calling the function.
+
+#921 puts the label on the document, where it belongs, and the tests now write a verdict and read
+the block back off disk. Sensitivity: revert and 3 of 10 fail.
+
+### ★ and it broke a neighbour's brittle extractor, which is its own finding
+
+`test_verdict_key_semantics_720` reads the persisted dict's keys by slicing source from an anchor to
+``src.index("}", i)`` — the FIRST closing brace. #921 gives `coverage` a nested dict literal whose
+`}` now arrives before `"screens"`, so the slice truncated and the file reported `screens` as no
+longer persisted. **The dict was correct; the extractor was brittle to any nesting.** Rewritten to
+read the `_verdict = {...}` literal through the AST.
+
+Third time this session a source-slicing test has failed on a change that altered no behaviour
+(#892's extraction, #909's report, now this). The pattern is stable enough to state as a rule:
+**a test that locates code by counting characters will fail on formatting and pass on defects.**

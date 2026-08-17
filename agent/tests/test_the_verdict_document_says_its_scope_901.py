@@ -80,6 +80,52 @@ def test_r153_shows_the_contradiction_it_fixes():
     assert both == ["browse_home_rows", "card_hover_preview"], both
     assert all(scored[n] is not None for n in both), "they really do carry scores"
 
+# --------------------------------------------------------------------------- DRIVEN (#921)
+
+def _persisted_coverage(coverage):
+    """Write a verdict and read the coverage block back off disk — the artifact a human opens."""
+    import json
+    import tempfile
+    from pathlib import Path as _P
+    d = _P(tempfile.mkdtemp())
+    (d / "design" / "visual_gate").mkdir(parents=True)
+    vf._persist_verdict(d, passed=True, min_similarity=0.65, summary="s", coverage=coverage,
+                        results=[{"name": "a", "route": "/a", "similarity": 0.7,
+                                  "dimensions": {}, "deviations": []}])
+    return json.loads((d / "design" / "visual_gate" / "verdict.json").read_text())["coverage"]
+
+
+def test_the_written_document_carries_the_scope():
+    """★ #921. #901 added the label to the dict `run_visual_fidelity` RETURNS; `_persist_verdict`
+    received the unlabelled original, so **121 of 121 delivered verdict.json files carry a
+    coverage block and none carries the label** — including r153's, which still reads
+    `"unjudged": ["browse_home_rows", "card_hover_preview"]` directly above a `screens` list where
+    both carry scores.
+
+    Every one of this file's original six assertions read the SOURCE, where the string does exist.
+    That is why nothing caught it: #903's shape (a value handed to the wrong object) inside the
+    ticket whose whole point was that the artifact should not need the source to disambiguate it."""
+    cov = _persisted_coverage({"judged": 2, "unjudged": ["b"]})
+    assert "scope" in cov, cov
+    assert "merge across" in cov["scope"]
+
+
+def test_the_original_coverage_fields_survive():
+    cov = _persisted_coverage({"judged": 2, "unjudged": ["b"], "measured": 9})
+    assert cov["judged"] == 2 and cov["unjudged"] == ["b"] and cov["measured"] == 9
+
+
+def test_a_non_dict_coverage_does_not_break_the_write():
+    """The gate hands whatever it has; a None must still produce a readable document."""
+    assert _persisted_coverage(None) == {"scope": _persisted_coverage(None)["scope"]}
+
+
+def test_the_label_explains_the_contradiction_it_exists_for():
+    """r153's document puts `browse_home_rows` in `unjudged` and in `screens` WITH a score. The
+    label has to name that, or it is decoration."""
+    scope = _persisted_coverage({"judged": 1})["scope"]
+    assert "unjudged" in scope and "screens" in scope
+
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

@@ -52,11 +52,22 @@ def _returned_keys():
 
 
 def _persisted_keys():
-    src = inspect.getsource(vf)
-    i = src.index('"passed": bool(passed) or _merged_passed')
-    start = src.rindex("_verdict = {", 0, i) if "_verdict = {" in src[:i] else i - 400
-    j = src.index("}", i)
-    return set(re.findall(r'"(\w+)":', src[start:j]))
+    """The keys of the `_verdict = {...}` literal, read through the AST.
+
+    ★ Was a source slice ending at `src.index("}", i)` — the FIRST closing brace after the anchor.
+    #921 gave `coverage` a nested dict literal, whose `}` now arrives before `"screens"`, so the
+    slice truncated and this file reported `screens` as no longer persisted. The dict was correct;
+    the extractor was brittle to any nesting. Parsing beats slicing for exactly this reason."""
+    import ast
+    tree = ast.parse(inspect.getsource(vf._persist_verdict))
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign) and node.targets
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id == "_verdict"
+                and isinstance(node.value, ast.Dict)):
+            return {k.value for k in node.value.keys
+                    if isinstance(k, ast.Constant) and isinstance(k.value, str)}
+    return set()
 
 
 # --- the sweep still finds both dicts -----------------------------------------------------------
