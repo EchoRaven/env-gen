@@ -2364,9 +2364,35 @@ def _auth_wipeout_655(judged_screens, auth_bounced) -> bool:
     if not auth_names:
         return False
     bounced = set(auth_bounced or ())
-    bounced_routes = {s.get("route") for s in judged_screens if s["name"] in bounced}
+
+    # #916: a screen with NO route can neither prove a route bounced nor be proved bounced by
+    # one. It used to do both: `s.get("route")` is `None` for such a screen, so ONE route-less
+    # bounced screen put `None` into `bounced_routes`, and then EVERY route-less auth screen
+    # matched it and counted as covered — a wholesale auth wipeout inferred from two missing
+    # fields. Found by driving this function instead of reading it (item 262's pass): two screens,
+    # neither with a route, one bounced → True.
+    #
+    # ★ Latent, not live: the corpus has 140 route-less design screens across 7 runs and NONE of
+    # them is marked `auth`, so no run has taken this path. Fixed anyway because it costs two
+    # lines and the failure is expensive and silent — a True here abandons the ENTIRE round
+    # (`return {"passed": False, "auth_unavailable": True, "screens": []}`), which is exactly the
+    # all-screens-unjudged state #892 exists to prevent.
+    #
+    # Direction chosen deliberately: missing the wipeout leaves the round to judge those screens
+    # (low scores, recoverable); inventing one discards a whole round of real work.
+    def _rt_916(s: Mapping[str, Any]) -> str:
+        return str(s.get("route") or "").strip()
+
+    bounced_routes = {_rt_916(s) for s in judged_screens
+                      if s["name"] in bounced and _rt_916(s)}
+    # A screen is covered when its ROUTE is known to have bounced, OR when the screen ITSELF
+    # bounced — the latter needs no route at all, which is what keeps #655's own case working
+    # (`test_a_screen_with_no_route_is_handled`: both auth screens bounced, one unrouted → still a
+    # wipeout). The first version of #916 dropped that and I wrote the loss up as a deliberate
+    # trade; #655's existing test said otherwise, and it was right.
     covered = {s["name"] for s in judged_screens
-               if s["name"] in auth_names and s.get("route") in bounced_routes}
+               if s["name"] in auth_names
+               and (s["name"] in bounced or (_rt_916(s) and _rt_916(s) in bounced_routes))}
     return covered >= auth_names
 
 

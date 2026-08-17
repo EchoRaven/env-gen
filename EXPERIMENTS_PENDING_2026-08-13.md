@@ -13262,3 +13262,44 @@ Status of the three ceilings item 260 parked as "unverifiable without a run":
     #872  now driven — 5 cases, including the cut itself
     #889  6 driving assertions already
     #892  fixed in #915 — was ZERO
+
+## 264. #916 — driving two source-only detectors, and the defect that fell out on the third input
+
+Item 262's targeted pass, continued. Filtering the 135 source-only test files down to those whose
+subject is a **module-level, low-arity, non-async function** — i.e. trivially drivable, so
+"unverifiable" was never the reason — leaves **44**. Both visual-gate wipeout detectors are in it.
+
+`_auth_wipeout_655(judged_screens, auth_bounced)` decides whether EVERY authenticated route bounced
+to `/login`. A True abandons the whole round —
+`return {"passed": False, "auth_unavailable": True, "screens": []}` — the all-screens-unjudged state
+#892 exists to prevent.
+
+★ **The defect, on the third input tried.** `s.get("route")` is `None` for a route-less screen, so
+ONE route-less BOUNCED screen put `None` into `bounced_routes`, and then EVERY route-less auth
+screen matched it and counted as covered. Two screens, neither routed, one bounced → `True`: a
+wholesale auth wipeout inferred from two missing fields.
+
+    corpus: 140 route-less design screens across 7 runs — and NONE marked `auth`
+
+**Latent, not live.** Recorded as such. Fixed anyway: two lines, and the failure is silent and
+costs an entire round. Fourth appearance this session of a missing value used as a real one (#902's
+blank route as the site root, #907's empty cache as an empty tree, #908's empty `child_meta`
+answered as data) — here `None` was a route key.
+
+### ★ my first fix broke #655's own case, and #655's own test caught it
+
+The first version dropped route-less screens from BOTH sides, so *"both auth screens bounced, one of
+them unrouted"* stopped being a wipeout. That is a genuine session collapse, and
+`test_a_screen_with_no_route_is_handled` has asserted it since #655. **I had written the loss up in
+my new test as a deliberate trade** — a rationalisation of a behaviour I had not checked against the
+tests that already existed.
+
+The distinction the fix now makes: a screen is covered when its ROUTE is known to have bounced, **or
+when the screen ITSELF bounced** — the latter needs no route. Both cases now pass, plus the defect.
+
+★ Second time this session an existing test caught a real defect in one of my changes (#566y's did
+it for #908). The suite's guards are not uniformly decorative, and the ones that fire tend to be the
+ones written by someone who had already been bitten by the exact case.
+
+    14 driven cases for the two detectors, replacing source-text assertions
+    sensitivity: revert #916 → 2 of them fail; revert the refinement → #655's own test fails
