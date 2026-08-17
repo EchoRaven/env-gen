@@ -11599,3 +11599,62 @@ vestige still reports.** A row of zeros is the same shape as a row of measured z
 The fix is to drop the block (or route it through `_gate_absent_792`), and to remove
 `semantic_hub_drift` from the check vocabulary if nothing can produce it. **Not applied — code edits
 are declined at present.**
+
+
+## 232. 5 of the delivery gate's 24 named checks cannot fail
+
+Item 231 found one. The obvious generalisation is to enumerate **every** `failed_checks.append` in
+`delivery_gate.py` and ask, for each, whether its guard can ever be true. 24 sites; five cannot.
+
+### structurally dead — 2
+
+Two vestigial values, on **adjacent lines**, both hardcoded and never populated:
+
+    1896:  projection_errors = {}                                # CRDT removed in Cutover 4
+    1897:  semantic_drift = {"errors": [], "warnings": []}       # specs no longer an independent source
+
+    1907:  if projection_errors:        → failed_checks.append("semantic_projection_errors")   NEVER
+    1905:  if semantic_drift.get("errors"): → failed_checks.append("semantic_hub_drift")       NEVER
+
+★ **And the pair is a perfect demonstration of #883's discriminator.** Same intent, same cleanup, one
+line apart — and opposite *reporting* behaviour,決定 purely by the container's truthiness:
+
+| | guard | report block (`if X:`) | result |
+|---|---|---|---|
+| `projection_errors = {}` | falsy | **skipped** | dead and **honest** |
+| `semantic_drift = {"errors": [], "warnings": []}` | *non-empty dict → truthy* | **runs** | dead and **prints six zeros** |
+
+There is also a dead consumer: `delivery_gate.py:655` branches on
+`if "semantic_projection_errors" in failed_checks:` — remediation logic for a check that can never be
+present.
+
+### dead by an unmet precondition — 3
+
+    2075:  if task_suite_exists:              # (output_dir / "tasks" / "tasks.yaml").exists()
+    2076:      if retry_pending_count > 0:  → "validation_retry_pending"
+    2080:      if not api_smoke_pass:       → "validation_api_smoke_missing"
+    2082:      if not ui_smoke_pass:        → "validation_ui_smoke_missing"
+
+★ **Measured directly against the corpus rather than taken from #671's citation:**
+
+    runs=152   with tasks/tasks.yaml=0
+
+and the `tasks/` directory **exists and is empty** in those runs — so the precondition tests for a file
+that nothing ever writes into a directory the framework does create.
+
+#671 recorded the `ui_smoke` third of this. **The `api_smoke` and `retry_pending` thirds sit on the
+identical path and are not recorded anywhere I can find** — so "the delivery gate requires an API
+smoke pass" has never been true in 152 runs either.
+
+### ★★ what this means
+
+**21% of the delivery gate's named check vocabulary cannot block a release.** None of the five is a
+*regression* — two are honest vestiges of removed subsystems, three await a task-suite feature that
+was never wired. The harm is that the vocabulary reads as coverage. A reader (or an LLM
+`deliverability_check`, which my own notes record as a SUBSET of the deterministic gate) sees 24 named
+checks and infers 24 things are verified.
+
+This is the same shape as item 231's zeros and as #792's `_gate_absent_792`: **a check that cannot
+fire and a check that fired and passed are indistinguishable from the outside.** The fix for all five
+is the same — either wire them or announce them as unavailable; do not leave them in the vocabulary
+reading clean. **Not applied: code edits are declined at present.**
