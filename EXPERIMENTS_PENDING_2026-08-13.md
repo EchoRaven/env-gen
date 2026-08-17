@@ -11869,3 +11869,52 @@ grepping callers) was **missing from my own scan's output**.
 **Two independent oracles, both necessary.** The calibration proves the detector works; the hand-found
 instance proves the *population* was complete. A scan can pass the first and fail the second, which is
 exactly what v3 did.
+
+
+## 237. handlers are clean of the LOCAL defect and carry the NON-LOCAL one — which is the shape of every real find today
+
+Item 236's four broken imports all sit in `except` handlers: code that runs only when something has
+already failed, and is therefore never exercised. My own #884 near-miss (`logger` where the module
+defines `_LOG`) was the same position, different failure. So: sweep every handler for names that
+resolve to nothing.
+
+    except handlers scanned:                     2098
+    ★ unresolvable names in a handler:              0
+    CALIBRATION (#884's shape — `logger` undefined in a handler):  DETECTED ✔
+
+An earlier pass reported **10** hits — `self`, `team_id`, `per_agent_timeout`, `dataset_id`, `prefix`
+— every one a **closure**. The scan analysed each nested `def` with only its own arguments as scope,
+so enclosing-function names read as undefined. Adding a proper scope chain took all ten to zero, and
+the calibration still fires. ★ Fifth instrument error of the day, same session; caught, again, because
+the result had to survive a known positive.
+
+### ★★ the asymmetry is the finding
+
+| class | position | result |
+|---|---|---|
+| a **name** that resolves to nothing in a handler | judgeable **from the line** | **0 of 2098** |
+| a **relative import depth** in a handler | needs the module's depth in the package tree | **4 broken** |
+
+**Defects concentrate where correctness depends on context outside the line.** A misspelled name is
+visible to anyone reading it. Whether `from ...tools.browser._bootstrap import` is legal is *invisible
+from the line* — it depends on where the file sits, and on the fact that the runtime root is
+`env_generator/llm_generator` rather than the repo root.
+
+★ **Every real defect found today has that shape:**
+
+| find | the line is correct in isolation; what makes it wrong is… |
+|---|---|
+| #861 | the key lives on a **different dict** — `verdict.json`, not `gate.last_result` |
+| #895 + item 236's four | the **module's depth** in the package tree |
+| item 231 `semantic_hub_drift` | the **producer** three hundred lines away is a hardcoded empty |
+| item 228 `mark_detail_authored` | a `return` **41 lines above** |
+| item 220 `up_timeout` | whether an **enforcer exists elsewhere** |
+| #883 | what the **consumer** does with empty |
+
+And it is symmetric with the review method that found them: every one needed *"go to where the value
+binds"*, and every instrument failure today was me **not** doing that — resolving against the wrong
+root, merging bindings across a module, reading the first line of a ticket, scoping a scan to one
+file's accumulator names.
+
+**The codebase's hard defects and my hard mistakes have the same shape, because they have the same
+cause: a line whose correctness is not in the line.**
