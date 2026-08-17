@@ -1329,6 +1329,13 @@ class Orchestrator:
                         _planned = None
                     if _planned:
                         milestones = _planned
+                        try:                          # #894: stage timeline
+                            from .runtime.stage_contract import record_stage_894
+                            record_stage_894("milestone_plan", "milestones", milestones,
+                                             progress=self.progress,
+                                             event_type=EventType.PHASE_START)
+                        except Exception:
+                            pass
                         self._logger.warning(
                             "MILESTONE PLAN (agent-decided): %d milestone(s): %s",
                             len(milestones),

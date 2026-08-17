@@ -274,6 +274,14 @@ volumes:
         # resource the lane registered an endpoint for but never tabled (large apps).
         tables = synthesize_missing_tables(tables, _eps)
         paths = write_database_scaffold(orch.output_dir, tables)
+        try:                                             # #894: stage timeline
+            from .stage_contract import record_stage_894
+            from progress import EventType as _ET894      # top-level module, not a sibling
+            record_stage_894("database_scaffold", "tables", tables, ok=bool(tables),
+                             progress=getattr(orch, "progress", None),
+                             event_type=_ET894.PHASE_START)
+        except Exception:
+            pass
         orch._logger.info(
             "Authored app/database/ scaffold: %d table(s) → %s",
             paths["table_count"], paths["schema_sql"],
@@ -295,6 +303,18 @@ volumes:
             out_dir = getattr(orch, "output_dir", None)
             if not out_dir:
                 return
+            # #891: the backend is the first consumer of the DDL. 12 of 151 corpus runs reached
+            # here with app/database/init empty — the app then has no tables and every query
+            # fails at RUNTIME, five links from the cause.
+            try:
+                from .stage_contract import require_stage_input_891
+                _init = Path(orch.output_dir) / "app" / "database" / "init"
+                require_stage_input_891(
+                    "backend skeleton", "app/database/init/*.sql", "the database scaffold",
+                    present=lambda: sorted(_init.glob("*.sql")) if _init.is_dir() else [],
+                    detail="the generated app will start against an empty database.")
+            except Exception:
+                pass
             from .backend_skeleton import write_backend_skeleton
             from .lifecycle import business_endpoints
             from .database_scaffold import (synthesize_missing_tables,

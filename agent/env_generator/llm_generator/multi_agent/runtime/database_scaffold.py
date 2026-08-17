@@ -1211,6 +1211,17 @@ def write_database_scaffold(output_dir: Path, tables: Dict[str, Any]) -> Dict[st
 
     schema_sql = init_dir / "01_init.sql"
     schema_sql.write_text(render_schema_sql(tables), encoding="utf-8")
+    # #891: a schema with no tables is a silent empty database. The file is written either way, so
+    # nothing downstream can tell "the contract had no tables" from "the contract had tables".
+    if not (tables or {}):
+        try:
+            from .stage_contract import require_stage_output_891
+            require_stage_output_891(
+                "database scaffold", "any registered table", present=False,
+                detail="01_init.sql was written with ZERO tables — the app will start with an "
+                       "empty database and every query will fail at runtime.")
+        except Exception:
+            pass
     return {
         "schema_sql": schema_sql,
         "table_count": len(tables or {}),
