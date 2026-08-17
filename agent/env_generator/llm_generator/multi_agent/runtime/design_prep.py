@@ -20,6 +20,7 @@ import logging
 _LOG_813 = logging.getLogger(__name__)
 
 import json
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -506,8 +507,41 @@ def _tool_call_args(resp) -> Optional[Dict]:
     return None
 
 
+# #889: ceiling on ONE ladder, INCLUDING its rungs and their re-rolls. `utils.llm` caps a single
+# completion at 240s (FIX #187) and nothing caps the retry count; a ladder is up to THREE such
+# calls, and `_run_analyst` runs one ladder PER SCREEN (~12). Worst case was 12 x 3 x 240s x N.
+# Calibrated like #870/#871/#872 — above one watchdog so an honest slow rung completes, below two
+# so the re-rolls cannot stack. Env-overridable.
+_LADDER_TIMEOUT_S_889 = max(30.0, float(os.environ.get("ENVGEN_DESIGN_LADDER_TIMEOUT_S") or "300"))
+
+
 async def _chat_ladder(client, msgs, *, max_tokens: int) -> Optional[Dict]:
-    """forced-function → JSON-mode text → plain text; TypeError degrades per rung."""
+    """forced-function → JSON-mode text → plain text; TypeError degrades per rung.
+
+    #889: bounded. `design_prep.py` carried **no timeout of any kind** — the four LLM calls in
+    this module all funnel through here — while sitting on the pre-kickoff critical path, and it
+    is the stage that was still logging 104-789s AFTER the orchestrator's last entry in 6 of the 7
+    runs that died with nothing built (item 190).
+
+    Timing out returns `None`, which is this function's documented contract for every other kind
+    of failure ("degrades per rung"; `return None` on an unparseable body) and which #813 and #819
+    already make audible. So the ceiling lands on a path the code takes — the same property that
+    made #870, #871 and #872 safe."""
+    import asyncio as _asyncio
+    try:
+        return await _asyncio.wait_for(
+            _chat_ladder_inner(client, msgs, max_tokens=max_tokens),
+            timeout=_LADDER_TIMEOUT_S_889)
+    except _asyncio.TimeoutError:
+        _LOG_813.error(
+            "DESIGN LADDER TIMED OUT after %.0fs — this screen is enriched from the skeleton "
+            "only (#889). Unbounded, its rungs and their re-rolls ran ahead of milestone "
+            "planning and kickoff.", _LADDER_TIMEOUT_S_889)
+        return None
+
+
+async def _chat_ladder_inner(client, msgs, *, max_tokens: int) -> Optional[Dict]:
+    """The unbounded ladder body; call `_chat_ladder`, which bounds it (#889)."""
     import re
     resp = None
     try:
