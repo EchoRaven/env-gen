@@ -11419,3 +11419,82 @@ as a finding before checking the other side.** I wrote the suspicion as conditio
 is populated with all registered resources"*) and went to the builder. It was a different set than I
 guessed (`_NESTED_CHILD_RESOURCES`, not `_OWNER_SCOPED_RESOURCES`) but the same shape. Two items after
 naming the rule, it works when actually applied.
+
+
+## 229. ★★★ #861 IS BROKEN AND SHOULD BE REVERTED — I gated a release path on a key that does not exist
+
+The highest-severity finding of the session, and it is mine, shipped this session.
+
+### what #861 did
+
+It added a second condition to `_visual_release_decision`'s fast path:
+
+    _live_ok = (blocking_average_live is not None and avg_min is not None
+                and blocking_average_live >= avg_min)
+
+fed by `_visual_fast_release_args`:
+
+    res = getattr(gate, "last_result", None) or {}
+    ... "blocking_average_live": res.get("blocking_average_live"),
+
+### why it can never be satisfied
+
+    self.last_result = result                          visual_fidelity.py:4788
+    result = run_visual_fidelity(...)                  lines 2376-3028
+
+AST over every dict literal in `run_visual_fidelity`:
+
+    'blocking_average'       in returned dict literals:  True
+    'blocking_average_live'  in returned dict literals:  FALSE
+
+So `res.get("blocking_average_live")` is **always None** → `_live_ok` is **always False** →
+**`fast_release` can never fire.** Not "stricter" — **disabled**.
+
+### ★ and the premise was already refuted, in the same file, before I wrote it
+
+`visual_fidelity.py:3406` (#711r) states it exactly:
+
+> *"The merged, monotonically non-decreasing number lives in the PERSISTED record — verdict.json and
+> rounds.jsonl … The DECISION path does not read it. `_visual_fast_release_args` takes
+> `gate.last_result`, which is the dict RETURNED by run_visual_fidelity … and that dict carries
+> `blocking_average` = `_blocking_similarity_average(results)` — **the CURRENT capture, never
+> merged**"*
+
+#861's whole rationale was *"`blocking_average` is #500's high-water MERGE … the LIVE average must
+clear the bar too"*. **On the decision path, `blocking_average` already IS the live average.** The
+merged/live divergence I measured — *"merged ≥ 0.65 while live < 0.65 in 5 of 7 runs"* — was measured
+in `verdict.json`, the **persisted** record, which this path does not read.
+
+★ **That is the tenth field-location error of this session and the only one that reached shipped
+code.** Same shape as the other nine: two numbers with the same name in two dicts, and I checked the
+wrong dict. #712's struck-out comment two hundred lines below says of its own version of this mistake:
+*"I verified monotonicity from rounds.jsonl — the PERSISTED number — and then assumed the counter read
+the same one."* I read that comment this session, quoted #711r's neighbours, and made the identical
+error anyway.
+
+### ★ why my own test passed
+
+`tests/test_fast_release_reads_the_live_score_861.py` calls the **pure** `_visual_release_decision`
+with `blocking_average_live` supplied directly as a kwarg. It never exercises
+`_visual_fast_release_args` against a real `gate.last_result`, so it cannot see that production never
+supplies the key.
+
+**This is item 228's finding, one item later, with me as the author**: the test pins the function's
+logic given the input, not the production path that produces the input. There I described it as a
+latent hazard; here it let a live regression through, in the same session, in code I wrote.
+
+### severity and the fix
+
+**Not a safety regression.** Item 224 verified that declining the fast path can only *delay* a
+release, never ship something worse. The cost is throughput: every run now waits for the wall-clock,
+plateau or attempt escape instead — the orchestrator's own #861 comment estimates the fast path saves
+*"~40-60 minutes and ~40 re-judgements"*, so that is what each affected run now pays.
+
+★ **The correct fix is to REVERT #861, not to add the missing key.** It gates on a value that does not
+exist, to correct a divergence that does not exist on this path. Adding
+`"blocking_average_live": _live_average` to `run_visual_fidelity`'s return would make the gate *real*
+— and a real gate here is a **second, redundant** check of the number `blocking_average` already
+carries, tightening nothing while re-introducing the calibration question #711 left open.
+
+Not applied: code edits are declined at present. Flagged as the single most important item in this
+batch.
