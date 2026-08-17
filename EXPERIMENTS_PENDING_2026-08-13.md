@@ -13396,3 +13396,38 @@ hit rate (`invented_field_fallback_blockers`, 11 runs, none released). `_persist
 for five of the remaining entries and is one function — it needs a verdict argument my probe did not
 supply, so its 765 "crashes" were my probe, not the code. The rest are lower-value by construction:
 none of them produces or suppresses a blocker.
+
+## 267. the r148 mechanisms and r153's green gate, validated by planted controls
+
+Item 266 set the standard: prove the detector sees the thing it exists for, then trust its zero.
+Applied to the two surfaces that matter most — the gate that cleared r153, and the three mechanisms
+that let r148 release a dead SPA.
+
+### r153's released tree, one planted defect per class
+
+    baseline hard blockers                                   0
+    deleted a page component  → "component `GamesPage` not found — expected at src/pages/…"   ✓
+    removed its <Route>       → "route `/games` not wired in App.jsx"                          ✓
+    planted a stub handler    → #173's blocker, verbatim                                        ✓
+    planted `t.rating || '4.5'` → #175's invented-field blocker                                 ✓
+
+Four for four. **r153's zero is now a measurement**, not an assertion: the checks are live and the
+released tree is clean on each axis.
+
+### the three r148 mechanisms
+
+| mechanism | state |
+|---|---|
+| **#737** blackout manufactures its own plateau | already driven — 13 assertions touching `plateau_rounds`, one source-assert, and `test_the_old_behaviour_is_reproducible_in_this_harness` is itself a planted control proving the harness catches the original defect |
+| **#738** stale bundle reads clean | pure predicate, driven here across 8 shapes: fires on *"same bundle, commit moved"*, stays False on first-round / changed-bundle / missing-prior. Content-based, not the route-shaped #715 probe it replaced |
+| **#887** unreadable served-build stamp | keeps the permissive default (a corrupt stamp must not block a capture) and **says so**: *"#738's stale-bundle check is DISABLED for this round and will report the build clean, which is exactly the blind spot it was written to…"* |
+
+★ All three are covered, and each was checked by RUNNING it rather than by reading it — which is
+the whole point, since r148 shipped past a gate that read fine.
+
+### nothing to fix in this pass
+
+Every instrument fired on its planted defect and every zero held. Recorded so the next pass starts
+from a validated baseline instead of re-deriving one. The remaining source-only subjects
+(`_persist_verdict` and friends) neither produce nor suppress a blocker, which is why they rank
+below everything checked here.
