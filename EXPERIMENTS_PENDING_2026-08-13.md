@@ -11545,3 +11545,57 @@ That is the same failure mode as [229] one layer up: there, a decision read a nu
 dict; here, a comment describes a coupling that a later ticket created. **Both are the gap between
 what a line says about the system and what the system now does** — and neither is visible from the
 line itself.
+
+
+## 231. a delivery-gate check that cannot fail, and a report line that always prints zeros
+
+Generalising #861 one more way: instead of tracing producers (which needs the receiver's identity and
+is where I keep slipping), ask a name-independent question — **which dict keys are READ somewhere and
+written NOWHERE in the tree?**
+
+    distinct keys read:            1237
+    never written anywhere:         258
+
+★ **The signal-to-noise is terrible and that is worth stating.** The overwhelming majority are
+legitimate reads of *external* sources: ~80 `os.environ.get("ENVGEN_…")`, YAML config keys
+(`workflow_policies`, `execution_pipeline`, `task_macros`), HTTP headers (`Cookie`,
+`Content-Length`), third-party API fields (`jti`, `kid`, `thumbnailLink`, `accessToken`),
+`page.evaluate` JS results (`mapEls`, `apiReqs`, `fbEls`), and LLM-returned design JSON (`size_px`,
+`surfaces`, `top_color`). **This scan would not have caught #861 either** — that key IS written, just
+onto a different dict. Different class, and mostly noise.
+
+One cluster was not external: five keys read in `delivery_gate.py:752-756`.
+
+### what they are
+
+    # delivery_gate.py:1897
+    semantic_drift = {"errors": [], "warnings": []}   # vestigial — specs no longer exist as an
+                                                      # independent source.
+
+That value is hardcoded and never populated. Three consequences follow, and the middle one is a gate:
+
+1. `if semantic_drift:` at 748 is **always True** — `{"errors": [], "warnings": []}` is a *non-empty
+   dict*. The guard reads as "only report when there is drift data" and can never be False.
+2. ★★ `if semantic_drift.get("errors"): failed_checks.append("semantic_hub_drift")` at 1905 — `errors`
+   is always `[]`, so **`semantic_hub_drift` is a named delivery-gate check that is structurally
+   incapable of failing.** It is in the vocabulary, it appears in no run's `failed_checks`, and no
+   reader can tell "never drifted" from "never measured".
+3. Every gate report prints, unconditionally:
+
+       - Semantic hub drift: spec_endpoints=0, hub_endpoints=0, spec_tables=0, hub_tables=0,
+         spec_pages=0, hub_pages=0
+
+   Six zeros from a producer that measured nothing. `spec_endpoints` is the only one of the six that
+   is written anywhere in the tree, and that writer is `verification_tools.py:541` — **a different
+   dict entirely**.
+
+### ★ this is "no information is not information saying no", in the gate's own summary
+
+The comment is honest — *"vestigial — specs no longer exist as an independent source"* — so nothing is
+being hidden deliberately, and there is genuinely nothing left to measure. **The defect is that the
+vestige still reports.** A row of zeros is the same shape as a row of measured zeros, and #792's
+`_gate_absent_792` exists precisely so an absent check announces itself instead of reading clean.
+
+The fix is to drop the block (or route it through `_gate_absent_792`), and to remove
+`semantic_hub_drift` from the check vocabulary if nothing can produce it. **Not applied — code edits
+are declined at present.**
