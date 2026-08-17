@@ -76,9 +76,24 @@ def test_the_reason_is_empty_when_the_suite_exists():
 # --- it reaches the report ---------------------------------------------------------------------
 
 def test_it_is_surfaced_beside_task_suite_exists():
-    src = inspect.getsource(dg)
-    i = src.index('"task_suite_exists": task_suite_exists,')
-    assert '"matrix_skipped_reason": matrix_skipped_reason' in src[i:src.index("}", i)]
+    """Both keys must live in the SAME dict literal.
+
+    ★ Was `src[i:src.index("}", i)]` — a slice to the first closing brace after the anchor. #921
+    hit exactly that shape in `test_verdict_key_semantics_720`: a nested dict literal moved the
+    first `}` earlier, the slice truncated, and the test reported a key as missing that was
+    present. Read the literal through the AST instead: a test that locates code by counting
+    characters fails on formatting and passes on defects."""
+    import ast
+    tree = ast.parse(inspect.getsource(dg))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        keys = {k.value for k in node.keys
+                if isinstance(k, ast.Constant) and isinstance(k.value, str)}
+        if "task_suite_exists" in keys:
+            assert "matrix_skipped_reason" in keys, sorted(keys)
+            return
+    raise AssertionError("no dict literal carrying `task_suite_exists` found")
 
 
 # --- it must not change the verdict -----------------------------------------------------------

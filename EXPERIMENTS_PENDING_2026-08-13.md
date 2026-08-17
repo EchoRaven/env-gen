@@ -13780,3 +13780,33 @@ read the `_verdict = {...}` literal through the AST.
 Third time this session a source-slicing test has failed on a change that altered no behaviour
 (#892's extraction, #909's report, now this). The pattern is stable enough to state as a rule:
 **a test that locates code by counting characters will fail on formatting and pass on defects.**
+
+## 276. #922 — the brittle-locator class, swept and closed (3 of 3)
+
+Item 275 ended by stating a rule rather than applying it: *"a test that locates code by counting
+characters will fail on formatting and pass on defects."* Applied mechanically.
+
+The sweep is narrower than "source-only tests" and that is the point. **158** test files slice module
+source by character position, and most anchor on meaningful strings (`src.index("if
+task_suite_exists:")`) — those are fine, and re-writing them would be churn. The fragile shape is
+specifically **slicing to a BARE delimiter**, where any nesting introduced later moves the end:
+
+    ★ slicing to a bare `}` / `)` / `]`                                3 files
+
+    #720  src[i:src.index("}", i)]                    → broke on #921's nested coverage dict (fixed)
+    #671  src[i:src.index("}", i)]                    → latent: a nested dict between the two keys
+    #863  src.index(")", src.index('agent="…"', …))   → latent: a nested CALL in a later argument
+
+All three now read the structure through the AST — the dict literal's keys, the call's keyword
+arguments — so they fail on the defect and survive the formatting.
+
+    3 of 3 instances handled; 155 files with robust anchors deliberately untouched
+
+★ The two latent ones are the #916 pattern again: a defect that has not fired yet, cheap to close,
+and expensive to diagnose when it does — #720's cost me a full-suite run and a false "the key is no
+longer persisted" before I saw the extractor was at fault rather than the code.
+
+★ Worth keeping as the discriminator, because "source-only test" was too coarse a category and the
+first sweep over it produced 135 files and no action: **the question is not whether a test reads
+source, it is whether it can still find what it is looking for after the code is reformatted.** An
+anchor on a named string can. A count to the next bracket cannot.

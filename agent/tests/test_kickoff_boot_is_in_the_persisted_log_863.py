@@ -94,10 +94,22 @@ def test_it_does_not_change_the_boot_itself():
     """Observation only: the call and its arguments are untouched."""
     src = _src()
     assert re.search(r"self\._kickoff_handle = run_kickoff\.start_kickoff\(", src)
-    start = src.index("run_kickoff.start_kickoff(")
-    end = src.index(")", src.index('agent="orchestrator"', start))
-    call = src[start:end]
-    assert 'attendees=["backend", "frontend", "verifier"]' in call
+    # ★ Was a slice to the first `)` after `agent="orchestrator"` — which a nested call in any
+    # later argument would end early (#921's class, one bracket along). Read the call node.
+    import ast
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "start_kickoff"):
+            continue
+        kw = {k.arg: k.value for k in node.keywords if k.arg}
+        assert "attendees" in kw, sorted(kw)
+        att = kw["attendees"]
+        assert isinstance(att, ast.List), ast.dump(att)[:120]
+        assert [e.value for e in att.elts if isinstance(e, ast.Constant)] == [
+            "backend", "frontend", "verifier"]
+        return
+    raise AssertionError("no run_kickoff.start_kickoff(...) call found")
 
 
 def test_862s_warning_really_is_unreachable_for_this_class():
