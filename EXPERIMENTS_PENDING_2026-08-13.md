@@ -12344,3 +12344,64 @@ skip only files under a `tests/` **directory**, never by filename.
 
 ★ **Keep both calibration tests.** They are what will make this guard trustworthy once the predicate is
 right — and they are precisely what #802 lacks.
+
+
+## 245. the curated-list trap is in MY test too — #883 scans 8 of 16 gate modules
+
+Item 244 found the new #895 guard uses a hand-maintained `_TOP_LEVEL`, the exact trap #802's docstring
+names. Sweeping **every** scanner test for that shape:
+
+    scanner tests with a curated membership list: 3
+    CALIBRATION (does it find the known positive `_TOP_LEVEL`?): yes
+
+Only three across the whole suite — **not a widespread class**. But one of the three is mine.
+
+### `_GATES`, in the #883 test I wrote
+
+    _GATES = ("delivery_gate.py", "deliverability.py", "frontend_audit.py", "backend_audit.py",
+              "completeness_audit.py", "seed_audit.py", "flow_coverage.py", "framework_validation.py")
+
+Detecting gate modules by **behaviour** instead (`failed_checks` / `blockers.append` /
+`release_decision` / `_gate_absent_792` / `def *_blockers`) finds **16**. Ten are outside the scan.
+
+★ My behavioural detector is crude and some of the ten are probably false positives (`service.py`,
+`story_hub.py`, `cross_check_suite.py` may only mention the words). **Three are unambiguous**, and I
+read all three directly this session:
+
+| module | what it decides |
+|---|---|
+| `page_build_gate.py` | `pages_release_decision`, with its own escape ladder |
+| `visual_fidelity.py` | the visual gate — verdict, coverage, the `app_dead` veto |
+| `validation_runner.py` | `_add("docker_up", False, …)` and the rest of the smoke checks |
+
+### ★★ why that is not cosmetic
+
+#883 scans for *an `except` handler assigning an empty default inside a gate file*, where **empty
+means clean** is a silent pass. `visual_fidelity.py` is not scanned — **and this session found exactly
+that shape there twice**: #884 (an unreadable prior verdict turning a partial capture into a gate
+failure) and #887 (an unreadable `served_build.json`). *The scanner built to catch that class does not
+look at the file where the class kept appearing.*
+
+★ And `test_a_new_gate_file_starts_at_zero` does **not** close the hole. It checks files present in
+`counts`; a module absent from `_GATES` never enters `counts`, so a new gate file is **invisible** to
+it rather than starting at zero. The guard against staleness is itself scoped by the stale list.
+
+### the tally for this defect class
+
+**Three independent implementations, all initially blind, each differently:**
+
+| | how it was blind |
+|---|---|
+| #802 | the **oracle** resolves against the wrong package root |
+| #895's guard (today) | a curated name list **plus** a filename exclusion that deletes runtime modules |
+| #883 (mine) | a curated **file** list covering half the gates |
+
+I wrote the third while quoting the docstring that names the trap.
+
+### APPLY-READY for #883
+
+Replace `_GATES` with the behavioural predicate — *a module is a gate if it appends to
+`failed_checks`/`blockers` or returns a release decision* — and keep `_BASELINE`, which then covers new
+files automatically. Expect the baseline to need entries for `visual_fidelity.py`,
+`page_build_gate.py` and `validation_runner.py` on first run; **each one is a real handler to read,
+not a number to bump.**
