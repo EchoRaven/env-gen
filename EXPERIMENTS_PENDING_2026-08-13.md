@@ -12405,3 +12405,57 @@ Replace `_GATES` with the behavioural predicate — *a module is a gate if it ap
 files automatically. Expect the baseline to need entries for `visual_fidelity.py`,
 `page_build_gate.py` and `validation_runner.py` on first run; **each one is a real handler to read,
 not a number to bump.**
+
+
+## 246. widening #883 to the real gates immediately finds a vacuous pass in `page_build_gate`
+
+Item 245 *predicted* the corrected predicate would need baseline entries for the three unscanned gate
+modules. A prediction is not a measurement, so I ran #883's own scan over them:
+
+    visual_fidelity.py    12 silent empty-default handlers
+    page_build_gate.py     1
+    validation_runner.py   6
+
+Per #883's own discriminator the count is not the point — **the direction is**. One is unambiguously
+the dangerous kind.
+
+### `page_build_gate._unbuilt_with_routes`
+
+> *"Core walk: (component_name, normalized_route) for each registered BUSINESS ui_page the lane never
+> built. Best-effort; never raises."*
+
+**Two** silent empty-exits, not one:
+
+    out: List[tuple] = []
+    try:
+        from .frontend_page_projector import _PAGE_MARKER
+        from .frontend_scaffold import _page_component_name
+    except Exception:
+        return out                  # ← silent empty #1
+    pages = {}
+    ...
+        except Exception:
+            pages = {}              # ← silent empty #2
+    if not pages:
+        return out
+
+★ **Empty means "no unbuilt pages" — the PASSING direction.** The page-build gate exists so a
+referenced-but-unbuilt page never escapes; either failure switches it off without a word.
+
+This is precisely the shape #883 classified as ★ dangerous and *fixed* at `delivery_gate.py:143`
+(`rows = []` → every expectation vacuous). **The identical shape in `page_build_gate` sat outside
+`_GATES` and was therefore never seen** — the concrete payoff item 245 predicted, arriving on the first
+run of the widened scan.
+
+### the other two modules
+
+Mostly the safe direction on inspection: `visual_fidelity`'s `self.avg_pass_rounds = 0` means *"not
+stable yet"* (delays release — conservative), and `_unstable_893 = []` feeds an advisory log. They
+belong in the baseline so the class cannot grow unnoticed, but they are not defects.
+
+### APPLY-READY
+
+Route both exits through `_swallowed_790` (already used by the sibling gates), then add
+`page_build_gate.py` to #883's `_BASELINE` at **0**, since announcing removes them from the silent
+count. ★ **Do not make `_unbuilt_with_routes` raise** — its *"never raises"* is load-bearing for
+callers; **announcing is the whole fix.**
