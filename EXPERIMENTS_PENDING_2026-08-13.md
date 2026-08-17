@@ -13054,3 +13054,49 @@ Of the 77 same-named `pages/`+`components/` pairs:
   `no-store`. r153 captured 12 screens through it, so the config is proven by the run itself.
 - **Frontend/backend endpoint agreement in r153.** 11 distinct `/api` paths called, 17 served, 0
   unmatched.
+
+## 259. #913/#913b — one malformed route, and a whole feature disappears
+
+Chasing item 258's leftover ("the episodes feature is complete and unreachable") to its cause.
+`wire_detail_modal_534` mounts the lane's detail modal at a `detail`-ish PARAM route. r153 has no
+such route, because its only detail route is:
+
+    <Route path="/browse?title=:id" element={<BrowseHomePage />} />
+
+React Router matches the **pathname** only, so that route can never fire. `design_prep` already
+knows the class — #355, on r93's `/?comments=1`: *"a dead route, the exact class the #238 nav gate
+exists to catch"* — and answers it by classifying such a screen as an OVERLAY of the base path. That
+guard lives on the **design-screen** producer; the `ui_page` record carrying the same shape reaches
+the scaffolder and the audit unfiltered.
+
+Corpus: **1 dead route in 2120**. Its consequence is out of all proportion to its rarity — it was
+r153's only `detail` param route, so #534 no-opped, and `TitleDetailModal`, `EpisodeList` and
+`GET /api/titles/{id}/episodes` all shipped complete, correct and **unreachable**. A user of the
+arc's best delivery cannot see a show's episodes.
+
+### two producers, two guards
+
+- **#913** (scaffolder): apply #355's own answer — the query is a STATE of the base page, so when
+  that path is already claimed the record adds no route; when it is not, keep the path part rather
+  than dropping the page.
+- **#913b** (audit): ★ the half that would have caught r153. Its App.jsx is **lane-authored** (no
+  `@framework-managed-routes` marker), so the scaffolder never sees it — and `_route_is_wired` is a
+  string match, so a route the lane copied verbatim SATISFIES the wiring check. **The audit
+  confirmed a dead route as wired.** Now reported (soft — a contract typo must not wedge a run) with
+  the base path named.
+
+★ Removing the dead route does not by itself restore the feature. The contract declares the detail
+as a query STATE of `/browse`, which needs `BrowseHomePage` to open the modal — and that page is the
+#910 projection that renders no components. That half remains the recorded user decision.
+
+### ★ the sensitivity check caught me aiming at the wrong producer — twice in two tickets
+
+The first #913 was scaffolder-only, and 5 of its 6 tests passed with the guard disabled: two because
+`seen_components` deduped my fixture before it reached the guard (both records used
+`BrowseHomePage`, as r153's do), and the rest because they exercised untouched paths. Only after
+fixing the fixture to use a DISTINCT component, and then checking who actually wrote r153's App.jsx,
+did the lane-authored half surface. With both guards disabled, 6 of 10 now fail.
+
+Same shape as #905's `/pages/` discriminator: **a fix aimed one producer to the left of the
+defect.** The routine that catches it is cheap and mechanical — disable the change, re-run its own
+tests, and require that they go red.

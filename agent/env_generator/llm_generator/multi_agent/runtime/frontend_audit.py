@@ -457,6 +457,27 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
         # _norm_route. Clears cosmetic route drift (`/watch/:id`≡`/watch`,
         # `/channel/:handle`≡`/channel/:channelId`) while still hard-flagging a
         # genuinely-absent route (`/feed/library` with no matching wired path).
+        # #913b: a route carrying a QUERY or FRAGMENT can never match — React Router matches the
+        # PATHNAME only. `_route_is_wired` is a string/set match, so when the lane copies the
+        # declared route into App.jsx verbatim the wiring check is SATISFIED by a route that can
+        # never fire: the audit confirms a dead route as wired.
+        #
+        # `design_prep` already knows the class (#355, r93's `/?comments=1`: *"a dead route"*) and
+        # handles it for DESIGN screens; a ui_page record carrying the same shape reaches here
+        # unfiltered. r153 registered `title_detail` at `/browse?title=:id`, the lane wired it
+        # verbatim, and the audit was happy. Corpus: 1 in 2120 routes — rare, and it is in the
+        # arc's best run, where it was the only `detail`-ish param route, so
+        # `wire_detail_modal_534` found no target and `TitleDetailModal` + `EpisodeList` +
+        # `GET /api/titles/{id}/episodes` shipped complete and unreachable.
+        #
+        # Reported, not hard: a contract typo should not wedge a run, and the message names the
+        # fix precisely enough to act on.
+        if "?" in route or "#" in route:
+            _base_913b = route.split("?", 1)[0].split("#", 1)[0].rstrip("/") or "/"
+            missing.append(
+                f"route `{route}` carries a query/fragment and can NEVER match — React Router "
+                f"matches the pathname only. Register the page at `{_base_913b}` and open this "
+                f"state from that page (it is a STATE of `{_base_913b}`, not a second route).")
         if not _route_is_wired(route, app_jsx):
             # FIX #146 (run-69 M3 STUCK, live): declared-route vs implemented-
             # route DRIFT — ui_page `messages_page` declared `/messages` but the

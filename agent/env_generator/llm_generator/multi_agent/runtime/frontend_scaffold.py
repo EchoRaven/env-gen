@@ -9562,6 +9562,23 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                 continue
             seen_components.add(comp)
             route = str(page.get("route") or "").strip()
+            # #913: a route carrying a QUERY or FRAGMENT can never match — React Router matches
+            # the PATHNAME only, so `<Route path="/browse?title=:id">` is dead on arrival.
+            # `design_prep` already knows this (#355: r93's `/?comments=1`) and classifies such a
+            # screen as an OVERLAY of the base path — but that guard lives on the design-screen
+            # producer, and a ui_page record registered with the same shape reaches this loop
+            # unfiltered. One rule, one producer, and the other one wires it verbatim.
+            #
+            # Corpus: 1 dead route in 2120 (r153's `/browse?title=:id`) — rare, and it is in the
+            # arc's BEST run. Apply #355's own answer here: the query is a STATE of the base page,
+            # so when that path is already claimed, this record adds no route. When it is not
+            # claimed, keep the path part rather than dropping the page entirely.
+            if route and ("?" in route or "#" in route):
+                _base_913 = route.split("?", 1)[0].split("#", 1)[0].rstrip("/") or "/"
+                if _base_913 in used_routes:
+                    seen_components.discard(comp)
+                    continue
+                route = _base_913
             if not route:
                 # #406: drop a route-less duplicate of an already-routed page (see above) —
                 # else it wires a variant fallback-stub route that blocks delivery + defeats
