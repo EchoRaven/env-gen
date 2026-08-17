@@ -11498,3 +11498,50 @@ carries, tightening nothing while re-introducing the calibration question #711 l
 
 Not applied: code edits are declined at present. Flagged as the single most important item in this
 batch.
+
+
+## 230. generalising item 229: #861 is the only missing key — and a *"does not gate"* comment has gone stale
+
+#861 was one instance. The obvious question is whether the rest of the same release path reads keys
+its producer never emits, so I checked every one against `run_visual_fidelity`'s actual output.
+
+### the check
+
+| read in `_visual_fast_release_args` | produced? |
+|---|---|
+| `res.get("coverage")` | ✔ `visual_fidelity.py:3020` |
+| `res.get("blocking_average")` | ✔ |
+| `res.get("min_similarity")` | ✔ |
+| **`res.get("blocking_average_live")`** | ★ **absent — item 229** |
+| `cov.get("blocking_judged")` | ✔ built at `visual_fidelity.py:1160`, inside the helper that makes the coverage dict |
+
+**#861's key is the only genuine miss.** The bug is isolated, not a family.
+
+★ My first scan also flagged `result.get("available")`, `result.get("message")`, `result.get("blocked")`
+and `res.get("written")` as missing. **All four are artifacts**: the scan matched on the receiver's
+*variable name*, and those `result`/`res` locals belong to unrelated functions. `blocking_judged`
+was a fifth artifact — the coverage sub-dict is built by a helper, so its keys are not in an AST walk
+of `run_visual_fidelity`'s own body.
+
+Five false positives out of six, from name-matching — the very error the last three items are about.
+Caught before reporting this time, which is the only part worth noting.
+
+### ★ a stale claim found on the way
+
+    "coverage": _coverage,   # #351: reporting only — does not gate
+
+`_visual_fast_release_args` gates on exactly this value:
+
+    _blocking_judged = int(cov.get("blocking_judged") or 0)
+    "coverage_ok": _blocking_judged >= 1,
+
+and `coverage_ok` is a required conjunct of `fast_release`. **#351's comment was true when written and
+#558 falsified it**, without touching the line. Not a defect — gating on "≥1 blocking screen was
+judged" is #558's stated precondition and it is correct. But the comment now actively misleads:
+someone changing how `coverage` is computed, on the strength of *"reporting only — does not gate"*,
+would silently move a release condition.
+
+That is the same failure mode as [229] one layer up: there, a decision read a number from the wrong
+dict; here, a comment describes a coupling that a later ticket created. **Both are the gap between
+what a line says about the system and what the system now does** — and neither is visible from the
+line itself.
