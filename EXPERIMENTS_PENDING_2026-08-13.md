@@ -11918,3 +11918,49 @@ file's accumulator names.
 
 **The codebase's hard defects and my hard mistakes have the same shape, because they have the same
 cause: a line whose correctness is not in the line.**
+
+
+## 238. citation sweep closed 37/37 — and it surfaces a THIRD open calibration decision
+
+The remaining ~16 citation sites from item 225 are now opened rather than classified. **All 37
+examined; no new defect beyond item 236's four imports.**
+
+**Verified structural, not rhetorical:** `_counter_default(col)` is called before the column is
+rendered (#97); `_ensure_seed_json(be, amplify=True)` is in the writer (#84); `_INTEGRITY_HANDLER` is
+in the renderer, not only the heal (#82); a framework-injected public route is public because the
+framework injected it (#73); the spine-table skip makes the `tenants.id TEXT PK` exemption fall out of
+the algorithm rather than a special case (#309). **Deliberate decisions with reasons:** un-truncated
+inbox bodies (#274, from a user directive), `failed` not terminal for bugs (#743's reading),
+WARN-never-reject on unknown registry sub-keys (r148's `query`/`headers` were correct information).
+
+### ★ the third decision that is yours, and I had not listed it
+
+`#615` / `#700` — **`duplicate_route_content_groups`**: routes that render identical content.
+
+    measured: 32 of 45 delivered apps
+    r146 (DELIVERED): /browse, /browse/browse-by-languages, /browse/games, /browse/latest
+                      all fetch the bare unparameterised /api/titles → four nav destinations,
+                      one page. r145: none — so not a universal projection artifact.
+
+#700 wired the **reporting** half — verified live at `deliverability.py:277`, WARNING-only. The
+**blocking** half is explicitly deferred to you, in the code's own words: *"whether 'six identical
+pages' should block or merely be reported is a calibration decision, not a measurement — the same call
+as the 0.65 fidelity bar."* At 32/45 it would wedge nearly every run.
+
+So the open user decisions are **three**, not two: `#774` (blocking?), `#854` (the roster), and this.
+
+### ★★ and the detector carries the session's own defect shape, pre-labelled
+
+Its comment warns:
+
+> *"NOTE THE PATH. `ui_page_delivery_blockers` takes frontend/**src**, but
+> `duplicate_route_content_groups` appends "src"/"pages" itself and so takes the frontend ROOT.
+> Passing it the same argument as the line below silently returns `[]` — its contract is "[] when
+> nothing can be resolved", which is indistinguishable from "nothing found"."*
+
+Two adjacent calls, same-looking argument, different required base — **correctness that is not in the
+line** (item 237) — and a failure that returns the reassuring empty (#883's direction question). The
+author saw it and wrote the warning instead of removing the trap. That is the honest move available
+without a signature change, and it is worth noting that **the codebase's own comments were ahead of me
+on this class**: #712's struck-out retraction, #711r's "the decision path does not read it", and this
+one each describe, before I found my own instances, exactly the mistake I then made.
