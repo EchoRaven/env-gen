@@ -9665,6 +9665,43 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                         if (_cand_ok and
                                 (not _marked
                                  or _stale_thin_projection_583(_existing, _cand))):
+                            # #910: say what this costs. `not _marked` means "the existing page is
+                            # not MY output" — i.e. the lane wrote it — and the clobber is then
+                            # unconditional on content. #583 added a candidate-vs-existing
+                            # comparison, but only for a page the projector had already marked;
+                            # there is no analogous test for the lane's.
+                            #
+                            # Measured on r153's own delivered git history (30 revisions of
+                            # BrowseHomePage.jsx alone, lane-merge and projection alternating):
+                            #
+                            #     BrowseHomePage     479 -> 166 lines   (-313, twice)
+                            #     LanguagesPage      324 -> 100         (-224)
+                            #     NewAndPopularPage  326 -> 130         (-196, four times)
+                            #     LoginPage          186 ->  72         (-114)
+                            #     PlayerPage         170 ->  94         ( -76)
+                            #
+                            # The lane's BrowseHomePage rendered its own <TopNav>/<Tile>; the
+                            # projection renders no components at all, which is the mechanism
+                            # behind #909's 70% orphan rate. Whether the projector SHOULD defer to
+                            # a substantially richer lane page is a real question with a fidelity
+                            # payoff (player scored 0.35) and a real regression risk (this markup
+                            # is what the visual gate has been scoring all along) — so it stays a
+                            # user decision. What is not defensible is deleting 313 lines of lane
+                            # work in silence. Never raises; observability must not break the
+                            # scaffold it observes.
+                            try:
+                                _ex_n = len(_existing.splitlines())
+                                _cd_n = len(_cand.splitlines())
+                                if not _marked and _ex_n > _cd_n:
+                                    _ex_comp = len(set(re.findall(r"<([A-Z]\w*)", _existing)))
+                                    __import__("logging").getLogger(__name__).warning(
+                                        "PROJECTION CLOBBER: %s — replacing the lane's %d-line "
+                                        "page (%d component tag(s)) with a %d-line projection. "
+                                        "The lane page carried no projector marker, so no "
+                                        "content comparison was made (#910).",
+                                        comp, _ex_n, _ex_comp, _cd_n)
+                            except Exception:
+                                pass
                             _body = _cand
             if _body is not None:
                 target.write_text(_body, encoding="utf-8")

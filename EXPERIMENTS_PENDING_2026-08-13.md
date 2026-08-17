@@ -12819,3 +12819,51 @@ Whether the projector SHOULD reuse the lane's components instead of replacing th
 question this exposes. It is a design decision with a fidelity payoff (`player` 0.35) and a
 regression risk (the projector's markup is what the visual gate has been scoring all along), so it
 belongs to the user, not to a silent default. The report is what makes it a decision at all.
+
+## 254. ★★★ the projector deletes 313 lines of lane work per page, in silence (#910)
+
+#909 found the orphaned components; this is the mechanism. `scaffold_pages_from_contract` clobbers
+when
+
+    _cand_ok and (not _marked or _stale_thin_projection_583(_existing, _cand))
+
+`_marked` means *"the existing page carries MY marker"*. So `not _marked` — **the lane wrote it** —
+clobbers unconditionally **on content**. #583 added a candidate-vs-existing comparison, but only for
+a page the projector had already marked. There is no analogous test for the lane's.
+
+Measured on r153's own delivered git history, where `merge agent/frontend → integration` and
+`framework delivery: … + projections` alternate for **30 revisions of `BrowseHomePage.jsx` alone**:
+
+    page                lane -> projected          screen                score
+    BrowseHomePage      479 -> 166  (-313, x2)     browse_home           0.80
+    LanguagesPage       324 -> 100  (-224)         browse_by_languages   0.60
+    NewAndPopularPage   326 -> 130  (-196, x4)     new_and_popular       0.62
+    LoginPage           186 ->  72  (-114)         login                 0.60
+    PlayerPage          170 ->  94   (-76)         player                0.35
+
+The lane's `BrowseHomePage` rendered its own `<TopNav>`/`<Tile>`; the projection renders no
+components at all. The delivered page is the projection every time, because the projector runs
+POST-merge by design (*"the clobber SURVIVES into the delivered tree"*).
+
+★ **This is not obviously wrong.** The projector exists because lanes ship stubs (r92: 11 StubPages;
+r93: 3 routes against an 11-screen reference), and the scores above are the PROJECTION's — the
+lane's pages were never scored. Whether the projector should defer to a substantially richer lane
+page has a fidelity payoff (`player` 0.35 with four orphaned components) and a real regression risk
+(this markup is what the visual gate has measured all along). ★ **User decision — recorded, not
+taken.** A line-count rule alone would let a long-but-broken lane page survive, which is precisely
+what the projector was built to prevent.
+
+What is not defensible either way is doing it without a word. #910 logs the replacement with both
+sizes and the lane page's component-tag count.
+
+### ★ I wrote the session's own recurring bug into the fix, again
+
+The first version called `logger.warning(...)`. `frontend_scaffold` has **no module-level `logger`**
+— one `NameError`, raised inside the `except Exception: pass` wrapping it, and the line could never
+have fired. A guard around an observability call hides bugs in the observability call.
+
+It was caught because the test drives a real scaffold through a log sink instead of asserting source
+text: with the broken call, 3 of 6 cases go red. The same test written as `assert "PROJECTION
+CLOBBER" in inspect.getsource(...)` would have passed against code that cannot execute. That is the
+fourth time this session the difference between "the string is present" and "the code runs" decided
+whether a check was real.
