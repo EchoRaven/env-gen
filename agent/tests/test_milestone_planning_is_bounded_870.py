@@ -102,13 +102,24 @@ def test_the_ceiling_is_calibrated_against_the_inner_watchdog():
     assert watchdog < t < 2 * watchdog, (watchdog, t)
 
 
-def test_the_retry_layer_it_bounds_is_still_uncapped():
-    """Non-vacuity for the corrected premise: if the re-roll count ever gains its own cap, this
-    ceiling is redundant and the note should be re-read rather than trusted."""
+def test_the_retry_budget_it_bounds_is_large_not_infinite():
+    """★ #890 corrected this twice-wrong premise. The first version of this ticket said the call
+    could hang forever; the second said the retry count was uncapped. Both are wrong: the layer
+    caps at `retry_attempts` (default 3) plus bounded malformed/rate-limit extras, so one call is
+    ~3 x 240s = 12 MINUTES worst case.
+
+    Bounded-but-huge is the actual problem, and it fits the 3.0-17.2 minute deaths better than
+    either wrong story did. If the budget ever shrinks to ~1 attempt, this ceiling is redundant
+    and the note should be re-read rather than trusted."""
     import inspect as _i
     from utils import llm as _llm
+    from utils.config import LLMConfig
     doc = _i.getdoc(_llm._llm_hard_timeout) or ""
     assert "retried, not lost" in doc, doc
+    assert LLMConfig().retry_attempts >= 2, "the budget shrank; re-read #870/#871/#872"
+    watchdog = _llm._llm_hard_timeout(None, {})
+    worst = LLMConfig().retry_attempts * watchdog
+    assert worst >= 4 * orch._MILESTONE_PLAN_TIMEOUT_S_870 / 3, (worst,)
 
 
 def test_the_floor_survives_a_hostile_env(monkeypatch):

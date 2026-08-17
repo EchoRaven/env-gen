@@ -10779,3 +10779,51 @@ matched *any* file that mentions "Dockerfile" and found 77 "interpolation sites"
 strings and prompt text. Narrowing to the actual **writers** left 4, of which 1 is the lint itself.
 **A sweep scoped by "files that mention X" is the filename-scoped `_GATES` mistake in miniature.**
 
+
+## 217. #890 — I applied the choke-point lesson and it landed on my own three tickets
+
+The previous item recorded `dockerfile_lint`'s design as the antidote to my most-repeated error:
+**gate at the choke point every path must cross, not at the sites you happen to be reading.**
+Applying it immediately produced a target — and the target was mine.
+
+`#870`, `#871` and `#872` each added a timeout ceiling **at a call site**. The choke point for
+"total time including retries" is the retry layer in `utils.llm`, not three call sites. So a fourth
+unbounded LLM call anywhere still stacks the same way. That was the finding I expected.
+
+★ **What I found instead was that my premise was wrong for the third time.** The retry layer is
+**capped**:
+
+    retry_attempts (utils/config.py)        default 3
+    _retry_budget's extension rule           "each cause is idempotent (its target total is
+                                              ABSOLUTE, so re-applying never grows the budget)"
+
+So one call is **~3 x 240s = 12 minutes** worst case, plus bounded malformed/rate-limit extras —
+**not unbounded**.
+
+**The three ceilings are still right; their stated reason was not.** And the corrected number fits
+the evidence *better* than either wrong story:
+
+    #870 v1  "it hangs forever"          -> predicts runs that never end.   The dead runs end.
+    #870 v2  "the retry count is uncapped" -> same prediction, same problem.
+    #890     "~12-20 min bounded budget"   -> the dead runs are 3.0-17.2 minutes. ✓
+
+★★ **Three corrections of one claim, each found by asking what bounds the thing I was bounding.**
+The first came from justifying the constant (is 300s above or below?), the second from applying
+the choke-point lesson (where is the real cap?). Neither came from re-reading my own text — they
+came from asking a question the text could not answer.
+
+Corrected in all four places that stated it: the constant note and the inline comment in
+`orchestrator.py`, and the ceiling notes in `reference_materials.py` and `visual_fidelity.py`. The
+premise test in #870's file was named `test_the_retry_layer_it_bounds_is_still_uncapped` — **a test
+asserting the false premise by its own name** — now
+`test_the_retry_budget_it_bounds_is_large_not_infinite`, which pins the actual numbers and fails if
+the budget ever shrinks to the point where the ceilings are redundant.
+
+### the tree bracket earned itself back
+
+The first full run after this change reported **44 failures and 10 errors**. The working-tree
+fingerprint (item 213) said *"tree moved — not comparable"*, and `git status` showed the other
+agent mid-edit across five runtime modules. **I did not chase any of it.** My own four ticket files
+passed in isolation; ninety seconds later the full suite was green under a clean bracket. Before
+item 213 that would have been an hour of looking at my own diff.
+

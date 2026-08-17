@@ -718,7 +718,8 @@ class ReferenceCompileResult:
 
 
 # #871: ceiling on the reference compile INCLUDING its re-rolls. `utils.llm` caps one completion
-# at 240s (FIX #187) but nothing caps the retry count, and this gathers two such calls. Same
+# at 240s (FIX #187) and the retry layer is capped at 3 attempts (#890's correction), so one
+# call is ~12 MINUTES worst case -- bounded, and large enough to eat a run. This gathers two. Same
 # calibration as #870's planning ceiling: above one watchdog, below two. Env-overridable.
 _REF_COMPILE_TIMEOUT_S_871 = max(
     30.0, float(_os.environ.get("ENVGEN_REF_COMPILE_TIMEOUT_S") or "300"))

@@ -219,7 +219,8 @@ _VIEWPORT = dict(_CV646)
 _VIEWPORT_FALLBACK_H_644 = 900
 
 # #872: ceiling on ONE judge call including its re-rolls. `utils.llm` caps a completion at 240s
-# (FIX #187) but nothing caps the retry count. Per SCREEN, so a round of ~12 is bounded at
+# (FIX #187) and the retry layer is capped at 3 attempts (#890), so one call is ~12 MINUTES
+# worst case -- bounded, and large enough to eat a round. Per SCREEN, so a round of ~12 is at
 # 12 x this rather than unbounded. Env-overridable. Placed AFTER the constant above, not before
 # it: inserting between #644's rationale and its number orphaned that rationale and #647's guard
 # caught it — a seam, not a logic error.
@@ -2393,6 +2394,21 @@ async def run_visual_fidelity(
     (default 0.65, env ENVGEN_VISUAL_MIN). No mappable references → passes
     vacuously with a summary saying so (the gate only binds when references
     exist — that's the user-provided design contract)."""
+    # #891: the capture's only real input is the built frontend. r32 captured with
+    # `app/frontend/src` EMPTY — the blank-capture class (#75a/#737), where a blank PNG is then
+    # scored, refunded, and consumed as evidence of stability. Naming the missing input here
+    # separates "the app renders nothing" from "the frontend was never written".
+    try:
+        from .stage_contract import require_stage_input_891
+        _src891 = Path(project_dir) / "app" / "frontend" / "src"
+        require_stage_input_891(
+            "visual capture", "app/frontend/src/**/*.jsx", "the frontend scaffold",
+            present=lambda: list(_src891.rglob("*.jsx")) if _src891.is_dir() else [],
+            detail="every capture from here will be blank, and a blank capture is NOT evidence "
+                   "that the app is stable (#737).")
+    except Exception:
+        pass
+
     project_dir = Path(project_dir).resolve()
     if min_similarity is None:
         try:
@@ -2760,8 +2776,49 @@ async def run_visual_fidelity(
                 "min_similarity": min_similarity}
     judge = judge_fn or judge_screen_pair
 
+    # #892: a per-ROUND budget, spent as VERDICTS rather than as skips.
+    #
+    # #872 bounded ONE judge call at 300s. A round is ~12 screens, so the round itself was still
+    # 60 minutes — and the gate's escapes (`escape_s` wall-clock, attempt cap, plateau) are
+    # evaluated only BETWEEN rounds by `_visual_release_decision`, so a long round cannot be
+    # escaped from while it runs. 70 of the 94 non-completed corpus runs die at this gate.
+    #
+    # ★ #872 recorded a per-round cap as "actively harmful", and that was right about the version
+    # I had in mind: a budget that STOPS STARTING screens leaves them out of `results`, and an
+    # absent screen is `unjudged` — "an owned screen that was never judged is a FAILURE, not a
+    # skip". It would convert a slow run into a permanently failing one.
+    #
+    # The harm was in the SKIP, not in the bound. `judged = {r["name"] for r in results}` counts a
+    # screen that appears AT ALL, so spending the remaining screens as `judge_error` verdicts
+    # (score 0.0, `judge_error: True`) keeps them judged — the exact state #142 refuses to cache
+    # and re-judges next round, and the exact state a #872 timeout already produces. Bounded and
+    # recoverable, instead of bounded and fatal.
+    #
+    # Sized off #872's own ceiling: three screens' worth of honest slow judging before the round
+    # gives the wall-clock escape a chance to look at it.
+    import time as _t892
+    _round_budget_892 = max(
+        _JUDGE_TIMEOUT_S_872, float(os.environ.get("ENVGEN_JUDGE_ROUND_BUDGET_S") or "900"))
+    _round_started_892 = _t892.monotonic()
+    _spent_892 = False
+
     results: List[Dict[str, Any]] = []
     for screen in judged_screens:
+        if not _spent_892 and (_t892.monotonic() - _round_started_892) > _round_budget_892:
+            _spent_892 = True
+            _LOG.error(
+                "VISUAL ROUND BUDGET SPENT after %.0fs — the remaining screens are recorded as "
+                "judge_error (transient, not cached, re-judged next round) so the round can end "
+                "and the gate's escapes can run. They are NOT skipped: an unjudged owned screen "
+                "fails the verdict outright (#892).", _round_budget_892)
+        if _spent_892:
+            results.append({
+                "name": screen["name"], "route": screen["route"],
+                "similarity": 0.0, "dimensions": {},
+                "deviations": ["not judged this round: the round budget was spent (#892)"],
+                "summary": "round budget spent", "judge_error": True,
+                "advisory": bool(screen.get("advisory"))})
+            continue
         shot = shots.get(screen["name"])
         if not shot:
             _no_shot_768 = False
@@ -3046,10 +3103,12 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
 
         # #500: merge with the prior persisted verdict, keeping the BEST per-screen capture.
         prior_by_name: Dict[str, Any] = {}
+        _prior_code_state_893 = None
         try:
             _pp = vdir / "verdict.json"
             if _pp.is_file():
                 _pj = json.loads(_pp.read_text(encoding="utf-8"))
+                _prior_code_state_893 = _pj.get("code_state")
                 for s in (_pj.get("screens") or []):
                     if isinstance(s, dict) and s.get("name") is not None:
                         prior_by_name[s["name"]] = s
@@ -3228,6 +3287,58 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                                 capture_output=True, text=True, timeout=10).stdout.strip() or None
         except Exception:
             _head_sha = None
+        # #893: the judge contradicting ITSELF on identical input.
+        #
+        # #781 and #857 tell the judge not to report what it cannot point to in the reference.
+        # Both are PROMPT rules — the "claim with no enforcer" shape this session has been mining,
+        # and I fixed a prompt problem with a prompt. A content-matching enforcer is not the
+        # answer either: the careful version of one reported 5 of 6 controls "present" by matching
+        # word tokens across a 300 KB concatenation, and it is recorded as do-not-build.
+        #
+        # ★ What CAN be checked without vision is self-consistency. `code_state` (#621) stamps the
+        # tree each capture scored, so two rounds at the SAME sha are the same input — and a
+        # different `missing` list or a materially different score across them is the judge being
+        # non-deterministic, not the app changing. That is exactly the over-claim signature:
+        # an element "missing" in one round and not the next, with no code in between.
+        #
+        # Honest limit: only 7 of 119 corpus verdicts carry a `code_state`, so this cannot be
+        # validated against history — #621 is recent. Every verdict from here on carries one, so
+        # its first real signal is run 152. It is recorded in the verdict rather than acted on.
+        _unstable_893 = []
+        try:
+            if _head_sha and _prior_code_state_893 == _head_sha:
+                for _s in merged:
+                    _pn = prior_by_name.get(_s.get("name"))
+                    if not isinstance(_pn, dict):
+                        continue
+
+                    def _miss(rec):
+                        out = set()
+                        for _dv in (rec.get("dimensions") or {}).values():
+                            if isinstance(_dv, dict):
+                                out |= {str(m) for m in (_dv.get("missing") or [])}
+                        return out
+
+                    _a, _b = _miss(_s), _miss(_pn)
+                    _delta = abs(float(_s.get("similarity") or 0)
+                                 - float(_pn.get("similarity") or 0))
+                    if (_a != _b and (_a - _b or _b - _a)) or _delta >= 0.10:
+                        _unstable_893.append({
+                            "screen": _s.get("name"),
+                            "appeared": sorted(_a - _b)[:5],
+                            "vanished": sorted(_b - _a)[:5],
+                            "score_delta": round(_delta, 3)})
+            if _unstable_893:
+                _LOG.warning(
+                    "JUDGE UNSTABLE at an unchanged tree (%s): %d screen(s) got a different "
+                    "verdict for the SAME code_state — %s. An item that appears and vanishes "
+                    "with no code between rounds is judge noise, not a defect; weigh `missing` "
+                    "accordingly (#893).",
+                    str(_head_sha)[:8], len(_unstable_893),
+                    ", ".join(str(u["screen"]) for u in _unstable_893[:4]))
+        except Exception:
+            _unstable_893 = []
+
         _verdict = {
             "passed": bool(passed) or _merged_passed, "min_similarity": min_similarity,
             "code_state": _head_sha,   # #621: the tree `blocking_average_live` scored
@@ -3236,6 +3347,8 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
             "blocking_average_live": _live_average,
             "summary": summary, "coverage": coverage, "screens": merged,
         }
+        if _unstable_893:
+            _verdict["judge_unstable_893"] = _unstable_893
         if (_live_average is not None
                 and _blocking_average - _live_average > 0.01):
             _verdict["record_exceeds_live_by"] = round(_blocking_average - _live_average, 4)

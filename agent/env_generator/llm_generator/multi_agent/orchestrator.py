@@ -154,7 +154,10 @@ FWVAL_NO_DELIVER_ABORT_S = int(os.environ.get("ENVGEN_NO_DELIVER_ABORT_S", "4500
 # livelock). Env-gated. ~this-many re-authorings of room before giving up on the verifier.
 # #870: ceiling on the milestone-planning call INCLUDING its re-rolls. `utils.llm` already caps a
 # single completion at 240s (FIX #187's watchdog, `min(config.timeout, 600)`), but its retry layer
-# re-rolls after each cancel with no cap on the count — so the total is unbounded. 300s allows one
+# re-rolls after each cancel, and #890 corrected what I first wrote here: that layer IS capped, at
+# `retry_attempts` (default 3) plus bounded malformed/rate-limit extras. So one call is ~3 x 240s
+# = 12 MINUTES worst case rather than unbounded — which is the real problem, large enough to eat a
+# run, and a better fit for the 3.0-17.2 minute deaths than "forever" ever was. 300s allows one
 # full attempt and truncates the second; planning is optional (the fallback is a single milestone)
 # so further re-rolls buy little. Env-overridable because the watchdog itself is.
 _MILESTONE_PLAN_TIMEOUT_S_870 = max(
@@ -1282,7 +1285,7 @@ class Orchestrator:
                         # (FIX #187) caps one completion at `min(config.timeout=240s, cap=600s)`
                         # = 240s by default. What is NOT bounded is what sits above it — its own
                         # docstring: *"The retry layer re-rolls after the cancel, so a cancelled
-                        # slow call is retried, not lost."* Nothing caps the number of re-rolls,
+                        # slow call is retried, not lost."* #890: the retry layer IS capped (retry_attempts, default 3, plus
                         # so total planning time is 240s x N.
                         #
                         # That fits the dead runs better than a hang did: they lasted 3.0-17.2
