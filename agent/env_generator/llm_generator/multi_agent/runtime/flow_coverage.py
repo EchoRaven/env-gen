@@ -165,18 +165,32 @@ def _is_navigable_page(page: Any) -> bool:
     # Keyed off the record's own vocabulary, like the rest of this predicate: a thing that calls
     # itself a page is a page wherever its file lives.
     _name_909 = f"{page.get('name') or ''}|{page.get('component') or ''}".lower()
-    _is_page_file = "/pages/" in _src or _name_909.replace("_", "").rstrip("|").endswith("page") \
-        or any(p.endswith("page") for p in _name_909.replace("_", "").split("|") if p)
+    _says_page = any(p.replace("_", "").endswith("page")
+                     for p in _name_909.split("|") if p)
+
+    # An explicit `/`-rooted route (in `route` or, for the kickoff spec shape, in `path`) settles
+    # it — the lane meant this to be navigable.
     for key in ("route", "path"):
         if key in page:
             val = str(page.get(key) or "").strip()
             if val.startswith("/"):
                 return True
-            # no usable route on this entry — a real page file still has to be walked.
-            # (``path`` is overloaded: a route in the kickoff spec shape, a SOURCE FILE in the
-            # registry shape. `app/frontend/src/pages/X.jsx` never starts with '/', so before
-            # #905 every registry record that reached this branch was exempted outright.)
-            return _is_page_file
+            break
+
+    # ★ #911b: EXEMPT ONLY ON POSITIVE EVIDENCE OF COMPONENT-NESS. #905/#905b asked "can I prove
+    # this is a page?" and treated *no answer* as "component" — so a routeless record with no
+    # `path` at all (`{"name": "settings", "route": "", "component": ""}`) was exempted, and once
+    # #911 made the scaffold share this predicate it stopped wiring those pages entirely. Three
+    # existing route-dedup tests went red; on the corpus exactly one record has no path
+    # (r11's `__probe_only`), which is why measurement alone would not have caught it.
+    #
+    # #243's own conservatism, restored and generalised: *"we can't prove it is a component"* →
+    # it stays a page. The only proof accepted is a source file under `components/` whose name
+    # does not call itself a page — which is precisely the 8 corpus records (tenant_picker,
+    # netflix_top_nav, search_overlay, profile_menu, footer), and leaves the 22 `login_page`
+    # records filed under `components/` navigable.
+    if "/components/" in _src and not _says_page:
+        return False
     return True
 
 

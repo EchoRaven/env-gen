@@ -28,6 +28,18 @@ def _load():
     pkg = types.ModuleType("fs_pkg500")
     pkg.__path__ = []
     sys.modules["fs_pkg500"] = pkg
+    # #911: `frontend_scaffold` gained a MODULE-LEVEL sibling import
+    # (`from .flow_coverage import _is_navigable_page`), so the synthetic package needs that
+    # sibling present or collection dies here. Deliberately module-level in the real file: its
+    # call site sits inside a `try:` whose handler is *"never raise into the orchestrator"* and
+    # returns an empty result, so a function-local import that failed would silently turn the
+    # whole scaffold into a no-op. Bound to the REAL function so the exec'd copy behaves
+    # identically rather than against a stub that could drift.
+    from env_generator.llm_generator.multi_agent.runtime.flow_coverage import (
+        _is_navigable_page as _real_is_navigable_page)
+    _fc = types.ModuleType("fs_pkg500.flow_coverage")
+    _fc._is_navigable_page = _real_is_navigable_page
+    sys.modules["fs_pkg500.flow_coverage"] = _fc
     mod = types.ModuleType("fs_pkg500.frontend_scaffold")
     mod.__package__ = "fs_pkg500"
     exec(compile(_SRC.read_text(encoding="utf-8"), str(_SRC), "exec"), mod.__dict__)

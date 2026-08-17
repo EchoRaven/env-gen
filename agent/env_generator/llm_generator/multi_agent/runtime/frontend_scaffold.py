@@ -22,6 +22,12 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
 
+# #911: the one "is this record a page or a component?" test, shared with the ui_flow gate (#905b)
+# and the deliverability audit (#906) so the three cannot drift. Module-level on purpose:
+# `flow_coverage` imports nothing from this package (no cycle), and a function-local import inside
+# the scaffold loop would raise where it is hardest to see.
+from .flow_coverage import _is_navigable_page
+
 _EXPORT_RE = re.compile(
     r"export\s+(?:async\s+)?(?:function|const|let|var)\s+([A-Za-z0-9_$]+)"
 )
@@ -9533,6 +9539,23 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
             if isinstance(p, dict) and str(p.get("route") or "").strip()]
         for i, page in enumerate(ui_pages or []):
             if not isinstance(page, dict):
+                continue
+            # #911: a record that is a COMPONENT gets no page file and no route. Registration is
+            # permissive, so lanes register components as ui_pages (#243's tiktok r33: video_grid,
+            # explore_card, top_action_bar); this loop then derives a route from the name and
+            # writes `pages/<Comp>.jsx`, and r83 shipped
+            #     <Route path="/netflix-top-nav" element={<NetflixTopNav />} />
+            # — a nav BAR served as a full page — plus a SECOND `NetflixTopNav.jsx`. Its 12 real
+            # importers use the lane's 139-line `components/` copy; App.jsx routes the 78-line
+            # shadow this loop created. Corpus: 77 same-named pages//components pairs, 3 where
+            # both copies are genuinely imported and all 3 differ.
+            #
+            # Uses the SAME predicate as the ui_flow gate (#905b) and the deliverability audit
+            # (#906), so the three agree by construction: a blank-route record whose name says
+            # component AND whose file lives under components/ is a component. That is 8 records
+            # corpus-wide — tenant_picker, netflix_top_nav, search_overlay, profile_menu, footer.
+            # Anything page-named, routed, or without a components/ path is untouched.
+            if not _is_navigable_page(page):
                 continue
             comp = _page_component_name(page)
             if comp in seen_components:

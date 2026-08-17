@@ -12948,3 +12948,57 @@ filesystem instead of the git log, and it is why the lane's `AuthShell`/`AuthFor
 /profile-menu)"* — was correctly sized and correctly left alone. What was worth finding sat next to
 it under the same query, and the earlier pass walked past it because it went looking for the thing
 it had already named.
+
+## 257. #911 — a nav bar served as a page; and #911b, the regression the corpus could not have found
+
+Item 256 measured 77 same-named `pages/`+`components/` pairs and left them. Following the three
+where **both** copies are genuinely imported produced the concrete harm. r83's App.jsx:
+
+    import NetflixTopNav from './pages/NetflixTopNav.jsx';
+    <Route path="/netflix-top-nav" element={<NetflixTopNav />} />
+
+A nav BAR, wired as a full page. Its twelve real importers use the lane's 139-line
+`components/NetflixTopNav.jsx`; the 78-line `pages/` copy exists only because the scaffold loop
+created it from a ui_page record whose own `path` pointed into `components/`. All three
+both-imported pairs DIFFER (r120 `LoginPage` 72 vs 33, r149 72 vs 3, r83 78 vs 139) — two UIs
+answering to one name inside one app.
+
+#911 makes the scaffold consult the same predicate as the ui_flow gate (#905b) and the
+deliverability audit (#906), so the three answer "page or component?" identically **by
+construction** rather than by three hand-written copies happening to agree.
+
+### ★ #911b — and then it deleted real pages
+
+Sharing the predicate immediately exposed that the predicate was wrong. #905/#905b asked *"can I
+prove this is a page?"* and treated **no answer** as *component*. A routeless record with no `path`
+at all — `{"name": "settings", "route": "", "component": ""}` — was therefore exempt, and once the
+scaffold started honouring that, those pages stopped being wired. `/settings` and `/browse-history`
+vanished; **three existing tests went red.**
+
+★ **The corpus could not have caught this.** Exactly ONE record in 2390 has no `path` (r11's
+`__probe_only`), so every measurement I ran said the change was safe. The tests that failed were
+written for #406's route-dedup logic years of tickets ago and had nothing to do with this ticket.
+Measurement covers what the corpus happens to contain; a test covers what the code must do.
+
+The rule is now #243's own conservatism, generalised — **exempt only on positive evidence of
+component-ness**: a source file under `components/` whose name does not call itself a page. That is
+exactly the 8 corpus records (`tenant_picker`, `netflix_top_nav`, `search_overlay`, `profile_menu`,
+`footer`); the 22 `login_page` records filed under `components/` stay navigable; anything with no
+path, an unknown path, or a `/`-rooted route stays a page.
+
+    corpus after #911b:  2382 navigable, 8 exempt
+
+### ★ two self-inflicted seam errors in one change
+
+1. The edit that inserted the skip **deleted the `comp = _page_component_name(page)` line it was
+   anchored on** — caught immediately by reading the result, not by a test.
+2. The new module-level `from .flow_coverage import _is_navigable_page` broke
+   `test_cjs_esm_umd_guard_orphan_brace_500`, which execs `frontend_scaffold.py`'s source into a
+   synthetic package. `frontend_scaffold` had **zero** module-level relative imports before this;
+   that was load-bearing and undocumented. Kept module-level deliberately — its call site sits
+   inside a `try:` whose handler is *"never raise into the orchestrator"* and returns an empty
+   result, so a function-local import that failed would silently turn the entire scaffold into a
+   no-op — and the harness now binds the REAL function rather than a stub that could drift.
+
+★ Errors at boundaries I introduce, for the third time this session. The rule earns its keep:
+re-read the diff for SEAMS as a separate pass from re-reading it for logic.

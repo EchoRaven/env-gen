@@ -233,3 +233,33 @@ def test_a_component_whose_name_merely_contains_page_is_not_rescued():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --------------------------------------------------------------------------- #911b
+
+def test_a_routeless_record_with_no_path_stays_a_page():
+    """★ #911b — the regression #911 caused and three existing tests caught.
+
+    #905/#905b asked *"can I prove this is a page?"* and treated **no answer** as "component". A
+    routeless record with no `path` at all — `{"name": "settings", "route": "", "component": ""}`,
+    the shape `test_frontend_route_dedup` uses — was therefore exempt, and once #911 made the
+    scaffold share this predicate those pages stopped being wired at all.
+
+    The rule is now #243's own conservatism, generalised: exempt ONLY on positive evidence of
+    component-ness. On the corpus exactly one record has no path (r11's `__probe_only`), so
+    measurement alone would never have surfaced this — the existing tests did."""
+    assert _is_navigable_page({"name": "settings", "route": "", "component": ""}) is True
+    assert _is_navigable_page({"name": "browse_history", "route": "", "component": "",
+                               "apis_used": ["GET /api/history"]}) is True
+
+
+def test_the_kickoff_shape_where_path_is_the_route_still_works():
+    assert _is_navigable_page({"name": "explore", "path": "/explore"}) is True
+
+
+def test_only_a_components_file_proves_a_component():
+    """The single accepted proof, stated as a test so a future widening has to argue with it."""
+    assert _is_navigable_page(
+        {"name": "footer", "route": "", "path": "app/frontend/src/components/Footer.jsx"}) is False
+    assert _is_navigable_page(
+        {"name": "footer", "route": "", "path": "app/frontend/src/widgets/Footer.jsx"}) is True
