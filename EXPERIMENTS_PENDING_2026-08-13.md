@@ -11262,3 +11262,43 @@ for a promise it is the enforcer; for a skip it is the set.
 `frontend_scaffold.py:2992` (#540's rule cited for a template), `backend_skeleton.py:179` (#411's
 "handlers must OMIT" rule) and `chain_executor.py:2443` (*"the #587 precedent"*) are asserted
 citations I have **not** verified against their cited code. Named, not bucketed.
+
+
+## 226. the three named citations: all accurate — and I got one wrong by committing the error item 225 had just named
+
+Item 225 left three asserted citations unverified and named them rather than bucketing them. Verified
+here against the code they cite.
+
+| citation | verdict |
+|---|---|
+| `frontend_scaffold.py:2992` — #873 quoting **#540**'s *"When the spec carries none of these signals the caller keeps the existing template (byte-identical)"* | ✔ **exact** — the quoted sentence is verbatim at `frontend_scaffold.py:3105`, inside #540's block at 3099 |
+| `chain_executor.py:2443` — *"the **#587** precedent"* for annotation-not-reclassification | ✔ **exact** — #587 is `projected_routes` + the `" [framework-projected route: …]"` annotation: it labels the failure without moving ownership |
+| `backend_skeleton.py:179` — **#411**'s *"handlers must OMIT db-defaulted columns"* | ✔ **exact** — verbatim at `chain_executor.py:1485` |
+
+**Three of three accurate. The asserted-citation class has zero live instances**; both historical
+ones (#254's unreachable warning, #225/#226's "already covered" fallbacks) are fixed.
+
+### ★ the third one I called wrong, out loud, before finishing the check
+
+I reported *"#411 对不上"* — that the citation was reversed. It is not. What happened: grepping `#411`
+returned its **first** framing — *"a create step that inserted an explicit NULL for a required
+NO-DEFAULT column … Recover column X so the fill+retry sends it"* — which is about **supplying** an
+omitted column. I concluded the citation had inverted it and said so. Six lines further into the same
+block:
+
+    # SKIP the DB-defaulted / system columns a handler must OMIT (id + created_at/updated_at and
+    # any *_at timestamp): filling those with a literal would fight the DDL DEFAULT (see #407/#409)
+    # — the fix there is the handler omitting them, not the chain sending one.
+
+#411 carries **both** directions: supply the required no-default columns, skip the db-defaulted ones.
+The cited rule is the second half, quoted exactly.
+
+★★ **This is item 225's own rule — "read the other side, not the construct" — violated in the
+paragraph after writing it**, and worse than the earlier instances because I *stated the conclusion
+before the check finished* rather than catching it in the draft. The nine field-location errors, the
+"falls off the end" false alarm, the `signature|reason` grep, and now this: every one is the first
+match standing in for the whole. **A ticket is not a line. Read its block to the end before
+characterising what it says.**
+
+That the correction landed inside the very item recording the rule is not a coincidence worth
+smoothing over — it is the measurement of how strong the pull is.
