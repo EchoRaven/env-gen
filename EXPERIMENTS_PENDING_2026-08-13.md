@@ -13701,3 +13701,42 @@ The pair is complete only because the two fail on different things, and the docs
 An overstated claim in a test is the same defect class this session has spent its time on — a check
 whose description promises more than it delivers — and it lasted about four minutes here because it
 was checked instead of asserted.
+
+## 274. ★ #920 — the sensitivity check I skipped on my own work, and what it found
+
+Item 273's lesson was that a claim about a test is worth four minutes of checking. Applying it to
+the one thing I had NOT checked this session: every ticket got a disable-and-demand-red pass except
+**#909**.
+
+    #909 report disabled → 1 of 11 tests fails
+    …and that one is `assert "len(_orphaned) == len(_decl_909)" in src`
+
+**Ten of eleven passed with the report completely switched off.** The helper
+(`_rendered_components_909`) was well driven — six behavioural cases — but the thing the ticket
+DELIVERS, the report itself, was checked only by reading its source. #918 had inherited the same
+shape from it: its report block was four `_block()` string assertions.
+
+★ Two tickets I wrote this session, in the exact class this session spent itself mining. The helper
+is the fun part to test; the wiring is the part that ships.
+
+#920 drives both through the real `sync_ui_page_statuses` with a stub workhub:
+
+    the drift is actually reported            component_drift == {"x_page": ["Rail"]}
+    no drift when the page renders it         silent
+    the unreachable API is actually reported  api_unreachable == {"x_page": ["/api/things"]}
+    no report when the page can reach it      silent
+    the two are independent channels          one fires, the other does not
+    a drifting but HEALTHY page keeps its status   the churn guard, driven
+
+    sensitivity now: disable both reports → 6 tests fail, all behavioural
+
+### ★ and the churn-guard test was wrong on its first try
+
+I asserted "no page is ever downgraded" against the island fixture — which is genuinely unusable
+for reasons unrelated to #909 (it makes no API call at all), so the pre-existing rollup downgrades
+it and the assertion failed. It conflated *"#909 caused a status write"* with *"a status write
+happened"*. Isolated properly: a page that drifts **but is otherwise sound** must keep its status,
+and that is what the test now says.
+
+Same error shape as item 273's overstated docstring, one turn later: **the claim was about the
+subject, the evidence was about the fixture.**

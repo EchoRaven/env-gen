@@ -148,6 +148,90 @@ def test_the_existing_implemented_rollup_still_runs():
     assert "not implemented yet" in src
     assert src.index("not implemented yet") < src.index("_decl_909")
 
+# --------------------------------------------------------------------------- DRIVEN (#920)
+
+class _StubWorkHub:
+    """The minimum `sync_ui_page_statuses` touches. Records status writes so a test can assert
+    the report did NOT cause one."""
+
+    def __init__(self, pages, components):
+        self._pages, self._components = pages, components
+        self.page_updates = []
+
+    def get_ui_pages(self):
+        return self._pages
+
+    def get_ui_components(self):
+        return self._components
+
+    def update_ui_page(self, name, patch, **kw):
+        self.page_updates.append((name, patch))
+
+    def update_ui_component(self, *a, **kw):
+        pass
+
+
+def _sync(page_body: str, *, declares_components=("Rail",), declares_apis=("GET /api/things",),
+          component_body="export default () => <div/>"):
+    """Drive the REAL `sync_ui_page_statuses` over a real tree.
+
+    ★ Added because the report these files exist for was checked only by reading its source: with
+    the report disabled, 10 of #909's 11 tests still passed, and the one that failed was
+    `assert 'len(_orphaned) == len(_decl_909)' in src`. The helper was well driven; the thing the
+    ticket delivers was not."""
+    import tempfile
+    from pathlib import Path as _P
+    from env_generator.llm_generator.multi_agent.runtime import frontend_audit as _fa
+
+    root = _P(tempfile.mkdtemp())
+    src = root / "app" / "frontend" / "src"
+    (src / "pages").mkdir(parents=True)
+    (src / "components").mkdir(parents=True)
+    (src / "App.jsx").write_text(
+        '<Routes><Route path="/x" element={<XPage />} /></Routes>', encoding="utf-8")
+    (src / "pages" / "XPage.jsx").write_text(page_body, encoding="utf-8")
+    for c in declares_components:
+        (src / "components" / f"{c}.jsx").write_text(component_body, encoding="utf-8")
+    wh = _StubWorkHub(
+        {"x_page": {"name": "x_page", "route": "/x", "component": "XPage",
+                    "path": "app/frontend/src/pages/XPage.jsx",
+                    "components": list(declares_components),
+                    "apis_used": list(declares_apis), "status": "implemented"}},
+        {c: {"name": c, "path": f"app/frontend/src/components/{c}.jsx",
+             "status": "implemented"} for c in declares_components})
+    return _fa.sync_ui_page_statuses(root, wh, None), wh
+
+
+_ISLAND = "import {useState} from 'react';\nexport default function XPage(){return <div onClick={()=>{}}>x</div>}"
+
+
+def test_the_drift_is_actually_reported(): 
+    """★ Driven end to end: the island page declares `Rail` and renders nothing."""
+    out, _ = _sync(_ISLAND)
+    assert out.get("component_drift") == {"x_page": ["Rail"]}, out.get("component_drift")
+
+
+def test_no_drift_when_the_page_renders_it():
+    out, _ = _sync("import Rail from '../components/Rail.jsx';\n"
+                   "export default function XPage(){return <div onClick={()=>{}}><Rail/></div>}")
+    assert not out.get("component_drift"), out.get("component_drift")
+
+
+def test_a_drifting_but_otherwise_HEALTHY_page_is_not_downgraded():
+    """★ The churn guard, driven rather than grepped: 45% of pages drift, and a status write per
+    tick would rewrite half the registry forever.
+
+    ★ The first version of this test asserted "no page is ever downgraded" against the ISLAND
+    fixture — which is genuinely unusable for reasons that have nothing to do with #909 (no API
+    call at all), so the pre-existing rollup downgrades it and the assertion failed. It conflated
+    "#909 caused a status write" with "a status write happened". Isolated properly: a page that
+    drifts but is otherwise sound must keep its status."""
+    out, wh = _sync("export default function XPage(){\n"
+                    "  const load = () => fetch('/api/things');\n"
+                    "  return <div onClick={load}>x</div>;\n}")
+    assert out.get("component_drift") == {"x_page": ["Rail"]}, out.get("component_drift")
+    assert not [p for _n, p in wh.page_updates if p.get("status") == "defined"], wh.page_updates
+
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
