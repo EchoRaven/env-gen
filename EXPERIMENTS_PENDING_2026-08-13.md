@@ -13431,3 +13431,43 @@ Every instrument fired on its planted defect and every zero held. Recorded so th
 from a validated baseline instead of re-deriving one. The remaining source-only subjects
 (`_persist_verdict` and friends) neither produce nor suppress a blocker, which is why they rank
 below everything checked here.
+
+## 268. ★★ #917 — the guard degraded as the situation worsened, and went silent at its worst
+
+Found by refusing my own dismissal. Item 267 ranked `_persist_verdict` last — *"neither produces nor
+suppresses a blocker"* — while the memory note from r148's post-mortem says the opposite in plain
+words: *"verdict.json is #500's high-water merge and ERASES the blackout; check live per-screen
+scores, not the persisted record."* The function I deprioritised is the one at the centre of the
+worst failure in the arc.
+
+Driven with a planted prior of four screens at 0.80, then a round with N of them blank:
+
+    blank 0/4 → #711 warns (over 4 screens)
+    blank 1/4 → #711 warns (over 3)
+    blank 2/4 → #711 warns (over 2)
+    blank 3/4 → #711 warns (over 1)
+    ★ blank 4/4 → SILENT — and `verdict.json` still reads `passed: true`, every screen 0.80
+
+★ **The guard's population is the screens this capture scored, so it thins exactly as the blackout
+spreads and empties when the blackout is total.** #736 introduced that restriction and was right to:
+both of #711's historical firings were composition artefacts, not divergence. The hole is the end of
+the range nobody drove.
+
+This is r148's fourth mechanism, in the REPORTING path rather than the escape path. #737 stops a
+blackout manufacturing a plateau and #750 vetoes the escape; nothing said that the file on disk
+still passes while nothing rendered.
+
+#917 adds the missing end: when the like-for-like population is empty and a prior record exists,
+say so and name what the record still claims (`N screens averaging X with passed=Y`). Reports only —
+same disposition as #711/#736/#641; the release path reads the returned dict.
+
+    an empty population is not "nothing to compare" — it is "everything is gone"
+
+Fifth appearance this session of an empty container answered as a fact: #902's blank route as the
+site root, #907's empty cache as an empty source tree, #908's empty `child_meta` as data, #916's
+`None` as a route key, and now an empty comparison set as "no divergence".
+
+★ Method note worth keeping: this came out of **checking a claim I had made one turn earlier**, not
+from new territory. "Neither produces nor suppresses a blocker" was true and irrelevant — the
+function's output is the RECORD, and a false record is how r148 shipped. The dismissal named the
+wrong axis.

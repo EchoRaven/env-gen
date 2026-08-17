@@ -3548,6 +3548,38 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                     "and the rest of the gap would be composition, not divergence.)",
                     len(_cmp736), _g736, _l711, _g736 - _l711,
                     _g711, _l711, len(_blocking_merged))
+            # ★ #917: and say something when there is NOTHING to compare.
+            #
+            # #736 restricted the comparison to the screens THIS capture scored, which was right
+            # — both its firings were composition artefacts. But a TOTAL blackout empties that
+            # population, so `_cmp736` is `[]`, `_g736` is None, and the guard that exists to say
+            # "the record on disk overstates the app" says nothing at all. Measured as a clean
+            # gradient on a planted prior of four screens at 0.80:
+            #
+            #     blank 0/4 → warns (over 4)    blank 2/4 → warns (over 2)
+            #     blank 1/4 → warns (over 3)    blank 3/4 → warns (over 1)
+            #     ★ blank 4/4 → SILENT, and the persisted verdict still reads passed=True
+            #
+            # The guard degraded exactly as the situation got worse, and went quiet at its worst.
+            # That is r148's fourth mechanism in the REPORTING path — #500's high-water merge
+            # keeps every screen's best-ever score, so a totally blacked-out round leaves a
+            # verdict.json that still passes and no line anywhere saying the capture was empty.
+            #
+            # An empty population is not "nothing to compare": it is "everything is gone", which
+            # is the loudest reading available. Fifth appearance this session of an empty
+            # container answered as a fact (#902, #907, #908, #916).
+            #
+            # Reports only, like #711/#736 — the release path reads the returned dict, not this
+            # file, and #737/#750 already handle the escape side.
+            if not _cmp736 and _blocking_merged and (results or []):
+                _LOG.error(
+                    "TOTAL BLACKOUT AGAINST A RECORD THAT STILL PASSES: this capture scored NO "
+                    "blocking screen, so #736's like-for-like comparison has an empty population "
+                    "and #711 above is silent. The persisted verdict still shows %d screen(s) "
+                    "averaging %.4f with passed=%s — #500's best-ever-per-screen merge never "
+                    "falls, so the record on disk cannot show this round at all. Read the LIVE "
+                    "per-screen scores, not verdict.json (#917).",
+                    len(_blocking_merged), _blocking_average, bool(_verdict.get("passed")))
         except Exception:
             pass
         # #713: TWO SCREENS THAT CAPTURED THE SAME IMAGE DID NOT BOTH RENDER.
