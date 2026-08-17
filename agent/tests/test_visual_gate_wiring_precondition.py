@@ -31,6 +31,11 @@ def _load():
     vr._service_host_port = lambda *a, **k: None
     sys.modules["vf_pkg"] = pkg
     sys.modules["vf_pkg.validation_runner"] = vr
+    # #898: `visual_fidelity` derives its ceilings via `stage_contract.llm_ceiling_898`, imported
+    # inside the accessor. This harness hand-stubs each module the source reaches, so a new one
+    # must be added here too — the same contract `validation_runner` above is satisfying.
+    import env_generator.llm_generator.multi_agent.runtime.stage_contract as _sc
+    sys.modules["vf_pkg.stage_contract"] = _sc
     mod = types.ModuleType("vf_pkg.visual_fidelity")
     mod.__package__ = "vf_pkg"
     exec(compile(_SRC.read_text(encoding="utf-8"), str(_SRC), "exec"), mod.__dict__)

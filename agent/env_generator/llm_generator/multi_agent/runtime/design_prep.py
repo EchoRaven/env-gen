@@ -512,7 +512,18 @@ def _tool_call_args(resp) -> Optional[Dict]:
 # calls, and `_run_analyst` runs one ladder PER SCREEN (~12). Worst case was 12 x 3 x 240s x N.
 # Calibrated like #870/#871/#872 — above one watchdog so an honest slow rung completes, below two
 # so the re-rolls cannot stack. Env-overridable.
-_LADDER_TIMEOUT_S_889 = max(30.0, float(os.environ.get("ENVGEN_DESIGN_LADDER_TIMEOUT_S") or "300"))
+# #898: DERIVED from the live per-call watchdog, not hardcoded. r153 measured 6550
+# completions with max 588.9s -- 2.45x the 240s I had calibrated against, because 240 is
+# `_llm_hard_timeout(None, ...)` (the UNSET default) while config.py sets timeout=1800, so
+# the live cap is min(1800, 600) = 600s. The old 300s sat at HALF the real watchdog and
+# would have cut that 588.9s call in two.
+# ★ imported INSIDE the function: three tests exec this module's source into a synthetic
+# package and hand-stub each module-level relative import, so a new one there fails at
+# collection with `No module named '<pkg>.stage_contract'` (#853/#889 hit this too).
+# Calling it per use also means the ceiling tracks a config change without a restart.
+def _ladder_timeout_s_889() -> float:
+    from .stage_contract import llm_ceiling_898
+    return llm_ceiling_898("ENVGEN_DESIGN_LADDER_TIMEOUT_S")
 
 
 async def _chat_ladder(client, msgs, *, max_tokens: int) -> Optional[Dict]:
@@ -531,12 +542,12 @@ async def _chat_ladder(client, msgs, *, max_tokens: int) -> Optional[Dict]:
     try:
         return await _asyncio.wait_for(
             _chat_ladder_inner(client, msgs, max_tokens=max_tokens),
-            timeout=_LADDER_TIMEOUT_S_889)
+            timeout=_ladder_timeout_s_889())
     except _asyncio.TimeoutError:
         _LOG_813.error(
             "DESIGN LADDER TIMED OUT after %.0fs — this screen is enriched from the skeleton "
             "only (#889). Unbounded, its rungs and their re-rolls ran ahead of milestone "
-            "planning and kickoff.", _LADDER_TIMEOUT_S_889)
+            "planning and kickoff.", _ladder_timeout_s_889())
         return None
 
 

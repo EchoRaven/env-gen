@@ -37,7 +37,7 @@ def test_the_wrapper_bounds_the_body():
     src = inspect.getsource(dp._chat_ladder)
     assert "wait_for(" in src
     assert "_chat_ladder_inner" in src
-    assert "_LADDER_TIMEOUT_S_889" in src
+    assert "_ladder_timeout_s_889" in src
 
 
 def test_the_body_is_still_reachable_and_unchanged_in_shape():
@@ -61,17 +61,27 @@ def test_the_timeout_is_audible():
 
 
 def test_the_ceiling_is_calibrated_against_the_inner_watchdog():
-    """The relationship #870/#871/#872 pin, on the fourth site."""
+    """★ CORRECTED at #898, against real data. This asserted the relationship using
+    `_llm_hard_timeout(None, {})` = 240 — the value when `config.timeout` is UNSET. `config.py`
+    sets `timeout: int = 1800`, so the live watchdog is `min(1800, 600)` = **600s**, and r153
+    measured a completion at **588.9s** across 6550 calls. The old 300s ceiling sat at half the
+    real cap and would have cut that call in two; the test could not see it because it read the
+    default rather than the value in use — the field-location error, in the check meant to catch
+    exactly this.
+
+    Now derived, so it cannot drift out of calibration when the config moves."""
     from utils.llm import _llm_hard_timeout
-    watchdog = _llm_hard_timeout(None, {})
-    assert watchdog == 240.0, watchdog
-    t = dp._LADDER_TIMEOUT_S_889
-    assert watchdog < t < 2 * watchdog, (watchdog, t)
+    from utils.config import LLMConfig
+    watchdog = _llm_hard_timeout(LLMConfig.timeout, {})
+    assert watchdog == 600.0, watchdog
+    t = dp._ladder_timeout_s_889()
+    assert watchdog < t <= 2 * watchdog, (watchdog, t)
+    assert t > 588.9, "r153's slowest real completion must still fit"
 
 
 def test_the_floor_survives_a_hostile_env():
     src = inspect.getsource(dp)
-    assert re.search(r"_LADDER_TIMEOUT_S_889 = max\(\s*30\.0,\s*float\(", src)
+    assert "llm_ceiling_898(" in src   # #898: the floor lives in the helper now
     assert "ENVGEN_DESIGN_LADDER_TIMEOUT_S" in src
 
 
@@ -79,8 +89,16 @@ def test_the_module_had_no_other_timeout():
     """★ Non-vacuity for the finding itself: this was not one omission among several bounds — the
     module carried none. If a second appears, the note should be re-read."""
     src = inspect.getsource(dp)
-    others = [m.group(0) for m in re.finditer(r"\btimeout\s*=", src)]
-    assert len(others) <= 1, others
+    # #898: count only numeric bounds in CODE. Two corrections got here: `timeout=` now also
+    # appears in #889's own `wait_for`, and the first fix matched `timeout=1800` inside my comment
+    # about config.py — the seventeenth self-match of the session, and the same rule as #847c and
+    # #868: strip comments, because a quotation is not a declaration.
+    import io as _io, tokenize as _tok
+    code = "".join(
+        tv for tt, tv, *_ in _tok.generate_tokens(_io.StringIO(src).readline)
+        if tt not in (_tok.COMMENT, _tok.STRING))
+    others = [m.group(0) for m in re.finditer(r"\btimeout\s*=\s*\d", code)]
+    assert not others, others
 
 
 def test_every_llm_call_in_the_module_goes_through_the_ladder():

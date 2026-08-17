@@ -53,7 +53,7 @@ def test_the_gather_is_findable():
 def test_the_gather_is_bounded():
     src = _src()
     assert "wait_for(" in src
-    assert "_REF_COMPILE_TIMEOUT_S_871" in src
+    assert "_ref_compile_timeout_s_871" in src
 
 
 def test_a_timeout_continues_without_a_spec():
@@ -78,19 +78,28 @@ def test_the_existing_fallback_still_follows_it():
 
 
 def test_the_ceiling_is_calibrated_against_the_inner_watchdog():
-    """Same relationship #870 pins: below one watchdog no attempt could finish; far above it the
-    uncapped retry loop stacks. The relationship is the claim, not the number."""
+    """★ CORRECTED at #898, against real data. This asserted the relationship using
+    `_llm_hard_timeout(None, {})` = 240 — the value when `config.timeout` is UNSET. `config.py`
+    sets `timeout: int = 1800`, so the live watchdog is `min(1800, 600)` = **600s**, and r153
+    measured a completion at **588.9s** across 6550 calls. The old 300s ceiling sat at half the
+    real cap and would have cut that call in two; the test could not see it because it read the
+    default rather than the value in use — the field-location error, in the check meant to catch
+    exactly this.
+
+    Now derived, so it cannot drift out of calibration when the config moves."""
     from utils.llm import _llm_hard_timeout
-    watchdog = _llm_hard_timeout(None, {})
-    assert watchdog == 240.0, watchdog
-    t = rm._REF_COMPILE_TIMEOUT_S_871
-    assert watchdog < t < 2 * watchdog, (watchdog, t)
+    from utils.config import LLMConfig
+    watchdog = _llm_hard_timeout(LLMConfig.timeout, {})
+    assert watchdog == 600.0, watchdog
+    t = rm._ref_compile_timeout_s_871()
+    assert watchdog < t <= 2 * watchdog, (watchdog, t)
+    assert t > 588.9, "r153's slowest real completion must still fit"
 
 
 def test_the_floor_survives_a_hostile_env():
     """`=0` must not mean 'time out instantly and never compile'."""
     src = inspect.getsource(rm)
-    assert re.search(r"_REF_COMPILE_TIMEOUT_S_871 = max\(\s*30\.0,\s*float\(", src)
+    assert "llm_ceiling_898(" in src   # #898: the floor lives in the helper now
     assert "ENVGEN_REF_COMPILE_TIMEOUT_S" in src
 
 

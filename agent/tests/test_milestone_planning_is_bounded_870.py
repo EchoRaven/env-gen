@@ -64,7 +64,7 @@ def test_the_await_is_bounded():
     span = _span()
     assert "asyncio.wait_for(" in span
     assert "plan_milestones(" in span
-    assert "_MILESTONE_PLAN_TIMEOUT_S_870" in span
+    assert "_milestone_plan_timeout_s_870" in span
 
 
 def test_a_timeout_falls_back_rather_than_propagating():
@@ -84,22 +84,29 @@ def test_the_timeout_is_reported_as_an_error():
 
 
 def test_the_constant_is_finite_generous_and_overridable():
-    t = orch._MILESTONE_PLAN_TIMEOUT_S_870
+    t = orch._milestone_plan_timeout_s_870()
     assert 30.0 <= t <= 1800.0, t
     src = inspect.getsource(orch)
     assert "ENVGEN_MILESTONE_PLAN_TIMEOUT_S" in src
 
 
 def test_the_ceiling_is_calibrated_against_the_inner_watchdog():
-    """★ The correction, pinned. A value BELOW `utils.llm`'s 240s per-call watchdog would fire
-    before any attempt could finish and planning would never succeed; a value far above it would
-    let the uncapped retry loop stack several attempts, which is the condition being fixed. It has
-    to sit in between, and the relationship — not the number — is what matters."""
+    """★ CORRECTED at #898, against real data. This asserted the relationship using
+    `_llm_hard_timeout(None, {})` = 240 — the value when `config.timeout` is UNSET. `config.py`
+    sets `timeout: int = 1800`, so the live watchdog is `min(1800, 600)` = **600s**, and r153
+    measured a completion at **588.9s** across 6550 calls. The old 300s ceiling sat at half the
+    real cap and would have cut that call in two; the test could not see it because it read the
+    default rather than the value in use — the field-location error, in the check meant to catch
+    exactly this.
+
+    Now derived, so it cannot drift out of calibration when the config moves."""
     from utils.llm import _llm_hard_timeout
-    watchdog = _llm_hard_timeout(None, {})
-    assert watchdog == 240.0, watchdog
-    t = orch._MILESTONE_PLAN_TIMEOUT_S_870
-    assert watchdog < t < 2 * watchdog, (watchdog, t)
+    from utils.config import LLMConfig
+    watchdog = _llm_hard_timeout(LLMConfig.timeout, {})
+    assert watchdog == 600.0, watchdog
+    t = orch._milestone_plan_timeout_s_870()
+    assert watchdog < t <= 2 * watchdog, (watchdog, t)
+    assert t > 588.9, "r153's slowest real completion must still fit"
 
 
 def test_the_retry_budget_it_bounds_is_large_not_infinite():
@@ -118,16 +125,17 @@ def test_the_retry_budget_it_bounds_is_large_not_infinite():
     assert "retried, not lost" in doc, doc
     assert LLMConfig().retry_attempts >= 2, "the budget shrank; re-read #870/#871/#872"
     watchdog = _llm._llm_hard_timeout(None, {})
-    worst = LLMConfig().retry_attempts * watchdog
-    assert worst >= 4 * orch._MILESTONE_PLAN_TIMEOUT_S_870 / 3, (worst,)
+    # #898: computed from the LIVE watchdog, not the unset default. 3 attempts x 600s.
+    from utils.llm import _llm_hard_timeout
+    worst = LLMConfig().retry_attempts * _llm_hard_timeout(LLMConfig.timeout, {})
+    assert worst > orch._milestone_plan_timeout_s_870(), (worst, "the ceiling must still bite")
 
 
 def test_the_floor_survives_a_hostile_env(monkeypatch):
     """`=0` must not mean 'time out instantly and never plan'. The `max(30.0, …)` is the guard, and
     the env parse must be a number rather than a truthiness test (#562's trap)."""
     src = inspect.getsource(orch)
-    m = re.search(r"_MILESTONE_PLAN_TIMEOUT_S_870 = max\(\s*30\.0,\s*float\(", src)
-    assert m, "the floor or the numeric parse changed"
+    assert "llm_ceiling_898(" in src   # #898: the floor lives in the helper now
 
 
 @pytest.mark.parametrize("delay,expect_timeout", [(0.0, False), (5.0, True)])

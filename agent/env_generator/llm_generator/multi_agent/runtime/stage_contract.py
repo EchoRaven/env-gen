@@ -180,3 +180,40 @@ def stage_input_checker_891(progress: Any = None, event_type: Any = None) -> Cal
 
 __all__ = ["require_stage_input_891", "require_stage_output_891",
            "stage_input_checker_891", "reset_said_891", "record_stage_894"]
+
+
+def llm_ceiling_898(env_var: str, *, factor: float = 1.25, floor: float = 30.0) -> float:
+    """#898: a ceiling DERIVED from the live per-call watchdog, not hardcoded against its default.
+
+    ★ #870/#871/#872/#889 each hardcoded 300s and justified it as *"above one 240s watchdog, below
+    two"*. r153 measured the truth: **6550 completions, max 588.9s** — 2.45x that supposed cap. The
+    240 comes from `_llm_hard_timeout(None, ...)`, the value when `config.timeout` is UNSET.
+    `config.py` sets `timeout: int = 1800`, so the live watchdog is `min(1800, 600)` = **600s**.
+
+    So all four ceilings sat at HALF the real cap, and r153's 588.9s completion would have been
+    cut in half had it landed on a bounded path. The tests asserted the relationship against
+    `_llm_hard_timeout(None, {})` — the default, not the value in use — which is the
+    field-location error one more time, this time in the check that was supposed to catch it.
+
+    Deriving it removes the question: the ceiling is whatever the watchdog is, times a margin, so
+    it cannot drift out of calibration when the config changes. `factor` > 1 keeps one honest slow
+    call inside the budget; the env var still overrides for a specific site."""
+    import os as _os
+    try:
+        from utils.llm import _llm_hard_timeout
+        from utils.config import LLMConfig
+        # the dataclass default IS the deployed value unless a config file overrides it; reading
+        # the class rather than a live instance keeps this import-safe and side-effect free.
+        watchdog = _llm_hard_timeout(getattr(LLMConfig, "timeout", None), _os.environ)
+    except Exception:
+        watchdog = 600.0                     # the cap; safer than the unset-default 240
+    try:
+        override = _os.environ.get(env_var)
+        if override:
+            return max(floor, float(override))
+    except Exception:
+        pass
+    return max(floor, watchdog * factor)
+
+
+__all__.append("llm_ceiling_898")

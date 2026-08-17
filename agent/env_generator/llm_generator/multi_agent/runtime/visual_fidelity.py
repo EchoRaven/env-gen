@@ -224,7 +224,18 @@ _VIEWPORT_FALLBACK_H_644 = 900
 # 12 x this rather than unbounded. Env-overridable. Placed AFTER the constant above, not before
 # it: inserting between #644's rationale and its number orphaned that rationale and #647's guard
 # caught it — a seam, not a logic error.
-_JUDGE_TIMEOUT_S_872 = max(30.0, float(os.environ.get("ENVGEN_JUDGE_TIMEOUT_S") or "300"))
+# #898: DERIVED from the live per-call watchdog, not hardcoded. r153 measured 6550
+# completions with max 588.9s -- 2.45x the 240s I had calibrated against, because 240 is
+# `_llm_hard_timeout(None, ...)` (the UNSET default) while config.py sets timeout=1800, so
+# the live cap is min(1800, 600) = 600s. The old 300s sat at HALF the real watchdog and
+# would have cut that 588.9s call in two.
+# ★ imported INSIDE the function: three tests exec this module's source into a synthetic
+# package and hand-stub each module-level relative import, so a new one there fails at
+# collection with `No module named '<pkg>.stage_contract'` (#853/#889 hit this too).
+# Calling it per use also means the ceiling tracks a config change without a restart.
+def _judge_timeout_s_872() -> float:
+    from .stage_contract import llm_ceiling_898
+    return llm_ceiling_898("ENVGEN_JUDGE_TIMEOUT_S")
 
 
 def _references_dir_644(anywhere: Any) -> Optional[Path]:
@@ -2251,7 +2262,7 @@ async def judge_screen_pair(llm: Any, screen: Mapping[str, Any], screenshot_path
         resp = await _asyncio.wait_for(
             client.chat([Message.user_multimodal(parts)],
                         temperature=0.0, max_tokens=8000),
-            timeout=_JUDGE_TIMEOUT_S_872)
+            timeout=_judge_timeout_s_872())
         return _parse_verdict(getattr(resp, "content", "") or "")
     except Exception as exc:
         # judge_error marks a TRANSIENT failure — #142 must never cache it
@@ -2798,7 +2809,7 @@ async def run_visual_fidelity(
     # gives the wall-clock escape a chance to look at it.
     import time as _t892
     _round_budget_892 = max(
-        _JUDGE_TIMEOUT_S_872, float(os.environ.get("ENVGEN_JUDGE_ROUND_BUDGET_S") or "900"))
+        _judge_timeout_s_872(), float(os.environ.get("ENVGEN_JUDGE_ROUND_BUDGET_S") or "900"))
     _round_started_892 = _t892.monotonic()
     _spent_892 = False
 

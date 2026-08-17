@@ -721,8 +721,18 @@ class ReferenceCompileResult:
 # at 240s (FIX #187) and the retry layer is capped at 3 attempts (#890's correction), so one
 # call is ~12 MINUTES worst case -- bounded, and large enough to eat a run. This gathers two. Same
 # calibration as #870's planning ceiling: above one watchdog, below two. Env-overridable.
-_REF_COMPILE_TIMEOUT_S_871 = max(
-    30.0, float(_os.environ.get("ENVGEN_REF_COMPILE_TIMEOUT_S") or "300"))
+# #898: DERIVED from the live per-call watchdog, not hardcoded. r153 measured 6550
+# completions with max 588.9s -- 2.45x the 240s I had calibrated against, because 240 is
+# `_llm_hard_timeout(None, ...)` (the UNSET default) while config.py sets timeout=1800, so
+# the live cap is min(1800, 600) = 600s. The old 300s sat at HALF the real watchdog and
+# would have cut that 588.9s call in two.
+# ★ imported INSIDE the function: three tests exec this module's source into a synthetic
+# package and hand-stub each module-level relative import, so a new one there fails at
+# collection with `No module named '<pkg>.stage_contract'` (#853/#889 hit this too).
+# Calling it per use also means the ceiling tracks a config change without a restart.
+def _ref_compile_timeout_s_871() -> float:
+    from .stage_contract import llm_ceiling_898
+    return llm_ceiling_898("ENVGEN_REF_COMPILE_TIMEOUT_S")
 
 
 async def compile_reference_materials(
@@ -785,13 +795,13 @@ async def compile_reference_materials(
                     precompute_component_specs(images, output_dir=output_dir,
                                                llm=llm, logger=logger),
                 ),
-                timeout=_REF_COMPILE_TIMEOUT_S_871,
+                timeout=_ref_compile_timeout_s_871(),
             )
         except _asyncio.TimeoutError:
             logger.error(
                 "Reference compile TIMED OUT after %.0fs (#871) — continuing without a spec. "
                 "Unbounded, its retry loop ran ahead of milestone planning and cost the run.",
-                _REF_COMPILE_TIMEOUT_S_871)
+                _ref_compile_timeout_s_871())
             spec = None
         if not spec or not any(spec.get(k) for k in
                                ("screens", "endpoints", "entities", "mcp_tools")):

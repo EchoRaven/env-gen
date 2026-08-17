@@ -63,11 +63,13 @@ def test_advisory_status_is_preserved():
 
 
 def test_the_budget_is_at_least_one_full_judge_call():
-    """★ Below `_JUDGE_TIMEOUT_S_872` the budget could expire during the first honest slow screen
+    """★ Below `_judge_timeout_s_872` the budget could expire during the first honest slow screen
     and no round would ever complete — the relationship, not the number, is the claim."""
-    assert vf._JUDGE_TIMEOUT_S_872 == 300.0
     src = inspect.getsource(vf)
-    assert re.search(r"_round_budget_892 = max\(\s*\n?\s*_JUDGE_TIMEOUT_S_872,", src)
+    # #898: the per-call ceiling became an accessor, so the round budget calls it.
+    assert re.search(r"_round_budget_892 = max\(\s*\n?\s*_judge_timeout_s_872\(\),", src), src[
+        src.index("_round_budget_892 = max"):src.index("_round_budget_892 = max") + 160]
+    assert vf._judge_timeout_s_872() > 588.9, "one honest slow call must fit inside the budget"
     assert "ENVGEN_JUDGE_ROUND_BUDGET_S" in src
 
 

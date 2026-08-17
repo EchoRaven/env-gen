@@ -160,8 +160,18 @@ FWVAL_NO_DELIVER_ABORT_S = int(os.environ.get("ENVGEN_NO_DELIVER_ABORT_S", "4500
 # run, and a better fit for the 3.0-17.2 minute deaths than "forever" ever was. 300s allows one
 # full attempt and truncates the second; planning is optional (the fallback is a single milestone)
 # so further re-rolls buy little. Env-overridable because the watchdog itself is.
-_MILESTONE_PLAN_TIMEOUT_S_870 = max(
-    30.0, float(os.environ.get("ENVGEN_MILESTONE_PLAN_TIMEOUT_S") or "300"))
+# #898: DERIVED from the live per-call watchdog, not hardcoded. r153 measured 6550
+# completions with max 588.9s -- 2.45x the 240s I had calibrated against, because 240 is
+# `_llm_hard_timeout(None, ...)` (the UNSET default) while config.py sets timeout=1800, so
+# the live cap is min(1800, 600) = 600s. The old 300s sat at HALF the real watchdog and
+# would have cut that 588.9s call in two.
+# ★ imported INSIDE the function: three tests exec this module's source into a synthetic
+# package and hand-stub each module-level relative import, so a new one there fails at
+# collection with `No module named '<pkg>.stage_contract'` (#853/#889 hit this too).
+# Calling it per use also means the ceiling tracks a config change without a restart.
+def _milestone_plan_timeout_s_870() -> float:
+    from .runtime.stage_contract import llm_ceiling_898
+    return llm_ceiling_898("ENVGEN_MILESTONE_PLAN_TIMEOUT_S")
 
 FWVAL_CHAIN_CHURN_CAP = max(2, int(os.environ.get("ENVGEN_CHAIN_CHURN_CAP") or "8"))
 # FIX #186 (tiktok-r2): the api_smoke stuck ladder keyed only on (failure_set,
@@ -1305,14 +1315,14 @@ class Orchestrator:
                             plan_milestones(
                                 _gcl(self, "milestone_plan") or self.llm, raw_req,
                                 getattr(self, "_reference_spec", None) or {}),
-                            timeout=_MILESTONE_PLAN_TIMEOUT_S_870,
+                            timeout=_milestone_plan_timeout_s_870(),
                         )
                     except asyncio.TimeoutError:
                         self._logger.error(
                             "milestone planning TIMED OUT after %.0fs — falling back to a single "
                             "milestone (#870). Unbounded, this hung the whole run before "
                             "start_kickoff and cost every lane.",
-                            _MILESTONE_PLAN_TIMEOUT_S_870)
+                            _milestone_plan_timeout_s_870())
                         _planned = None
                     except Exception as exc:
                         self._logger.error("milestone planning raised: %s", exc)

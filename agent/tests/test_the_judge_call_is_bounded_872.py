@@ -67,7 +67,7 @@ def test_the_judge_call_is_findable():
 def test_the_call_is_bounded():
     span = _span()
     assert "_asyncio.wait_for(" in span
-    assert "_JUDGE_TIMEOUT_S_872" in span
+    assert "_judge_timeout_s_872" in span
 
 
 def test_a_timeout_lands_in_the_existing_transient_handler():
@@ -90,18 +90,27 @@ def test_a_timed_out_screen_is_not_cached_as_zero():
 
 
 def test_the_ceiling_is_calibrated_against_the_inner_watchdog():
-    """The relationship #870 and #871 pin, on the third site: below one watchdog no honest slow
-    call could finish; far above it the uncapped re-rolls stack."""
+    """★ CORRECTED at #898, against real data. This asserted the relationship using
+    `_llm_hard_timeout(None, {})` = 240 — the value when `config.timeout` is UNSET. `config.py`
+    sets `timeout: int = 1800`, so the live watchdog is `min(1800, 600)` = **600s**, and r153
+    measured a completion at **588.9s** across 6550 calls. The old 300s ceiling sat at half the
+    real cap and would have cut that call in two; the test could not see it because it read the
+    default rather than the value in use — the field-location error, in the check meant to catch
+    exactly this.
+
+    Now derived, so it cannot drift out of calibration when the config moves."""
     from utils.llm import _llm_hard_timeout
-    watchdog = _llm_hard_timeout(None, {})
-    assert watchdog == 240.0, watchdog
-    t = vf._JUDGE_TIMEOUT_S_872
-    assert watchdog < t < 2 * watchdog, (watchdog, t)
+    from utils.config import LLMConfig
+    watchdog = _llm_hard_timeout(LLMConfig.timeout, {})
+    assert watchdog == 600.0, watchdog
+    t = vf._judge_timeout_s_872()
+    assert watchdog < t <= 2 * watchdog, (watchdog, t)
+    assert t > 588.9, "r153's slowest real completion must still fit"
 
 
 def test_the_floor_survives_a_hostile_env():
     src = inspect.getsource(vf)
-    assert re.search(r"_JUDGE_TIMEOUT_S_872 = max\(\s*30\.0,\s*float\(", src)
+    assert "llm_ceiling_898(" in src   # #898: the floor lives in the helper now
     assert "ENVGEN_JUDGE_TIMEOUT_S" in src
 
 
@@ -110,8 +119,13 @@ def test_a_round_is_now_finite_but_still_long():
     minutes — bounded, and still longer than most runs should spend in one round. The per-ROUND
     cap is the stronger fix and is a policy decision (partial verdicts change `coverage`), so it
     is recorded, not smuggled in."""
-    per_round = 12 * vf._JUDGE_TIMEOUT_S_872
-    assert per_round == 3600.0
+    # ★ #898 corrected the model this asserted. 12 x the per-call ceiling is 9000s now, but the
+    # round is not bounded by that any more: #892 caps the ROUND directly, and that cap is what a
+    # reader should check. The per-call ceiling only bounds ONE screen.
+    import re as _re
+    src = inspect.getsource(vf)
+    assert _re.search(r"_round_budget_892 = max\(", src), "#892's round cap must still exist"
+    assert vf._judge_timeout_s_872() > 588.9, "one honest slow call must still fit"
     span = _span()
     # case-insensitive: the comment writes it as "ONCE PER SCREEN" and an exact-case anchor is a
     # test that breaks on prose, not on behaviour — the same slip as #859's docstring match.
@@ -133,7 +147,7 @@ def test_the_other_timeouts_in_the_module_are_not_llm_bounds():
     others = [m.group(0) for m in re.finditer(r"timeout[_s]*\s*[=:]\s*\d+", src)]
     assert others, "non-vacuity: the module does carry other timeouts"
     assert not any("judge" in src[max(0, src.index(o) - 120):src.index(o)].lower()
-                   for o in others if o != f"timeout=_JUDGE_TIMEOUT_S_872")
+                   for o in others if o != f"timeout=_judge_timeout_s_872")
 
 
 if __name__ == "__main__":  # pragma: no cover
