@@ -10638,3 +10638,42 @@ written by someone trying to be precise. ★ **Precision about the wrong thing i
 defending the status quo** — and the tell is always the same: the assertion names a token instead
 of a consequence.
 
+
+## 213. #887 — the 18 triaged, and one was a false all-clear on the r148 mechanism
+
+#884 left 18 silent empty-default handlers in the three files #883's scanner does not reach.
+Triaged by what the **consumer** does with the empty value:
+
+| | sites |
+|---|---|
+| cosmetic / optional | `_pid`, `_rhythm`, `_head_sha`, `_pk`, `_this_live` |
+| degrades a comparison | `_url_before`, `token2` |
+| costs tokens, not correctness | `_ck` — the verdict cache is skipped and the screen re-judged |
+| conservative direction | `commits = 0` (stall handling fires), `framework_validation`'s signature reads |
+| **false all-clear** | **`_prev738`** |
+
+★ The last one is **#884's shape, one function away in the same file**. `_sf738.exists()` already
+separates *"first round, no prior"* — which `_served_build_is_stale_738`'s docstring calls a
+legitimate never-stale state — from *"the file is there and will not parse"*. The handler
+collapsed them back, and the probe returns `False` on an empty prior, so an unreadable
+`served_build.json` reads as **NOT STALE**: a false all-clear on the one probe that exists
+because, in its own words, *"#715 cannot see this case: the routes are unchanged, so it reports
+the build clean"* — the mechanism recorded as letting r148 release v1.0.0 with a dead SPA.
+
+### ★ my own tree-stability rule was insufficient, one item after writing it
+
+Item 210 recorded *"green means green AND the tree did not move"*, and I implemented it as a
+**HEAD** check. This run then reported three failures — `#719`'s ticket-collision guard and
+`#738`'s fault-tolerance test among them — **all of which passed in isolation**.
+
+**HEAD catches commits. The other agent spends most of its time in uncommitted edits.** The
+bracket is now a working-tree fingerprint (`git status --porcelain` + HEAD + recent-mtime hash),
+and the final run was clean under it. A stability check that only watches the part of the state
+that changes least is not a stability check.
+
+### and a third ticket collision
+
+`#885` was theirs. They renumbered my block to `#887` before I got to it — I verified the block is
+internally consistent (all four references, plus the say-once variable) rather than assuming a
+correct fix, which is the same discipline that caught my own `876 → 877` sweep damaging theirs.
+
