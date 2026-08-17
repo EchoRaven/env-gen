@@ -13881,3 +13881,39 @@ lines disappeared, three of them reverts (the code went with them), and the one 
 ★ Both new tests carry planted controls — one proves the detector catches a bare-delimiter slice,
 one proves it ignores a docstring that merely describes one. Item 266's rule applied to the tool I
 built to enforce item 266's rule.
+
+## 279. ★ the artifact vein is at its floor — stated on a full sweep, not on patience
+
+Every gate this session validated with a planted control, run over all 153 delivered trees:
+
+    gate                        findings   runs   accounted for
+    #919 unscoped owner read         159     81   pre-#908 artifacts; the post-#908 projector
+                                                  emits the filter (verified end to end, #273)
+    #175 invented field               31     11   ★ 0 of the 11 released — the gate blocked them
+    #173 stub handler                  0      0   planted control confirms it is live, not inert
+
+**Nothing unaccounted for.** Every finding is either an artifact of a run that predates its fix or a
+run the gate correctly stopped.
+
+★ The other signal is where the last four tickets' defects came from: #920 found an untested report
+in my own #909, #921 found #901 shipped to the wrong object, #922/#923 found brittle locators and
+then three bugs in the tool I built to detect them. **When the defects you find are in the
+instruments you built this turn, you are measuring your own noise, not the product.** That is what a
+floor looks like, and it is worth naming rather than grinding past.
+
+### what is left, and why none of it is digging
+
+    #914 projector deference    implemented, default OFF, logging while off. Needs ONE run with the
+                                flag unset (free, byte-identical) — the corpus cannot answer it
+                                because the lane's pages have never been rendered to a camera.
+    the auth branch of it       deliberately second, same reason.
+    #872/#889/#892 in the field the mechanisms are now driven in tests (#915/#915b); whether a real
+                                stall reaches them needs a run that stalls.
+    the 24 fixes               ★ NOT ONE has been validated by a generation run. r154 has not run.
+    #774 / #854 / #181 / 184   user decisions.
+    components floor 9/12       the lever is #914's flag; see above.
+
+★ The single highest-value action available is the one that costs nothing and needs no decision: run
+r154 with `ENVGEN_DEFER_TO_LANE_PAGE` unset. It validates 24 fixes at once, measures #914's exposure
+for free via the `LANE PAGE WITH OWN COMPONENTS` lines, and either fires or does not fire #918/#919
+on a freshly generated app. Everything else waits on its output.
