@@ -13303,3 +13303,47 @@ ones written by someone who had already been bitten by the exact case.
 
     14 driven cases for the two detectors, replacing source-text assertions
     sensitivity: revert #916 → 2 of them fail; revert the refinement → #655's own test fails
+
+## 265. the 44 drivable subjects, swept — nothing to fix, and why that is the interesting part
+
+Item 262's pass, finished for the drivable subset. Of the 135 source-only test files, **45 subjects**
+are module-level, low-arity, non-async functions — trivially callable, so "unverifiable" was never
+the reason nobody had called them. Batch-driven with five degenerate inputs each (`None`, `{}`,
+`[]`, `""`, `0`), 225 calls:
+
+    ★ returned True for an empty/None input (the fail-open class)      0
+    raised on a None argument                                         16
+
+The 16 are all `None` where a Path, Mapping or registry object is required. Spot-checked at the call
+sites (`_measured_diff_lines(r, output_dir)` takes `r` from a results list; `_persist_verdict` takes
+a real verdict): `None` is not a reachable argument for any of them. Not defects.
+
+★ **Nothing to fix here, and that is a result** — the class I was hunting (a guard that answers
+"clean" when handed nothing) does not appear in the drivable set beyond the two already fixed.
+Recorded so the next pass does not re-derive it.
+
+### ★ the methodological finding is the real one
+
+    225 calls with DEGENERATE inputs across 45 functions   →  0 defects
+    ~8 calls with DOMAIN-SHAPED inputs to ONE function     →  1 defect, on the third input (#916)
+
+Degenerate inputs test the **guard clauses** — the `if not x: return` at the top, which everyone
+remembers to write. `_auth_wipeout_655` survives `None`, `{}`, `[]` and `0` perfectly. What broke it
+was two *plausible* screens that happened to lack a route: well-formed, realistic, and past every
+guard.
+
+So "drive the source-only tests" is right, but breadth-first sweeping is not how it pays. The
+payoff was in taking one load-bearing detector and asking what its arguments look like on a real
+run. The remaining ~43 subjects are worth that treatment one at a time, cheapest-and-most-
+load-bearing first, and the sweep above says the shallow pass over them is already done.
+
+### incidental confirmation
+
+The sweep tripped #792's own guard, which behaved exactly as designed:
+
+    DELIVERY GATE DID NOT RUN (#792): _stub_handler_blockers … It is returning NO BLOCKERS, which
+    is the permissive default so a broken audit cannot wedge every release — but that is NOT
+    evidence the app is clean on this axis.
+
+An audit that says "I could not run, and my silence is not an all-clear" is the shape this whole
+session has been arguing for, working.
