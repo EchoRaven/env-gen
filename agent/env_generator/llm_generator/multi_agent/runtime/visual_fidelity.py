@@ -3752,6 +3752,20 @@ def _append_round_record_640(vdir: Any, verdict: Dict[str, Any],
             "live": {str(s.get("name")): s.get("similarity")
                      for s in (results or []) if isinstance(s, dict) and s.get("name")},
         }
+        # #900: carry #893's instability finding into the APPEND-ONLY record.
+        #
+        # ★ #893 wrote `judge_unstable_893` only into verdict.json, which `_persist_verdict`
+        # OVERWRITES every round — so a detection could be erased by the very next round. That is
+        # #500's evidence-erasure shape, committed by the detector built to expose the judge's
+        # inconsistency. r153 makes the cost concrete: 12 rounds happened and exactly ONE verdict
+        # file survives, so any instability found in rounds 1-11 would be unrecoverable.
+        #
+        # `rounds.jsonl` is already appended here, one line per round, and r153 proves it retains
+        # what verdict.json loses: 11 distinct code_states over 12 rounds, including the repeat
+        # (41b11425e7 x2) that gave #893 its only real opportunity — where it correctly stayed
+        # silent, because both rounds scored identically (merged 0.6771, live 0.627, delta 0.0000).
+        if verdict.get("judge_unstable_893"):
+            row["judge_unstable_893"] = verdict["judge_unstable_893"]
         with open(Path(vdir) / "rounds.jsonl", "a", encoding="utf-8") as fh:
             fh.write(json.dumps(row, default=str) + "\n")
     except Exception:

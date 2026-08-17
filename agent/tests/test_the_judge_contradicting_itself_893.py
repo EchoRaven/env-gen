@@ -130,3 +130,57 @@ def test_the_corpus_coverage_claim_still_holds():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #900: the finding must outlive the round that made it --------------------------------------
+
+def test_the_finding_is_carried_into_the_append_only_record():
+    """★ #893 wrote `judge_unstable_893` only into verdict.json, which `_persist_verdict`
+    OVERWRITES every round — so a detection could be erased by the very next round. That is
+    #500's evidence-erasure shape, in the detector built to expose the judge's inconsistency.
+
+    r153 makes the cost concrete: **12 rounds ran and exactly one verdict.json survives.** Any
+    instability found in rounds 1–11 would be unrecoverable. `rounds.jsonl` is appended one line
+    per round and retains what verdict.json loses."""
+    src = _src()
+    i = src.index("#900: carry #893")
+    # anchored on the WRITER, not on the first mention of the filename — the comment above names
+    # rounds.jsonl three times, so `index("rounds.jsonl", i)` lands inside the explanation.
+    # Eighteenth self-match of the session, same rule: anchor on code, not on prose about it.
+    block = src[i:src.index('with open(Path(vdir) / "rounds.jsonl"', i)]
+    assert 'row["judge_unstable_893"]' in block
+    assert 'verdict.get("judge_unstable_893")' in block
+
+
+def test_it_is_still_written_to_the_verdict_too():
+    """Both, not either: verdict.json is what a human opens first."""
+    assert 'judge_unstable_893"] = _unstable_893' in _src()
+
+
+def test_the_append_only_record_is_the_one_that_retains_history():
+    """Non-vacuity for the premise, from r153: verdict.json is overwritten, rounds.jsonl is not."""
+    src = _src()
+    assert 'open(Path(vdir) / "rounds.jsonl", "a"' in src, "must be append mode"
+    assert '"code_state": _head_sha' in src, "each round must carry the sha #893 keys on"
+
+
+def test_r153_proved_the_comparison_is_reachable():
+    """★ The question this check existed to answer, settled with real data rather than argued.
+
+    r153: 12 rounds, 11 distinct code_states, and `41b11425e7` spanning TWO — so #893 had a real
+    opportunity and stayed silent because both rounds scored **identically** (merged 0.6771, live
+    0.627, delta 0.0000). A correct negative, not an inert detector — and incidentally the first
+    evidence this session that the judge is DETERMINISTIC at an unchanged tree."""
+    import json
+    import pathlib as _p
+    rj = (_p.Path(__file__).resolve().parents[1]
+          / "generated/netflix-web-r153/design/visual_gate/rounds.jsonl")
+    if not rj.is_file():
+        pytest.skip("r153 corpus not present")
+    rows = [json.loads(l) for l in rj.read_text().splitlines() if l.strip()]
+    assert len(rows) >= 10, len(rows)
+    same = [r for r in rows if str(r.get("code_state", "")).startswith("41b11425e7")]
+    assert len(same) == 2, same
+    a, b = same
+    assert a.get("blocking_average_live") == b.get("blocking_average_live")
+    assert a.get("blocking_average") == b.get("blocking_average")
