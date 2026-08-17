@@ -374,7 +374,7 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
                              plateau_hard: int = VISUAL_PLATEAU_HARD_ROUNDS,
                              last_judgment_at=None,
                              idle_s: float = VISUAL_IDLE_S,
-                             blocking_average=None, blocking_average_live=None, avg_min=None,
+                             blocking_average=None, avg_min=None,
                              avg_stable_rounds: int = 0,
                              avg_release_rounds: int = VISUAL_AVG_RELEASE_ROUNDS,
                              avg_release: bool = VISUAL_AVG_RELEASE,
@@ -440,37 +440,29 @@ def _visual_release_decision(deferred_since, attempts: int, total_judgments: int
     # CLEARS the moment a capture renders, so a lane that fixes the crash still ships.
     if app_dead:
         return "defer"
-    # #861: the LIVE average must clear the bar too.
+    # #861 REVERTED at #897 — it gated on a key production never emits.
     #
-    # `blocking_average` is #500's HIGH-WATER MERGE across judged rounds; `blocking_average_live`
-    # is what the current capture actually scored. visual_fidelity's own ranking
-    # (`better_state_available_641`) deliberately uses `_live` and says why: "`blocking_average`
-    # is #500's [merge]". This escape took the other one.
+    # #861 added `and _live_ok`, fed by `res.get("blocking_average_live")` where `res` is
+    # `gate.last_result` = the dict RETURNED by `run_visual_fidelity`. An AST pass over every dict
+    # literal in that function: `blocking_average` is emitted, `blocking_average_live` is NOT. So
+    # `_live_ok` was always False and **fast_release could never fire** — not stricter, disabled.
+    # Cost per run, by #861's own estimate: the ~40-60 minutes and ~40 re-judgements the fast path
+    # exists to save.
     #
-    # Measured over the 7 corpus runs that record both (r145-r151; `_live` is a recent field):
+    # ★ The premise was refuted 200 lines away in the file I was reading. #711r: "The DECISION path
+    # does not read [the merged number]. `_visual_fast_release_args` takes `gate.last_result` …
+    # and that dict carries `blocking_average` = the CURRENT capture, never merged." **On this
+    # path `blocking_average` already IS the live average.** The merged/live divergence I measured
+    # (merged >= 0.65 while live < 0.65 in 5 of 7) was measured in `verdict.json`, the PERSISTED
+    # record, which this path never reads. Tenth field-location error of the session and the only
+    # one that reached shipped code.
     #
-    #     merged >= 0.65 while live < 0.65   ->  5 of 7   (r146 r147 r148 r150 r151)
-    #     median gap merged - live           ->  +0.068, max +0.505
-    #
-    # r148 is in that list, and r148 released v1.0.0 with the SPA throwing on every route.
-    # #750's `app_dead` veto catches the RENDERING half of that; this catches the SCORE half —
-    # the number the release decision read was never the number the app earned.
-    #
-    # Refusing here cannot cost a release. #558's own docstring establishes that fast_release is
-    # "a strict SUBSET of the states the wall-clock escape would eventually release anyway", so a
-    # run denied the fast path still releases on the wall clock, the attempt cap or the plateau.
-    # What it no longer does is let an inflated average BUY the ~40-60 minutes and ~40
-    # re-judgements of remediation the app still needed.
-    #
-    # An absent `_live` (a gate result from before the field existed) is "cannot confirm" and
-    # declines the fast path, for the same reason: declining is free.
-    _live_ok = (blocking_average_live is not None
-                and avg_min is not None
-                and blocking_average_live >= avg_min)
+    # Reverted rather than repaired: emitting the key would make the gate real, and a real gate
+    # here re-checks the number `blocking_average` already carries — redundant, while re-opening
+    # the calibration question #711 left open.
     if (avg_release and coverage_ok and avg_release_rounds > 0
             and blocking_average is not None and avg_min is not None
             and blocking_average >= avg_min
-            and _live_ok
             and avg_stable_rounds >= avg_release_rounds):
         return "fast_release"
     if deferred_since is not None and (now - deferred_since) > escape_s:
@@ -528,10 +520,8 @@ def _visual_fast_release_args(gate) -> dict:
         _blocking_judged = 0
     return {
         "blocking_average": res.get("blocking_average"),
-        # #861: the LIVE average too. `blocking_average` is #500's high-water MERGE across
-        # rounds; `blocking_average_live` is what THIS capture actually scored, and the two
-        # disagree across the bar in 5 of the 7 corpus runs that record both.
-        "blocking_average_live": res.get("blocking_average_live"),
+        # #897: no `blocking_average_live` — `run_visual_fidelity` does not emit it, and on this
+        # path `blocking_average` is already the CURRENT capture (#711r), not #500's merge.
         "avg_min": res.get("min_similarity"),
         "avg_stable_rounds": getattr(gate, "avg_pass_rounds", 0),
         "coverage_ok": _blocking_judged >= 1,

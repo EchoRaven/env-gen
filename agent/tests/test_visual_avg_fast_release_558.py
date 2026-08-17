@@ -44,20 +44,11 @@ MIN = 0.65
 
 def _decide(**kw):
     """All-quiet baseline (nothing else can release): deferred 100s (below the 1500s plateau
-    floor and the 3600s wall-clock), no attempts/judgments/plateau. Only fast-release can fire.
-
-    #861: `blocking_average_live` defaults to whatever `blocking_average` is given, i.e. the
-    honest case where the high-water merge and the live capture agree. Every case in this file is
-    about the merge's STABILITY, not about the two disagreeing; the disagreeing case has its own
-    test at the bottom and its own file. Defaulting it to None instead would silently turn every
-    fast-release case here into a `defer` and the file would test nothing."""
+    floor and the 3600s wall-clock), no attempts/judgments/plateau. Only fast-release can fire."""
     base = dict(deferred_since=NOW - 100.0, attempts=0, total_judgments=0, now=NOW,
                 plateau_rounds=0, last_judgment_at=None,
                 blocking_average=None, avg_min=None, avg_stable_rounds=0, coverage_ok=False)
     base.update(kw)
-    base.setdefault("blocking_average_live", base.get("blocking_average"))
-    if "blocking_average" in kw and "blocking_average_live" not in kw:
-        base["blocking_average_live"] = kw["blocking_average"]
     return _visual_release_decision(**base)
 
 
@@ -165,15 +156,13 @@ def _gate_with(last_result, avg_pass_rounds=0):
 
 def test_args_helper_extracts_avg_min_rounds_and_coverage():
     g = _gate_with(
-        {"blocking_average": 0.7258, "blocking_average_live": 0.7258,   # #861
-         "min_similarity": 0.65,
+        {"blocking_average": 0.7258, "min_similarity": 0.65,
          "coverage": {"blocking_judged": 3, "unjudged": []}},
         avg_pass_rounds=2)
     args = _visual_fast_release_args(g)
     # #750 added `app_dead` to this dict, so both call sites get the veto for free by
     # splatting it. Exact-equality is kept deliberately — it is what caught the addition.
-    assert args == {"blocking_average": 0.7258, "blocking_average_live": 0.7258,   # #861
-                    "avg_min": 0.65,
+    assert args == {"blocking_average": 0.7258, "avg_min": 0.65,
                     "avg_stable_rounds": 2, "coverage_ok": True,
                     "app_dead": False}, args
 
@@ -188,8 +177,7 @@ def test_args_helper_coverage_ok_requires_a_blocking_screen():
 def test_args_helper_safe_when_no_last_result():
     g = VisualFidelityGate(None)
     assert _visual_fast_release_args(g) == {
-        "blocking_average": None, "blocking_average_live": None,   # #861
-        "avg_min": None,
+        "blocking_average": None, "avg_min": None,
         "avg_stable_rounds": 0, "coverage_ok": False,
         "app_dead": False}      # #750: a fresh gate has never seen a blackout
 
@@ -198,8 +186,7 @@ def test_end_to_end_gate_state_fast_releases():
     # the exact plumbing the deliver block uses: gate.last_result + gate.avg_pass_rounds →
     # _visual_fast_release_args → _visual_release_decision → fast_release.
     g = _gate_with(
-        {"blocking_average": 0.7258, "blocking_average_live": 0.7258,   # #861
-         "min_similarity": 0.65,
+        {"blocking_average": 0.7258, "min_similarity": 0.65,
          "coverage": {"blocking_judged": 4, "unjudged": []}},
         avg_pass_rounds=2)
     d = _visual_release_decision(
@@ -312,24 +299,14 @@ def _run(coro):
         loop.close()
 
 
-def _result(avg, live=None):
+def _result(avg):
     """A judged result that is NOT an all-pass (one blocking screen always lags), so passed
-    stays False — the exact #558 shape — but carries the given gating blocking_average.
-
-    #861: the real verdict has carried `blocking_average_live` unconditionally since #618, so this
-    fixture does too. It defaults to `avg` — i.e. the honest case where the high-water merge and
-    the live capture agree — because that is what these tests are about. The DISAGREEING case is
-    #861's own concern and is covered in `test_fast_release_reads_the_live_score_861`, plus the
-    one case added at the bottom of this file so the interaction is visible from both sides.
-
-    Before this, the fixture omitted the field entirely and every fast-release case here passed
-    while production could fast-release on a number the app never scored."""
+    stays False — the exact #558 shape — but carries the given gating blocking_average."""
     return {
         "passed": False,
         "summary": "test",
         "min_similarity": 0.65,
         "blocking_average": avg,
-        "blocking_average_live": avg if live is None else live,
         "coverage": {"measured": 2, "judged": 2, "blocking_judged": 2, "unjudged": [],
                      "coverage": 1.0},
         "screens": [
@@ -372,21 +349,3 @@ def test_maybe_run_tracks_stable_rounds_and_resets_below_min(tmp_path):
 if __name__ == "__main__":
     import pytest
     raise SystemExit(pytest.main([__file__, "-q"]))
-
-
-def test_an_inflated_merge_does_not_fast_release_861():
-    """#861, asserted from #558's side too: this file is where a future author will look when the
-    fast path stops firing, so the extra condition has to be visible here and not only in its own
-    test file.
-
-    `blocking_average` is #500's high-water merge; `blocking_average_live` is what the capture
-    scored. 5 of the 7 corpus runs recording both had merged >= 0.65 with live < 0.65, r148 among
-    them — the run that released v1.0.0 with the SPA throwing on every route."""
-    from env_generator.llm_generator.multi_agent.orchestrator import (
-        _visual_release_decision as _dec)
-    base = dict(avg_release=True, coverage_ok=True, avg_release_rounds=2, avg_stable_rounds=2,
-                avg_min=0.65, deferred_since=None, now=0.0, escape_s=1e9,
-                total_judgments=0, total_cap=99, attempts=0, attempt_cap=99,
-                plateau_cap=0, plateau_rounds=0, plateau_min_s=0)
-    assert _dec(blocking_average=0.72, blocking_average_live=0.72, **base) == "fast_release"
-    assert _dec(blocking_average=0.72, blocking_average_live=0.59, **base) == "defer"
