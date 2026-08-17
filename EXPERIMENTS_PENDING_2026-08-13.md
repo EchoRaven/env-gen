@@ -12544,3 +12544,64 @@ empty input. Only one was a defect. The discriminator:
 Mis-registered COMPONENTS with blank routes (#243's tiktok r33 class: `top_action_bar`, `explore_card`)
 would get a derived React-Router route. Measured across the corpus: **1 run** (r83, `/profile-menu`).
 Recorded, not fixed.
+
+## 248. ★★★ the ui_flow gate exempted 644 REAL pages and swallowed 24 recorded failures (#905)
+
+Fallout from item 247, following the blank route into the gates. #243 drops a ui_page with a blank
+route from the required flow set because *"a ui_page with NO navigable route is a COMPONENT
+mis-registered as a page"* and *"the browser walk only visits routed pages, so a `validation:ui_flow`
+record can NEVER be produced — requiring one is an UNWINNABLE gate"*.
+
+Both halves are wrong for most of what it hits:
+
+    ui_page records                                 2543
+      carrying route=''                              826   32%, in 100% of runs
+        exempted, path under /components/             26   <- #243's actual class
+        exempted, path under /pages/                 644   <- REAL pages
+    ★ of those 644, a ui_flow record EXISTS for      403   63%; "can never exist" is false
+    ★ ...and is FAILING, but the gate never saw it    24
+
+r116 hid seven at once: landing, login, profiles, browse_home, shows, movies, title_detail.
+
+The records exist because the walk visits **App.jsx's** real routes and keys records by page NAME —
+the registry's empty `route` never enters that path.
+
+★ **Severity comes from the fallback.** `_extract_required_flows` has a contract-derived fallback:
+with no `critical:true` page it treats EVERY declared ui_page as a required flow. This filter runs
+BEFORE it. In r153 that cut the required set from 12 pages to 4.
+
+### the discriminator was already in the record
+
+`path` is overloaded — a route in the kickoff spec shape, a SOURCE FILE in the registry shape — and
+`app/frontend/src/pages/X.jsx` never starts with `/`, so every registry record reaching that branch
+was exempted outright. A file under `src/pages/` is the framework's own page convention.
+
+### why this is not a revert of #243
+
+Measured, both directions: a newly-required flow with no record reads MISSING, which `deliverability`
+already drops on a functionally-validated app (`if ui_validated: … "ui flow(s) missing" not in b`),
+and #489/#240 author the records from a real pre-gate walk. A FAILED record always blocked — it just
+never reached the gate. Corpus recount: required 1872 → 2513 of 2543; the 26 components stay exempt.
+
+### ★ what this says about #883
+
+#883's vacuous-gate scan **does** cover `flow_coverage.py` and rates its 5 empty-defaults *fail-closed
+— "empty => nothing covered"*. That reading is right and still misses this: a coverage gate has **two
+empty sets with opposite polarity**. An empty COVERED set fails closed; an empty REQUIRED set fails
+OPEN. #883 scans for `x = []` defaults, and a required set is not emptied by a default here — it is
+emptied by a FILTER, which that scan cannot see.
+
+A sweep for comprehensions that shrink a required/expected-looking set in the 12 gate modules found
+**3**: `delivery_gate:1926` (selection, not a gate), `flow_coverage:260` (this one), and
+`frontend_audit:1114` — the same predicate open-coded a third time, carrying the claim *"A genuinely
+declared page always carries a '/'-anchored route"*, which the 644 refute. Measured: including those
+pages in the frontend audit produces **1** hard blocker across 153 runs, and it is TRUE (r112,
+`NotFoundPage` component genuinely absent). Zero false positives.
+
+### ★ a retraction on the way
+
+I claimed the required set was empty in 100% of runs (no page is ever marked `critical`, no
+`user_flows` are ever critical — both true, 0 of 2543 and 0 of 153). The claim was wrong: I had read
+only a fragment of `_extract_required_flows` and missed the contract-derived fallback below it. What
+refuted it was an **artifact** — an r132 event listing 12 tracked pages and 4 missing. Reading half a
+function and generalising from the half is the same error as reading half a record.

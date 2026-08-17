@@ -120,12 +120,49 @@ def _is_navigable_page(page: Any) -> bool:
     ``validation:ui_flow`` record can ever exist for them and the coverage gate
     is unwinnable. Conservative: only reject when a route/path key is PRESENT
     and is not a ``/``-rooted path — an entry with NO route key at all is an
-    older spec shape and stays required (we can't prove it is a component)."""
+    older spec shape and stays required (we can't prove it is a component).
+
+    ★ #905: that premise is FALSE for most of what this actually exempts. Blank routes are not
+    rare and they are not mostly components — `register_ui_page(route: str = "")` defaults to
+    empty, and **826 of the 2543 page records across the 153-run corpus (32%, in 100% of runs)
+    carry one**. Split by where their file lives:
+
+        exempted, path under /pages/       644     REAL pages whose route was never recorded
+        exempted, path under /components/   26     #243's actual class
+        ★ of those 644, records EXIST for  403     the walk visits App.jsx's real routes and
+                                                   keys records by NAME, so "can NEVER exist"
+                                                   is wrong for 63% of them
+        ★ ...and are FAILING, but ignored   24     r116 alone hid 7: landing, login, profiles,
+                                                   browse_home, shows, movies, title_detail
+
+    So the exemption removed real, *validatable* pages from the required set and swallowed 24
+    recorded failures. It is also load-bearing in the other direction now: `_extract_required_flows`
+    falls back to "every declared ui_page is a flow", and this filter runs BEFORE that — in r153
+    it cut the required set from 12 pages to 4.
+
+    Keep #243's exemption for its real class and use the discriminator that is already in the
+    record: a `path` under ``src/pages/`` is the framework's own page convention (the scaffolder
+    writes there; `_project_page_component` tests ``"/pages/" in rel``). A component file is not a
+    page; a page file with no route is a page whose route nobody wrote down.
+
+    Safe in both directions: a newly-required flow with no record reads as MISSING, which
+    `deliverability` already suppresses on a functionally-validated app (and #489/#240 author the
+    records from a real browser walk pre-gate); a FAILED record always blocked and now actually
+    reaches the gate."""
     if not isinstance(page, Mapping):
         return True
+    _src = str(page.get("path") or "").replace("\\", "/")
+    _is_page_file = "/pages/" in _src
     for key in ("route", "path"):
         if key in page:
-            return str(page.get(key) or "").strip().startswith("/")
+            val = str(page.get(key) or "").strip()
+            if val.startswith("/"):
+                return True
+            # no usable route on this entry — a real page file still has to be walked.
+            # (``path`` is overloaded: a route in the kickoff spec shape, a SOURCE FILE in the
+            # registry shape. `app/frontend/src/pages/X.jsx` never starts with '/', so before
+            # #905 every registry record that reached this branch was exempted outright.)
+            return _is_page_file
     return True
 
 
