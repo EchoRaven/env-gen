@@ -340,7 +340,19 @@ def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
     apis = [a for a in (_norm_api(x) for x in (page.get("apis_used") or []))
             if a]
 
-    if _src_cache is None:
+    # #907: `if not _src_cache`, not `is None`. Passed a dict, this function trusts it as the WHOLE
+    # source tree — `_src_cache.get(str(canonical))` is the only place it looks for a component — so
+    # an EMPTY dict does not mean "nothing cached yet", it means "there are no source files", and
+    # every page audits as unusable. All four real call sites fill the cache first, so nothing in
+    # the framework was wrong; a measurement of mine passed `_src_cache={}` and produced a confident
+    # false blocker that reached a commit message (item 251). The tell was that the same record
+    # returned ok=True without the argument and ok=False with it — a result that changes when you
+    # add an "optional" argument is the argument saying it is not optional.
+    #
+    # Falling back to the walk on an empty dict costs one rglob in the only case where the old
+    # behaviour was a silent lie; a genuinely empty tree still yields an empty cache and the same
+    # verdict. Callers that pass a POPULATED cache are byte-identical.
+    if not _src_cache:
         _src_cache = {}
         for f in list(frontend_src.rglob("*.jsx")) + list(frontend_src.rglob("*.js")):
             try:
@@ -1112,8 +1124,9 @@ def ui_page_delivery_blockers(frontend_src: Any, workhub: Any) -> List[str]:
             # runs are real pages under `src/pages/` with no route** (#905). They were skipped
             # here too, so "declared but unusable" never looked at them. Use the shared test:
             # a component file stays skipped (#47's class, and #243's), a page file does not.
-            # Measured before changing: including them yields ONE hard blocker in 153 runs, and
-            # it is true (r112, `NotFoundPage` genuinely absent) — no false positives.
+            # Measured before changing: including them yields ZERO hard blockers across 153 runs
+            # (the first measurement said one; it was an artifact of handing `audit_ui_page` an
+            # EMPTY `_src_cache`, which that function treats as the whole tree — item 251).
             if not isinstance(page, dict) or not _is_navigable_page(page):
                 continue
             _ok, missing = audit_ui_page(src, page, _src_cache=cache)

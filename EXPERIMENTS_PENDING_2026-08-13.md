@@ -12595,8 +12595,8 @@ A sweep for comprehensions that shrink a required/expected-looking set in the 12
 **3**: `delivery_gate:1926` (selection, not a gate), `flow_coverage:260` (this one), and
 `frontend_audit:1114` — the same predicate open-coded a third time, carrying the claim *"A genuinely
 declared page always carries a '/'-anchored route"*, which the 643 refute. Measured: including those
-pages in the frontend audit produces **1** hard blocker across 153 runs, and it is TRUE (r112,
-`NotFoundPage` component genuinely absent). Zero false positives.
+pages in the frontend audit produces **0** hard blockers across 153 runs (item 251 corrects an
+earlier count of one).
 
 ### ★ a retraction on the way
 
@@ -12613,8 +12613,8 @@ function and generalising from the half is the same error as reading half a reco
 genuinely-declared page always carries a '/'-anchored route"* that item 248's 644 records refute. Both
 now call the shared `_is_navigable_page`.
 
-Measured before changing it: including those pages yields **1** hard blocker across 153 runs, and it
-is true (r112, `NotFoundPage` genuinely absent at `src/pages/NotFoundPage.jsx`). No false positives.
+Measured before changing it (see item 251 — the first measurement was wrong): including those pages
+yields **0** hard blockers across 153 runs. The change adds no blocker on any delivered tree.
 The map half is not measurable on this corpus — netflix has no map surfaces — which is the argument
 for sharing rather than fixing one copy.
 
@@ -12662,3 +12662,40 @@ asking what could possibly be true in every single run. **A denominator that inc
 the counting version of the field-location error**: the container's own metadata read as one of the
 things it contains. Corrected in item 247, item 248, `flow_coverage`'s docstring, the #902/#905 test
 files and the memory note.
+
+## 251. ★ an EMPTY cache handed to a function that treats the cache as the world (corrects 249)
+
+Item 249 reported that widening the frontend audit (#906) would produce **one** hard blocker across
+153 runs, *"and it is TRUE — r112, `NotFoundPage` genuinely absent"*. Both halves are wrong. The file
+exists, the record is `status: implemented`, `route: "*"`, and App.jsx really does carry
+`<Route path="*" element={<NotFoundPage />`. Re-measured correctly: **0 hard blockers.**
+
+The probe called `audit_ui_page(src, page, _src_cache=cache)` with a `cache` I created and never
+filled. And:
+
+    if _src_cache is None:
+        _src_cache = {}
+        _src_cache[str(f)] = f.read_text(...)     # walks the tree
+    ...
+    comp_file_text = _src_cache.get(str(canonical))
+
+★ The function populates the cache **only when the caller passes None**. Passed a dict, it trusts it
+completely — so an EMPTY dict does not mean "nothing cached yet", it means **"the source tree is
+empty"**, and every component reads as absent. The real caller (`sync_ui_page_statuses`) fills the
+cache from its own walk first, so the framework is correct; only the measurement was not.
+
+The tell was available and I walked past it: the same record returned `ok=True` when I called
+`audit_ui_page(src, rec)` and `ok=False` when I called `audit_ui_page(src, rec, _src_cache={})`. **A
+result that changes when you add an "optional" argument is the argument telling you it is not
+optional.**
+
+★ This is the fifth instrument failure in this one investigation (the others: counting blank-route
+screens as root screens; simulating a filter by deleting the record and emptying a second set derived
+from it; a regex that missed JSON's escaped quotes and reported 0 of 2380 lines; `_meta` counted as a
+page record — item 250). Every one produced a confident number. Four were caught before they reached
+a commit; **this one and item 250's did not** — 249's write-up and the #906 commit message both assert
+the false blocker. Corrected here, in `frontend_audit`'s comment, and in the #905 test file.
+
+What #906 is actually worth, restated: it removes a third and fourth copy of a predicate whose premise
+#905 disproved, and it closes the fake-map check's blind spot for route-less map surfaces. It fixes no
+observed blocker. That is a smaller claim, and it is the true one.

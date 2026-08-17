@@ -111,8 +111,9 @@ def test_the_frontend_audit_shares_the_predicate_rather_than_copying_it():
     *"A genuinely-declared page always carries a '/'-anchored route"* — which the 643 refute. Two
     copies of one concept drift; this asserts there is one.
 
-    Measured before the change: including those pages in the audit yields ONE hard blocker across
-    153 runs, and it is true (r112, `NotFoundPage` genuinely absent). No false positives."""
+    Measured before the change: including those pages in the audit yields ZERO hard blockers across
+    153 runs. (The first measurement said one — an artifact of passing an EMPTY `_src_cache`, which
+    `audit_ui_page` treats as the entire source tree.)"""
     from env_generator.llm_generator.multi_agent.runtime import frontend_audit as fa
     assert fa._is_navigable_page is _is_navigable_page
     src = inspect.getsource(fa.ui_page_delivery_blockers)
@@ -149,3 +150,49 @@ def test_missing_is_suppressed_on_a_validated_app():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --------------------------------------------------------------------------- #907
+
+def test_an_empty_source_cache_is_not_read_as_an_empty_tree():
+    """★ #907. `audit_ui_page` treats a passed `_src_cache` as the WHOLE source tree, so an empty
+    dict used to mean "there are no source files" and every component audited as absent. All four
+    real call sites populate it first — nothing in the framework was wrong — but the shape produced
+    a confident false blocker in a measurement of mine that reached a commit message (item 251).
+
+    Driven against a real tree so it fails if the fallback is ever narrowed back to `is None`."""
+    import tempfile
+    from pathlib import Path
+    from env_generator.llm_generator.multi_agent.runtime import frontend_audit as fa
+
+    src = Path(tempfile.mkdtemp()) / "src"
+    (src / "pages").mkdir(parents=True)
+    (src / "App.jsx").write_text(
+        '<Routes><Route path="/x" element={<XPage />} /></Routes>', encoding="utf-8")
+    (src / "pages" / "XPage.jsx").write_text(
+        "export default function XPage(){ return <div onClick={()=>{}}>x</div> }", encoding="utf-8")
+    page = {"name": "x_page", "route": "/x", "component": "XPage", "apis_used": [],
+            "path": "app/frontend/src/pages/XPage.jsx"}
+
+    none_ok, _ = fa.audit_ui_page(src, page)                      # populates internally
+    empty_ok, empty_missing = fa.audit_ui_page(src, page, _src_cache={})
+    assert none_ok == empty_ok, (none_ok, empty_ok, empty_missing)
+    assert not any("not found" in m for m in empty_missing), empty_missing
+
+
+def test_a_populated_cache_is_still_trusted_verbatim():
+    """Non-regression: the fallback must not re-walk when the caller has already done it — that is
+    the entire point of the parameter, and `sync_ui_page_statuses` calls it once per page."""
+    import tempfile
+    from pathlib import Path
+    from env_generator.llm_generator.multi_agent.runtime import frontend_audit as fa
+
+    src = Path(tempfile.mkdtemp()) / "src"
+    (src / "pages").mkdir(parents=True)
+    (src / "App.jsx").write_text("nothing here", encoding="utf-8")
+    cache = {str(src / "App.jsx"): '<Route path="/x" element={<XPage />} />',
+             str(src / "pages" / "XPage.jsx"): "export default function XPage(){return <div/>}"}
+    before = dict(cache)
+    fa.audit_ui_page(src, {"name": "x", "route": "/x", "component": "XPage", "apis_used": []},
+                     _src_cache=cache)
+    assert cache == before, "a populated cache must not be refilled from disk"
