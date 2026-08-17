@@ -12911,3 +12911,40 @@ like.
 
 Also retracted on the way: the same metric first counted merge bookkeeping as re-authoring. Checking
 content hashes (not line counts) is what turned a suspicion into the exact two-state cycle above.
+
+## 256. #905b — `/pages/` was the wrong half of the question, and it left the LOGIN page exempt
+
+Chasing the self-flagged leftover from item 247 ("mis-registered COMPONENTS with blank routes …
+recorded, not fixed") turned up the opposite of what it promised. Thirty corpus records have a
+`path` pointing into `components/`. They are not mostly components:
+
+    x18  login_page  | (no component)          ← the LOGIN page
+    x3   login_page  | LoginPage
+    x1   login       | LoginPage
+    ------------------------------------------  22 real pages, filed under components/
+    x4   tenant_picker      x1 netflix_top_nav
+    x1   search_overlay     x1 profile_menu     x1 footer
+    ------------------------------------------   8 real components (#243's class)
+
+#905's discriminator was *"is the file under `src/pages/`"* — a question about **where the file
+lives**, when the one that matters is **whether the record is a page**. So all 22 stayed exempt from
+the ui_flow gate, including 21 login pages. (#905 did not cause this — they were exempt before it
+too — but the fix was aimed one inch off.)
+
+The record's own name separates the classes perfectly on the corpus: nothing page-named is a
+component, nothing component-named is a page. #905b tests the SUFFIX (`PageHeader` is not rescued —
+anchoring on a bare substring is how this session's self-matches happened) and keys off the same
+vocabulary as the rest of the predicate.
+
+### ★ 29 of 30 also produced a SHADOW file
+
+Twenty-nine of those records have a same-named file under **both** `components/` and `pages/`, and
+28 got their own React-Router route. r153 is one: `components/LoginPage.jsx` (the lane's, orphaned —
+it is in #909's list) and `pages/LoginPage.jsx` (the framework's 72-line inline form, routed). Two
+files, one name, one of them unreachable. That is the same #910b oscillation seen from the
+filesystem instead of the git log, and it is why the lane's `AuthShell`/`AuthForm` never ship.
+
+★ The item this started from — *"a mis-registered component gets its own route: 1 run (r83,
+/profile-menu)"* — was correctly sized and correctly left alone. What was worth finding sat next to
+it under the same query, and the earlier pass walked past it because it went looking for the thing
+it had already named.

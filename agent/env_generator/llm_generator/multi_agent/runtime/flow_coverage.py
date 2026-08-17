@@ -152,7 +152,21 @@ def _is_navigable_page(page: Any) -> bool:
     if not isinstance(page, Mapping):
         return True
     _src = str(page.get("path") or "").replace("\\", "/")
-    _is_page_file = "/pages/" in _src
+    # ★ #905b: `/pages/` was the wrong half of the question. It asks WHERE THE FILE IS; what
+    # matters is WHETHER THE RECORD IS A PAGE. Of the 30 records whose path points into
+    # `components/`, **22 are `login_page`** (component `LoginPage`) — the login page, which the
+    # lane simply filed under components/ — and #905 left every one of them exempt from the flow
+    # gate. The name separates the two classes perfectly on the corpus:
+    #
+    #     rescued by the name (22)   login_page, login  →  LoginPage
+    #     still exempt        (8)    tenant_picker, netflix_top_nav, search_overlay,
+    #                                profile_menu, footer          ← #243's real class
+    #
+    # Keyed off the record's own vocabulary, like the rest of this predicate: a thing that calls
+    # itself a page is a page wherever its file lives.
+    _name_909 = f"{page.get('name') or ''}|{page.get('component') or ''}".lower()
+    _is_page_file = "/pages/" in _src or _name_909.replace("_", "").rstrip("|").endswith("page") \
+        or any(p.endswith("page") for p in _name_909.replace("_", "").split("|") if p)
     for key in ("route", "path"):
         if key in page:
             val = str(page.get(key) or "").strip()

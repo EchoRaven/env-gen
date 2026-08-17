@@ -148,9 +148,6 @@ def test_missing_is_suppressed_on_a_validated_app():
     assert '"ui flow(s) missing" not in b.lower()' in src
 
 
-if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(pytest.main([__file__, "-q"]))
-
 
 # --------------------------------------------------------------------------- #907
 
@@ -196,3 +193,43 @@ def test_a_populated_cache_is_still_trusted_verbatim():
     fa.audit_ui_page(src, {"name": "x", "route": "/x", "component": "XPage", "apis_used": []},
                      _src_cache=cache)
     assert cache == before, "a populated cache must not be refilled from disk"
+
+# --------------------------------------------------------------------------- #905b
+
+def test_a_page_the_lane_filed_under_components_is_still_required():
+    """★ #905b. `/pages/` was the wrong half of the question — it asks WHERE THE FILE IS, and what
+    matters is WHETHER THE RECORD IS A PAGE.
+
+    Of the 30 corpus records whose path points into `components/`, **22 are `login_page`** with
+    component `LoginPage`: the login page, which the lane simply filed under components/. #905 left
+    every one of them exempt from the flow gate — arguably the single page most worth gating."""
+    assert _is_navigable_page(
+        {"name": "login_page", "route": "",
+         "path": "app/frontend/src/components/LoginPage.jsx"}) is True
+    assert _is_navigable_page(
+        {"name": "login", "component": "LoginPage", "route": "",
+         "path": "app/frontend/src/components/LoginPage.jsx"}) is True
+
+
+def test_the_real_component_class_stays_exempt():
+    """The other 8, and #243's tiktok class. The name is what separates them, and it separates
+    them perfectly on the corpus — no `/components/` record is both page-named and a component."""
+    for nm, comp in (("tenant_picker", "TenantPicker"), ("netflix_top_nav", "NetflixTopNav"),
+                     ("search_overlay", "SearchOverlay"), ("profile_menu", "ProfileMenu"),
+                     ("footer", "Footer"), ("top_action_bar", "TopActionBar"),
+                     ("explore_card", "ExploreCard"), ("video_grid", "VideoGrid")):
+        rec = {"name": nm, "component": comp, "route": "",
+               "path": f"app/frontend/src/components/{comp}.jsx"}
+        assert _is_navigable_page(rec) is False, nm
+
+
+def test_a_component_whose_name_merely_contains_page_is_not_rescued():
+    """`PageHeader` is a component that starts with the word; the test is the SUFFIX, so it stays
+    exempt. Anchoring on a bare substring is how this session's self-matches happened."""
+    assert _is_navigable_page(
+        {"name": "page_header", "component": "PageHeader", "route": "",
+         "path": "app/frontend/src/components/PageHeader.jsx"}) is False
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(pytest.main([__file__, "-q"]))
