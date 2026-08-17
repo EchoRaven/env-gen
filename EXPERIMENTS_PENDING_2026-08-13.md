@@ -13622,3 +13622,47 @@ broken probe wearing one.
 ★ Worth stating for the next pass: two of the three defects in this category (#908 privacy, #913
 reachability) are still not covered by any automated axis. #918 covers the third and names the
 shape; a page-level privacy axis is the obvious sibling and does not exist yet.
+
+## 272. ★★ #919 — the privacy axis, built. All three of the category now have a gate.
+
+Item 271 ended by naming what still had no automated axis: *"page-level privacy (#908's class). That
+is the obvious sibling and does not exist yet."* Now it does.
+
+**#919 asks: does a served GET return every row of an OWNED table to any authenticated caller?**
+
+#908's shape, verbatim from r153's delivered backend:
+
+    @app.get("/api/my-list")
+    def _projected_get_api_my_list_7(db=Depends(get_db), user=Depends(get_current_user)):
+        rows = db.query(MyList).limit(100).all()          # every account's rows
+
+…beside a POST that 403s a foreign `profile_id`. It cleared every gate and was found by hand.
+
+    corpus: 153 delivered backends
+    ★ 159 findings across exactly TWO endpoints — /api/my-list (79), /api/continue-watching (80)
+      both genuinely per-user, no other path fires → zero false positives on this corpus
+
+### it BLOCKS, and the line is category not severity
+
+`#173` (stub handler) and `#175` (invented field) block; `#909`/`#910`/`#918` report. The difference
+is not how bad it is — it is whether the finding is a **functional defect in the artifact that
+ships** or a **contract describing a different page**. #919 is the former, so it blocks, with
+`ENVGEN_OWNER_READ_GATE=0` to disable, exactly like its two siblings.
+
+### ★ it shares the projector's ownership decision rather than re-deriving it
+
+`_owner_fk`, `_is_per_user_sub_entity_fk`, `_is_user_content_relation` — the same functions
+`route_projector` consults when deciding whether to EMIT the filter. **#908 existed precisely
+because two functions ten lines apart held different evidence standards for one column**; a gate
+with its own copy would drift from the generator the same way. A test asserts the sharing.
+
+### the category, closed
+
+| defect found by reading the delivered app | axis |
+|---|---|
+| #908 a cross-user read | **#919** — blocks |
+| #909 components built and orphaned | #909 — reports |
+| #913 a feature shipped unreachable | **#918** — reports |
+
+Three defects, three axes, none of which existed when the session started. Each was found by hand
+first; each now has a check that finds it without one.

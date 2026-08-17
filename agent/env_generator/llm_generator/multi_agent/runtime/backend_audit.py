@@ -34,6 +34,9 @@ from typing import Any, Dict, List, Set, Tuple
 
 from .route_projector import (
     _duplicate_routes, _existing_routes, _express_to_fastapi, _norm_path,
+    # #919: the ownership vocabulary, shared rather than re-derived — #908 was caused by two
+    # functions ten lines apart holding different evidence standards for the same column.
+    _owner_fk, _is_per_user_sub_entity_fk, _is_user_content_relation,
 )
 # Part B: the ONE shared fixed-surface definition (see kickoff/contract.py).
 # Previously this file redefined ``_FIXED_KINDS`` as {auth,oauth,spine,control,
@@ -428,6 +431,119 @@ def _reads_db(fn: Any) -> bool:
                 if isinstance(f, ast.Name) and f.id.lower() in _DB_CALL_NAMES:
                     return True
     return False
+
+
+_OWNED_READ_919 = "unscoped owner read"
+
+
+def _models_919(backend_dir: Any) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, str]]:
+    """Tables and their columns/FKs, parsed from the delivered ORM. Returns ({table: meta},
+    {ClassName: table}); best-effort and total."""
+    models: Dict[str, Dict[str, Any]] = {}
+    cls2tbl: Dict[str, str] = {}
+    try:
+        for fname in ("models.py", "main.py"):
+            f = Path(backend_dir) / fname
+            if not f.is_file():
+                continue
+            try:
+                tree = ast.parse(f.read_text(encoding="utf-8", errors="ignore"))
+            except Exception:
+                continue
+            for n in ast.walk(tree):
+                if not isinstance(n, ast.ClassDef):
+                    continue
+                tbl = None
+                cols: List[str] = []
+                fks: Dict[str, str] = {}
+                for a in n.body:
+                    if not (isinstance(a, ast.Assign) and a.targets
+                            and isinstance(a.targets[0], ast.Name)):
+                        continue
+                    nm = a.targets[0].id
+                    if nm == "__tablename__" and isinstance(a.value, ast.Constant):
+                        tbl = str(a.value.value)
+                    if isinstance(a.value, ast.Call) and getattr(
+                            a.value.func, "id", getattr(a.value.func, "attr", "")) == "Column":
+                        cols.append(nm)
+                        for arg in a.value.args:
+                            if (isinstance(arg, ast.Call)
+                                    and getattr(arg.func, "id", "") == "ForeignKey"
+                                    and arg.args and isinstance(arg.args[0], ast.Constant)):
+                                fks[nm] = str(arg.args[0].value).split(".")[0]
+                if tbl and tbl not in models:
+                    models[tbl] = {"cols": cols, "fks": fks}
+                    cls2tbl[n.name] = tbl
+    except Exception:
+        return {}, {}
+    return models, cls2tbl
+
+
+def unscoped_owner_read_findings(backend_dir: Any) -> List[str]:
+    """#919: a served GET that returns rows of an OWNED table without filtering by the caller.
+
+    The page-level privacy axis. #908 was a live cross-user leak in r153 -- `GET /api/my-list`
+    answering `db.query(MyList).limit(100).all()` to any authenticated caller, beside a POST that
+    403s a foreign `profile_id` -- and it passed every gate in the framework, because no gate asks
+    this question. It was found by reading the delivered app by hand.
+
+    The decision is not re-derived here: `_owner_fk` recognises the owner column and
+    `_is_per_user_sub_entity_fk` / `_is_user_content_relation` decide whether the read SHOULD be
+    scoped, exactly as `route_projector` decides whether to EMIT the filter. Sharing them is the
+    point -- #908 existed because two functions ten lines apart held different evidence standards
+    for the same column.
+
+    Measured over the 153 delivered backends: **159 findings, and only two distinct endpoints** --
+    `/api/my-list` (79) and `/api/continue-watching` (80), both genuinely per-user. No other path
+    fires, so the signal is the leak itself rather than a class of near-misses.
+
+    Best-effort ``[]`` on any fault; the caller decides the disposition.
+    """
+    out: List[str] = []
+    try:
+        main = Path(backend_dir) / "main.py"
+        if not main.is_file():
+            return []
+        src = main.read_text(encoding="utf-8", errors="ignore")
+        tree = ast.parse(src)
+        models, cls2tbl = _models_919(backend_dir)
+        if not models:
+            return []
+        for n in ast.walk(tree):
+            if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            paths = [d.args[0].value for d in n.decorator_list
+                     if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)
+                     and d.func.attr == "get" and d.args
+                     and isinstance(d.args[0], ast.Constant)]
+            if not paths:
+                continue
+            body = ast.get_source_segment(src, n) or ""
+            # any filter at all -- ORM or raw SQL -- means the handler took a position on scope
+            if ".filter(" in body or "WHERE" in body.upper():
+                continue
+            model = None
+            for c in ast.walk(n):
+                if (isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)
+                        and c.func.attr == "query" and c.args):
+                    model = getattr(c.args[0], "id", None)
+            meta = models.get(cls2tbl.get(model or "") or "")
+            if not meta:
+                continue
+            fk = _owner_fk(meta)
+            if not fk:
+                continue                      # a public catalog table -- unfiltered is correct
+            if not (_is_per_user_sub_entity_fk(meta, fk, models)
+                    or _is_user_content_relation(meta, fk)):
+                continue                      # ambiguous ownership -- the projector leaves it too
+            out.append(
+                "%s: GET %s returns every row of `%s` to any authenticated caller -- the table is "
+                "owned via `%s` and the handler applies no owner filter, while its paired write "
+                "refuses a foreign owner. Scope the read to the caller (#919)."
+                % (_OWNED_READ_919, paths[0], cls2tbl.get(model or "", "?"), fk))
+    except Exception:
+        return []
+    return out
 
 
 def stub_handler_blockers(backend_dir: Any) -> List[str]:

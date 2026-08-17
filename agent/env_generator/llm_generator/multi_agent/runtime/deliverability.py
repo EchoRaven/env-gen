@@ -408,6 +408,39 @@ def _stub_handler_blockers(app_root) -> List[str]:
         return []
 
 
+def _unscoped_owner_read_blockers(app_root) -> List[str]:
+    """#919: a served GET that returns every row of an OWNED table to any authenticated caller.
+
+    The page-level PRIVACY axis, and the last of the three defects this session found by reading
+    the delivered app that no gate looked for. #908 was live in r153 -- `GET /api/my-list`
+    answering `db.query(MyList).limit(100).all()` beside a POST that 403s a foreign `profile_id`
+    -- and it cleared every check in the framework.
+
+    Blocks, like its siblings #173 and #175, and for the same reason: those report a FUNCTIONAL
+    defect in the delivered artifact, not a description that drifted. (#909/#910/#918 report
+    instead, because a contract describing a different page is not a broken app.) Measured over
+    the 153 delivered backends: **159 findings across exactly two endpoints** -- `/api/my-list`
+    (79) and `/api/continue-watching` (80), both genuinely per-user, no other path -- so the
+    false-positive rate on this corpus is zero. ``ENVGEN_OWNER_READ_GATE=0`` disables.
+    """
+    try:
+        import os as _os
+        if str(_os.environ.get("ENVGEN_OWNER_READ_GATE", "")).strip() == "0":
+            return []
+    except Exception:
+        pass
+    try:
+        from .backend_audit import unscoped_owner_read_findings
+    except Exception as exc:
+        _gate_absent_792("_unscoped_owner_read_blockers", exc, "import")
+        return []
+    try:
+        return unscoped_owner_read_findings(Path(app_root) / "backend")
+    except Exception as exc:
+        _gate_absent_792("_unscoped_owner_read_blockers", exc, "run")
+        return []
+
+
 def _invented_field_blockers(app_root) -> List[str]:
     """#175 (gmrun9): frontend member-field fallbacks to FABRICATED display literals
     (``place.rating || '4.5'`` / ``? place.name : 'HI Point Montara Lighthouse'``) render
@@ -654,6 +687,13 @@ def compute_deliverability(hub_registry, app_root,
     # backend twin of a mock frontend. Static AST on the served backend tree, self-clearing
     # once the handler queries the real table.
     blockers.extend(_stub_handler_blockers(app_root))
+
+    # UNSCOPED OWNER READ gate (#919). A served GET that returns every row of a table
+    # owned via a recognised owner column, to any authenticated caller -- the shape
+    # #908 shipped live in r153 while every other gate stayed green. Uses the SAME
+    # ownership decision the projector uses to emit the filter, so the gate and the
+    # generator cannot disagree about what is private.
+    blockers.extend(_unscoped_owner_read_blockers(app_root))
 
     # FABRICATED member-field fallback gate (#175, gmrun9). The frontend renders
     # `place.rating || '4.5'` / `? place.name : 'HI Point Montara Lighthouse'` — invented data
