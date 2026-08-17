@@ -140,9 +140,26 @@ def test_the_persisted_passed_is_the_optimistic_one():
 
 def test_the_live_field_is_built_from_results_not_merged():
     """rounds.jsonl's `live` is the one per-screen field that IS current."""
+    # ★ #923: read the comprehension, do not slice to a brace. This was
+    # `src[i:src.index("}", i) + 200]` — a slice to the first closing brace, with a `+ 200` fudge
+    # that was itself the admission the brace lands in the wrong place (the value IS a dict
+    # comprehension, so its own `}` closes before the generator is read). The AST asks the actual
+    # question: is `live` built by iterating `results`?
+    import ast
     src = inspect.getsource(vf)
-    i = src.index('"live": {str(s.get("name"))')
-    assert "for s in (results or [])" in src[i:src.index("}", i) + 200]
+    for node in ast.walk(ast.parse(src)):
+        if not isinstance(node, ast.Dict):
+            continue
+        for k, v in zip(node.keys, node.values):
+            if not (isinstance(k, ast.Constant) and k.value == "live"):
+                continue
+            assert isinstance(v, ast.DictComp), ast.dump(v)[:120]
+            iters = {getattr(g.iter, "id", None)
+                     or getattr(getattr(g.iter, "left", None), "id", None)
+                     or ast.unparse(g.iter) for g in v.generators}
+            assert any("results" in str(x) for x in iters), iters
+            return
+    raise AssertionError('no dict literal carrying a "live" key found')
 
 
 if __name__ == "__main__":  # pragma: no cover

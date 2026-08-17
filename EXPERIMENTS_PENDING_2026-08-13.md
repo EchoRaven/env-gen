@@ -13844,3 +13844,40 @@ gone. The assertion fired on my own prose, the script aborted before writing eit
 "27 passed" I saw was the two unchanged files. Nineteenth self-match of this session and it is in
 the memory note as a known failure mode — *never anchor on a bare name a write-up may quote*. The
 comment now says what the old anchor was without repeating it, and says why.
+
+## 278. ★ #923 — a guard for the decidable half, and three attempts at the half that is not
+
+Item 277 left the class closed on my say-so. Turning that into a standing check found the leftover
+immediately and then produced three instrument failures in a row — all of them instances of the
+class the check exists to police.
+
+    ★ real leftover, caught on the meta-test's first run
+      test_verdict_key_semantics_720:145
+        src[i:src.index("}", i) + 200]     ← the `+ 200` was itself the admission that the brace
+                                             lands wrong: the value IS a dict comprehension, so
+                                             its own `}` closes before the generator is read
+        now reads the DictComp through the AST and asks whether `live` iterates `results`
+
+    my own instrument, three times
+      v1  regex over the file text     → flagged anchors quoted in neighbours' DOCSTRINGS, and
+                                         compared undecoded literals (`"\nclass "` as two chars)
+      v2  AST, attributed to the FIRST → a test reading two modules had half its anchors checked
+          imported module                against the wrong source
+      v3  AST, attributed per receiver → `src` is reassigned per test in most files, so a
+                                         file-level {var: module} map cannot represent it
+
+Each version reported dozens of "unresolved anchors" and every one I checked was the tool.
+
+★ **So the check ships as half of what I intended, deliberately.** The bare-delimiter sweep needs no
+attribution — the offending call is right there in the AST — and it caught a real defect on its
+first run. Whole-suite anchor RESOLUTION needs flow analysis to attribute a reused variable, and a
+guard that cries wolf is worse than no guard. The three failure modes are recorded in the file so
+the next attempt starts from them.
+
+The risk left uncovered is measured, not assumed: across the last 40 commits four `#NNN:` heading
+lines disappeared, three of them reverts (the code went with them), and the one genuine rewording
+(#891's, by #896) had no test anchored on it.
+
+★ Both new tests carry planted controls — one proves the detector catches a bare-delimiter slice,
+one proves it ignores a docstring that merely describes one. Item 266's rule applied to the tool I
+built to enforce item 266's rule.
