@@ -13347,3 +13347,52 @@ The sweep tripped #792's own guard, which behaved exactly as designed:
 
 An audit that says "I could not run, and my silence is not an all-clear" is the shape this whole
 session has been arguing for, working.
+
+## 266. ★ plant the defect before believing the zero — and the zero I had no right to publish
+
+The deep pass over the path-taking subjects, done the way item 265 said it should be.
+
+### a self-inflicted zero, caught
+
+`_stub_handler_blockers(app_root)` returned `[]` on all 153 delivered trees in my first pass. The
+parameter is named `app_root` and I read it as "the root of the run" — but the body is
+`stub_handler_blockers(Path(app_root) / "backend")`, so it wants `<run>/app`. I had pointed it at
+`<run>/backend`, which does not exist. **The zero was mine, not the corpus's.** Eighth instrument
+failure this session, and the first in the shape of a wrong ARGUMENT rather than a wrong field.
+
+Re-driven correctly: still **0 of 153** — but now for a reason, because of what follows.
+
+### ★ the technique: prove the detector can see the thing it exists for
+
+    planted:  @router.get("/api/transit/{id}/departures")
+              def departures(id): return {"items": []}          # #173's own gmrun9 case
+
+    detected: "backend handler `departures` (custom_routes.py) is a PLACEHOLDER STUB — the served
+               handler … returns a hardcoded empty/mock collection with NO database query …"
+
+Now the zero means something: the delivered apps are genuinely clean on this axis, and the check is
+live rather than inert. **A zero from an unvalidated instrument is not a measurement**, and this
+session has produced several. Retro-validating the ones that mattered:
+
+    invented_field_fallback_blockers   11 hits on the corpus            → live, proven by data
+    _stub_handler_blockers             planted stub caught              → live, proven by planting
+    #909 component drift               14 reports on r153               → live
+    #913b dead route                   fires on r153                    → live
+    #912 concatenated api reference    98 real misses survive           → live
+    item 265's fail-open sweep         planted fail-open flagged on
+                                       all 5 inputs; safe fn not        → NOW trustworthy
+    item 258 "0 wrong-copy imports"    planted a `../widgets/X.jsx`
+                                       import → flagged                 → NOW trustworthy
+    r153 "0 unmatched endpoints"       planted `/api/ghost` → flagged   → NOW trustworthy
+
+★ Everything I reported as a clean zero this session now has either hits proving the instrument or a
+planted defect proving it. That is the standard the next pass should start from, not end at.
+
+### where the deep pass stands
+
+Of the 45 drivable subjects: two driven in depth (#916, one real defect found), one driven over the
+whole corpus with a planted control (`_stub_handler_blockers`, clean), one proven live by its own
+hit rate (`invented_field_fallback_blockers`, 11 runs, none released). `_persist_verdict` accounts
+for five of the remaining entries and is one function — it needs a verdict argument my probe did not
+supply, so its 765 "crashes" were my probe, not the code. The rest are lower-value by construction:
+none of them produces or suppresses a blocker.
