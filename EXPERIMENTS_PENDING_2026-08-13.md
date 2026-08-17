@@ -12011,3 +12011,63 @@ why *static* analysis cannot substitute for it here.
 Recording a discarded instrument on purpose. Items 233 and 236 showed a scan can be wrong and look
 clean; this one shows the other outcome — **a scan that is honestly unsalvageable**, and the value is
 in saying so rather than shipping 88 unvalidated hits as "findings".
+
+
+## 240. #646's "one viewport for the whole pipeline" has four copies and the gate reads none of them
+
+★ **First: #861 is fixed.** The concurrent agent applied item 229's recommendation —
+`and _live_ok` is gone from the fast-release condition and the comment carries the reasoning
+(*"Reverted rather than repaired: emitting the key would make the gate real … redundant, while
+re-opening the calibration question #711 left open"*). The r153 trap is closed.
+
+Re-verifying the other nine defects at HEAD turned up **two more broken imports my scan could not
+see**, and they are worse than the four in item 236.
+
+### the sixth instrument scoping error
+
+Item 236 swept **function-local** relative imports, because #895's instance was function-local.
+**Sweep scoped to the shape of the known example.** These two are module-level:
+
+    visual_fidelity.py:188     try: from ...tools.browser._bootstrap import CANONICAL_VIEWPORT_646 as _CV646
+    test_user_runner.py:35     try: from ...tools.browser._bootstrap import CANONICAL_VIEWPORT_646 as _CV646
+                               except Exception: _CV646 = {"width": 1380, "height": 900}
+                               _VIEWPORT = dict(_CV646)
+
+`multi_agent.runtime` is depth 2 and `level=3`, so **the import always fails and the fallback always
+wins**. Both modules still import fine — the `try` hides it completely.
+
+### ★★ what it costs
+
+    _bootstrap.py:28             CANONICAL_VIEWPORT_646 = {"width": 1380, "height": 900}   ← the source of truth
+    visual_fidelity.py:190       _CV646                 = {"width": 1380, "height": 900}   ← fallback, always used
+    test_user_runner.py:37       _CV646                 = {"width": 1380, "height": 900}   ← fallback, always used
+    test_user_validation.py:510  viewport=                {"width": 1380, "height": 900}   ← a fourth copy, no import at all
+
+**Four copies; three never consult the canonical one.** The only real reader is
+`_manager.py:106`, which uses `from ._bootstrap import` — same package, level 1.
+
+The values agree today, so nothing misbehaves. ★ **The trap is what the canonical constant's own
+comment promises:**
+
+> *"Whether 900 is the RIGHT height is a separate, open question (#644 measured the capture at 1.533
+> against a reference set whose median aspect is 1.7344, and parked the change because the two
+> consumers of that number want opposite corrections). **Making it one constant is what lets that
+> question be answered ONCE.**"*
+
+It is not one constant. **Editing `CANONICAL_VIEWPORT_646` changes `_manager.py` and nothing else** —
+not the visual gate, which is the consumer whose scores the question is about. Whoever finally
+answers #644 will change 900, watch the fidelity scores not move, and draw the wrong conclusion.
+
+★ Same shape as `scaffolder.py:119`'s *"the two cannot drift"* (item 236) and as
+[grep-the-literal-not-the-constant]: **a value duplicated under one NAME is a promise of unity, and
+here the promise is broken by an import that cannot resolve.** The `try/except` is what makes it
+silent — `# pragma: no cover — import-shape safety only` says the author expected the fallback to be
+unreachable.
+
+### tally at HEAD
+
+    fixed:  #861 (by the concurrent agent, from item 229)
+    open:   6 broken relative imports (4 function-local + these 2 module-level; 3 of them kill the
+            browser self-heal, 2 defeat #646's single-source viewport, 1 defeats "cannot drift")
+            semantic_hub_drift + 4 more unfireable gate checks · mark_detail_authored bypass ·
+            up_timeout · start_run(timeout_s) · compress(min_importance)
