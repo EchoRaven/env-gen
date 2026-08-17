@@ -13810,3 +13810,37 @@ longer persisted" before I saw the extractor was at fault rather than the code.
 first sweep over it produced 135 files and no action: **the question is not whether a test reads
 source, it is whether it can still find what it is looking for after the code is reformatted.** An
 anchor on a named string can. A count to the next bracket cannot.
+
+## 277. the anchor class, measured properly — 68 legitimate, 2 fixed
+
+Item 276 closed the bare-delimiter shape and left 155 files "deliberately untouched" on the strength
+of a claim I had not checked: that anchoring on a named string is robust. Checking it splits the
+class cleanly.
+
+    anchors resolving into CODE                                  326
+    anchors resolving ONLY into a COMMENT                          97   across 62 files
+      …of those, used as a SPAN LOCATOR (start of a slice)         70   across 50 files
+        ★ anchored on a `#NNN:` ticket heading                     68   legitimate
+        ★ anchored on PROSE inside the comment                      2   fixed
+
+★ **A `#NNN:` heading is not prose.** It is the ticket's identity, as stable as a function name —
+this session reworded dozens of comment BODIES and never once touched a heading. Rewriting those 68
+would be churn dressed as rigour, so they stay.
+
+The two that were prose:
+
+    #667  span ENDS on a dated audit note   → ends on `hasattr(workhub, "create_task")`
+    #732  span STARTS on a sentence from the very comment it then asserts about
+                                            → starts from the code the rationale precedes
+
+★ The second one is the sharper defect: rewording that comment would break the **locator**, so the
+failure would point at the wrong thing — a test that cannot survive an edit to its own subject
+matter.
+
+### ★ and the edit itself produced the session's signature error, once more
+
+My explanatory comment quoted the old anchor verbatim, while the same patch asserted that string was
+gone. The assertion fired on my own prose, the script aborted before writing either file, and the
+"27 passed" I saw was the two unchanged files. Nineteenth self-match of this session and it is in
+the memory note as a known failure mode — *never anchor on a bare name a write-up may quote*. The
+comment now says what the old anchor was without repeating it, and says why.

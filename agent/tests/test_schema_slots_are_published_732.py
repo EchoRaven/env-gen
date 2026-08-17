@@ -107,8 +107,12 @@ def test_the_two_settled_keys_are_carried_deliberately():
     import inspect
     from env_generator.llm_generator.multi_agent.runtime import registryhub as rh
     src = inspect.getsource(rh)
-    i = src.index("`query` and `headers` are carried alongside")
-    block = " ".join(src[i:src.index("_KNOWN_SCHEMA_KEYS_731 =", i)].replace("#", " ").split())
+    # ★ #922: anchored on the CODE the rationale precedes, not on a sentence inside it. The start
+    # used to be a phrase from the very comment this test reads, so rewording that comment would
+    # break the LOCATOR rather than the assertion — the failure would point at the wrong thing.
+    _end = src.index("_KNOWN_SCHEMA_KEYS_731 =")
+    _start = src.rindex("\n\n", 0, _end)
+    block = " ".join(src[_start:_end].replace("#", " ").split())
     assert "folded into `request` by" in block
     assert "a header selects an actor" in block
 

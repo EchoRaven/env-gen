@@ -29,11 +29,19 @@ import pytest
 from env_generator.llm_generator.multi_agent.agents.runtime import step_runner as sr
 
 
+# ★ #922: bounded by the CODE that follows, not by a DATE written in a comment. The old end
+# anchor was a dated audit note, so rewording one comment would move the span and this file would
+# report the branch as changed when nothing had. `hasattr(workhub, "create_task")` moves only when
+# the behaviour does. (The old anchor is deliberately NOT quoted here: a write-up that repeats a
+# string it also asserts absent is its own false positive — that happened while making this edit.)
+_END_922 = 'hasattr(workhub, "create_task")'
+
+
 def _block():
     """The conflict branch, bounded by the construct that follows it."""
     src = inspect.getsource(sr)
     i = src.index("#667: DEDUPE THE EVENT")
-    return src[i:src.index("May 29 audit fix", i)]
+    return src[i:src.index(_END_922, i)]
 
 
 # --- the gate exists and reuses the task's own signal ----------------------------------------
@@ -70,7 +78,7 @@ def test_a_hub_fault_defaults_to_publishing_not_silence():
 
 def test_the_task_is_still_created_and_still_deduped():
     src = inspect.getsource(sr)
-    i = src.index("May 29 audit fix")
+    i = src.index(_END_922)
     tail = src[i:src.index("assignee=", i)]
     assert "_dup = any(" in tail
     assert "if not _dup:" in tail
@@ -88,7 +96,7 @@ def test_the_event_still_carries_the_routing_payload():
     body = _block()
     src = inspect.getsource(sr)
     i = src.index("#667: DEDUPE THE EVENT")
-    tail = src[i:src.index("May 29 audit fix", i)]
+    tail = src[i:src.index(_END_922, i)]
     assert 'event_type="merge_conflict"' in tail
     assert '"phase": "step_start_pull"' in tail
 
