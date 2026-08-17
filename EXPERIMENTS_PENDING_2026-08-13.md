@@ -12071,3 +12071,58 @@ unreachable.
             browser self-heal, 2 defeat #646's single-source viewport, 1 defeats "cannot drift")
             semantic_hub_drift + 4 more unfireable gate checks · mark_detail_authored bypass ·
             up_timeout · start_run(timeout_s) · compress(min_importance)
+
+
+## 241. APPLY-READY: the six broken relative imports, exact diffs, verified by execution
+
+#861 was fixed because item 229 stated the change precisely enough to apply. Code edits are declined
+to me, so this item does for the six broken imports what that one did: **exact before/after, nothing
+to decide.** All six are `from ...tools.…` inside `multi_agent/runtime/` — package depth 2, `level=3`
+— which CPython rejects (`len(pkg) < level`). Fix is the absolute form the codebase already uses
+(`orchestrator.py:48`: `from progress import (`).
+
+**Verified by execution under the repo venv, not by reading:**
+
+    from tools.browser._bootstrap import CANONICAL_VIEWPORT_646, heal_missing_browser, is_missing_executable
+    from tools.file_tools import FRAMEWORK_SCRATCH_DIRS
+    → CANONICAL_VIEWPORT_646 = {'width': 1380, 'height': 900} · heal_missing_browser = callable
+      FRAMEWORK_SCRATCH_DIRS = ('.agents', '.agent_logs', 'worktrees', '.memory')
+
+### the six
+
+| file:line | replace `...tools` with `tools` |
+|---|---|
+| `runtime/visual_fidelity.py:188` | `    from ...tools.browser._bootstrap import CANONICAL_VIEWPORT_646 as _CV646` |
+| `runtime/visual_fidelity.py:1788` | `            from ...tools.browser._bootstrap import heal_missing_browser` |
+| `runtime/test_user_runner.py:35` | `    from ...tools.browser._bootstrap import CANONICAL_VIEWPORT_646 as _CV646` |
+| `runtime/test_user_runner.py:768` | `            from ...tools.browser._bootstrap import (` *(2-line form; only line 768 changes)* |
+| `runtime/test_user_validation.py:505` | `                from ...tools.browser._bootstrap import heal_missing_browser` |
+| `runtime/scaffolder.py:119` | `        from ...tools.file_tools import FRAMEWORK_SCRATCH_DIRS` |
+
+Indentation is exactly as shown; the edit is `...tools` → `tools` and nothing else.
+
+★ **Do NOT also delete the `try/except` fallbacks.** They become genuinely unreachable safety once the
+imports resolve, which is what their `# pragma: no cover — import-shape safety only` already claims.
+Removing them is a separate judgement and not needed to fix the defect.
+
+### what each one restores
+
+| | effect today | after |
+|---|---|---|
+| `visual_fidelity:1788`, `test_user_runner:768`, `test_user_validation:505` | ★ **#234's browser self-heal has never run.** The import sits **inside** `except Exception as _launch_exc:`, so a missing browser binary raises `ImportError` *from within the handler* and **replaces** the real launch error | the heal runs; the original error survives if it fails |
+| `visual_fidelity:188`, `test_user_runner:35` | ★ **#646's "one viewport for the whole pipeline" is three copies.** Editing `CANONICAL_VIEWPORT_646` moves only `_manager.py` — **not the visual gate**, the consumer whose scores #644's open height question is about | one constant, answerable once |
+| `scaffolder:119` | the docstring's *"the two cannot drift"* is false — two unlinked literals (identical today) | linked, as documented |
+
+### ★ a seventh copy, not an import bug
+
+`test_user_validation.py:510` hardcodes `viewport={"width": 1380, "height": 900}` **inline, with no
+import at all**. Fixing the six leaves this one still detached from `CANONICAL_VIEWPORT_646`. It needs
+`dict(CANONICAL_VIEWPORT_646)` — a real edit, not a mechanical substitution, which is why it is listed
+separately rather than folded into the table above.
+
+### verification after applying
+
+    grep -rn "from \.\.\.tools\." env_generator/llm_generator/multi_agent/runtime/   # → empty
+
+and the calibrated scan of item 236 re-run tree-wide, which must go from 6 to 0 while still flagging
+the reverted #895 line.
