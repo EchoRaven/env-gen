@@ -12763,3 +12763,59 @@ container is not a fact about the world.**
 
 ★ Also worth keeping: this is the one time all session an existing test caught a real defect in my
 change rather than pinning an old one. The suite's guards are not uniformly decorative.
+
+## 253. ★★★ 70% of every component the lanes author is never rendered by any page (#909)
+
+Pulled from #908's thread — auditing the delivered app rather than the framework. r153's registry
+records `browse_home_page` as built from `NetflixHeader + HeroBillboard + PosterRail + PosterCard +
+TitleDetailModal`. The shipped `BrowseHomePage.jsx` imports React and react-router and renders
+**none of them**.
+
+    components authored across 131 runs        1761
+    ★ never reachable from ANY page            1239   70%
+    declared component references in ui_pages  1431
+    ★ reachable from the page the record names  479   33%
+    ★ pages rendering ZERO of their own          246   45%
+
+r153 alone: **28 of 34 components orphaned, 11 of 12 pages render none of what they declare.**
+
+    LandingPage      0/4   HeroCollageBackground, LandingFooter, LandingHeroCTA, LandingTopBar
+    LoginPage        0/4   LoginCard, LoginFooter, NetflixHeader, RegisterForm
+    BrowseHomePage   0/5   HeroBillboard, NetflixHeader, PosterCard, PosterRail, TitleDetailModal
+    PlayerPage       0/4   VideoSurface, PlayerControls, PlayerTitleOverlay, PlayerBackButton
+    LanguagesPage    0/4   LanguageDropdown, NetflixHeader, PosterGrid, RateDialog
+    ProfilesPage     5/5   ← the ONLY compliant page
+
+★ The split is mechanical, not random. Nine of the twelve carry the projector fingerprint
+(`data-projected="ref"`); `LandingPage`/`LoginPage` are the framework's own auth/landing overwrite.
+`ProfilesPage` — the single 5/5 — is the only page **no framework writer touched**. The lane builds
+a component library; a framework page writer replaces the page with generic inline markup; the
+registry goes on describing the page the lane meant to ship.
+
+★ It is also a fidelity story with a number attached: `player_page` declares four components, all
+orphaned, and scored **0.35** — the lowest non-advisory screen in the run.
+
+### the check that existed asked the other question
+
+`sync_ui_page_statuses` already loops over `page["components"]` and verifies each is **implemented**.
+Nobody ever asked whether the page **uses** it. So the whole arrangement stays green: the components
+exist, the page works, the record is a description of something else.
+
+#909 reports the total-miss case only (a page using 3 of 5 is a refactor, not a page that was never
+shipped), out of band in `out["component_drift"]` plus a WARNING —
+
+- **not** folded into `ok`: that would flip 45% of pages to `defined` every tick and churn the lane
+  over a description mismatch;
+- **not** a blocker: re-projecting from the lane's components is a separate decision with its own
+  risk, and #891's rule applies — the run is not wrong here, the record is.
+
+The walk is transitive (a page rendering `<PosterRail/>` uses `PosterCard` too, so a direct-tag
+comparison would invent drift), reads only the already-populated cache, and cannot raise — it runs
+inside the loop that maintains every page's status, and #827's shape wedged r152 from exactly there.
+
+### open, and now visible
+
+Whether the projector SHOULD reuse the lane's components instead of replacing them is the real
+question this exposes. It is a design decision with a fidelity payoff (`player` 0.35) and a
+regression risk (the projector's markup is what the visual gate has been scoring all along), so it
+belongs to the user, not to a silent default. The report is what makes it a decision at all.

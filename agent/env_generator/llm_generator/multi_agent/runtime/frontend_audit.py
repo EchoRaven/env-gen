@@ -330,6 +330,43 @@ def _component_resolves(name: str, frontend_src: Path,
     return bool(re.search(r"(function|const)\s+" + re.escape(name) + r"\b", all_src))
 
 
+_JSX_TAG_909 = re.compile(r"<([A-Z]\w*)")
+
+
+def _rendered_components_909(frontend_src: Path, page: Mapping[str, Any],
+                             src_cache: Dict[str, str]) -> set:
+    """#909: the components a page actually renders, following the tree TRANSITIVELY.
+
+    A page that renders `<PosterRail/>` uses `PosterCard` too, so a direct-tag comparison would
+    report drift that is not there. Reads only the already-populated cache — never touches disk,
+    never raises: this feeds a WARNING inside the loop that maintains every ui_page's status, and
+    an observability call that throws there would take the status sync down with it (#906/#827).
+    """
+    try:
+        by_stem: Dict[str, str] = {}
+        for _fn, _tx in (src_cache or {}).items():
+            try:
+                by_stem.setdefault(Path(_fn).stem, _tx)
+            except Exception:
+                continue
+        _rel = str(page.get("path") or "").replace("\\", "/")
+        _stem = Path(_rel).stem if _rel else str(page.get("component") or "")
+        start = by_stem.get(_stem)
+        if start is None:
+            return set()
+        seen: set = set()
+        stack = list(_JSX_TAG_909.findall(start))
+        while stack:
+            tag = stack.pop()
+            if tag in seen or tag not in by_stem:
+                continue
+            seen.add(tag)
+            stack.extend(_JSX_TAG_909.findall(by_stem[tag]))
+        return seen
+    except Exception:
+        return set()
+
+
 def audit_ui_page(frontend_src: Path, page: Mapping[str, Any],
                   *, _src_cache: Optional[Dict[str, str]] = None,
                   ) -> Tuple[bool, List[str]]:
@@ -1003,6 +1040,41 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
                     ok = False
                     missing = list(missing) + [
                         f"referenced component `{ref}` not implemented yet"]
+            # #909: the rollup above asks whether each declared component EXISTS. Nothing has
+            # ever asked whether the delivered page USES it — and mostly it does not.
+            #
+            #     components authored across 131 runs        1761
+            #     ★ never reachable from ANY page            1239   70%
+            #     declared component references in ui_pages  1431
+            #     ★ reachable from the page the record names  479   33%
+            #     ★ pages rendering ZERO of their own          246   45%
+            #
+            # r153: 28 of 34 components orphaned; 11 of 12 pages render none of what they
+            # declare. `browse_home_page` claims HeroBillboard + PosterRail + PosterCard +
+            # TitleDetailModal and the shipped file imports only React. The lane builds a
+            # component library, a framework page writer (the #221 projector, or the auth/landing
+            # overwrite) replaces the page with generic inline markup, and the registry keeps
+            # describing the page the lane meant to ship. `player_page` — 4 declared components,
+            # all orphaned — scored 0.35 on the visual gate.
+            #
+            # ★ REPORTED, never enforced, and deliberately kept OUT of `ok`: feeding it into
+            # `missing` would flip the page to `defined` on the next tick (#891's rule — the run
+            # is not wrong here, the description is), and re-projecting is a separate decision
+            # with its own risk. This only ends the silence.
+            _decl_909 = [str(c) for c in (page.get("components") or []) if str(c) in comp_status]
+            if _decl_909:
+                _used_909 = _rendered_components_909(frontend_src, page, cache)
+                _orphaned = [c for c in _decl_909 if c not in _used_909]
+                if len(_orphaned) == len(_decl_909):
+                    out.setdefault("component_drift", {})[name] = _orphaned
+                    try:
+                        _LOG_791.warning(
+                            "COMPONENT DRIFT: ui_page `%s` declares %d component(s) and the "
+                            "delivered page renders NONE of them (%s). The contract describes a "
+                            "page that was not shipped (#909).",
+                            name, len(_orphaned), ", ".join(_orphaned[:6]))
+                    except Exception:
+                        pass
             if ok and status != "implemented":
                 workhub.update_ui_page(name, {"status": "implemented"},
                                        agent="orchestrator")
