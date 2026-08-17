@@ -41,6 +41,7 @@ with a bad score, not skipped, and #142 refuses to cache it. **Judged-and-0.0 is
 round; unjudged is not.**
 """
 import asyncio
+import time
 import inspect
 import re
 
@@ -150,9 +151,6 @@ def test_the_other_timeouts_in_the_module_are_not_llm_bounds():
                    for o in others if o != f"timeout=_judge_timeout_s_872")
 
 
-if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(pytest.main([__file__, "-q"]))
-
 
 def test_a_timed_out_screen_stays_in_the_results():
     """★ The invariant #872's safety rests on, pinned because breaking it looks like an
@@ -170,3 +168,101 @@ def test_a_timed_out_screen_stays_in_the_results():
     j = src.index("judge call failed")
     verdict = src[j - 200:j + 220]
     assert '"similarity": 0.0' in verdict and '"judge_error": True' in verdict
+
+# --------------------------------------------------------------------------- #915b: DRIVEN
+
+def _tiny_png(dirpath, name):
+    f = dirpath / name
+    f.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
+    return str(f)
+
+
+def _run_judge_against(chat_impl, monkeypatch, ceiling=0.05):
+    """Drive the REAL `judge_screen_pair` — reference image, screenshot, provider client and all —
+    with the ceiling lowered. `_judge_timeout_s_872` is a module-level accessor (that is what
+    #898/#901 made it), so lowering it here exercises the real `wait_for`, the real
+    `except Exception`, and the real verdict construction.
+
+    ★ Added because this file had exactly ONE assertion that executed anything, and it was
+    `issubclass(asyncio.TimeoutError, Exception)` — a fact about Python, not about this code
+    (item 262). The ceiling's whole claim is "a stalled judge becomes a transient verdict instead
+    of hanging the round", and nothing had ever run it.
+    """
+    import tempfile
+    from pathlib import Path as _P
+    from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as _vf
+
+    d = _P(tempfile.mkdtemp())
+    screen = {"name": "player", "route": "/watch/:id", "path": _tiny_png(d, "ref.png")}
+    shot = _tiny_png(d, "shot.png")
+
+    class _Client:
+        async def chat(self, *a, **k):
+            return await chat_impl()
+
+    class _LLM:
+        _client = _Client()
+
+    monkeypatch.setattr(_vf, "_judge_timeout_s_872", lambda: ceiling)
+    loop = asyncio.new_event_loop()
+    try:
+        t0 = time.monotonic()
+        out = loop.run_until_complete(_vf.judge_screen_pair(_LLM(), screen, shot))
+        return out, time.monotonic() - t0
+    finally:
+        loop.close()
+
+
+def test_a_stalled_judge_returns_a_verdict_instead_of_hanging(monkeypatch):
+    """★ The ticket's actual claim, executed. r151 sat in this call for 116 minutes."""
+    async def _stall():
+        await asyncio.sleep(30)
+    out, _ = _run_judge_against(_stall, monkeypatch)
+    assert isinstance(out, dict)
+    assert out["judge_error"] is True
+    assert out["similarity"] == 0.0
+
+
+def test_the_stall_is_actually_bounded_by_the_ceiling(monkeypatch):
+    """The half a source grep cannot reach: `wait_for` must CUT the call, not merely be present.
+    A 30s stub returning inside a fraction of a second is the proof."""
+    async def _stall():
+        await asyncio.sleep(30)
+    _, elapsed = _run_judge_against(_stall, monkeypatch, ceiling=0.05)
+    assert elapsed < 5.0, f"the ceiling did not cut the call: {elapsed:.1f}s"
+
+
+def test_the_timeout_verdict_names_the_failure(monkeypatch):
+    """It reaches the deviation list a human and the remediation prompt both read; an empty
+    reason would read as a screen that was judged and found perfect."""
+    async def _stall():
+        await asyncio.sleep(30)
+    out, _ = _run_judge_against(_stall, monkeypatch)
+    assert out["deviations"] and "judge call failed" in out["deviations"][0]
+    assert out["summary"] == "judge error"
+
+
+def test_a_fast_judge_is_untouched_by_the_ceiling(monkeypatch):
+    """Non-regression: the bound must not change the healthy path. A well-formed response still
+    parses into a real verdict."""
+    async def _ok():
+        class _R:
+            content = ('{"dimensions": {"layout": {"score": 0.9}}, "similarity": 0.9, '
+                       '"deviations": [], "summary": "ok"}')
+        return _R()
+    out, _ = _run_judge_against(_ok, monkeypatch)
+    assert not out.get("judge_error"), out
+    assert out.get("similarity") == 0.9
+
+
+def test_a_raising_client_still_yields_a_transient_verdict(monkeypatch):
+    """The pre-existing contract the ceiling rides on: ANY failure is a transient verdict, never
+    an exception into the orchestrator loop."""
+    async def _boom():
+        raise RuntimeError("provider exploded")
+    out, _ = _run_judge_against(_boom, monkeypatch)
+    assert out["judge_error"] is True and out["similarity"] == 0.0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(pytest.main([__file__, "-q"]))

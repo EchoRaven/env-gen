@@ -13227,3 +13227,38 @@ several of this session's own tickets do it deliberately. The narrower, real fin
 while a wrong value passes it. Worth a targeted pass on the tickets whose mechanism is load-bearing
 and cheap to drive — #872's timeout verdict is the obvious next one, and it is the same extraction
 shape #915 just used.
+
+## 263. #915b — #872's ceiling, executed for the first time
+
+Item 262 named this as the obvious next one. `judge_screen_pair` turns out to be directly drivable —
+no extraction needed — because #898/#901 already made the ceiling a module-level accessor
+(`_judge_timeout_s_872()`), so a test can lower it and run the real `wait_for`, the real
+`except Exception` and the real verdict construction against a stub client that stalls.
+
+Before: **one** assertion in the file executed anything, and it was
+`issubclass(asyncio.TimeoutError, Exception)` — a fact about Python, not about this code.
+
+Five driven cases now:
+
+    a stalled judge returns a verdict instead of hanging   judge_error=True, similarity=0.0
+    ★ the stall is actually CUT                            30s stub, ceiling 0.05s, elapsed < 5s
+    the verdict names the failure                          "judge call failed…", summary set
+    a fast judge is untouched                              a real 0.9 verdict still parses
+    a raising client still yields a transient verdict      the contract the ceiling rides on
+
+★ The timing assertion is the one a source grep cannot reach: `wait_for` must **cut** the call, not
+merely appear in the file. Sensitivity check — remove the `wait_for` and the same three tests take
+**90 seconds instead of 0.56** and two of them fail. The tests demonstrate the 116-minute r151 stall
+in miniature.
+
+Worth keeping: the case that still PASSES with the ceiling removed
+(`..._returns_a_verdict_instead_of_hanging`) does so because after 30s the stub returns `None` and
+`_parse_verdict("")` produces a judge_error verdict anyway. It is a real property, but it is not
+evidence of a bound — **the timing test is what carries the proof**, and a suite of only the former
+would have looked complete.
+
+Status of the three ceilings item 260 parked as "unverifiable without a run":
+
+    #872  now driven — 5 cases, including the cut itself
+    #889  6 driving assertions already
+    #892  fixed in #915 — was ZERO
