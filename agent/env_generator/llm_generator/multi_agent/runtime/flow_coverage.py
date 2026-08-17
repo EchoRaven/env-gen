@@ -124,12 +124,12 @@ def _is_navigable_page(page: Any) -> bool:
 
     ★ #905: that premise is FALSE for most of what this actually exempts. Blank routes are not
     rare and they are not mostly components — `register_ui_page(route: str = "")` defaults to
-    empty, and **826 of the 2543 page records across the 153-run corpus (32%, in 100% of runs)
-    carry one**. Split by where their file lives:
+    empty, and **673 of the 2390 page records carry one** — 28%, in 78% of the 144 runs that
+    registered any page at all. Split by where their file lives:
 
-        exempted, path under /pages/       644     REAL pages whose route was never recorded
+        exempted, path under /pages/       643     REAL pages whose route was never recorded
         exempted, path under /components/   26     #243's actual class
-        ★ of those 644, records EXIST for  403     the walk visits App.jsx's real routes and
+        ★ of those 643, records EXIST for  403     the walk visits App.jsx's real routes and
                                                    keys records by NAME, so "can NEVER exist"
                                                    is wrong for 63% of them
         ★ ...and are FAILING, but ignored   24     r116 alone hid 7: landing, login, profiles,

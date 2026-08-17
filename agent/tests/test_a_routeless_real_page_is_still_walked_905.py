@@ -1,16 +1,17 @@
-r"""#905: the ui_flow gate exempted 644 REAL pages and swallowed 24 recorded failures.
+r"""#905: the ui_flow gate exempted 643 REAL pages and swallowed 24 recorded failures.
 
 #243 exempts a ui_page with a blank route from the required flow set, on the premise that such an
 entry is *a component mis-registered as a page* and that **"a ui_flow record for a routeless entry
 can NEVER be produced"** — requiring one would be an unwinnable gate.
 
-Measured over the 153-run corpus, both halves of that premise are wrong for most of what it hits:
+Measured over the corpus (144 of 153 runs registered any ui_page), both halves of that premise
+are wrong for most of what it hits:
 
-    ui_page records                                 2543
-      carrying route=''                              826   32%, in 100% of runs
+    ui_page records                                 2390
+      carrying route=''                              673   28%, in 78% of runs
         exempted, path under /components/             26   #243's real class
-        exempted, path under /pages/                 644   REAL pages, route never recorded
-    ★ of those 644, a ui_flow record EXISTS for      403   63% — "can never exist" is false
+        exempted, path under /pages/                 643   REAL pages, route never recorded
+    ★ of those 643, a ui_flow record EXISTS for      403   63% — "can never exist" is false
     ★ ...and is FAILING, but the gate never saw it    24
 
 r116 alone hid seven failing flows — landing, login, profiles, browse_home, shows, movies,
@@ -53,7 +54,7 @@ def test_a_component_with_no_route_is_still_exempt():
 
 
 def test_a_real_page_with_no_route_is_required():
-    """The defect: 644 of these, of which 403 already had a record and 24 were failing."""
+    """The defect: 643 of these, of which 403 already had a record and 24 were failing."""
     assert _is_navigable_page(_page(name="languages_page")) is True
 
 
@@ -107,7 +108,7 @@ def test_the_required_set_actually_grows_for_a_routeless_page_set():
 
 def test_the_frontend_audit_shares_the_predicate_rather_than_copying_it():
     """★ #906. The same test was open-coded a third time in `frontend_audit`, carrying the claim
-    *"A genuinely-declared page always carries a '/'-anchored route"* — which the 644 refute. Two
+    *"A genuinely-declared page always carries a '/'-anchored route"* — which the 643 refute. Two
     copies of one concept drift; this asserts there is one.
 
     Measured before the change: including those pages in the audit yields ONE hard blocker across

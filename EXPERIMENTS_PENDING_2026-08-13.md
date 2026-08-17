@@ -12486,11 +12486,11 @@ can check.
 
 ### measured, corpus-wide
 
-    ui_page records                                    2543   in 153 runs
-    ★ carrying route=''                                 826   32%, in 100% of runs
-    ★ resolved to the WRONG design screen               590   71% of the blanks
+    ui_page records                                    2390   in 144 runs
+    ★ carrying route=''                                 673   28%, in 78% of runs (112/144)
+    ★ resolved to the WRONG design screen               590   88% of the blanks
        ...of which the wrong screen was LANDING         590   100%
-    runs affected                                       111 / 153
+    runs affected                                       111 / 144
 
 100% is not a coincidence: `landing` is the one screen every app has at `/`, so this miss always
 finds a plausible-looking victim instead of returning nothing.
@@ -12545,7 +12545,7 @@ Mis-registered COMPONENTS with blank routes (#243's tiktok r33 class: `top_actio
 would get a derived React-Router route. Measured across the corpus: **1 run** (r83, `/profile-menu`).
 Recorded, not fixed.
 
-## 248. ★★★ the ui_flow gate exempted 644 REAL pages and swallowed 24 recorded failures (#905)
+## 248. ★★★ the ui_flow gate exempted 643 REAL pages and swallowed 24 recorded failures (#905)
 
 Fallout from item 247, following the blank route into the gates. #243 drops a ui_page with a blank
 route from the required flow set because *"a ui_page with NO navigable route is a COMPONENT
@@ -12554,11 +12554,11 @@ record can NEVER be produced — requiring one is an UNWINNABLE gate"*.
 
 Both halves are wrong for most of what it hits:
 
-    ui_page records                                 2543
-      carrying route=''                              826   32%, in 100% of runs
+    ui_page records                                 2390
+      carrying route=''                              673   28%, in 78% of runs
         exempted, path under /components/             26   <- #243's actual class
-        exempted, path under /pages/                 644   <- REAL pages
-    ★ of those 644, a ui_flow record EXISTS for      403   63%; "can never exist" is false
+        exempted, path under /pages/                 643   <- REAL pages
+    ★ of those 643, a ui_flow record EXISTS for      403   63%; "can never exist" is false
     ★ ...and is FAILING, but the gate never saw it    24
 
 r116 hid seven at once: landing, login, profiles, browse_home, shows, movies, title_detail.
@@ -12581,7 +12581,7 @@ was exempted outright. A file under `src/pages/` is the framework's own page con
 Measured, both directions: a newly-required flow with no record reads MISSING, which `deliverability`
 already drops on a functionally-validated app (`if ui_validated: … "ui flow(s) missing" not in b`),
 and #489/#240 author the records from a real pre-gate walk. A FAILED record always blocked — it just
-never reached the gate. Corpus recount: required 1872 → 2513 of 2543; the 26 components stay exempt.
+never reached the gate. Corpus recount: required 1717 → 2360 of 2390; the 26 components stay exempt.
 
 ### ★ what this says about #883
 
@@ -12594,14 +12594,14 @@ emptied by a FILTER, which that scan cannot see.
 A sweep for comprehensions that shrink a required/expected-looking set in the 12 gate modules found
 **3**: `delivery_gate:1926` (selection, not a gate), `flow_coverage:260` (this one), and
 `frontend_audit:1114` — the same predicate open-coded a third time, carrying the claim *"A genuinely
-declared page always carries a '/'-anchored route"*, which the 644 refute. Measured: including those
+declared page always carries a '/'-anchored route"*, which the 643 refute. Measured: including those
 pages in the frontend audit produces **1** hard blocker across 153 runs, and it is TRUE (r112,
 `NotFoundPage` component genuinely absent). Zero false positives.
 
 ### ★ a retraction on the way
 
 I claimed the required set was empty in 100% of runs (no page is ever marked `critical`, no
-`user_flows` are ever critical — both true, 0 of 2543 and 0 of 153). The claim was wrong: I had read
+`user_flows` are ever critical — both true, 0 of 2390 and 0 of 153). The claim was wrong: I had read
 only a fragment of `_extract_required_flows` and missed the contract-derived fallback below it. What
 refuted it was an **artifact** — an r132 event listing 12 tracked pages and 4 missing. Reading half a
 function and generalising from the half is the same error as reading half a record.
@@ -12634,3 +12634,31 @@ reading it as one is what first made r116 look like it had shipped):
 So the hole is real and the gate was blind, but **no bad release is attributable to it**. Those 8 runs
 failed to deliver for other reasons. The value of #905 is coverage the gate did not have (r153's
 required set was 4 of 12 pages), not a shipped-bug count.
+
+## 250. ★ the store's `_meta` key was counted as a page record — every denominator in 247/248 was inflated
+
+Found while checking whether `delivery_gate`'s `if not pages: failed_checks.append("no_pages_in_hub")`
+could be vacuous: `registryhub_ui_pages.json` has a top-level `_meta` key, so if `list_ui_pages()`
+returned it, the check could never fire. It does not — `JsonStore.value()` strips `_META_KEY`, so the
+gate is clean. **My corpus probes did not**: they read the raw JSON and took every dict value, so
+`_meta` (a dict, with no `route`) was counted once per run as a blank-route page record.
+
+    reported            corrected
+    2543 records        2390        153 phantom records = one _meta per run
+    826 blank (32%)     673 (28%)
+    "in 100% of runs"   78% (112 of 144)   ← the 100% WAS the artifact: _meta is in every run
+    111 / 153 runs      111 / 144          (only 144 runs registered any page)
+    644 /pages/         643
+    2513 of 2543 req.   2360 of 2390
+    r153: 20 recs, 9    19 recs, 8
+
+★ **The load-bearing numbers are unchanged**: 590 pages resolved to the wrong design screen, 100% of
+them to `landing`, across 111 runs; 643 real pages exempted from the ui_flow gate, 403 with records,
+24 failing. `_meta` has no `path`, so it never entered the `/pages/` or wrong-screen counts.
+
+★ The tell was a suspiciously round claim. *"In 100% of runs"* is exactly what a per-run constant
+produces, and I wrote it three times — in the doc, in the source comment, and in the memory — without
+asking what could possibly be true in every single run. **A denominator that includes a schema key is
+the counting version of the field-location error**: the container's own metadata read as one of the
+things it contains. Corrected in item 247, item 248, `flow_coverage`'s docstring, the #902/#905 test
+files and the memory note.
