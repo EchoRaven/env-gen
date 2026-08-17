@@ -11964,3 +11964,50 @@ author saw it and wrote the warning instead of removing the trap. That is the ho
 without a signature change, and it is worth noting that **the codebase's own comments were ahead of me
 on this class**: #712's struck-out retraction, #711r's "the decision path does not read it", and this
 one each describe, before I found my own instances, exactly the mistake I then made.
+
+
+## 239. #861's class is NOT statically detectable here — a scan built, calibrated, and thrown away
+
+#861 (a consumer reading a key its producer never emits, across a module boundary) is the session's
+worst defect, so it deserves a tree-wide detector. I built one: index every repo function's returned
+dict-literal keys, then flag `var.get("k")` where `var` was assigned from a call to that function.
+
+    producer fns indexed: 694
+    hits: 88
+    ★ CALIBRATION: does it detect #861 itself?   NO
+
+**It cannot see its own motivating example.** #861's chain is
+`res = getattr(gate, "last_result", None)` — provenance through an **attribute**, not a call, so the
+consumer is never linked to `run_visual_fidelity`. A detector that misses the one instance it was
+built for is not a detector, and by item 233's rule its 88 hits are worth nothing until that changes.
+
+Spot-checking confirms it: the hits are dominated by producers that do not *emit* keys at all —
+
+| shape | example | why the hit is spurious |
+|---|---|---|
+| **mutate-and-return-the-argument** | `_counter_default(col)` → 20+ hits in `backend_skeleton`/`database_scaffold` | the keys come from the caller's dict; the function has no literal |
+| **delegate** | `_validate_delivery_gate()` → 6 hits on `gate.get("failed_checks")` | it `return _gate793`, the runtime gate's result, which **does** carry `failed_checks` (`delivery_gate.py:2305`) |
+| **load external** | `load_config()`, `check_session_info()` | keys come from YAML / a session store |
+
+### ★★ what this means for the class
+
+**Dict provenance in this codebase flows through attributes, delegation and mutation — three things a
+literal-keys index cannot follow.** So #861's class has no static detector worth writing, and that is
+a real conclusion rather than a gap: it says where the defence has to live instead.
+
+★ **It has to be at the consumer, and the codebase already has the pattern.** #792's
+`_gate_absent_792` exists precisely so a check that could not run says so. `res.get("blocking_average_live")`
+returning `None` currently disables `fast_release` in total silence; the same read routed through an
+announcement would have made #861 visible on its first run rather than found by reading source three
+weeks later.
+
+That generalises past #861: **wherever a gate condition is built from a `.get()` on a dict assembled
+elsewhere, `None` must be distinguishable from "measured and failing".** That is #883's direction
+question, item 231's zeros, and #792 — the same rule for the fourth time, now with an argument for
+why *static* analysis cannot substitute for it here.
+
+### method
+
+Recording a discarded instrument on purpose. Items 233 and 236 showed a scan can be wrong and look
+clean; this one shows the other outcome — **a scan that is honestly unsalvageable**, and the value is
+in saying so rather than shipping 88 unvalidated hits as "findings".
