@@ -3492,8 +3492,22 @@ def _design_screen_for_route(design, route, hints=()) -> Optional[Dict[str, Any]
     #229 (r21 live): a param route ('/@:username') tokenizes to just the param
     name, so route-only fuzzy missed profile_own@/profile — ``hints`` (the
     page's own name/id/component) join the fuzzy vocabulary."""
-    want = _norm_route_221(route)
-    if not want:
+    # #902: `_norm_route_221('')` returns `'/'`, so a BLANK route is indistinguishable from the
+    # site ROOT — and the guard below can never fire, because the normaliser has no falsy output.
+    # A page whose record carries no route therefore EXACT-matched the landing screen and won it
+    # outright, skipping the fuzzy phase that exists for exactly this case: the ``hints`` (the
+    # page's own name/id/component) already identify it. Measured on r153, where 9 of the 20
+    # ui_page records carry `route=''`: **7 of the 12 routed pages resolved to `landing`** rather
+    # than their own screen. `languages_page` was one, which is why the delivered LanguagesPage
+    # projected a flat grid — landing's archetype — instead of browse_by_languages' four shelves,
+    # even though #551 correctly answers "rows" for that screen. The archetype logic was right;
+    # it was being asked about the wrong screen.
+    #
+    # Blank means NO ROUTE SIGNAL, not the root (#873's rule: no information is not information
+    # saying no). Fall through to the hints-driven fuzzy match, which is honest about a miss.
+    _has_route_902 = bool(str(route or "").strip())
+    want = _norm_route_221(route) if _has_route_902 else ""
+    if _has_route_902 and not want:
         return None
     # #584: several screens routinely share one route (a detail modal, its rating dialog and
     # its episode list are all classified `/title/:id`). Returning the first `kind == 'page'`
@@ -3676,8 +3690,16 @@ def missing_design_screen_pages(design, ui_pages, endpoints) -> List[Dict[str, A
     between the screen's name/component prose and the registered GET
     collection endpoints (no match → empty, the lane still must author).
     Pure + env-agnostic; the caller registers the returned specs."""
+    # #904: the same root as #902 — `_norm_route_221('')` is `'/'`, so a page registered with NO
+    # route silently marks the ROOT as covered and the measured landing screen is never
+    # synthesized. r26 is the live case: its registry holds one junk record (name=None,
+    # route=None) whose None-route claimed '/', and `landing_page` — the first screen anyone
+    # sees — was the only page of 12 that #225 failed to produce. A blank route is not coverage
+    # of anything; the #226 fuzzy pass below still covers such a page by its NAME tokens, which
+    # is what keeps this from synthesizing a duplicate.
     covered = {_norm_route_221(p.get("route"))
-               for p in (ui_pages or []) if isinstance(p, dict)}
+               for p in (ui_pages or []) if isinstance(p, dict)
+               and str(p.get("route") or "").strip()}
     # #226: a page also covers a screen it fuzzy-matches (kickoff /activity vs
     # screen notifications_activity@/notifications) — else a TWIN page gets
     # registered and one of the two ships as a generic fallback (r20 live).
@@ -9543,6 +9565,16 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                 n += 1
             used_routes.add(route)
             entries.append((comp, route))
+            # #903: the canonical route was just derived above and is the one React-Router
+            # actually wires — but the page record handed downstream still carries the
+            # registry's `route=''`, and `_design_screen_for_route` reads `page.get("route")`.
+            # A value computed correctly and then not used at the one place that needs it: with
+            # #902 the blank no longer resolves to `landing`, but it degrades to hints-only
+            # fuzzy, which on r153 loses `my_list_page` (hints alone find nothing; `/my-list`
+            # finds the `my_list` screen). Carry the wired route so the exact phase can work.
+            # Copy — never mutate the hub's own record.
+            if isinstance(page, dict) and not str(page.get("route") or "").strip():
+                page = {**page, "route": route}
             plan.append((comp, route, page))
 
         # Shared top-nav for the data pages: the main business routes (skip auth /

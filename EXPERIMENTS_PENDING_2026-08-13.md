@@ -12459,3 +12459,88 @@ Route both exits through `_swallowed_790` (already used by the sibling gates), t
 `page_build_gate.py` to #883's `_BASELINE` at **0**, since announcing removes them from the silent
 count. ★ **Do not make `_unbuilt_with_routes` raise** — its *"never raises"* is load-bearing for
 callers; **announcing is the whole fix.**
+
+## 247. ★★★ 590 pages across 111 runs were projected against the LANDING screen (#902/#903/#904)
+
+Opened by pulling on ONE r153 deviation — *"Row titles all say 'Browse by Languages' instead of
+category"*. Three readings died before the right one, and each looked finished:
+
+| reading | how it died |
+|---|---|
+| the row titles are mislabelled | the delivered `LanguagesPage.jsx` has **no rows at all** — a flat grid |
+| rule S (#545) forces a selector NAME to grid | `#551` already exempts a selector name carrying >=2 measured rails |
+| `_is_rail_comp` under-counts the design's phrasing | it counts **4**; `_wants_rows_539` answers **"rows"** |
+
+So the archetype logic was right and **was being asked about the wrong screen**.
+
+### the mechanism
+
+`scaffold_pages_from_contract` reads pages from `registryhub.list_ui_pages()`, derives the canonical
+route for React-Router (#387), and then hands `_design_screen_for_route` **the record's own empty
+route**. `_norm_route_221("")` returns `"/"` — so the lookup asks for the site ROOT and exact-matches
+`landing`, which wins outright.
+
+★ The guard that should have caught it **could not fire**: the normaliser has no falsy output, so
+`if not want: return None` is unreachable code. Blank and root are the same value by the time anyone
+can check.
+
+### measured, corpus-wide
+
+    ui_page records                                    2543   in 153 runs
+    ★ carrying route=''                                 826   32%, in 100% of runs
+    ★ resolved to the WRONG design screen               590   71% of the blanks
+       ...of which the wrong screen was LANDING         590   100%
+    runs affected                                       111 / 153
+
+100% is not a coincidence: `landing` is the one screen every app has at `/`, so this miss always
+finds a plausible-looking victim instead of returning nothing.
+
+r153's seven: browse_home, genre_category, languages, login, my_list, player, profiles — 7 of its 12
+routed pages. Five carry the projector fingerprint in the delivered tree.
+
+### the fix, in three parts
+
+- **#902** `_design_screen_for_route`: blank means *no route signal*, not the root — fall through to
+  the hints-driven fuzzy phase, which is honest about a miss (`profiles_page` → no match → the
+  generic floor, per the function's own *"a wrong graft is worse than the generic floor"*).
+- **#903** the plan loop: carry the derived route on a COPY of the page so the exact phase still
+  works — without it `my_list_page` degrades from wrong-but-confident to no-match.
+- **#904** `missing_design_screen_pages`: same root, third site — one blank-route record marked `/`
+  covered, so the measured landing screen was never synthesized (r26 produced 11 of its 12 pages,
+  missing exactly `landing_page`). #226's name-token pass is what stops this from creating a
+  duplicate, and a test now says so.
+
+Result on r153: 6 of the 8 blank-route pages resolve to their own screen, `landing` unchanged,
+`languages` archetype `grid` → **`rows`**.
+
+### ★ the semantics already existed, three modules over
+
+`flow_coverage._is_navigable_page` (#243) reads the *same field* and treats a present-but-blank route
+as **not navigable** — the correct reading. One field, two contradictory interpretations in one
+codebase; the projector held the wrong one for 111 runs.
+
+### the class, sharpened
+
+A sweep of every `_norm*`/`_canon*`/`_slug*` in `runtime/` found **11** that return a truthy value for
+empty input. Only one was a defect. The discriminator:
+
+★ **collapsing empty onto a default is dangerous only when the default is PLAUSIBLE AND PERMISSIVE.**
+`route → "/"` names a page that exists in every app, so the error always looks like a real answer.
+`_canon_validation_status("") → "error"` is fail-closed and harmless. `_norm_gate_path` and
+`_norm_nav_target` also return `"/"` but are guarded at every call site (`if path and ...`,
+`if route.startswith("/")`) — checked, clean, recorded so the next sweep does not redo it.
+
+### two instrument failures worth keeping
+
+1. My corpus probe counted screens whose route was BLANK as root screens — **the identical defect as
+   the code under test**, in the instrument measuring it. It reported 8 affected runs; 7 were #864's
+   dead runs. Corrected: 1.
+2. To test whether #904 creates a duplicate page I deleted the blank-route record from `ui_pages`
+   entirely — which also emptied `page_token_sets` and manufactured the duplicate I was testing for.
+   The real change does not create one.
+
+### not worth acting on
+
+Mis-registered COMPONENTS with blank routes (#243's tiktok r33 class: `top_action_bar`, `explore_card`)
+would get a derived React-Router route. Measured across the corpus: **1 run** (r83, `/profile-menu`).
+Recorded, not fixed.
