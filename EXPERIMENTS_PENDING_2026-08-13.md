@@ -12204,3 +12204,85 @@ need behind it. **(i) is the safe default.** Recorded so the choice is made rath
 ★ **B and E each remove a false statement that a reader would otherwise trust** — six measured-looking
 zeros, and a docstring promising the finally *always* marks. Those are worth more than the dead code
 they sit next to.
+
+
+## 243. ★★★ #802's guard CERTIFIES the defect it exists to catch — including #895 itself
+
+Verifying item 241's six import fixes out-of-repo produced something bigger than the verification.
+
+### the verification first
+
+A copy at `/tmp` with the six edits applied, against an unmodified control copy, same command:
+
+    control (unmodified):  85 failed, 5822 passed
+    fixed:                 85 failed, 5818 passed
+    failures unique to the fixed run:  0
+
+The 85 are environmental (the copy lacks repo-relative certs/paths) and **identical in both**. And the
+fix is proven by a *differential*, not by equality — mutating the source and watching consumers follow:
+
+    canonical CANONICAL_VIEWPORT_646 → height 795
+      fixed copy:     visual_fidelity._VIEWPORT = 795, test_user_runner._VIEWPORT = 795   ★ LINKED
+      repo (unfixed): visual_fidelity._VIEWPORT = 900                                     ★ NOT LINKED
+
+★ Equality would have proved nothing — the values already matched before the fix. That is #646's whole
+trap, and checking it by equality is how it survived.
+
+### ★★★ but 4 tests DISAPPEARED, and that is the finding
+
+    tests/test_lazy_imports_resolve_802.py::test_every_lazy_import_resolves[runtime/scaffolder.py:119]
+                                                                          [runtime/test_user_runner.py:768]
+                                                                          [runtime/test_user_validation.py:505]
+                                                                          [runtime/visual_fidelity.py:1788]
+
+A test named ***"every function-level import in the runtime must actually resolve"*** was parametrised
+on all four broken imports and **passed on every one**. Its `_resolve`:
+
+    _PKG_ROOT = "env_generator.llm_generator.multi_agent"      # the REPO-ROOT view
+    pkg  = _PKG_ROOT + "." + rel.rsplit("/", 1)[0]             # -> ...multi_agent.runtime
+    base = ".".join(parts[:len(parts) - (level - 1)])          # level=3 -> env_generator.llm_generator
+    importlib.import_module(base + "." + module)               # -> resolves
+
+**The runtime root is `env_generator/llm_generator`** (proven by `orchestrator.py:48`'s bare
+`from progress import (`), so the real module is `multi_agent.runtime.visual_fidelity` — depth 2. The
+guard gives it depth 4. **Two spare components absorb the extra dots and every broken import
+resolves.**
+
+Executed, not read — the guard's own resolver on its own cases:
+
+    runtime/visual_fidelity.py       level=3 -> env_generator.llm_generator.tools.browser._bootstrap  RESOLVES -> PASS
+    runtime/scaffolder.py            level=3 -> env_generator.llm_generator.tools.file_tools          RESOLVES -> PASS
+    runtime/test_user_validation.py  level=3 -> env_generator.llm_generator.tools.browser._bootstrap  RESOLVES -> PASS
+    orchestrator.py                  level=2 -> env_generator.llm_generator.progress                  RESOLVES -> PASS
+
+★ **The last line is #895.** The import that killed r152 at 29:51 and made the delivery gate unpassable
+from the day #827 landed would have been certified green by the guard built for exactly this class.
+That is why it survived.
+
+### ★★ why two rounds of hardening missed it
+
+#802 already has both defences this session has been preaching, and they are aimed at the wrong axis:
+
+| defence present | what it protects |
+|---|---|
+| `test_the_scan_finds_something`: `assert len(_IMPORTS) >= 300` | **vacuity** — the scan sees 364 imports |
+| `#802b`: *"the first version scanned `runtime/` only … A guard that omits the file whose defect motivated it"* | **coverage** — now the whole package |
+
+Full coverage, non-vacuous, and wrong — because the defect is in the **oracle**. *"Does it see
+anything"* and *"does it judge correctly"* are different questions, and item 233's rule only asked the
+first. **Sharpened: a scan must be calibrated on a known POSITIVE, not merely proved non-empty.** #802
+has 364 subjects, at least 4 of them broken, and reports 0.
+
+### APPLY-READY
+
+`tests/test_lazy_imports_resolve_802.py`:
+
+    -_PKG_ROOT = "env_generator.llm_generator.multi_agent"
+    +_PKG_ROOT = "multi_agent"        # runtime root is env_generator/llm_generator (orchestrator.py:48)
+
+with `env_generator/llm_generator` on `sys.path` for the test. ★ **Add a calibration case** — the
+reverted #895 line (`orchestrator.py`, `progress`, `level=2`) must FAIL the resolver — or the next
+wrong `_PKG_ROOT` is undetectable in exactly the same way.
+
+Expect it to go red on the 4 (or 6, with the module-level pair) until item 241's fixes land. **That is
+the test working for the first time.**
