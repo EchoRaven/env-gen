@@ -10868,3 +10868,42 @@ was reachable by re-reading the code — the first needed the retry config, the 
 commit away from applying this one straight through a 0.1% tail that would have broken the
 agent loop.
 
+
+## 219. the measurement behind the last item was 65% idle time
+
+The previous item concluded *"gate per-site, because an agent step legitimately reaches 3011s"* and
+rested it on 186,926 inter-response gaps. I then asserted the 58 gaps over 720s were *"legitimately
+long single operations"* **without checking**. They are not.
+
+Splitting the 168 gaps over 300s by what lies between the two responses:
+
+| | |
+|---|---|
+| **IDLE** — a new `prompt` starts the next step, so the agent was re-woken and no call was in flight | **110 (65%)** |
+| one step containing tool calls — the gap includes tool execution, not a single LLM call | 39 |
+| **"one call, no intervening events"** — the only candidates for a genuinely long call | **19** |
+
+★ **So "a global 300s cap would cut 165 real steps" is wrong.** Two thirds of those gaps have
+nothing in flight to cut. The real candidate set is 19, and even those may include tool time.
+
+★★ **The honest resolution: the metric cannot answer the question.** Agent logs record *responses*,
+not call boundaries. Whether a legitimate LLM call ever exceeds 300s needs call-level timing that
+is not recorded anywhere. The previous item's conclusion may still be right — I no longer have
+evidence for it, and I am not going to let a third justification in this family stand on a number
+that does not mean what I said it meant.
+
+**What survives unchanged** is the *distinction* itself (uniform invariant → choke point;
+caller-dependent value → per-site), which is an argument about `dockerfile_lint` versus a timeout,
+not about the 3011s. And the decision not to hoist the ceiling stands, now on the plain ground that
+it is a shared-infrastructure change with no measured need.
+
+### ★ and the digging turned up a real lead
+
+`netflix-web-r122` has **three lanes — Backend, Frontend, Orchestrator — each stalled ~3600s with
+ZERO events between responses**, plus 15 of the 61 long gaps overall. Three independent agents
+hitting the same one-hour wall simultaneously is not three long operations; it is one wall. 3600s
+is also the visual window's anchor (*"ran every visual window to the 3600s anchor"*).
+
+Not opened here — it needs the run's other artifacts, and this item is already a retraction rather
+than a finding. Recorded so it is a lead rather than a thing I noticed and lost.
+
