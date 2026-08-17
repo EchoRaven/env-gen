@@ -11706,3 +11706,62 @@ there.**
 
 The 5 unfireable checks of item 232 stand as the complete set for this class. Nine further gate
 modules were examined with a calibrated instrument and are clean.
+
+
+## 234. applying the new rule backwards: one of my own scans was uncalibrated, and it measured the wrong property
+
+Item 233 ended on a rule — *a scan that reports zero is worth nothing until it has found something
+you already know is there.* The first thing to do with it is point it at this session's own scans.
+
+| scan | had a known positive? |
+|---|---|
+| hard-claim sweep (47) | ✔ self-calibrating — it found the `mark_detail_authored` break |
+| `return`-above-`finally` (16) | ✔ same |
+| asserted citations (37) | ✔ **both historical positives (#254's unreachable warning, #225/#226's "already covered" fallbacks) appeared in the hits** |
+| keys read but never written (1237→258) | ✔ negatively — I recorded that it *cannot* find #861, whose key is written onto a different dict |
+| gate block-sites (10 modules) | ✔ item 233 — the calibration is the item |
+| **scan A — `ENVGEN_*` dead knobs** | ★ **no calibration, and it measured the wrong property** |
+
+### what scan A got wrong
+
+It asked *"is the constant read anywhere but its own definition?"* and returned **1 candidate, a false
+positive**, from which I concluded the dead knob is *"an instance, not a class"*.
+
+★ But `_DOCKER_UP_TIMEOUT` **is** read — at `validation_runner.py:643`, as the default of the
+`up_timeout` parameter. Scan A therefore **could not have found the very defect that motivated it**,
+and its zero was structural. The property that matters is not *"does the constant have a reader"* but
+*"does the knob do anything"*.
+
+### the rebuilt scan, calibrated
+
+Two stages: (1) find knobs whose constant is used **only** in its own definition and as a parameter
+default; (2) for each, ask whether that **parameter is read in the function body**.
+
+    ENVGEN_* knobs defined as a module constant:                   46
+    constant used only as a parameter default:                      7
+    CALIBRATION — finds the known positive ENVGEN_DOCKER_UP_TIMEOUT: YES
+
+    _DOCKER_UP_TIMEOUT          -> run_smoke_validation(up_timeout=…)          ★ NOT read — DEAD
+    VISUAL_AVG_RELEASE          -> _visual_release_decision(avg_release=…)       read ✔
+    VISUAL_DEFERRAL_ESCAPE_S    -> _visual_release_decision(escape_s=…)          read ✔
+    VISUAL_IDLE_S               -> _visual_release_decision(idle_s=…)            read ✔
+    VISUAL_TOTAL_JUDGMENTS_CAP  -> _visual_release_decision(total_cap=…)         read ✔
+    VISUAL_PLATEAU_HARD_ROUNDS  -> _visual_release_decision(plateau_hard=…)      read ✔
+    VISUAL_PLATEAU_MIN_S        -> _visual_release_decision(plateau_min_s=…)     read ✔
+
+**Exactly one dead knob out of 46, and it is the one already known.**
+
+### ★★ the point
+
+**The conclusion did not change; the justification did.** Scan A said "not a class" for a reason that
+could not have supported it — an instrument that was structurally blind to the only known member of
+the class it was surveying. It happened to be right.
+
+That is a different failure from v1 and v2 in item 233, which were *wrong*. This one was **right and
+unjustified**, which is harder to notice and, in a review whose whole output is confidence, no better.
+The six live knobs are the evidence that was missing: they show the class was surveyed and found to
+have one member, rather than surveyed with a net that had no hole the right shape.
+
+★ Note the second stage is the *same* discriminator as item 220's: a defaulted parameter matters only
+if something reads it. Applied to a constant there, to an env knob here — and both times the answer
+came from **one level further down than where the question was asked**.
