@@ -1125,7 +1125,7 @@ def visual_gate_verdict(*, results, owned=None):
     if unjudged:
         return {
             "passed": False, "unjudged": unjudged,
-            "reason": (f"{len(unjudged)} declared screen(s) were never judged: "
+            "reason": (f"{len(unjudged)} declared screen(s) were not judged in this round: "
                        f"{unjudged}. An unbuilt page is not exempt from its own "
                        f"exam — author the page so it can be captured and scored."),
         }
@@ -3028,7 +3028,21 @@ async def run_visual_fidelity(
     # their verdicts + remediation must flow this tick (a partial-blank must not discard
     # a fixable sibling's 0.55 and suppress its remediation).
     return {"passed": passed, "summary": summary, "screens": results, "skipped": skipped,
-            "coverage": _coverage,  # #351: reporting only — does not gate
+            # #901: scope-labelled, because `screens` and `coverage` describe DIFFERENT SETS and
+            # the document did not say so. `screens` is #500's MERGE (this round plus anything a
+            # prior round scored); `coverage` is computed from THIS round's `results`. r153's
+            # verdict therefore lists `browse_home_rows` (0.40) and `card_hover_preview` (0.30)
+            # with scores while `coverage.unjudged` calls them never-judged.
+            #
+            # ★ Both halves are individually right — the gate evaluates the current round on
+            # purpose (`visual_gate_verdict(results=results, ...)`, and #351 means this block does
+            # not gate) — but as a DOCUMENT it contradicts itself, and it misled me into filing a
+            # gate defect that does not exist. The artifact a human opens should not need the
+            # source to disambiguate it.
+            "coverage": {**(_coverage if isinstance(_coverage, dict) else {}),
+                         "scope": "this round's captures; `screens` above is #500's merge across "
+                                  "rounds, so a screen may carry a score here and still appear "
+                                  "under `unjudged` (#901)"},
             "blocking_average": _blk_avg,  # #542a: gating avg over BLOCKING screens only
             # #656: a NEAR-total blackout is the same condition as a total one.
             "capture_transient": _blank_wipeout_656(results, _blank_screens, shots),
