@@ -11765,3 +11765,49 @@ have one member, rather than surveyed with a net that had no hole the right shap
 ★ Note the second stage is the *same* discriminator as item 220's: a defaulted parameter matters only
 if something reads it. Applied to a constant there, to an env knob here — and both times the answer
 came from **one level further down than where the question was asked**.
+
+
+## 235. ★ BEFORE r153: #861 is not "unverified", it is DISABLED — and #895/#896/#861 are one defect three times
+
+r152's write-up lists *"#861/#872/#889/#892/#893 stay unverified"* because the run never reached the
+visual gate. **#861 is not unverified. It is broken, and r153 cannot verify it.** Re-checked at
+current HEAD, after r152's commits:
+
+    run_visual_fidelity emits 'blocking_average_live':      False
+    orchestrator still reads res.get('blocking_average_live'): True
+    _live_ok still gates fast_release:                      True
+
+★★ **This sets a false-negative trap for the very next experiment.** `fast_release` cannot fire in
+r153 under any scores. If r153 shows no fast release, the natural reading — *"the live-average gate
+correctly declined"* — is exactly backwards: the gate is not declining, it is absent. **Revert #861
+(and `test_fast_release_reads_the_live_score_861.py`) before r153, or the run cannot answer the
+question it is being launched to answer.** Detail in item 229.
+
+### ★ three independent instances of one defect, all authored the same day
+
+| | the check measured | the claim was about |
+|---|---|---|
+| **#861** (mine) | the merged average in the **persisted** `verdict.json` | the live average on the **decision** path — a dict that never carries the key |
+| **#896** (r152's) | `ok=bool(tables)` — **the argument that came IN** | the artifact that went **OUT** (no `.sql` existed anywhere in the tree) |
+| **item 233 v1/v2** (my scans) | accumulator names my regex knew / names merged across a module | the block sites that exist / the binding in *this* function |
+
+**Every one measured the thing that was easy to reach instead of the thing the claim was about, and
+in every one the wrong measurement returned the reassuring answer.** r152's own summary states the
+consequence better than I can: *"I built the silent-degradation defect inside the instrumentation
+meant to catch it."*
+
+★ #895 is the same family with a different surface: a function-local `from ..progress import
+EventType` that `compile()` cannot see and no test executes, sitting in the delivery gate — so **the
+gate could never pass on any run since it landed**, with a green suite throughout. Not a measurement
+error but a *reachability* one: the check existed and nothing drove it.
+
+### what this says about the session's method
+
+Item 233 derived *"a scan that reports zero is worth nothing until it has found something you already
+know is there."* #895 generalises it past scans to **code**: a delivery gate that has never passed is
+indistinguishable, from the suite's side, from one that passes. The fix r152 applied — *a test that
+EXECUTES every function-local import with the method's real package context* — is the same shape as
+`test_the_scan_sees_the_tree`: **prove the path runs before believing what it reports.**
+
+Three of us-authored instruments failed this way in one day. The rule is not "be careful"; it is
+**every new check needs a demonstration that it can fail.**
