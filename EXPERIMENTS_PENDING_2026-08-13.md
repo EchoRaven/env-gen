@@ -11018,3 +11018,65 @@ values it carries without comment. An unstated default is not reviewed, because 
 review it against.
 
 This line of inquiry is closed with evidence rather than abandoned.
+
+
+## 222. item 221 was wrong: a loud promise IS broken — and the break is a `return` above the `finally`
+
+Item 221 closed the hard-claim sweep with *"loud promises are kept; silent ones are broken"* and
+called the line of inquiry exhausted. **It was not exhausted, and the conclusion was drawn from 6
+checked claims out of 47** — the other 45 were sorted into an "other" bucket and never opened.
+Opening them falsifies the headline.
+
+### the five re-checked
+
+| claim | verdict |
+|---|---|
+| `_response_has_rows` — *ambiguous ⇒ True so a leak is NEVER masked* | ✔ every ambiguous branch returns `True` (unparseable, `null`, unrecognised envelope, non-list payload) |
+| `maybe_rerun_unrun_chains` — *NEVER acts when any chain has a BROKEN last_result* | ✔ `if any(... .get("broken") ...): return False` |
+| `_index_ui_flow_records` — *a PASSING record is NEVER dropped* | ✔ the #401 staleness delete filters `s in ("failed", "error")` |
+| `_build_contract` — *the contract is NEVER empty* | ~ **overstated prose**: the #42 backstop is behind `if description and (...)`, so the guarantee is really "never empty when a description exists AND extraction yields something" |
+| `messaging._handle_kickoff_detail_request` — *the FINALLY block ALWAYS marks the phase `detail_authored`* | ★★ **BROKEN** |
+
+### the broken one
+
+    only return   L1770   inside `if current is None:`
+    try/finally   L1811   41 lines below — the finally is what calls mark_detail_authored
+
+`current is None` exits **before** the `try`, so the mark never runs. `author_milestone_detail`
+then polls `while waited < timeout_s` with `timeout_s = 240.0` (the cap verified honoured in #871)
+and burns the full four minutes before giving up.
+
+★ **And it lands on a state this corpus actually reaches.** `current is None` requires
+`ms.get(...)`, `get_by_index(...)` and `get_current()` to all return nothing — which is precisely
+the roadmap-never-landed condition behind #864's 7 dead runs. Same family, one link further down.
+
+### ★★ the correction, and a better rule than the one it replaces
+
+The enforcer was **not** missing. The `finally` exists and is correct; a guard clause above it
+exits first. So 221's "is there an enforcer elsewhere" discriminator, applied to this claim, would
+have passed it — the enforcer is right there. The threat to a `finally`-enforced promise is not
+absence, it is **a `return` lexically above the `try`**.
+
+That is mechanically checkable, so it becomes a class. Scanning for *top-level `try`/`finally` with
+a `return` above it*: **16 functions**. The discriminator — the same shape as #883's "which direction
+does empty point" and 221's "does an enforcer exist" — is **what the `finally` is for**:
+
+| what the finally does | bypassing it is | count |
+|---|---|---|
+| release a resource (`con.close`, `sse_hub.unregister`, `if spawned: terminate`, `if teardown: down -v`) | **safe** — the early return precedes acquisition, so there is nothing to release | 9 |
+| restore local state (`_processing_state`, `_active_phase`, `_focus_hub` — the six kickoff handlers) | **safe** — the early return precedes the assignment | 6 |
+| **signal an external waiter** (`mark_detail_authored`) | ★ **unsafe** — the poller is already waiting and does not care how the handler exited | **1** |
+
+**Exactly one of the 16 signals a waiter, and exactly that one has a bypassing return.** A
+resource-releasing `finally` is self-cancelling under an early return; a *signalling* `finally` is
+not, because the thing being signalled started waiting before this function was entered.
+
+The fix is to mark on the `current is None` path too (or move the resolve inside the `try`).
+**Not applied — code edits are declined at present.** Bounded at 240s by #871's cap, so this is a
+stall, not a hang.
+
+### method note
+
+I declared this line exhausted while 45 of 47 claims were unopened, and the very next pass through
+them produced a live defect and overturned the generalisation. *Sorting an item into "other" is not
+the same as checking it* — the bucket name was doing the work the check should have done.
