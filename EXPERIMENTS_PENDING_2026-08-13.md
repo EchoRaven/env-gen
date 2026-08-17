@@ -12126,3 +12126,81 @@ separately rather than folded into the table above.
 
 and the calibrated scan of item 236 re-run tree-wide, which must go from 6 to 0 while still flagging
 the reverted #895 line.
+
+
+## 242. APPLY-READY: the remaining five, separated into mechanical and judgement-bearing
+
+Item 241 did the six imports. This does the rest. ★ **Two of the five are NOT mechanical, and saying
+so is the point** — dressing a judgement up as a substitution is how #861 happened.
+
+---
+
+### MECHANICAL — exact substitutions, no decision
+
+**A. `delivery_gate.py:1908` — a gate check that cannot fire.**
+
+    1896:  projection_errors = {}  # file-coordination CRDT removed in Cutover 4 …
+    1908:  if projection_errors: failed_checks.append("semantic_projection_errors")
+
+Delete lines 1907-1908 and the `projection_errors` local at 1896; delete the dead consumer at
+`delivery_gate.py:655` (`if "semantic_projection_errors" in failed_checks:`) and the report block at
+763-766. Nothing else reads it (verified: item 233).
+
+**B. `delivery_gate.py:1906` — the same, plus a report that lies.**
+
+    1897:  semantic_drift = {"errors": [], "warnings": []}  # vestigial …
+    1905:  if semantic_drift.get("errors"): failed_checks.append("semantic_hub_drift")
+
+Delete 1905-1906 and the local at 1897. ★ **Also delete the report block at 747-761** — unlike A's,
+its guard `if semantic_drift:` is **always true** (a non-empty dict), so every gate report prints
+`spec_endpoints=0, hub_endpoints=0, spec_tables=0, hub_tables=0, spec_pages=0, hub_pages=0` from a
+producer that measured nothing. A and B differ *only* in the truthiness of the empty container, which
+is why B lies and A is merely dead.
+
+**C. `runhub/service.py:222` — a trap, not yet a bug.** Delete the parameter `timeout_s: int = 300`.
+It is never read; the real bound is the hardcoded `timeout_s=60.0` on the `HealthcheckProbe` three
+lines below. Zero callers pass it (verified tree-wide including tests). Leaving it means the first
+caller to pass `timeout_s=600` silently gets 60.
+
+**D. `test_user_validation.py:510` — the seventh viewport copy.** Replace the inline
+`viewport={"width": 1380, "height": 900}` with `viewport=dict(CANONICAL_VIEWPORT_646)` and add the
+absolute import. Do this **with** item 241's six, or #646 still is not one constant.
+
+---
+
+### ★ JUDGEMENT-BEARING — do not apply blind
+
+**E. `messaging.py:1770` — the `mark_detail_authored` bypass.** The obvious patch ("mark before the
+early return") is **wrong as stated**. At that point `current is None`, and `milestone_id` is only
+whatever the payload carried — possibly `None`. `ms.mark_detail_authored(None, …)` is not a fix.
+
+What is actually true: the poller (`author_milestone_detail`, 240s cap) is waiting on the milestone
+**it asked about**, and the payload carries that identity even when this handler cannot resolve it. So
+the fix is to mark using the payload's `milestone_id` / `milestone_index` when either is present,
+guarded, logging at `error` — and when neither is present, **the 240s timeout is the correct
+behaviour** and should stay. That last clause is why this is not a substitution: part of the bug is
+supposed to remain.
+
+**F. `validation_runner.py` — `up_timeout`.** Two defensible fixes and they are not equivalent:
+
+* **(i) honest minimum** — delete the dead parameter and fix the lying comment at line 43
+  (*"Override with ENVGEN_DOCKER_UP_TIMEOUT"*). Admits the real bound is now
+  `2×900 + 240 = 2040s` (or 2280s on the skip-then-rebuild path).
+* **(ii) restore the ceiling** — thread `up_timeout` as a whole-boot deadline through
+  `_build_with_retry` and both `up` calls, so the documented knob works again and the worst case
+  returns to the 1200s it names.
+
+★ (ii) is what I attempted and it was declined; it is a shared-infrastructure change with no measured
+need behind it. **(i) is the safe default.** Recorded so the choice is made rather than defaulted.
+
+---
+
+### after applying
+
+    grep -rn "semantic_projection_errors\|semantic_hub_drift" env_generator/  → definitions gone
+    grep -rn "up_timeout" .../validation_runner.py                            → 0 (under (i))
+    pytest tests/ -q                                                          → was 6019 pass at r152
+
+★ **B and E each remove a false statement that a reader would otherwise trust** — six measured-looking
+zeros, and a docstring promising the finally *always* marks. Those are worth more than the dead code
+they sit next to.
