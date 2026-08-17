@@ -37,6 +37,17 @@ import pytest
 from env_generator.llm_generator.multi_agent.runtime import stage_contract as sc
 
 
+@pytest.fixture(autouse=True)
+def _fresh_899():
+    """★ #899's dedup makes these order-dependent without a reset: two parametrized cases whose
+    count normalises to the same value share a signature, so the second is silently deduped and
+    its spy sees nothing. A say-once is a hidden fixture dependency — the correction is to reset,
+    not to weaken the dedup."""
+    sc.reset_said_891()
+    yield
+    sc.reset_said_891()
+
+
 class _Spy:
     def __init__(self):
         self.seen = []
@@ -117,3 +128,55 @@ def test_no_dead_variable_survived():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #899: measured on r153, the timeline was 34/35 duplicates -------------------------------
+
+def test_an_unchanged_stage_is_recorded_once(caplog):
+    """★ r153's real sequence: `database_scaffold` re-runs every delivery tick, so the timeline was
+    10x "12 tables" then 24x "13 tables" — 32 duplicates burying the one informative line."""
+    sc.reset_said_891()
+    with caplog.at_level(logging.INFO):
+        for _ in range(10):
+            sc.record_stage_894("database_scaffold", "tables", 12)
+    assert sum("STAGE database_scaffold" in r.getMessage() for r in caplog.records) == 1
+
+
+def test_a_CHANGE_is_still_recorded(caplog):
+    """★ The half that #845's plain say-once would have destroyed. `12 -> 13 tables` is exactly the
+    line worth keeping — the contract grew, and that is a fact about the run."""
+    sc.reset_said_891()
+    with caplog.at_level(logging.INFO):
+        for _ in range(10):
+            sc.record_stage_894("database_scaffold", "tables", 12)
+        for _ in range(24):
+            sc.record_stage_894("database_scaffold", "tables", 13)
+    msgs = [r.getMessage() for r in caplog.records if "STAGE database_scaffold" in r.getMessage()]
+    assert len(msgs) == 2, msgs
+    assert "12 tables" in msgs[0] and "13 tables" in msgs[1]
+
+
+def test_ok_to_empty_is_a_change_worth_seeing(caplog):
+    """A stage that stops producing must not be silenced by having produced before."""
+    sc.reset_said_891()
+    with caplog.at_level(logging.INFO):
+        sc.record_stage_894("database_scaffold", "tables", 12)
+        sc.record_stage_894("database_scaffold", "tables", 12, ok=False)
+    assert sum("STAGE database_scaffold" in r.getMessage() for r in caplog.records) == 2
+
+
+def test_different_stages_do_not_shadow_each_other(caplog):
+    sc.reset_said_891()
+    with caplog.at_level(logging.INFO):
+        sc.record_stage_894("a", "x", 1)
+        sc.record_stage_894("b", "x", 1)
+    assert sum("STAGE " in r.getMessage() for r in caplog.records) == 2
+
+
+def test_the_reset_clears_it():
+    """A long session must not silence a later run's timeline."""
+    sc.reset_said_891()
+    sc.record_stage_894("s", "t", 1)
+    assert sc._SEEN_899
+    sc.reset_said_891()
+    assert not sc._SEEN_899

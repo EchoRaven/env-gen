@@ -32,10 +32,14 @@ logger = logging.getLogger(__name__)
 # #845's rule — a line that repeats every tick stops being read.
 _SAID_891: set = set()
 
+# #899: (stage, produced, count, ok) already recorded — see `record_stage_894`.
+_SEEN_899: set = set()
+
 
 def reset_said_891() -> None:
     """Test hook; also called per-run so a long session does not silence a later run."""
     _SAID_891.clear()
+    _SEEN_899.clear()
 
 
 def require_stage_input_891(
@@ -154,6 +158,21 @@ def record_stage_894(
                 n = len(count) if hasattr(count, "__len__") else int(count)
     except Exception:
         n = None
+    # #899: record a stage on its FIRST occurrence and whenever its value CHANGES — not per tick.
+    #
+    # ★ Measured on r153: 35 STAGE lines, of which **34 were `database_scaffold`** (10x "12
+    # tables" then 24x "13 tables"). The scaffold is idempotent and re-runs every delivery tick, so
+    # the timeline became 32 duplicates burying the one line that carried information — the 12→13
+    # transition. A timeline whose dominant content is a repeated no-change entry does not answer
+    # "where did this run stop" any better than no timeline; it answers it worse, by making the
+    # reader scroll.
+    #
+    # Transitions are kept deliberately: `12 -> 13 tables` is exactly the kind of thing worth
+    # seeing, and #845's plain say-once would have hidden it.
+    _sig = (stage, produced, n, bool(ok))
+    if _sig in _SEEN_899:
+        return
+    _SEEN_899.add(_sig)
     try:
         logger.info("STAGE %s %s%s%s", stage, "ok" if ok else "EMPTY",
                     f" — {n} {produced}" if n is not None else f" — {produced}",
