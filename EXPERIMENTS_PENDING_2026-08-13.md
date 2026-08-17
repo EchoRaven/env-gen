@@ -11206,3 +11206,59 @@ other docstring.
     10  historical narrative about bugs that WERE (past tense, already fixed)
 
 Nothing testable in this set is left open.
+
+
+## 225. the meta-shape behind every discriminator this session: computed vs asserted
+
+Item 224 ended on an incidental observation — #861 justifies a decision by citing *#558's own
+docstring*, one piece of prose as evidence for another. That is a shape, so I swept it.
+
+### the sweep
+
+Justification phrases (*"cannot cost"*, *"safe because"*, *"already covered"*, *"deliberately not"*,
+*"establishes that"*, *"by construction"*) within two lines of a citation (`#NNN`, *"own docstring"*):
+**37 sites.**
+
+Most are **not** the dangerous shape. *"By construction"* — 20-odd of the 37, nine in
+`backend_skeleton.py` alone — is a **structural** argument: the code's shape guarantees the property,
+and the reader can check it where they stand. That is the opposite of a citation.
+
+**I read four of the 37 closely** (the ones whose phrasing asserts coverage *elsewhere*); the rest I
+classified by shape and did not open. Saying so because the last three items were each corrected for
+treating a classification as a check.
+
+| site | verdict |
+|---|---|
+| `orchestrator.py:459` — *"#558's own docstring establishes…"* | asserted, and **currently true** — verified against the code in item 224, not against the other docstring |
+| `hub_registry.py:26` — #746 | ★ **the class biting.** #254's refusal read `getattr(self, "_logger", None)` and `_logger` is set NOWHERE — the attribute appears exactly once in the file, *in that read*. The warning was **unreachable from the day it was written**. Fixed (`_LOG_746`) |
+| `frontend_scaffold.py:3559` — #225/#226 | ★ **the class biting.** `profiles` + `search` were skipped as *"already covered"* and **shipped as bare fallback stubs** — even though `GET /api/profiles` and `GET /api/search` both existed. Fixed (`backfill_page_apis`) |
+| `frontend_scaffold.py:4629` — #454/#551 | **safe, and the reason is the discriminator**: `skip={lbl.lower() for lbl, _ in _util_icons_551}` — the skip set is **computed from what the other channel actually emitted** |
+
+### ★★ the meta-shape
+
+Four discriminators surfaced this session, and they are one rule wearing four hats:
+
+| | the question |
+|---|---|
+| #883 | an `except` assigning an empty default — **which direction does empty point?** |
+| item 220 | a defaulted parameter with no reader — **does an enforcer exist elsewhere?** |
+| item 222 | a `return` above a `try/finally` — **what is the `finally` FOR?** |
+| here | an *"already covered"* skip — **is the covering set COMPUTED or ASSERTED?** |
+
+**In every case the construct is identical and the consequence is opposite, and only reading the
+other side tells them apart.** That is why each of these had to be a scan producing a *baseline* or a
+*judgement*, never a rule that fails on the construct itself — a checker that flags every
+`except: x = []`, every unread default, every early return, or every "already covered" would be
+noise, and noise gets deleted.
+
+★ It also explains this session's own error pattern. Nine field-location mistakes, the crude
+"falls off the end" false alarm, the `signature|reason` grep that returned zero on a correct
+function: **every one was me reading the construct and not the other side.** The discipline that
+fixed each was the same — go to where the value binds. For a pure predicate that is the call site;
+for a promise it is the enforcer; for a skip it is the set.
+
+### what stays open
+
+`frontend_scaffold.py:2992` (#540's rule cited for a template), `backend_skeleton.py:179` (#411's
+"handlers must OMIT" rule) and `chain_executor.py:2443` (*"the #587 precedent"*) are asserted
+citations I have **not** verified against their cited code. Named, not bucketed.
