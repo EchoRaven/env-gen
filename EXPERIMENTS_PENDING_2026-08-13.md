@@ -15170,3 +15170,50 @@ greps separated "nowhere to put it" from "already returned and thrown away". The
 same two greps before anyone designs anything.
 
 Full suite 6403 passed.
+
+### 319. the remaining seven, triaged — "design question" survives on two of them
+
+#948 showed that label was doing unearned work on the biggest detector. Applied the same two
+checks to the other seven: what does the function RETURN, and what does its message actually say?
+
+**Projection loss — mechanical, no design needed (4)**
+
+    #758  map_reference_screens          "declared reference OVERRULES the name guess for screen
+                                          '%s'" — a MAPPING DECISION, and it returns `screens`,
+                                          which could carry it. This is the class that makes a
+                                          fidelity score inexplicable later: the score is against
+                                          a reference nobody recorded choosing.
+    #224  heal_missing_browser           ★★ "BROWSER INFRA DOWN: playwright binary missing — every
+    #231                                  runtime UI gate unavailable". Returns a bare bool. Today
+                                          established that a failed capture scores a hard 0.00 that
+                                          COUNTS (#768/#933), so a missing binary yields a run-wide
+                                          0.00 with no recorded cause — r154's title_detail shape
+                                          at whole-run scale. The most valuable of the seven.
+    #556  heal_state_write_endpoints     "N read-but-no-write gap(s) healed" — a healing ACTION,
+                                          returns `result`.
+    #566f/i/n heal_create_endpoint_...   "create omitted required field(s) %s" — same shape.
+
+**Already partially recorded (1)**
+
+    #712  maybe_run                      the latched-average warning; #711's number reaches
+                                         verdict.json as `record_exceeds_live_by`, written
+                                         elsewhere. Text lost, number kept.
+
+**Genuinely nowhere to go (2)**
+
+    #867  _file_lock                     "RE-ENTRANT file lock — a mutator called back into the
+                                         store while update() held it". This reports a defect in
+                                         the FRAMEWORK's own code, not a fact about the run. Its
+                                         home is a failing test, not an artifact.
+    #731  _warn_unknown_schema_keys_731  its own message says it: "The information is KEPT, not
+                                         dropped — but no consumer reads it." A self-documented
+                                         no-consumer case, not a loss.
+
+★ So the honest split is 4 mechanical / 1 partial / 2 genuine — not "eight design questions". The
+label had been carrying five entries it had not earned, and separating them cost one AST pass over
+seven functions.
+
+★★ #224/#231 should go first and not because of its ticket number: it is the only one whose
+silence can void an ENTIRE run's visual measurement, and this session has already shown twice
+(#768's hard-zero, r154's seven-round capture failure) that the framework scores a missing picture
+as a bad page.
