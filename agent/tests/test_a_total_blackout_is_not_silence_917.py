@@ -123,10 +123,19 @@ def test_it_reports_and_changes_nothing():
     hold the escape side. If this ever starts gating, that is a separate decision."""
     import inspect
     src = inspect.getsource(vf._persist_verdict)
-    i = src.index("TOTAL BLACKOUT")
-    block = src[i - 400:i + 900]
+    # ★ was `src[i - 400:i + 900]`. A fixed byte window fires when a COMMENT grows: #588's test
+    # broke exactly that way today after #942 added a dozen comment lines to a block it measures.
+    # Anchor on the STATEMENT instead — the `if` whose body holds the blackout log.
+    import ast
+    fn = ast.parse(src.strip()).body[0]
+    node = next(n for n in ast.walk(fn)
+                if isinstance(n, ast.Call) and "TOTAL BLACKOUT" in ast.dump(n))
+    owner = max((n for n in ast.walk(fn) if isinstance(n, ast.If)
+                 and n.lineno <= node.lineno <= (n.end_lineno or 0)),
+                key=lambda n: n.lineno)
+    block = ast.unparse(owner)
     assert "_LOG.error" in block
-    assert "return" not in block.split("_LOG.error")[1][:400]
+    assert "return" not in block, "the blackout branch must report, not bail"
 
 
 if __name__ == "__main__":  # pragma: no cover

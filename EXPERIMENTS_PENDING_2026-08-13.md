@@ -14940,3 +14940,35 @@ this). Rewritten to assert the shape via AST: the skip stays gated on `_is_playe
 keyed on the raw merged score.
 
 Full suite 6369 passed.
+
+### 311. #943 — the brittle-test class, measured, and a ratchet on its worst shape
+
+Four tests broke this session for changes that improved the code they measure. That is a class, so
+I counted it instead of continuing to fix them one at a time. Across the suite:
+
+    source-text assertions          947  in 223 files
+      dependency-shaped            1020  `'_is_navigable_page(page)' in src` — LEGITIMATE: it
+                                         couples to a call that must exist and breaks when removed
+      spelling-pinned               528  the shape that forbids its own improvement
+    ★ fixed byte windows             59  in 26 files — `src[i:i + 900]` and friends
+
+The byte windows are the unambiguous subset. Nothing about them is a claim on behaviour, and each
+one fires the day someone writes a longer comment inside the block it measures. That happened
+today: #942 added a dozen comment lines and #588's `src[i:i + 2400]` stopped reaching the line it
+asserts — **a test failing for a change that touched no logic at all.**
+
+#943 does not pretend to fix 59. It is a RATCHET: the count may fall, never rise, with a second
+test that nags if the ceiling drifts above the real number. Two were re-anchored today as the
+worked examples — #588's on the block's own closing landmark, #917's (mine, this session) on the
+`ast.If` node that owns the log call.
+
+★ The 528 spelling-pinned assertions are NOT ratcheted. Most are probably fine, and a ceiling on a
+number I have not read line by line would be a guess dressed as a guard — the exact thing #936b's
+first locator and #940's first scope both were. Recorded as a measurement, not a rule.
+
+★★ Why this is worth a ticket at all: every one of the four casualties was a test that would have
+PASSED on the worse implementation and FAILED on the better one. #926 proved that with a control
+(old test: red on correct source, green on the duplicated source). A suite with 528 of these is
+not just noisy — it is, in that subset, pointed the wrong way.
+
+Full suite 6373 passed.
