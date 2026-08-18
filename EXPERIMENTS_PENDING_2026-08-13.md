@@ -15096,3 +15096,46 @@ Ratcheted at 8, with a nag if it drifts. Planted control: one new log-only detec
 reasoning belongs — the delivery gate's seven tickets probably want a `delivery_reasons.json`
 beside `progress_events.jsonl`, which is a design question rather than a mechanical repair. The
 ratchet stops the class growing while that is decided.
+
+### 317. ★★★ RETRACTION — "528 spelling-pinned assertions" was not a measurement
+
+Item 311 published `spelling-pinned 528` beside two numbers that ARE sound. It was produced by a
+lexical rule (needle longer than 45 chars, or containing an operator) that I never validated.
+
+Validated it now, against the five assertions that actually broke this session:
+
+    #926  '"../components/" in (_existing or "")'                spelling   ✓
+    #589  'if _sim(_s) >= min_similarity and not _is_player:'    spelling   ✓
+    #621  '_merged_passed'                                       dependency ✗
+    #900  'row["judge_unstable_893"]'                            other      ✗
+    #944  '_hint944'                                             dependency ✗
+
+**2 of 5.** The rule misses the largest real subclass — an assertion pinning a function-LOCAL name,
+which has no contract at all and is brittle by construction.
+
+So I built a sharper one (is the pinned identifier module-level in the code under test?) and it
+scored **5/5** on the casualties, recounting the corpus at 731 + 366. Then I dumped ten of the 731
+before publishing, which is the only reason this item is a retraction rather than a second wrong
+number:
+
+    'chars'  'rate'  'gold'  'exceeded'  'created_at'  'duplicate_of'  'return'  'OSError'
+    '_better["code_state"]'   'escape_s'
+
+Two of ten are genuine. The rest are message substrings and JSON keys — a bare WORD is
+indistinguishable from a bare IDENTIFIER by regex, and nothing in the AST distinguishes them either,
+because both are just `ast.Constant(str)`.
+
+★ Retracted: **528 is withdrawn, and no replacement number is offered.** What survives is what was
+validated structurally: 59 fixed byte windows (#943, ratcheted) and five measured casualties.
+
+★★ The error is the session's own recurring one, in its purest form: I checked SENSITIVITY (does it
+catch the known cases?) and shipped before checking SPECIFICITY (does it catch anything else?).
+Every failing-open guard today — #936b's locator flagging prose, #940's scope harvesting locals,
+#947's `dumps` — is the same order-of-operations mistake, and this time I made it while writing the
+item that catalogues it.
+
+★★★ The general rule, which is worth more than the number would have been: **a classifier
+validated only against its motivating examples is a restatement of those examples.** Sensitivity
+without specificity is not measurement. Where the corpus cannot separate the classes — as here,
+where `'rate'` and `_hint944` are the same AST node — the honest output is a retraction, not a
+smaller number with a caveat.
