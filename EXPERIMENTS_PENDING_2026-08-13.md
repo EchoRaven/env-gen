@@ -16254,3 +16254,24 @@ either a key that already has `gpt-5-6-sol-genai-responses`, or that model grant
 `MODEL=` is overridable (the launcher documents it), so any single entitled model unblocks the run.
 
 Sidecar stopped, :8900 free, 0 containers. The secret is not recorded here.
+
+### 353. a second token, the same wall — `LLM|…` app tokens carry no model entitlement
+
+A second credential arrived, a different app id, same `LLM|<id>|<secret>` shape. Re-probed rather
+than reusing item 352's conclusion, because **entitlement is per-key**, so the earlier result is
+not evidence about this one.
+
+Identical outcome: sidecar healthy, authentication fine, and **11 of 11 existing models denied** —
+the same eleven, spanning gpt / claude / gemini.
+
+★ Two independent tokens with byte-identical results changes what can be concluded. One key with no
+entitlements is a provisioning gap; **two are a property of the credential TYPE.** The
+`LLM|appid|secret` form authenticates against MetaGen but carries no model access, and the sidecar
+has been asking for the other kind all along — `mg-api-…`, which `_get_tier_str(credential.key)`
+parses to select a tier (item 348). An app token has nothing for it to parse.
+
+**So the ask is now specific: an `mg-api-…` key** (the self-service kind, from the MetaGen key
+page), not another app token. Alternatively, grant one of the eleven models to one of these app
+ids via the Access_Control link the exception prints.
+
+Sidecar stopped both times, :8900 free, 0 containers, no secret recorded.
