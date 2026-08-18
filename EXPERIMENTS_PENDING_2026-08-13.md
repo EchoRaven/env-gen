@@ -14843,3 +14843,38 @@ every argument to the counter is a name actually bound in the enclosing function
 back turns it red.
 
 Full suite 6351 passed.
+
+### 308. #940 — an undefined-name guard, plus two corrections it forced on me
+
+Three NameError-shaped seams in one session, all at boundaries I introduced (#930's `_head_sha`,
+#934's `shots_dir`, #939's `fe`), none in a fix's logic. The tool for this class is standard —
+pyflakes/ruff F821 — and this repo has **neither configured nor installed**, with no egress to
+install one. So: a conservative AST scan, written to miss rather than to false-positive.
+
+It found one real thing on its first full run: `agents/runtime/messaging.py` used `Any` in its
+`TYPE_CHECKING` block and never imported it — inert today under PEP 563, a live `NameError` the
+moment anything calls `get_type_hints`. Fixed rather than allowlisted. After that the package
+scans clean.
+
+★ CORRECTION 1 (to item 307): I wrote that no test drives the auth branch of
+`scaffold_pages_from_contract` and that 6351 tests could not have caught #939's seam. **False.**
+Planting the seam back turns `test_the_projection_clobber_is_announced_910::
+test_the_unconditional_auth_overwrite_is_announced` red, along with two others. #910's own test
+drives that branch. I asserted the negative without running it.
+
+★★ CORRECTION 2, and the better finding: **#939's seam is not a NameError at all.** `fe` is bound
+in eight OTHER functions of `frontend_scaffold` as `fe = Path(frontend_dir)`, and my first
+`unbound_loads` built the module scope with `ast.walk(tree)` — which descends into every function
+body and harvests their locals as globals. So the guard passed on the exact seam it was written
+for. Fixed by pruning the module walk at each function/class body; the planted seam is now named
+with file, line and function.
+
+That also reframes the seam itself: had `fe` been a genuine module global, the call would not have
+raised — it would have silently passed the WRONG value. A name that exists in a sibling scope is
+more dangerous than one that exists nowhere.
+
+★★★ The rule this session keeps re-teaching, now three times over: **a guard nobody has watched
+fail is a guess.** #936b's first locator flagged prose; #940's first scope harvested locals as
+globals; both looked correct and both were verified only by planting the thing they exist to catch.
+
+Full suite 6357 passed.
