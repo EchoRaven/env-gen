@@ -34,6 +34,7 @@ Semantics:
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -275,6 +276,69 @@ def _drop_unresolved_owner_fks(body: Any) -> tuple:
     if not dropped:
         return body, []
     return {k: v for k, v in body.items() if k not in dropped}, dropped
+
+
+_ROUTE_TABLE_927: Dict[str, Optional[List[tuple]]] = {}
+
+
+def _env_off_927() -> bool:
+    """``ENVGEN_CHAIN_ROUTE_TABLE=0`` → fall back to the string heuristic everywhere. Read per
+    call, not at import: #927 turns previously-soft steps into chain failures, so a run that
+    starts wedging on it must be recoverable without a code edit."""
+    return str(os.environ.get("ENVGEN_CHAIN_ROUTE_TABLE", "1")).strip().lower() in (
+        "0", "false", "no", "off")
+
+
+def _route_table_927(base: str) -> Optional[List[tuple]]:
+    """``[(METHOD, compiled path regex)]`` for every route the RUNNING app declares, or None.
+
+    #927: the 404 classifier below decides "is this endpoint BUILT?" from the detail string,
+    which cannot answer it. Ask the app instead — FastAPI serves its own route table at
+    ``/openapi.json``. Fetched once per base and cached; ``_http`` never raises, and any
+    shape surprise degrades to None (→ the string heuristic, unchanged).
+
+    ★ Live, not source: r154 declares ``@router.delete("/api/v1/tenants/{tenant_id}")`` in
+    ``custom_routes.py`` while its openapi holds no such path — the router is not mounted.
+    A source scan would have called that route built and hard-failed a chain on an endpoint
+    the app genuinely does not serve.
+    """
+    key = str(base or "").rstrip("/")
+    if key in _ROUTE_TABLE_927:
+        return _ROUTE_TABLE_927[key]
+    table: Optional[List[tuple]] = None
+    try:
+        res = _http("GET", key + "/openapi.json", timeout=6)
+        if res.get("status") == 200 and (res.get("body_text") or "").strip().startswith("{"):
+            paths = (json.loads(res["body_text"]) or {}).get("paths") or {}
+            if isinstance(paths, Mapping) and paths:
+                table = []
+                for tmpl, ops in paths.items():
+                    if not isinstance(tmpl, str) or not isinstance(ops, Mapping):
+                        continue
+                    rx = re.compile("^" + "".join(
+                        "[^/]+" if seg.startswith("{") and seg.endswith("}") else re.escape(seg)
+                        for seg in re.split(r"(\{[^/}]*\})", tmpl) if seg) + "/?$")
+                    for verb in ops:
+                        if isinstance(verb, str) and verb.upper() in (
+                                "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"):
+                            table.append((verb.upper(), rx))
+    except Exception:
+        table = None
+    _ROUTE_TABLE_927[key] = table
+    return table
+
+
+def _route_is_declared_927(base: str, method: Any, path: Any) -> Optional[bool]:
+    """Does the running app declare THIS verb on THIS path? True / False / None (no table).
+
+    Only the (path, verb) PAIR counts. A path that exists without the verb is the soft case by
+    design — the chain asked for an endpoint the app never built — so it must answer False."""
+    table = _route_table_927(base)
+    if table is None:
+        return None
+    p = str(path or "").split("?", 1)[0].split("#", 1)[0] or "/"
+    m = str(method or "").upper()
+    return any(mm == m and rx.match(p) for mm, rx in table)
 
 
 def _request_identity(step: Mapping[str, Any], method: Any, path: Any, body: Any) -> tuple:
@@ -2876,8 +2940,28 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                 # rejected the request), so it must count as 'broken'. Without this a chain
                 # ships status='passing' while its user-scoped steps 404 (V29 coverage_chain
                 # bug: 4× '404 User not found' steps, yet broken=[] / status='passing').
+                # #927: the detail string cannot answer "is this endpoint BUILT?", so ask the
+                # app — FastAPI publishes its own route table. Corpus: 365 soft steps inside
+                # PASSING chains, of which 129 carried a HANDLER-authored `{"detail":"not
+                # found"}` (r153's own `main.py:1324`, three lines under the DELETE the chain
+                # called) and were softened by nothing but the `.lower()` below folding them
+                # onto Starlette's `Not Found`. 33 runs emit BOTH spellings, so the app is not
+                # rewriting the detail globally: the two come from different places, and the
+                # case was the only thing telling them apart.
+                #
+                # Only the (path, VERB) pair counts as built. A path that exists without the
+                # verb is the soft case this branch was written for — the chain asked for an
+                # endpoint the app never wrote — and must stay soft.
+                _declared_927 = (None if _env_off_927() else
+                                 _route_is_declared_927(base, method, path))
                 _built_404 = False
-                if status == 404:
+                if _declared_927 is not None:
+                    _built_404 = bool(_declared_927)
+                elif status == 404:
+                    # No route table (app down, non-FastAPI, fetch failed) → the old heuristic,
+                    # minus the `.lower()`. Starlette's unmatched-route detail is exactly
+                    # "Not Found"; a handler that writes its own "not found" is a BUILT route
+                    # answering, which is the distinction the comment above always claimed.
                     _bt = (res.get("body_text") or "").strip()
                     _d = _bt
                     if _bt.startswith("{"):
@@ -2885,7 +2969,7 @@ def execute_chain(base: str, chain: Mapping[str, Any],
                             _d = (json.loads(_bt) or {}).get("detail")
                         except Exception:
                             _d = _bt
-                    _built_404 = isinstance(_d, str) and _d.strip().lower() not in ("not found", "")
+                    _built_404 = isinstance(_d, str) and _d.strip() not in ("Not Found", "")
                 kind = "broken" if _built_404 else "missing"
             else:
                 kind = "broken"

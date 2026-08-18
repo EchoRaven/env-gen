@@ -14202,3 +14202,43 @@ while #914 passes a possibly-None `_existing`, so the predicate owns the None.
 ★ Worth its line because the defect was in the *test*, on a session where every other item was a
 defect in the code, and it survived my own review at write time. The tell was mechanical, not
 insightful: an assertion whose subject is `inspect.getsource`.
+
+### 288. #927 — a built route that 404s was filed as "not built yet", so the chain read passing
+
+`execute_chain` softens 404/405 to `kind="missing"` so a not-yet-written endpoint does not fail a
+whole chain, and decides "built or not" from the response detail:
+
+    _built_404 = isinstance(_d, str) and _d.strip().lower() not in ("not found", "")
+
+Its own comment explains why that should work — Starlette answers an unmatched path with exactly
+`{"detail":"Not Found"}`, so anything else is a route that exists and rejected the request. The
+`.lower()` folds a handler's own `"not found"` onto Starlette's default and erases the signal.
+
+Corpus — 365 soft steps sitting inside PASSING chains, 94 runs:
+
+    "Not Found"           194  53%   Starlette's real default, correctly soft
+    ★ "not found"         129  35%   a handler's own detail, softened by .lower() alone
+    "Method Not Allowed"   34   9%   405 is never detail-checked at all
+    other                   8
+
+r153, RELEASED, is one: `my_list_per_profile_lifecycle` holds `DELETE /api/my-list/1 -> 404
+{"detail":"not found"}` kind=missing, and the handler that wrote it is `main.py:1324`, three lines
+under `@app.delete("/api/my-list/{title_id}")`. r154 is failing `business_chain` right now with the
+same shape in `tenant_admin_lifecycle`.
+
+Two controls before believing the 129:
+  * live probe of an unregistered path on r154 → `{"detail":"Not Found"}`, title case;
+  * 33 runs emit BOTH spellings, so nothing is rewriting the detail app-wide — the two come from
+    different places and the case was all that separated them.
+
+★ The fix stops guessing rather than sharpening the guess: FastAPI publishes the route table at
+`/openapi.json`, so ask it (cached per base, `_http` never raises, any surprise degrades to the
+string path). Only the (path, VERB) pair counts as built — a path served without the verb is the
+soft case this branch exists for. `ENVGEN_CHAIN_ROUTE_TABLE=0` restores the old path.
+
+★★ And the route table is not the same thing as a source scan. My first discriminator grepped the
+backend for decorators and reported "r134: 19 of 19 missing-steps hit a declared route". Then the
+live openapi showed r154 declares `@router.delete("/api/v1/tenants/{tenant_id}")` in
+`custom_routes.py` and serves no such path — the router is not mounted. A source scan would have
+hard-failed a chain on an endpoint the app genuinely does not serve. The corpus numbers that
+survive are the ones that never needed route matching at all (the 129 and the 34).
