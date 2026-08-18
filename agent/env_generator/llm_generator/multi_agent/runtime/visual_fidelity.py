@@ -3406,7 +3406,19 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         _unstable_893 = []
         try:
             if _head_sha and _prior_code_state_893 == _head_sha:
-                for _s in merged:
+                # ★ #929: over `screens` (THIS capture), not `merged`. #500's merge replaces a
+                # collapsed screen's record with the prior one, so when the live capture scored
+                # LOWER `_s` *is* `_pn` and `_delta` is 0 by construction — the detector could
+                # only ever see instability in the direction where the judge grew kinder.
+                # Executed control, same tree both ways:
+                #     0.60 -> 0.00   judge_unstable_893: null      (silent)
+                #     0.00 -> 0.60   judge_unstable_893: delta 0.6 (reported)
+                # r154 is the live case: title_detail scored 0.60, then 0.00 twice on a capture
+                # that is byte-identical between the two rounds and shows a complete, working
+                # detail page (hero art, Play/+/like, meta row, synopsis, Episodes with a season
+                # selector). A judge that scores that 0.00 is the noise this ticket exists to
+                # name, and it was the one shape #893 could not report.
+                for _s in screens:
                     _pn = prior_by_name.get(_s.get("name"))
                     if not isinstance(_pn, dict):
                         continue

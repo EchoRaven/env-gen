@@ -14293,3 +14293,44 @@ Reading the live run turned out to be worth more than waiting for it:
 ★ Method note: `rounds.jsonl` has no `round` or `gating_score` key. The real keys are `at`,
 `code_state`, `blocking_average`, `blocking_average_live`, `passed`, `min_similarity`, `live`.
 I read the wrong ones twice in this session before dumping a record.
+
+### 291. #929 — #893 could only see the judge getting kinder
+
+#893 records "the same code_state got a different verdict", so a reader can discount judge noise.
+It walked `merged` — the post-#500 list — and compared each entry to the prior verdict. When the
+live capture scored LOWER the merge has already put the prior record back into `merged`, so `_s`
+IS `_pn`: delta 0, missing-sets equal, by construction.
+
+Executed control, same tree, one screen, both directions:
+
+    0.60 -> 0.00    judge_unstable_893: null        silent
+    0.00 -> 0.60    judge_unstable_893: delta 0.6   reported
+
+★ r154 is the live case. `title_detail` scored 0.60, then 0.00 twice — on a capture that is
+byte-identical between those two rounds. I opened it (#771's path, which is what that field is
+for): a complete, working detail page — hero art, "Disclosure Day", Play / + / like, 2026 · TV-14 ·
+HD, synopsis, Science Fiction tag, and an Episodes section with a Season 1 selector and an episode
+row with runtime. A judge scoring that 0.00 is exactly the noise #893 exists to name, and it was
+the one shape #893 could not report. #711 fired on the aggregate; nothing named the screen, and
+nothing said the tree had not changed under it.
+
+Fix: compare THIS capture against the prior (`screens`, not `merged`). Recorded, not acted on,
+exactly as #893 was.
+
+★ Same root as #928, one detector along: a consumer reading the merged record where it needed the
+live one. Worth stating as a class — **#500's merge is an evidence sink**. Everything downstream of
+it that wants to know "what is true NOW" has to be checked individually:
+
+    blocking_average_live   #618   ok, computed pre-merge
+    record_exceeds_live_by  #711   ok, aggregate
+    per-screen similarity   #928   was broken, fixed here
+    judge_unstable_893      #929   was broken, fixed here
+    screenshot / reference  #771   ★ STILL WRONG — a stable path, overwritten each round, so a
+                                   merged record points at the LATEST image, not the one that
+                                   produced its score. r154's title_detail record says 0.6 and
+                                   points at the file that scored 0.00.
+    deviations/dimensions   ---    ★ STILL LOST — the collapsed capture's evidence is discarded
+                                   wholesale; the verdict keeps the GOOD capture's diagnosis of a
+                                   screen that is currently broken.
+
+The last two are the next tickets and are NOT fixed here.
