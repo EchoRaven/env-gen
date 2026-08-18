@@ -16099,3 +16099,44 @@ conclusion was previously **assumed from a guard I wrote** and is now **read off
 other avenue is likewise closed by measurement, not inference: `llm`/`plugboard` not installed,
 `/tmp/envgen_key.sh` + three other documented paths absent, no non-key credential class in the
 factory's namespace (`MetaGenKey` is the only one).
+
+### 349. #961 — the container CLI is resolved everywhere, so the shim stops being a prerequisite
+
+#936b converted the READ-ONLY docker calls and deliberately left the LIFECYCLE ones, writing:
+"switching the binary under them could produce a second project alongside the running one. That
+needs a generation to validate." Re-examined, that risk is bounded by construction:
+
+    runtime_bin() prefers docker whenever it resolves. Under run_netflix.sh the shim is on PATH,
+    so it returns "docker" and the argv is byte-identical to pre-#961. The binary changes ONLY
+    where `docker` does not resolve — and there the old call raised FileNotFoundError.
+    ★ A call that was crashing cannot have been starting a second stack.
+
+So no generation is needed to clear it, and #961 converts all seven sites: runhub
+`ComposeLifecycle._base_args` (the app's whole up/down), `validation_runner._compose`,
+`docker_tools._run_compose` + compose down + compose ps + container prune, and
+`database_tools._try_start_db_service`. Each keeps `"docker"` as its fallback, so the change is
+strictly no-worse than today. The framework now runs on a podman host WITHOUT the hand-installed
+shim — the prerequisite that #945 exists to abort on.
+
+★ Three instrument lessons landed inside this one fix:
+
+1. **My own published count was wrong, again.** `container_runtime.py`'s docstring claimed "ten
+   argv lists across five modules". AST says SEVEN across FOUR: the count had swept in
+   `memory_bank.py:997`, a KEYWORD list, which is the exact false positive #936b's structural
+   locator was built to reject. Third wrong number of mine in one session (346, 348, this).
+   Corrected in both the module and the test docstring.
+
+2. **The planted control found a hole in the locator, not just in the code.** Reverting
+   `_base_args` made only the BEHAVIOURAL test red; the new AST test stayed green, because
+   `["docker", "compose"]` carries no flag and no dynamic element and my discriminator required
+   one. Tightened to treat the bare two-element base as argv, then re-verified BOTH ways: it now
+   flags both pre-#961 shapes and still refuses the keyword list.
+
+3. **A test was pinning the defect.** `test_the_locator_finds_the_known_lifecycle_sites` asserted
+   `{"_compose","_run_compose"} <= live_sites` — it required two real functions to KEEP
+   hardcoding the binary, so fixing them turned the suite red *because the bug was fixed*. Same
+   shape as #782, which three spelling-pinned tests kept alive for 122 runs. Rewritten to prove
+   non-vacuity against a synthetic fixture: **non-vacuity is a property of the locator, so prove
+   it against a sample, never against the tree it polices.** `_LIFECYCLE_ALLOWED` is now empty,
+   which makes the guard strictly stronger — verified by planting a literal in a formerly
+   allowlisted site and watching it fail.

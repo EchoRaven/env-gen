@@ -1,8 +1,11 @@
 """#936 — which container CLI is on this host, and the one call shape no shim can rescue.
 
-Ten argv lists across five modules begin with the literal ``"docker"``, and this host runs podman
-5.8.3 with no docker package. It works anyway, via a hand-installed PATH shim the repo ships and
-`tools/podman_setup.sh` tells you to add yourself:
+Seven argv lists across FOUR modules began with the literal ``"docker"`` (measured by AST on
+2026-08-18; an earlier count of "ten across five" in this docstring was mine and was wrong — it
+included ``memory_bank.py:997``, a KEYWORD list ``["docker","compose","port","url",…]`` that is
+not an argv at all, and the same false positive #936b's locator produced). #961 converted all
+seven. This host runs podman 5.8.3 with no docker package, and it worked anyway only via a
+hand-installed PATH shim the repo ships and `tools/podman_setup.sh` tells you to add yourself:
 
     tools/podman_shim/docker   `docker compose …` -> `podman-compose …`;  `docker …` -> `podman …`
 

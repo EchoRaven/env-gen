@@ -103,7 +103,7 @@ def _run_compose(
                 repair_custom_routes_param_types_vs_projection(_be)
         except Exception:
             pass
-    cmd = ["docker", "compose", "-f", str(compose_file)] + args
+    cmd = [_rt936(), "compose", "-f", str(compose_file)] + args  # #961
     return subprocess.run(
         cmd,
         cwd=str(cwd),
@@ -610,7 +610,7 @@ Example:
             )
         
         # Use docker compose (v2) instead of docker-compose
-        cmd = ["docker", "compose", "-f", str(compose_file), "down"]
+        cmd = [_rt936(), "compose", "-f", str(compose_file), "down"]  # #961
         
         if volumes:
             cmd.append("-v")
@@ -754,7 +754,7 @@ Example:
             )
         
         # Use docker compose (v2) instead of docker-compose
-        cmd = ["docker", "compose", "-f", str(compose_file), "ps"]
+        cmd = [_rt936(), "compose", "-f", str(compose_file), "ps"]  # #961
         
         try:
             result = subprocess.run(
@@ -1261,7 +1261,7 @@ Example:
             steps_completed.append(f"docker compose down (exit={result.returncode})")
             
             # Step 2: Prune any dangling containers for this directory
-            prune_cmd = ["docker", "container", "prune", "-f"]
+            prune_cmd = [_rt936(), "container", "prune", "-f"]  # #961
             subprocess.run(prune_cmd, capture_output=True, timeout=30)
             steps_completed.append("docker container prune")
             

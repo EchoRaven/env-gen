@@ -267,7 +267,7 @@ Connection uses docker-compose service name 'db' by default.
         for compose_file in compose_files:
             for svc in ("db", "database", "postgres"):
                 for cmd in (
-                    ["docker", "compose", "-f", str(compose_file), "up", "-d", svc],
+                    [_rt936(), "compose", "-f", str(compose_file), "up", "-d", svc],  # #961
                     ["docker-compose", "-f", str(compose_file), "up", "-d", svc],
                 ):
                     try:

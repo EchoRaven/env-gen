@@ -72,8 +72,14 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
     # on docker_up (smoke-notes 2026-06-19). The classic builder streams full step
     # logs, so the real esbuild error reaches the repair agent.
     import os as _os
+    # #961: resolve the container CLI rather than hardcoding `docker` — see container_runtime.
+    try:
+        from .container_runtime import runtime_bin as _rb
+        _bin = _rb()
+    except Exception:
+        _bin = "docker"
     return subprocess.run(
-        ["docker", "compose", "-f", str(compose_file), *args],
+        [_bin, "compose", "-f", str(compose_file), *args],
         cwd=str(cwd), capture_output=True, text=True, timeout=timeout,
         env={**_os.environ, "DOCKER_BUILDKIT": "0", "COMPOSE_DOCKER_CLI_BUILD": "0"},
     )

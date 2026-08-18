@@ -14,6 +14,23 @@ from dataclasses import dataclass
 from typing import Any, Callable, List, Optional
 
 
+def _runtime_bin_961() -> str:
+    """#961 — resolve the container CLI, never assume the literal ``docker``.
+
+    Imported lazily and guarded: this module is deliberately dependency-light so unit tests can
+    stub every subprocess, and a hard import would make an unrelated import error break the
+    lifecycle. Falling back to ``"docker"`` keeps the pre-#961 behaviour exactly.
+    """
+    try:
+        from ...container_runtime import runtime_bin
+    except Exception:
+        return "docker"
+    try:
+        return runtime_bin()
+    except Exception:
+        return "docker"
+
+
 @dataclass
 class ComposeResult:
     returncode: int
@@ -52,7 +69,11 @@ class ComposeLifecycle:
         self.compose_file = compose_file
 
     def _base_args(self) -> List[str]:
-        args = ["docker", "compose"]
+        # #961: the runtime, not the literal. This host has no `docker` binary — the whole
+        # lifecycle works only because tools/podman_shim is hand-added to PATH, which nothing
+        # guarantees (#936). runtime_bin() prefers docker when it exists, so a docker host is
+        # unchanged; a podman host now works WITHOUT the shim.
+        args = [_runtime_bin_961(), "compose"]
         if self.compose_file:
             args += ["-f", self.compose_file]
         return args

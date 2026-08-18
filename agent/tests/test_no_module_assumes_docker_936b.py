@@ -15,11 +15,19 @@ returned None because `docker ps` raised, and every `docker exec`/`docker compos
 raised too, leaving only a direct `psql` that needs the binary on the host. Same for
 `log_tools`' `compose logs` — a lane could not read its own container's logs.
 
-★ What is deliberately NOT changed, and why: every remaining literal is in a LIFECYCLE path — it
-creates, starts, stops or prunes containers. Those are not dead in the same sense (something does
-bring the stack up in every run, and I have not traced what), so switching the binary under them
-could produce a second project alongside the running one. That needs a generation to validate, not
-a unit test, and it is recorded rather than guessed at.
+★ UPDATE 2026-08-18 (#961): the lifecycle literals ARE now converted, and the allowlist below is
+empty. The original note deferred them because "switching the binary under them could produce a
+second project alongside the running one … needs a generation to validate". That risk turned out
+to be bounded by construction, which is why it no longer needs a generation:
+
+    runtime_bin() prefers docker whenever the binary resolves. Under run_netflix.sh the podman
+    shim is on PATH, so it returns "docker" and the argv is byte-identical to pre-#961. The
+    binary changes ONLY where `docker` does not resolve at all — and there the old call raised
+    FileNotFoundError. **A call that was crashing cannot have been starting a second stack.**
+
+Also corrected: this docstring said "ten argv lists across five modules". Measured by AST it was
+SEVEN across FOUR — the count had swept in `memory_bank.py:997`, a keyword list, which is the very
+false positive the structural locator below exists to reject.
 """
 import ast
 import pathlib
@@ -37,13 +45,10 @@ _CMD_NAMES = ("cmd", "arg", "argv", "command")
 
 #: Functions allowed to keep the literal, with the reason. Keyed by function NAME rather than
 #: line number so the guard survives edits — and so adding one is a decision someone writes down.
-_LIFECYCLE_ALLOWED = {
-    "_compose": "validation_runner: compose up/build/down for the generated stack",
-    "_base_args": "runhub ComposeLifecycle: up/down",
-    "_run_compose": "docker_tools: the agent's compose build/up path",
-    "_try_start_db_service": "database_tools: compose up -d <db service>",
-    "execute": "docker_tools tool bodies: compose down, container prune",
-}
+#: EMPTY since #961 — every lifecycle site now resolves the runtime. Kept (rather than deleted)
+#: because the guard below is "nothing outside this set", and an empty set states the rule at its
+#: strongest: no module may hardcode the binary. Re-adding a name is a decision someone writes down.
+_LIFECYCLE_ALLOWED: dict = {}
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1] / "env_generator"
 
@@ -110,11 +115,34 @@ def _argv_sites():
     return out
 
 
-def test_the_locator_finds_the_known_lifecycle_sites():
-    """★ Non-vacuity. A locator that matches nothing would make the next test pass forever."""
-    sites = _argv_sites()
-    assert sites, "found no docker argv lists at all — the locator is broken, not the tree"
-    assert {"_compose", "_run_compose"} <= {s[2] for s in sites}
+def test_the_locator_is_not_vacuous(tmp_path):
+    """★ Non-vacuity, proven SYNTHETICALLY — this test used to demand the defect survive.
+
+    It asserted `{"_compose", "_run_compose"} <= live_sites`, i.e. that two real functions still
+    hardcoded the binary. #961 fixed them and this test went red *because the bug was fixed* —
+    the exact shape of [[a-green-suite-can-pin-the-defect]], where three tests pinning a field's
+    spelling kept #782 alive for 122 runs.
+
+    Non-vacuity is a property of the LOCATOR, so prove it against a fixture the locator is not
+    allowed to lose, never against the tree it polices.
+    """
+    global _ROOT
+    sample = tmp_path / "sample.py"
+    sample.write_text(
+        "import subprocess\n"
+        "def _compose(f):\n"
+        "    return subprocess.run(['docker', 'compose', '-f', str(f), 'up'])\n"
+        "def _base_args():\n"
+        "    args = ['docker', 'compose']\n"
+        "    return args\n"
+    )
+    _orig, _ROOT = _ROOT, tmp_path
+    try:
+        sites = _argv_sites()
+    finally:
+        _ROOT = _orig
+    assert {s[2] for s in sites} >= {"_compose", "_base_args"}, (
+        f"the locator no longer detects the pre-#961 shape it exists to forbid: {sites}")
 
 
 def test_no_read_only_path_still_assumes_docker():
