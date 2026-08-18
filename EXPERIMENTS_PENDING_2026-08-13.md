@@ -16275,3 +16275,72 @@ page), not another app token. Alternatively, grant one of the eleven models to o
 ids via the Access_Control link the exception prints.
 
 Sidecar stopped both times, :8900 free, 0 containers, no secret recorded.
+
+### 354. I killed a working run, and the evidence that fooled me was all real
+
+r155 went 11 minutes without writing a log line. I read three signals and called it hung:
+
+    CPU time frozen at 277s          "not computing"
+    6 sockets CLOSE-WAIT to :8900    "sidecar closed, client never read"
+    last LLM Request had no Response "the call never came back"
+
+All three readings were wrong, and each was wrong in the same way: **they measure the parent
+process, and the parent was blocked on a child.** A process waiting on `subprocess.run` burns no
+CPU (277s over 6919s wall was this run's normal ratio, not a new symptom). Idle keep-alive sockets
+that the peer closed sit in CLOSE-WAIT whether or not anything is stuck. And a coroutine that never
+logs its response looks identical whether it is hung or merely descheduled.
+
+What settled it came only after the kill: `podman-compose` and `podman build` in the dead process's
+pgid, **started 12:25:32 — two minutes before I killed it.** It was building the frontend image.
+
+★ The generalizable form: *absence of output is not evidence of absence of work.* Before calling a
+silence a hang, look for the thing the process could be waiting ON — children, sockets with a live
+peer, open files — not just at the process itself. `pgrep -P <pid>` would have answered it in one
+call, and I had actually run it earlier and got a hit; I read the empty `ps` of an already-exited
+child as "no children" and moved on.
+
+Cost: ~2h of run. Cleanup after: 0 containers, 0 `docker_*` images, 0 volumes, 3001/8000/5433 free.
+
+### 355. #963/#964 — the silence was manufactured by us, not by the model
+
+Root cause, found after the kill and worth more than the run: `tools/validation_tools.py`'s
+`RunValidationTool.execute` is `async def`, and it called the fully synchronous
+`run_smoke_validation` **directly**. That freezes the whole event loop for the length of a compose
+boot. Everything else on the loop is starved meanwhile — including the LLM client's own 60s
+`[LLM] Still waiting for API response...` heartbeat, which exists precisely to prove liveness, and
+the orchestrator's stall nudges. So the framework had a heartbeat and a watchdog, and the one code
+path that most needed them was the one that switched them off.
+
+    #963  await asyncio.to_thread(run_smoke_validation, ...)   + SINGLE-FLIGHT (below)
+    #964  _compose() announces `<bin> <verb> (timeout=Ns)` BEFORE it blocks, and rc+elapsed after
+
+The single-flight is not decoration. Unfreezing the loop made a *concurrent* second smoke reachable
+for the first time — orchestrator framework-validation and the verifier lane can now both be in
+flight — and two smokes on one project race `compose down -v` against each other's build. The fix
+would otherwise have traded a visibility bug for a contamination bug.
+
+Why it surfaced now and not in r150–r154: max log gap in those runs was 80–121s; r155's was 1,365s.
+The defect was always there, sized by how long the blocking call took. r155 is also the first run on
+`LLM.openai` via the metagen sidecar (median call 15.3s, p90 48.2s) instead of `LLM.anthropic`
+(median 2.6s, p90 9.4s) — a 6x slower path stretches every window, and a cold image cache stretched
+the build one past ten minutes.
+
+Tests: `test_validation_does_not_block_the_loop_963.py` (a co-scheduled ticker must keep ticking
+during the blocking smoke; planted control on a synthetic coroutine proves the assertion
+discriminates — pre-fix shape yields 0 ticks), `test_compose_spawn_is_announced_964.py` (the
+load-bearing assertion is ORDERING: the log record must exist at the moment `subprocess.run` is
+entered, not after it returns).
+
+### 356. #965 — r155's first real product finding: the acceptance budget went binding
+
+Not from the log — from the suite going red on r155's own artifacts.
+`test_acceptance_criteria_reach_the_briefing_818.py` is a corpus tripwire, and r155's
+`reference_spec.json` tripped it: **4,079 chars / 36 acceptance criteria**, 27% above the previous
+corpus maximum (netflix-web-r48, 3,202). #818 sized the budget at 4,000 for ~25% headroom over that
+old max, so r155 turned it into a binding cap and silently dropped one criterion from the briefing.
+
+Re-measured across 154 specs, same rule, new maximum: **5,100**. Recorded honestly in the comment
+that this constant is a treadmill by construction — each richer app resets the maximum — and that
+the corpus test is what forces the re-measurement instead of letting the drop go quiet.
+
+Full suite after all three: **6,487 passed, 0 failed.**

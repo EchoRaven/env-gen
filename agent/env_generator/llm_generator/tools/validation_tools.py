@@ -15,6 +15,7 @@ keeps the tool usable in unit tests where no live registry is attached.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any, List, Optional
@@ -39,6 +40,35 @@ def _import_runner():
     except Exception:  # pragma: no cover - alt path
         from env_generator.llm_generator.multi_agent.runtime.validation_runner import run_smoke_validation
     return run_smoke_validation
+
+
+# #963: SINGLE-FLIGHT. Offloading the smoke to a thread (below) unfroze the event
+# loop, which also made a second, concurrent run_validation reachable for the first
+# time — the orchestrator's framework validation and the verifier lane can now both
+# be in flight. Two smokes on one project race `compose down -v` against each other's
+# build/up: the loser's volumes vanish mid-probe and the verdict describes an env that
+# no longer exists. Serialise them; the second caller runs a fresh smoke after the
+# first returns.
+_SMOKE_LOCK: Optional["asyncio.Lock"] = None
+
+
+def _smoke_lock() -> "asyncio.Lock":
+    """Created lazily so the lock binds to the running loop, not import time."""
+    global _SMOKE_LOCK
+    if _SMOKE_LOCK is None:
+        _SMOKE_LOCK = asyncio.Lock()
+    return _SMOKE_LOCK
+
+
+async def _run_smoke_single_flight(runner, project_dir, biz):
+    """#963: the smoke is synchronous (subprocess compose + urllib probes), so run it
+    in a THREAD \u2014 calling it straight from a coroutine froze the whole event loop for
+    the length of a boot. Nothing else could be scheduled meanwhile, including the LLM
+    client's 60s "[LLM] Still waiting" heartbeat and the orchestrator's stall nudges,
+    so a working cold build emitted ZERO log lines and was indistinguishable from a
+    dead process (netflix r155: 683s of silence, read as a hang and killed)."""
+    async with _smoke_lock():
+        return await asyncio.to_thread(runner, project_dir, biz, teardown=False)
 
 
 class RunValidationTool(BaseTool):
@@ -150,7 +180,8 @@ then record the verdict. Do NOT hand-orchestrate docker_up + test_api yourself.
         # checks (and the orchestrator's delivery probe) run against the SAME
         # running env. The clean boot (down -v && up) at the runner's start is
         # what guarantees freshness — teardown is the orchestrator's job at the end.
-        report = run_smoke_validation(project_dir, biz, teardown=False)
+        report = await _run_smoke_single_flight(
+            run_smoke_validation, project_dir, biz)
         # §0.5 framework consequence: the verifier's api_smoke evidence (one
         # registryhub_record_contract_test per endpoint, which the delivery gate +
         # integrity check audit) is a deterministic CONSEQUENCE of this one call,

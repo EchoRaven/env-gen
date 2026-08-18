@@ -243,7 +243,12 @@ _SPEC_LIST_KEYS = ("screens", "endpoints", "entities", "mcp_tools", "acceptance"
 # under their caps (screens 206, endpoints 395, entities 100, mcp_tools 0 — medians); `acceptance`
 # is the only one that overflows, and it overflows in 150 of 150 runs: median 2,156, max 3,202
 # against a 1,500 cut. 4000 clears the observed maximum with ~25% margin.
-_ACCEPTANCE_BUDGET_818 = 4000
+# #965: re-measured at 154 specs — netflix-web-r155 came in at 4,079 chars / 36 criteria, 27% over
+# the previous corpus max, so the #818 budget went from 25% headroom to binding and dropped a
+# criterion. Same rule, new maximum: 5100 clears 4,079 with ~25% margin. This constant is a
+# TREADMILL by construction — each richer app resets the maximum — so the paired corpus test is
+# the tripwire that forces the re-measurement rather than letting the drop go quiet.
+_ACCEPTANCE_BUDGET_818 = 5100
 
 
 def _acceptance_line_818(acceptance) -> str:

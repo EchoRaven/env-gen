@@ -28,6 +28,7 @@ generator runs. Returns a report; never raises (failures are recorded, not throw
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import subprocess
@@ -38,6 +39,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 # #936: docker is absent on a podman gen host; resolve the runtime instead of assuming.
 from env_generator.llm_generator.multi_agent.runtime.container_runtime import runtime_bin as _rt936
+
+_LOG = logging.getLogger(__name__)
 
 # A cold docker build for a heavy app (React npm-install+build + backend + postgres + staged assets)
 # can exceed the old 300s cut-off mid-`up --build` (r6: 6/6 api_smoke attempts timed out at 300s →
@@ -78,11 +81,28 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
         _bin = _rb()
     except Exception:
         _bin = "docker"
-    return subprocess.run(
-        [_bin, "compose", "-f", str(compose_file), *args],
-        cwd=str(cwd), capture_output=True, text=True, timeout=timeout,
-        env={**_os.environ, "DOCKER_BUILDKIT": "0", "COMPOSE_DOCKER_CLI_BUILD": "0"},
-    )
+    # #964: announce the spawn BEFORE it blocks. These calls own the longest silent
+    # windows in a run (build up to _DOCKER_BUILD_TIMEOUT, up to _DOCKER_UP_TIMEOUT)
+    # and used to emit nothing at all — no start line, no argv, no elapsed — so an
+    # in-progress cold build was indistinguishable from a wedged process from the
+    # outside (netflix r155). Naming the verb and the cap up front makes the wait
+    # self-explaining; the completion line gives rc + how long it actually took.
+    _verb = " ".join(args) or "(no args)"
+    _LOG.info("compose spawn: %s %s (timeout=%ss, cwd=%s)", _bin, _verb, timeout, cwd)
+    _t0 = time.monotonic()
+    try:
+        cp = subprocess.run(
+            [_bin, "compose", "-f", str(compose_file), *args],
+            cwd=str(cwd), capture_output=True, text=True, timeout=timeout,
+            env={**_os.environ, "DOCKER_BUILDKIT": "0", "COMPOSE_DOCKER_CLI_BUILD": "0"},
+        )
+    except subprocess.TimeoutExpired:
+        _LOG.warning("compose spawn: %s %s TIMED OUT after %.0fs (cap %ss)",
+                     _bin, _verb, time.monotonic() - _t0, timeout)
+        raise
+    _LOG.info("compose spawn: %s %s -> rc=%s in %.0fs",
+              _bin, _verb, cp.returncode, time.monotonic() - _t0)
+    return cp
 
 
 def _compose_capture(compose_file: Path, *args: str, cwd: Path, timeout: int):
