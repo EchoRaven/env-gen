@@ -15262,3 +15262,29 @@ seconds — and it is the cheapest integration test imaginable, absent until now
 ★★ Pre-r155 status: r155 is BLOCKED on `GOOGLE_API_KEY`, which is not in the environment and not on
 disk (the only two matches in $HOME are a comment and a variable name). Everything else is ready —
 containers cleared, 377G free, playwright installed, base images present, shim on PATH for #945.
+
+### 322. #951 — the second integration run found the loop #939 did not count
+
+Same method as #950, applied to the scaffold cluster (#926/#938/#939/#946). Six consistency
+assertions, all green — and the log beside them showed something none of them asked about:
+
+    AUTH PAGE OVERWRITE #1..#4   LoginPage          counted 4
+    PROJECTION CLOBBER  x4       BrowseHomePage     counted 0
+
+203 lane lines replaced by a 68-line projection, four rounds running, and #939 saw none of it —
+because #939 counted the auth branch and stopped. Its own justification does not stop there:
+*"the loop itself is waste either way."* And the corpus puts **537** component-importing pages on
+the projection path against the auth branch's one, so **the uncounted loop is the larger one.**
+
+Counted under a `projection:` prefix rather than merged: the two are different decisions (#914
+governs the projection path; nothing governs auth) and one number would hide which is which.
+Re-ran the integration: `{'LoginPage': 4, 'projection:BrowseHomePage': 4}`.
+
+★ Two integration runs, two real defects, both invisible to the 6414 unit tests that were already
+green. The common shape: **every unit test asserts what its own ticket claims, so a gap between two
+tickets is exactly what no unit test is looking at.** #950 was a relationship between two records;
+#951 is a claim made by one ticket that a sibling ticket also earns.
+
+★★ Also assert-scoped the new call with #940's rule — the counter's argument must be a name bound
+in the enclosing function — because #939's first version passed `fe` where the parameter is
+`frontend_dir`, and no unit test drove that branch.

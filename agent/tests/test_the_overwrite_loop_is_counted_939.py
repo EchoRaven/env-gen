@@ -107,3 +107,37 @@ def test_the_counter_call_uses_a_bound_name():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --------------------------------------------------------------------------- #951 the other loop
+
+def test_the_projection_loop_is_counted_apart_from_auth(tmp_path):
+    """#951: #939 counted the auth branch and stopped. Its own argument — "the loop itself is
+    waste either way" — does not stop there, and the corpus puts 537 component-importing pages on
+    the projection path against the auth branch's one. Found by driving the scaffold four rounds:
+    BrowseHomePage was clobbered four times and counted zero."""
+    fe = _fe(tmp_path)
+    for _ in range(3):
+        fs._count_overwrite_939(fe, "projection:BrowseHomePage")
+    fs._count_overwrite_939(fe, "LoginPage")
+    data = json.loads((tmp_path / "design" / "scaffold_overwrites_939.json").read_text())
+    assert data["projection:BrowseHomePage"] == 3
+    assert data["LoginPage"] == 1, "the two loops are different decisions and must stay separable"
+
+
+def test_the_projection_branch_calls_the_counter():
+    """AST, and scope-checked: the argument must be a name bound in that function (#940's rule,
+    after `fe` vs `frontend_dir` cost a NameError in #939)."""
+    import ast
+    import inspect
+    tree = ast.parse(inspect.getsource(fs))
+    fn = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
+          and n.name == "scaffold_pages_from_contract"][0]
+    calls = [n for n in ast.walk(fn) if isinstance(n, ast.Call)
+             and isinstance(n.func, ast.Name) and n.func.id == "_count_overwrite_939"]
+    assert len(calls) == 2, f"auth and projection, found {len(calls)}"
+    params = {a.arg for a in fn.args.args}
+    bound = params | {t.id for n in ast.walk(fn) if isinstance(n, ast.Assign)
+                      for t in n.targets if isinstance(t, ast.Name)}
+    for c in calls:
+        assert isinstance(c.args[0], ast.Name) and c.args[0].id in bound, ast.unparse(c)

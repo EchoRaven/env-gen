@@ -9915,6 +9915,29 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                                 _ex_n = len(_existing.splitlines())
                                 _cd_n = len(_cand.splitlines())
                                 if not _marked and _ex_n > _cd_n:
+                                    # #951: count THIS loop too.
+                                    #
+                                    # #939 counted the auth branch and stopped, and its own
+                                    # argument does not stop there: "the loop itself is waste
+                                    # either way". Driving the scaffold four rounds shows
+                                    # BrowseHomePage clobbered four times — 203 lane lines
+                                    # replaced by a 68-line projection, every round — and counted
+                                    # zero times. The corpus puts 537 component-importing pages on
+                                    # this path against the auth branch's one, so the UNcounted
+                                    # loop is the larger one.
+                                    #
+                                    # Keyed apart from the auth count: they are different
+                                    # decisions (#914 governs this one, nothing governs auth) and
+                                    # merging them would hide which is which.
+                                    _n951 = _count_overwrite_939(frontend_dir, f"projection:{comp}")
+                                    if _n951 >= 3:
+                                        __import__("logging").getLogger(__name__).error(
+                                            "SCAFFOLD LOOP (projection): %s has now been replaced "
+                                            "%d times this run — the lane rewrites it and the "
+                                            "projector overwrites it, so its work never reaches a "
+                                            "capture. ENVGEN_DEFER_TO_LANE_PAGE decides who should "
+                                            "win (#914); that this repeats is waste either way "
+                                            "(#951).", comp, _n951)
                                     _ex_comp = len(set(re.findall(r"<([A-Z]\w*)", _existing)))
                                     __import__("logging").getLogger(__name__).warning(
                                         "PROJECTION CLOBBER: %s — replacing the lane's %d-line "
