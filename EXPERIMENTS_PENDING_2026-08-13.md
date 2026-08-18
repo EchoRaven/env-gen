@@ -14482,3 +14482,56 @@ photographing the login page is a verdict, however bad).
 
 ★ One seam caught by writing the test first: `float(None or 0.0)` is 0.0, so a screen with NO score
 would have been filed as a judge failure. The guard rejects the value instead of coercing it.
+
+### 298. ★ CORRECTION to items 291 and 297 — the judge was right, the picture was stale
+
+Both tickets illustrated themselves with r154's `title_detail`, and both said the same wrong thing:
+*"a judge scoring a complete, working detail page 0.00 is noise"*. I had opened
+`visual_gate/title_detail.png`, seen a correct page, and reasoned from it.
+
+Then I listed the mtimes:
+
+    title_detail.png     17:19:57     ← round 1, never rewritten
+    every other screen   19:01:xx     ← this round
+    browse_home_rows     18:16:49     ← round 3, then stopped
+
+`title_detail` scored 0.00 in rounds 2–8 and its file has not been written since before round 1's
+record. **The capture has failed every round.** The 0.00 is correct, the picture is stale, and the
+page I described is round 1's photograph of an app that may look nothing like that now.
+
+An independent signal was in the run all along and I found it only after: the orchestrator's own
+notes say `flow_coverage.missing = ['profiles','title_detail','signup_page']` — "M1 pages the
+ui_flow harness can't detect". Two unrelated subsystems failing on the same page is a route
+problem, not a judge problem, and that correlation is what sent me to the mtimes.
+
+What survives unchanged:
+  * **#929's fix** — proven by its own executed control (0.60→0.00 silent, 0.00→0.60 reported),
+    which never depended on why r154's screen collapsed.
+  * **#933's fix** — and it is now much better motivated: the live record for a failed capture
+    carries `capture_missing: True` and the deviation *"produced NO capture this pass … This is not
+    a verdict on the page"*, and #500's merge threw both away. #933 would have told me in one line
+    what four probes and a wrong conclusion took.
+
+What was wrong: only the illustration, in both tickets. Corrected in place here rather than by
+editing them, so the mistake stays legible.
+
+★ The deeper lesson is not "check mtimes". #768's comment already says a failed capture "drags the
+gate exactly as if the lane had shipped a broken page", and #771's says a path turns looking at the
+image into a lookup. Both were right; together they produce a trap neither anticipated — **the
+lookup succeeds and returns a healthy picture of a screen that was never photographed**. I fell
+into it while writing the ticket about evidence erasure.
+
+### 299. #934 — a stale capture must not look current
+
+The record is honest (`screenshot: None`, `capture_missing: True`, a deviation saying in words
+"This is not a verdict on the page"). The DIRECTORY is not: `visual_gate/<name>.png` still holds
+the last successful round's image. A lane reads that directory; #713 reads it too, and for #713 a
+stale file is a real image that can duplicate-match another screen.
+
+Renamed to `<name>.NOT-CAPTURED.png`, never deleted — #930 has already archived the picture under
+the code_state that earned its score.
+
+★ Second unbound-name seam of the session, same shape as #930's `_head_sha`: `shots_dir` is
+assigned inside the `capture is None` branch, so with an injected `capture_fn` the name was
+unbound. Caught by #542's end-to-end test on the first full run, not by me. Hoisted to one
+definition above the branch rather than duplicated into the `else`.

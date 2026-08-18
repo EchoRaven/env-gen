@@ -2718,6 +2718,11 @@ async def run_visual_fidelity(
                 "screens": [], "skipped": skipped}
 
     capture = capture_fn
+    # #934 hoisted this out of the `capture is None` branch below: the no-capture handler needs it,
+    # and with an injected `capture_fn` that branch never ran, so the name was unbound (caught by
+    # #542's end-to-end test on the first full run). One definition, not two — a value duplicated
+    # under one name is a promise that drifts on the first edit to either.
+    shots_dir = out_dir or (project_dir / "design" / "visual_gate")
     if capture is None:
         err = _compose_up(project_dir)
         if err:
@@ -2785,7 +2790,6 @@ async def run_visual_fidelity(
         # poll broke on a 2xx-4xx from THIS app's own port), so base_url points at
         # the real generated app, never the :8080 gmaps demo.
         base_url = f"http://localhost:{fe_port}"
-        shots_dir = out_dir or (project_dir / "design" / "visual_gate")
 
         _auth_bounced: List[str] = []
         _blank_screens: List[str] = []
@@ -2940,6 +2944,21 @@ async def run_visual_fidelity(
                         "did not photograph it, so there is nothing to judge. This is not a "
                         "verdict on the page")
                 _no_shot_768 = True
+                # #934: and the PREVIOUS round's photograph is still sitting at
+                # `visual_gate/<name>.png`, looking healthy.
+                #
+                # The record says the truth (`screenshot: None`, `capture_missing: True`); the
+                # DIRECTORY does not. r154 ran seven rounds with `title_detail` at 0.00 while
+                # `title_detail.png` held a complete, correct detail page whose mtime never moved
+                # off 17:19:57 — round 1's capture. I opened that file, reasoned from it, and
+                # wrote two tickets around "the judge scored a working page 0.00" before checking
+                # the mtime. It is also the reading a lane gets, and the reading #713 gets: a
+                # stale file is a real image that can duplicate-match another screen.
+                #
+                # Renamed, never deleted — the pixels stay available under a name that cannot be
+                # mistaken for this round's capture, and #930 has already archived it under its
+                # own code_state if it ever earned a score.
+                _retire_stale_capture_934(shots_dir, screen["name"])
             results.append({"name": screen["name"], "route": screen["route"],
                             "similarity": 0.0, "passed": False, "dimensions": {},
                             "deviations": [_dev],
@@ -3096,6 +3115,30 @@ async def run_visual_fidelity(
             # later milestone's pages. Empty on the final/single-milestone path.
             "scope_excluded_screens": _scope_excluded_names,
             "min_similarity": min_similarity}
+
+
+def _retire_stale_capture_934(shots_dir: Any, name: str) -> bool:
+    """The harness did not photograph this screen — take the PREVIOUS round's picture out of the
+    way. Returns True if a stale file was retired.
+
+    The record already tells the truth (`screenshot: None`, `capture_missing: True`); the
+    directory does not. r154 ran seven rounds with `title_detail` at 0.00 while
+    `visual_gate/title_detail.png` held a complete, correct detail page whose mtime never moved off
+    round 1. I opened that file, reasoned from it, and wrote two tickets around "the judge scored a
+    working page 0.00" before checking the mtime. A lane reads the same directory, and so does
+    #713, for which a stale file is a real image that can duplicate-match another screen.
+
+    Renamed, never deleted: the pixels stay under a name that cannot be mistaken for this round,
+    and #930 has already archived the image under its own code_state if it ever earned a score.
+    """
+    try:
+        p = Path(shots_dir) / f"{name}.png"
+        if not p.is_file():
+            return False
+        p.replace(p.with_name(f"{name}.NOT-CAPTURED.png"))
+        return True
+    except Exception:
+        return False
 
 
 def _archive_capture_930(rec: Dict[str, Any], vdir: Any, code_state: Any) -> Dict[str, Any]:
