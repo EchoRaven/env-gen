@@ -16187,3 +16187,35 @@ Left open (recorded, not guessed): giving each run its OWN compose project name 
 rather than this instance. It touches how every generated compose file is invoked, so it wants a
 live run to validate — the same bar #936b set for the lifecycle literals, which #961 later cleared
 by argument rather than by running.
+
+### 351. per-run compose project names: the deferral, decided on evidence rather than instinct
+
+#961 cleared a "needs a live run" deferral by ARGUMENT. Item 350 left another one — give each run
+its own compose project — so I tested whether the same trick applies. Three measurements:
+
+1. **Nothing depends on the `docker_<service>` container-name prefix.** All 37 `docker_*` string
+   literals in `env_generator/` are TOOL names (`docker_up`, `docker_build`, bundle keys), not
+   container names. `container_id()` matches by substring (`--filter name=backend`), so a rename to
+   `netflix-web-r155_backend_1` keeps matching. On dependency grounds the change is safe.
+
+2. ★ **One path already passes `-p`, with a RANDOM name.** `docker_tools`'s reset builds
+   `project_name = f"gen_{uuid.uuid4().hex[:8]}"` and runs build/up/ps under it, while EVERY other
+   path (`docker_up`, `docker_status`, validation_runner `_compose`, runhub `ComposeLifecycle`)
+   uses the default project `docker`. After a reset the live stack is `gen_a1b2c3d4_*` and the rest
+   of the framework is looking at an empty project — so a later `docker_up` starts a SECOND stack
+   that collides on ports, and `container_id()`'s name filter matches both. That is the #962
+   ambiguity manufactured inside a single run.
+
+3. **It has never fired: 0 of 264 run logs** contain `compose -p gen_XXXXXXXX` or
+   `Project: gen_XXXXXXXX`. The hazard is LATENT, not active.
+
+**Decision: do not implement per-run project names now, and do not "fix" the reset either.** The
+reward is preventing cross-run collisions — but the collision that actually bit today came from a
+leftover stack (my own, item 350), that stack is gone, and #962 now makes the ambiguous case
+return "unknown" instead of the wrong container. Doing it properly means making EVERY invocation
+path agree on one project name, including the reset's random one; that is a coordinated change
+across four modules, landing immediately before a run, to fix something measured at 0/264.
+
+★ The measurement that mattered was the reachability one. Without it, item 2 reads like a live bug
+and would have justified exactly the risky pre-run change I am declining. **A hazard's severity is
+not its reachability, and only one of those two is an argument for acting today.**
