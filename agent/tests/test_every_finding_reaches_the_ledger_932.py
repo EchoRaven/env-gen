@@ -34,9 +34,14 @@ from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as v
 
 # --------------------------------------------------------------------------- the completeness guard
 
-#: keys the verdict grows that are NOT findings. Empty today; a future non-finding key goes here
-#: with a reason, which is the point — the decision gets made rather than defaulted.
-_NOT_A_FINDING = frozenset()
+#: keys the verdict grows that are NOT findings. A future non-finding key goes here with a reason,
+#: which is the point — the decision gets made rather than defaulted.
+#:
+#: ★ This guard caught its first real case within hours of being written: #941 added `milestone`
+#: to the verdict and the suite went red. That key is an IDENTITY LABEL, not a detection, and it
+#: reaches the ledger by its own line in the row builder rather than through the findings loop —
+#: carrying it twice would be the duplication #926 is about.
+_NOT_A_FINDING = frozenset({"milestone"})
 
 
 def _verdict_conditional_keys():

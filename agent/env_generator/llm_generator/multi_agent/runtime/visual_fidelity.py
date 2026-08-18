@@ -2462,6 +2462,7 @@ async def run_visual_fidelity(
     judge_fn: Optional[Callable] = None,
     verdict_cache: Optional[Dict[str, Dict[str, Any]]] = None,
     milestone_owned_routes: Optional[set] = None,
+    milestone_label: Optional[str] = None,   # #941
 ) -> Dict[str, Any]:
     """Compare the running app against the reference designs.
 
@@ -3115,6 +3116,7 @@ async def run_visual_fidelity(
     # #419: PERSIST the per-dimension verdict to disk so fidelity iteration is
     # TARGETED, not guessed (see _persist_verdict). Best-effort + write-only.
     _persist_verdict(project_dir, passed=passed, min_similarity=min_similarity,
+                     milestone_label=milestone_label,
                      summary=summary, coverage=_coverage, results=results)
     # FIX #75a: a REFUNDABLE transient ONLY when EVERY judged screen was a blank shell
     # (no real verdict obtained). If SOME screens produced real shots, do NOT refund —
@@ -3219,6 +3221,7 @@ def _archive_capture_930(rec: Dict[str, Any], vdir: Any, code_state: Any) -> Dic
 
 
 def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
+                     milestone_label: Optional[str] = None,
                      summary: str, coverage: Any, results: List[Mapping[str, Any]]) -> None:
     """#419/#500: write design/visual_gate/verdict.json — the BEST per-screen result MERGED
     across the milestone's captures — with each screen's per-dimension detail, so fidelity
@@ -3644,6 +3647,15 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         # landing IMPROVING 0.40 -> 0.72 in the same round.
         if _below_928:
             _verdict["screens_below_record_928"] = sorted(_below_928)
+        # #941: WHICH MILESTONE earned these numbers.
+        #
+        # `verdict.json` is a run-wide, best-of-captures merge (#500) and nothing resets it at a
+        # milestone boundary — I checked: no unlink, no rmtree, no reset anywhere on this path. So
+        # on a compound app the recorded fidelity can have been earned by a version of a page that
+        # a later milestone replaced, and the document said nothing at all: the string "milestone"
+        # appears ZERO times in r154's verdict, which spans M1 and M2.
+        if milestone_label:
+            _verdict["milestone"] = milestone_label
         # #641: computed BEFORE this round joins the ledger, so the comparison is against
         # earlier rounds only. Recommendation only — it changes no decision taken here.
         _better = better_state_available_641(vdir, _verdict.get("blocking_average_live"))
@@ -4077,6 +4089,11 @@ def _append_round_record_640(vdir: Any, verdict: Dict[str, Any],
             "min_similarity": verdict.get("min_similarity"),
             "live": {str(s.get("name")): s.get("similarity")
                      for s in (results or []) if isinstance(s, dict) and s.get("name")},
+            # #941: and on every ROUND — the half that matters more. rounds.jsonl is the only
+            # append-only record of the run, it spans every milestone, and without this a reader
+            # cannot tell M1's rounds from M2's. r154's ledger has 12 rounds across two
+            # milestones and no way to split them.
+            **({"milestone": verdict["milestone"]} if verdict.get("milestone") else {}),
         }
         # #900: carry #893's instability finding into the APPEND-ONLY record.
         #
@@ -5220,9 +5237,22 @@ class VisualFidelityGate:
                 _routes = _milestone_declared_routes(_ms)
                 if _routes:
                     _scope = _routes
+            # #941: the milestone's identity, built from whatever the plan actually carries
+            # (`id` / `index` / `name` — verified against r154's milestones.json, not guessed).
+            _mlabel941 = None
+            try:
+                _msd = getattr(orch, "_current_milestone", None) or {}
+                if isinstance(_msd, dict) and _msd:
+                    _bits = [str(_msd.get("index") or "").strip(),
+                             str(_msd.get("name") or "").strip(),
+                             str(_msd.get("id") or "").strip()]
+                    _mlabel941 = " ".join(b for b in _bits if b) or None
+            except Exception:
+                _mlabel941 = None
             result = await run_visual_fidelity(orch.output_dir, refs, _judge_llm,
                                                verdict_cache=self._verdict_cache,
-                                               milestone_owned_routes=_scope)
+                                               milestone_owned_routes=_scope,
+                                               milestone_label=_mlabel941)
             if result.get("capture_unavailable") or result.get("auth_unavailable"):
                 # Not a judgment — the app wasn't reachable (mid-rebuild) or
                 # the authed session was rejected wholesale (token mint failed

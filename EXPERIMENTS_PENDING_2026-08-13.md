@@ -14878,3 +14878,31 @@ fail is a guess.** #936b's first locator flagged prose; #940's first scope harve
 globals; both looked correct and both were verified only by planting the thing they exist to catch.
 
 Full suite 6357 passed.
+
+### 309. #941 — the verdict and the ledger now say which milestone they belong to
+
+The thread I recorded and left: "整份 verdict 'milestone' 出现 0 次". Closing it.
+
+`_persist_verdict` merges best-of-captures across the whole RUN (#500) and nothing resets it at a
+milestone boundary — checked, no unlink/rmtree/reset anywhere on that path. On a compound app the
+recorded fidelity for a page can therefore have been earned by a version a later milestone
+replaced. r154's verdict spans M1 and M2 and contains the string "milestone" zero times.
+
+`rounds.jsonl` is the worse half: the run's only append-only record, twelve rounds across two
+milestones, no way to tell them apart.
+
+Label built from what the plan actually carries — verified against r154's `milestones.json`
+(`{'id': 'ms_d3d6595a', 'index': '2', 'name': 'M2-category-pages-search-player'}`) rather than
+guessed at. Absent label → no key, so a single-milestone run's artifacts stay byte-identical.
+
+★★ #932's completeness guard caught this on its first real opportunity — hours after being written,
+against its own author. Adding `milestone` to the verdict turned
+`test_every_verdict_finding_is_carried_932` red with "these verdict keys reach no append-only
+record". It is an identity label, not a detection, and it reaches the ledger by its own line rather
+than through the findings loop, so it goes in `_NOT_A_FINDING` **with the reason written down** —
+which is the entire point of having the excuse-list be explicit.
+
+That is the second guard-catches-its-author event of the session (#771b's key guard caught #935's
+`capture_error`). Both were built this session; both fired on the next thing I did.
+
+Full suite 6362 passed.
