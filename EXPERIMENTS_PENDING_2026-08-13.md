@@ -15378,3 +15378,29 @@ coding relevance is extrapolation, and worth flagging before Saturday rather tha
 ★★★ Method note: this is the second time today that reading the primary artifact overturned
 something I had asserted from a secondary signal (the first was #938's route→file resolution). The
 pattern is identical — a name or a summary stood in for the thing, and the thing disagreed.
+
+### 326. readout_run.py extended for the 2026-08-18 artifacts — and it fell into its own trap
+
+r155 will produce seven artifact kinds that no reader knows about. Without extending the readout I
+would be back to ad-hoc greps at the end of a two-hour run, and several of today's errors came from
+exactly that.
+
+Added: `preflight` (#944), `gate_evals` / first-ok round / every failed check seen (#948),
+`distinct_renderings` per screen (#937 — the number that cost three detours in r154),
+`rounds_with_zero_reasons` (#933), `milestones_in_ledger` (#941), `capture_errors_seen` (#935),
+`overwrite_loops` (#939/#951), `lane_page_exposure` (#946 — decision 1a's measurement),
+`archived_captures` (#930), `served_build_stamped` (#936).
+
+★ The selftest gained a second calibration and it is the more interesting one: **r154 predates
+every new field, so each must read `None` — "not recorded" — and never `0`.** A reader seeing
+`overwrite_loops: {}` on r154 would conclude the loop never happened; it happened 19 times and
+nothing counted it. #907's rule, applied to the reporting tool rather than to the framework.
+
+★★ And the tool failed its own rule on first run. `rounds_with_zero_reasons` computed
+`sum(1 for r in rl if ...)` over r154's twelve rounds and reported **0**, which reads as "twelve
+rounds, none had a zero reason" — when the truth is the field did not exist. I had written the
+absent-vs-zero checklist and left this field off it. Fixed, and the checklist widened from five
+fields to nine so the omission cannot recur silently.
+
+That is the third time today an instrument I built to catch a class was caught BY that class:
+#936b's locator flagged prose, #940's scope harvested locals, and now this.

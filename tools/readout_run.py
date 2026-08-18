@@ -94,6 +94,75 @@ def readout(run: str) -> dict:
 
     # live gate findings on the delivered tree
     sys.path.insert(0, str(ROOT))
+
+    # ── artifacts introduced 2026-08-17/18 (#930–#951). ★ Absent is reported as None, never as
+    # zero: r154 predates all of these, and "not recorded" must not read as "nothing happened"
+    # (#907). The selftest pins exactly that on r154.
+    def _lines(rel):
+        f = d / rel
+        if not f.is_file():
+            return None
+        out_ = []
+        for ln in f.read_text(encoding="utf-8", errors="replace").splitlines():
+            ln = ln.strip()
+            if not ln:
+                continue
+            try:
+                out_.append(json.loads(ln))
+            except Exception:
+                pass
+        return out_
+
+    pf = _j(d / "logs/preflight.json")                                   # #944
+    out["preflight"] = None if pf is None else {
+        "docker": (pf.get("docker") or {}).get("available"),
+        "compose_provider": (pf.get("compose") or {}).get("provider"),
+        "compose_service_ps": (pf.get("compose") or {}).get("service_ps"),
+        "remedy": bool((pf.get("docker") or {}).get("remedy")),
+    }
+
+    gl = _lines("logs/delivery_gate.jsonl")                              # #948
+    out["gate_evals"] = None if gl is None else len(gl)
+    out["gate_first_ok_at"] = None if not gl else next(
+        (i + 1 for i, r in enumerate(gl) if r.get("ok")), None)
+    out["gate_failed_checks_seen"] = None if not gl else sorted(
+        {c for r in gl for c in (r.get("failed_checks") or [])})
+
+    rl = _lines("design/visual_gate/rounds.jsonl")
+    out["rounds"] = None if rl is None else len(rl)
+    if rl:
+        # #937 — distinct renderings per screen: the number that took three detours in r154
+        fps: dict = {}
+        for r in rl:
+            for k, v in (r.get("capture_md5_937") or {}).items():
+                fps.setdefault(k, set()).add(v)
+        out["distinct_renderings"] = {k: len(v) for k, v in sorted(fps.items())} or None
+        # ★ None, not 0, when NO round carries the key — r154 has 12 rounds and no
+        # `zero_reasons_933` at all, and this line reported 0, which reads as "12 rounds, none
+        # had a zero reason". My own selftest exists to catch exactly that and I had left this
+        # field off the list it checks. Absent and none-of-them are different facts (#907).
+        out["rounds_with_zero_reasons"] = (
+            sum(1 for r in rl if r.get("zero_reasons_933"))
+            if any("zero_reasons_933" in r for r in rl) else None)                          # #933
+        out["milestones_in_ledger"] = sorted({r["milestone"] for r in rl
+                                              if r.get("milestone")}) or None               # #941
+        out["capture_errors_seen"] = sorted({                                               # #935
+            (z or {}).get("capture_error") for r in rl
+            for z in (r.get("zero_reasons_933") or {}).values()
+            if (z or {}).get("capture_error")}) or None
+
+    ow = _j(d / "design/scaffold_overwrites_939.json")                   # #939 / #951
+    out["overwrite_loops"] = None if ow is None else {
+        k: v for k, v in sorted(ow.items()) if isinstance(v, int) and v >= 2} or {}
+    ex = _j(d / "design/lane_page_exposure_946.json")                    # #946 — decision 1a
+    out["lane_page_exposure"] = None if ex is None else {
+        k: {"lane": v.get("lane_lines"), "proj": v.get("projection_lines")}
+        for k, v in sorted(ex.items())}
+    caps = d / "design/visual_gate/captures"                             # #930
+    out["archived_captures"] = len(list(caps.glob("*.png"))) if caps.is_dir() else None
+    out["served_build_stamped"] = (d / "design/visual_gate/served_build.json").is_file()  # #936
+
+
     try:
         from env_generator.llm_generator.multi_agent.runtime import deliverability as dv
         from env_generator.llm_generator.multi_agent.runtime import frontend_audit as fa
@@ -113,6 +182,23 @@ def selftest() -> int:
     expect = {"ui_pages": 19, "screens": 12, "blocking": 7, "blocking_at_bar": 4,
               "releases": ["1.0.0", "1.1.0"], "gate_919_owner_read": 2}
     bad = [f"{k}: got {r.get(k)!r}, expected {v!r}" for k, v in expect.items() if r.get(k) != v]
+
+    # ★ Second calibration, added with the #930–#951 fields: r154 predates every one of them, so
+    # each MUST read None — "not recorded" — and not 0. A reader who sees `overwrite_loops: {}`
+    # on r154 would conclude the loop never happened; it happened 19 times and nothing counted it.
+    # This is #907's rule turned into a test of the reporting tool itself.
+    r154 = readout("netflix-web-r154")
+    for k in ("preflight", "gate_evals", "overwrite_loops", "lane_page_exposure",
+              "archived_captures", "rounds_with_zero_reasons", "distinct_renderings",
+              "milestones_in_ledger", "capture_errors_seen"):
+        if r154.get(k) is not None:
+            bad.append(f"r154.{k}: got {r154.get(k)!r}, expected None (predates the field)")
+    # …and the fields r154 DOES have must still read, or the tool is silently blind
+    if not r154.get("rounds"):
+        bad.append(f"r154.rounds: got {r154.get('rounds')!r}, expected 12")
+    if r154.get("served_build_stamped") is not False:
+        bad.append("r154.served_build_stamped should be False — #738 never wrote one")
+
     for line in bad:
         print("  MISMATCH", line)
     print("selftest:", "OK" if not bad else "FAILED")
