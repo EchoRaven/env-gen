@@ -16020,3 +16020,47 @@ because r154's containers were still up.
 ★★ Standing consequence for the r155 readout: **#952's orphan detector compares source against the
 LIVE openapi and must keep doing so.** A static substitute is not available at any accuracy —
 measured, not assumed.
+
+### 347. the post-key launch path, executed for the first time — without a key
+
+`run_netflix.sh` only calls `start_sidecar` (and only then demands MG_KEY) when nothing healthy
+answers on the port:
+
+    if sidecar_healthy; then say "sidecar already up on :$PORT" ; else start_sidecar ; fi
+
+So `tools/stub_llm_server.py` (new) serving `/health` + `/v1/chat/completions` runs the ENTIRE
+segment below the key check. Every dry run to date stopped AT the key; this is the first time any
+of it has executed on this host.
+
+**Verdict: the post-key plumbing is clean.** Reached `Project phase: init -> implement` — past
+kickoff — with no plumbing defect:
+
+    smoke test          the launcher's own grep for '"content": "pong"' passes verbatim
+    preflight           #936c fires correctly (podman-compose 1.5.0, no service positional);
+                        #945 does NOT abort (podman shim on PATH, as patched)
+    FGEN_PY             the .venv override resolves; playwright imports
+    inputs              21 reference images + spec.md + DESCRIPTION.txt all load
+    engine              221 tools registered across 13 profiles, base scaffold seeded
+    recovery            the one ERROR is a DESIGNED recovery working: the facilitator "auto-wrote
+                        backup escalate so the driver can fall through to synthesize_fallback
+                        rather than hanging the meeting" — correct behaviour under a model that
+                        can never comply
+
+★ Two facts about what the engine actually asks for, from 1092 logged calls — never observable
+before, because nothing had ever recorded a request:
+
+    tools:       []          the OpenAI tools array is NEVER sent; tool calls are parsed from text
+    max_tokens:  128000      on 740 of 790 sampled calls (3000/6000/8000 for the rest)
+
+★★ A non-finding, recorded because it looked like a finding: 94 × `finish() REJECTED` at ~7
+calls/sec reads exactly like a retry storm. It is not. The loop is bounded — `for _attempt in
+range(2)`, `max_steps=10` each, plus an authoring deadline at half the kickoff budget — and the 94
+are repeated *wakes* under a stub whose replies can never record a decision. Same shape as item
+346: a striking number from my own instrument, killed by reading the code it accuses.
+
+Cleanup: the probe wrote a 77 MB project and touches the SHARED knowledge DB
+(`~/.env-gen/knowledge/knowledge.db`). Project removed; the DB's single row is r154's, from
+yesterday — uncontaminated. `agent/generated/` is back to exactly 154 netflix runs and nothing else.
+
+**What this buys r155:** it will not die on plumbing. What remains untestable without a key is
+everything that depends on the model producing usable output — which is the run itself.
