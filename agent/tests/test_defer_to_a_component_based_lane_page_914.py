@@ -28,6 +28,7 @@ was earned by the projection**; the lane's pages have never been rendered to a c
 rule would keep and which — with byte-identical output. That is the cheap half of the experiment;
 the other half is one run with it on, compared against r153's per-screen baseline.
 """
+import json
 import logging
 import os
 import re
@@ -214,3 +215,68 @@ def test_the_predicate_tolerates_a_missing_page():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --------------------------------------------------------------------------- #946 the measurement
+
+def _exposure(tmp: Path):
+    f = tmp / "design" / "lane_page_exposure_946.json"
+    return json.loads(f.read_text(encoding="utf-8")) if f.is_file() else {}
+
+
+def _scaffold_at(root: Path, existing: str):
+    """Like `_scaffold` but under a caller-owned root, so the artifact can be read back."""
+    fe = root / "app" / "frontend"
+    (fe / "src" / "pages").mkdir(parents=True, exist_ok=True)
+    (fe / "src" / "components").mkdir(parents=True, exist_ok=True)
+    (fe / "src" / "pages" / "BrowseHomePage.jsx").write_text(existing, encoding="utf-8")
+    orig = fs._load_design_for_projection
+    fs._load_design_for_projection = lambda _fd: _DESIGN
+    try:
+        fs.scaffold_pages_from_contract(fe, [_PAGE])
+    finally:
+        fs._load_design_for_projection = orig
+
+
+def test_the_exposure_is_written_to_an_artifact(tmp_path, monkeypatch):
+    """★ THE point of #946. #914 ships OFF precisely so an ordinary run measures the exposure for
+    free — and the line went to a logger no run persists, so the measurement could not be taken.
+    `LANE PAGE WITH OWN COMPONENTS` appears in zero of r154's artifacts."""
+    monkeypatch.delenv("ENVGEN_DEFER_TO_LANE_PAGE", raising=False)
+    _scaffold_at(tmp_path, _lane_page(imports_components=True, n=120))
+    e = _exposure(tmp_path)
+    assert "BrowseHomePage" in e, e
+    rec = e["BrowseHomePage"]
+    assert rec["lane_lines"] > rec["projection_lines"] or rec["lane_lines"] > 0
+    assert rec["would_keep_lane"] is False and rec["flag_on"] is False
+
+
+def test_it_records_what_the_flag_would_have_done(tmp_path, monkeypatch):
+    monkeypatch.setenv("ENVGEN_DEFER_TO_LANE_PAGE", "1")
+    _scaffold_at(tmp_path, _lane_page(imports_components=True, n=120))
+    rec = _exposure(tmp_path)["BrowseHomePage"]
+    assert rec["would_keep_lane"] is True and rec["flag_on"] is True
+
+
+def test_a_stub_page_is_not_recorded(tmp_path, monkeypatch):
+    """The 58%. Only pages the rule would actually shelter belong in the measurement."""
+    monkeypatch.delenv("ENVGEN_DEFER_TO_LANE_PAGE", raising=False)
+    _scaffold_at(tmp_path, _lane_page(imports_components=False, n=120))
+    assert _exposure(tmp_path) == {}
+
+
+def test_the_record_names_the_lane_components(tmp_path, monkeypatch):
+    """'How much richer' is the question the decision turns on, so record the evidence, not a
+    boolean."""
+    monkeypatch.delenv("ENVGEN_DEFER_TO_LANE_PAGE", raising=False)
+    _scaffold_at(tmp_path, _lane_page(imports_components=True, n=120))
+    assert "Tile" in _exposure(tmp_path)["BrowseHomePage"]["lane_components"]
+
+
+def test_a_re_scaffold_overwrites_rather_than_accumulates(tmp_path, monkeypatch):
+    """The question is which pages and how much richer, not how many times scaffolding ran."""
+    monkeypatch.delenv("ENVGEN_DEFER_TO_LANE_PAGE", raising=False)
+    _scaffold_at(tmp_path, _lane_page(imports_components=True, n=120))
+    _scaffold_at(tmp_path, _lane_page(imports_components=True, n=300))
+    e = _exposure(tmp_path)
+    assert len(e) == 1 and e["BrowseHomePage"]["lane_lines"] > 300

@@ -15033,3 +15033,27 @@ abort — #944 undone by #945, one commit later. **Caught by a test I wrote in t
                               folded into a fidelity run. #939's counter reports the blast radius
                               per page meanwhile.
   2   shim-less launch        abort (#945), with an explicit escape.
+
+### 315. #946 — the measurement the approved plan depends on could not be taken
+
+Decision 1a, approved 2026-08-18, was: leave #914 OFF and *"take the free exposure measurement over
+the next runs"* — the rule logs what it WOULD have kept, with byte-identical output, which is the
+whole reason shipping it off was safe.
+
+★ Checked before relying on it: **the exposure cannot be collected.** `LANE PAGE WITH OWN
+COMPONENTS` goes to `logging.getLogger(__name__)` and appears in **zero** of r154's artifacts —
+exactly as #769's capture reason did (#935) and the preflight did (#944). I only ever saw it in
+r154 by tailing the console while the run was alive.
+
+Third instance of that erasure in one session, and the first where it silently voided **an approved
+plan** rather than a diagnosis. Two more runs would have produced nothing to read, and the gap
+would only have surfaced when I went looking for the numbers.
+
+`design/lane_page_exposure_946.json`, keyed by component — the question is *which pages and how
+much richer*, not *how many times scaffolding ran* — recording lane lines, projection lines, the
+lane's component tags, and whether the rule would have kept it. Written whether the flag is on or
+off, so an ordinary run answers 1a.
+
+★ The rule is now: **a measurement that exists only in a log line is not a measurement.** #932,
+#933, #935, #939, #941, #944 and #946 are all the same repair; the class is broad enough that the
+next detector should default to writing an artifact and treat the log line as the extra.

@@ -9500,6 +9500,38 @@ def _stale_thin_projection_583(existing: str, cand: str) -> bool:
     return len(missing) >= 2
 
 
+def _record_exposure_946(frontend_dir: Any, comp: str, payload: Dict[str, Any]) -> None:
+    """Persist #914's free measurement, because a log line is not a measurement here.
+
+    #914 ships OFF and logs what it WOULD have kept, so any ordinary run measures the exposure at
+    byte-identical output — that is the whole reason it was safe to leave off, and the plan agreed
+    on 2026-08-18 was "take that measurement over the next few runs".
+
+    ★ It could not be taken. The line goes to `logging.getLogger(__name__)`, and no run persists
+    that logger: `LANE PAGE WITH OWN COMPONENTS` appears in ZERO of r154's artifacts, exactly as
+    `#769` did (#935) and the preflight did (#944). I only saw it in r154 by tailing the console
+    while it ran. Third instance of the same erasure in one session, and this one silently voided
+    an approved plan rather than a diagnosis.
+
+    Keyed by component so re-runs of the same page overwrite rather than accumulate — the question
+    is "which pages, and how much richer", not "how many times did scaffolding run".
+    """
+    try:
+        root = Path(frontend_dir).resolve().parents[1]
+        f = root / "design" / "lane_page_exposure_946.json"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        data = {}
+        if f.is_file():
+            try:
+                data = json.loads(f.read_text(encoding="utf-8")) or {}
+            except Exception:
+                data = {}
+        data[str(comp)] = payload
+        f.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def _count_overwrite_939(frontend_dir: Any, comp: str) -> int:
     """How many times the framework has now replaced a non-empty existing ``comp`` this run.
 
@@ -9834,6 +9866,14 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                             _cand_ok and not _marked and _imports_own_components(_existing))
                         _defer_914 = _lane_real_914 and _env_flag_914()
                         if _lane_real_914:
+                            _record_exposure_946(frontend_dir, comp, {
+                                "lane_lines": len((_existing or "").splitlines()),
+                                "projection_lines": len((_cand or "").splitlines()),
+                                "lane_components": sorted(set(
+                                    re.findall(r"<([A-Z]\w*)", _existing or "")))[:12],
+                                "would_keep_lane": bool(_defer_914),
+                                "flag_on": bool(_env_flag_914()),
+                            })
                             try:
                                 __import__("logging").getLogger(__name__).warning(
                                     "LANE PAGE WITH OWN COMPONENTS: %s — %d lines importing "
