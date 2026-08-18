@@ -110,9 +110,47 @@ def container_id(compose_file: Any, service: str, *, timeout: int = 20) -> str:
     try:
         out = subprocess.run([rt, "ps", "-q", "--filter", f"name={service}"],
                              capture_output=True, text=True, timeout=timeout).stdout.strip()
-        cid = out.splitlines()[0].strip() if out else ""
+        ids = [ln.strip() for ln in out.splitlines() if ln.strip()] if out else []
     except Exception:
         return ""
+    if len(ids) > 1:
+        # #962 — AMBIGUOUS. Every run's compose project is named `docker` (the project name comes
+        # from the compose file's parent directory, which is always `docker/`), so containers are
+        # named `docker_backend_1` with NO run identity. Two stacks up at once — a leftover from a
+        # previous run is enough, measured 2026-08-18 — and this filter matches both. Taking
+        # `[0]` silently answers about SOMEONE ELSE'S container, which is exactly how a stale-build
+        # or served-build probe reports confidently about the wrong app.
+        #
+        # Disambiguate on the compose project's config_files label, which carries the absolute
+        # path of the file the caller asked about. If that cannot single one out, return "" —
+        # "unknown" is recoverable, a confident wrong container is not.
+        want = str(compose_file)
+        matched = []
+        for cid in ids:
+            try:
+                lbl = subprocess.run(
+                    [rt, "inspect", cid, "--format",
+                     "{{index .Config.Labels \"com.docker.compose.project.config_files\"}}"],
+                    capture_output=True, text=True, timeout=timeout).stdout.strip()
+            except Exception:
+                continue
+            if lbl and (lbl == want or want in lbl.split(",")):
+                matched.append(cid)
+        log = logging.getLogger(__name__)
+        if len(matched) == 1:
+            log.warning(
+                "#962 `%s ps --filter name=%s` matched %d containers (compose project name is "
+                "`docker` for EVERY run, so names collide across runs); disambiguated to %s by "
+                "config_files label %s.", rt, service, len(ids), matched[0][:12], want)
+            return matched[0]
+        log.error(
+            "#962 `%s ps --filter name=%s` matched %d containers and the config_files label could "
+            "not single one out (%d candidates for %s). Returning NO id rather than guessing — a "
+            "probe that answers about another run's container reports confidently about the wrong "
+            "app. Stop the stale stack, or give the run its own compose project name.",
+            rt, service, len(ids), len(matched), want)
+        return ""
+    cid = ids[0] if ids else ""
     if cid and not _SAID.get("fallback"):
         # ★ Say it ONCE. The compose lookup returning "" while the name filter finds the container
         # is the signature of a podman-compose CLI, and it is the state in which #715 and #738
