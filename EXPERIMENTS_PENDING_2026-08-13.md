@@ -13961,3 +13961,29 @@ the other three plus the end of the run. Corrected here rather than left to be r
 
 Worth keeping as an operational number: **r154 is not stuck until ~70 minutes have passed with the
 lanes silent.**
+
+## 281. a calibrated readout, because fifteen ad-hoc probes were wrong
+
+r154 is in design analysis and will not reach the phases the new instrumentation covers for another
+hour. Rather than idle or manufacture tickets, the useful thing was to stop re-typing the probe.
+
+This session answered the same questions about r153 perhaps a dozen times with throwaway one-liners
+and got the PROBE wrong **fifteen** times: `_meta` counted as a page record (item 250); a relative
+cache key compared against a resolved path (#918); `app_root` pointed one directory too high (item
+266); a regex that missed JSON's escaped quotes and reported 0 of 2380 lines; a wrong-copy import
+scan that flagged nothing because it never resolved; a slice window too small to reach its own end
+anchor; and so on. **Every one produced a confident number**, and three of them reached a commit
+message before being caught.
+
+`tools/readout_run.py <run>` answers all of it once: releases (tag-keyed, `_meta` excluded), ui_page
+counts, per-screen fidelity with the blocking/advisory split, `coverage.scope` (#921), lane
+first-write minutes, the eleven log signals, and the three live gates.
+
+★ **`--selftest` calibrates it against r153's known answers** — 19 ui_pages, 12 screens, 4 of 7
+blocking at the bar, releases `1.0.0`+`1.1.0`, #919 firing twice. It failed on its first run: every
+gate reported `None` because I invoked it with the system interpreter, which lacks the framework's
+dependencies. A silent `None` from the wrong python is exactly the shape of the fifteen — and the
+selftest caught it in one command. The file now says which interpreter to use, and why.
+
+Applied to r154 at 14 minutes: 0 releases, 0 screens, lanes unwritten, every signal 0 — which item
+280's baseline says is normal until ~70 minutes.
