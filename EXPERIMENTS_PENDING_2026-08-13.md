@@ -14972,3 +14972,37 @@ PASSED on the worse implementation and FAILED on the better one. #926 proved tha
 not just noisy — it is, in that subset, pointed the wrong way.
 
 Full suite 6373 passed.
+
+### 312. #944 — the environment diagnosis reaches disk, and names the fix that exists
+
+`_preflight_check` answers the question you ask FIRST when a run produces a hollow app: was the
+container runtime even there? Its result went to `self.context.preflight` and one log line. **The
+string "preflight" appears in zero of r154's artifacts.** Same erasure as #935's #769 line and
+#932's findings, one layer out — and this one describes the MACHINE, which unlike a code defect a
+reader cannot reconstruct from the source afterwards.
+
+The advice was also wrong for this host. "Start Docker Desktop" is not the fix on a podman box, and
+the real one ships in the repo: `tools/podman_shim` maps `docker`/`docker compose` onto
+`podman`/`podman-compose`, and nothing puts it on PATH (`tools/podman_setup.sh` tells a human to).
+Without it every container call raises inside a `try`, the run continues to completion, and two
+hours later there is nothing to show — for one missing PATH entry. The warning now prints the
+resolved shim path, but ONLY when podman is present and docker is not, and the same string goes
+into `preflight.json` as `docker.remedy`.
+
+★ Deliberately NOT an abort. Whether a shim-less launch should fail rather than degrade is a real
+decision with a real cost (it would stop a docker-less user cold), and it is the user's, not mine.
+This makes the state visible; it does not change what the run does.
+
+★★ Four instrument defects on the way, all mine, all caught by running rather than reading:
+
+  * the persist was written BEFORE `docker.remedy` was added, so the field a reader most needs
+    would have been absent from the file. Order is the whole point of that field.
+  * the test's orchestrator stub lacked `context.ui_port` — `_preflight_check` reads three port
+    attributes, found by executing, not by reading.
+  * the containment check compared INDENTATION (12 inside a `try:` vs the guard's 8) and failed on
+    correct code; rewritten to test AST containment.
+  * ★ the guard locator searched `ast.unparse(...)` for `preflight["docker"]["available"]` — and
+    **`ast.unparse` normalises quotes to single**. It matched nothing and the test reported "the
+    guard moved": a locator failing OPEN, dressed as a real finding.
+
+Full suite 6380 passed.

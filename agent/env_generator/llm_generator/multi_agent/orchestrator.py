@@ -1112,11 +1112,43 @@ class Orchestrator:
         
         # Warn if Docker is not available
         if not preflight["docker"]["available"]:
+            # #944: say what to DO on this host. "Start Docker Desktop" is not the fix on a
+            # podman box, and the real one ships in this repo: tools/podman_shim maps
+            # `docker`/`docker compose` onto podman/podman-compose, and nothing puts it on PATH
+            # for you (`tools/podman_setup.sh` tells a human to). Without it every container call
+            # raises inside a `try` and the run continues to completion producing nothing —
+            # a two-hour failure whose cause is one PATH entry.
+            import shutil as _sh944
+            _hint944 = ""
+            if _sh944.which("podman"):
+                _shim944 = Path(__file__).resolve().parents[4] / "tools" / "podman_shim"
+                _hint944 = (
+                    "\n  → PODMAN IS INSTALLED AND DOCKER IS NOT. This repo ships a shim; nothing "
+                    "adds it for you:\n"
+                    f"       export PATH=\"{_shim944}:$PATH\"\n"
+                    "     Without it every container call fails silently inside a try/except and "
+                    "the run finishes with nothing to show.")
             self._logger.warning(
                 "Docker is not available. Docker-based testing will fail.\n"
                 "  → Start Docker Desktop or docker daemon before testing.\n"
                 "  → Agents will use docker_compose_reset() to clean up stale state."
+                + _hint944
             )
+            preflight["docker"]["remedy"] = _hint944.strip() or None
+
+        # #944: AND ON DISK. The environment diagnosis is the first thing anyone wants when a run
+        # produces a hollow app, and it lived only in `self.context` and a logger no run persists:
+        # the string "preflight" appears in ZERO of r154's artifacts. Same erasure as #935's #769
+        # line and #932's findings, one layer out — and this one describes the MACHINE, which a
+        # reader cannot reconstruct from the code afterwards.
+        try:
+            import json as _json944
+            _pf944 = self.output_dir / "logs" / "preflight.json"
+            _pf944.parent.mkdir(parents=True, exist_ok=True)
+            _pf944.write_text(_json944.dumps(preflight, indent=1, default=str, sort_keys=True),
+                              encoding="utf-8")
+        except Exception as _pf_exc:
+            self._logger.warning("could not persist preflight.json: %s", _pf_exc)
         
         await self.message_bus.start()
         
