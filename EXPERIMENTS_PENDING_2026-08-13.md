@@ -15586,3 +15586,30 @@ least trustworthy number in the system.
 ★★ Running tally of what real execution bought today, against zero from fixtures on the same code:
 #952 (unreachable handler), #953 (probes dead for a second reason), #954 (a third of all tables
 invisible, 141 runs), #955 (all columns invisible, every run).
+
+### 333. the key-shape sweep — 1 true positive, 4 false, and why it cannot become a guard
+
+#954 and #955 share a shape: **a checker reads a key its producer does not write.** Tried to
+mechanise it — inventory every key registryhub records actually carry (4279 endpoint records, 200
+runs), then cross it against every `.get("…")` the delivery gate performs on a record-shaped
+variable.
+
+    ✓ columns       ← #955, rediscovered by the sweep. The idea works.
+    ✗ assignee, title, fail_reason   ← workhub task records, which I did not inventory
+    ✗ table         ← `_table_norm(t)` where `t` is a TASK (`impl.table.titles`), and the code
+                      already falls back to deriving the name from the id, so the branch is inert
+
+**One true positive, four false.** The discriminator is the problem: `t`, `rec`, `p` name both hub
+records and task records in this file, and an AST cannot tell which without type information. A
+guard built on it would fire on four working call sites — #782's shape, and #936b's first locator
+all over again.
+
+★ Recorded rather than shipped. What survives is the *manual* form of the question, which has now
+paid twice in one session: **when a check reports nothing, ask what shape it is reading and what
+shape the producer writes.** Both #954 and #955 answered in under two minutes once asked.
+
+★★ Also checked and cleared while here: `semantic_hub_drift` is hardcoded
+`{"errors": [], "warnings": []}` with the comment *"vestigial — specs no longer exist as
+independent source"*, so its `if semantic_drift.get("errors")` failed-check is provably
+unreachable. Honestly dead, not blind — left alone, since #948 now persists it and removing a field
+readers may key on costs more than the two bytes of noise it saves.
