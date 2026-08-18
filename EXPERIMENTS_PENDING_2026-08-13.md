@@ -14334,3 +14334,35 @@ it that wants to know "what is true NOW" has to be checked individually:
                                    screen that is currently broken.
 
 The last two are the next tickets and are NOT fixed here.
+
+### 292. #930 — the record pointed at the latest image, not the one it scored
+
+#771 put the capture's path into the record so "look at the image" is a lookup instead of an
+inference; its docstring says that omission cost a session its most decisive step. The path is
+stable — `visual_gate/<name>.png`, overwritten every round — so the moment #500's merge keeps an
+older record, the lookup returns a different picture than the one scored.
+
+r154: the `title_detail` record reads `similarity: 0.6` and its `screenshot` is the file that
+scored 0.00. I opened that file while diagnosing #929 and got the right image for the wrong
+record — a complete working detail page paired with a 0.6 that a different capture earned.
+
+Fix: copy the image aside when a record WINS the merge (`captures/<name>@<code_state>.png`) and
+point that record at the copy; `screenshot_live` keeps the moving path. Only winners are archived,
+so the directory grows once per genuine improvement, asserted (three losing rounds leave nothing).
+
+★ Two things this cost, both worth recording:
+
+  * the hoist. #930 names the archive after `code_state`, and #621's `rev-parse` was computed
+    ~140 lines BELOW the merge — using it there is a NameError on every call. Caught by reading
+    for seams before running, which is the [[errors-cluster-at-seams-i-introduce]] pass.
+  * #621's own test then failed — correctly. Its `_block()` ran from the first "#621" mention to
+    `_verdict = {`, assuming #621's code was the last thing before the verdict dict; after the
+    hoist that span covered the whole merge and tripped on `_merged_passed`. ★ The tempting fix
+    was to drop "#621" from the new comment, which would have made the test pass while asserting
+    about a block that no longer contains the lookup — #782 exactly. Re-anchored the locator on
+    `"rev-parse"` instead, and planted a `passed = True` inside the tightened block to confirm it
+    still catches what it is for.
+
+★ And one weak test of my own, caught the same way: `test_a_new_high_water_re_archives` passed with
+the fix REVERTED, because the moving path happened to hold the right bytes at that instant. A
+third round that overwrites the file gives it teeth (6 red on revert became 7).

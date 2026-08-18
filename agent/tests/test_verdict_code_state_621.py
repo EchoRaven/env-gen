@@ -75,12 +75,28 @@ def test_the_verdict_is_still_written_when_git_is_unavailable(tmp_path):
 
 
 def _block():
-    """Semantic boundaries, not a character count — a fixed window breaks the moment anything
-    is inserted, which it has three times this session already."""
+    """The code #621 adds: the `_head_sha = None` guard, the `rev-parse`, and the `except` that
+    restores None.
+
+    Anchored on the rev-parse itself. It used to run from the first "#621" mention to
+    `_verdict = {`, which assumed #621's code was the last thing before the verdict dict — #930
+    hoisted the lookup above the merge (the archive is named after the sha) and the old span then
+    covered the whole merge, so `test_it_changes_no_decision` failed on `_merged_passed`, code
+    #621 does not touch. Anchoring on the call keeps the assertions pointed at #621's own lines
+    wherever they sit."""
     import inspect
     src = inspect.getsource(vf._persist_verdict)
-    i = src.index("#621")
-    return src[i:src.index("_verdict = {", i)]
+    i = src.index('"rev-parse"')
+    start = src.rindex("_head_sha = None", 0, i)
+    end = src.index("_head_sha = None", i) + len("_head_sha = None")
+    return src[start:end]
+
+
+def test_the_block_locator_finds_the_lookup_and_nothing_else():
+    """★ The locator is the test's instrument; a wrong span passed a false verdict once already."""
+    b = _block()
+    assert '"rev-parse"' in b and b.count("_head_sha = None") == 2
+    assert "merged" not in b and "similarity" not in b, b
 
 
 def test_the_lookup_is_bounded(tmp_path):

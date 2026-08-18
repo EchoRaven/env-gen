@@ -3098,6 +3098,37 @@ async def run_visual_fidelity(
             "min_similarity": min_similarity}
 
 
+def _archive_capture_930(rec: Dict[str, Any], vdir: Any, code_state: Any) -> Dict[str, Any]:
+    """Copy the image that earned THIS score aside, and point the record at the copy.
+
+    #771 put the capture's path in the record so "look at the image" is a lookup rather than an
+    inference. The path is stable — ``visual_gate/<name>.png``, rewritten every round — so as soon
+    as #500's merge keeps an older record, that lookup returns a DIFFERENT picture than the one
+    scored. r154: the title_detail record reads 0.6 and its `screenshot` is the file that scored
+    0.00, twice.
+
+    Called only for a record that just WON the merge, so the archive grows once per genuine
+    improvement rather than once per round. `screenshot_live` keeps the moving path, so a reader
+    can still find the current capture. Best-effort; any failure returns the record untouched.
+    """
+    try:
+        src = rec.get("screenshot")
+        if not src:
+            return rec
+        p = Path(str(src))
+        if not p.is_file():
+            return rec
+        stamp = str(code_state or "").strip()[:8] or "nocommit"
+        dst = Path(vdir) / "captures" / f"{p.stem}@{stamp}{p.suffix}"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if not dst.is_file() or dst.stat().st_size != p.stat().st_size:
+            import shutil as _sh930
+            _sh930.copyfile(p, dst)
+        return {**rec, "screenshot": str(dst), "screenshot_live": str(p)}
+    except Exception:
+        return rec
+
+
 def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                      summary: str, coverage: Any, results: List[Mapping[str, Any]]) -> None:
     """#419/#500: write design/visual_gate/verdict.json — the BEST per-screen result MERGED
@@ -3212,6 +3243,17 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                     type(_pv_exc).__name__, _pv_exc)
             prior_by_name = {}
 
+        # #621's HEAD stamp, hoisted here by #930 because the merge below now names the archive
+        # after it. Its own rationale is unchanged and still written out at its old site; this is
+        # a pure `git rev-parse` read, so computing it earlier decides nothing differently.
+        _head_sha = None
+        try:
+            import subprocess as _sp
+            _head_sha = _sp.run(["git", "-C", str(project_dir), "rev-parse", "HEAD"],
+                                capture_output=True, text=True, timeout=10).stdout.strip() or None
+        except Exception:
+            _head_sha = None
+
         merged: List[Dict[str, Any]] = []
         _names_now = set()
         _below_928: List[str] = []
@@ -3240,7 +3282,17 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                                    "captures merge (#500), `similarity_live` is what the "
                                    "delivered frontend rendered at this code_state (#928)")})
             else:
-                merged.append(s)
+                # #930: this capture won, so ARCHIVE the image that earned the score before the
+                # next round overwrites it. `screenshot` is a stable path
+                # (`visual_gate/<name>.png`) rewritten every round, so a record kept by #500's
+                # merge points at the LATEST image rather than its own — r154's title_detail
+                # record reads 0.6 and points at the file that scored 0.00. #771 added the path
+                # so "look at the image" is a lookup instead of an inference; for every merged
+                # screen that lookup silently returned the wrong picture.
+                #
+                # Only the winner is copied, only when it wins, so the archive grows once per
+                # genuine improvement (a handful per screen per run) rather than once per round.
+                merged.append(_archive_capture_930(s, vdir, _head_sha))
         # carry over prior screens absent from this (possibly partial) capture
         for name, p in prior_by_name.items():
             if name not in _names_now:
@@ -3379,13 +3431,8 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
         #
         # Stamping HEAD costs a `rev-parse` and makes that selection possible later — the same
         # move as #611 (record what a future question will need). It changes no decision here.
-        _head_sha = None
-        try:
-            import subprocess as _sp
-            _head_sha = _sp.run(["git", "-C", str(project_dir), "rev-parse", "HEAD"],
-                                capture_output=True, text=True, timeout=10).stdout.strip() or None
-        except Exception:
-            _head_sha = None
+        # (#930 hoisted the `rev-parse` above the merge, which needs it to name the archive.
+        # Nothing else moved.)
         # #893: the judge contradicting ITSELF on identical input.
         #
         # #781 and #857 tell the judge not to report what it cannot point to in the reference.
