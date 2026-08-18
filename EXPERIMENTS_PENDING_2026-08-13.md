@@ -15057,3 +15057,42 @@ off, so an ordinary run answers 1a.
 ★ The rule is now: **a measurement that exists only in a log line is not a measurement.** #932,
 #933, #935, #939, #941, #944 and #946 are all the same repair; the class is broad enough that the
 next detector should default to writing an artifact and treat the log line as the extra.
+
+### 316. #947 — the class, counted and ratcheted
+
+Seven repairs this session were one defect: a detector that found something real and wrote it only
+to a logger no run persists (#932, #933, #935, #939, #941, #944, #946). #946 made it a rule, because
+it silently voided an **approved plan** rather than a diagnosis.
+
+    A measurement that exists only in a log line is not a measurement.
+
+Scanned for the shape — a `_LOG.warning/error` naming a ticket, in a function that hands its
+finding to no disk write, no persisted dict and no out-parameter:
+
+    8 functions, 15 tickets
+
+    validate_delivery_gate   #287 #566 #671 #739 #743 #755 #774
+    maybe_run                #711 #712
+    map_reference_screens    #747 #758
+    heal_state_write_endpoints #556 · heal_create_endpoint_request_schemas #566
+    _file_lock #867 · _warn_unknown_schema_keys_731 #730 #731 · heal_missing_browser #224 #231
+
+★ Two survive PARTIALLY and the count must not be read as "15 findings lost": the delivery gate's
+check NAMES do reach `progress_events.jsonl` (r154's has them) and #711's aggregate NUMBER reaches
+`verdict.json` as `record_exceeds_live_by`, written elsewhere. What is unavailable in both cases is
+the REASONING — which is the half you need when the number is surprising.
+
+★★ The scanner needed three corrections before it could be trusted, and each one is the session's
+other lesson again:
+  * `dumps` in the persist-set marked every JSON-encoding function safe — it hid
+    `capture_route_screenshots` (#769), the canonical case, behind `json.dumps(token)`;
+  * out-parameters read as no persistence, so it flagged a detector #935 had repaired hours
+    earlier — and out-parameters are this module's own idiom, four times over;
+  * only after both did the known-good and known-bad cases classify correctly.
+
+Ratcheted at 8, with a nag if it drifts. Planted control: one new log-only detector names itself.
+
+★★★ Not fixed here, deliberately: filling in the eight means deciding, per detector, WHERE the
+reasoning belongs — the delivery gate's seven tickets probably want a `delivery_reasons.json`
+beside `progress_events.jsonl`, which is a design question rather than a mechanical repair. The
+ratchet stops the class growing while that is decided.
