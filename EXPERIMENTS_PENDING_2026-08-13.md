@@ -14906,3 +14906,37 @@ That is the second guard-catches-its-author event of the session (#771b's key gu
 `capture_error`). Both were built this session; both fired on the next thing I did.
 
 Full suite 6362 passed.
+
+### 310. #942 — the last "deliberately not fixed" item, and why the deferral was wrong
+
+Item 295 found that #589 skips its player-chrome inspection when the MERGED score clears the bar,
+so a screen at recorded 0.70 / live 0.00 is never inspected — the same merged-vs-live confusion as
+#928 and #929, one detector further on. I left it, writing: *"changing it would alter which screens
+carry `chrome_incomplete`, and that feeds `_merged_passed`."*
+
+Followed to its end, that reason is false:
+
+    chrome_incomplete   written once, read once — by `_merged_passed`
+    _merged_passed      1 Store, 1 Load — `verdict["passed"]`, nothing else
+    verdict.json        exactly one programmatic reader in the repo (its own prior-read)
+
+So the blast radius is the diagnostic file. **The deferral was over-cautious, and it was based on
+following the first hop and stopping.** The skip now uses the worse of the recorded and live
+scores; `similarity_live` absent (nothing diverged) or None (not captured) is not zero (#907).
+
+★★ Two of my own instrument tests failed on the way, both worth recording:
+
+  * my `test_the_deferral_premise_is_actually_false` grepped for `_merged_passed` and counted 4 —
+    **two of them my own COMMENT lines, written in the same patch.** Nineteenth self-match of the
+    session, same rule: AST counts uses, prose mentions them. Rewritten as 1 Store / 1 Load.
+  * `#588`'s test failed because it reads `src[i:i + 2400]` and my dozen comment lines pushed the
+    line it asserts out of the window. **A test that fails when a COMMENT grows is measuring the
+    wrong thing** — re-anchored on the block's own closing landmark.
+
+★★★ And #589's own test pinned the literal `if _sim(_s) >= min_similarity and not _is_player:`, so
+a change that gives it strictly MORE of what it asks for turned it red. **Fourth spelling assertion
+this session to forbid its own improvement** (#926, #621's block locator, #900's `row[...]` line,
+this). Rewritten to assert the shape via AST: the skip stays gated on `_is_player` and must not be
+keyed on the raw merged score.
+
+Full suite 6369 passed.

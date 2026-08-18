@@ -77,7 +77,11 @@ def test_the_demotion_is_gated_on_being_below_the_bar_and_not_already_advisory()
     # anchor on the block's own opening line, not a bare "#588" — #595's comment references
     # "#588/#589" and would otherwise win the index()
     i = src.index("#588: a CONTENT-DOMINATED")
-    window = src[i:i + 2400]
+    # ★ was `src[i:i + 2400]`. #942 added a dozen comment lines inside the block and the fixed
+    # window stopped reaching the demotion it asserts — a test that fails when a COMMENT grows is
+    # measuring the wrong thing. End on the block's own closing landmark instead.
+    _end = src.index("#589: the framework emitted this cluster", i)
+    window = src[i:_end]
     # #589 split the old single guard: already-advisory screens are still skipped outright,
     # and the demotion itself still requires being below the bar.
     assert 'if _s.get("advisory"):' in window, window[:300]

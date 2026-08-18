@@ -82,11 +82,27 @@ def _persist_src():
 
 
 def test_a_high_scorer_is_no_longer_skipped_before_the_chrome_is_read():
-    """The #588 shape (`or _sim(_s) >= min_similarity: continue`) hid r107 entirely."""
+    """The #588 shape (`or _sim(_s) >= min_similarity: continue`) hid r107 entirely.
+
+    ★ Asserted as SEMANTICS. This used to pin the literal
+    `if _sim(_s) >= min_similarity and not _is_player:`, and #942 replaced that with a skip on the
+    WORSE of the recorded and live scores — strictly more inspection, exactly what this test wants
+    — which turned it red. Fourth spelling assertion this session to forbid its own improvement
+    (#926, #621's locator, #900's row line, this). The rule the test actually holds: the skip must
+    be guarded by `_is_player` and must not be keyed on the raw merged similarity alone.
+    """
+    import ast
     src = _persist_src()
     assert 'if _s.get("advisory") or _sim(_s) >= min_similarity' not in src
     assert "_is_player = bool(_screen_is_player_449(_s))" in src
-    assert "if _sim(_s) >= min_similarity and not _is_player:" in src
+    fn = ast.parse(src.strip()).body[0]
+    skips = [n for n in ast.walk(fn) if isinstance(n, ast.If)
+             and any(isinstance(b, ast.Continue) for b in n.body)
+             and "_is_player" in ast.dump(n.test)]
+    assert skips, "the chrome skip must still be gated on _is_player"
+    left = skips[0].test.values[0].left if isinstance(skips[0].test, ast.BoolOp) else None
+    assert isinstance(left, ast.Name) and left.id != "_sim", (
+        "the skip must not be keyed on the raw merged score; #942 uses the worse of merged+live")
 
 
 def test_the_block_is_gated_on_the_framework_predicate_not_on_missing_alone():

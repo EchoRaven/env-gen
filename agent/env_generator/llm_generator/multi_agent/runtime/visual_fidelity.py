@@ -3455,7 +3455,23 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                 # #589: above the bar, only a screen the framework itself treats as a player is
                 # still worth inspecting — for everyone else the checklist does not apply.
                 _is_player = bool(_screen_is_player_449(_s))
-                if _sim(_s) >= min_similarity and not _is_player:
+                # #942: judge the skip on the WORSE of the recorded and the live score.
+                #
+                # `_sim(_s)` is #500's high-water, so a screen at recorded 0.70 / live 0.00 cleared
+                # this bar and was never inspected — the same merged-record read that #928 and #929
+                # were about, one detector further on. I left it in place when I found it, on the
+                # grounds that `chrome_incomplete` feeds `_merged_passed`; following that to its
+                # end shows `_merged_passed` writes only `verdict["passed"]`, and verdict.json has
+                # exactly ONE programmatic reader in the whole repo (its own prior-read here). So
+                # the blast radius is the diagnostic file, and the deferral was over-cautious.
+                #
+                # `similarity_live` is absent when nothing diverged and None when the screen was
+                # not captured this round; neither means zero (#907).
+                _lv942 = _s.get("similarity_live")
+                _worst942 = _sim(_s)
+                if isinstance(_lv942, (int, float)):
+                    _worst942 = min(_worst942, float(_lv942))
+                if _worst942 >= min_similarity and not _is_player:
                     continue
                 _nm = str(_s.get("name") or "")
                 _cands = [_s.get("component"),
