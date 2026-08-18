@@ -14614,3 +14614,42 @@ it red.
 literal. They survive because the port lookup has a deterministic third fallback (the compose
 file's declared port), so nothing is silently dead — but the two live-query paths are just as
 inert on podman, and any future caller that lacks a fallback will hit this again.
+
+### 302. ★★ #936b — the same literal in four more modules, including the agent's own tools
+
+I had punted this to the user ("shall I take these too?"). Taking them.
+
+Ten argv lists across five modules began with the literal `"docker"`. Premise re-verified by
+EXECUTION before touching anything, because the whole ticket rests on it:
+
+    subprocess.run(["docker", "info"])  ->  FileNotFoundError: [Errno 2] ... 'docker'
+
+Read-only paths now resolve the runtime. Proven live against r154's containers:
+
+    _find_db_container      docker ps      -> ['docker_database_1','docker_backend_1','docker_frontend_1']
+    the psql candidate      docker exec …  -> rc=0, `select count(*) from titles` = 60
+
+★ That second line is the finding. **The agent's own database tool had no working path to the
+database on this host.** `_find_db_container` returned None because `docker ps` raised; every
+`docker exec` / `docker compose exec` candidate raised too; the only survivor was a direct `psql`
+needing the binary on the host. Same shape in `log_tools._get_docker_logs` — a lane could not read
+its own container's logs — and in `docker_tools`' `info`/`ps`/`exec`.
+
+★ Where I drew the line, and why: every remaining literal is a LIFECYCLE path (`_compose`,
+`_run_compose`, `_base_args`, `_try_start_db_service`, `compose down`, `container prune`). Those
+are not dead in the same way — something brings the stack up in every run and I have NOT traced
+what (no code in the repo invokes podman; no `podman-docker` shim is installed; the run's own
+records never mention podman; yet the containers are named `docker_frontend_1`, which is
+podman-compose's underscore convention). Switching the binary under a lifecycle call while that is
+unexplained could stand a second project up beside the running one. Recorded, not guessed at.
+
+★★ The guard's first version was WRONG and the failure taught the rule. It accepted any list whose
+second element was a docker subcommand, and `memory_bank.get_digest` holds
+`["docker", "compose", "port", "url", "vite", …]` — keywords for a substring match. It flagged
+prose. Rewritten to judge by POSITION: a list is a command line when it sits where one goes (first
+arg to a runner, assigned/appended to a `cmd`/`args` name, returned, `+ args`, or iterated as
+`for cmd in (…)`). The last of those was added after the allowlist looked stale —
+`_try_start_db_service` was present but unreachable to the locator, which is the same lie as a dead
+entry. Planted control: restoring one read-only literal names it exactly.
+
+Full suite 6317 passed.

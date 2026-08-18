@@ -20,6 +20,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.tool import BaseTool, ToolResult, ToolCategory, create_tool_param
 from workspace import Workspace
+# #936: docker is absent on a podman gen host; resolve the runtime instead of assuming.
+from env_generator.llm_generator.multi_agent.runtime.container_runtime import runtime_bin as _rt936
 
 
 @dataclass
@@ -341,7 +343,7 @@ Examples:
                 return None
             
             result = subprocess.run(
-                ["docker", "compose", "-f", str(compose_file), "logs", "--tail", str(lines), service],
+                [_rt936(), "compose", "-f", str(compose_file), "logs", "--tail", str(lines), service],
                 capture_output=True,
                 text=True,
                 timeout=30,

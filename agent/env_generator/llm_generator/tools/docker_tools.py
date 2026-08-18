@@ -22,6 +22,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.tool import BaseTool, ToolResult, ToolCategory, create_tool_param
 from workspace import Workspace
+# #936: docker is absent on a podman gen host; resolve the runtime instead of assuming.
+from env_generator.llm_generator.multi_agent.runtime.container_runtime import runtime_bin as _rt936
 
 # Import environment cache for avoiding repeated failures
 try:
@@ -34,7 +36,7 @@ def _docker_daemon_reachable(timeout: int = 3) -> bool:
     """Fast probe to detect whether Docker daemon is currently reachable."""
     try:
         result = subprocess.run(
-            ["docker", "info", "--format", "{{.ServerVersion}}"],
+            [_rt936(), "info", "--format", "{{.ServerVersion}}"],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -1102,7 +1104,7 @@ Example:
         # Get container ID for the service
         try:
             result = subprocess.run(
-                ["docker", "compose", "-f", str(compose_file), "ps", "-q", service],
+                [_rt936(), "compose", "-f", str(compose_file), "ps", "-q", service],
                 cwd=str(self.workspace.base_root),
                 capture_output=True,
                 text=True,
@@ -1122,7 +1124,7 @@ Example:
             
             for path in paths:
                 check_result = subprocess.run(
-                    ["docker", "exec", container_id, "test", "-e", path],
+                    [_rt936(), "exec", container_id, "test", "-e", path],
                     capture_output=True,
                     timeout=10,
                 )
@@ -1133,7 +1135,7 @@ Example:
                     # For key files, get first few lines
                     if path.endswith(('.jsx', '.js', '.html', '.json')):
                         head_result = subprocess.run(
-                            ["docker", "exec", container_id, "head", "-20", path],
+                            [_rt936(), "exec", container_id, "head", "-20", path],
                             capture_output=True,
                             text=True,
                             timeout=10,

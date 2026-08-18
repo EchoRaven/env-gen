@@ -36,6 +36,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
+# #936: docker is absent on a podman gen host; resolve the runtime instead of assuming.
+from env_generator.llm_generator.multi_agent.runtime.container_runtime import runtime_bin as _rt936
 
 # A cold docker build for a heavy app (React npm-install+build + backend + postgres + staged assets)
 # can exceed the old 300s cut-off mid-`up --build` (r6: 6/6 api_smoke attempts timed out at 300s →
@@ -194,11 +196,11 @@ def _service_host_port(compose_file: Path, cwd: Path, service: str) -> Optional[
         cid = cid.splitlines()[0].strip() if cid else ""
         if not cid:
             _r = subprocess.run(
-                ["docker", "ps", "-q", "--filter", f"name={service}"],
+                [_rt936(), "ps", "-q", "--filter", f"name={service}"],
                 capture_output=True, text=True, timeout=30).stdout.strip().splitlines()
             cid = _r[0].strip() if _r else ""
         if cid:
-            ports = subprocess.run(["docker", "port", cid], capture_output=True, text=True, timeout=30).stdout
+            ports = subprocess.run([_rt936(), "port", cid], capture_output=True, text=True, timeout=30).stdout
             # 0.0.0.0:P / 127.0.0.1:P / [::]:P / :::P (unbracketed IPv6)
             m = re.search(r"(?:\d+\.\d+\.\d+\.\d+|\[?::\]?):(\d+)", ports)
             if m:

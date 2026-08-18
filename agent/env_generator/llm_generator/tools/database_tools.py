@@ -19,6 +19,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.tool import BaseTool, ToolResult, ToolCategory, create_tool_param
 from workspace import Workspace
+# #936: docker is absent on a podman gen host; resolve the runtime instead of assuming.
+from env_generator.llm_generator.multi_agent.runtime.container_runtime import runtime_bin as _rt936
 
 
 class DatabaseQueryTool(BaseTool):
@@ -140,14 +142,14 @@ Connection uses docker-compose service name 'db' by default.
         candidate_cmds: List[List[str]] = []
         container_name = self._find_db_container()
         if container_name:
-            candidate_cmds.append(["docker", "exec", container_name, *psql_args])
+            candidate_cmds.append([_rt936(), "exec", container_name, *psql_args])
 
         compose_files = self._existing_compose_files()
         for svc in ("db", "database", "postgres"):
-            candidate_cmds.append(["docker", "compose", "exec", "-T", svc, *psql_args])
+            candidate_cmds.append([_rt936(), "compose", "exec", "-T", svc, *psql_args])
             candidate_cmds.append(["docker-compose", "exec", "-T", svc, *psql_args])
             for compose_file in compose_files:
-                candidate_cmds.append(["docker", "compose", "-f", str(compose_file), "exec", "-T", svc, *psql_args])
+                candidate_cmds.append([_rt936(), "compose", "-f", str(compose_file), "exec", "-T", svc, *psql_args])
                 candidate_cmds.append(["docker-compose", "-f", str(compose_file), "exec", "-T", svc, *psql_args])
 
         candidate_cmds.append([
@@ -337,7 +339,7 @@ Connection uses docker-compose service name 'db' by default.
         """Find the running database container name."""
         try:
             result = subprocess.run(
-                ["docker", "ps", "--format", "{{.Names}}"],
+                [_rt936(), "ps", "--format", "{{.Names}}"],
                 capture_output=True,
                 text=True,
                 timeout=10,

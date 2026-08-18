@@ -51,6 +51,8 @@ from progress import (
     ConsoleListener,
     JsonlEventLogger,
 )
+# #936: docker is absent on a podman gen host; resolve the runtime instead of assuming.
+from .runtime.container_runtime import runtime_bin as _rt936
 
 
 @dataclass
@@ -979,7 +981,7 @@ class Orchestrator:
         # Check Docker
         try:
             docker_result = subprocess.run(
-                ["docker", "info"],
+                [_rt936(), "info"],
                 capture_output=True,
                 timeout=10,
             )

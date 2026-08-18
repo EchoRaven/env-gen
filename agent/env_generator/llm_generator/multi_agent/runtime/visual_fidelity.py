@@ -3147,52 +3147,20 @@ async def run_visual_fidelity(
 
 
 def _runtime_bin_936() -> str:
-    """``docker`` when it exists, else ``podman``. Resolved per call, never cached.
+    """``docker`` when it exists, else ``podman`` — see `container_runtime` for the whole story.
 
-    #936: this module shells out to a literal ``"docker"`` in four places, and there is no
-    ``docker`` binary on a podman-backed gen host — `subprocess.run` raises `FileNotFoundError`,
-    every one of those calls is inside a `try`, and the probes they implement have therefore
-    NEVER RUN here. `served_build.json`, #738's state file, exists in **0 of the corpus's runs**.
-
-    #738 was written because r148 released v1.0.0 with the SPA crashing on every route, and its
-    whole job is to notice "the served bundle did not change while app/frontend did". r154 is that
-    signature exactly — 50 commits touching 12 frontend source files after 18:00, and `login`
-    rendered ONE distinct image across all 12 rounds (landing 2, games 2, browse_home 3) — and
-    nothing reported it, because the probe could not execute.
-
-    Prefers docker so a docker host is byte-identical.
+    #936: this module shelled out to a literal ``"docker"`` in four places and there is no docker
+    binary on a podman-backed gen host, so #715 and #738 had never run. Kept as a thin local name
+    because four call sites and a test suite refer to it; the logic lives in one place.
     """
-    import shutil as _sh936
-    for _b in ("docker", "podman"):
-        if _sh936.which(_b):
-            return _b
-    return "docker"
+    from .container_runtime import runtime_bin
+    return runtime_bin()
 
 
 def _container_id_936(compose_file: Any, service: str, *, timeout: int = 20) -> str:
-    """The running container id for a compose service, on either runtime.
-
-    ``docker compose ps -q <service>`` is Compose-v2 only: podman-compose's ``ps`` has **no
-    service positional** (argparse "unrecognized arguments: <service>", exit 2, empty stdout) —
-    already learned and written down in `validation_runner._service_host_port`, whose fix is the
-    name filter used here. `podman compose` merely delegates to podman-compose, so it inherits the
-    same gap; the fallback is what actually works.
-    """
-    rt = _runtime_bin_936()
-    try:
-        out = subprocess.run([rt, "compose", "-f", str(compose_file), "ps", "-q", service],
-                             capture_output=True, text=True, timeout=timeout).stdout.strip()
-        cid = out.splitlines()[0].strip() if out else ""
-        if cid:
-            return cid
-    except Exception:
-        pass
-    try:
-        out = subprocess.run([rt, "ps", "-q", "--filter", f"name={service}"],
-                             capture_output=True, text=True, timeout=timeout).stdout.strip()
-        return out.splitlines()[0].strip() if out else ""
-    except Exception:
-        return ""
+    """The running container id for a compose service, on either runtime (#936)."""
+    from .container_runtime import container_id
+    return container_id(compose_file, service, timeout=timeout)
 
 
 def _retire_stale_capture_934(shots_dir: Any, name: str) -> bool:
