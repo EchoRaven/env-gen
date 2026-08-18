@@ -14057,3 +14057,37 @@ from the artifact side and nearly filed it twice.
 34 of 35 are one line repeated. With #899's transition-only dedup and #924's two new boundaries,
 r154 should print roughly five: `reference_compile`, `design_prep`, `milestone_plan`, and the
 12→13 table transition. That is a cheap, unambiguous read the moment r154 reaches the scaffold.
+
+## 284. ★ "the producer speaks early" — measured, it speaks 5.3 minutes less late
+
+Item 283 concluded that #891 arrives too late because it reports at the consumer's boundary, and
+that the producer-side #896 is "the check that could speak early". Measured against r152 rather
+than reasoned:
+
+    r152 start                                    17:49:32
+    +24.7 min   first `STAGE database_scaffold ok — 12 tables`   ← where #896 would speak
+    +30.0 min   `#891 INPUT MISSING … without app/database/init/*.sql`
+    +30.1 min   last log line
+
+★ **#896 would have spoken 5.3 minutes earlier — 18% of the run, and still at 82% of its life.**
+That is not an early warning; it is a less late one. The reason is structural and neither check can
+fix it: **the scaffold itself does not run until +24.7 min**, so no boundary check on it can speak
+before then.
+
+The correction matters because it changes what to rely on. The only instrumentation that speaks in
+the first twenty minutes is #924's, and r152 is the case that shows what it buys:
+
+    +~2 min   stage reference_compile ok
+    +~5 min   stage design_prep ok
+              …twenty minutes of nothing…
+    +22 min   stage milestone_plan ok
+    +24.7     stage database_scaffold EMPTY   ← #896, once it has landed
+    +30       INPUT MISSING (#891), run ends
+
+From minute two the SHAPE is legible, and the twenty-minute gap is itself the diagnosis — which is
+what #894's docstring promised and could not deliver while its first line arrived at +20.
+
+★ Two of my own claims corrected in two turns by the same move: measure the thing instead of
+reasoning about it. "#891 never triggered" was wrong (it fired, correctly). "#896 speaks early" was
+wrong (it speaks 5.3 minutes less late). Both readings came from the same two logs that were sitting
+there the whole session.
