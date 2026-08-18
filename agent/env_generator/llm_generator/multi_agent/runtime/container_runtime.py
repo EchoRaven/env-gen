@@ -1,23 +1,38 @@
-"""#936 — which container CLI is actually on this host, and how to find a service's container.
+"""#936 — which container CLI is on this host, and the one call shape no shim can rescue.
 
-Ten argv lists across five modules begin with the literal ``"docker"``. There is no ``docker``
-binary on a podman-backed gen host — verified by execution, not inference:
+Ten argv lists across five modules begin with the literal ``"docker"``, and this host runs podman
+5.8.3 with no docker package. It works anyway, via a hand-installed PATH shim the repo ships and
+`tools/podman_setup.sh` tells you to add yourself:
 
-    subprocess.run(["docker", "info"])  ->  FileNotFoundError: [Errno 2] ... 'docker'
+    tools/podman_shim/docker   `docker compose …` -> `podman-compose …`;  `docker …` -> `podman …`
 
-Every one of those calls sits inside a ``try``, so each fails silently and the thing it implements
-simply never happens. The clearest casualty is #738's stale-bundle probe, written because r148
-released v1.0.0 with the SPA crashing on every route: its state file ``served_build.json`` exists
-in **0 of the corpus's runs**, because the guard that writes it (``if _bundle738 and _fe738``)
-never sees a bundle listing.
+★ Nothing verifies that shim is present. Measured both ways:
 
-Two functions, deliberately: the binary, and the one lookup that differs between the runtimes.
+    without it   subprocess.run(["docker","info"])            -> FileNotFoundError
+    with it      docker ps --format '{{.Names}}'              -> rc=0, all three containers
+    with it      docker compose -f … ps -q frontend           -> rc=2, EMPTY stdout
+
+The last line is the one that matters, and it is why this module exists. podman-compose's ``ps``
+has **no service positional** — argparse answers "unrecognized arguments: frontend" and exits 2.
+That is not an exception, so it cannot be caught; the caller just gets ``""``. The shim rescues
+every other shape and cannot rescue this one.
+
+Both stale-build probes depend on exactly that call. #738 was written because r148 released
+v1.0.0 with the SPA crashing on every route, and its state file ``served_build.json`` exists in
+**0 of the corpus's runs**: the guard that writes it (``if _bundle738 and _fe738``) never sees a
+bundle listing, because the container id was always empty.
+
+Two functions, deliberately: the binary, and the lookup the shim cannot fix.
 """
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
-from typing import Any
+from typing import Any, Dict
+
+#: one-shot flags — a line that fires every round stops being read (#845)
+_SAID: Dict[str, bool] = {}
 
 
 def runtime_bin() -> str:
@@ -56,6 +71,18 @@ def container_id(compose_file: Any, service: str, *, timeout: int = 20) -> str:
     try:
         out = subprocess.run([rt, "ps", "-q", "--filter", f"name={service}"],
                              capture_output=True, text=True, timeout=timeout).stdout.strip()
-        return out.splitlines()[0].strip() if out else ""
+        cid = out.splitlines()[0].strip() if out else ""
     except Exception:
         return ""
+    if cid and not _SAID.get("fallback"):
+        # ★ Say it ONCE. The compose lookup returning "" while the name filter finds the container
+        # is the signature of a podman-compose CLI, and it is the state in which #715 and #738
+        # produced nothing for the entire history of this corpus. Silence here is what made that
+        # take a full session to notice; a line makes the next reader's first question cheap.
+        _SAID["fallback"] = True
+        logging.getLogger(__name__).info(
+            "#936 `%s compose ps -q %s` returned nothing but the container IS running (%s) — this "
+            "is podman-compose, whose `ps` has no service positional. Using the name filter. Every "
+            "probe keyed on that lookup (#715/#738 served-build staleness) got an empty id before "
+            "this fallback existed.", rt, service, cid[:12])
+    return cid

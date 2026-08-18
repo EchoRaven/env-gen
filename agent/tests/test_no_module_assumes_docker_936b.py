@@ -153,3 +153,50 @@ def test_the_shared_resolver_exists_and_prefers_docker(monkeypatch):
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --------------------------------------------------------------------------- the shim gap
+
+def test_the_fallback_announces_itself_once(caplog, monkeypatch):
+    """★ The corrected mechanism. `tools/podman_shim/docker` rescues `docker ps` and `docker exec`
+    but CANNOT rescue `docker compose ps -q <service>`: podman-compose exits 2 with empty stdout,
+    which is not an exception. That single shape is what #715/#738 key on, which is why
+    served_build.json exists in 0 runs — not, as this ticket first claimed, a missing binary.
+
+    Measured under the shim: `docker ps --format` rc=0 with all three containers, and
+    `docker compose -f … ps -q frontend` rc=2 with empty stdout."""
+    import logging
+    import subprocess as sp
+    from env_generator.llm_generator.multi_agent.runtime import container_runtime as cr
+
+    cr._SAID.clear()
+
+    def fake(cmd, **kw):
+        if "compose" in cmd:                      # podman-compose: exit 2, EMPTY stdout
+            return sp.CompletedProcess(cmd, 2, "", "unrecognized arguments: frontend")
+        return sp.CompletedProcess(cmd, 0, "206cda4e42cb\n", "")
+
+    monkeypatch.setattr(cr.subprocess, "run", fake)
+    with caplog.at_level(logging.INFO,
+                         logger="env_generator.llm_generator.multi_agent.runtime.container_runtime"):
+        assert cr.container_id("/c.yml", "frontend") == "206cda4e42cb"
+        assert cr.container_id("/c.yml", "frontend") == "206cda4e42cb"
+    said = [r for r in caplog.records if "#936" in r.getMessage()]
+    assert len(said) == 1, f"once, not per call (#845) — got {len(said)}"
+    assert "no service positional" in said[0].getMessage()
+
+
+def test_a_working_compose_lookup_says_nothing(caplog):
+    """On a real docker host the first path answers, and silence is correct."""
+    import logging
+    import subprocess as sp
+    from env_generator.llm_generator.multi_agent.runtime import container_runtime as cr
+    cr._SAID.clear()
+    orig = cr.subprocess.run
+    cr.subprocess.run = lambda cmd, **kw: sp.CompletedProcess(cmd, 0, "abc\n", "")
+    try:
+        with caplog.at_level(logging.INFO):
+            assert cr.container_id("/c.yml", "frontend") == "abc"
+    finally:
+        cr.subprocess.run = orig
+    assert not [r for r in caplog.records if "#936" in r.getMessage()]

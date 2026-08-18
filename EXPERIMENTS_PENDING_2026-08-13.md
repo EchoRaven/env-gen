@@ -14653,3 +14653,49 @@ arg to a runner, assigned/appended to a `cmd`/`args` name, returned, `+ args`, o
 entry. Planted control: restoring one read-only literal names it exactly.
 
 Full suite 6317 passed.
+
+### 303. ★★★ CORRECTION to #936/#936b — the shim exists, and the real gap is one call shape
+
+I closed item 302 with "something brings the stack up in every run and I have NOT traced what".
+Traced it. `tools/podman_setup.sh:84` says it in plain words:
+
+    "Put tools/podman_shim first on PATH (docker->podman, podman build --network=host)"
+
+`tools/podman_shim/docker` is a five-line bash shim: ``docker compose …`` -> ``podman-compose …``,
+``docker …`` -> ``podman …``. Nothing adds it automatically (only `tools/ensure_base_images.sh`
+exports it for itself). r154 clearly ran WITH it — the podman-compose child process I saw has no
+other possible origin, since no code in the repo invokes podman.
+
+Measured, both configurations:
+
+    without the shim   subprocess.run(["docker","info"])         -> FileNotFoundError
+    with the shim      docker ps --format '{{.Names}}'           -> rc=0, all three containers
+    with the shim      docker compose -f … ps -q frontend        -> rc=2, EMPTY stdout
+
+★ So my stated mechanism was WRONG. It is not "there is no docker binary" — during a real
+generation there is one. It is the thing I filed as secondary: **podman-compose's `ps` has no
+service positional**, so it exits 2 with empty stdout, which is not an exception and cannot be
+caught. The shim rescues every other call shape and cannot rescue that one — and that one is
+exactly what #715 and #738 key on. `served_build.json` in 0 of the corpus's runs is explained
+either way; the cause is different.
+
+★ What that costs the two tickets:
+  * the CODE is right in both configurations and byte-identical under the shim (`runtime_bin()`
+    returns the shim's `docker`, because `shutil.which` finds it);
+  * `container_id`'s name-filter fallback is now CORRECTLY motivated, and is the only part that
+    changes behaviour in production. Proven live under the shim: compose lookup returns nothing,
+    the filter returns `206cda4e42cb`, and the one-shot line explains why;
+  * #936b's justification was wrong. `database_tools` and `log_tools` were NOT dead in production
+    — my psql proof ran in a shell without the shim, so it proved the fallback works, not that the
+    original failed. The change is still a strict improvement (it makes a shim-less launch work
+    instead of failing silently) but it did not fix a live defect. Recorded rather than reworded.
+
+★★ And the finding that survives is better than the one I started with: **the framework depends on
+a manually-installed PATH shim that nothing verifies, and the single call shape the shim cannot
+cover is the one both stale-build probes were built on.** A launch without the shim degrades
+every container operation to a silent no-op inside a `try`.
+
+★ Method note, the sharpest of the session: I "verified by execution" and still got the mechanism
+wrong, because I executed in MY shell rather than the generation's. An execution check is only as
+good as the environment it runs in — the same error shape as reading a stale PNG in #934, one
+layer out.
