@@ -14566,3 +14566,51 @@ against the person who has been writing the tickets about it.
 ★ Also corrected #933's test docstring in place: it still carried the pre-#934 story about the
 judge scoring a working page. A wrong illustration in a test is worse than in a ticket — the ticket
 is dated, the test is read as current.
+
+### 301. ★★ #936 — both stale-build probes have never executed on this host
+
+`visual_fidelity` shells out to a literal `"docker"` in four places: the compose `up`, the
+container-id lookup, and the two `exec`s that #715 and #738 depend on. **There is no `docker`
+binary anywhere on this host's PATH** (checked every PATH entry; the runtime is podman 5.8.3).
+`subprocess.run` raises `FileNotFoundError`, every call sits inside a `try`, and the probes have
+therefore never run. The evidence is absolute, not statistical:
+
+    served_build.json — #738's own state file — exists in 0 of the corpus's runs.
+
+Nor could a second attempt have worked: the lookup is `docker compose ps -q frontend`, and
+podman-compose's `ps` has **no service positional** (argparse "unrecognized arguments: frontend",
+exit 2, EMPTY stdout — not an exception). `podman compose` just delegates to podman-compose and
+inherits it. `validation_runner._service_host_port` learned this and wrote it down; its fix, the
+`ps --filter name=` fallback, is what #936 reuses.
+
+#738 exists because r148 released v1.0.0 with the SPA crashing on every route. Its one job is
+"the served bundle did not change while app/frontend did".
+
+★ r154 is the case that wanted it. After 18:00 the run made 50 commits touching 12 frontend source
+files, and across 12 capture rounds the screens produced almost no distinct renderings:
+
+    login 1 distinct image of 12 captures · landing 2 · games 2 · browse_home 3 · movies 3
+
+That is #738's shape. **I am deliberately NOT claiming the bundle was stale** — the probe that
+would answer it could not run, and over-reading an artifact is exactly what made #934 necessary.
+What is established is that the question was unanswerable, in every run, for as long as this host
+has existed.
+
+Live proof after the fix, against r154's still-running containers:
+
+    runtime resolved            podman
+    frontend container id       206cda4e42cb
+    served assets               index-CPCKce0W.js, index-Dmr8qcuR.css, fonts, posters, …
+
+`index-CPCKce0W.js` is the Vite content-hashed name that IS #738's fingerprint. Before this it got
+an empty list, every time, and the `if _bundle738 and _fe738:` guard then skipped writing the state
+file — which is why it exists nowhere.
+
+★ The guard test is an AST walk for argv lists whose first element is the literal `"docker"`, plus a
+non-vacuity test that the resolver is actually used in argv position. Reverting one call site turns
+it red.
+
+★ Not fixed here, recorded: `validation_runner._compose` and `_service_host_port` hold the same
+literal. They survive because the port lookup has a deterministic third fallback (the compose
+file's declared port), so nothing is silently dead — but the two live-query paths are just as
+inert on podman, and any future caller that lacks a fallback will hit this again.

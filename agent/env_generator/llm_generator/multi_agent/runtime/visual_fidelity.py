@@ -1206,7 +1206,8 @@ def _compose_up(project_dir: Path,
         return f"no compose file at {compose_file}"
     try:
         r = subprocess.run(
-            ["docker", "compose", "-f", str(compose_file), "up", "-d"],
+            # #936: docker when present, podman otherwise — see _runtime_bin_936.
+            [_runtime_bin_936(), "compose", "-f", str(compose_file), "up", "-d"],
             cwd=str(cwd), capture_output=True, text=True, timeout=timeout)
         if r.returncode != 0:
             return (r.stderr or r.stdout or "compose up failed")[-400:]
@@ -2525,9 +2526,10 @@ async def run_visual_fidelity(
                         _cf715 = project_dir / _c715
                         break
                 if _cf715 is not None:
-                    _cid715 = _sp715.run(
-                        ["docker", "compose", "-f", str(_cf715), "ps", "-q", "frontend"],
-                        capture_output=True, text=True, timeout=20).stdout.strip().split("\n")[0]
+                    # #936: was `docker compose ps -q frontend` — no docker binary on a podman
+                    # host, and podman-compose has no service positional either, so this returned
+                    # "" forever and both probes below never ran.
+                    _cid715 = _container_id_936(_cf715, "frontend")
                     if _cid715:
                         # The container is nginx serving the BUILD, not the source: the
                         # Dockerfile is multi-stage and ends
@@ -2538,7 +2540,7 @@ async def run_visual_fidelity(
                         # served JS for each route the source declares. `src/` is still tried
                         # first for a dev-server layout.
                         _served715 = _sp715.run(
-                            ["docker", "exec", _cid715, "sh", "-c",
+                            [_runtime_bin_936(), "exec", _cid715, "sh", "-c",
                              "cat /app/src/App.jsx 2>/dev/null || "
                              "cat /usr/share/nginx/html/assets/*.js 2>/dev/null"],
                             capture_output=True, text=True, timeout=30).stdout
@@ -2619,7 +2621,7 @@ async def run_visual_fidelity(
                         # not mean the app is broken, it means this measurement is of the wrong
                         # build. Any fault leaves the state file untouched and says nothing.
                         _assets738 = _sp715.run(
-                            ["docker", "exec", _cid715, "sh", "-c",
+                            [_runtime_bin_936(), "exec", _cid715, "sh", "-c",
                              "ls -1 /usr/share/nginx/html/assets/ 2>/dev/null"],
                             capture_output=True, text=True, timeout=20).stdout.split()
                         _bundle738 = " ".join(sorted(_assets738))
@@ -3142,6 +3144,55 @@ async def run_visual_fidelity(
             # later milestone's pages. Empty on the final/single-milestone path.
             "scope_excluded_screens": _scope_excluded_names,
             "min_similarity": min_similarity}
+
+
+def _runtime_bin_936() -> str:
+    """``docker`` when it exists, else ``podman``. Resolved per call, never cached.
+
+    #936: this module shells out to a literal ``"docker"`` in four places, and there is no
+    ``docker`` binary on a podman-backed gen host — `subprocess.run` raises `FileNotFoundError`,
+    every one of those calls is inside a `try`, and the probes they implement have therefore
+    NEVER RUN here. `served_build.json`, #738's state file, exists in **0 of the corpus's runs**.
+
+    #738 was written because r148 released v1.0.0 with the SPA crashing on every route, and its
+    whole job is to notice "the served bundle did not change while app/frontend did". r154 is that
+    signature exactly — 50 commits touching 12 frontend source files after 18:00, and `login`
+    rendered ONE distinct image across all 12 rounds (landing 2, games 2, browse_home 3) — and
+    nothing reported it, because the probe could not execute.
+
+    Prefers docker so a docker host is byte-identical.
+    """
+    import shutil as _sh936
+    for _b in ("docker", "podman"):
+        if _sh936.which(_b):
+            return _b
+    return "docker"
+
+
+def _container_id_936(compose_file: Any, service: str, *, timeout: int = 20) -> str:
+    """The running container id for a compose service, on either runtime.
+
+    ``docker compose ps -q <service>`` is Compose-v2 only: podman-compose's ``ps`` has **no
+    service positional** (argparse "unrecognized arguments: <service>", exit 2, empty stdout) —
+    already learned and written down in `validation_runner._service_host_port`, whose fix is the
+    name filter used here. `podman compose` merely delegates to podman-compose, so it inherits the
+    same gap; the fallback is what actually works.
+    """
+    rt = _runtime_bin_936()
+    try:
+        out = subprocess.run([rt, "compose", "-f", str(compose_file), "ps", "-q", service],
+                             capture_output=True, text=True, timeout=timeout).stdout.strip()
+        cid = out.splitlines()[0].strip() if out else ""
+        if cid:
+            return cid
+    except Exception:
+        pass
+    try:
+        out = subprocess.run([rt, "ps", "-q", "--filter", f"name={service}"],
+                             capture_output=True, text=True, timeout=timeout).stdout.strip()
+        return out.splitlines()[0].strip() if out else ""
+    except Exception:
+        return ""
 
 
 def _retire_stale_capture_934(shots_dir: Any, name: str) -> bool:
