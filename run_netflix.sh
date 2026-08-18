@@ -88,6 +88,31 @@ echo "$SMOKE" | grep -q '"content": "pong"' || say "WARN: smoke didn't return 'p
 "$FGEN_PY" -c "import playwright" 2>/dev/null || \
   say "WARN: playwright missing in fgen — visual/browser gates will fail. Run: ./run_netflix.sh --setup"
 
+# ── package-registry egress for the app builds ───────────────────────────────
+# The generated frontend/backend Dockerfiles run `npm install` / `pip install` with no
+# proxy args of their own, and this host cannot resolve registry.npmjs.org or pypi.org
+# directly (`getaddrinfo EAI_AGAIN`). The local forwarder on :19080 is what makes them
+# reachable, and `--network=host` builds see it on 127.0.0.1 — this is exactly what
+# launch_netflix.sh:41-42 has always exported. run_netflix.sh did not, so r155/r156 both
+# died on EAI_AGAIN: three identical 682s frontend builds before the run gave up. It only
+# stayed hidden this long because a warm image cache meant npm never actually ran.
+#
+# NOTE the asymmetry: base IMAGES come from the internal mirror and need the proxy
+# UNSET (tools/ensure_base_images.sh, see COMMANDS_next_session.md); package registries
+# need it SET. Do not "simplify" these into one setting.
+PKG_PROXY="${PKG_PROXY:-http://127.0.0.1:19080}"
+if curl -sf -m 3 -o /dev/null -x "$PKG_PROXY" https://registry.npmjs.org/ 2>/dev/null; then
+  export http_proxy="$PKG_PROXY" https_proxy="$PKG_PROXY"
+  export HTTP_PROXY="$PKG_PROXY" HTTPS_PROXY="$PKG_PROXY"
+  export no_proxy="127.0.0.1,localhost,.fbinfra.net,.fbcdn.net,.facebook.com,.thefacebook.com"
+  export NO_PROXY="$no_proxy"
+  say "package-registry proxy OK ($PKG_PROXY) — npm/pip reachable inside builds"
+else
+  say "WARN: no package-registry egress via $PKG_PROXY — every frontend build will fail"
+  say "      with 'EAI_AGAIN registry.npmjs.org' after ~682s, twice per validation."
+  say "      Start the forwarder (or set PKG_PROXY=...) before trusting this run."
+fi
+
 # ── launch generation ────────────────────────────────────────────────────────
 DESC_FILE="$REPO/design_inputs/netflix/DESCRIPTION.txt"
 DESC=""; [ -f "$DESC_FILE" ] && DESC="$(cat "$DESC_FILE")"
