@@ -14156,3 +14156,26 @@ COMPONENTS` stayed 0 all run.
 
 ★ That is a real vote on the open #914 question, from a fresh run rather than the corpus: **for the
 auth branch, the default is right.** Excluding auth from #914's scope was the correct call.
+
+### 286b. the missing direction, verified
+
+Item 286 offered two fix directions — propagate the framework's write back to the lane branch, or
+stop the merge carrying framework-owned files — without checking whether either already existed.
+Checked:
+
+    heal_pipeline.py:109   reconcile_integration_seed
+    heal_pipeline.py:163   reconcile_integration_frontend_pages
+    heal_pipeline.py:248   reconcile_integration_frontend_app_jsx
+    ★ integration → lane                                        NOTHING
+
+Three reconcilers, all lane→integration. **There is no path by which a lane branch learns what the
+framework wrote**, which is why r154's `agent/frontend` still holds the 151-line LoginPage it wrote
+once, and why every merge re-applies it. The oscillation has no brake by construction.
+
+The obvious key for the second option does not exist either: the framework's projected pages carry
+`data-projected="ref"`, but the AUTH page does not (r153's LoginPage has zero marker hits), so
+"don't merge a framework-owned file" would need a new ownership marker. That is a real change and
+it belongs to the #914 decision, not to a silent default.
+
+★ Recorded because the suggestion was cheap and the verification was cheaper: two greps turned "one
+of these would work" into "neither exists, and the second needs a marker that does not exist".
