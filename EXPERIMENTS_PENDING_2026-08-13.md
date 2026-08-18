@@ -15558,3 +15558,31 @@ repairs. Recorded so the asymmetry is a decision rather than an oversight.
 ★★★ Six defects today came from running real things: #952 and #953 from the live app, #954 from
 the real delivery gate. **None was reachable by a fixture** — a fixture author writes the SQL the
 framework writes, unquoted, and would never produce the case that has been failing in 141 runs.
+
+### 332. ★★★ #955 — a second blindness sitting behind the first, found by demanding a finding
+
+#954 made the tables visible (4 → 12) and the gate still reported `errors: 0`. Rather than accept
+that, I planted a drift — deleted `synopsis` from r154's SQL while the contract still declares it —
+and the gate STILL said `errors: 0`. A fixed check that cannot produce a finding is not fixed.
+
+    registry record   {"name": "titles", "schema": {"columns": [{"name": "id"}, …]}}
+    extractor read    table["columns"]                       ← absent
+
+`expected_columns` was empty for all 12 tables, and the caller's `if not expected_columns: continue`
+skipped the comparison for every table in every run. **The column-level contract check has never
+executed** — #954 made the tables countable and #955 makes the columns comparable; either alone
+leaves a check that counts correctly and compares nothing.
+
+Verified, both fixed, against r154:
+
+    clean              errors 0, warnings 0   (correct — r154 genuinely has no drift)
+    synopsis removed   errors 1: "SQL table `titles` missing registered columns: synopsis"
+
+★ The discipline that found it is the one this session keeps re-earning: **after fixing a blind
+detector, demand that it produce a finding.** Item 329 applied it to four audits and cleared them;
+here the same demand exposed a second layer. "0 errors" from a check I have just repaired is the
+least trustworthy number in the system.
+
+★★ Running tally of what real execution bought today, against zero from fixtures on the same code:
+#952 (unreachable handler), #953 (probes dead for a second reason), #954 (a third of all tables
+invisible, 141 runs), #955 (all columns invisible, every run).

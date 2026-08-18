@@ -1453,7 +1453,21 @@ def extract_spec_tables(spec: Dict[str, Any]) -> Dict[str, set]:
         name = str(raw_name or "").strip()
         if not name or not isinstance(table, dict):
             continue
-        columns = table.get("columns", {})
+        # #955: the registry keeps columns under `schema.columns`, not `columns`.
+        #
+        # A registryhub table record looks like
+        #   {"id": "titles", "name": "titles", "status": "implemented",
+        #    "schema": {"columns": [{"name": "id", "type": "serial primary key"}, …]}}
+        # and this read `table["columns"]`, which is absent — so `expected_columns` was EMPTY for
+        # all 12 of r154's tables, and the caller's `if not expected_columns: continue` skipped
+        # the column comparison for every table in every run. The column-level contract check has
+        # never executed.
+        #
+        # Found immediately after #954 made the tables visible: a planted drift (deleting
+        # `synopsis` from the SQL while the contract still declares it) produced no error, which
+        # is how a second blindness behind the first one shows itself. Fixing only #954 would have
+        # left a check that counts tables correctly and compares nothing.
+        columns = table.get("columns") or (table.get("schema") or {}).get("columns") or {}
         if isinstance(columns, dict):
             out[name] = {str(c) for c in columns.keys()}
         elif isinstance(columns, list):
