@@ -171,13 +171,45 @@ def test_a_stub_lane_page_is_not_reported(caplog, monkeypatch):
     assert not [r for r in caplog.records if "LANE PAGE WITH OWN COMPONENTS" in r.getMessage()]
 
 
-def test_it_reuses_583s_own_criterion():
-    """★ The rule is not invented here. If #583's first condition is ever reworded, these two
-    must be reconciled rather than silently diverging — which is how #905/#906 diverged."""
-    import inspect
-    assert "../components/" in inspect.getsource(fs._stale_thin_projection_583)
-    assert '"../components/" in (_existing or "")' in inspect.getsource(
-        fs.scaffold_pages_from_contract)
+def test_a_page_importing_its_own_components_is_never_stale_to_583():
+    """#583's first condition, asserted as behaviour: whatever the fresh render looks like, a page
+    that pulls its own components in is not a stale thin projection."""
+    rich = "<div><ul><li/></ul><h2/><table/><form/></div>"
+    assert fs._stale_thin_projection_583(_lane_page(imports_components=True), rich) is False
+
+
+def test_both_sites_route_through_the_one_predicate(monkeypatch, caplog):
+    """★ The rule is not invented here — if #583's condition is ever reworded the two uses must be
+    reconciled rather than silently diverging (which is how #905/#906 diverged).
+
+    Enforced with a SPY, not a source string. The previous version of this test asserted the exact
+    spelling `'"../components/" in (_existing or "")'` at the #914 call site — and #782 is the
+    lesson that a spelling assertion turns the better implementation into a prohibition: extracting
+    the shared predicate, which is #906's own remedy for a duplicated criterion, would have failed
+    it. A spy delegates to the real predicate, changes no behaviour, and goes red for the thing the
+    test actually cares about: either site re-inlining the criterion instead of calling it.
+    """
+    seen = []
+    real = fs._imports_own_components
+    monkeypatch.setattr(fs, "_imports_own_components",
+                        lambda src: (seen.append(src or ""), real(src))[1])
+
+    lane = _lane_page(imports_components=True)
+    assert fs._stale_thin_projection_583(lane, "<div/>") is False
+    assert any("lane 0" in s for s in seen), "#583 must ask the shared predicate"
+
+    seen.clear()
+    monkeypatch.delenv("ENVGEN_DEFER_TO_LANE_PAGE", raising=False)
+    _scaffold(lane, caplog=caplog)
+    assert any("lane 0" in s for s in seen), "#914 must ask the shared predicate"
+
+
+def test_the_predicate_tolerates_a_missing_page():
+    """★ The seam this refactor introduced: #583 guards `not existing` before asking, #914 passes a
+    possibly-None `_existing` straight in. The predicate owns the None, so both callers are safe."""
+    assert fs._imports_own_components(None) is False
+    assert fs._imports_own_components("") is False
+    assert fs._imports_own_components("import X from '../components/X.jsx'") is True
 
 
 if __name__ == "__main__":  # pragma: no cover

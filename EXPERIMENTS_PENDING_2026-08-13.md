@@ -14179,3 +14179,26 @@ it belongs to the #914 decision, not to a silent default.
 
 ★ Recorded because the suggestion was cheap and the verification was cheaper: two greps turned "one
 of these would work" into "neither exists, and the second needs a marker that does not exist".
+
+### 287. #926 — a spelling assertion I wrote myself, inverted under control
+
+`test_it_reuses_583s_own_criterion` (mine, this session) asserted the literal
+`'"../components/" in (_existing or "")'` inside `scaffold_pages_from_contract`. Its docstring's
+intent was right — #583's criterion had two hand-spelled copies and must not diverge — but pinning
+the SPELLING is #782's mechanism, so I ran the control both ways:
+
+    old test vs the CORRECT source (predicate extracted)      FAILED
+    old test vs the DIVERGENT source (criterion re-inlined)   passed
+
+Exactly inverted. It forbade #906's own remedy for a duplicated criterion and rewarded the
+duplication it was written to prevent.
+
+#926 extracts `_imports_own_components(src)`, used by both #583 and #914, and replaces the test
+with a **spy**: patch the predicate with a recording delegate, drive both sites, assert both asked.
+No behaviour change, no source string. Re-inlining at either site → red (verified in place).
+A third test covers the seam the refactor introduced — #583 guards `not existing` before asking
+while #914 passes a possibly-None `_existing`, so the predicate owns the None.
+
+★ Worth its line because the defect was in the *test*, on a session where every other item was a
+defect in the code, and it survived my own review at write time. The tell was mechanical, not
+insightful: an assertion whose subject is `inspect.getsource`.

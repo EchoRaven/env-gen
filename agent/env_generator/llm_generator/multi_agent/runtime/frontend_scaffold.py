@@ -9452,6 +9452,21 @@ def _env_flag_914() -> bool:
         return False
 
 
+def _imports_own_components(src: str) -> bool:
+    """Does this page pull in its own components? — #583's first condition, in its own words:
+
+        "a lane that refined a page pulls its own components in; a bare projection does not"
+
+    #906: one criterion, one function. It had two inline copies (#583's staleness guard and
+    #914's deference rule) spelled identically by hand, which is how #905/#906 diverged — the
+    same predicate written twice drifts on the first edit to either. Extracting it also removes
+    the reason #914's test had to pin the *spelling* at the call site (#782: a test that asserts
+    an exact spelling turns the better implementation into a prohibition — this refactor was
+    that better implementation, and that test forbade it).
+    """
+    return "../components/" in (src or "")
+
+
 def _stale_thin_projection_583(existing: str, cand: str) -> bool:
     """#583 — is this marked page a STALE THIN projection rather than a refined floor?
 
@@ -9472,7 +9487,7 @@ def _stale_thin_projection_583(existing: str, cand: str) -> bool:
     Either condition failing → leave the page alone."""
     if not existing or not cand:
         return False
-    if "../components/" in existing:
+    if _imports_own_components(existing):
         return False
     # The page must still be UNMODIFIED machine output. The projector emits a distinctive
     # helper preamble (`_url` / `_imgOf` / `_titleOf` …); a page a human or lane rewrote does
@@ -9768,7 +9783,7 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                         # exposure for free — how many pages the rule would have kept, and which —
                         # with byte-identical output. That is the cheap half of the experiment.
                         _lane_real_914 = bool(
-                            _cand_ok and not _marked and "../components/" in (_existing or ""))
+                            _cand_ok and not _marked and _imports_own_components(_existing))
                         _defer_914 = _lane_real_914 and _env_flag_914()
                         if _lane_real_914:
                             try:
