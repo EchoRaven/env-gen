@@ -15992,3 +15992,31 @@ Verified end to end: backend/frontend/database all resolve 3000/8081/5432, match
 message. The distinction that mattered — one CLI shape versus a missing binary — was already in my
 own #936c correction two hours earlier, and I still restated the broad version. **A correction does
 not propagate itself to the claims it invalidates; those have to be revisited by hand.**
+
+### 346. ★ a number caught BEFORE publishing — the static orphan scan over-reports 21×
+
+Item 345's lesson ("a correction does not propagate itself") sent me back over today's broad
+claims. #952 was the weak one: *one* unmounted handler out of 46, measured on r154 alone and never
+checked corpus-wide.
+
+A static approximation — count route decorators in modules whose router is never `include_router`'d
+— gave **2485 of 6311 declared routes (39%) unmounted, in 129 of 154 runs**. A striking number, and
+I was one command from writing it down.
+
+Calibrated it against the one live ground truth I had instead:
+
+    static scan on r154     21 orphans (all of custom_routes.py)
+    live openapi on r154     1 orphan  (DELETE /api/v1/tenants/{tenant_id})
+
+**Over-reports 21×.** `custom_routes.py` IS mounted — via `_custom_router`, a name my matcher
+collected but never connected back to the file. So the 39% is noise, and **#952's finding stays
+r154-only and unquantified across the corpus.**
+
+★ Ninth instrument failure of the session and the first caught BEFORE publication rather than after.
+What made the difference was having a live ground truth in hand and spending one command on it. The
+eight before it were all caught later, by a guard or by a contradiction — this one cost nothing
+because r154's containers were still up.
+
+★★ Standing consequence for the r155 readout: **#952's orphan detector compares source against the
+LIVE openapi and must keep doing so.** A static substitute is not available at any accuracy —
+measured, not assumed.
