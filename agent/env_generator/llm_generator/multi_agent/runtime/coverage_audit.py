@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+import logging
 from typing import Dict, List, Set
 
 
@@ -143,6 +144,25 @@ def scan_dead_tables(hub_registry) -> List[dict]:
         if schema_hub.get_table_consumers(name):
             continue
         out.append({"table": name, "provider": table.get("provider")})
+    # #957: "dead" here means "no REGISTERED consumer", and nothing in the system ever registers
+    # one. `registryhub_table_consumers.json` holds **0 records across the entire corpus**, while
+    # `registryhub_consumers.json` holds 1145 — every one keyed by `endpoint_id`, none by table.
+    # So this returns EVERY table, every run: r154's twelve are all reported dead while its
+    # database serves 60 titles, 57 title_genres, 16 episodes and five more populated tables.
+    #
+    # The count feeds a delivery blocker ("N dead artifact(s)", relaxed once
+    # `functionally_validated`), so the number is not inert — it inflates every pre-validation
+    # gate tick by the whole table count and carries no information about any of them.
+    #
+    # Not silently zeroed: dropping tables from the count would change a blocker's arithmetic, and
+    # that needs a live run to validate (this session's rule after #566j's 75-minute abort). Said
+    # once instead, so the next reader does not spend the afternoon I nearly did.
+    if out and len(out) == len(tables):
+        logging.getLogger(__name__).warning(
+            "COVERAGE: all %d table(s) report as dead because none has a REGISTERED consumer — "
+            "and nothing registers one (registryhub_table_consumers is empty in every run of the "
+            "corpus, while endpoint consumers number 1145). Treat the `tables` term of "
+            "dead_count_by_kind as a constant, not a finding (#957).", len(tables))
     return out
 
 

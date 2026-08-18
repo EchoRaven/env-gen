@@ -15648,3 +15648,33 @@ validate, not a unit test.
 `contract_alignment` tables, `contract_alignment` columns, now seed). The pattern is stable enough
 to state as a prior: **in this codebase, an empty findings list from a check nobody has watched
 fail is more likely to mean "did not run" than "nothing wrong".**
+
+### 335. #957 — "12 dead tables" is a constant, not a finding
+
+The gate's `coverage.dead_count_by_kind` reported `{"endpoints": 0, "tables": 12, "files": 24, …}`
+on r154 — every one of its tables dead, while the live database serves 60 titles, 57 title_genres,
+16 episodes and five more populated tables.
+
+`scan_dead_tables` calls a table dead when `get_table_consumers(name)` is empty. Corpus-wide:
+
+    registryhub_table_consumers.json    0 records, every run
+    registryhub_consumers.json       1145 records, every one keyed by endpoint_id, none by table
+
+Nothing registers a table consumer, so the scan returns every table, always. The count feeds a
+blocker (`"N dead artifact(s)"`), which r154's live `progress_events` shows firing at 18:34 — so
+it is not inert: it inflates every pre-validation tick by the entire table count.
+
+★ Mitigated, not harmless: the blocker is guarded by `and not functionally_validated`, which is why
+r154 still delivered M1. So this does not wedge — it just makes "dead artifacts" carry no
+information about tables, and only the `files: 24` term can mean anything.
+
+★★ Not silently zeroed, same disposition as #956: removing tables from the count changes a
+blocker's arithmetic and needs a live run to validate — the rule adopted after #566j's 75-minute
+no-deliver abort. Announced once, with the corpus numbers that explain it, plus a test that FAILS
+if table consumers ever start being registered so the premise cannot rot into a lie.
+
+★★★ Fifth check today found reporting something it cannot actually measure — #715, #738,
+`contract_alignment` (tables, then columns), the seed audit, now dead-tables. Three said "clean"
+without looking and two said "broken" without looking. **The common cause is not carelessness: in
+every case a checker's notion of the thing (a registration, a quoted name, a `columns` key) had
+drifted from what the producer writes, and nothing compares the two.**
