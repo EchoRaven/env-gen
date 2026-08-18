@@ -14768,3 +14768,49 @@ different defect from a plateau where the pixels move and the score does not, an
 could tell them apart.
 
 ★ A missing capture gets NO entry rather than an empty string — #907's rule, applied on the way in.
+
+### 306. ★★★ CORRECTION + the measurement #914 has been waiting for
+
+Item 305 concluded "the remediation loop is not changing the components the judged screens render",
+from a `git log` on `components/LoginPage.jsx` (2 commits in 148 minutes). **Wrong file.**
+`App.jsx:7` reads `import LoginPage from './pages/LoginPage.jsx'`. The one I traced is a
+139-byte-era orphan re-export that nothing imports. The routed file has **39 commits**.
+
+★ #938's own resolver caught it — I wrote the helper, ran it against r154, and it disagreed with
+my conclusion. That is the entire argument for the ticket: if a full-time reader of this codebase
+resolves route→file wrong, a lane holding one task description will too. The remediation header now
+prints `edit: <path>  ← what App.jsx routes <route> to`, omitted rather than guessed when
+unresolvable.
+
+★★★ And following the RIGHT file answers r154's plateau, and hands #914 the evidence I said it was
+missing. 39 commits, **3 distinct contents**:
+
+    bb861b93  4118B   the framework's projection
+    25f7d87f  5768B   the lane's page          17:36 – 17:47
+    04fb6e8a  7260B   the lane's richer page   18:25 – 18:49
+
+    lane writes → framework overwrites back to 4118B → lane writes → overwritten …  ×19
+
+Every oscillation lands back on the framework's 4118 bytes, and that is what every capture saw:
+`login` produced ONE distinct image across twelve rounds and sat at 0.50 the whole run. The lane's
+work existed for tens of seconds at a time.
+
+★ So the plateau is not stale builds (20 rebuilds, refuted in item 305), not the judge, and not a
+lane editing the wrong file. It is **#910b's AUTH PAGE OVERWRITE, running 19 times**, quantified
+end-to-end for the first time.
+
+★★ #914 implements exactly the lever this calls for — defer to a substantially richer,
+component-importing lane page — and I shipped it OFF because "every fidelity score in the arc was
+earned by the projection, and the lane's pages have never been rendered to a camera". That
+symmetry is now broken by measurement: the lane's pages have never been rendered to a camera
+**because they are overwritten before the camera arrives**. The 0.50 that the projection "earned"
+is the score of a page that won by deletion, nineteen times.
+
+★★★ USER DECISION, unchanged in shape but now evidenced: run one generation with
+`ENVGEN_DEFER_TO_LANE_PAGE=1` and compare per-screen against r153/r154. The flag logs its exposure
+either way, so an OFF run already tells us how many pages it would keep. Not flipping a default on
+one run's evidence.
+
+★ Method: this is the second time today that following an artifact instead of a NAME reversed a
+conclusion (the first was #934's stale PNG). Both were grep-by-filename where the truth was one
+indirection away — an import line, a file mtime.

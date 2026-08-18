@@ -4386,6 +4386,46 @@ def _is_noop_fix_660(text: str) -> bool:
             and len(t) <= 40)
 
 
+def _component_file_938(project_dir: Any, route: Any) -> Optional[str]:
+    """The source file that renders ``route``, as a repo-relative path, or None.
+
+    Two hops, both already owned by the framework: `frontend_audit._route_element` reads App.jsx's
+    routing table for the component IDENTIFIER (#597 calls that wiring "the source of truth for
+    what renders this page"), and App.jsx's own import line maps that identifier to a file.
+
+    Returns None rather than a guess. A remediation task that names the WRONG file is worse than
+    one that names none — the lane would edit it, see no score change, and conclude the judge is
+    broken, which is the reasoning error #934 caught me making from the other end.
+    """
+    try:
+        if not project_dir or not route:
+            return None
+        src = Path(str(project_dir)) / "app" / "frontend" / "src"
+        app = src / "App.jsx"
+        if not app.is_file():
+            return None
+        text = app.read_text(encoding="utf-8", errors="replace")
+        from .frontend_audit import _route_element
+        ident = _route_element(text, str(route))
+        if not ident:
+            return None
+        m = re.search(r"import\s+(?:\{[^}]*\b" + re.escape(ident) + r"\b[^}]*\}|"
+                      + re.escape(ident) + r")\s+from\s+['\"]([^'\"]+)['\"]", text)
+        if not m:
+            return None
+        rel = m.group(1)
+        if not rel.startswith("."):
+            return None                      # a package import renders nothing the lane can edit
+        base = (src / rel).resolve()
+        for cand in (base, base.with_suffix(".jsx"), base.with_suffix(".tsx"),
+                     base / "index.jsx", base / "index.tsx"):
+            if cand.is_file():
+                return str(cand.relative_to(Path(str(project_dir)).resolve()))
+        return None
+    except Exception:
+        return None
+
+
 def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
                      latched: Optional[set] = None,
                      prev_live: Optional[float] = None,
@@ -4493,6 +4533,22 @@ def remediation_text(result: Mapping[str, Any], output_dir: Any = None,
     _deferred = _eligible[_REMEDIATION_SCREEN_CAP_680:]
     for r in _eligible[:_REMEDIATION_SCREEN_CAP_680]:
         lines.append(f"\n## {r['name']}  (route {r['route']}, similarity {r['similarity']:.2f})")
+        # #938: NAME THE FILE. The header gave a screen name and a route, and left resolving that
+        # to a component up to the lane.
+        #
+        # r154 is what that costs. Twenty frontend rebuilds, fifty commits touching twelve
+        # frontend source files, twelve capture rounds — and `components/LoginPage.jsx`, the file
+        # `App.jsx` actually routes `/login` to, was edited TWICE in 148 minutes, the second time
+        # by 24 bytes. `login` produced ONE distinct image across all twelve captures and sat at
+        # 0.50 the whole run. The loop was working hard somewhere else.
+        #
+        # App.jsx is the source of truth for what renders a route (#597's own words, in
+        # `_route_element`), and the framework has parsed it since #566e. Printing the path costs
+        # a file read and removes an inference the lane was silently getting wrong. Omitted, never
+        # guessed, when it cannot be resolved — a wrong path is worse than none.
+        _f938 = _component_file_938(output_dir, r.get("route"))
+        if _f938:
+            lines.append(f"   edit: {_f938}   ← what App.jsx routes {r['route']} to")
         if _ab_on and _audit is not None:
             # A1: a failing screen whose reference components map to staged real
             # assets the code never references gets the asset mandate FIRST —
