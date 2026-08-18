@@ -3280,7 +3280,18 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                                "similarity_live_note": (
                                    "this capture scored lower; `similarity` is the best-of-"
                                    "captures merge (#500), `similarity_live` is what the "
-                                   "delivered frontend rendered at this code_state (#928)")})
+                                   "delivered frontend rendered at this code_state (#928). "
+                                   # #931: and say whose evidence this is. Every other field on
+                                   # this record — dimensions, deviations, fixes, screenshot —
+                                   # describes the RECORDED capture, so a reader who sees
+                                   # `similarity_live: 0.00` beside a deviations list about title
+                                   # placement would take that list as the reason for the 0.00.
+                                   # It is not; it is why the BETTER capture fell short of 1.0.
+                                   # (Checked before writing it: `remediation_text` reads the
+                                   # live results, not this file, so no lane is dispatched
+                                   # against the stale list — the harm is to a human reader.)
+                                   "dimensions/deviations/fixes/screenshot on this record "
+                                   "describe the RECORDED capture, not the live one")})
             else:
                 # #930: this capture won, so ARCHIVE the image that earned the score before the
                 # next round overwrites it. `screenshot` is a stable path

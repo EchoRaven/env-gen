@@ -147,5 +147,19 @@ def test_every_prior_field_survives_the_annotation(tmp_path):
         assert s.get(k) == expect, (k, s.get(k))
 
 
+def test_the_note_says_whose_evidence_the_other_fields_are(tmp_path):
+    """#931: `similarity_live: 0.00` sits beside a deviations list that describes the RECORDED
+    capture. A reader takes that list as the reason for the 0.00; it is the reason the BETTER
+    capture fell short of 1.0. Verified first that no lane is misdirected by it —
+    `remediation_text` is called with `run_visual_fidelity`'s live return value, not this file."""
+    first = _res("title_detail", 0.60)
+    first["deviations"] = ["Title placement: reference overlays the title on the hero image"]
+    _persist(tmp_path, [first])
+    v = _persist(tmp_path, [_res("title_detail", 0.00)])
+    s = _by_name(v)["title_detail"]
+    assert s["deviations"] == first["deviations"], "the recorded capture's evidence is kept"
+    assert "describe the RECORDED capture" in s["similarity_live_note"], s["similarity_live_note"]
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

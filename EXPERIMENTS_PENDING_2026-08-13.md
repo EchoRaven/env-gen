@@ -14366,3 +14366,32 @@ so the directory grows once per genuine improvement, asserted (three losing roun
 ★ And one weak test of my own, caught the same way: `test_a_new_high_water_re_archives` passed with
 the fix REVERTED, because the moving path happened to hold the right bytes at that instant. A
 third round that overwrites the file gives it teeth (6 red on revert became 7).
+
+### 293. #931 — and a hypothesis I checked instead of shipping
+
+#929's note listed "the collapsed capture's evidence is discarded" as the next ticket, on the
+assumption that a lane would then be dispatched against a stale diagnosis — #714's harm, one field
+over. Checked before building: `remediation_text` is called with
+`result = await run_visual_fidelity(...)`, the LIVE return value, not `verdict.json`. So no lane is
+misdirected and the phantom-to-do harm does not exist.
+
+What remains is a human reader of the artifact: `similarity_live: 0.00` sits beside a `deviations`
+list describing the RECORDED capture, and that list reads as the reason for the 0.00 when it is the
+reason the BETTER capture fell short of 1.0. That does not justify storing a second copy of every
+collapsed capture's evidence; it justifies one accurate sentence, which #931 adds to #928's note.
+
+★ Recorded because the cheap check changed the size of the fix by an order of magnitude, and
+because the ticket I had written for myself would have been mostly wrong.
+
+### 294. where r154 is
+
+    17:22  M1 gate opens red      frontend_code_missing, database_sql_missing, 4x ui_page_unwired
+    17:28  ...                    verification_checklist_not_ready
+    17:29  ...                    business_chain_failing (27 min on this one)
+    17:56  ★ ok=true              M1 deliverable
+    18:00  ok=true                (one 60s flap at 17:59)
+    18:31  Kickoff M2
+    18:34  red again              no_successful_run, dead_artifacts, ui_flow_missing, chain
+
+So M1 completed and M2 is under way — the multi-milestone path, which is the under-tested one.
+Visual: 3 rounds, live average 0.44 -> 0.35 -> 0.35, recorded stuck at 0.55 throughout.
