@@ -54,7 +54,7 @@ def test_the_counter_survives_a_fresh_process(tmp_path):
     fe = _fe(tmp_path)
     fs._count_overwrite_939(fe, "LoginPage")
     f = tmp_path / "design" / "scaffold_overwrites_939.json"
-    assert json.loads(f.read_text())["LoginPage"] == 1
+    assert json.loads(f.read_text())["LoginPage"]["overwrites"] == 1   # #960 shape
     assert fs._count_overwrite_939(fe, "LoginPage") == 2
 
 
@@ -83,9 +83,12 @@ def test_the_escalation_fires_on_the_third_overwrite(tmp_path, caplog):
         # drive the real branch through the source it guards
         src = __import__("inspect").getsource(fs.scaffold_pages_from_contract)
         assert "SCAFFOLD LOOP" in src and "_n939 >= 3" in src, "the escalation must be in-branch"
-    assert re.search(r"_count_overwrite_939\(frontend_dir, comp\)", src), (
-        "★ the seam: the parameter is `frontend_dir`; `fe` is not bound in this scope and would "
-        "NameError on the one line that only runs when the defect fires (#910's own mistake)")
+    # ★ A regex pinning the literal `_count_overwrite_939(frontend_dir, comp)` used to live here,
+    # and #960 added a third argument — so it went red for a change that strengthens exactly what
+    # it cares about. Sixth spelling assertion of the session to forbid its own improvement, and
+    # this one was mine, in this file. `test_the_counter_call_uses_a_bound_name` below already
+    # checks the real invariant — every argument is a name bound in the enclosing scope — via the
+    # AST, so this was redundant as well as brittle.
 
 
 def test_the_counter_call_uses_a_bound_name():
@@ -121,8 +124,9 @@ def test_the_projection_loop_is_counted_apart_from_auth(tmp_path):
         fs._count_overwrite_939(fe, "projection:BrowseHomePage")
     fs._count_overwrite_939(fe, "LoginPage")
     data = json.loads((tmp_path / "design" / "scaffold_overwrites_939.json").read_text())
-    assert data["projection:BrowseHomePage"] == 3
-    assert data["LoginPage"] == 1, "the two loops are different decisions and must stay separable"
+    assert data["projection:BrowseHomePage"]["overwrites"] == 3
+    assert data["LoginPage"]["overwrites"] == 1, (
+        "the two loops are different decisions and must stay separable")
 
 
 def test_the_projection_branch_calls_the_counter():
@@ -141,3 +145,42 @@ def test_the_projection_branch_calls_the_counter():
                       for t in n.targets if isinstance(t, ast.Name)}
     for c in calls:
         assert isinstance(c.args[0], ast.Name) and c.args[0].id in bound, ast.unparse(c)
+
+
+# --------------------------------------------------------------------------- #960 distinct content
+
+def test_it_records_how_many_DISTINCT_things_the_lane_wrote(tmp_path):
+    """★ #960. r154's real answer was 39 commits, THREE distinct contents, the framework winning
+    all 19 oscillations — and getting it took reconstructing every version with `git show`. A bare
+    count cannot tell an author who is ITERATING from one re-emitting the same file, and those need
+    opposite responses: progress being discarded, versus a loop with no learning in it."""
+    fe = _fe(tmp_path)
+    fs._count_overwrite_939(fe, "LoginPage", "version A\n")
+    fs._count_overwrite_939(fe, "LoginPage", "version A\n")     # same content again
+    fs._count_overwrite_939(fe, "LoginPage", "version B\nmore\n")
+    d = json.loads((tmp_path / "design" / "scaffold_overwrites_939.json").read_text())
+    assert d["LoginPage"]["overwrites"] == 3
+    assert d["LoginPage"]["distinct_count"] == 2, d["LoginPage"]
+
+
+def test_the_signature_carries_the_line_count(tmp_path):
+    """Size is the cheapest signal that a lane page is richer than what replaced it (#914's
+    discriminator is exactly a size-and-imports question)."""
+    fs._count_overwrite_939(_fe(tmp_path), "P", "a\nb\nc\n")
+    d = json.loads((tmp_path / "design" / "scaffold_overwrites_939.json").read_text())
+    assert d["P"]["distinct_replaced"][0].endswith(":3L"), d["P"]
+
+
+def test_an_old_int_record_migrates_in_place(tmp_path):
+    """A run that started before #960 must not lose its count or crash on the new read."""
+    fe = _fe(tmp_path)
+    f = tmp_path / "design" / "scaffold_overwrites_939.json"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps({"LoginPage": 7}))
+    assert fs._count_overwrite_939(fe, "LoginPage", "x\n") == 8
+    assert json.loads(f.read_text())["LoginPage"]["overwrites"] == 8
+
+
+def test_no_content_still_counts(tmp_path):
+    """The caller may not have the replaced text; the count must not depend on it."""
+    assert fs._count_overwrite_939(_fe(tmp_path), "P") == 1

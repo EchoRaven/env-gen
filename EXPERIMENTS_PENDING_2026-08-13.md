@@ -15946,3 +15946,25 @@ Read with `.venv/bin/python tools/readout_run.py netflix-web-r155`.
 ★ Deliberately NOT predicted: the fidelity score. Nine of today's ten fixes are observability; only
 #927 (chain 404 classification) and #953 can move a gate outcome, and neither touches the judge. A
 fidelity change either way would be noise attributable to the model, not to this work.
+
+### 344. #960 — count the DISTINCT things the lane wrote, not just how often we replaced them
+
+#939 records "LoginPage overwritten 19 times". That number cannot distinguish an author who is
+ITERATING — each version better than the last, all discarded — from one re-emitting the same file
+into a loop with no learning in it. Those need opposite responses, and r154's actual answer (39
+commits, **three** distinct contents, the framework's version winning all 19 oscillations) cost me
+reconstructing every version with `git show` and hashing it by hand.
+
+The counter now stores `{overwrites, distinct_replaced: [md5:NL, …], distinct_count}` and both call
+sites pass the text they are about to destroy. The signature carries the line count because #914's
+discriminator is a size-and-imports question. An old integer record migrates in place.
+
+This directly serves decision 1a: r155's `scaffold_overwrites_939.json` will say not just *how many
+times* the framework won, but *how many different pages the lane wrote before losing each time*.
+
+★ Three of my own tests broke on the changed record shape — correctly, and updated. A fourth broke
+for a different reason and is the session's **sixth spelling assertion to forbid its own
+improvement**: it pinned the literal `_count_overwrite_939(frontend_dir, comp)`, so adding an
+argument turned it red. Its intent (the argument must be the bound `frontend_dir`, not `fe`) is
+already enforced properly by `test_the_counter_call_uses_a_bound_name` through the AST — redundant
+as well as brittle, so dropped rather than re-spelled.

@@ -9532,7 +9532,7 @@ def _record_exposure_946(frontend_dir: Any, comp: str, payload: Dict[str, Any]) 
         pass
 
 
-def _count_overwrite_939(frontend_dir: Any, comp: str) -> int:
+def _count_overwrite_939(frontend_dir: Any, comp: str, replaced: str = "") -> int:
     """How many times the framework has now replaced a non-empty existing ``comp`` this run.
 
     #910b predicted the loop in words — *"a lane that keeps re-authoring this page will loop"* —
@@ -9558,8 +9558,27 @@ def _count_overwrite_939(frontend_dir: Any, comp: str) -> int:
                 data = json.loads(f.read_text(encoding="utf-8")) or {}
             except Exception:
                 data = {}          # unreadable is not "never happened", but it is not fatal here
-        n = int(data.get(str(comp), 0)) + 1
-        data[str(comp)] = n
+        # #960: count the DISTINCT things the lane wrote, not just how many times we replaced
+        # them. r154's answer — 39 commits, THREE distinct contents, the framework's version
+        # winning all 19 oscillations — took reconstructing every version with `git show` and
+        # hashing it by hand. A counter that records only "19" cannot tell an author who is
+        # iterating from one who is re-emitting the same file, and those need opposite responses:
+        # the first is progress being discarded, the second is a loop with no learning in it.
+        _prev = data.get(str(comp))
+        if isinstance(_prev, dict):
+            n = int(_prev.get("overwrites", 0)) + 1
+            seen = list(_prev.get("distinct_replaced") or [])
+        else:
+            n = int(_prev or 0) + 1          # migrate the old int form in place
+            seen = []
+        if replaced:
+            import hashlib as _h960
+            _sig = f"{_h960.md5(replaced.encode('utf-8', 'replace')).hexdigest()[:8]}" \
+                   f":{len(replaced.splitlines())}L"
+            if _sig not in seen:
+                seen.append(_sig)
+        data[str(comp)] = {"overwrites": n, "distinct_replaced": seen[:20],
+                           "distinct_count": len(seen)}
         f.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
         return n
     except Exception:
@@ -9764,7 +9783,7 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                     if target.exists():
                         _prev_910b = target.read_text(encoding="utf-8")
                         if _prev_910b.strip() and _prev_910b != (_body or ""):
-                            _n939 = _count_overwrite_939(frontend_dir, comp)
+                            _n939 = _count_overwrite_939(frontend_dir, comp, _prev_910b)
                             _log939 = __import__("logging").getLogger(__name__)
                             _log939.warning(
                                 "AUTH PAGE OVERWRITE #%d: %s — replacing the existing %d-line page "
@@ -9929,7 +9948,7 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                                     # Keyed apart from the auth count: they are different
                                     # decisions (#914 governs this one, nothing governs auth) and
                                     # merging them would hide which is which.
-                                    _n951 = _count_overwrite_939(frontend_dir, f"projection:{comp}")
+                                    _n951 = _count_overwrite_939(frontend_dir, f"projection:{comp}", _existing or "")
                                     if _n951 >= 3:
                                         __import__("logging").getLogger(__name__).error(
                                             "SCAFFOLD LOOP (projection): %s has now been replaced "
