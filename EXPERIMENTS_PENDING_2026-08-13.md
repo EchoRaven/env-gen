@@ -15678,3 +15678,39 @@ if table consumers ever start being registered so the premise cannot rot into a 
 without looking and two said "broken" without looking. **The common cause is not carelessness: in
 every case a checker's notion of the thing (a registration, a quoted name, a `columns` key) had
 drifted from what the producer writes, and nothing compares the two.**
+
+### 336. the empty-store sweep — the structural form of today's five, and what it leaves open
+
+Item 333's key-shape sweep failed on specificity because an AST cannot tell a task record from a
+hub record. This asks a question that needs no type inference: **which hub stores are empty in
+every run, and does any gate path read them?**
+
+    hub store kinds                       44
+    ★ empty across all 154 runs           19
+    …of those, referenced by a gate path   6
+
+    seed_registrations   deliverability, seed_audit      → #956, CONFIRMED defect
+    table_consumers      coverage_audit                  → #957, CONFIRMED defect
+    examples             seed_audit                      → unverified
+    projects             delivery_gate, framework_validation → unverified
+    reviews              deliverability                  → unverified
+    schemas              deliverability                  → unverified
+
+★ The sweep independently rediscovered both of today's confirmed defects, which is the validation
+the item-333 attempt never got. Its discriminator is a fact about the data (is the store empty in
+154 runs?), not a guess about a variable's type.
+
+★ One of the four was chased and came back ambiguous: `visual_reviews` reads
+`gate_registry.list_critical_visual_reviews()`, and `gate_registry` genuinely exists with the
+method present, returning 0 for r154. Distinguishing "never populated in any run" from "not
+populated in r154" needs its backing store located, which the `*review*` filename filter did not
+find. **Recorded as unverified rather than counted** — the whole point of items 329 and 333 is that
+an unverified zero is not a finding.
+
+★★ The 13 empty stores no gate reads (`codehub_pull_requests`, `workhub_decisions`,
+`registryhub_mocks` …) are almost certainly unused features rather than defects, and are listed
+here only so the next sweep does not re-derive them.
+
+★★★ Handoff for the next round: three unverified gate-referenced stores (`examples`, `projects`,
+`schemas`) plus `reviews`. Each needs the same two questions that resolved #956 and #957 —
+*what does the checker call "present", and what does the producer actually write?*
