@@ -851,6 +851,17 @@ class EnvGenAgent(
             self._task_complete_event.set()
             if task.task_name == "resident_message_wakeup":
                 self._resident_wakeup_task_pending = False
+                # #966: a wake-eligible message that landed while this wakeup was in flight
+                # was dropped by the dedup guard. The inbox read inside the task may have
+                # happened before it arrived, so clearing the flag here would strand it with
+                # nothing left to re-trigger. Re-arm once; the woken step either finds real
+                # work or finishes immediately.
+                _deferred = getattr(self, "_wakeup_deferred_966", None)
+                if _deferred:
+                    self._wakeup_deferred_966 = None
+                    self._resident_wakeup_task_pending = True
+                    asyncio.create_task(
+                        self._enqueue_resident_wakeup_966(**_deferred))
             if getattr(self, "_is_resident_lane", False):
                 try:
                     agent_manager = getattr(self, "_agent_manager", None)

@@ -291,46 +291,74 @@ class AgentMessaging:
                     )
                     return
         if getattr(self, "_resident_wakeup_task_pending", False):
+            # #966: this message passed EVERY eligibility gate above — it is real work for
+            # this lane — and is being dropped only because a wakeup is already in flight.
+            # The in-flight task drains the inbox once; anything that lands AFTER that read
+            # is never seen again, because completion clears the pending flag without
+            # re-checking. Today the orchestrator's finish_continue policy hides this (the
+            # lane never sleeps, so it re-reads the inbox next step), but every other
+            # resident lane is already exposed, and it is the documented instagram M1/M2
+            # shape: a lane goes idle holding an unread request and kickoff hangs to its
+            # 1200s timeout. Remember it and re-arm on completion.
+            self._wakeup_deferred_966 = {
+                "source": inbox_msg.get("from"),
+                "msg_type": msg_type,
+                "message_id": inbox_msg.get("id"),
+            }
             return
 
         self._resident_wakeup_task_pending = True
 
         async def _enqueue_wakeup() -> None:
             await asyncio.sleep(0)
-            try:
-                header = MessageHeader(
-                    message_id=str(uuid4()),
-                    source_agent_id="runtime",
-                    target_agent_id=self.agent_id,
-                    priority=MessagePriority.LOW,
-                )
-                task_msg = TaskMessage(
-                    header=header,
-                    task_id=str(uuid4()),
-                    task_name="resident_message_wakeup",
-                    payload={
-                        "name": "resident_message_wakeup",
-                        "workflow": "resident_tick",
-                        "trigger": "inbox_message",
-                        "source_agent": inbox_msg.get("from"),
-                        "message_type": msg_type,
-                        "message_id": inbox_msg.get("id"),
-                        "instruction": (
-                            "You are a resident lane woken up by a new inbox message. "
-                            "Check unread inbox messages, decide whether action is required, "
-                            "route or perform the next step, then call finish()."
-                        ),
-                    },
-                )
-                await self._message_queue.put(task_msg)
-                self._logger.info(
-                    f"[{self.agent_id}] scheduled resident wakeup for {msg_type} from {inbox_msg.get('from')}"
-                )
-            except Exception as e:
-                self._logger.warning(f"[{self.agent_id}] failed to schedule resident wakeup: {e}")
-                self._resident_wakeup_task_pending = False
+            await self._enqueue_resident_wakeup_966(
+                source=inbox_msg.get("from"),
+                msg_type=msg_type,
+                message_id=inbox_msg.get("id"),
+            )
 
         asyncio.create_task(_enqueue_wakeup())
+
+    async def _enqueue_resident_wakeup_966(
+        self, *, source: Any, msg_type: str, message_id: Any,
+    ) -> None:
+        """Put one ``resident_message_wakeup`` task on this lane's queue.
+
+        Extracted so the deferred-wakeup re-arm on task completion enqueues through the
+        SAME path as the live one — a second copy of this would drift.
+        """
+        try:
+            header = MessageHeader(
+                message_id=str(uuid4()),
+                source_agent_id="runtime",
+                target_agent_id=self.agent_id,
+                priority=MessagePriority.LOW,
+            )
+            task_msg = TaskMessage(
+                header=header,
+                task_id=str(uuid4()),
+                task_name="resident_message_wakeup",
+                payload={
+                    "name": "resident_message_wakeup",
+                    "workflow": "resident_tick",
+                    "trigger": "inbox_message",
+                    "source_agent": source,
+                    "message_type": msg_type,
+                    "message_id": message_id,
+                    "instruction": (
+                        "You are a resident lane woken up by a new inbox message. "
+                        "Check unread inbox messages, decide whether action is required, "
+                        "route or perform the next step, then call finish()."
+                    ),
+                },
+            )
+            await self._message_queue.put(task_msg)
+            self._logger.info(
+                f"[{self.agent_id}] scheduled resident wakeup for {msg_type} from {source}"
+            )
+        except Exception as e:
+            self._logger.warning(f"[{self.agent_id}] failed to schedule resident wakeup: {e}")
+            self._resident_wakeup_task_pending = False
 
     def _has_kickoff_bootstrap_gate(self) -> bool:
         for policy in getattr(self, "_workflow_policies", []) or []:
