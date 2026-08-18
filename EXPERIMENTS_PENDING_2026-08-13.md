@@ -16064,3 +16064,38 @@ yesterday — uncontaminated. `agent/generated/` is back to exactly 154 netflix 
 
 **What this buys r155:** it will not die on plumbing. What remains untestable without a key is
 everything that depends on the model producing usable output — which is the run itself.
+
+### 348. the key requirement, PROVED rather than assumed
+
+I had been reporting "blocked on MG_KEY" from the sidecar's own guard. That is evidence about the
+sidecar, not about the SDK — so it left open the hope that some keyless path existed. The repo's
+own TARGETS comment even hints at one:
+
+    # If you switch ENVGEN_METAGEN_FACTORY=prod and need service-user CAT tokens, also add:
+    #   "//crypto/cat/py:crypto_auth_token_util"
+
+and the DEFAULT factory is named `create_for_current_unix_user_for_devserver_only` — which reads
+exactly like "authenticates as me, no key". `--introspect` returns before `make_platform`, so it
+runs WITHOUT a key; buck2-run it and the SDK lands on disk readable.
+
+The real signature closes it:
+
+    def create_for_current_unix_user_for_devserver_only(
+        metagen_auth_credential: MetaGenKey,        # <- required positional, not Optional
+        ...
+    )
+    """@param metagen_auth_credential the authentication credentials for the MetaGen service.
+       This is ORTHOGONAL to the CAT token used by the underlying Thrift service."""
+
+    tier_str: str = _get_tier_str(metagen_auth_credential.key, tier)   # reads .key — no placeholder
+
+So the unix-user CAT authenticates the **Thrift transport**; the MetaGen **service** still demands
+the key, and the key's text is parsed to select a tier. `ENVGEN_METAGEN_FACTORY=prod` swaps
+`create_for_current_unix_user_for_devserver_only` for `create` — a different transport identity,
+same required credential.
+
+★ The point is not the conclusion (unchanged: only the user can supply MG_KEY). It is that the
+conclusion was previously **assumed from a guard I wrote** and is now **read off the SDK**. Every
+other avenue is likewise closed by measurement, not inference: `llm`/`plugboard` not installed,
+`/tmp/envgen_key.sh` + three other documented paths absent, no non-key credential class in the
+factory's namespace (`MetaGenKey` is the only one).
