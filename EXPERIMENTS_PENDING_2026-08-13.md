@@ -15815,3 +15815,38 @@ correct:
 ★★★ Sixth prose-match of the session, and the first one where the guard doing the false-matching
 was NOT mine. The rule holds across authors: **in this codebase a line-regex is never a locator,
 because the codebase documents its own patterns in prose more often than it uses them.**
+
+### 340. the near-miss — a sixth "dead gate" claim that was my measurement, not the gate
+
+Auditing the five gate fields I had not examined. Two resolved as non-findings, and the second is
+worth more than a defect would have been.
+
+**`build_evidence` — my stub.** `frontend_build_recorded: false` and the
+`frontend_build_not_recorded` failed-check both read `get_validation_results`, which I passed as
+`lambda: {}`. Not a finding; r154 rebuilt its frontend twenty times.
+
+**`unresolved_bugs` — a measurement error of mine that nearly became finding #960.** I counted
+task priorities and got:
+
+    top-level task["priority"]      None on all 13978 tasks, 0 runs with an open P0
+
+One step from reporting "the P0 gate is structurally dead — sixth of the day". Two things stopped
+it. My memory note says *83% of runs end with an open P0*, which contradicted the measurement; and
+reading the gate's actual predicate showed it reads `metadata`, not the top level. Re-measured:
+
+    metadata.priority               P2 8897 · P0 3839 · P1 1230 · P3 12
+    open P0 by priority             826 tasks, 128/154 runs = 83%      ← matches the note exactly
+    the gate's own predicate        kind=="bug" AND severity=="P0" → 889 tasks, 125/154 runs (81%)
+
+**The gate is fine.** It reads the right path, fires on four runs in five, and r154's empty result
+is genuine (128 tasks, all completed).
+
+★ What this cost and what it bought: nothing shipped, and the day's strongest habit got tested from
+the other side. Five real blind checks made "this gate is dead" the cheap hypothesis, and the sixth
+time it was wrong. **A prior that has been right five times is exactly when the next measurement
+needs the same scrutiny as the code** — I read `priority` where the writer puts `metadata.priority`,
+which is #955's defect committed by me, against the corpus, in the middle of cataloguing it.
+
+★★ The thing that actually caught it was a recorded number disagreeing with a fresh one. Worth
+stating: **when a new measurement contradicts a written prior, re-derive before publishing —
+the prior was written when someone had the context, and the new number was produced in a hurry.**
