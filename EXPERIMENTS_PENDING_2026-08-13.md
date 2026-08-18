@@ -15898,3 +15898,51 @@ preflight and the tests, and not the shell script that starts them.
 
 ★★ Remaining launch gap is the credential alone: `MG_KEY`. It is in `~/.bash_history`; extracting a
 credential from a history file is blocked by policy and correctly so — the user exports it.
+
+### 343. ★ r155 predictions, written BEFORE the run
+
+Recorded now so r155 is an experiment rather than an observation. Without a prediction on record,
+any outcome can be narrated as confirmation afterwards — and this session has already shown me
+doing exactly that twice (#929's and #933's r154 illustrations, both wrong, both plausible until
+the mtimes were listed).
+
+Read with `.venv/bin/python tools/readout_run.py netflix-web-r155`.
+
+**A. Artifacts that have never existed — presence alone is the test**
+
+    logs/preflight.json                 present, docker.available true, compose provider
+                                        "podman-compose …", service_ps false            (#944/#936c)
+    logs/delivery_gate.jsonl            one line per gate tick, ≥8 non-empty fields each  (#948)
+    design/visual_gate/served_build.json  present — 0 of 154 prior runs have one       (#953/#936)
+    design/visual_gate/captures/        ≥1 file per screen that ever set a high-water    (#930)
+    design/scaffold_overwrites_939.json present IF any page is overwritten ≥1×      (#939/#951)
+    design/lane_page_exposure_946.json  present IF any lane page imports ../components/  (#946)
+    design/duplicate_routes_959.json    present IF #615 fires — it fired twice on r154   (#959)
+
+**B. Numbers with a stake**
+
+    #937 distinct_renderings   ★ THE prediction. r154's login rendered ONE distinct image across
+                               12 rounds. If the auth overwrite loop is unchanged, login shows 1
+                               again. If it shows ≥2, something in the merge/scaffold path moved.
+    #951 projection: counts    r154's corpus shape says the projection loop is the larger one
+                               (537 component-importing pages vs the auth branch's 1). Expect
+                               `projection:<Page>` entries to OUTNUMBER the bare auth entries.
+    #946 exposure              r154's #914 discriminator matched 0 pages. Expect 0–2. A larger
+                               number would make decision 1a urgent rather than optional.
+    #954 contract_alignment    sql_tables should equal the declared table count (r154: 12 = 12).
+                               A mismatch now means REAL drift, not the quoting blindness.
+    #955 column errors         first run in which column drift can be reported at all. Expect 0 if
+                               the lane's DDL matches the contract; any error is a genuine find.
+
+**C. What would falsify today's work**
+
+    * `served_build.json` absent            → #953's compose-path fix does not survive a real run
+    * `preflight.json` absent               → #944 writes only on a path the real orchestrator skips
+    * distinct_renderings all equal to rounds → #937 is counting something else
+    * the gate's failed_checks set differs from r154's for reasons other than real app changes
+      → one of #954–#958's announcements leaked into a verdict, which the r154 replay said it
+        did not (item 323: blocker set unchanged)
+
+★ Deliberately NOT predicted: the fidelity score. Nine of today's ten fixes are observability; only
+#927 (chain 404 classification) and #953 can move a gate outcome, and neither touches the judge. A
+fidelity change either way would be noise attributable to the model, not to this work.
