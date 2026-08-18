@@ -1181,6 +1181,19 @@ class Orchestrator:
                 # endpoints / entities / MCP tools — which (a) extends the
                 # kickoff requirements and (b) becomes deliverability gates.
                 raw_req = await self._compile_reference_materials(raw_req)
+                # #924: record the FIRST stage boundary. #894's own worked example opens with
+                # `stage reference_compile` and `stage design_prep`, and NEITHER was wired — only
+                # `milestone_plan` and `database_scaffold` were. Its punchline is "the absence of
+                # the next line IS the diagnosis", but the 7 runs it cites (r19/r35/r38/r42/r44/
+                # r136/r140) all died BEFORE milestone_plan, so the timeline it promised them was
+                # entirely EMPTY and diagnosed nothing. r154 sat in exactly this span for its
+                # first six minutes with the timeline still blank, which is how this surfaced.
+                try:
+                    from .runtime.stage_contract import record_stage_894 as _rs924
+                    _rs924("reference_compile", "reference images",
+                           getattr(self, "_reference_images", None))
+                except Exception:
+                    pass
 
                 # Set reference images on all agents that might need them.
                 # Round-8e.1: design+frontend merged — frontend owns
@@ -2877,6 +2890,12 @@ class Orchestrator:
                     # hollow doc; the framework crops+measures+maps what's missing itself.
                     ds = complete_design_system(ds, resolved, self.output_dir)
                     self._design_system = ds
+                    # #924: the second stage #894's example names and never recorded.
+                    try:
+                        from .runtime.stage_contract import record_stage_894 as _rs924b
+                        _rs924b("design_prep", "screens", ds.get("screens") or [])
+                    except Exception:
+                        pass
                     self._logger.info(
                         "Design-Prep: design_system.json ready (%d screens, %d real assets) [%s]",
                         len(ds.get("screens") or []), len(ds.get("assets") or []),

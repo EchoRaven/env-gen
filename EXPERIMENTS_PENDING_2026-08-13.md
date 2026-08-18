@@ -13917,3 +13917,47 @@ floor looks like, and it is worth naming rather than grinding past.
 r154 with `ENVGEN_DEFER_TO_LANE_PAGE` unset. It validates 24 fixes at once, measures #914's exposure
 for free via the `LANE PAGE WITH OWN COMPONENTS` lines, and either fires or does not fire #918/#919
 on a freshly generated app. Everything else waits on its output.
+
+## 280. #924 — the timeline promised four stages and recorded two, neither of the first two
+
+Found by watching r154 rather than reading code. Six minutes in, mid-`decompose_reference`,
+`grep -c "STAGE " gm_netflix-web-r154.log` returned **0**.
+
+`record_stage_894`'s own worked example is:
+
+    stage  reference_compile  ok   3020 images
+    stage  design_prep        ok   12 screens
+    stage  milestone_plan     ok   1 milestone
+    <nothing>                      <- kickoff never started
+
+…with the punchline *"the absence of the next line IS the diagnosis"*. Only `milestone_plan` and
+`database_scaffold` were ever wired. ★ **Every one of the seven runs the ticket cites died BEFORE
+`milestone_plan`**, so for the exact class it was written for the timeline was entirely blank. The
+absence of a line can only diagnose anything if the lines before it exist.
+
+#924 wires the two the example names. Both are guarded — they sit on the pre-kickoff critical path,
+and an observability call that raises there manufactures the failure it exists to report (#827).
+
+r154 will NOT exercise it: the process imported `orchestrator` before the edit. This is for r155.
+
+### ★ a baseline that corrects item 269, and my own alarm
+
+Watching r154's 0-byte lane logs at 10 minutes, I treated them as the dead-run signature. r153's own
+timings say otherwise:
+
+    r153, minutes from the first agent log
+      Knowledge     0.0      Design      5.4
+      API          38.6      Browser    40.3
+      ★ Backend    69.6      Frontend   71.2      Verifier   71.2
+      ★ Debugger   NEVER WROTE — in the run that shipped two tags
+
+**The lanes wake at ~70 minutes.** A 0-byte lane log at 10 minutes into a two-hour run is normal;
+the dead runs' signature is those zeros *together with the run ending at 3–4 minutes*, not the zeros
+themselves.
+
+★ And item 269 listed "Backend / Frontend / Verifier / **Debugger** 0 files" as its evidence.
+Debugger writes nothing in a SUCCESSFUL run either, so it carries no information — the evidence is
+the other three plus the end of the run. Corrected here rather than left to be re-derived.
+
+Worth keeping as an operational number: **r154 is not stuck until ~70 minutes have passed with the
+lanes silent.**
