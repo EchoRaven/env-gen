@@ -15288,3 +15288,35 @@ tickets is exactly what no unit test is looking at.** #950 was a relationship be
 ★★ Also assert-scoped the new call with #940's rule — the counter's argument must be a name bound
 in the enclosing function — because #939's first version passed `fe` where the parameter is
 `frontend_dir`, and no unit test drove that branch.
+
+### 323. pre-r155 readiness — three integration runs, two defects, and the launch gate cleared
+
+`GOOGLE_API_KEY` is absent from the environment and from disk, so r155 cannot start. Everything
+that does not depend on it is done.
+
+**Integration runs (the method #950 established: drive a cluster together, not ticket by ticket)**
+
+    artifacts    #928/#930/#931/#933/#935/#937/#941   8 assertions   → found #950
+    scaffold     #926/#938/#939/#946                  6 assertions   → found #951
+    container    #936/#936c/#944/#945                 5 assertions   → clean
+
+★ The container run mattered most and was the one worth doing before the key arrives, not after:
+it confirms **#945 does not abort in the production configuration**. With the shim on PATH,
+`runtime_bin()` resolves to `docker` (so a docker host stays byte-identical), the compose provider
+is correctly identified as podman-compose lacking `ps <service>`, and `preflight.docker.available`
+is True. Had that been wrong, r155 would have died at second one — the gate I added this morning.
+
+**Artifact creatability** — every one of the seven new write sites carries
+`mkdir(parents=True, exist_ok=True)`, checked by AST rather than by grep context, because
+`captures/` does not exist in r154 and would otherwise fail on first write.
+
+**What r155 produces that r154 could not**
+
+    logs/preflight.json                     the machine, and the remedy if it is wrong   #944
+    logs/delivery_gate.jsonl                21 fields per gate evaluation, appended      #948
+    design/visual_gate/rounds.jsonl         + capture md5, zero reasons, milestone,
+                                              findings, capture errors        #932/#933/#935/#937/#941
+    design/visual_gate/captures/            the image that earned each recorded score    #930
+    design/scaffold_overwrites_939.json     both overwrite loops, per page          #939/#951
+    design/lane_page_exposure_946.json      1a's measurement, which was uncollectable     #946
+    design/visual_gate/served_build.json    #738's state file — 0 runs have ever had one  #936
