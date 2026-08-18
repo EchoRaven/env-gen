@@ -14119,3 +14119,40 @@ watching a number move.** Not found by grepping artifacts, and not findable that
 tree records how many times a function ran. It took a live run and three minutes.
 
 r154 will not benefit (it imported the module before the edit); #925 is for r155.
+
+## 286. ★ the oscillation is merge-driven, not lane-driven — corrected on live data
+
+Item 285's turn ended by naming the residual: *"the framework wins the content argument, but the
+lane wastes 151 lines every cycle."* Watching r154, that is wrong in the part that matters.
+
+    workhub task   impl.page.login   →   COMPLETED   (the lane is NOT being re-dispatched)
+    agent/frontend branch            →   151L        (unchanged since it was written)
+    integration / HEAD               →    72L
+    revisions of the file ON THE LANE BRANCH   2      (integration has oscillated 4×)
+
+**The LLM wrote it twice.** The 151-line page then sits still on the lane branch, and every
+`merge agent/frontend → integration` carries it forward again, after which the framework overwrites
+it. The oscillation's engine is the MERGE, not repeated inference.
+
+★ This independently confirms what r134's byte-identical git history implied — *"the lane branch
+never receives the framework's write, so every merge restores its copy"* — and the task store is the
+new evidence: the task is complete and the file still oscillates.
+
+**The cost is therefore much smaller than I said**: not an LLM tick per cycle, but a file copy and
+an overwrite. And the fix direction changes with it — not "tell the lane to stop" (it already has),
+but either propagate the framework's write back to the lane branch or stop the merge from carrying
+framework-owned files. Both belong to the #914/#910b decision; recorded, not taken.
+
+### ★ and the content argument, settled on live data
+
+    lane 151L        fetch/api calls 0   inputs 2   navigate 2   className 30
+    framework 72L    fetch/api calls 1   inputs 3   navigate 0   className 26
+
+The lane's page makes **no API call at all** — the extra 79 lines are styling and routing, not
+function. The framework's 72 lines are the only version that calls `/auth/login`. So on this page
+the unconditional overwrite is not merely defensible, it is correct, and #914's discriminator
+(protect only a page importing `../components/`) declined to protect it — `LANE PAGE WITH OWN
+COMPONENTS` stayed 0 all run.
+
+★ That is a real vote on the open #914 question, from a fresh run rather than the corpus: **for the
+auth branch, the default is right.** Excluding auth from #914's scope was the correct call.
