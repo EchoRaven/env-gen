@@ -15465,3 +15465,32 @@ corpus's runs and in 1 of 1 probe runs after the fix.
 code.** They pass the compose path in directly, so a wrong LOOKUP is invisible to them by
 construction. Two contacts with a real application produced #952 and #953 — and #953 is the one
 that would have made r155's whole stale-build story a silent no-op again.
+
+### 329. planted controls on the real app — 4/4 audits proven sighted, and two bad plants of mine
+
+Four delivery-blocker audits return **0** on r154's released frontend, and #919 returns 0 on its
+backend. By this session's own rule that is not evidence: #715/#738 returned "nothing wrong"
+hundreds of times while never executing. So I planted a defect for each.
+
+    dead_nav_link            ✓ caught  (link to an unrouted target)
+    bare_authed_fetch        ✓ caught  (bare fetch() of an authed API)
+    invented_field_fallback  ✗ → ✓     ★ MY PLANT WAS WRONG
+    routed_fallback_page     ✗ → ✓     ★ MY PLANT WAS WRONG
+
+★ `invented_field_fallback`: I planted `t.made_up || "N/A"`. The audit targets **fabricated display
+literals** (`place.rating || '4.5'`) — "N/A" is an honest placeholder, not invented data. Replanted
+with `|| "4.5"`: caught, and the message quotes the expression.
+
+★★ `routed_fallback_page`: I planted a hand-written "This page is not implemented yet" stub. The
+audit targets **the framework's OWN fallback page** — its docstring says so in the first line —
+detected by `data-fallback="1"` / the projector marker, or by the `_imgOf`/`_titleOf`/`_subOf`/
+`_metaOf` helper preamble plus a shell fingerprint. A lane-authored stub is not that artifact, so
+silence was correct. Replanted with `data-fallback="1"`: caught, and it names the route.
+
+**All four audits are sighted; both apparent blind spots were mine.** That is worth as much as
+finding a real one: had I reported "two audits are blind" the fix would have loosened detectors
+that work, and #782 is this session's record of what a loosened detector costs.
+
+★★★ The rule I keep re-deriving, now in its cleanest form: **a planted control tests the plant as
+much as the detector.** Before concluding a detector is blind, read what it says it looks for —
+twice today the docstring's first sentence contained the answer.
