@@ -15494,3 +15494,36 @@ that work, and #782 is this session's record of what a loosened detector costs.
 ★★★ The rule I keep re-deriving, now in its cleanest form: **a planted control tests the plant as
 much as the detector.** Before concluding a detector is blind, read what it says it looks for —
 twice today the docstring's first sentence contained the answer.
+
+### 330. three real capture rounds — the day's fixes validated on real pixels, and #929 firing live
+
+Ran the visual pipeline three times against r154's live app with a stub judge (0.55, 0.55, then
+0.20 to force a collapse). Real captures, real md5s, real archiving — the first time today's
+changes have seen anything but synthetic input.
+
+    #929  JUDGE UNSTABLE at an unchanged tree (2d304214): 3 screens got a different
+          verdict for the SAME code_state
+    #928  rec 0.55 / live 0.20, all three named in screens_below_record_928
+    #930  captures/browse_home@2d304214.png — the image that earned the kept score
+    #937  md5 9ae022bdada3 identical across all three rounds (true: same app, no code change)
+    #711  record_exceeds_live_by 0.35
+    #953  served_build.json present
+
+★ #929 proving itself is the one worth naming. The judge went 0.55 → 0.20 on an UNCHANGED tree and
+the collapse was reported. Before today that direction was structurally invisible: #893 compared
+the merged record against the prior, and #500's merge makes those the same object whenever the live
+score fell — so it could only ever see the judge getting kinder. The executed control at commit
+time proved the mechanism; this proves it on real captures.
+
+★★ Also confirms #937 does not false-alarm: three identical md5s across three rounds is the honest
+answer here (same app, no code between rounds), which is exactly the reading r154 needed and could
+not produce.
+
+**Real-app channel, total for the day:** #952 (a handler that exists and cannot be reached),
+#953 (the probes were dead for a second, independent reason — and `served_build.json` written for
+the first time in this corpus's history), 4/4 audits proven sighted by planted controls, and
+end-to-end validation of #928/#929/#930/#936/#937/#941/#953 on real pixels.
+
+★★★ Standing conclusion for the next round: **synthetic integration found 2 defects, first contact
+with a real application found 2 more, and the real ones were the ones that would have silently
+voided r155's measurements.** A fixture cannot have a wrong lookup path or an unmounted router.
