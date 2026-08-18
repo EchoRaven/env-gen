@@ -16344,3 +16344,63 @@ that this constant is a treadmill by construction — each richer app resets the
 the corpus test is what forces the re-measurement instead of letting the drop go quiet.
 
 Full suite after all three: **6,487 passed, 0 failed.**
+
+### 357. #968 — the orchestrator was told to finish, and the framework refused to let it
+
+Two runs reproduced the same shape, so it stopped being noise: the orchestrator lane calls
+`finish()`, gets told to keep going, checks its inbox, finds nothing, and calls `finish()`
+again — every 20–37s, on a conversation that never resets.
+
+    messages       266 → 336        +10 per step
+    content_chars  159,540 → 179,596   +2,900 per step
+    per wake       prompt 43k–74k tokens, completion 26–352
+    cumulative     5.4M prompt tokens / 173 calls, 22 minutes in
+    shape          finish was the ONLY action tool in 168 of ~200 steps
+
+★ **The model was right and the framework was wrong.** Three texts, in order: the wakeup
+task says "…then call `finish()`" (messaging.py:352); the finish tool documents itself as
+"Ends the current agentic loop / Agent remains available for new tasks" (
+agent_interaction_tools.py:382-389); and then `finish_continue` injects "Continue monitoring
+with `check_inbox()`… use `deliver_project()` to end" — which is unreachable during kickoff,
+because it is gated on `delivery_phase_reached`. The orchestrator's own words in r155:
+"awaiting framework re-wake on kickoff_detail_request" — it knew exactly what it should do.
+
+The injected followup never appears in the log (it goes into the conversation, not stderr),
+so from the outside you only see a model repeating "nothing to do". That is why this lasted.
+
+**Polling was never the problem — the LAYER was.** The prompt preamble says the orchestrator
+"IS the lane that ticks… the polling shape is intentional", and its stop_rules name the
+mechanism: `resident_coordination_tick`, dispatched by the coordination loop when the lane is
+FREE, starting a fresh conversation each time. `finish_continue` implemented that same
+polling one layer down, inside a single agentic loop, where nothing bounds the context.
+Exiting on `finish()` is what makes the lane free — the change restores the intended cadence
+rather than removing it.
+
+Deadlock face, checked before touching it (this is why the review was worth a session):
+
+    _main_loop (utils/base_agent.py:754)     while self._running — consumes the queue
+                                             independently of the agentic loop
+    run_loop (agents/base.py:693)            drains urgent messages every 0.5s, same
+    orchestrator runtime policy set          exactly 2: finish_continue + retro_before_deliver
+                                             (flags carry no depends_on, so no DependsOnPolicy)
+    starved pass-2 gates                     none apply — HubConsistency / ClaimAssignedTasks /
+                                             LaneWindDown / RequiredFiles / AutoCommitOnFinish
+                                             are all keyed on a yaml `kind:` this profile lacks
+    kickoff progression                      pure Python (kickoff_driver.py:78); finalizes
+                                             deterministically on synth=ready without any LLM
+    kickoff-time wakes                       kickoff_facilitate_request / kickoff_detail_request,
+                                             live high subs handled INLINE, bypassing the queue
+    post-kickoff backstop                    coordination tick, dispatched the moment the lane
+                                             is free
+
+Ordering mattered: #966 (the deferred-wakeup race) had to land FIRST, because `finish_continue`
+was the only thing keeping the orchestrator out of that race, and #967 (structural idle verdict)
+gives a backstop that is now observable instead of dead.
+
+Full suite 6,504 passed. Rollback is three lines of yaml, one revert.
+
+**Not done, deliberately** (scope held to the spin): preflight does not check package-manager
+egress, and `_build_with_retry` treats a deterministic failure as a transient one — r156 burned
+three identical 682s builds on `EAI_AGAIN registry.npmjs.org`, and would have burned ~2.3 hours
+across the full 6-attempt validation budget. Both are real; both are registered here rather than
+folded into a change about lane termination.

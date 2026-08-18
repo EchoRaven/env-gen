@@ -298,11 +298,13 @@ class AgentMessaging:
             # this lane — and is being dropped only because a wakeup is already in flight.
             # The in-flight task drains the inbox once; anything that lands AFTER that read
             # is never seen again, because completion clears the pending flag without
-            # re-checking. Today the orchestrator's finish_continue policy hides this (the
-            # lane never sleeps, so it re-reads the inbox next step), but every other
-            # resident lane is already exposed, and it is the documented instagram M1/M2
-            # shape: a lane goes idle holding an unread request and kickoff hangs to its
-            # 1200s timeout. Remember it and re-arm on completion.
+            # re-checking. It is the documented instagram M1/M2 shape: a lane goes idle
+            # holding an unread request and kickoff hangs to its 1200s timeout.
+            #
+            # #968 amends the original note here, which said the orchestrator was exempt
+            # because finish_continue meant that lane never slept. That policy is gone, so
+            # the orchestrator now sleeps like every other resident lane and this re-arm is
+            # load-bearing for it too — not a safety net for the others alone.
             self._wakeup_deferred_966 = {
                 "source": inbox_msg.get("from"),
                 "msg_type": msg_type,

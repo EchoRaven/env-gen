@@ -392,6 +392,16 @@ class VerifierValidationTriggerPolicy(BaseWorkflowPolicy):
 
 
 class FinishContinuePolicy(BaseWorkflowPolicy):
+    """Turn a lane's ``finish()`` into "keep going" by appending a follow-up instruction.
+
+    #968: NOT for a coordinator. This makes the turn non-terminating, so the lane's
+    conversation never resets — it grows by the follow-up plus every stage prompt and
+    reply, forever. The orchestrator carried this policy and paid ~+10 messages / +2,900
+    chars per step with finish as its only action tool in 168 of ~200 steps (netflix
+    r156). A lane whose idle mechanism is a re-dispatched task (``resident_coordination_
+    tick``, which starts a FRESH conversation) must be allowed to exit; use this only
+    where something else bounds the conversation.
+    """
     def __init__(self, *, tool_name: str = "finish", followup_message: str = ""):
         self.tool_name = tool_name
         self.followup_message = followup_message

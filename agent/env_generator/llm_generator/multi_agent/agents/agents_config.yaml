@@ -192,9 +192,22 @@ profiles:
         run_start: delivery_phase_reached
         run_validation: delivery_phase_reached
     workflow_policies:
-      - kind: finish_continue
-        tool_name: finish
-        followup_message: "Downstream agents notified. Continue monitoring with check_inbox() and respond to questions. When all agents complete and testing passes, use deliver_project() to end."
+      # #968: `finish_continue` REMOVED from this profile (it was the only user in the
+      # repo). It turned every finish() into "keep going" and appended 3 messages, so the
+      # orchestrator's turn never ended and its conversation never reset: netflix r156
+      # measured messages 266→336 (+10/step), content_chars 159,540→179,596 (+2,900/step),
+      # 5.4M prompt tokens in 22 minutes, with finish as the ONLY action tool in 168 of
+      # ~200 steps. There was no other exit — deliver_project is gated on
+      # delivery_phase_reached, unreachable during kickoff.
+      #
+      # Polling itself stays: this prompt's own preamble says the orchestrator "IS the
+      # lane that ticks", and its stop_rules say "coord_tick is NOT a finish() call — the
+      # pipeline loop manages tick lifecycle". That mechanism is
+      # `resident_coordination_tick`, dispatched by the coordination loop when the lane is
+      # FREE (orchestrator.py:2331) and starting a FRESH conversation each time. Exiting
+      # on finish() is what makes the lane free, so it restores the intended cadence
+      # instead of removing it.
+      #
       # Memory-redesign #2: gate deliver_project / report_completion on
       # at least one submit_retro call. Otherwise retros stay at 0 forever
       # since the run ends right when the LLM might have called them.
