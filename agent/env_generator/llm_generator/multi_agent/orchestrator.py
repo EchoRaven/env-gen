@@ -55,6 +55,13 @@ from progress import (
 from .runtime.container_runtime import runtime_bin as _rt936
 
 
+def _env_true_945(name: str) -> bool:
+    """#945: read per call, never at import — a run that trips the abort must be restartable by
+    exporting one variable, without a code edit or a reload."""
+    import os as _os945
+    return str(_os945.environ.get(name, "")).strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass
 class GenerationResult:
     """Result of environment generation."""
@@ -1149,6 +1156,26 @@ class Orchestrator:
                               encoding="utf-8")
         except Exception as _pf_exc:
             self._logger.warning("could not persist preflight.json: %s", _pf_exc)
+
+        # #945: FAIL FAST — but only after #944's report is on disk. Approved 2026-08-18.
+        #
+        # A warning here is indistinguishable from a healthy run until the artifacts are opened:
+        # every container call raises inside a `try` and the generation runs to completion
+        # producing an empty shell — r148's shape with a cause that is one PATH entry.
+        #
+        # ★ Ordering is the whole point and I got it wrong first: raising inside the docker
+        # branch above put the abort BEFORE `preflight.json` was written, so the operator would
+        # have lost the report that explains the abort — #944 undone by #945, caught by its own
+        # test. The cost of aborting is a genuinely docker-less user being stopped, so the escape
+        # is explicit rather than absent.
+        if not preflight["docker"]["available"] and not _env_true_945(
+                "ENVGEN_ALLOW_NO_CONTAINER_RUNTIME"):
+            raise RuntimeError(
+                "PREFLIGHT ABORT: no container runtime. Every container operation would fail "
+                "silently inside a try/except and this run would finish with nothing to show. "
+                "The full report is in logs/preflight.json."
+                + (preflight["docker"].get("remedy") or "")
+                + "\n  → set ENVGEN_ALLOW_NO_CONTAINER_RUNTIME=1 to proceed anyway.")
         
         await self.message_bus.start()
         

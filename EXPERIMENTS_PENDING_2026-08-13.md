@@ -15006,3 +15006,30 @@ This makes the state visible; it does not change what the run does.
     guard moved": a locator failing OPEN, dressed as a real finding.
 
 Full suite 6380 passed.
+
+### 313. #945 — a shim-less launch now aborts (user-approved 2026-08-18)
+
+Approved with the cost stated: a genuinely docker-less user is stopped, so the escape is explicit —
+`ENVGEN_ALLOW_NO_CONTAINER_RUNTIME=1`, read per call so a tripped run restarts by exporting one
+variable.
+
+★ Ordering was the whole ticket and I got it wrong first. Raising inside the docker branch put the
+abort BEFORE `preflight.json` was written, so the operator would lose the report that explains the
+abort — #944 undone by #945, one commit later. **Caught by a test I wrote in the same patch**
+(`test_the_abort_happens_after_the_file_is_written`), which is the only reason it did not ship.
+
+★★ Two more seams, same session-long shape:
+  * the helper landed between `@dataclass` and its class, breaking the module import. Insertion
+    points are the recurring hazard, not the logic.
+  * my own test asserted the literal `_hint944`, and moving the abort changed the expression to
+    `preflight["docker"].get("remedy")` — **fifth spelling assertion of the session to break on an
+    improvement, and this one I had written ten minutes earlier.**
+
+### 314. the three decisions, as approved
+
+  1a  #914 default            stays OFF; take the free exposure measurement over the next runs
+                              (it logs what it WOULD keep with byte-identical output; r154: 0)
+  1b  auth overwrite          option B — integration→lane propagation — as its own ticket, not
+                              folded into a fidelity run. #939's counter reports the blast radius
+                              per page meanwhile.
+  2   shim-less launch        abort (#945), with an explicit escape.

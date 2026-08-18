@@ -121,3 +121,54 @@ def test_the_remedy_is_conditional_on_podman_being_present():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --------------------------------------------------------------------------- #945 fail-fast
+
+def test_the_escape_hatch_reads_the_usual_spellings(monkeypatch):
+    for v in ("1", "true", "yes", "on", "ON"):
+        monkeypatch.setenv("ENVGEN_ALLOW_NO_CONTAINER_RUNTIME", v)
+        assert orc._env_true_945("ENVGEN_ALLOW_NO_CONTAINER_RUNTIME") is True, v
+    for v in ("0", "false", "no", "", "anything"):
+        monkeypatch.setenv("ENVGEN_ALLOW_NO_CONTAINER_RUNTIME", v)
+        assert orc._env_true_945("ENVGEN_ALLOW_NO_CONTAINER_RUNTIME") is False, v
+
+
+def test_unset_means_abort(monkeypatch):
+    monkeypatch.delenv("ENVGEN_ALLOW_NO_CONTAINER_RUNTIME", raising=False)
+    assert orc._env_true_945("ENVGEN_ALLOW_NO_CONTAINER_RUNTIME") is False
+
+
+def test_the_abort_is_guarded_by_the_escape_and_carries_the_remedy():
+    """★ Structural, and both halves matter: an abort with no way past it strands a docker-less
+    user, and an abort that does not say what to do is the same warning with a bigger hammer."""
+    src = inspect.getsource(orc)
+    tree = ast.parse(src)
+    raises = [n for n in ast.walk(tree) if isinstance(n, ast.Raise)
+              and "PREFLIGHT ABORT" in ast.dump(n)]
+    assert len(raises) == 1, "exactly one preflight abort"
+    ln = raises[0].lineno
+    guard = [n for n in ast.walk(tree) if isinstance(n, ast.If)
+             and "_env_true_945" in ast.unparse(n.test)
+             and any(b.lineno <= ln <= (b.end_lineno or 0) for b in n.body)]
+    assert guard, "the abort must sit behind the escape hatch"
+    # ★ semantic, not spelled: the first version required the literal `_hint944`, and moving the
+    # abort below the persist changed the expression to `preflight["docker"].get("remedy")`.
+    # Fifth spelling assertion of the session to break on an improvement — this one was mine,
+    # written ten minutes earlier.
+    dumped = ast.dump(raises[0])
+    assert "_hint944" in dumped or "remedy" in dumped, "the abort must carry the remedy"
+    assert "preflight.json" in ast.unparse(raises[0]), (
+        "the abort must point at the report it just wrote")
+
+
+def test_the_abort_happens_after_the_file_is_written():
+    """★ The seam that matters most here: raising before the persist would destroy the very
+    diagnosis the operator needs — #944's whole point, undone by #945's ordering."""
+    src = inspect.getsource(orc)
+    lines = src.splitlines()
+    abort_ln = next(i + 1 for i, l in enumerate(lines) if "PREFLIGHT ABORT" in l)
+    write_ln = next(i + 1 for i, l in enumerate(lines) if 'logs" / "preflight.json"' in l)
+    assert write_ln < abort_ln, (
+        f"preflight.json is written at {write_ln} but the abort raises at {abort_ln} — "
+        "the operator would lose the report that explains the abort")
