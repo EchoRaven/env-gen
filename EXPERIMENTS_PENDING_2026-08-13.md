@@ -14395,3 +14395,30 @@ because the ticket I had written for myself would have been mostly wrong.
 
 So M1 completed and M2 is under way — the multi-milestone path, which is the under-tested one.
 Visual: 3 rounds, live average 0.44 -> 0.35 -> 0.35, recorded stuck at 0.55 throughout.
+
+### 295. closing the "#500's merge is an evidence sink" class
+
+Enumerated every consumer rather than stopping at the two that bit:
+
+    who reads verdict.json programmatically   ★ exactly one — _persist_verdict's own prior read.
+                                              The docstring's "diagnostic-only" claim is true;
+                                              grepped the whole repo including tools/.
+    uses of `merged` after the merge          4
+      L3324  #595 mid-interaction / ad demotion    sets advisory        diagnostic, fine
+      L3355  #589 player-chrome check              reads CURRENT source diagnostic, fine
+      L3404  _blocking_merged -> _merged_passed    writes verdict.passed only, nothing reads it
+      L3536  the verdict's `screens`               the artifact itself   #928/#930/#931
+
+    consumers that wanted LIVE and got MERGED
+      per-screen similarity   #928  fixed
+      judge_unstable_893      #929  fixed
+      screenshot path         #930  fixed
+      deviations/dimensions   #931  annotated (checked: no lane reads them from here)
+
+★ One caveat worth leaving in place rather than fixing: #589 skips its chrome inspection when the
+MERGED score is above the bar, so a screen at high-water 0.70 / live 0.00 is not inspected. It only
+sets an advisory flag in the diagnostic file, so the harm is bounded — recorded, not fixed, because
+changing it would alter which screens carry `chrome_incomplete` and that feeds `_merged_passed`.
+
+The class is closed on the programmatic side. Everything remaining is a human reading the artifact,
+which is what #921/#928/#930/#931 are for.
