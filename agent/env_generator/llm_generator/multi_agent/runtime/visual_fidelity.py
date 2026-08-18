@@ -3214,14 +3214,43 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
 
         merged: List[Dict[str, Any]] = []
         _names_now = set()
+        _below_928: List[str] = []
         for s in screens:
             _names_now.add(s.get("name"))
             p = prior_by_name.get(s.get("name"))
-            merged.append(p if (p is not None and _sim(p) > _sim(s)) else s)
+            if p is not None and _sim(p) > _sim(s):
+                # #928: keep the high-water number — that IS #500's point, and the docstring
+                # above defends it as the right MEASUREMENT — but stop the record implying the
+                # app renders that way NOW. The aggregate already says so
+                # (`blocking_average_live` + #711's `record_exceeds_live_by`); per screen it
+                # said nothing, so the eight numbers a reader actually looks at were all
+                # high-water with one aggregate caveat beside them.
+                #
+                # Measured over the runs holding both files: 8 of 10 carry at least one screen
+                # whose recorded score exceeds the last live capture (46 screens, median gap
+                # 0.54), and 24 of those recorded >=0.40 while the live capture was <=0.05 —
+                # a collapsed screen presented as a good one. r148 is five of the 24
+                # (browse_home 0.80/0.00, new_and_popular 0.75/0.00, my_list 0.72/0.00,
+                # movies 0.70/0.00, games 0.62/0.00), which is how a run whose SPA crashed on
+                # every route recorded ~0.7 fidelity.
+                _below_928.append(str(s.get("name")))
+                merged.append({**p, "similarity_live": _sim(s),
+                               "similarity_live_note": (
+                                   "this capture scored lower; `similarity` is the best-of-"
+                                   "captures merge (#500), `similarity_live` is what the "
+                                   "delivered frontend rendered at this code_state (#928)")})
+            else:
+                merged.append(s)
         # carry over prior screens absent from this (possibly partial) capture
         for name, p in prior_by_name.items():
             if name not in _names_now:
-                merged.append(p)
+                # #928: and a screen this round never photographed must not keep a
+                # `similarity_live` earned in some earlier round — that is the same lie one
+                # level down. Say it was not captured instead.
+                merged.append({**p, "similarity_live": None,
+                               "similarity_live_note": (
+                                   "not captured in this round; `similarity` is a previous "
+                                   "capture's score (#500/#928)")})
 
         # #595: a reference frame captured with TWO OR MORE independent overlays open is not a
         # state the app can be in — demote before the chrome checks, same as #128/#542a do by
@@ -3444,6 +3473,13 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
             _verdict["record_exceeds_live_note"] = (
                 "the persisted score is the best-of-captures merge (#500); THIS capture scored "
                 "lower, so the delivered frontend is currently worse than the recorded number")
+        # #928: name them. The aggregate caveat above says the delivered app is worse than the
+        # record without saying WHERE, and "worse by 0.20" reads like eight screens each a
+        # little dimmer when the corpus shape is two screens collapsing to zero while the rest
+        # hold. r154 is exactly that: title_detail 0.60 -> 0.00 and movies 0.62 -> 0.05, with
+        # landing IMPROVING 0.40 -> 0.72 in the same round.
+        if _below_928:
+            _verdict["screens_below_record_928"] = sorted(_below_928)
         # #641: computed BEFORE this round joins the ledger, so the comparison is against
         # earlier rounds only. Recommendation only — it changes no decision taken here.
         _better = better_state_available_641(vdir, _verdict.get("blocking_average_live"))

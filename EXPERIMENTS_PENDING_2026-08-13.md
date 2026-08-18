@@ -14242,3 +14242,54 @@ live openapi showed r154 declares `@router.delete("/api/v1/tenants/{tenant_id}")
 `custom_routes.py` and serves no such path — the router is not mounted. A source scan would have
 hard-failed a chain on an endpoint the app genuinely does not serve. The corpus numbers that
 survive are the ones that never needed route matching at all (the 129 and the 34).
+
+### 289. #928 — the per-screen record was high-water only, so a collapsed screen read as a good one
+
+#500 merges each screen with the prior verdict and keeps the MAX. That is right for MEASUREMENT
+and the docstring defends it well (a capture taken mid-rebuild must not zero a screen that renders).
+The aggregate reports the other side of the trade — `blocking_average_live`, #711's
+`record_exceeds_live_by`. The eight per-screen numbers a reader actually looks at carried no mark
+at all: every one was the best capture ever taken, with one aggregate caveat beside them.
+
+Over the runs holding both `verdict.json` and `rounds.jsonl`:
+
+    runs with a screen recorded above its last live capture   8 of 10
+    screens affected                                          46   median gap 0.54  max 0.88
+    ★ recorded >=0.40 while the live capture was <=0.05       24
+
+★ r148 is five of the 24 — browse_home 0.80/0.00, new_and_popular 0.75/0.00, my_list 0.72/0.00,
+movies 0.70/0.00, games 0.62/0.00. That is the arithmetic by which the run whose SPA crashed on
+every route recorded ~0.7 fidelity, and it is the missing half of
+[[green-gate-can-ship-a-dead-app]]: not just that the gate passed, but that the DIAGNOSTIC file
+agreed with it, per screen, in eight separate numbers.
+
+r154 produced the same shape live while this was being written: title_detail 0.60 -> 0.00 and
+movies 0.62 -> 0.05, with landing IMPROVING 0.40 -> 0.72 in the same round. So "worse by 0.20"
+does not describe what happened to any single screen — which is the whole reason the aggregate
+caveat is not enough.
+
+Fix: keep #500's number, add `similarity_live` next to it, and name the diverging screens at the
+top level (`screens_below_record_928`). A screen not captured this round gets `similarity_live:
+None` with a "not captured" note rather than an inherited value — the same lie one level down —
+and is deliberately NOT listed as collapsed (it was not looked at; naming it would send a lane to
+fix a page nobody photographed, which is #714's lesson one field over).
+
+Pure addition: `blocking_average`, `similarity` and the pass/fail are byte-identical, asserted.
+
+### 290. what r154 showed while it was still running
+
+Reading the live run turned out to be worth more than waiting for it:
+
+  * ★ the delivery gate went `ok:true, failed_checks:[]` at 17:56 with `title_detail` at 0.00 and
+    `movies` at 0.05 — the r148 configuration, reproduced;
+  * 8 screens produced only 5 DISTINCT images (`browse_by_languages` = `browse_home` =
+    `browse_home_rows`; `login` = `movies`). #713 caught the login/movies pair; the three-way group
+    is suppressed by #718 as expected route sharing, which is correct as written but means
+    "three reference screens, one implemented route" is invisible;
+  * `movies` scored 0.05 because it photographed the LOGIN page, and `scope_excluded_screens`
+    already carries it (#714) — so the machinery built earlier in the session is working;
+  * the round-2 regression (live 0.44 -> 0.35) is real and per-screen, not diffuse.
+
+★ Method note: `rounds.jsonl` has no `round` or `gating_score` key. The real keys are `at`,
+`code_state`, `blocking_average`, `blocking_average_live`, `passed`, `min_similarity`, `live`.
+I read the wrong ones twice in this session before dumping a record.
