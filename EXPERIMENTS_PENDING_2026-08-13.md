@@ -14453,3 +14453,32 @@ two rounds, assert round 1 keeps the finding, round 2 adds no empty key, and nei
 other. Reverted the carry entirely to confirm it goes red. The three casualties — #926, #621's
 block locator, this one — are all the same shape: **an assertion whose subject is source text
 forbids the better implementation**.
+
+### 297. #933 — a screen scored 0.00 five rounds running and nothing on disk could say why
+
+Every 0.0 this module produces is a JUDGE failure, and each path writes its cause as a deviation:
+"judge returned no JSON", "judge JSON unparseable", "judge call failed: …", #766's non-verdict.
+#767 stamped `raw_judge_reply` onto the screen record for exactly this question and said why —
+*"Only the raw text can say, and one round from now it will be gone."* It goes onto the screen
+record, which #500's merge discards whenever the screen COLLAPSED. ★ #767's fix is defeated by the
+merge in precisely its own use case (r150's 0.00 on a page that renders).
+
+r154 is the live instance:
+
+    title_detail   r1 0.60   r2 0.00   r3 0.00   r4 0.00   r5 0.00      three distinct code states
+
+I opened the capture (#771's path): a complete working detail page — hero art, "Disclosure Day",
+Play / + / like, 2026 · TV-14 · HD, synopsis, Science Fiction tag, Episodes with a Season 1
+selector and an episode row with runtime. I opened the reference too: Netflix's "ALL AMERICAN"
+modal, unmistakably the same screen, with a right-column Cast/Genres block and a seasons count the
+app lacks. A fair score is around what round 1 gave. **0.00 is not a verdict about that page**, and
+nothing on disk says what the judge replied in rounds 2–5. The verdict shows 0.6 for it, because
+the merge kept round 1.
+
+`results` — the live list — is already an argument to the ledger writer, so the reason costs one
+loop. Only exact zeros are carried: that is the value every judge-failure path returns, so the rule
+needs no threshold, and a threshold would quietly reclassify real low scores (movies' 0.05 for
+photographing the login page is a verdict, however bad).
+
+★ One seam caught by writing the test first: `float(None or 0.0)` is 0.0, so a screen with NO score
+would have been filed as a judge failure. The guard rejects the value instead of coercing it.

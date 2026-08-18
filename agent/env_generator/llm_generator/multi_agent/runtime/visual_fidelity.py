@@ -4010,6 +4010,44 @@ def _append_round_record_640(vdir: Any, verdict: Dict[str, Any],
         for _k932 in _ROUND_FINDINGS_932:
             if verdict.get(_k932):
                 row[_k932] = verdict[_k932]
+        # #933: WHY a screen scored zero, in the record that survives the round.
+        #
+        # Every 0.0 this module produces is a JUDGE failure and each one writes its cause as a
+        # deviation — "judge returned no JSON", "judge JSON unparseable", "judge call failed: …",
+        # #766's non-verdict. #767 stamped `raw_judge_reply` onto the record for exactly this
+        # question, and said why: *"Only the raw text can say, and one round from now it will be
+        # gone."* It goes into the screen record — which #500's merge discards whenever the screen
+        # COLLAPSED, i.e. precisely when the question is asked.
+        #
+        # r154: `title_detail` scored 0.00 for four consecutive rounds across three code states,
+        # on a capture showing a complete working detail page (hero art, Play/+/like, meta row,
+        # synopsis, Episodes with a season selector) against a reference that is unmistakably the
+        # same screen. Round 1 scored the same page 0.60. Nothing on disk can say what the judge
+        # replied in rounds 2-5.
+        #
+        # `results` is the LIVE list and is already in hand here. Only exact zeros are carried —
+        # that is the value every judge-failure path returns, so the rule needs no threshold.
+        _zero933: Dict[str, Any] = {}
+        for _s933 in (results or []):
+            if not isinstance(_s933, dict):
+                continue
+            _n933 = str(_s933.get("name") or "")
+            try:
+                _sim933 = float(_s933.get("similarity") or 0.0)
+            except Exception:
+                continue
+            if not _n933 or _sim933 != 0.0:
+                continue
+            _devs933 = [str(d) for d in (_s933.get("deviations") or []) if str(d).strip()]
+            _zero933[_n933] = {
+                "why": _devs933[0][:200] if _devs933 else None,
+                "judge_error": bool(_s933.get("judge_error")),
+                "blank": _s933.get("blank"),
+                "capture_missing": _s933.get("capture_missing"),
+                "raw_judge_reply": str(_s933.get("raw_judge_reply") or "")[:200] or None,
+            }
+        if _zero933:
+            row["zero_reasons_933"] = _zero933
         with open(Path(vdir) / "rounds.jsonl", "a", encoding="utf-8") as fh:
             fh.write(json.dumps(row, default=str) + "\n")
     except Exception:
