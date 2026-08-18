@@ -15404,3 +15404,35 @@ fields to nine so the omission cannot recur silently.
 
 That is the third time today an instrument I built to catch a class was caught BY that class:
 #936b's locator flagged prose, #940's scope harvested locals, and now this.
+
+### 327. ★ a real experiment, without the model — and #952, the defect it found
+
+`GOOGLE_API_KEY` blocks the GENERATOR, not the pipeline's deterministic half. r154's app source and
+compose file are still on disk, so I brought the app back up and ran today's changed machinery
+against a real application instead of a fixture.
+
+**The falsifiable test I set, and lost.** r154 recorded `tenant_admin_lifecycle` as `passing` with
+`DELETE /api/v1/tenants/tenant_0 -> 404 kind=missing`. I predicted today's #927 would call it
+BROKEN. It did not:
+
+    live openapi tenants paths   /api/v1/admin/init-tenant [POST] · /api/v1/tenants [GET, POST]
+    #927 declared?               DELETE /api/v1/tenants/tenant_0 -> False   (GET/POST -> True)
+    source                       custom_routes.py:138 declares the DELETE
+
+★ **#927 is right and my prediction was wrong**, for the exact reason #936's docstring warns about:
+source declaration is not live registration. The route genuinely is not served, so `missing` is the
+correct classification and the chain correctly survives. A real app disagreed with me and the code
+did not.
+
+★★ But the run surfaced something none of my synthetic checks could: **a handler that exists in
+source and cannot be reached.** r154 declares 46 routes and serves 39; exactly one is an orphan,
+and it is the one a chain exercises. "Not built yet" says *write it*; "built and unmounted" says
+*find the `include_router` you never added* — and nothing in the system said the second.
+
+#952 crosses `missing` steps against the backend's own decorators (with `include_router` prefixes)
+and reports the intersection as data on `run_chains`'s return, not only as a log line. Verified
+against the live r154 app: it names the DELETE and stays quiet on a genuinely unwritten route.
+
+★★★ Method: this is what an experiment buys that a fixture cannot. Four synthetic integration runs
+today found two defects; the first contact with a real application found a third — and corrected a
+prediction I would otherwise have carried into r155.

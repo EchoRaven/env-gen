@@ -3221,6 +3221,68 @@ def _projected_owner_note(proj: set, method: Any, path: Any) -> str:
     return ""
 
 
+def _declared_but_unmounted_952(project_dir: Any, missing_steps: List[Mapping[str, Any]],
+                                base: str) -> List[Dict[str, Any]]:
+    """Missing steps whose route the BACKEND SOURCE declares — written, but not reachable.
+
+    #952, found by running r154's own `tenant_admin_lifecycle` against its own live app rather
+    than against a fixture. The chain calls `DELETE /api/v1/tenants/{id}`;
+    `custom_routes.py:138` declares exactly that handler; the served openapi has no such path at
+    all. #927 correctly files the step as `missing` — the app really does not serve it — and the
+    chain correctly survives. Nobody is told the third thing: **a lane wrote a handler that cannot
+    be reached, and a verifier wrote a chain that exercises it.**
+
+    "Not built yet" and "built and not mounted" are different instructions. The first says write
+    it; the second says find the `include_router` you did not add. r154 has exactly one (of 46
+    declared routes), and that one is why a chain reported passing over a 404.
+
+    Deliberately source-vs-LIVE, never source alone: #936 records what a source-only scan gets
+    wrong, and this is the same comparison run the other way round.
+    """
+    try:
+        if not project_dir or not missing_steps:
+            return []
+        app = Path(project_dir) / "app"
+        if not app.is_dir():
+            return []
+        prefixes = {""}
+        decls = []
+        for f in app.rglob("*.py"):
+            if "node_modules" in str(f):
+                continue
+            try:
+                src = f.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+            for m in re.finditer(r'include_router\([^)]*prefix\s*=\s*[\'"]([^\'"]+)[\'"]', src):
+                prefixes.add(m.group(1).rstrip("/"))
+            for m in re.finditer(r'@\w+\.(get|post|put|patch|delete)\(\s*[\'"]([^\'"]+)[\'"]', src):
+                decls.append((m.group(1).upper(), m.group(2), f.name))
+        if not decls:
+            return []
+        out = []
+        for st in missing_steps:
+            meth = str(st.get("method") or "").upper()
+            path = str(st.get("path") or "").split("?", 1)[0]
+            for dm, dp, fname in decls:
+                if dm != meth:
+                    continue
+                for pre in prefixes:
+                    rx = re.compile("^" + "".join(
+                        "[^/]+" if seg.startswith("{") and seg.endswith("}") else re.escape(seg)
+                        for seg in re.split(r"(\{[^/}]*\})", pre + dp) if seg) + "/?$")
+                    if rx.match(path):
+                        out.append({"method": meth, "path": path,
+                                    "declared_in": fname, "declared_as": pre + dp})
+                        break
+                else:
+                    continue
+                break
+        return out
+    except Exception:
+        return []
+
+
 def run_chains(base: str, project_dir: Any,
                business_endpoints: List[Mapping[str, Any]]) -> Dict[str, Any]:
     """Execute the verifier's chains. No chains → the gate FAILS with the
@@ -3279,5 +3341,20 @@ def run_chains(base: str, project_dir: Any,
                              change_info={"agent": "chain_executor"})
     except Exception:
         pass
+    # #952: a `missing` step whose route the SOURCE declares is not "not built yet" — it is a
+    # handler nobody can reach. Reported as data, not only as a log line (#947's rule).
+    _missing952 = [st for r in results for st in (r.get("steps") or [])
+                   if isinstance(st, Mapping) and st.get("kind") == "missing"]
+    _unmounted952 = _declared_but_unmounted_952(project_dir, _missing952, base)
+    if _unmounted952:
+        _LOGC952 = __import__("logging").getLogger(__name__)
+        for _u in _unmounted952[:5]:
+            _LOGC952.warning(
+                "#952 DECLARED BUT UNMOUNTED: a chain calls %s %s and %s declares it as %s, but "
+                "the running app serves no such route. This is not 'not built yet' — the handler "
+                "exists and cannot be reached; find the include_router that was never added. The "
+                "chain survives (correctly, #927), so nothing else says this.",
+                _u["method"], _u["path"], _u["declared_in"], _u["declared_as"])
     return {"source": "verifier", "chains": results, "broken": broken,
-            "framework_defects": framework_defects, "total_steps": total}
+            "framework_defects": framework_defects, "total_steps": total,
+            "declared_but_unmounted_952": _unmounted952}
