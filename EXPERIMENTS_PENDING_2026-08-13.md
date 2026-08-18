@@ -15876,3 +15876,25 @@ locators, and now this — in a tool I wrote two hours earlier for exactly this 
 answer" and has **no coding benchmark** (Crafting, OOLONG-REAL, DEEPDIVE; base model
 Qwen-3-4B-Instruct-2507). That correction was made from the paper, and this pass confirms the
 method generalises — read the primary artifact before repeating a summary, including your own.
+
+### 342. #945 would have broken the documented launcher — patched run_netflix.sh
+
+`run_netflix.sh` (repo root, the REAL netflix launcher — see item 337's correction) never put
+`tools/podman_shim` on PATH. Before today that meant the container layer degraded silently; **after
+#945 it means the preflight ABORTS at second one.** My own change would have broken the documented
+launch path, and nothing in the test suite could see it: #945 is unit-tested, the launcher is a
+shell script.
+
+Two patches, both verified by sourcing the script's config block:
+
+    PATH   prepends $REPO/tools/podman_shim, idempotently (case ":$PATH:" guard)
+    FGEN_PY  falls back to $REPO/.venv/bin/python when ~/.conda/envs/fgen is absent — it is, on
+             devvm57505, and the repo venv is where every 2026-08-18 fix was validated
+
+★ The general point is the one this session keeps producing in new forms: **a gate I add changes
+what "not configured" costs.** #945 converted a silent degradation into a hard stop, which is
+better — but only if every documented entry point actually satisfies it. I checked the engine, the
+preflight and the tests, and not the shell script that starts them.
+
+★★ Remaining launch gap is the credential alone: `MG_KEY`. It is in `~/.bash_history`; extracting a
+credential from a history file is blocked by policy and correctly so — the user exports it.

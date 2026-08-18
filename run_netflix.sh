@@ -13,11 +13,21 @@ set -uo pipefail
 REPO=/home/haibotong/forgingground-gen
 FBCODE="${FBCODE:-$HOME/fbsource/fbcode}"
 SIDECAR_SUBPATH="${SIDECAR_SUBPATH:-scripts/haibotong/metagen_sidecar}"
+# 2026-08-18: fall back to the repo venv. ~/.conda/envs/fgen does not exist on devvm57505, and
+# the repo venv has env_generator + playwright (every fix of 2026-08-18 was validated on it).
 FGEN_PY="${FGEN_PY:-$HOME/.conda/envs/fgen/bin/python}"
+[ -x "$FGEN_PY" ] || FGEN_PY="$REPO/.venv/bin/python"
 MODEL="${MODEL:-gpt-5-6-sol-genai-responses}"
 PORT="${PORT:-8900}"
 NAME="${NAME:-netflix-web-r1}"
 ENVGEN_SINGLE_MILESTONE="${ENVGEN_SINGLE_MILESTONE:-1}"
+
+# 2026-08-18: the shim MUST be first on PATH. This host has no `docker` binary; the repo ships
+# tools/podman_shim (docker->podman, docker compose->podman-compose). Without it every container
+# call used to fail silently inside a try — and since #945 the preflight ABORTS the run instead,
+# so a launcher that does not set this would now stop at second one.
+case ":$PATH:" in *":$REPO/tools/podman_shim:"*) ;; *) PATH="$REPO/tools/podman_shim:$PATH" ;; esac
+export PATH
 
 SIDECAR_DIR="$FBCODE/$SIDECAR_SUBPATH"
 TARGET="//${SIDECAR_SUBPATH}:metagen_sidecar"
