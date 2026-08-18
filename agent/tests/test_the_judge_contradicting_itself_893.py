@@ -141,15 +141,27 @@ def test_the_finding_is_carried_into_the_append_only_record():
 
     r153 makes the cost concrete: **12 rounds ran and exactly one verdict.json survives.** Any
     instability found in rounds 1–11 would be unrecoverable. `rounds.jsonl` is appended one line
-    per round and retains what verdict.json loses."""
-    src = _src()
-    i = src.index("#900: carry #893")
-    # anchored on the WRITER, not on the first mention of the filename — the comment above names
-    # rounds.jsonl three times, so `index("rounds.jsonl", i)` lands inside the explanation.
-    # Eighteenth self-match of the session, same rule: anchor on code, not on prose about it.
-    block = src[i:src.index('with open(Path(vdir) / "rounds.jsonl"', i)]
-    assert 'row["judge_unstable_893"]' in block
-    assert 'verdict.get("judge_unstable_893")' in block
+    per round and retains what verdict.json loses.
+
+    ★ Asserted by DRIVING the writer, not by reading its source. This test used to require the
+    literal `row["judge_unstable_893"]`, which #932 broke by carrying all eight findings in one
+    loop instead of one hand-written line each — the generalisation of #900's own reasoning. A
+    spelling assertion cannot tell that apart from the finding being dropped (#782, and the third
+    time this session: #926 and #621's block locator were the others)."""
+    import json as _json
+    import tempfile
+    from pathlib import Path as _P
+    from env_generator.llm_generator.multi_agent.runtime import visual_fidelity as _vf
+    _v = _P(tempfile.mkdtemp()) / "design" / "visual_gate"
+    _v.mkdir(parents=True)
+    _finding = [{"screen": "title_detail", "appeared": ["nav"], "vanished": [],
+                 "score_delta": 0.6}]
+    _vf._append_round_record_640(_v, {"code_state": "abc", "judge_unstable_893": _finding}, [])
+    _vf._append_round_record_640(_v, {"code_state": "def"}, [])          # a clean later round
+    _rows = [_json.loads(x) for x in (_v / "rounds.jsonl").read_text().splitlines() if x.strip()]
+    assert _rows[0]["judge_unstable_893"] == _finding
+    assert "judge_unstable_893" not in _rows[1], "a clean round adds no empty key"
+    assert len(_rows) == 2, "and it must not have erased the round that found it"
 
 
 def test_it_is_still_written_to_the_verdict_too():

@@ -14422,3 +14422,34 @@ changing it would alter which screens carry `chrome_incomplete` and that feeds `
 
 The class is closed on the programmatic side. Everything remaining is a human reading the artifact,
 which is what #921/#928/#930/#931 are for.
+
+### 296. #932 — #900's remedy carried one finding of eight
+
+#900 saw the shape exactly and wrote it down: "#893 wrote `judge_unstable_893` only into
+verdict.json, which `_persist_verdict` OVERWRITES every round — so a detection could be erased by
+the very next round. That is #500's evidence-erasure shape." Then it carried that one key and
+stopped. An AST walk of `_persist_verdict` finds EIGHT keys the verdict can grow, all findings:
+
+    judge_unstable_893  identical_captures_713  screens_below_record_928
+    record_exceeds_live_by (+note)  better_state_available (+note)  scope_excluded_screens
+
+★ r154 proved the erasure while this was being written, and I only know because I had dumped the
+file an hour earlier. Round 2 recorded
+
+    identical_captures_713: [{"md5": "41a9d24b…", "screens": ["login", "movies"]}]
+
+— `movies` photographed the LOGIN page and scored 0.05 for it. Round 3 saw movies recover to 0.62,
+the key was not re-added, and the surviving verdict has no trace. The run's history says it never
+happened.
+
+Carried as one declared set with an AST-based completeness guard, because the failure mode is a
+finding added LATER quietly not being carried — which is precisely what happened to #900. Planted
+control: adding a fake `a_brand_new_finding_999` to the verdict turns the guard red.
+
+★ Third spelling-assertion casualty of the session. #900's own test required the literal
+`row["judge_unstable_893"]`, so generalising #900's reasoning broke #900's test — it cannot tell a
+loop that carries all eight from the finding being dropped. Rewritten to DRIVE the writer:
+two rounds, assert round 1 keeps the finding, round 2 adds no empty key, and neither erases the
+other. Reverted the carry entirely to confirm it goes red. The three casualties — #926, #621's
+block locator, this one — are all the same shape: **an assertion whose subject is source text
+forbids the better implementation**.

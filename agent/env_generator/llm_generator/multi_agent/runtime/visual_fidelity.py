@@ -3934,6 +3934,22 @@ def better_state_available_641(vdir: Any, this_live: Any,
         return None
 
 
+# #932: every finding `_persist_verdict` can add to the verdict, carried into the append-only
+# ledger. Kept as one declared set so a finding added later is either listed here or caught by
+# `test_every_verdict_finding_is_carried_932`, which walks the function's AST for the keys it can
+# grow — a hand-written line per finding is how #900 ended up carrying exactly one of eight.
+_ROUND_FINDINGS_932 = (
+    "judge_unstable_893",         # the judge contradicting itself on an unchanged tree
+    "identical_captures_713",     # distinct screens that photographed the same page
+    "screens_below_record_928",   # screens whose live capture fell under their recorded score
+    "record_exceeds_live_by",     # #711's aggregate divergence
+    "record_exceeds_live_note",
+    "better_state_available",     # #641: an earlier round of this run scored higher
+    "better_state_note",
+    "scope_excluded_screens",     # #714/#565: screens whose remediation is suppressed
+)
+
+
 def _append_round_record_640(vdir: Any, verdict: Dict[str, Any],
                              results: List[Dict[str, Any]]) -> None:
     """#640 — one line per capture round, so "which tree scored best" becomes answerable.
@@ -3980,8 +3996,20 @@ def _append_round_record_640(vdir: Any, verdict: Dict[str, Any],
         # what verdict.json loses: 11 distinct code_states over 12 rounds, including the repeat
         # (41b11425e7 x2) that gave #893 its only real opportunity — where it correctly stayed
         # silent, because both rounds scored identically (merged 0.6771, live 0.627, delta 0.0000).
-        if verdict.get("judge_unstable_893"):
-            row["judge_unstable_893"] = verdict["judge_unstable_893"]
+        # #932: #900's remedy applied to EVERY finding on the document, not one of them.
+        #
+        # Its reasoning above is general — "a detection could be erased by the very next round" —
+        # and every other finding sits on the same overwritten file. r154 proved it while this was
+        # being written: `identical_captures_713` recorded `login` and `movies` capturing the same
+        # image in round 2, `movies` recovered in round 3, and the finding vanished from the only
+        # surviving verdict. The run's history now says it never happened.
+        #
+        # Carried as a declared set rather than a hand-written line each, because the failure mode
+        # here is a NEW finding quietly not being carried; the test asserts every key the verdict
+        # can grow is either in this set or explicitly not a finding.
+        for _k932 in _ROUND_FINDINGS_932:
+            if verdict.get(_k932):
+                row[_k932] = verdict[_k932]
         with open(Path(vdir) / "rounds.jsonl", "a", encoding="utf-8") as fh:
             fh.write(json.dumps(row, default=str) + "\n")
     except Exception:
