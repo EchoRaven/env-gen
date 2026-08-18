@@ -14016,3 +14016,44 @@ happens inside the twenty minutes the timeline could not see.
 ★ Method note: the number came from asking "does the instrument reach the artifact?" BEFORE arguing
 about what it should contain. That question is what found #921 (a label on the wrong object) and it
 is what confirmed #894 was worth extending rather than replacing.
+
+## 283. #891 verified in the field — and it arrived four seconds before the end
+
+Waiting on r154, the two older logs answered three questions I had left open.
+
+### ★ #891 has fired, and it was right
+
+Item 279 listed the stage-contract boundaries as never triggered. r152's log says otherwise:
+
+    18:19:19 [E] STAGE INPUT MISSING: backend skeleton is running without
+                 app/database/init/*.sql, which the database scaffold should have produced.
+                 the generated app will start against an empty database. Downstream failures
+                 from here are a CONSEQUENCE, not the cause (#891).
+
+Checked against the artifact: r152's `app/` holds `backend` and `frontend` and **no `database` at
+all**. The diagnosis was exactly correct. That closes "#891 never triggered" with evidence.
+
+### ★ but as an EARLY warning it was worth nothing
+
+    r152 started 17:49:32 · #891 fired 18:19:19 (+30 min) · last log line 18:19:23 (+30 min)
+
+**Four seconds.** #891 reports at the CONSUMER's boundary, so its warning cannot arrive before the
+consumer runs — and the backend skeleton runs late. The check that could speak early is the
+producer-side one, and that is #896 (`ok=bool(tables) and _sql894.is_file()`), which does not yet
+have a field observation of its own.
+
+★ Recorded honestly: the producer/consumer contradiction visible in r152's log — `STAGE
+database_scaffold ok — 12 tables` twice, then `INPUT MISSING` — is **not a new finding**. It is
+precisely what #896 was written for; its commit message (b6dc600) reads *"r152 died in 30 min on a
+same-day import bug, and my own instrument called it ok"*. I rediscovered my own fix's motivation
+from the artifact side and nearly filed it twice.
+
+### the #899 baseline, ready for r154
+
+    r153 (pre-#899)  35 STAGE lines = 24× "database_scaffold ok — 13 tables"
+                                    + 10× "database_scaffold ok — 12 tables"
+                                    +  1× "milestone_plan ok — 2 milestones"
+
+34 of 35 are one line repeated. With #899's transition-only dedup and #924's two new boundaries,
+r154 should print roughly five: `reference_compile`, `design_prep`, `milestone_plan`, and the
+12→13 table transition. That is a cheap, unambiguous read the moment r154 reaches the scaffold.
