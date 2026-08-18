@@ -2521,8 +2521,23 @@ async def run_visual_fidelity(
             # make — and the reason a phantom 0.05 was indistinguishable from a real one.
             try:
                 import subprocess as _sp715
+                # #953: look in `docker/` too — that is where every real run puts it.
+                #
+                # This searched the project ROOT only. r154, r153 and r150 all keep their compose
+                # at `docker/docker-compose.yml`, and `_compose_up` in this same module has always
+                # used that path — the knowledge was already here, written twice, and the two
+                # copies disagreed (#926's shape).
+                #
+                # So `_cf715` was None in every run and the probe never reached the container
+                # lookup at all. #936's docker-vs-podman fix was real but DOWNSTREAM of a lookup
+                # that never succeeded: #715 and #738 were dead for two independent reasons, and
+                # this one would have kept them dead on a docker host too. Found only by running
+                # the real pipeline against a real app — a synthetic test passes the compose path
+                # in directly and can never see a wrong lookup.
                 _cf715 = None
-                for _c715 in ("docker-compose.yml", "compose.yml", "docker-compose.yaml"):
+                for _c715 in ("docker/docker-compose.yml", "docker-compose.yml",
+                              "docker/compose.yml", "compose.yml",
+                              "docker/docker-compose.yaml", "docker-compose.yaml"):
                     if (project_dir / _c715).exists():
                         _cf715 = project_dir / _c715
                         break

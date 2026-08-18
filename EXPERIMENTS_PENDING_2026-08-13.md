@@ -15436,3 +15436,32 @@ against the live r154 app: it names the DELETE and stays quiet on a genuinely un
 ★★★ Method: this is what an experiment buys that a fixture cannot. Four synthetic integration runs
 today found two defects; the first contact with a real application found a third — and corrected a
 prediction I would otherwise have carried into r155.
+
+### 328. ★★★ #953 — the probes were dead for a SECOND reason, and #936 alone would not have revived them
+
+Ran the full visual pipeline against r154's live app with a stub judge — no LLM needed, since
+`judge_fn` is injectable. `verdict.json` and `rounds.jsonl` were written; `served_build.json` was
+**not**. #936 had not been enough.
+
+    probe searched    project_dir / "docker-compose.yml"          (project ROOT)
+    every run has it  project_dir / "docker" / "docker-compose.yml"   r154, r153, r150
+
+`_cf715` was None in every run, so the probe never reached the container lookup that #936 fixed.
+**#715 and #738 were dead for two independent reasons**, and this one would have kept them dead on
+a docker host as well. `_compose_up`, in the same module, has always used the `docker/` path — the
+knowledge was written twice and the copies disagreed (#926's shape, third instance today).
+
+After the fix, against the live app:
+
+    #936  compose ps -q returned nothing but the container IS running (b37c8517) — name filter
+    #715  served build matches the source: all 14 declared route(s) present in the bundle
+    ✓ served_build.json written — the first time in this corpus's history
+
+★ Both probes exist because r148 released v1.0.0 with the SPA crashing on every route, and
+neither had ever executed. That is now measured, not inferred: the state file exists in 0 of the
+corpus's runs and in 1 of 1 probe runs after the fix.
+
+★★ The method point, which is the day's strongest: **four synthetic integration runs passed this
+code.** They pass the compose path in directly, so a wrong LOOKUP is invisible to them by
+construction. Two contacts with a real application produced #952 and #953 — and #953 is the one
+that would have made r155's whole stale-build story a silent no-op again.
