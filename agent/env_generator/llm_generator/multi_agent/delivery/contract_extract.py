@@ -39,7 +39,25 @@ def extract_sql_tables(db_dir: Path) -> Dict[str, set]:
     if not db_dir.exists():
         return tables
     sql_text = "\n".join(p.read_text(encoding="utf-8", errors="ignore") for p in db_dir.glob("**/*.sql"))
-    for match in re.finditer(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z_][\w]*)\s*\((.*?)\);", sql_text, re.IGNORECASE | re.DOTALL):
+    # #954: the identifier may be QUOTED, and schema-qualified. `([a-zA-Z_][\w]*)` allows
+    # neither, so `CREATE TABLE IF NOT EXISTS "titles" (` was invisible while
+    # `CREATE TABLE IF NOT EXISTS tenants (` matched.
+    #
+    # Across the corpus: **1132 quoted CREATE TABLEs against 564 unquoted, in 141 runs.** The
+    # framework's own spine tables are unquoted and every lane-authored schema quotes, so this
+    # check has been comparing the contract against roughly a THIRD of the tables that exist —
+    # for the whole history of the project. r154 reports `expected_tables=12, sql_tables=4`, and
+    # the four are exactly the spine's (`tenants`, `users`, `oauth_clients`,
+    # `oauth_authorization_codes`); its `errors` list is empty because the comparison never saw
+    # the other eight.
+    #
+    # Column parsing already stripped quotes (`first.strip('"')`) — the knowledge was in the
+    # function, one loop down, and the table name never got it.
+    for match in re.finditer(
+            r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?'
+            r'(?:"?[a-zA-Z_][\w]*"?\s*\.\s*)?'          # optional schema qualifier
+            r'"?([a-zA-Z_][\w]*)"?\s*\((.*?)\);',
+            sql_text, re.IGNORECASE | re.DOTALL):
         table = match.group(1)
         body = match.group(2)
         columns = set()

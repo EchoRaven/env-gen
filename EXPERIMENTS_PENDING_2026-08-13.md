@@ -15527,3 +15527,34 @@ end-to-end validation of #928/#929/#930/#936/#937/#941/#953 on real pixels.
 ★★★ Standing conclusion for the next round: **synthetic integration found 2 defects, first contact
 with a real application found 2 more, and the real ones were the ones that would have silently
 voided r155's measurements.** A fixture cannot have a wrong lookup path or an unmounted router.
+
+### 331. ★★★ #954 — the contract check has never seen a quoted table name, in 141 runs
+
+Constructed a real `HubRegistry` and ran the real `validate_delivery_gate` against r154. Several of
+its failed checks are artifacts of my stubs and must not be read as r154's state. **One field is
+not**, because `contract_alignment` reads the hubs and the SQL file, neither of which I stubbed:
+
+    contract_alignment: {"errors": [], "expected_tables": 12, "sql_tables": 4}
+
+r154's `01_init.sql` contains **twelve** CREATE TABLE statements. The four the checker sees are
+exactly the framework's spine — `tenants`, `users`, `oauth_clients`, `oauth_authorization_codes`.
+The difference is one character:
+
+    CREATE TABLE IF NOT EXISTS tenants (      framework, unquoted  → matched
+    CREATE TABLE IF NOT EXISTS "titles" (     lane, quoted         → invisible
+
+`([a-zA-Z_][\w]*)` does not admit a leading quote. Corpus-wide: **1132 quoted CREATE TABLEs against
+564 unquoted, across 141 runs.** The framework quotes nothing and the lanes quote everything, so
+this delivery check has been comparing the contract against roughly a third of the tables that
+exist, for the project's whole history — and reporting `errors: []` while doing it.
+
+★ The column loop in the same function already strips quotes (`first.strip('"')`). The knowledge
+was inside the function, one loop below the line that lacked it — #926's shape again.
+
+★★ NOT extended to `extract_backend_sql_refs`, on measurement: backend SQL is 23454 unquoted
+against 62 quoted (0.26%). Changing a regex that fires 23k times to catch 62 risks more than it
+repairs. Recorded so the asymmetry is a decision rather than an oversight.
+
+★★★ Six defects today came from running real things: #952 and #953 from the live app, #954 from
+the real delivery gate. **None was reachable by a fixture** — a fixture author writes the SQL the
+framework writes, unquoted, and would never produce the case that has been failing in 141 runs.
