@@ -200,3 +200,57 @@ def test_a_working_compose_lookup_says_nothing(caplog):
     finally:
         cr.subprocess.run = orig
     assert not [r for r in caplog.records if "#936" in r.getMessage()]
+
+
+# --------------------------------------------------------------------------- the preflight
+
+def _provider(monkeypatch, out):
+    import subprocess as sp
+    from env_generator.llm_generator.multi_agent.runtime import container_runtime as cr
+    monkeypatch.setattr(cr.subprocess, "run",
+                        lambda cmd, **kw: sp.CompletedProcess(cmd, 0, out, ""))
+    return cr.compose_provider()
+
+
+def test_podman_compose_is_reported_as_lacking_the_service_positional(monkeypatch):
+    """★ Measured on this host: `docker compose version` under the shim answers
+    'podman-compose version 1.5.0', and `podman-compose ps --help` prints
+    `usage: podman-compose ps [-h] [-q] [-f FORMAT]` — no service positional."""
+    p = _provider(monkeypatch, "podman-compose version 1.5.0\npodman version 5.8.3\n")
+    assert p["service_ps"] is False
+    assert "podman-compose" in p["provider"]
+    assert "no service positional" in p["message"].lower()
+
+
+def test_compose_v2_is_reported_as_capable(monkeypatch):
+    p = _provider(monkeypatch, "Docker Compose version v2.27.0\n")
+    assert p["service_ps"] is True and "2.27" in p["provider"]
+
+
+def test_a_failed_probe_assumes_capable_rather_than_crying_wolf(monkeypatch):
+    """★ An unreachable probe is not evidence of a broken provider — the opposite default would
+    print the warning on every docker host with a slow daemon (#845)."""
+    from env_generator.llm_generator.multi_agent.runtime import container_runtime as cr
+
+    def boom(cmd, **kw):
+        raise OSError("nope")
+    monkeypatch.setattr(cr.subprocess, "run", boom)
+    p = cr.compose_provider()
+    assert p["service_ps"] is True and p["provider"] == "unknown"
+
+
+def test_the_preflight_reports_the_provider_and_uses_the_right_logger():
+    """★ The seam: orchestrator has NO module-level `logger` and 117 uses of `self._logger`.
+    #910 shipped that exact NameError on a line that only runs when the defect fires."""
+    import ast
+    import inspect
+    from env_generator.llm_generator.multi_agent import orchestrator as orc
+    fn = [n for n in ast.walk(ast.parse(inspect.getsource(orc)))
+          if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+          and n.name == "_preflight_check"]
+    assert fn, "_preflight_check not found"
+    src = ast.get_source_segment(inspect.getsource(orc), fn[0]) or ""
+    assert "compose_provider" in src, "the preflight must probe the compose provider"
+    bare = [n for n in ast.walk(fn[0]) if isinstance(n, ast.Attribute)
+            and isinstance(n.value, ast.Name) and n.value.id == "logger"]
+    assert not bare, "orchestrator has no module-level `logger`; use self._logger"

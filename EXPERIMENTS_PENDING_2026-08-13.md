@@ -14699,3 +14699,33 @@ every container operation to a silent no-op inside a `try`.
 wrong, because I executed in MY shell rather than the generation's. An execution check is only as
 good as the environment it runs in — the same error shape as reading a stale PNG in #934, one
 layer out.
+
+### 304. #936d — the preflight now names the capability that actually costs something
+
+Item 303 ended by recording "nothing verifies the shim" and stopping there. Closing it.
+
+The orchestrator already has a `_preflight_check` — and it asks the question that cannot fail
+informatively here: *is the daemon up?* Under `tools/podman_shim` the answer is yes, and everything
+looks healthy, while the one shape that matters is quietly broken. The CLI says so itself:
+
+    docker compose version        ->  podman-compose version 1.5.0
+    podman-compose ps --help      ->  usage: podman-compose ps [-h] [-q] [-f FORMAT]
+                                                                    ^ no service positional
+
+`compose_provider()` reads the first line and reports `service_ps: False`; the preflight logs a
+WARNING naming the consequence. Executed, not just parsed:
+
+    WARNING Orchestrator PREFLIGHT: compose provider is podman-compose version 1.5.0 —
+    podman-compose has NO service positional on `ps`, so `compose ps -q <service>` returns EMPTY
+    (exit 2, not an exception)… #715/#738 produced nothing for the entire corpus without it.
+
+★ Default when the probe itself fails: `service_ps: True`. An unreachable probe is not evidence of
+a broken provider, and the opposite default would print this on every docker host with a slow
+daemon — #845's rule, applied to a line I was about to add.
+
+★ Seam caught before running, then confirmed by executing the branch: I wrote `logger.warning`.
+`orchestrator.py` has **no module-level logger** and 117 uses of `self._logger`. #910 shipped that
+exact NameError on a line that only runs when the defect fires, which is the worst possible place
+for one. A test now asserts no bare `logger.` attribute inside `_preflight_check`.
+
+Full suite 6324 passed; removing the probe turns the guard red.

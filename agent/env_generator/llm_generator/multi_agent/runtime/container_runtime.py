@@ -48,6 +48,42 @@ def runtime_bin() -> str:
     return "docker"
 
 
+def compose_provider(*, timeout: int = 20) -> Dict[str, Any]:
+    """Which compose implementation is behind ``<runtime> compose``, and what it cannot do.
+
+    #936c: a preflight that only asks "is the daemon up?" cannot see the state that actually
+    costs anything here. Under `tools/podman_shim`, ``docker compose version`` answers
+    ``podman-compose version 1.5.0`` — and podman-compose's own help is explicit:
+
+        usage: podman-compose ps [-h] [-q] [-f FORMAT]        <- no service positional
+
+    So ``compose ps -q <service>`` exits 2 with EMPTY stdout, which is not an exception. Every
+    probe keyed on that lookup (#715, #738) has produced nothing for the whole corpus, silently.
+    Reported at startup so a reader does not have to find it the way I did.
+
+    Returns ``{"provider", "service_ps", "message"}``; never raises.
+    """
+    rt = runtime_bin()
+    try:
+        r = subprocess.run([rt, "compose", "version"],
+                           capture_output=True, text=True, timeout=timeout)
+        text = ((r.stdout or "") + " " + (r.stderr or "")).strip()
+    except Exception as exc:
+        return {"provider": "unknown", "service_ps": True,
+                "message": f"{rt} compose version failed ({type(exc).__name__}) — assuming v2"}
+    low = text.lower()
+    if "podman-compose" in low:
+        return {"provider": text.splitlines()[0].strip()[:60] if text else "podman-compose",
+                "service_ps": False,
+                "message": ("podman-compose has NO service positional on `ps`, so "
+                            "`compose ps -q <service>` returns EMPTY (exit 2, not an exception). "
+                            "Use container_runtime.container_id(), which falls back to a name "
+                            "filter — #715/#738 produced nothing for the entire corpus without "
+                            "it.")}
+    return {"provider": text.splitlines()[0].strip()[:60] if text else f"{rt} compose",
+            "service_ps": True, "message": "compose v2: `ps -q <service>` supported"}
+
+
 def container_id(compose_file: Any, service: str, *, timeout: int = 20) -> str:
     """The running container id for a compose service, on either runtime. ``""`` if unknown.
 

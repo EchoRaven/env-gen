@@ -976,6 +976,8 @@ class Orchestrator:
             "docker": {"available": False, "message": ""},
             "node": {"available": False, "message": ""},
             "ports": {"available": True, "blocked": []},
+            # #936c: the daemon being up is not the capability that matters here.
+            "compose": {"provider": "", "service_ps": True, "message": ""},
         }
         
         # Check Docker
@@ -997,6 +999,29 @@ class Orchestrator:
         except Exception as e:
             results["docker"]["message"] = f"Docker check failed: {e}"
         
+        # #936c: WHICH compose implementation, and whether `ps -q <service>` works on it.
+        #
+        # This host runs `docker` through tools/podman_shim, which maps `docker compose` onto
+        # podman-compose. Everything looks fine — `docker ps`, `docker exec`, compose up all
+        # work — except that podman-compose's `ps` has no service positional, so
+        # `compose ps -q <service>` exits 2 with EMPTY stdout. That is not an exception, so the
+        # callers' `try` blocks never see it and simply get "". Both served-build staleness
+        # probes (#715, #738) key on exactly that lookup and have therefore produced nothing for
+        # the entire corpus: served_build.json exists in 0 runs. Announced here so the next
+        # reader spends five seconds on it instead of a session.
+        try:
+            from .runtime.container_runtime import compose_provider
+            results["compose"] = compose_provider()
+            if not results["compose"].get("service_ps", True):
+                # ★ `self._logger`, not `logger` — this module has NO module-level logger and
+                # 117 uses of the attribute. #910 shipped exactly that NameError on a line that
+                # only runs when the defect fires, which is the worst place for one.
+                self._logger.warning(
+                    "PREFLIGHT: compose provider is %s — %s (#936c)",
+                    results["compose"].get("provider"), results["compose"].get("message"))
+        except Exception as _cp_exc:
+            results["compose"]["message"] = f"compose provider probe failed: {_cp_exc}"
+
         # Check Node.js
         try:
             node_result = subprocess.run(
