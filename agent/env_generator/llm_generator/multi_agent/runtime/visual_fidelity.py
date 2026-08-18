@@ -2854,10 +2854,27 @@ async def run_visual_fidelity(
                             "token (incl. one re-mint retry); skipping judgment"),
                 "screens": [], "skipped": skipped}
     if judged_screens and not shots and not _blank_screens:
+        # #949: say what is KNOWN, not a cause nobody checked.
+        #
+        # This summary asserted "app not reachable" for every zero-capture round, and it does not
+        # know that. `heal_missing_browser` re-raises when a playwright binary is missing and
+        # cannot be installed, so a browser-infra failure lands here reading as an app failure —
+        # a mis-attribution, which is worse than silence: it sends the reader to the app, and
+        # this session already lost a long detour to exactly that shape (#934's stale PNG).
+        #
+        # #935's `_cap_err935` is in scope and holds the actual exception per screen. Name it when
+        # it exists, say plainly that nothing was recorded when it does not, and hand the dict out
+        # so the caller can record it rather than re-deriving it from a sentence.
+        _why949 = "; ".join(f"{_k}: {_v}" for _k, _v in list(_cap_err935.items())[:3])
         return {"passed": False,
-                "summary": "capture unavailable — app not reachable; not judged",
+                "summary": ("capture unavailable — 0 of "
+                            f"{len(judged_screens)} screen(s) photographed; not judged"
+                            + (f" — the capture raised {_why949}" if _why949 else
+                               " — no capture exception was recorded, so the app most likely did "
+                               "not serve (unverified)")),
                 "screens": [], "skipped": skipped,
                 "capture_unavailable": True,
+                "capture_errors": dict(_cap_err935),
                 "min_similarity": min_similarity}
     judge = judge_fn or judge_screen_pair
 

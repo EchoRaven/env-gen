@@ -15217,3 +15217,19 @@ seven functions.
 silence can void an ENTIRE run's visual measurement, and this session has already shown twice
 (#768's hard-zero, r154's seven-round capture failure) that the framework scores a missing picture
 as a bad page.
+
+### 320. #949 — "app not reachable" was asserted for every zero-capture round, verified for none
+
+`heal_missing_browser` re-raises when the playwright binary is missing and cannot be installed, so
+a browser-infra failure lands in the zero-capture branch and is reported as an app failure. A
+mis-attribution is worse than silence: it sends the reader to the app. This session lost a long
+detour to exactly that shape (#934's stale PNG said "working page" about a screen not photographed
+in ninety minutes).
+
+#935's `_cap_err935` was already in scope there. The summary now names the actual exception when
+one was recorded, says plainly that none was and marks the app guess **unverified** when not, and
+hands `capture_errors` out as data so a caller need not parse a sentence.
+
+★ This also corrects item 319's reasoning: the danger in `heal_missing_browser` is not its bare
+bool — the visual gate re-raises rather than swallowing — it is the generic sentence downstream
+that names a cause nobody checked.
