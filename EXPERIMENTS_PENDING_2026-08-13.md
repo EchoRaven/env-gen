@@ -13987,3 +13987,32 @@ selftest caught it in one command. The file now says which interpreter to use, a
 
 Applied to r154 at 14 minutes: 0 releases, 0 screens, lanes unwritten, every signal 0 — which item
 280's baseline says is normal until ~70 minutes.
+
+## 282. #924's justification, measured — the timeline was blind for the first 20 minutes of every run
+
+Item 280 argued from a docstring mismatch. The logs give the number, and it is worse than the
+argument.
+
+First, the check that had to come first: **does the timeline reach a log at all?** #921's lesson is
+that a value can be computed correctly and handed to the wrong object, and r154 showed `STAGE ` = 0
+for twenty minutes. It does reach it — r153 logged 35 STAGE lines, r152 four — so #894 works and
+#924's additions will appear.
+
+But r153's FIRST line is `STAGE milestone_plan` at 19:15:56, and that is the whole finding:
+
+    r153   first STAGE at +20 min of a 120 min run   → blind for the first 17%
+    r152   first STAGE at +22 min of a  30 min run   → blind for the first 73%
+
+★ **r152 is the one that matters.** It is the run that WEDGED — killed by #827's function-local
+import at 29:51 — so the run most in need of a timeline had none for 73% of its life, and the wedge
+came about eight minutes after the first line finally appeared. The seven dead runs (3–4 minutes
+each) lie entirely inside that window.
+
+So #924 does not tidy a docstring: it moves the timeline's start from ~20 minutes to
+`reference_compile`, which is the first thing a run does after boot. Every failure class this
+session catalogued in the pre-kickoff span — the un-spawned lanes, the empty roadmap, r152's wedge —
+happens inside the twenty minutes the timeline could not see.
+
+★ Method note: the number came from asking "does the instrument reach the artifact?" BEFORE arguing
+about what it should contain. That question is what found #921 (a label on the wrong object) and it
+is what confirmed #894 was worth extending rather than replacing.
