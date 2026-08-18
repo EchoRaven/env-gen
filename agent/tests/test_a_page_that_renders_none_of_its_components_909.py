@@ -232,6 +232,48 @@ def test_a_drifting_but_otherwise_HEALTHY_page_is_not_downgraded():
     assert out.get("component_drift") == {"x_page": ["Rail"]}, out.get("component_drift")
     assert not [p for _n, p in wh.page_updates if p.get("status") == "defined"], wh.page_updates
 
+# --------------------------------------------------------------------------- #925: tick dedup
+
+def test_an_unchanging_finding_is_logged_once(caplog):
+    """★ #925, predicted from the code and confirmed by r154.
+
+    `sync_ui_page_statuses` is called from `generate_backend_skeleton`, which re-runs on EVERY
+    delivery tick — r153 logged 34 `database_scaffold` records from that same loop. #909 and #918
+    would therefore have printed 5x34 and 4x34 lines for a state that never changed, which is
+    exactly #845's rule ("a line that repeats every tick stops being read") — a rule #909's own
+    docstring cites and then did not follow. Same transition-dedup #899 uses for the timeline."""
+    import logging
+    from env_generator.llm_generator.multi_agent.runtime import frontend_audit as _fa
+    _fa.reset_said_925()
+    logger = logging.getLogger(_fa.__name__)
+    with caplog.at_level(logging.WARNING, logger=_fa.__name__):
+        for _ in range(3):
+            _sync(_ISLAND)
+    drift = [r for r in caplog.records if "COMPONENT DRIFT" in r.getMessage()]
+    assert len(drift) == 1, [r.getMessage()[:60] for r in drift]
+
+
+def test_a_CHANGED_finding_speaks_again(caplog):
+    """The half that keeps it honest: dedup must not silence a page whose situation moved."""
+    import logging
+    from env_generator.llm_generator.multi_agent.runtime import frontend_audit as _fa
+    _fa.reset_said_925()
+    with caplog.at_level(logging.WARNING, logger=_fa.__name__):
+        _sync(_ISLAND, declares_components=("Rail",))
+        _sync(_ISLAND, declares_components=("Rail", "Deck"))
+    drift = [r for r in caplog.records if "COMPONENT DRIFT" in r.getMessage()]
+    assert len(drift) == 2, [r.getMessage()[:70] for r in drift]
+
+
+def test_the_returned_dict_still_carries_every_finding(caplog):
+    """★ The dedup is on the LOG only. A caller reading `component_drift` must still see the
+    finding on every tick, or the report would vanish for anything that consumes it."""
+    from env_generator.llm_generator.multi_agent.runtime import frontend_audit as _fa
+    _fa.reset_said_925()
+    first, _ = _sync(_ISLAND)
+    second, _ = _sync(_ISLAND)
+    assert first.get("component_drift") == second.get("component_drift") == {"x_page": ["Rail"]}
+
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

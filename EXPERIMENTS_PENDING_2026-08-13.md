@@ -14091,3 +14091,31 @@ what #894's docstring promised and could not deliver while its first line arrive
 reasoning about it. "#891 never triggered" was wrong (it fired, correctly). "#896 speaks early" was
 wrong (it speaks 5.3 minutes less late). Both readings came from the same two logs that were sitting
 there the whole session.
+
+## 285. ★ #925 — predicted from the code, confirmed by the live run in three minutes
+
+The first thing r154 taught me was about my own work. #909 and #918 both fired in a live run for the
+first time (5 drift + 4 unreachable at +35 min), and reading the call path answered a question the
+artifacts never could: `sync_ui_page_statuses` is invoked from `generate_backend_skeleton`, which
+**re-runs on every delivery tick** — r153 logged 34 `database_scaffold` records from that same loop.
+
+Neither report had a say-once. Prediction: the counts multiply by the tick count.
+
+    +39.8 min   DRIFT=5    UNREACHABLE=4
+    +42.6 min   DRIFT=15   UNREACHABLE=12     ← ×3, three minutes later
+    +44.9 min   DRIFT=25   UNREACHABLE=12
+
+On r153's 34 skeleton regenerations that extrapolates to ~170 and ~136 lines for a state that never
+changed — exactly #845's rule, *"a line that repeats every tick stops being read"*. ★ **#909's own
+docstring cites #845** and then did not follow it, while #899 — written the same session, for the
+same log — implements the transition-dedup properly. One lesson, applied in one place.
+
+#925 gives both reports #899's rule: speak on the first occurrence and whenever the finding
+CHANGES. The dedup is on the LOG only — `out["component_drift"]` / `out["api_unreachable"]` still
+carry every finding on every tick, so anything consuming the dict is unaffected, and a test says so.
+
+★ The shape of this is worth keeping: **predicted from reading the call path, then confirmed by
+watching a number move.** Not found by grepping artifacts, and not findable that way — no delivered
+tree records how many times a function ran. It took a live run and three minutes.
+
+r154 will not benefit (it imported the module before the edit); #925 is for r155.

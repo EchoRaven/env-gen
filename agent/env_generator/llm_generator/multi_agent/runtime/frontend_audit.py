@@ -333,6 +333,43 @@ def _component_resolves(name: str, frontend_src: Path,
 _JSX_TAG_909 = re.compile(r"<([A-Z]\w*)")
 
 
+class _Skip925(Exception):
+    """Raised to skip a repeated report; the call site's `except Exception: pass` absorbs it.
+
+    ★ Deliberate: the reports already sit inside a bare `except` (an observability call must not
+    take down the status sync), so a sentinel reuses that guard instead of adding a second branch
+    around each `_LOG_791.warning`. The `out[...]` dict is populated BEFORE the skip, so a caller
+    reading `component_drift` / `api_unreachable` still sees every finding every tick — only the
+    LOG is deduped."""
+
+
+# #925: transition-dedup for the two REPORTS below, the way #899 does it for the stage timeline.
+# `sync_ui_page_statuses` is called from `generate_backend_skeleton`, which re-runs on EVERY
+# delivery tick — r153 logged 34 `database_scaffold` records from that same loop. Without this,
+# #909 and #918 would print 5x34 and 4x34 lines for an unchanging state, which is precisely #845's
+# rule ("a line that repeats every tick stops being read") — a rule #909's own docstring cites and
+# then did not follow. Keyed on the FINDING, so a page whose orphan set changes still speaks.
+_SAID_925: dict = {}
+
+
+def reset_said_925() -> None:
+    """Test hook; also safe to call per run so a long session does not silence a later one."""
+    _SAID_925.clear()
+
+
+def _say_once_925(kind: str, name: str, finding) -> bool:
+    """True the first time this exact finding is seen for this page, and whenever it CHANGES."""
+    try:
+        key = (kind, str(name))
+        sig = tuple(sorted(str(x) for x in (finding or ())))
+        if _SAID_925.get(key) == sig:
+            return False
+        _SAID_925[key] = sig
+        return True
+    except Exception:
+        return True
+
+
 _IMPORT_918 = re.compile(r"""from\s+['"](\.[^'"]+)['"]""")
 
 
@@ -1183,6 +1220,8 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
                 if _unreachable and len(_unreachable) == len(_apis_918):
                     out.setdefault("api_unreachable", {})[name] = _unreachable
                     try:
+                        if not _say_once_925("api", name, _unreachable):
+                            raise _Skip925
                         _LOG_791.warning(
                             "API UNREACHABLE FROM ITS PAGE: ui_page `%s` declares %d API(s) and "
                             "NONE is reachable from the page's own import/render closure (%d "
@@ -1198,6 +1237,8 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
                 if len(_orphaned) == len(_decl_909):
                     out.setdefault("component_drift", {})[name] = _orphaned
                     try:
+                        if not _say_once_925("drift", name, _orphaned):
+                            raise _Skip925
                         _LOG_791.warning(
                             "COMPONENT DRIFT: ui_page `%s` declares %d component(s) and the "
                             "delivered page renders NONE of them (%s). The contract describes a "
