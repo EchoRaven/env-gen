@@ -15320,3 +15320,26 @@ is True. Had that been wrong, r155 would have died at second one — the gate I 
     design/scaffold_overwrites_939.json     both overwrite loops, per page          #939/#951
     design/lane_page_exposure_946.json      1a's measurement, which was uncollectable     #946
     design/visual_gate/served_build.json    #738's state file — 0 runs have ever had one  #936
+
+### 324. the fourth cluster — chain classification (#927) verified end to end
+
+Last of the four. Drove `execute_chain` against a fake app publishing a real route table, four
+scenarios covering both sides of #927's rule:
+
+    built route + handler's own lowercase 404   -> broken   chain fails      ✓  (the 129 in the corpus)
+    built route + Starlette's exact default     -> broken   chain fails      ✓  (only the table sees this)
+    unbuilt route                               -> missing  chain survives   ✓  (the behaviour #768 wants)
+    built PATH, unbuilt VERB                    -> missing  chain survives   ✓  (the soft case, preserved)
+
+The delivery-gate consequence is the one that matters for r155: `broken` is non-empty only in the
+first two, so `business_chain_failing` now fires on a built route that rejects a request and stays
+quiet on an endpoint nobody wrote — which is what r154's `tenant_admin_lifecycle` got wrong in the
+other direction (passing while a declared DELETE 404'd).
+
+**All four clusters verified: artifacts (→#950), scaffold (→#951), container runtime, chains.**
+Two defects found, both invisible to the 6414 unit tests, both in the seam between two tickets.
+
+★ r155 remains blocked on `GOOGLE_API_KEY`. Not routed around deliberately: this box has a keyless
+`llm` CLI path (`meta:gemini-3.0-flash-preview`), and wiring env_generator to it would make r155 a
+simultaneous test of 26 fixes AND an unvalidated transport — an uninterpretable result is worse
+than a delayed one.
