@@ -15233,3 +15233,32 @@ hands `capture_errors` out as data so a caller need not parse a sentence.
 ★ This also corrects item 319's reasoning: the danger in `heal_missing_browser` is not its bare
 bool — the visual gate re-raises rather than swallowing — it is the generic sentence downstream
 that names a cause nobody checked.
+
+### 321. #950 — the first defect found by driving the day's fixes TOGETHER
+
+Every change committed today passed its own unit tests. Before launching r155 I drove
+#928/#930/#931/#933/#935/#937/#941 through one two-round persist and checked the artifacts against
+each other — eight consistency assertions, all green, and one thing the assertions did not ask
+about:
+
+    browse   similarity / similarity_live   0.80 / 0.00
+    browse   capture_error                  None          ← the ledger says TimeoutError
+
+`capture_error` belonged to the KEPT round-1 record, which genuinely had none. A reader pairs
+`similarity_live: 0.00` with `capture_error: None` and concludes the JUDGE failed. The truth is the
+opposite: the CAPTURE failed. **That is r154's title_detail misreading exactly — the one that cost
+this session two wrong tickets — reproduced one field over, in the fixes written to prevent it.**
+
+#931's note explains that dimensions/deviations/fixes/screenshot describe the recorded capture. It
+does not cover `capture_missing`/`capture_error`, and those are precisely the fields that EXPLAIN a
+live zero rather than describe the recorded one. They now travel with the score they explain, as
+`capture_missing_live` / `capture_error_live`, and the note names them.
+
+★ The method point, which is the reason to record this at all: **unit tests verified each fix in
+isolation and none of them could have found this.** The defect lives in the relationship between
+two records that only exist together at runtime. One synthetic two-round persist found it in
+seconds — and it is the cheapest integration test imaginable, absent until now.
+
+★★ Pre-r155 status: r155 is BLOCKED on `GOOGLE_API_KEY`, which is not in the environment and not on
+disk (the only two matches in $HOME are a comment and a variable name). Everything else is ready —
+containers cleared, 377G free, playwright installed, base images present, shim on PATH for #945.

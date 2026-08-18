@@ -3390,7 +3390,19 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                 # movies 0.70/0.00, games 0.62/0.00), which is how a run whose SPA crashed on
                 # every route recorded ~0.7 fidelity.
                 _below_928.append(str(s.get("name")))
+                # #950: carry the LIVE capture's own explanation alongside its score.
+                #
+                # Found by driving #928/#930/#933/#935/#937/#941 together for the first time —
+                # every one of them passed its own unit tests. The merged record showed
+                # `similarity_live: 0.0` beside `capture_error: None`, because capture_error
+                # belonged to the KEPT (round-1) record, which genuinely had none. A reader pairs
+                # those two fields and concludes the JUDGE failed; the truth was the opposite —
+                # the capture did. That is r154's title_detail misreading exactly, one field over,
+                # and #931's note does not cover these two because they are the fields that
+                # EXPLAIN a live zero rather than describe the recorded capture.
                 merged.append({**p, "similarity_live": _sim(s),
+                               "capture_missing_live": s.get("capture_missing"),
+                               "capture_error_live": s.get("capture_error"),
                                "similarity_live_note": (
                                    "this capture scored lower; `similarity` is the best-of-"
                                    "captures merge (#500), `similarity_live` is what the "
@@ -3405,7 +3417,9 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                                    # live results, not this file, so no lane is dispatched
                                    # against the stale list — the harm is to a human reader.)
                                    "dimensions/deviations/fixes/screenshot on this record "
-                                   "describe the RECORDED capture, not the live one")})
+                                   "describe the RECORDED capture; `similarity_live`, "
+                                   "`capture_missing_live` and `capture_error_live` describe "
+                                   "THIS one (#950)")})
             else:
                 # #930: this capture won, so ARCHIVE the image that earned the score before the
                 # next round overwrites it. `screenshot` is a stable path

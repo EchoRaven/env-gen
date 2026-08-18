@@ -163,3 +163,33 @@ def test_the_note_says_whose_evidence_the_other_fields_are(tmp_path):
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_the_live_captures_own_explanation_travels_with_its_score(tmp_path):
+    """#950: found only by driving the day's changes TOGETHER — each passed its own unit tests.
+
+    The merged record showed `similarity_live: 0.0` beside `capture_error: None`, because
+    capture_error belonged to the KEPT round-1 record, which genuinely had none. Pairing those two
+    fields says "the judge failed"; the truth was the opposite. r154's title_detail misreading,
+    one field over."""
+    _persist(tmp_path, [_res("browse", 0.80)])
+    live = _res("browse", 0.00)
+    live.update({"capture_missing": True, "capture_error": "TimeoutError: 20000ms"})
+    v = _persist(tmp_path, [live])
+    s = _by_name(v)["browse"]
+    assert s["similarity"] == 0.80 and s["similarity_live"] == 0.00
+    assert s["capture_missing_live"] is True
+    assert s["capture_error_live"].startswith("TimeoutError")
+    assert "capture_error_live" in s["similarity_live_note"], (
+        "the note must name the fields that explain the live zero")
+
+
+def test_a_judge_failure_is_distinguishable_from_a_capture_failure(tmp_path):
+    """★ The whole point: two live zeros, opposite causes, must not look identical."""
+    _persist(tmp_path, [_res("a", 0.80), _res("b", 0.80)])
+    judge = _res("a", 0.00); judge["deviations"] = ["judge returned no JSON"]
+    cap = _res("b", 0.00); cap.update({"capture_missing": True, "capture_error": "TargetClosed"})
+    v = _persist(tmp_path, [judge, cap])
+    by = _by_name(v)
+    assert by["a"]["capture_missing_live"] in (None, False) and by["a"]["capture_error_live"] is None
+    assert by["b"]["capture_missing_live"] is True
