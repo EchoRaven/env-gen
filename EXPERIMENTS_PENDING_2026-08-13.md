@@ -15343,3 +15343,38 @@ Two defects found, both invisible to the 6414 unit tests, both in the seam betwe
 `llm` CLI path (`meta:gemini-3.0-flash-preview`), and wiring env_generator to it would make r155 a
 simultaneous test of 26 fixes AND an unvalidated transport — an uninterpretable result is worse
 than a delayed one.
+
+### 325. RAO, actually read — closing the gap I flagged, and one correction to its framing
+
+I gave the paper analysis from training memory and said plainly that RAO (arXiv:2605.06639) sat on
+my cutoff, that I could not verify it, and that arXiv was blocked. The zip contains it. Read via a
+hand-written extractor (no pdftotext, no pypdf, no egress to install either — zlib on the content
+streams and the `Tj/TJ` operators).
+
+The three questions I said to bring to it, answered in its own words:
+
+**Q1 — what trains "when to split"?** *"reward defined at each node … Each node receives a local
+reward from its own success AND a delegation bonus from the success rate of its children."*
+Outcome-based, not description-based — better than my hedge. But it needs a **verifiable reward per
+subtask**, and forgingground-gen has almost none: its subtasks are "write this page", adjudicated
+much later by a visual judge. That is the real adoption barrier, and it is not the one I guessed.
+
+**Q2 — how are sub-outputs merged?** *"…what type of output to request, whether to run child agents
+serially or in parallel, and how to aggregate their results."* Aggregation is a **decision the
+parent agent makes**, over results children RETURN. There is no write-conflict arbitration, because
+children never write the same artifact. ★ So my concern stands, confirmed: RAO does not address
+this system's dominant failure — two writers on one file, 19 times.
+
+**Q3 — "generalizes to much harder tasks"?** Three benchmarks: **Crafting** (recipe quantities),
+**OOLONG-REAL** (long D&D transcripts), **DEEPDIVE** (deep research). Difficulty is parameterised
+as *quantity and length* — the most decomposition-friendly axis there is. Exactly the skepticism I
+flagged, and it holds.
+
+★★ CORRECTION to the framing in the reading list: RAO is described as *"the coding-domain answer"*
+to "can we train a planner that decomposes". **It has no coding benchmark.** Base model
+**Qwen-3-4B-Instruct-2507**; the domains are crafting, long-context QA and deep research. The
+coding relevance is extrapolation, and worth flagging before Saturday rather than after.
+
+★★★ Method note: this is the second time today that reading the primary artifact overturned
+something I had asserted from a secondary signal (the first was #938's route→file resolution). The
+pattern is identical — a name or a summary stood in for the thing, and the thing disagreed.
