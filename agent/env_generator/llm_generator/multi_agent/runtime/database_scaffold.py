@@ -75,6 +75,12 @@ def _sql_type(raw: str) -> str:
     m = re.search(r"\bcheck\b", t, re.IGNORECASE)
     if m:
         t = t[: m.start()].strip()
+    # #969: drop the contract-only ``nullable`` marker before the alias lookup, so
+    # ``"string nullable"`` resolves to TEXT instead of reaching the DDL verbatim. Only this
+    # known modifier word is removed — legitimate MULTI-TOKEN types (``double precision``,
+    # ``timestamp with time zone``, ``character varying``) must keep every token, so a
+    # "first token wins" normalization would be wrong here.
+    t = _INLINE_NULLABLE_RE.sub("", t).strip()
     return _TYPE_ALIASES.get(t.lower(), t)
 
 
@@ -205,6 +211,15 @@ def _quote_ident(name: str) -> str:
 _INLINE_PK_RE = re.compile(r"\bprimary\s+key\b", re.IGNORECASE)
 _INLINE_NOTNULL_RE = re.compile(r"\bnot\s+null\b", re.IGNORECASE)
 _INLINE_UNIQUE_RE = re.compile(r"\bunique\b", re.IGNORECASE)
+# #969: ``nullable`` is a CONTRACT word, not SQL. Kickoff/ORM contracts describe a column as
+# ``{"logo_url": "string nullable"}``; postgres has no such keyword (nullability is the
+# DEFAULT, expressed by the ABSENCE of NOT NULL). Left in the type string it defeats the
+# alias lookup — ``"string nullable"`` misses the table that would have mapped ``string`` ->
+# TEXT — and both tokens reach the DDL verbatim: ``"logo_url" string nullable,`` ->
+# `syntax error at or near "nullable"` -> initdb fails -> the db container dies -> docker_up
+# FAILS. Same class as the inline ``check`` handled in _sql_type and the four modifiers
+# promoted below; ``\bnot\s+null\b`` deliberately does NOT match it, so the two cannot collide.
+_INLINE_NULLABLE_RE = re.compile(r"\bnullable\b", re.IGNORECASE)
 _INLINE_REFERENCES_RE = re.compile(
     r"\breferences\s+(\w+)\s*(?:\(\s*(\w+)\s*\)|\.\s*(\w+))", re.IGNORECASE
 )
@@ -235,6 +250,12 @@ def _promote_inline_modifiers(col: Dict[str, Any]) -> Dict[str, Any]:
         out["not_null"] = True
     if _INLINE_UNIQUE_RE.search(spec) and not out.get("unique"):
         out["unique"] = True
+    # #969: an inline ``nullable`` states the column IS optional. Promote it so the ORM
+    # renderer agrees with the DDL (the #393 parity rule), but never let it overrule an
+    # explicit NOT NULL — a contradictory ``"text not null nullable"`` keeps the stricter read.
+    if (_INLINE_NULLABLE_RE.search(spec) and "nullable" not in out
+            and not out.get("not_null") and not _INLINE_NOTNULL_RE.search(spec)):
+        out["nullable"] = True
     if not (out.get("references") or out.get("fk")):
         m = _INLINE_REFERENCES_RE.search(spec)
         if m:

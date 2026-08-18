@@ -16404,3 +16404,49 @@ egress, and `_build_with_retry` treats a deterministic failure as a transient on
 three identical 682s builds on `EAI_AGAIN registry.npmjs.org`, and would have burned ~2.3 hours
 across the full 6-attempt validation budget. Both are real; both are registered here rather than
 folded into a change about lane termination.
+
+### 358. r157 — the first run to reach the app itself, and #969 on the way
+
+r157 is the first run in this arc to get past the launch pad. Everything the previous four
+sessions fixed held, and the run reached territory no earlier run had seen.
+
+    kickoff        15:48:51 -> 15:50:28 = 97s        r156 took 244s; the cap is 1200s
+    frontend build docker build -> rc=0 in 17s       r156: rc=1 in 682s, three times
+    EAI_AGAIN      0                                 the egress fix landed
+    api_smoke      "passed (app is up)"              first time an app has actually booted
+
+★ **The #968 gate passed the only way that counts.** Removing `finish_continue` means the
+orchestrator now sleeps between events, and it woke three times for kickoff — twice through
+the inline `kickoff_detail_request` / `kickoff_facilitate_request` handlers, once through the
+coordination tick — exactly the paths the review predicted. It has processed 12 tasks where
+r156 processed one and never finished it. Its conversation sizes now go 28 / 42 / 49 / 56 /
+62 / **50** — the drop is the point: the turn ends and the next tick starts clean. Token cost
+at the same elapsed: 7.3M vs r156's 18.0M.
+
+Then the failures moved where they should be — into the app:
+
+    business_chain: GET /api/titles/10 -> 404
+    docker_up: ERROR: syntax error at or near "nullable" at character 411
+
+**#969.** The second one is framework-owned, not model error. Contracts describe an optional
+column as `{"logo_url": "string nullable"}`; postgres has no such keyword — nullability is the
+default, spelled by the ABSENCE of NOT NULL. Left in the type string it defeats the alias
+lookup (`"string nullable"` misses the entry that maps `string` -> TEXT), so both tokens reach
+the DDL verbatim, initdb fails, the db container exits, docker_up FAILS. Six occurrences in
+this run, each costing a full down/build/up cycle.
+
+Exactly the sibling of two fixes already in that file: `_sql_type` already strips an inline
+`check`, and `_promote_inline_modifiers` already promotes `primary key` / `not null` /
+`unique` / `references`. `nullable` was the one nobody had hit yet.
+
+★ The constraint that shaped the fix: **only the known modifier word may be dropped.** Real SQL
+types are multi-token — `double precision`, `timestamp with time zone`, `character varying` —
+so the tempting "first token wins" normalization would silently retype columns. The test pins
+those six shapes as untouched, which is the assertion that stops the next person widening it.
+
+Also seen once, r149: `syntax error at or near "default_now"` — same class, different token.
+Left alone deliberately: one occurrence is not a pattern, and inventing a mapping for it would
+be guessing at a contract shape I have not observed.
+
+r157 healed its own DDL at 16:34 and moved on to attempt 3/6 failing on the 404 instead. #969
+makes that determinism rather than luck. Full suite 6,518.
