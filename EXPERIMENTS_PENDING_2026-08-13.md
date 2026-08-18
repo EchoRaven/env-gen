@@ -15968,3 +15968,27 @@ improvement**: it pinned the literal `_count_overwrite_939(frontend_dir, comp)`,
 argument turned it red. Its intent (the argument must be the bound `frontend_dir`, not `fe`) is
 already enforced properly by `test_the_counter_call_uses_a_bound_name` through the AST — redundant
 as well as brittle, so dropped rather than re-spelled.
+
+### 345. ★ CORRECTION to #936b — validation_runner's live port lookup is NOT dead
+
+#936b's record says of `validation_runner._compose` and `_service_host_port`: *"they survive only
+because the port lookup has a deterministic third fallback … but the two live-query paths are just
+as inert on podman."* **The second half is wrong.** Tested under the shim against r154's live app:
+
+    layer 1  compose ps -q backend        podman-compose: unrecognized arguments: backend   dead
+    layer 2  docker ps -q --filter name=  81669c141ad2                                      WORKS
+    layer 3  docker port <cid>            8082/tcp -> 0.0.0.0:3000                          WORKS
+
+The shim maps plain `docker <verb>` onto podman without trouble; the only shape it cannot rescue is
+`compose ps -q <service>`, which is #936's actual finding. So `_service_host_port` resolves the
+LIVE port and falls back to the declared one only if the container is missing — the right order,
+and the one that matters under the port contention recorded in
+[[parallel-runs-default-port-contamination]], where declared and live diverge.
+
+Verified end to end: backend/frontend/database all resolve 3000/8081/5432, matching
+`podman ps` exactly.
+
+★ I generalised "no docker binary" into "every docker call is dead" and wrote it into a commit
+message. The distinction that mattered — one CLI shape versus a missing binary — was already in my
+own #936c correction two hours earlier, and I still restated the broad version. **A correction does
+not propagate itself to the claims it invalidates; those have to be revisited by hand.**
