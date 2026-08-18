@@ -15714,3 +15714,32 @@ here only so the next sweep does not re-derive them.
 ★★★ Handoff for the next round: three unverified gate-referenced stores (`examples`, `projects`,
 `schemas`) plus `reviews`. Each needs the same two questions that resolved #956 and #957 —
 *what does the checker call "present", and what does the producer actually write?*
+
+### 337. ★ CORRECTION to item 336 — the four "unverified" stores are matcher false positives
+
+I closed item 336 by handing four gate-referenced empty stores to the next round. Checked them
+instead of handing them over, and all four are my matcher hitting PROSE:
+
+    examples   "…the counter-examples are exactly the non-Netflix…"      seed_audit comment
+    projects   "Check whether generated projects have recorded build…"   delivery_gate docstring
+    schemas    "…support modules (oauth_routes/schemas) as dead…"        deliverability comment
+    reviews    "…gmrun9's `place.reviews`…"                              deliverability comment
+
+**None is read by a gate path.** So the sweep's real result is 19 empty stores, **2** referenced by
+a gate, and both are today's confirmed defects — #956 and #957. The sweep is clean and there is no
+handoff.
+
+★ Fourth time today a matcher matched prose about a thing instead of the thing: #936b's locator
+(flagged `memory_bank`'s keyword list), #940's scope (harvested locals as globals), #947's `dumps`
+(hid the canonical case), item 333's key sweep, and now this. Every one used a bare identifier as
+the needle in a corpus that discusses its own identifiers constantly.
+
+★★ The rule, since it has now cost five instruments: **in this codebase a bare-name search is never
+a locator.** Anchor on structure — the AST node that USES the name, in the position that matters —
+or expect to be reading comments about the thing you are looking for.
+
+★★★ `visual_reviews` remains genuinely open, and is unrelated to the store list: `_visual_summary`
+really does call `gate_registry.list_critical_visual_reviews()`, `gate_registry` really exists, and
+it really returns 0 for r154. What is unknown is whether any run ever populates it — its backing
+store is not named `*review*` and I did not find it. That one is a real handoff; the other four
+were noise I created.
