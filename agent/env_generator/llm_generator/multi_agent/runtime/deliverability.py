@@ -340,6 +340,54 @@ def _ui_page_wiring_blockers(hub_registry, app_root) -> List[str]:
                         "#780 could not file the route-filter task (%s: %s) — the finding above "
                         "is therefore log-only again, which is the defect #780 exists to fix.",
                         type(_t780).__name__, str(_t780)[:120])
+            # #959: and to an ARTIFACT, not only to the logger.
+            #
+            # #780 exists to stop this finding being log-only — it files a P1 fidelity task. But
+            # the filing sits behind `if _f708:`, i.e. only when the framework can derive WHICH
+            # filter each route should pass. When it cannot, the finding falls back to this log
+            # line, which is the state #780 was written to end. Measured: **1 such task exists
+            # across the whole corpus, in 1 run of 154**, while #615 fires routinely — twice in a
+            # single gate evaluation on r154 (/browse/languages+/games+/shows all fetching only
+            # /api/titles, and /movies+/new both fetching only /api/titles/top10).
+            #
+            # Five nav destinations showing the same list is a real fidelity defect and the visual
+            # gate cannot see it (this line says so itself). Writing it costs nothing and changes
+            # no behaviour; filing a task on every run would change what agents do, which needs a
+            # live run to validate (#956/#957/#958's disposition).
+            try:
+                import json as _j959
+                _f959 = Path(app_root).parent / "design" / "duplicate_routes_959.json"
+                _f959.parent.mkdir(parents=True, exist_ok=True)
+                _prev959 = {}
+                if _f959.is_file():
+                    try:
+                        _prev959 = _j959.loads(_f959.read_text(encoding="utf-8")) or {}
+                    except Exception as _r959:
+                        # #883's guard caught this within the hour, and it was right: `is_file()`
+                        # above already separates "no prior file" from "the file is there and will
+                        # not parse", and `{}` collapses them back — every duplicate group
+                        # recorded on an earlier tick would vanish from the artifact this one
+                        # writes. #884 is the same defect one module over.
+                        _LOG_700.warning(
+                            "duplicate_routes_959.json is UNREADABLE (%s: %s) — earlier groups in "
+                            "it are being dropped, not merged; this tick's file will hold only "
+                            "what it found now.", type(_r959).__name__, str(_r959)[:100])
+                        _prev959 = {}
+                _prev959[", ".join(_g.get("routes") or [])] = {
+                    "routes": list(_g.get("routes") or []),
+                    "endpoints": list(_g.get("endpoints") or []),
+                    "components": list(_g.get("components") or []),
+                    "task_filed": bool(_f708),
+                }
+                _f959.write_text(_j959.dumps(_prev959, indent=1, sort_keys=True), encoding="utf-8")
+            except Exception as _e959:
+                # #883's rule, applied to my own handler: a swallow in a gate file must say so.
+                # Its guard caught this within the hour — the write is best-effort (observability
+                # must not break the gate it observes) but a LOST artifact is not a clean one.
+                _LOG_700.warning(
+                    "could not persist duplicate_routes_959.json (%s: %s) — the finding below is "
+                    "log-only again, which is what #959 exists to stop.",
+                    type(_e959).__name__, str(_e959)[:120])
             _LOG_700.warning(
                 "#615 %d routes render identical content: %s — all fetch only %s (components: "
                 "%s). Not a blocker; a nav destination that shows the same list as its siblings "

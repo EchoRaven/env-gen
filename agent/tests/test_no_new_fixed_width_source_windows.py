@@ -35,22 +35,23 @@ _BASELINE = {
     "test_ad_state_reference_frame_601.py": 1,
     "test_checklist_blocker_explains_itself_585.py": 2,
     "test_content_dominated_chrome_checklist_588.py": 1,
-    "test_declared_405_is_timing_614.py": 4,
-    "test_durable_inbox_read_preview_604.py": 4,
-    "test_in_batch_read_dedupe_609.py": 1,
-    "test_incomplete_player_chrome_blocks_589.py": 3,
-    "test_ladder_substitution_attribution_592.py": 5,
-    "test_login_failure_attribution_612.py": 8,
-    "test_mcp_not_built_is_timing_616.py": 1,
-    "test_mid_interaction_reference_frame_595.py": 2,
-    "test_primary_dataless_needs_a_fetch_573.py": 1,
-    "test_record_vs_live_fidelity_618.py": 5,
-    "test_remediation_feedback_619.py": 3,
+    "test_declared_405_is_timing_614.py": 2,
+    "test_durable_inbox_read_preview_604.py": 2,
+    "test_incomplete_player_chrome_blocks_589.py": 2,
+    "test_ladder_substitution_attribution_592.py": 3,
+    "test_login_failure_attribution_612.py": 3,
+    "test_mid_interaction_reference_frame_595.py": 1,
+    "test_record_vs_live_fidelity_618.py": 3,
+    "test_remediation_feedback_619.py": 2,
     "test_stale_route_component_597.py": 1,
-    "test_terminal_task_ack_605.py": 2,
     "test_unsatisfiable_chain_rejected_at_registration_586.py": 1,
     "test_user_content_relation_read_scope_598.py": 1,
 }
+# ★ Lowered 2026-08-18 alongside the prose-match fix above. Four entries
+# (test_in_batch_read_dedupe_609, test_mcp_not_built_is_timing_616,
+#  test_primary_dataless_needs_a_fetch_573, test_terminal_task_ack_605) were counted only because
+# the regex matched the pattern inside a STRING, not in code — they were never violations. The
+# ratchet is now tighter by four files it should never have been holding.
 
 
 def _counts():
@@ -63,7 +64,26 @@ def _counts():
         src = open(path, encoding="utf-8").read()
         if "getsource" not in src:
             continue
-        n = sum(1 for line in src.split("\n") if _SLICE_RE.search(line))
+        # ★ Skip lines occupied by STRING literals. This counted the regex's own shape wherever
+        # it appeared, including inside a docstring that DESCRIBES the pattern — #959's test
+        # explained its fix in prose ("the first version wrote src[i:i + 2600]") and this guard
+        # flagged the explanation as a violation. Sixth prose-match of the session, and the one
+        # that would have blocked every future ticket about this very class.
+        #
+        # #943 does the same job over the AST and never had the problem; the two guards overlap
+        # deliberately (one counts per file with a baseline, one ratchets a global total), so the
+        # text-based one is repaired rather than removed.
+        _skip = set()
+        try:
+            import ast as _ast
+            for _n in _ast.walk(_ast.parse(src)):
+                if isinstance(_n, _ast.Constant) and isinstance(_n.value, str):
+                    for _l in range(_n.lineno, (_n.end_lineno or _n.lineno) + 1):
+                        _skip.add(_l)
+        except Exception:
+            _skip = set()
+        n = sum(1 for i, line in enumerate(src.split("\n"), 1)
+                if i not in _skip and _SLICE_RE.search(line))
         if n:
             out[name] = n
     return out

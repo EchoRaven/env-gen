@@ -15781,3 +15781,37 @@ that nothing writes, and the resulting number (0 or all) reads as a measurement.
 requires deciding WHO creates a `visual_review` page and WHEN, which is a workflow design question,
 not a repair. Announced in the same disposition as #956 and #957 — the gate now says it inspected
 nothing rather than implying approval.
+
+### 339. #959 — and three existing guards catching me inside one ticket
+
+#615 reports "N routes render identical content". #780 exists to stop that being log-only by filing
+a P1 fidelity task — but the filing sits behind `if _f708:`, i.e. only when the framework can
+derive WHICH filter each route should pass. When it cannot, the finding falls back to the log line
+#780 was written to replace. Measured: **1 such task across the corpus, in 1 run of 154**, while
+#615 fires routinely — twice in a single gate evaluation on r154:
+
+    /browse/languages, /games, /shows   all fetch only /api/titles
+    /movies, /new                       all fetch only /api/titles/top10
+
+Five nav destinations showing the same list, and #615's own text says the visual gate cannot see
+it. #959 writes the group to `design/duplicate_routes_959.json` with `task_filed` recording whether
+#780 managed anything — no behaviour change, since filing a task every run would alter what agents
+do and needs a live run to validate.
+
+★★ Three existing guards fired on this one ticket, all mine from earlier today or before, all
+correct:
+
+    #943  (mine, hours old)  my test wrote `src[i:i + 2600]` twice — the exact shape it ratchets.
+                             Replaced with AST anchors.
+    the older window guard   then flagged my DOCSTRING, which quotes the pattern while explaining
+                             the fix. It matched lines by regex; #943 walks the AST and did not.
+                             Repaired to skip string literals — and four baseline entries turned
+                             out to have been prose all along, so the ratchet tightened by four
+                             files it should never have held.
+    #883  (pre-existing)     my artifact writer swallowed an unreadable prior file into `{}`,
+                             silently dropping every group recorded on an earlier tick. #884 is
+                             the same defect one module over. Announced.
+
+★★★ Sixth prose-match of the session, and the first one where the guard doing the false-matching
+was NOT mine. The rule holds across authors: **in this codebase a line-regex is never a locator,
+because the codebase documents its own patterns in prose more often than it uses them.**
