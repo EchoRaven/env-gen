@@ -15743,3 +15743,41 @@ really does call `gate_registry.list_critical_visual_reviews()`, `gate_registry`
 it really returns 0 for r154. What is unknown is whether any run ever populates it — its backing
 store is not named `*review*` and I did not find it. That one is a real handoff; the other four
 were noise I created.
+
+### 338. #958 — the Cutover-20 visual-review gate can never fire, and that completes the pattern
+
+The one genuine handoff from item 337, closed rather than passed on.
+
+`_visual_summary` reads `gate_registry.list_critical_visual_reviews()`, which filters the ui_pages
+store for `kind == "visual_review"` and `metadata.critical is True`. Across the corpus:
+
+    ui_pages records            2405
+    kind == "ui_page"           2405
+    kind == "visual_review"        0   in 0 runs
+    metadata.critical is True      0
+
+So `visual_reviews` is `{critical_total: 0, approved: 0, pending: 0, needs_revision: 0}` in every
+run, and the two blockers keyed on it —
+
+    if visual["pending"] > 0 and not ui_validated:  → "N critical visual review(s) pending"
+    if visual["needs_revision"] > 0:                → "N critical visual review(s) need revision"
+
+— are `> 0` conditions on a value that is structurally always 0. **Cutover 20 has never been able
+to block anything.**
+
+★ This completes today's pattern set. Five checks were found reporting something they cannot
+measure, and they split cleanly:
+
+    always fires    #957 dead tables — every table lacks a consumer nobody registers
+    never fires     #715, #738 (dead for two reasons), contract tables (#954),
+                    contract columns (#955), seed audit (#956), Cutover 20 (#958)
+
+★★ One root, stated once: **the checker's notion of the thing and the producer's output have
+drifted, and nothing in the system compares the two.** A quoted identifier, a `columns` key, a
+`"defined"` status, a hub registration, a `kind` value — in every case the checker names a shape
+that nothing writes, and the resulting number (0 or all) reads as a measurement.
+
+★★★ Not fixed here, and this one is the clearest case for restraint: making Cutover 20 fire
+requires deciding WHO creates a `visual_review` page and WHEN, which is a workflow design question,
+not a repair. Announced in the same disposition as #956 and #957 — the gate now says it inspected
+nothing rather than implying approval.

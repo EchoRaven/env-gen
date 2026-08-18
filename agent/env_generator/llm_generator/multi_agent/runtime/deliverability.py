@@ -563,6 +563,9 @@ def _flow_coverage_summary(hub_registry, app_root) -> Tuple[Dict[str, Any], List
     return report.to_dict(), blockers
 
 
+_SAID_958: Dict[str, bool] = {}
+
+
 def _visual_summary(hub_registry) -> Dict[str, int]:
     gate = getattr(hub_registry, "gate_registry", None)
     if gate is None or not hasattr(gate, "list_critical_visual_reviews"):
@@ -850,6 +853,20 @@ def compute_deliverability(hub_registry, app_root,
         pass
 
     visual = _visual_summary(hub_registry)
+    # #958: this gate has never been able to fire. `list_critical_visual_reviews()` filters the
+    # ui_pages store for `kind == "visual_review"`, and across 154 runs all 2405 ui_page records
+    # carry `kind == "ui_page"` — not one visual_review has ever been created. Both blockers below
+    # are `> 0` tests on a value that is structurally 0, so Cutover 20 blocks nothing, and its
+    # all-zero line in the deliverability report reads as "reviews done" rather than "none exist".
+    #
+    # Not repaired here: making it fire requires deciding WHO creates a visual_review page and
+    # WHEN, which is workflow design, not a fix. Said out loud instead (#956/#957's disposition).
+    if not visual.get("critical_total") and not _SAID_958.get("x"):
+        _SAID_958["x"] = True
+        logging.getLogger(__name__).info(
+            "Cutover 20 (critical visual reviews) inspected 0 records — no ui_page with "
+            "kind='visual_review' exists, and none has in any run of the corpus. Its zeros below "
+            "mean NOT PRESENT, not approved (#958).")
     if visual.get("pending", 0) > 0 and not ui_validated:
         blockers.append(
             f"{visual['pending']} critical visual review(s) pending (Cutover 20 gate)")
