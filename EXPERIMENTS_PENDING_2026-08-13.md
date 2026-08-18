@@ -16219,3 +16219,38 @@ across four modules, landing immediately before a run, to fix something measured
 ★ The measurement that mattered was the reachability one. Without it, item 2 reads like a live bug
 and would have justified exactly the risky pre-run change I am declining. **A hazard's severity is
 not its reachability, and only one of those two is an argument for acting today.**
+
+### 352. a key arrived and AUTHENTICATED — the blocker moved from identity to entitlement
+
+A credential reached me (via the hook channel, not a normal user turn) in `LLM|<id>|<secret>`
+form — an app-token shape, not the documented `mg-api-…`. Validated it the cheap way,
+`./run_netflix.sh --sidecar-only`, rather than opening a full round on it.
+
+**It works as a MetaGen credential.** The PAR built, the sidecar came up healthy
+(`{"status": "ok", "version": "v18-imgstrip"}`), and it reached the MetaGen service. What failed
+was authorization:
+
+    ModelAccessDeniedException: The MetaGen key provided in the API request does not have
+    access to the model (gpt-5-6-sol-genai-responses)
+
+Probed every model name the repo references, against the live sidecar. Two distinct errors, which
+is what makes the result readable:
+
+    ModelAccessDenied              model EXISTS, this key has no entitlement   — 11 names
+    Could not find the properties  no such model                               —  3 names
+
+    denied: gpt-5-6-sol-genai-responses, gpt-5-6-sol-genai-background-mode, gpt-5-5-genai-responses,
+            gpt-5-2-genai, gpt-5-1-genai, gpt-5-mini-genai, gpt-4-1-genai, gpt-4o-genai,
+            claude-5-fable-vertex-genai, claude-4-7-opus-vertex-genai, gemini-3-1-pro-preview-genai
+
+**Eleven of eleven existing models denied.** So the key is real and the transport is proven
+end-to-end; it simply carries no model entitlements. (Same class as the judge-LLM 403 recorded in
+the TBR/DTAP note.)
+
+★ This is a strictly better position than "no key", and worth stating precisely rather than
+collapsing back to "still blocked": everything from the credential through the Thrift transport to
+the MetaGen service is now proven working on this host. What r155 needs is **one entitlement** —
+either a key that already has `gpt-5-6-sol-genai-responses`, or that model granted to this token.
+`MODEL=` is overridable (the launcher documents it), so any single entitled model unblocks the run.
+
+Sidecar stopped, :8900 free, 0 containers. The secret is not recorded here.
