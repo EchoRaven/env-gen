@@ -34,6 +34,9 @@ class AgentMessaging:
         _priority_queue: Any
         _pending_questions: Any
         _message_tracker: Any
+        # #966: mirror base.py's declaration — this file writes a dict and base.py restores
+        # None, so an inferred dict here would flag the restore as a bad assignment.
+        _wakeup_deferred_966: Optional[Dict[str, Any]]
         def _compose_system_prompt(self, *a: Any, **k: Any) -> Any: ...
         def run_agentic_loop(self, *a: Any, **k: Any) -> Any: ...
 

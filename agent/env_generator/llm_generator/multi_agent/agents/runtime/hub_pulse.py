@@ -666,7 +666,7 @@ _IDLE_STREAK_RE_637 = re.compile(
     re.I)
 
 
-def note_finish_637(agent: Any, reason: str) -> None:
+def note_finish_637(agent: Any, reason: str = "") -> None:
     """#637 — count CONSECUTIVE steps that ended with nothing done.
 
     Measured over the 565 agent trajectories: **40% of all `finish()` calls report idleness**
@@ -674,20 +674,29 @@ def note_finish_637(agent: Any, reason: str) -> None:
     run, max 295. Each one is a full model call: idle steps consume **952M of the
     orchestrator's 2.76B total tokens (35%)**, median 121 793 per step.
 
-    The agent has no idea it is repeating itself. This is #617's finding in a second place —
-    there, every remediation round announced itself as "attempt 1"; here, the twelfth
-    consecutive no-op step looks exactly like the first.
+    #967: the signal is now STRUCTURAL — did this step call any action tool other than
+    ``finish``? — instead of pattern-matching the model's own prose. The prose test never
+    fired once in production: it was fed ``tool_args.get("reason")``, and ``finish`` has no
+    ``reason`` parameter (only ``message``), so every call got "" and reset the streak. Even
+    with the right field it would have missed two of the three phrasings actually observed —
+    netflix r156 "Cold-start M1 kickoff **remains** in flight" (regex wants "still in
+    flight") and r155 "no new **actionable event** was supplied" (regex wants work/task).
+    A regex over free-form model text is a treadmill; the tool ledger is not.
 
-    Only the COUNTER is added, deliberately. The obvious next move is to stop calling the model
-    during a long idle streak, and the data says where that would be safe — P(next step does
-    real work) falls from 53% after one idle to **8% after six**, and those k>=6 steps alone are
-    **199M tokens**. But that is a scheduling change in the coordination loop, it can only
-    POSTPONE work rather than drop it, and its cost is not measurable from any artifact on disk.
-    Recording the streak makes it decidable on the next run instead of guessed at now — the #621
-    move. A line of prompt cannot delay anything.
+    Conservative on purpose: only a step whose sole action tool was ``finish`` counts. In
+    r156 that is 168 of the orchestrator's ~200 steps. The read-only pollers that also do
+    nothing (``check_inbox`` 26, ``*_list_*`` 14) are deliberately NOT counted — that needs a
+    read/write classification of every tool, and misclassifying one would suppress real work.
+
+    The prose test is kept as a fallback for callers that still pass text.
     """
     try:
-        if _IDLE_STREAK_RE_637.search(str(reason or "")):
+        acted = getattr(agent, "_step_action_tools_637", None)
+        if acted is None:
+            idle = bool(_IDLE_STREAK_RE_637.search(str(reason or "")))
+        else:
+            idle = int(acted) == 0
+        if idle:
             agent._idle_streak_637 = int(getattr(agent, "_idle_streak_637", 0)) + 1
         else:
             agent._idle_streak_637 = 0

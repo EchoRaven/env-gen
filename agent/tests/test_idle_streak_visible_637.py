@@ -134,14 +134,27 @@ def test_the_pulse_carries_it():
     assert 'report["idle_streak"] = _idle_streak' in src
 
 
-def test_why_it_is_only_a_counter_is_recorded():
-    """A future reader must see that the backoff was measured and deliberately deferred."""
+def test_why_the_verdict_is_structural_is_recorded():
+    """#967 supersedes this test's original form.
+
+    It used to be ``test_why_it_is_only_a_counter_is_recorded`` and asserted the docstring
+    still explained that a backoff "was measured and deliberately deferred". That deferral
+    was LIFTED by #639, which shipped ``_idle_backoff_639`` — so from that day the assertion
+    pinned a rationale the code had already abandoned, and stayed green only because nobody
+    rewrote the prose. It is the trap this suite exists to avoid: a passing test guarding a
+    stale claim.
+
+    What a future reader now needs is the cost evidence (unchanged, still the justification)
+    and why the verdict reads the tool ledger instead of the model's own summary.
+    """
     import inspect
     from env_generator.llm_generator.multi_agent.agents.runtime import hub_pulse
     flat = " ".join(inspect.getsource(hub_pulse.note_finish_637).split())
-    assert "952M of the orchestrator's 2.76B total tokens (35%)" in flat
-    assert "8% after six" in flat
-    assert "POSTPONE work rather than drop it" in flat
+    assert "952M of the orchestrator's 2.76B total tokens (35%)" in flat, (
+        "the measured cost is the whole justification — it must survive rewrites")
+    assert "structural" in flat.lower(), "the reader must learn what the verdict reads"
+    assert "reason" in flat and "message" in flat, (
+        "the field-name defect that made this dead code for months must stay recorded")
 
 
 if __name__ == "__main__":  # pragma: no cover

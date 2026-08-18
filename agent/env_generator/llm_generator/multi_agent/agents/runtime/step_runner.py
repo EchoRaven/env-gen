@@ -341,6 +341,10 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                     step_trace["stages"][stage_name] = payload
 
                 await _idle_backoff_639(self)
+                # #967: the per-step action-tool ledger the idle verdict reads. Reset AFTER
+                # the backoff (which consumes the previous step's verdict) and before any
+                # tool can run, so each step is judged on its own calls.
+                self._step_action_tools_637 = 0
                 self._logger.info(f"[{self.agent_id}] Step {step + 1}/{max_steps} (mode={self._execution_mode})")
                 _mark_stage(
                     "step_reminders",

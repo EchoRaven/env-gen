@@ -1138,11 +1138,19 @@ class AgentTooling:
 
                 if tool_name == "finish":
                     # #637: count consecutive no-op steps so the twelfth does not look like
-                    # the first. Counter only — see note_finish_637 for why not a backoff.
+                    # the first. #967: the verdict is structural (did any non-finish action
+                    # tool run this step?), counted just below — the old prose match was fed
+                    # a `reason` argument that `finish` does not have.
                     try:
                         from .hub_pulse import note_finish_637
-                        note_finish_637(self, str(tool_args.get("reason")
-                                                  or tool_args.get("summary") or ""))
+                        note_finish_637(self, str(tool_args.get("message") or ""))
+                    except Exception:
+                        pass
+                else:
+                    # #967: the step did something other than announce it was done.
+                    try:
+                        self._step_action_tools_637 = int(
+                            getattr(self, "_step_action_tools_637", 0)) + 1
                     except Exception:
                         pass
                 self.log_tool_call(tool_name, tool_args, result)

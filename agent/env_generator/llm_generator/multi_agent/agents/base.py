@@ -666,6 +666,10 @@ class EnvGenAgent(
         # the filesystem ``design/spec.*.json`` check that deadlocked
         # post round-8e.1.
         self._kickoff_bootstrapped: bool = False
+        # #966: a wake-eligible inbox message dropped by the resident-wakeup dedup guard,
+        # replayed once the in-flight wakeup completes. Declared here so the attribute has
+        # one authoritative Optional type rather than being inferred from its first write.
+        self._wakeup_deferred_966: Optional[Dict[str, Any]] = None
         self._active_stage: str = "action"
         # PR3.1.2 / Loop B ⑧: phase = the high-level task category the
         # step pipeline is servicing. Kickoff and implementation both
