@@ -15613,3 +15613,38 @@ shape the producer writes.** Both #954 and #955 answered in under two minutes on
 independent source"*, so its `if semantic_drift.get("errors")` failed-check is provably
 unreachable. Honestly dead, not blind — left alone, since #948 now persists it and removing a field
 readers may key on costs more than the two bytes of noise it saves.
+
+### 334. #956 — the seed audit returns "clean" after examining zero tables, and the naive fix is worse
+
+Chasing `deliverability.seed_data: {"tables": 12, "registered": 0, "missing": 0}` — twelve tables,
+no seed registrations, and nothing flagged.
+
+    for name, table in tables.items():
+        if (table.get("status") or "defined") != "defined":
+            continue
+
+Corpus: **1729 `implemented` against 16 `defined`; 145 of 147 runs have no `defined` table at all.**
+The audit has been reporting clean while inspecting nothing, for essentially the project's history.
+(Checked the right objects first: `schema_hub` IS the RegistryHub, `list_tables()` returns the same
+12 records, all `implemented`.)
+
+★★ And then the part that stops this being a one-line fix. Widening to `implemented` makes r154
+flag all twelve tables `missing_seed` — while its live database holds
+
+    titles 60 · title_genres 57 · episodes 16 · genres 10 · my_list 8 · continue_watching 7
+    profiles 6 · ratings 5          (every one above _DEFAULT_MIN_ROWS = 5)
+
+The app seeds through SQL INSERT; the audit's notion of "seeded" is `list_seed_registrations()`,
+which returns 0. **Widening the filter without fixing the definition converts a dead check into
+twelve false blockers on a correctly seeded app** — and false blockers wedge runs (#566j;
+r117/r120 lost 75 minutes to a no-deliver abort).
+
+So #956 says the state and changes no verdict: when the audit examines zero of N tables it now
+says so, naming the registration count that explains why the obvious fix is wrong. The real repair
+counts ROWS at gate time — the database is up when this runs — and that needs a live run to
+validate, not a unit test.
+
+★★★ This is the fourth check today found reporting "clean" without looking (#715, #738,
+`contract_alignment` tables, `contract_alignment` columns, now seed). The pattern is stable enough
+to state as a prior: **in this codebase, an empty findings list from a check nobody has watched
+fail is more likely to mean "did not run" than "nothing wrong".**

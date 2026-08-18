@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+import logging
 from typing import Optional, Any, Dict, List, Set
 
 
@@ -104,9 +105,11 @@ def audit_seed_data(hub_registry) -> SeedReport:
     seed_regs = schema_hub.list_seed_registrations() or {}
 
     flagged: List[dict] = []
+    _examined_956 = 0
     for name, table in tables.items():
         if (table.get("status") or "defined") != "defined":
             continue
+        _examined_956 += 1
         meta = table.get("metadata") or {}
         min_rows = meta.get("min_seed_rows", _DEFAULT_MIN_ROWS)
         if min_rows == 0:
@@ -186,6 +189,30 @@ def audit_seed_data(hub_registry) -> SeedReport:
                            "sample_size": len(reg.get("sample_excerpt") or [])},
             })
 
+    # #956: a clean report from an audit that examined NOTHING is not a clean report.
+    #
+    # The loop above skips any table whose status is not exactly "defined". Across the corpus
+    # that is 1729 `implemented` against 16 `defined`, and **145 of 147 runs have no `defined`
+    # table at all** — so this audit has been returning "clean" while looking at zero tables.
+    #
+    # ★ Deliberately NOT widened to `implemented` here. r154 would then flag all twelve tables as
+    # `missing_seed` while its database actually holds titles 60, title_genres 57, episodes 16,
+    # genres 10, my_list 8, continue_watching 7, profiles 6, ratings 5 — every one above
+    # `_DEFAULT_MIN_ROWS`. The app seeds through SQL INSERT and this audit's notion of "seeded" is
+    # `list_seed_registrations()`, which returns 0. Widening the filter without also fixing the
+    # definition would turn a dead check into twelve false blockers on a correctly seeded app,
+    # and false blockers wedge runs (#566j, r117/r120: a 75-minute no-deliver abort).
+    #
+    # So: say the state out loud, change no verdict. The real repair is to count ROWS at gate time
+    # — the database is up when this runs — and that needs a live run to validate, not a unit test.
+    if not _examined_956 and tables:
+        logging.getLogger(__name__).warning(
+            "SEED AUDIT EXAMINED 0 OF %d TABLES: every one has a status other than 'defined', "
+            "which is the only status this audit inspects (corpus: 1729 implemented vs 16 "
+            "defined; 145 of 147 runs have none). Its clean verdict below means NOT CHECKED, not "
+            "nothing wrong. Widening it needs the seeded-ness test fixed first — %d seed "
+            "registration(s) exist while the app seeds via SQL (#956).",
+            len(tables), len(seed_regs))
     return SeedReport(flagged_tables=flagged)
 
 
