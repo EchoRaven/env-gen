@@ -14729,3 +14729,42 @@ exact NameError on a line that only runs when the defect fires, which is the wor
 for one. A test now asserts no bare `logger.` attribute inside `_preflight_check`.
 
 Full suite 6324 passed; removing the probe turns the guard red.
+
+### 305. ★★ r154's plateau, answered — and #937, the number that should have answered it
+
+The open thread was "whether r154's bundle was stale — the fix only restores the ability to
+answer". It did not need a new run. The evidence was still on disk.
+
+**Refuted.** Counting image-creation events inside the run window (podman keeps the dangling
+layers) gives **23 build events, 20 of them carrying the 124 MB frontend layer**, one every 2–10
+minutes:
+
+    17:19 17:29 17:31 17:36 17:43 17:45 17:48 | 18:09 18:16 18:31 18:33 18:36 18:37 18:39 18:43
+    | 18:52 18:55 18:58 19:07 19:13
+
+Rounds 4–8 span 18:50–18:59 and there are three rebuilds inside that window. The container was
+being restaged the whole time. **The bundle was not stale.**
+
+★ Which makes the real answer worse: the frontend was rebuilt and redeployed twenty times, and the
+judged screens did not change. `git log` on the component `App.jsx` actually routes to —
+`components/LoginPage.jsx`, via `<Route path="/login" element={<LoginPage />} />` — shows it was
+edited **twice in 148 minutes**, the second time by 24 bytes. Fifty frontend commits touched other
+files. The plateau is not a build problem and not a judge problem: **the remediation loop is not
+changing the components the judged screens render.**
+
+(`pages/Login.jsx` exists as a 139-byte wrapper re-exporting `components/LoginPage`, imported by
+nobody — the only orphan of its kind. Tempting as "the file the lane edited instead", but the lane
+edited the RIGHT file, twice. Recorded and NOT claimed.)
+
+★★ #937: the number that would have started this in one query is one #142 already computes —
+it keys its verdict cache on `(screen, capture md5)` precisely because identical pixels must
+produce an identical verdict — and then drops. The ledger now carries it per screen per round, so
+
+    login 1 distinct image across 12 captures · landing 2 · games 2 · browse_home 3 · movies 3
+
+is a read of `rounds.jsonl` rather than three detours through `history/` (which only survives
+because #141b caps it at 500 files), `podman images`, and git. A plateau with IDENTICAL pixels is a
+different defect from a plateau where the pixels move and the score does not, and nothing recorded
+could tell them apart.
+
+★ A missing capture gets NO entry rather than an empty string — #907's rule, applied on the way in.

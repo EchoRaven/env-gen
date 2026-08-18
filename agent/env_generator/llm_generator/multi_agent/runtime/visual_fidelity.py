@@ -4143,6 +4143,36 @@ def _append_round_record_640(vdir: Any, verdict: Dict[str, Any],
             }
         if _zero933:
             row["zero_reasons_933"] = _zero933
+        # #937: the CAPTURE FINGERPRINT per screen, so "did anything actually change?" is a query.
+        #
+        # r154 spent 12 rounds at a flat 0.5655 across five distinct code_states. Answering why
+        # took: md5-ing `history/` (which only exists because #141b caps it at 500 files),
+        # counting build events in `podman images` to refute a stale bundle, and finally
+        # `git log` on the component App.jsx actually routes to — which had been edited TWICE in
+        # 148 minutes, the second time by 24 bytes. The one number that would have started that
+        # investigation is the one #142 already computes to key its verdict cache and then drops.
+        #
+        #     login 1 distinct image across 12 captures · landing 2 · games 2 · browse_home 3
+        #
+        # A plateau where the pixels are IDENTICAL is a different defect from one where they
+        # change and the score does not, and the ledger could not tell them apart.
+        try:
+            import hashlib as _hl937
+            _fp937: Dict[str, str] = {}
+            for _s937 in (results or []):
+                if not isinstance(_s937, dict):
+                    continue
+                _n937 = str(_s937.get("name") or "")
+                _p937 = _s937.get("screenshot")
+                if not _n937 or not _p937:
+                    continue
+                _f937 = Path(str(_p937))
+                if _f937.is_file():
+                    _fp937[_n937] = _hl937.md5(_f937.read_bytes()).hexdigest()[:12]
+            if _fp937:
+                row["capture_md5_937"] = _fp937
+        except Exception:
+            pass
         with open(Path(vdir) / "rounds.jsonl", "a", encoding="utf-8") as fh:
             fh.write(json.dumps(row, default=str) + "\n")
     except Exception:
