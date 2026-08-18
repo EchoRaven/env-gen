@@ -14814,3 +14814,32 @@ one run's evidence.
 ★ Method: this is the second time today that following an artifact instead of a NAME reversed a
 conclusion (the first was #934's stale PNG). Both were grep-by-filename where the truth was one
 indirection away — an import line, a file mtime.
+
+### 307. #939 — the loop #910b predicted, counted
+
+#910b's own message contains the prediction: *"This branch is unconditional, so a lane that keeps
+re-authoring this page will loop."* It then logged each turn separately, into a logger no run
+persists (#935's problem, one module over). r154 ran the prediction **19 times** and no artifact
+anywhere holds a total.
+
+`_count_overwrite_939` keeps a per-page count in `design/scaffold_overwrites_939.json`, and at
+three the message escalates from "I replaced a page" to "this page's author is being overwritten on
+a schedule; every capture since the first has photographed the framework's version".
+
+★ Three, not two: two can be a merge race. Three is a pattern. And the count must survive the
+process — a run's scaffolding spans many, and an in-memory counter would report "1" nineteen times,
+which is precisely the state being fixed.
+
+★★ Deliberate scope: this changes NOTHING about who wins. #914 owns that and it is the user's call.
+What #939 asserts is narrower and not in dispute — nineteen rounds of lane work were written and
+discarded, and that is waste whichever page should ship.
+
+★★★ Seam, and the third of exactly this shape today (#930's `_head_sha`, #934's `shots_dir`, this):
+I wrote `_count_overwrite_939(fe, comp)` and the parameter is `frontend_dir`. `fe` is not bound in
+that scope — a NameError on a line that only executes when the defect fires, which is #910's own
+original mistake, in the branch #910b added. **The existing suite would not have caught it**: no
+test drives the auth branch of `scaffold_pages_from_contract`. So the guard is an AST check that
+every argument to the counter is a name actually bound in the enclosing function. Planting the seam
+back turns it red.
+
+Full suite 6351 passed.

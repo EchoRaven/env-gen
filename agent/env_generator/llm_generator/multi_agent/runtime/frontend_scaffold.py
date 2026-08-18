@@ -9500,6 +9500,40 @@ def _stale_thin_projection_583(existing: str, cand: str) -> bool:
     return len(missing) >= 2
 
 
+def _count_overwrite_939(frontend_dir: Any, comp: str) -> int:
+    """How many times the framework has now replaced a non-empty existing ``comp`` this run.
+
+    #910b predicted the loop in words — *"a lane that keeps re-authoring this page will loop"* —
+    and then logged each replacement separately, into a logger no run persists. r154 ran the
+    prediction 19 times and nothing counted it: `pages/LoginPage.jsx` has 39 commits and THREE
+    distinct contents, the framework's 4118-byte projection alternating with two lane pages
+    (5768B, 7260B), landing on the framework's version every time. All twelve captures saw that
+    version; `login` produced one distinct image and 0.50 for the whole run.
+
+    A count turns nineteen indistinguishable warnings into one statement: this page's author is
+    being overwritten, repeatedly, and the work is being thrown away. Which page SHOULD win is
+    #914's open question; that the loop is waste is not.
+
+    Best-effort, never raises; returns 0 if the counter cannot be kept.
+    """
+    try:
+        root = Path(frontend_dir).resolve().parents[1]
+        f = root / "design" / "scaffold_overwrites_939.json"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        data = {}
+        if f.is_file():
+            try:
+                data = json.loads(f.read_text(encoding="utf-8")) or {}
+            except Exception:
+                data = {}          # unreadable is not "never happened", but it is not fatal here
+        n = int(data.get(str(comp), 0)) + 1
+        data[str(comp)] = n
+        f.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
+        return n
+    except Exception:
+        return 0
+
+
 def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -> Dict[str, object]:
     """Project one page-component STUB per registered ui_page + wire React-Router
     routes in App.jsx — the frontend analogue of the deterministic backend
@@ -9698,14 +9732,28 @@ def scaffold_pages_from_contract(frontend_dir, ui_pages: List[Dict[str, Any]]) -
                     if target.exists():
                         _prev_910b = target.read_text(encoding="utf-8")
                         if _prev_910b.strip() and _prev_910b != (_body or ""):
-                            __import__("logging").getLogger(__name__).warning(
-                                "AUTH PAGE OVERWRITE: %s — replacing the existing %d-line page "
+                            _n939 = _count_overwrite_939(frontend_dir, comp)
+                            _log939 = __import__("logging").getLogger(__name__)
+                            _log939.warning(
+                                "AUTH PAGE OVERWRITE #%d: %s — replacing the existing %d-line page "
                                 "(%d component tag(s)) with the framework's %d-line auth form. "
                                 "This branch is unconditional, so a lane that keeps re-authoring "
                                 "this page will loop (#910b).",
-                                comp, len(_prev_910b.splitlines()),
+                                _n939 or 1, comp, len(_prev_910b.splitlines()),
                                 len(set(re.findall(r"<([A-Z]\w*)", _prev_910b))),
                                 len((_body or "").splitlines()))
+                            # #939: the loop #910b predicted, counted. Three is not a race or a
+                            # one-off merge; it is an author being overwritten on a schedule.
+                            if _n939 >= 3:
+                                _log939.error(
+                                    "SCAFFOLD LOOP: %s has now been overwritten %d times this "
+                                    "run. Every capture since the first one has photographed the "
+                                    "FRAMEWORK's version, so the lane's work on this page has "
+                                    "never reached the judge. r154 did this 19 times and its "
+                                    "login screen produced ONE distinct image across 12 rounds at "
+                                    "0.50. Which page should win is ENVGEN_DEFER_TO_LANE_PAGE's "
+                                    "question (#914); the loop itself is waste either way (#939).",
+                                    comp, _n939)
                 except Exception:
                     pass
             else:
