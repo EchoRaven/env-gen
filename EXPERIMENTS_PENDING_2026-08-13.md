@@ -14535,3 +14535,34 @@ the code_state that earned its score.
 assigned inside the `capture is None` branch, so with an injected `capture_fn` the name was
 unbound. Caught by #542's end-to-end test on the first full run, not by me. Hoisted to one
 definition above the branch rather than duplicated into the `else`.
+
+### 300. #935 — #769 rescued the reason and put it somewhere the run does not keep
+
+#769's comment is right about why the reason matters — *"a navigation timeout, a closed page and a
+proxy refusal are three different problems"* — and it fixed a bare `except` by logging the
+exception type and message. r154's run directory contains **no `#769` line anywhere**: nothing in
+the run persists that logger. The reason existed, was caught, was written, and was still
+unavailable to anyone holding only the run's artifacts.
+
+Independent confirmation of the r154 diagnosis, from #141b's own history directory:
+
+    history/  118 entries
+    history/  title_detail:  ONE — 171957_title_detail.png
+    most recent: 1912xx for shows, player, new_and_popular, my_list, movies, login
+
+Photographed once, at 17:19:57. Every round after that raised, and #769 said so into a void.
+
+Fix: the fifth optional out-parameter, following the four this function already has
+(`auth_redirected`, `blank_screens`, `picker_screens` #657, `console_errors` #740). The exception
+reaches the screen record as `capture_error`, the deviation text names it, and #933 carries it into
+the ledger.
+
+★★ #771b's end-to-end key guard caught me on the first full run: **"produced at capture and never
+persisted: ['capture_error']"**. `_persist_verdict`'s fixed-key projection would have dropped it —
+the FOURTH field lost on that exact path, after #767's `raw_judge_reply`, #768's `capture_missing`
+and #771's `screenshot`. That guard is now three-for-three against the same mistake, including
+against the person who has been writing the tickets about it.
+
+★ Also corrected #933's test docstring in place: it still carried the pre-#934 story about the
+judge scoring a working page. A wrong illustration in a test is worse than in a ticket — the ticket
+is dated, the test is read as current.

@@ -1800,6 +1800,7 @@ async def capture_route_screenshots(
     blank_screens: Optional[List[str]] = None,
     picker_screens: Optional[List[str]] = None,   # #657
     console_errors: Optional[Dict[str, List[str]]] = None,   # #740
+    capture_errors: Optional[Dict[str, str]] = None,         # #935
 
 ) -> Dict[str, str]:
     """Screenshot each screen's route; returns {screen name → png path}. A
@@ -2051,6 +2052,20 @@ async def capture_route_screenshots(
                         "not the page.",
                         screen.get("name"), screen.get("route"),
                         type(_cap769).__name__, str(_cap769)[:200])
+                    # #935: and OUT of the logger. #769 rescued the reason from the bare `except`
+                    # and put it in a log line; r154's run directory contains no `#769` line
+                    # anywhere, because nothing in the run persists this logger. So the reason
+                    # existed, was caught, was written — and was still unavailable to anyone
+                    # holding only the run's artifacts.
+                    #
+                    # r154 is what that costs. `title_detail` was photographed ONCE, at 17:19:57
+                    # (`history/` holds exactly one entry for it against 118 in total), and scored
+                    # 0.00 in every round after. I diagnosed that as judge noise, wrote it into two
+                    # tickets, and only found the truth by listing mtimes. This dict is the fourth
+                    # out-parameter's shape (#657, #740) and reaches the ledger via #933.
+                    if capture_errors is not None:
+                        capture_errors[str(screen.get("name"))] = (
+                            f"{type(_cap769).__name__}: {str(_cap769)[:200]}")
                     continue
         finally:
             await browser.close()
@@ -2723,6 +2738,8 @@ async def run_visual_fidelity(
     # #542's end-to-end test on the first full run). One definition, not two — a value duplicated
     # under one name is a promise that drifts on the first edit to either.
     shots_dir = out_dir or (project_dir / "design" / "visual_gate")
+    # #935: same reason as shots_dir above — the no-capture handler reads it whichever branch ran.
+    _cap_err935: Dict[str, str] = {}
     if capture is None:
         err = _compose_up(project_dir)
         if err:
@@ -2800,7 +2817,7 @@ async def run_visual_fidelity(
             return await capture_route_screenshots(
                 base_url, scr, token, shots_dir, auth_redirected=_auth_bounced,
                 blank_screens=_blank_screens, picker_screens=_picker_screens,
-                console_errors=_console740)
+                console_errors=_console740, capture_errors=_cap_err935)
 
     else:
         _auth_bounced = []
@@ -2943,6 +2960,13 @@ async def run_visual_fidelity(
                 _dev = (f"route {screen['route']} produced NO capture this pass — the harness "
                         "did not photograph it, so there is nothing to judge. This is not a "
                         "verdict on the page")
+                # #935: name the failure. "produced NO capture" tells a reader the harness
+                # missed it; the exception type says WHY, and #769 is explicit that the three
+                # common causes are three different problems ("a navigation timeout, a closed
+                # page and a proxy refusal"). Only the logger had it.
+                _why935 = _cap_err935.get(screen["name"])
+                if _why935:
+                    _dev += f" — the capture raised {_why935}"
                 _no_shot_768 = True
                 # #934: and the PREVIOUS round's photograph is still sitting at
                 # `visual_gate/<name>.png`, looking healthy.
@@ -2967,6 +2991,9 @@ async def run_visual_fidelity(
                             # split the picker OUT of blank and #657b records what that cost, so
                             # overloading it again would repeat exactly that mistake.
                             "capture_missing": _no_shot_768,
+                            # #935: the exception, on the record and therefore in #933's ledger
+                            # entry — None for every path that is not a raised capture failure.
+                            "capture_error": _cap_err935.get(screen["name"]),
                             "advisory": bool(screen.get("advisory")),
                             "console_errors": _console740.get(screen["name"]) or [],  # #740
                             "screenshot": None,
@@ -3210,6 +3237,11 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
             # gating number and it disagreed with the live one; the same miss as #767b, one
             # function later.
             "capture_missing": r.get("capture_missing"),
+            # #935: and the WHY. #771b's end-to-end key guard caught this on its first full run —
+            # `capture_error` would have been the FOURTH field produced at capture and dropped by
+            # this fixed-key projection, after #767's raw_judge_reply, #768's capture_missing and
+            # #771's screenshot. The guard is doing exactly the job it was written for.
+            "capture_error": r.get("capture_error"),
             # #771: WHICH IMAGE PRODUCED THIS SCORE. The record could not say. Both paths carry
             # `screenshot` and `reference` from the capture, and both projections dropped them,
             # so `verdict.json` gave a number with no way back to the pixels.
@@ -4087,6 +4119,7 @@ def _append_round_record_640(vdir: Any, verdict: Dict[str, Any],
                 "judge_error": bool(_s933.get("judge_error")),
                 "blank": _s933.get("blank"),
                 "capture_missing": _s933.get("capture_missing"),
+                "capture_error": _s933.get("capture_error"),      # #935
                 "raw_judge_reply": str(_s933.get("raw_judge_reply") or "")[:200] or None,
             }
         if _zero933:

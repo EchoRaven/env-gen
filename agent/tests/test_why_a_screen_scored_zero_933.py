@@ -10,12 +10,17 @@ It goes onto the screen record — which #500's merge discards whenever the scre
 is the only time anyone asks. #767's fix is defeated by the merge in precisely its own use case
 (r150's 0.00 on a page that renders).
 
-★ r154 is the live instance. `title_detail` scored 0.00 in rounds 2, 3, 4 and 5, across three
-distinct code states, on a capture I opened: a complete working detail page — hero art,
-"Disclosure Day", Play / + / like, 2026 · TV-14 · HD, synopsis, genre tag, Episodes with a Season 1
-selector and an episode row. The reference is unmistakably the same screen (Netflix's "ALL
-AMERICAN" modal). Round 1 scored that page 0.60. Nothing on disk says what the judge replied in
-rounds 2–5, and the verdict shows 0.6 for it because the merge kept round 1.
+★ r154 is the live instance, and it is worth reading carefully because I got it wrong first.
+`title_detail` scored 0.00 in rounds 2–8 across three code states. I opened
+`visual_gate/title_detail.png`, saw a complete working detail page, and concluded the judge was
+scoring a good page 0.00. It was not: that file's mtime never moved off 17:19:57 and `history/`
+holds exactly ONE entry for the screen against 118 in total — **the capture failed every round**
+and the picture was round 1's (#934 now renames a stale capture out of the way).
+
+So the live record every round said `capture_missing: True` with the deviation *"produced NO
+capture this pass … This is not a verdict on the page"*, and #500's merge discarded all of it and
+kept round 1's 0.6. This ticket is what makes that legible: one line in the ledger instead of four
+probes and a wrong conclusion.
 
 `results` — the LIVE list — is already an argument to the ledger writer. Carry the reason there.
 """
@@ -115,7 +120,7 @@ def test_a_malformed_result_does_not_break_the_ledger(tmp_path):
                              {"name": "ok", "similarity": 0.0, "deviations": ["why"]}])
     assert rows[-1]["zero_reasons_933"] == {
         "ok": {"why": "why", "judge_error": False, "blank": None,
-               "capture_missing": None, "raw_judge_reply": None}}
+               "capture_missing": None, "capture_error": None, "raw_judge_reply": None}}
 
 
 def test_a_non_numeric_similarity_is_skipped_not_counted_as_zero(tmp_path):
