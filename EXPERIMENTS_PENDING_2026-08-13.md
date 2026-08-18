@@ -15850,3 +15850,29 @@ which is #955's defect committed by me, against the corpus, in the middle of cat
 ★★ The thing that actually caught it was a recorded number disagreeing with a fresh one. Worth
 stating: **when a new measurement contradicts a written prior, re-derive before publishing —
 the prior was written when someone had the context, and the new number was produced in a hurry.**
+
+### 341. verifying the ADVICE, not just the code — and a seventh instrument caught before it lied
+
+The three paper recommendations I gave were built on training memory. Now that a PDF extractor
+exists, the same rule that governs code applies to advice: **check it.**
+
+    FunCoder   "a code generation framework utilizing a divide-and-conquer strategy and a novel
+                functional consensus mechanism on functions" · "re-composites sub-functions, and
+                selects the best using functional consensus"        ✓ recommendation 1 stands
+    Agentless  "consisting of three phases: localization, repair, and patch validation", with
+                "Avg. $ Cost" as a headline metric                  ✓ recommendation 2 stands
+
+★ Both were "(未找到)" on the first attempt — because the extractor produced **zero characters**
+for these two PDFs. Its regex required a newline before `endstream`, which FunCoder's byte layout
+does not have (456 stream markers, 0 decompressing; it also carries 18 `/ObjStm` and `DCTDecode`).
+Loosening the boundary yielded 168K and 124K characters.
+
+**Without checking the instrument I would have concluded "the FunCoder paper does not contain
+functional consensus".** Seventh instance today of an instrument reporting nothing and the nothing
+being the instrument: #715/#738 (never ran), the four gate checks, the five prose-matching
+locators, and now this — in a tool I wrote two hours earlier for exactly this purpose.
+
+★★ The one correction already stood: RAO is described in the reading list as "the coding-domain
+answer" and has **no coding benchmark** (Crafting, OOLONG-REAL, DEEPDIVE; base model
+Qwen-3-4B-Instruct-2507). That correction was made from the paper, and this pass confirms the
+method generalises — read the primary artifact before repeating a summary, including your own.
