@@ -55,6 +55,46 @@ from progress import (
 from .runtime.container_runtime import runtime_bin as _rt936
 
 
+def _persist_gate_948(output_dir: Any, gate: Dict[str, Any], logger: Any) -> None:
+    """Append one line per delivery-gate evaluation to ``logs/delivery_gate.jsonl``.
+
+    #948: the gate RETURNS 21 fields of reasoning — business_chain, completeness, deliverability,
+    projection_errors, build_evidence, verification, contract_alignment, unresolved_bugs … — and
+    the only artifact that ever saw any of it is the progress tick, which carries three:
+    ``ok``, ``failed_checks``, ``did_not_run``. r154's `progress_events.jsonl` has 36 of those
+    ticks and not one word of WHY.
+
+    I filed this under "a design question — where does the reasoning belong?" (#947). It is not:
+    the caller already receives the whole structure and projects three keys out of it. That is
+    #771b's fixed-key projection loss, in the function that decides whether to ship, and the
+    remedy is the same one used for the visual ledger — append, do not overwrite.
+
+    Values are capped individually: `business_chain` can carry every chain's every step, and an
+    artifact nobody can open is the same as no artifact.
+    """
+    try:
+        import json as _j948
+        _CAP = 4000
+        row = {}
+        for k, v in (gate or {}).items():
+            try:
+                _enc = _j948.dumps(v, default=str)
+            except Exception:
+                _enc = _j948.dumps(str(v))
+            row[k] = v if len(_enc) <= _CAP else {
+                "_truncated_948": len(_enc), "head": _enc[:_CAP]}
+        row["at"] = time.time()
+        f = Path(output_dir) / "logs" / "delivery_gate.jsonl"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        with open(f, "a", encoding="utf-8") as fh:
+            fh.write(_j948.dumps(row, default=str) + "\n")
+    except Exception as _exc948:
+        try:
+            logger.warning("could not persist delivery_gate.jsonl: %s", _exc948)
+        except Exception:
+            pass
+
+
 def _env_true_945(name: str) -> bool:
     """#945: read per call, never at import — a run that trips the abort must be restartable by
     exporting one variable, without a code edit or a reload."""
@@ -4176,6 +4216,8 @@ class Orchestrator:
                 "not necessarily this tick. Any release cut while this is non-empty is "
                 "UNVERIFIED on these axes, whatever the gate says: %s",
                 len(_did_not_run), "; ".join(_did_not_run[:6]))
+        _persist_gate_948(self.output_dir, _gate793,
+                          getattr(self, "_logger", None) or _lg.getLogger("DeliveryGate"))
         return _gate793
     def _validate_contract_alignment(self) -> Dict[str, Any]:
         from .runtime.delivery_gate import validate_contract_alignment

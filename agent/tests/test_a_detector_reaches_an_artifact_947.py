@@ -34,6 +34,14 @@ import pytest
 
 _CEILING = 8
 
+#: Detectors the scan flags but whose finding DOES reach an artifact via the caller. The scan is
+#: intra-procedural — it cannot follow a returned structure — so a fix applied one frame up is
+#: invisible to it. #948 is exactly that: `validate_delivery_gate` still only logs, and the
+#: orchestrator wrapper now appends its whole 21-field return to `logs/delivery_gate.jsonl`.
+#: Recorded here rather than papered over, because a ceiling that silently counts a FIXED entry
+#: stops meaning anything.
+_FIXED_UPSTREAM = {"validate_delivery_gate": "#948 — persisted by _validate_delivery_gate wrapper"}
+
 _ROOT = pathlib.Path(__file__).resolve().parents[1] / "env_generator"
 
 #: serialising is NOT persisting — `dumps` here hid the canonical case behind `json.dumps(token)`.
@@ -130,6 +138,26 @@ def test_log_only_detectors_do_not_grow():
 def test_the_ceiling_is_not_stale():
     n = len(_log_only_detectors())
     assert n >= _CEILING - 2, f"only {n} remain; lower _CEILING to {n}"
+
+
+def test_the_upstream_fixes_are_still_upstream():
+    """★ The scan is intra-procedural, so #948's fix (one frame up) does not reduce the count.
+    Assert the fix is really there rather than letting the exemption rot into a lie."""
+    import ast
+    import inspect
+    from env_generator.llm_generator.multi_agent import orchestrator as orc
+    tree = ast.parse(inspect.getsource(orc))
+    fn = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
+          and n.name == "_validate_delivery_gate"][0]
+    assert any(isinstance(n, ast.Call) and getattr(n.func, "id", None) == "_persist_gate_948"
+               for n in ast.walk(fn)), _FIXED_UPSTREAM["validate_delivery_gate"]
+
+
+def test_the_real_remaining_count_is_reported():
+    """What the ceiling counts vs what is actually unrecorded — stated, not conflated."""
+    found = _log_only_detectors()
+    truly = [f for f in found if not any(k in f for k in _FIXED_UPSTREAM)]
+    assert len(truly) == len(found) - len(_FIXED_UPSTREAM), (found, truly)
 
 
 if __name__ == "__main__":  # pragma: no cover

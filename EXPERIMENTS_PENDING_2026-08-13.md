@@ -15139,3 +15139,34 @@ validated only against its motivating examples is a restatement of those example
 without specificity is not measurement. Where the corpus cannot separate the classes — as here,
 where `'rate'` and `_hint944` are the same AST node — the honest output is a retraction, not a
 smaller number with a caveat.
+
+### 318. #948 — the delivery gate's reasoning was a projection loss, not a design question
+
+Item 316 left the eight log-only detectors alone, saying *"where the reasoning belongs is a design
+question per detector"*. For the biggest one that was wrong, and checking took two greps.
+
+`validate_delivery_gate` RETURNS 21 fields — `business_chain`, `completeness`, `deliverability`,
+`projection_errors`, `build_evidence`, `verification`, `contract_alignment`, `unresolved_bugs`,
+`incomplete_required_tasks`, `checks_errored_790` … — and the only artifact that ever carried any
+of them is the progress tick, which takes three: `ok`, `failed_checks`, `did_not_run`. r154's
+`progress_events.jsonl` holds **36 ticks and not one word of why**.
+
+The caller already has the whole structure and projects three keys out of it. That is #771b's
+fixed-key projection loss — in the function that decides whether to ship — and the remedy is the
+one the visual ledger already uses: append, never overwrite. `logs/delivery_gate.jsonl`, one line
+per evaluation, written in the wrapper every one of the six call sites goes through.
+
+Values are capped per FIELD, not per row: `business_chain` can carry every chain's every step, and
+one huge neighbour must not cost the other twenty fields — nor produce a file nobody can open.
+
+★ And the #947 ratchet did NOT move, correctly and instructively: its scan is intra-procedural, so
+a fix applied one frame up is invisible to it. Rather than lower the ceiling (which would have
+counted a fixed entry as still-broken forever) or exempt the name silently, `_FIXED_UPSTREAM`
+records it **with a test that asserts the upstream fix is really there** — an exemption without a
+check is how an allowlist rots into a lie.
+
+★★ The lesson for the remaining seven: "design question" was doing work it had not earned. Two
+greps separated "nowhere to put it" from "already returned and thrown away". The others deserve the
+same two greps before anyone designs anything.
+
+Full suite 6403 passed.
