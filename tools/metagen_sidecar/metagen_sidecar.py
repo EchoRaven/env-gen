@@ -345,6 +345,22 @@ def _tool_response(sdk, msg):
 
 
 def build_dialog(sdk, messages):
+    # #999: report the size that actually LEAVES here, not the one the client measured.
+    #
+    # The client logs `content_chars` BEFORE sending, so a vision lane shows figures like
+    # 13.5 MB (r162's peak) while this function strips every base64 image outside the last
+    # MG_IMAGE_KEEP_LAST messages. The logged number is therefore systematically wrong for
+    # exactly the lanes where size matters, and reading it cost a 15-minute investigation
+    # into a runaway context that was never running away.
+    #
+    # Same shape as #973 and #987: a number printed without the one fact needed to read it.
+    # Logged only when stripping actually changed something, so ordinary text-only calls
+    # stay silent.
+    _pre = 0
+    for _m in messages:
+        _c = (_m or {}).get("content") if isinstance(_m, dict) else None
+        if isinstance(_c, str):
+            _pre += len(_c)
     dmsgs = []
     n = len(messages)
     # Keep base64 images only in the most recent MG_IMAGE_KEEP_LAST messages; strip stale ones
@@ -366,6 +382,14 @@ def build_dialog(sdk, messages):
         else:
             dmsgs.append(sdk.DialogMessage(source=_source(sdk, role),
                          contents=_contents(sdk, m, strip_images=strip)))
+    try:
+        _post = sum(len(getattr(c, "text", "") or "")
+                    for m in dmsgs for c in (getattr(m, "contents", None) or []))
+        if _pre and _post and _pre - _post > 100_000:
+            print(f"[sidecar] image-strip: {_pre:,} -> {_post:,} chars "
+                  f"(images kept in last {_IMAGE_KEEP_LAST} messages)", flush=True)
+    except Exception:
+        pass
     return sdk.Dialog(messages=dmsgs)
 
 
