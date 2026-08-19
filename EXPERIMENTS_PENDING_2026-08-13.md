@@ -17999,3 +17999,36 @@ different meta-tests, both written long before this session, have now each caugh
 locator in a test I wrote to catch something else.** Re-anchored on AST.
 
 Suite 6,752.
+
+### 404. #995 extended — 16 of the read-then-write repairs now guarded
+
+#995 covered 11 sites in `backend_scaffold`. Enumerated the rest of `runtime/` for the same
+shape (a function that READS a `.py` and WRITES it back) and guarded the five that matter:
+
+    route_projector    project_missing_routes, project_state_write_endpoints
+    heal_pipeline      repair_backend_as_wiring, repair_backend_entrypoint
+    handler_fk_repair  repair_handler_fk_aliases          <- #974's own home
+
+`route_projector` is the highest-value of these: it is the largest code generator in the tree
+and the one most likely to produce the next #979. The remaining unguarded writes target SQL,
+`pyproject.toml` and `.gitignore` — the guard is `.py`-only, so wiring them would be a no-op.
+
+Two failures on the way, both caught in seconds by the checks item 402 added:
+
+  * **the module docstring broke my anchor.** "First non-import node" is the DOCSTRING when a
+    module has one, so the import landed above `from __future__ import annotations` →
+    SyntaxError on reload. The template-SHA/reload check reported it immediately.
+  * **`route_projector` is imported STANDALONE by a test**, with no package context, so a
+    relative import raises at collection time. Real constraint, not a broken test.
+
+The second one produced the more interesting fix: a defensive wrapper that degrades to a plain
+write when the guard cannot be imported, **and says so in its docstring** rather than
+pretending it is still checking. A guard that silently stops guarding is worse than no guard —
+that is #992's lesson (a heuristic whose boundary is undocumented) pointed at myself.
+
+★ Worth contrasting with item 401. Same operation, same file class, same kind of mistake —
+but this time each error surfaced within seconds instead of after ten suite failures and a
+full revert, because the SHA snapshot and the reload run BEFORE anything else. **The fix from
+the last disaster paid for itself on the very next attempt at the same work.**
+
+Suite 6,755.

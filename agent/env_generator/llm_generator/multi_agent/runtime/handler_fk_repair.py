@@ -22,6 +22,20 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .route_projector import _OWNER_FK_NAMES, _orm_models, _owner_fk
+def _write_py_995(path, text, *, what: str = ""):
+    """#995 guard, imported defensively.
+
+    Some modules here are imported STANDALONE by tests (no package context), where a relative
+    import raises. The guard degrades to a plain write in that case rather than breaking the
+    import — and says so in this docstring rather than pretending it is still checking.
+    """
+    try:
+        from .safe_code_write import write_py_if_still_parses as _w
+    except Exception:
+        path.write_text(text, encoding="utf-8")
+        return True
+    return _w(path, text, what=what)
+
 
 # #784: tables an actor reference can point at. `profiles` is here because #777
 # established the profile as a NARROWER actor than the user on this corpus, so a
@@ -139,5 +153,5 @@ def repair_handler_fk_aliases(backend_dir: Any) -> Dict[str, Any]:
                 src = new_src
                 fixed.append(f"{cls}.{alias} -> {cls}.{actual} (x{n})")
     if fixed:
-        main_py.write_text(src, encoding="utf-8")
+        _write_py_995(main_py, src, what="repair_handler_fk_aliases")
     return {"fixed": fixed, "ambiguous": ambiguous, "narrowed": narrowed}

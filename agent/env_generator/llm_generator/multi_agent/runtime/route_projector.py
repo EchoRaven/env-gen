@@ -36,6 +36,20 @@ import ast
 import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+def _write_py_995(path, text, *, what: str = ""):
+    """#995 guard, imported defensively.
+
+    Some modules here are imported STANDALONE by tests (no package context), where a relative
+    import raises. The guard degrades to a plain write in that case rather than breaking the
+    import — and says so in this docstring rather than pretending it is still checking.
+    """
+    try:
+        from .safe_code_write import write_py_if_still_parses as _w
+    except Exception:
+        path.write_text(text, encoding="utf-8")
+        return True
+    return _w(path, text, what=what)
+
 
 _HTTP_METHODS = ("get", "post", "put", "delete", "patch")
 
@@ -1936,7 +1950,7 @@ def project_missing_routes(
                 "# === BY-CONSTRUCTION: param routes the lane declared but did not\n"
                 "# implement (appended last so /{id} patterns never shadow lane routes).\n"
                 + "\n\n\n".join(param_blocks))
-        main_py.write_text(new_src, encoding="utf-8")
+        _write_py_995(main_py, new_src, what="project_missing_routes")
 
     return {"projected": projected, "already": len(existing) - len(projected)}
 
@@ -2210,7 +2224,7 @@ def project_state_write_endpoints(
                     new_src,
                     "# === BY-CONSTRUCTION (#556 state-write heal): param write routes.\n"
                     + "\n\n\n".join(param_blocks))
-            main_py.write_text(new_src, encoding="utf-8")
+            _write_py_995(main_py, new_src, what="project_state_write_endpoints")
 
         result["projected"] = projected
         result["endpoints"] = synthesized

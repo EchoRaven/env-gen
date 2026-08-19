@@ -21,6 +21,20 @@ from __future__ import annotations
 
 import re
 from typing import Any, List
+def _write_py_995(path, text, *, what: str = ""):
+    """#995 guard, imported defensively.
+
+    Some modules here are imported STANDALONE by tests (no package context), where a relative
+    import raises. The guard degrades to a plain write in that case rather than breaking the
+    import — and says so in this docstring rather than pretending it is still checking.
+    """
+    try:
+        from .safe_code_write import write_py_if_still_parses as _w
+    except Exception:
+        path.write_text(text, encoding="utf-8")
+        return True
+    return _w(path, text, what=what)
+
 
 _ROUTE_FILE_SUFFIXES = (".jsx", ".tsx", ".js", ".ts", ".vue", ".mjs", ".css", ".html", ".json")
 
@@ -1733,7 +1747,7 @@ class HealPipeline:
                 "    _l.getLogger('uvicorn').warning('AS wiring skipped: %s', _as_exc)",
             ]
             lines[idx + 1:idx + 1] = wiring
-            main_py.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            _write_py_995(main_py, "\n".join(lines) + "\n", what="repair_backend_as_wiring")
             orch._logger.warning(
                 "Backend main.py: wired the framework OAuth2 AS router "
                 "(was missing → /auth/register + /oauth/* absent).")
@@ -1772,7 +1786,7 @@ class HealPipeline:
                 "    uvicorn.run(app, host=\"0.0.0.0\", "
                 "port=int(os.environ.get(\"API_PORT\", \"8081\")))\n"
             )
-            main_py.write_text(src.rstrip() + entry, encoding="utf-8")
+            _write_py_995(main_py, src.rstrip() + entry, what="repair_backend_entrypoint")
             orch._logger.warning(
                 "Backend main.py entrypoint appended (was missing uvicorn.run "
                 "→ container would exit(0) without serving).")
