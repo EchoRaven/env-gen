@@ -17566,3 +17566,38 @@ guard-rejection log the whole time.
 times" nor "package.json writes are denied" is interesting by itself; together they falsify a
 recorded conclusion. **This session's three biggest corrections (items 380, 387/388, this one)
 all came from a number that refused to fit the story, never from re-reading the story.**
+
+### 391. checking item 390's own evidence — absence of log lines is not evidence
+
+Item 390 rested partly on "successful lane writes to package.json: 0". Immediately doubted it,
+because r159 built a whole working application and the same query said it had **zero**
+successful `write` / `edit` / `apply_patch` calls of any kind. Files were obviously written.
+
+The reason: **successful file mutations are not logged individually at all.** Only the batch
+summary names them (`Tool calls: edit(file_path,old_string,…)`) and only FAILURES get a line
+(`❌ write`). So "0 successes" measured the logging convention, not the system — the exact
+mistake items 366 and 380 record, one layer down and inside my own correction.
+
+Checked it properly instead, against the code rather than the log:
+
+    _FRONTEND_FRAMEWORK_OWNED = frozenset({…, "package.json", "package-lock.json"})
+    _FRONTEND_LANE_OWNED      = frozenset({"App.jsx"})
+
+Path-based, unconditional, `return ToolResult("Write denied: … FRAMEWORK-OWNED")`.
+
+**Both conclusions survive, on better evidence than they shipped with:**
+
+  * package.json genuinely cannot be written by a lane → item 390 holds, and item 378's
+    "the lane keeps writing unpinned versions" was indeed wrong
+  * App.jsx is explicitly LANE-OWNED → the icon-heal explanation ("the lane keeps
+    reintroducing the unimported tag", item 376) also holds
+
+★ The pattern worth keeping: I nearly overturned a correct correction using a broken query,
+which is precisely how item 387 overturned a correct #988. **Twice now the failure mode has
+been the same — reaching for a convenient measurement instead of the authoritative one.** The
+frozenset was always the authoritative source for "can a lane write this file"; the log never
+was.
+
+★★ Absence of evidence is only evidence of absence when you have shown the evidence WOULD have
+appeared. That one extra step — "what would a success look like in this log?" — is the whole
+difference, and it costs one grep.
