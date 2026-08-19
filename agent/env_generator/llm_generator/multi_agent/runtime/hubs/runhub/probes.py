@@ -80,6 +80,7 @@ def classify_probe_result(
     body_excerpt: str,
     auth_required: bool,
     transport_error: Optional[str] = None,
+    headers: Optional[dict] = None,
 ) -> ProbeOutcome:
     if transport_error == "connection_refused":
         return ProbeOutcome(verdict="fail", severity="P0",
@@ -101,6 +102,32 @@ def classify_probe_result(
     if status_code == 404:
         return ProbeOutcome(verdict="fail", severity="P1",
                             note="route not wired (404 on declared endpoint)")
+    # #1001: a 405 on a registered, implemented endpoint is a CONTRACT violation, not an
+    # oddity. It fell through to the P2 catch-all below as "unexpected status 405", which is
+    # what r162's backend lane was working from while nine open tasks piled up behind it.
+    #
+    # Two things are wrong with that. The severity buried a delivery blocker underneath the
+    # P0s the lane already held; and the note carried no fact, so the task said "reproduce
+    # POST … returning 405" instead of showing it.
+    #
+    # HTTP requires a 405 to carry `Allow:` naming the methods the server DOES accept, which
+    # is precisely the missing diagnosis — the app bound some methods for this path and not
+    # this one. #1000 preserved that header at capture; this quotes it.
+    if status_code == 405:
+        _allow = ""
+        try:
+            for _k, _v in (headers or {}).items():
+                if str(_k).lower() == "allow":
+                    _allow = str(_v).strip()
+                    break
+        except Exception:
+            _allow = ""
+        _note = ("405: the path exists but this METHOD is not bound"
+                 + (f" — the app accepts [{_allow}]. Compare that list against the route "
+                    f"declaration; the handler is registered somewhere the app never loaded, "
+                    f"or is bound under a different method/prefix." if _allow
+                    else " (no Allow header returned, which itself violates HTTP)"))
+        return ProbeOutcome(verdict="fail", severity="P1", note=_note)
     if 500 <= status_code < 600:
         return ProbeOutcome(verdict="fail", severity="P1",
                             note=f"server error {status_code}")

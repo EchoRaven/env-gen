@@ -327,6 +327,9 @@ class RunHub:
                     body_excerpt=raw.get("body_excerpt", ""),
                     auth_required=bool(ep.get("auth_required")),
                     transport_error=raw.get("transport_error"),
+                    # #1001: hand over the headers #1000 preserved. Without this the
+                    # classifier cannot quote `Allow` and a 405 stays "unexpected status".
+                    headers=raw.get("headers"),
                 )
                 probe_record = {
                     "method": plan.method, "path": ep.get("path"), "url": plan.url,

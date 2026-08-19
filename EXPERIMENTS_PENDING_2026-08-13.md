@@ -18204,3 +18204,41 @@ rebased both on the highest existing ticket, which catches 4022 forever and neve
 editing again.
 
 Suite 6,782.
+
+### 410. #1001 — the classifier had no 405 branch, so a blocker was filed as P2 trivia
+
+#1000 kept the `Allow` header alive at capture. The immediate #994 question — *does the
+consumer see what the producer now emits?* — answered no. `classify_probe_result` took
+`status_code` and `body_excerpt` and had no 405 branch at all, so r162's blocker fell through
+to the catch-all:
+
+    return ProbeOutcome(verdict="fail", severity="P2", note=f"unexpected status {status_code}")
+
+**Two failures in one line.** `P2` is the lowest severity in the scheme, so a delivery blocker
+queued behind every P0 the backend lane already held. And the note carries no fact, which is
+the direct source of the dispatched task's wording — "reproduce POST /api/continue-watching
+returning 405" instead of showing it.
+
+Now:
+
+    405: the path exists but this METHOD is not bound — the app accepts [GET, HEAD]. Compare
+    that list against the route declaration; the handler is registered somewhere the app never
+    loaded, or is bound under a different method/prefix.
+
+at P1. That names the fact the worktree cannot yield: both files declare the POST and both
+look correct, so the only way to learn which methods the RUNNING app bound is to ask it, and
+it answers in every 405 it sends.
+
+★ #1000 and #1001 are one defect split across two layers, and fixing either alone accomplishes
+nothing — preserved evidence a consumer never reads, or a consumer reading a field that was
+discarded upstream. **This is the third time this session that a producer/consumer pair had to
+move together** (#993→#994 seed images, #995→its call sites, now this), and each time the
+second half was found by asking the same question rather than by another run.
+
+★★ The user's reframing is what produced both. *Opus 4.7 does not fail to fix a 405 seventeen
+times.* Reading that as "then the lane must be seeing something wrong" turned a hunt through
+application code into a walk up the evidence path — capture, classify, dispatch — and the
+defect was in the first two, four lines and one missing branch, both invisible from the
+symptom.
+
+Suite 6,790.
