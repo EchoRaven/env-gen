@@ -18242,3 +18242,38 @@ defect was in the first two, four lines and one missing branch, both invisible f
 symptom.
 
 Suite 6,790.
+
+### 411. station three: confirmed defect, unlocated code, and seven failed searches
+
+The evidence path for r162's 405 has three stations. Two are fixed and verified; the third is
+**proven defective but I could not find the line**, and that is worth recording precisely so
+the next pass does not repeat my approach.
+
+    ① capture    _UrllibResponse kept status_code only        #1000  fixed, 6 tests
+    ② classify   no 405 branch → "unexpected status" at P2    #1001  fixed, 8 tests
+    ③ dispatch   detail is `METHOD path → status`, no note    PROVEN, NOT LOCATED
+
+Station three is proven by the artifact, not inferred. The exact bytes from r162:
+
+    failed=['business_endpoints_reachable:GET /api/search → 500; GET /api/my-list → 500; …']
+
+Status codes and nothing else — so whatever #1001 now writes into `ProbeOutcome.note` does not
+reach the dispatched task through this field.
+
+★ **Seven searches, all empty**: the arrow character alone, the arrow with `join`, the arrow
+near `status_code`, `"; ".join`, `business_endpoints_reachable` in each module, `"detail":` in
+framework_validation, and the `f"{name}:{detail}"` composition shape. I announced after the
+fourth that I would stop guessing keywords and then guessed three more times. That is the
+brute-force reflex, and the tell was that each attempt was a new *string* rather than a new
+*method*.
+
+★★ The method that would work is not a search at all. `detail` arrives at the dispatcher as
+`c.get("detail")` from a check record, so **one line of instrumentation at that read — log the
+caller via `traceback.extract_stack()` — names the builder on the next run that fails a
+business endpoint.** Costs nothing, needs no guessing, and answers definitively. Left for r164
+rather than attempted now, because it only produces an answer when a run exercises it.
+
+★★★ Worth stating plainly: stations ① and ② stand on their own. `probe_record["note"]` now
+carries "the app accepts [GET, HEAD]" where r162 had that sentence nowhere in the system, and
+the verifier reads probe records directly. Station three would make the same fact travel one
+hop further, into the dispatched task body.
