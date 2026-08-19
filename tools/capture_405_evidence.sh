@@ -31,9 +31,23 @@ echo "[capture] waiting for a live backend for $RUN (up to ${MINS}m) -> $OUT"
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
   CID="$(podman ps --format '{{.Names}}' 2>/dev/null | grep -m1 backend || true)"
   if [ -n "$CID" ]; then
-    PORT="$(podman port "$CID" 2>/dev/null | head -1 | sed 's/.*://')"
+    # #1006a: pick the port the BACKEND answers on, not whatever `podman port` lists first.
+    # The first capture took head -1, got 3000 (a frontend mapping), and produced three 404s
+    # plus an empty openapi table — evidence that looked damning and meant nothing. An
+    # instrument that can silently probe the wrong service is worse than no instrument.
+    # Probe each mapped host port and keep the one that serves an openapi document.
+    PORT=""
+    for CAND in $(podman port "$CID" 2>/dev/null | sed 's/.*://' | sort -u); do
+      if curl -s -m 3 "http://localhost:/openapi.json" 2>/dev/null | head -c 40 | grep -q openapi; then
+        PORT="$CAND"; break
+      fi
+    done
+    if [ -z "$PORT" ]; then
+      PORT="$(podman port "$CID" 2>/dev/null | head -1 | sed 's/.*://')"
+      PORTNOTE=" (WARNING: no mapped port served /openapi.json — this may not be the API)"
+    fi
     {
-      echo "=== captured $(date '+%F %T')  container=$CID port=${PORT:-unknown}"
+      echo "=== captured $(date '+%F %T')  container=$CID port=${PORT:-unknown}${PORTNOTE:-}"
       echo
       echo "--- what it ACTUALLY serves"
       for M in OPTIONS POST GET; do
@@ -55,7 +69,7 @@ for x in k: print(f"    {x}: {sorted(p[x].keys())}")' 2>/dev/null
       echo "--- what is ON DISK inside the container (the decisive line)"
       podman exec "$CID" sh -lc \
         'grep -n "continue-watching" /app/main.py /app/custom_routes.py 2>/dev/null | head -8' \
-        2>/dev/null || echo "  (exec unavailable)"
+        2>&1 || echo "  (exec failed — see message above)"
     } > "$OUT" 2>&1
     echo "[capture] wrote $OUT"
     exit 0
