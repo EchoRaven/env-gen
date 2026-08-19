@@ -16981,3 +16981,39 @@ guard — the exact harm #784 was written to prevent, reintroduced by someone ti
 sweeps found real defects (#978, #979, #980); this one found a false positive I was one
 edit away from committing. Recording it so the next pass over this shape does not re-derive
 the same near-miss.
+
+### 374. r159 converged to two blockers, and both are the app's
+
+r159 is the longest run of the arc (230min+ and still going where r157 died at 133 and r158 at
+215) and its delivery gate has come down from r158's eight failed checks to **two**:
+
+    ['deliverability_ui_flow_failed', 'validation_ui_evidence_failed']
+
+Both are UI evidence, which pointed straight at the 18 `browser_fill` timeouts and 10
+`browser_navigate` failures in the harvest. Chased it:
+
+    ERR_CONNECTION_REFUSED at http://localhost:8081   x10
+    frontend publishes                                3000/tcp -> 0.0.0.0:8081
+
+The port is RIGHT. Connection refused means the stack was down at that instant — a concurrent
+lane `run_validation` (`down -v` → build → up) tearing the compose project out from under a
+walk already in flight. #963's single-flight lock covers smoke-vs-smoke only; the walk takes no
+lock at all. Real race, correctly diagnosed.
+
+★ And not the blocker. The walk SUCCEEDED repeatedly — `verdict=PASS` twice, `auth_ok=True`,
+15 captures, 62 ui_flow records — and the gate blocks on `ui_flow_**failed**`, not `_missing`.
+Evidence exists; it records failures. What it found is real application breakage:
+`blank=['player_page']`, `BROKEN: ['POST /api/continue-watching…']`,
+`console_errors=['browse_home_page…']`. **The gate is doing exactly its job.**
+
+★★ I nearly filed the race as the cause because 10 refused connections is a vivid number.
+The question that killed it was "did this ever SUCCEED?" — and it had, many times. A failure
+count means nothing until you know the success count beside it. Same family as trap #7
+(frequency is not severity) and #9 (the number may not measure what you think), and the third
+time this session that a confident reading was wrong in the same direction: **treating the
+loudest signal as the causal one.**
+
+The mid-walk teardown race is left unfixed on purpose. Fixing it means holding the smoke lock
+across a multi-minute browser walk, which would block the validation cycle that lanes depend
+on — a real cost, against a defect that costs some retries and blocks nothing. Recorded with
+the mechanism named so the next person does not re-derive it.
