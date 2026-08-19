@@ -44,7 +44,14 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
     done
     if [ -z "$PORT" ]; then
       PORT="$(podman port "$CID" 2>/dev/null | head -1 | sed 's/.*://')"
-      PORTNOTE=" (WARNING: no mapped port served /openapi.json — this may not be the API)"
+      # Warn on the CHOSEN port's behaviour, not on the search having failed. The first
+      # hardened capture printed "no mapped port served /openapi.json" and then printed a
+      # full openapi table three lines below — the probe loop had raced a container that was
+      # still binding, the fallback was correct, and the warning contradicted the evidence
+      # underneath it. A caveat that fires when nothing is wrong trains its reader to skip it.
+      if ! curl -s -m 5 "http://localhost:/openapi.json" 2>/dev/null | head -c 40 | grep -q openapi; then
+        PORTNOTE=" (WARNING: this port does not serve /openapi.json — it may not be the API)"
+      fi
     fi
     {
       echo "=== captured $(date '+%F %T')  container=$CID port=${PORT:-unknown}${PORTNOTE:-}"
