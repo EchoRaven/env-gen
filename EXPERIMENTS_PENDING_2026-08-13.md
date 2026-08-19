@@ -18123,3 +18123,36 @@ orchestrator step of "察觉 → 取消 → 重新驱动" that produced no progr
 still created duplicates. Seeing a list is not the same as noticing a match in it. Structured
 refusal at the point of creation is the only thing that closes that gap, and it is why keying
 on METHOD+PATH rather than asking the model to be more careful is the right shape.
+
+### 408. replaying real artifacts beats waiting for a run — and it misfired twice in ten minutes
+
+r163 cannot validate #997 or #998: it launched 13:02:30, they landed 13:16 and 13:29. So
+instead of waiting, I replayed each recent fix against artifacts the corpus already holds.
+
+    #997   every corpus DDL, 149 files          149 pass, 0 refused
+    #998   r163's own live task store           3 real duplicates, 3 refused, 0 missed
+    #993   the fixed emitter, 12 catalog rows   0 external URLs, 12 distinct, all data:
+    #994   those rows through #512              recognised as degenerate, upgraded to /assets/
+
+**#997's is the one that mattered.** It RAISES, so a single false positive aborts a run — and
+149 historical DDLs, every one of which booted a postgres, pass it untouched while the unit
+tests prove all three known-fatal spellings are caught.
+
+★ Then #992, and the technique misfired twice in ten minutes on one investigation:
+
+    first pass   grabbed every `|| 'x'` in every JSX  → 354 literals, incl. CSS colours and
+                 Tailwind class names → looked like a disaster
+    reality      the heal is gated by `_HEAL_EXPR`, which requires a MEMBER EXPRESSION on the
+                 left; I had measured a surface it never touches
+    second pass  replayed the real `_HEAL_OR` / `_HEAL_TERNARY_*` patterns → 1,991 candidates,
+                 58 rewritten, and most defensible
+
+`item.genre || 'Genre'` displays the word "Genre" as if it were the value — rewriting that to
+`'—'` is precisely the heal's purpose. `? 'Continue' : mode` was never a data fallback at all,
+which is what #992 fixed. **No defect.**
+
+★★ Item 391's trap, twice, inside one hour of applying the very technique that guards against
+it. What stopped it both times was the same question — *what does this code actually process?*
+— and the cost of not asking would have been a "fix" to a heal that is working. **A replay is
+only as good as the surface it replays against, and choosing that surface is the whole
+judgement.**
