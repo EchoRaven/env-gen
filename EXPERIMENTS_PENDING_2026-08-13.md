@@ -17532,3 +17532,37 @@ was never a property of the bugs; it was a property of the instruments** — and
 built three of them (#973 statement capture, #987 offset-aware cap, git-history recovery).
 
 Suite 6,670.
+
+### 390. the pin and the merge undo each other 60 times a run — measured, understood, not fixed
+
+Item 378 recorded the frontend tooling pin firing ~16 times per run and concluded "the lane
+keeps writing unpinned versions and the framework keeps restoring them". **That explanation
+was wrong**, and a contradiction between two separate measurements exposed it:
+
+    pin reports rewriting package.json      59x   (r160)
+    lane writes to package.json that SUCCEEDED   0x   — it is a FRAMEWORK-OWNED path, denied
+
+The lane cannot touch the file. So who keeps changing it?
+
+    per-tick worktree merges   61
+    pin firings                62
+
+One to one. `_merge_committed_agent_work` folds lane worktrees into the main tree each tick
+and carries an older `package.json` back over the pinned one; the pin, running after, re-pins
+it. **Two framework components undoing each other, sixty times a run** — the same shape #482
+records for `app/database/*.sql` ("the per-tick merge can DROP the working-tree copy").
+
+Not fixed, and the reason is measured rather than assumed: the pin always runs AFTER the
+merge, so the build always sees correct versions — r160 went its full 170 minutes with
+`docker_up failure causes: (none)`. The cost is 60 file writes and some log noise. Changing
+merge semantics to fix it risks the thing that currently works.
+
+★ Worth recording precisely BECAUSE it looks like a defect. Item 378 investigated it, produced
+a plausible story, and stopped. The story survived because I never asked the one question that
+would break it — "can the lane even write this file?" — and the answer had been sitting in the
+guard-rejection log the whole time.
+
+★★ Two measurements that disagree are worth more than either alone. Neither "the pin fires 59
+times" nor "package.json writes are denied" is interesting by itself; together they falsify a
+recorded conclusion. **This session's three biggest corrections (items 380, 387/388, this one)
+all came from a number that refused to fit the story, never from re-reading the story.**
