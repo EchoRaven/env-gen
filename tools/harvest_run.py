@@ -125,6 +125,14 @@ def harvest(run: str) -> dict:
 
 def _print(h: dict, against: dict | None = None) -> None:
     print(f"== {h['run']} — {h['lines']} lines, max silence {h['max_gap_s']}s at {h['max_gap_at']}")
+    # #381: report the DENOMINATOR. A sweep that silently examined nothing prints exactly
+    # the same clean result as one that examined everything and found nothing — and the
+    # difference is the whole value of the sweep. This session shipped a prompt check that
+    # reported "no problems" while resolving 0 of 13 templates, and only a denominator line
+    # caught it. Cheap here, load-bearing the day this file's log-name convention changes.
+    if h["lines"] < 50:
+        print(f"   WARNING: only {h['lines']} lines parsed — a clean result below may mean "
+              f"the log was empty or unreadable, not that nothing is wrong.")
     if h["double_logged"]:
         print("   NOTE: this log predates #975 — every line is emitted twice, so every\n         count below is 2x reality. Comparisons between two such runs still hold.")
 
@@ -183,6 +191,8 @@ def selftest() -> int:
         # flagged as double-logged; a false flag would tell a reader to halve
         # counts that are already correct
         assert h["double_logged"] is False
+        # #381: the tool must be able to tell "nothing found" from "nothing examined"
+        assert h["lines"] == 6, h["lines"]
         assert any("RuntimeError" in t for t, _ in h["exceptions"]), h["exceptions"]
         print("selftest OK")
         return 0
