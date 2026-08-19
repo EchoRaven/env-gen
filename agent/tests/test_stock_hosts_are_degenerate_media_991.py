@@ -57,6 +57,17 @@ def test_distinct_picsum_urls_are_degenerate():
     assert _field_is_degenerate(rows, "poster") is True
 
 
+def test_the_framework_placeholder_is_upgradeable():
+    """#994: #993's inline data-URI swatch renders with no network and no console error, but
+    a wall of flat rectangles is the "30 identical cards" look #512 exists to prevent. The
+    seed emitter is a pure function and cannot see the staged pool; #512 can. Marking the
+    placeholder degenerate is what lets the two meet."""
+    rows = _rows("data:image/svg+xml;utf8,%3Csvg%20a",
+                 "data:image/svg+xml;utf8,%3Csvg%20b",
+                 "data:image/svg+xml;utf8,%3Csvg%20c")
+    assert _field_is_degenerate(rows, "poster") is True
+
+
 def test_real_local_assets_are_left_alone():
     rows = _rows("/assets/posters/a.png", "/assets/posters/b.png", "/assets/posters/c.png")
     assert _field_is_degenerate(rows, "poster") is False

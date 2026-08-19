@@ -17824,3 +17824,36 @@ negative about the system. Same cause each time: **a query that cannot distingui
 there" from "nowhere to look."**
 
 Suite 6,732.
+
+### 399. #994 — asking #993's question before the run asked it
+
+#993 replaced the picsum seed with an inline `data:image/svg+xml` swatch: always renders, no
+network, no console error. Correct as a floor. Then I asked the question #993 had just taught
+me — **does the consumer see what the producer now emits?**
+
+    _field_is_degenerate(data-URI rows)  ->  False
+
+So #512 would skip them exactly as it skipped picsum, and the app would keep a wall of flat
+coloured rectangles forever. That is the "30 identical cards" look #512 exists to prevent, and
+the visual judge scores imagery richness.
+
+The two halves belong together and neither can do the other's job:
+
+    _seed_cell   pure function, no filesystem  → cannot know whether real posters are staged
+    #512         runs later, has the pool      → can, but only sees fields it calls degenerate
+
+Marking the placeholder degenerate is the wire between them: **self-contained by default,
+upgraded to real assets whenever the pool exists.**
+
+★ This is the first defect this session I caught BEFORE a run showed it, by applying the
+lesson from the previous fix rather than re-learning it. #993's whole content was "fixing a
+consumer never reaches a producer" — the symmetric question is "does the consumer accept the
+producer's new output", and it took one command to answer.
+
+★★ Worth noting what it would have cost otherwise: nothing would have failed. No console
+error, no gate blocker, no signature. The app would simply have looked worse, and the visual
+score would have drifted down with no line in any log saying why. **A fix that silently
+degrades quality leaves no trace to harvest** — which is exactly the kind of thing the
+harvest-driven loop cannot find, and the reason the question has to be asked at write time.
+
+Suite 6,733.

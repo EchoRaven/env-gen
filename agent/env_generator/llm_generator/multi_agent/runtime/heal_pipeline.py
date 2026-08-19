@@ -371,6 +371,19 @@ def _field_is_degenerate(rows, field) -> bool:
     #
     # Self-containment is right independent of this sandbox: a generated demo whose images
     # need the public internet is broken offline too.
+    # #994: a FRAMEWORK PLACEHOLDER is degenerate too. #993 made the seed emit an inline
+    # `data:image/svg+xml` swatch so the app renders with no network and no console error —
+    # correct as a floor, but a wall of flat rectangles is exactly the "30 identical cards"
+    # look #512 exists to prevent, and the visual judge scores imagery richness.
+    #
+    # `_seed_cell` is a pure function with no filesystem access, so it CANNOT know whether
+    # real posters are staged; #512 runs later and can. Marking the placeholder degenerate is
+    # what connects them: self-contained by default, upgraded to real assets whenever the
+    # pool exists. Asked proactively this time — #993's lesson was that a producer and its
+    # consumer have to be checked together, and here the consumer would have skipped the
+    # placeholder exactly as it skipped picsum.
+    if sum(1 for v in nonempty if v.startswith("data:image/")) >= max(1, len(nonempty) // 2):
+        return True
     if sum(1 for v in nonempty if _STOCK_HOST_991.search(v)) >= max(1, len(nonempty) // 2):
         return True
     if not all(_looks_like_image_ref(v) for v in nonempty):
