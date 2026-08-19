@@ -16881,3 +16881,37 @@ Both times the test was wrong and the code was right, which is the safer directi
 in, but only because I checked instead of "fixing" the code to satisfy a bad assertion.
 
 Suite 6,582.
+
+### 371. #979 — a landmine found by looking for #970's shape somewhere else
+
+Second class sweep of the session. #970 was "a scanner that counts LINES where generated source
+does not respect lines". Asking where else that assumption lives found
+`backend_scaffold`'s router repair:
+
+    lines[last_import + 1:last_import + 1] = ["", "from fastapi import APIRouter", ...]
+
+where `last_import` is the last line starting with `import `/`from `. **26 of the corpus's
+generated `custom_routes.py` end their imports with an unclosed `from models import (`** — so
+the insertion lands INSIDE the parentheses and the backend dies on a SyntaxError.
+
+Python cannot be minified the way JSX was, so #970's exact hazard does not apply here; the
+parenthesised continuation is the same rule failing for a different reason. The fix is the
+same sentence in both places: **follow statements, not lines.**
+
+★ Latent, not observed — the repair only fires when a file uses `router.` without defining it.
+That is what makes it worth pre-empting rather than waiting for: it triggers in an
+already-broken state, so the SyntaxError it introduces would read as the lane's own mistake,
+and the lane would be asked to fix code the framework had just corrupted.
+
+Reachability was measured before writing anything (26 of the corpus files carry the exact
+shape, listed by run), because "could happen" is not a reason to change code and the corpus
+was right there.
+
+★★ The suite then caught my own test. `#923`'s guard —
+`test_no_span_locator_ends_on_a_bare_delimiter` — failed on my `out.index(")")`, a naked
+delimiter as an anchor. It was right: the first `)` in a file is wherever the file happens to
+put it. Re-anchored on the import block's own closing line. **A guard test written three
+hundred items ago caught a fresh mistake in a test written to catch a fresh mistake** — which
+is the whole argument for keeping meta-tests that only ever fail on your own work.
+
+Suite 6,590.

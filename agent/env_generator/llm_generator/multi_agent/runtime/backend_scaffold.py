@@ -248,6 +248,25 @@ def repair_custom_routes_router_prologue(backend_dir) -> Dict[str, object]:
         lines = src.split("\n")
         last_import = max((i for i, l in enumerate(lines)
                            if l.startswith("import ") or l.startswith("from ")), default=-1)
+        # #979: land after the last import STATEMENT, not the last import LINE. 26 of the
+        # corpus's custom_routes.py end their imports with an unclosed `from models import (`
+        # — inserting at line+1 puts `router = APIRouter()` INSIDE the parentheses, a
+        # SyntaxError that kills the backend outright. Same shape as #970 one language over:
+        # there the generated source was minified, here it is parenthesised, and both break a
+        # rule that counts lines instead of statements.
+        #
+        # Latent rather than observed: the repair only runs when the file USES `router.`
+        # without defining it, which is rare. It is a landmine precisely because it fires in
+        # an already-broken state, where a SyntaxError reads as the lane's own fault.
+        if last_import >= 0:
+            _bal = 0
+            for _i in range(last_import, len(lines)):
+                _bal += lines[_i].count("(") - lines[_i].count(")")
+                if _bal <= 0:
+                    last_import = _i
+                    break
+            else:
+                last_import = len(lines) - 1
         lines[last_import + 1:last_import + 1] = [
             "", "from fastapi import APIRouter", "router = APIRouter()", ""]
         p.write_text("\n".join(lines), encoding="utf-8")
