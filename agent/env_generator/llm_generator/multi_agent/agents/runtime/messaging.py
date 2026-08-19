@@ -850,6 +850,27 @@ Answer directly without using tools."""
     async def _handle_issue(self, message: BaseMessage) -> None:
         """Handle an issue reported by another agent."""
         from_agent = message.header.source_agent_id
+        # #985: a bridged event carries the HUB as its sender (bridge.py stamps
+        # source_agent_id=event["source_hub"]), and the real author sits in the payload's
+        # `from`. #976 stopped the delivery ACK going to a hub; this path is worse than the
+        # ack — `_send_runtime_status_update(to_agent=from_agent)` misroutes, and the fix
+        # prompt below literally instructs the model to `send_message(to_agent="messagebus")`
+        # when it is done, so the completion report never reaches the lane that raised the
+        # issue. r160 caught one live: verifier "Received issue from messagebus:
+        # {'from': 'backend', 'to': 'verifier', …}".
+        #
+        # Prefer the payload's author over suppressing anything: the reply then lands on the
+        # lane that actually asked, which is strictly better than a silenced warning.
+        try:
+            if from_agent and from_agent not in set(
+                    (self._external_bus.list_agents() if self._external_bus else []) or []):
+                _p = message.payload
+                _real = (_p.get("from") if isinstance(_p, dict)
+                         else (message.metadata or {}).get("from"))
+                if _real:
+                    from_agent = str(_real)
+        except Exception:
+            pass
         issue_content = message.payload if isinstance(message.payload, str) else str(message.payload)
         context = message.metadata.get("context", {})
         severity = context.get("severity", "error")

@@ -17269,3 +17269,35 @@ internal-representation leaks (which corrected #984), self-heal frequency, dict-
 messages, ghost tools in prompts. **Two produced fixes, one produced a correction, three are
 now known-clean** — and "known-clean" is the point: it is a different state from "unexamined",
 and only one of them can be inherited by the next session.
+
+### 382. #985 — the harvester caught a gap in my own fix, three hours later
+
+r160's harvest flipped `#976 receipt to a hub` from 0 to **1**. #976 landed at 01:03, r160
+started at 04:06, so the run had the fix and leaked anyway. The one occurrence:
+
+    [verifier] Received issue from messagebus: {'from': 'backend', 'to': 'verifier', …}
+    [W] MessageBus: Target agent not found: messagebus
+
+#976 guarded `_send_delivery_ack`. This is `_handle_issue`, a different path — and a worse
+failure than the one I fixed. It takes `from_agent = message.header.source_agent_id`, which
+the bridge sets to the source HUB, and then:
+
+    _send_runtime_status_update(to_agent=from_agent)     → routed at a non-agent
+    "## Issue Reported by {from_agent}"                  → written into the fix prompt
+    'When fixed, use send_message(to_agent="messagebus")' → the model is TOLD to reply there
+
+So the completion report never reaches the lane that raised the issue. #976's case was a
+courtesy receipt nobody needed; this one silently drops the answer to a real question.
+
+★ The fix is not another suppression. The payload carries the real author — `'from':
+'backend'` — so when the header names something the bus does not know, use it. The reply then
+lands on the lane that asked, which is strictly better than a silenced warning. **I had the
+right data in front of me during #976 and reached for "don't send" instead of "send it to the
+right place."**
+
+★★ What makes this the loop working rather than a miss: the signature I added for #976 is
+what caught it. A fix without a named signature would have shipped, looked complete, and left
+this path leaking indefinitely — nobody re-reads a closed item. **The regression signature is
+worth as much as the fix, and costs a line.**
+
+Suite 6,640.
