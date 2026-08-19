@@ -18514,3 +18514,38 @@ Four catches by a guard written long before today is a strong argument that the 
 more than the tests it rejects.
 
 Suite 6,818.
+
+### 419. what verifies the OTHER unfixable files — audited, and one measured-not-fixed
+
+The user's point generalises past main.py: **nine framework-owned backend files are unfixable
+by any lane**, so each needs verification proportional to that. Audited what exists:
+
+    all 9        syntax        #995's write guard (added today)
+    main.py      structural    served_routes, duplicated_routes, #1006
+    models.py    structural    #997's DDL invariants
+    the other 7  structural    NOTHING
+
+Before building seven verifiers, measured whether the seven actually fail. Across
+r161–r164 in failure contexts:
+
+    auth_dependency.py  14      database.py  4      oauth_routes.py  4
+    jwt_manager.py       0      oauth_store.py 0    schemas.py 0    seed_data.py 0
+
+`auth_dependency.py` leads, so I chased it. Eight of the fourteen are
+`read: path not found: app/backend/auth_dependency.py` — the lane reading a file the prompt
+asserts exists, in bold: *"BEFORE writing any custom_routes handler that needs the caller,
+`read` app/backend/auth_dependency.py **(it is already on disk)**"*.
+
+★ It looked like #1004's class again — the framework asserting something untrue to a lane. It
+is not. `write_oauth_as` runs unconditionally, so the file IS created; the reads that fail are
+**once per run, early** (r161 line 3,739/39,194; r162 line 3,449/22,921) and **zero in r163
+and r164**. That is a worktree-sync race — #971's shape — that resolves itself before it
+matters. One wasted tool call per run, self-healing.
+
+**Measured, not fixed.** Item 393's rule: harm first, then repair. Recorded so the next reader
+does not re-derive it — the 14-occurrence count looks alarming until you see that six are
+write-denials (#1004's class, already fixed) and eight are one early race.
+
+★★ The seven unverified files stay unverified, deliberately. Building structural checks for
+files that have never failed would be seven plausible stories attached to zero evidence, which
+is exactly the churn item 414 talked me out of an hour ago.
