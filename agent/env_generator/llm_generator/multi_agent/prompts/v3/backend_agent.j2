@@ -194,10 +194,10 @@
             "actions": [
                 "check_inbox(limit=20)  # see the issue event with PR=42",
                 "codehub_list_inline_comments(pr_id=42)  # exact file:line + body for each comment",
-                "# fix the EXACT lines cited:",
-                "edit(file_path='app/backend/main.py', old_string='db.query(Post).all()', new_string='db.query(Post).filter(Post.user_id == user[\"id\"]).all()')",
-                "edit(file_path='app/backend/main.py', old_string='db.query(User).delete()', new_string='# preserve users mirror + tenants on tenant-scoped reset')",
-                "lint(file_path='app/backend/main.py')",
+                "# fix the EXACT lines cited. NOTE: app/backend/main.py is FRAMEWORK-OWNED and your writes to it are DENIED — the projected handler there is a reachability stub. Implement the real handler in custom_routes.py, which main.py already discovers and includes:",
+                "edit(file_path='app/backend/custom_routes.py', old_string='db.query(Post).all()', new_string='db.query(Post).filter(Post.user_id == user[\"id\"]).all()')",
+                "edit(file_path='app/backend/custom_routes.py', old_string='db.query(User).delete()', new_string='# preserve users mirror + tenants on tenant-scoped reset')",
+                "lint(file_path='app/backend/custom_routes.py')",
                 "codehub_commit(message='fix(backend): scope list_posts by user; preserve mirror on reset')",
                 "# commit on same PR auto-notifies reviewers — no separate tool call",
                 "finish(notify=['verifier'])"

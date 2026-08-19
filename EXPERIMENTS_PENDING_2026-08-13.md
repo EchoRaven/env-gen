@@ -18404,3 +18404,36 @@ and this one is not even about information quality — the instruction was *accu
 written, and impossible to obey.
 
 Suite 6,803.
+
+### 416. #1005 — the prompt taught the impossible edit, in both versions
+
+#1004 fixed one remediation message pointing the backend lane at `app/backend/main.py`. The
+obvious next question — *where else does the framework instruct a lane?* — is the prompts, and
+the backend lane's own worked example was worse than the remediation:
+
+    "scenario": "Verifier reports issue on PR #42: 'list_posts: no tenant scoping…'"
+    "actions": ["edit(file_path='app/backend/main.py', old_string='db.query(Post).all()', …)",
+                "edit(file_path='app/backend/main.py', old_string='db.query(User).delete()', …)"]
+
+That is the canonical "here is how you do your job" demonstration, and every edit in it is
+structurally denied. The framework's own projector states where the work belongs —
+*"the lane implements the real handler in custom_routes.py"* (route_projector:1698) — so the
+projected handler in main.py is a reachability stub, never the place to fix logic.
+
+★ **And I fixed the wrong file first, again.** v3 is what `agents_config` selects, so I edited
+v3 and re-swept — still two offenders, in `v4/backend_agent.j2`, unreferenced but carrying the
+identical example. That is #1000 → #1003 (fixing a sibling transport and believing the class
+closed) repeating **one turn after I wrote the lesson down**. The test now ignores versions
+entirely and sweeps every `*.j2` on disk, because a version-scoped test would pass today and
+the defect would return on cutover.
+
+★★ Worth noting what made v4 findable: the re-sweep after the fix. I ran the same query again
+instead of assuming the edit had settled it — the cheapest possible habit, and the only reason
+this is one item instead of two.
+
+★★★ Three defects today from the user's reframing, and they escalate: #1000/#1003 dropped the
+evidence, #1004 named an unwritable file in one message, #1005 **taught** the unwritable edit
+as the worked example. The last is the most damaging and the least visible — a lane following
+its own instructions correctly, failing, and being re-dispatched seventeen times.
+
+Suite 6,809.
