@@ -58,11 +58,30 @@ def test_a_string_payload_does_not_crash():
     assert _resolve("messagebus", "plain text issue", ["backend"]) == "messagebus"
 
 
+def test_the_question_path_resolves_too():
+    """#986: `_handle_question` had the identical defect — the ANSWER went to the hub.
+    Found by enumerating every use of header.source_agent_id instead of waiting for a
+    third run to catch it."""
+    src = inspect.getsource(messaging)
+    i_q = src.index("async def _handle_question")
+    i_resolve = src.index("_real_author_985(message, message.header.source_agent_id)", i_q)
+    i_send = src.index("_send_answer(from_agent", i_q)
+    assert i_resolve < i_send, "the answer must be addressed after resolution"
+
+
+def test_all_three_reply_paths_are_covered():
+    """#976 (ack), #985 (issue), #986 (question). A fourth would mean the helper was added
+    and not used."""
+    src = inspect.getsource(messaging)
+    assert src.count("_real_author_985(") >= 3, "helper defined and used on both reply paths"
+
+
 def test_the_handler_resolves_before_it_uses_from_agent():
     """Ordering: the fix prompt and the status update both interpolate from_agent, so the
     resolution has to happen above them or it fixes nothing."""
     src = inspect.getsource(messaging)
-    i_resolve = src.index("#985: a bridged event carries the HUB as its sender")
+    i_issue = src.index("async def _handle_issue")
+    i_resolve = src.index("_real_author_985(message, from_agent)", i_issue)
     i_status = src.index("to_agent=from_agent", i_resolve)
     i_prompt = src.index("Issue Reported by {from_agent}", i_resolve)
     assert i_resolve < i_status < i_prompt

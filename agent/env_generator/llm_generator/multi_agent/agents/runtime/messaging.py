@@ -781,7 +781,7 @@ class AgentMessaging:
 
     async def _handle_question(self, message: BaseMessage) -> None:
         """Handle a question from another agent."""
-        from_agent = message.header.source_agent_id
+        from_agent = self._real_author_985(message, message.header.source_agent_id)
         question = message.payload if isinstance(message.payload, str) else str(message.payload)
         context = message.metadata.get("context", {})
         question_id = context.get("question_id", message.header.message_id)
@@ -847,30 +847,37 @@ Answer directly without using tools."""
             self._pending_questions[question_id].set_result(answer)
             self._logger.info(f"[{self.agent_id}] Received answer for question {question_id[:8]}")
 
+    def _real_author_985(self, message, header_sender: str) -> str:
+        """#985/#986: a bridged event carries the HUB as its sender — bridge.py stamps
+        ``source_agent_id=event["source_hub"]`` — and the real author sits in the payload's
+        ``from``. Any handler that REPLIES to the sender must resolve it first, or the reply
+        goes to something the bus has never heard of.
+
+        #976 suppressed the delivery ACK in that situation. That was the weakest of the three
+        paths: the ack is a courtesy nobody reads. These two lose real traffic — `_handle_issue`
+        misroutes the completion report AND tells the model to send its own follow-up to the
+        hub, and `_handle_question` misroutes the ANSWER. Prefer the payload's author over
+        suppressing: the reply then lands on the lane that actually asked.
+
+        Kept as one method because this is the third site; the first two were found three
+        hours apart by a live run each time.
+        """
+        try:
+            if header_sender and header_sender not in set(
+                    (self._external_bus.list_agents() if self._external_bus else []) or []):
+                _p = getattr(message, "payload", None)
+                _real = (_p.get("from") if isinstance(_p, dict)
+                         else (getattr(message, "metadata", None) or {}).get("from"))
+                if _real:
+                    return str(_real)
+        except Exception:
+            pass
+        return header_sender
+
     async def _handle_issue(self, message: BaseMessage) -> None:
         """Handle an issue reported by another agent."""
         from_agent = message.header.source_agent_id
-        # #985: a bridged event carries the HUB as its sender (bridge.py stamps
-        # source_agent_id=event["source_hub"]), and the real author sits in the payload's
-        # `from`. #976 stopped the delivery ACK going to a hub; this path is worse than the
-        # ack — `_send_runtime_status_update(to_agent=from_agent)` misroutes, and the fix
-        # prompt below literally instructs the model to `send_message(to_agent="messagebus")`
-        # when it is done, so the completion report never reaches the lane that raised the
-        # issue. r160 caught one live: verifier "Received issue from messagebus:
-        # {'from': 'backend', 'to': 'verifier', …}".
-        #
-        # Prefer the payload's author over suppressing anything: the reply then lands on the
-        # lane that actually asked, which is strictly better than a silenced warning.
-        try:
-            if from_agent and from_agent not in set(
-                    (self._external_bus.list_agents() if self._external_bus else []) or []):
-                _p = message.payload
-                _real = (_p.get("from") if isinstance(_p, dict)
-                         else (message.metadata or {}).get("from"))
-                if _real:
-                    from_agent = str(_real)
-        except Exception:
-            pass
+        from_agent = self._real_author_985(message, from_agent)
         issue_content = message.payload if isinstance(message.payload, str) else str(message.payload)
         context = message.metadata.get("context", {})
         severity = context.get("severity", "error")

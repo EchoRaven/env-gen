@@ -17301,3 +17301,36 @@ this path leaking indefinitely — nobody re-reads a closed item. **The regressi
 worth as much as the fix, and costs a line.**
 
 Suite 6,640.
+
+### 383. #986 — asking "who else does this" caught the third path before a run did
+
+Immediately after #985, enumerated every use of `header.source_agent_id` in the messaging
+layer instead of waiting for another run. Three reply paths existed, not two:
+
+    _send_delivery_ack   #976   suppressed the ack        — a courtesy nobody reads
+    _handle_issue        #985   misrouted the report      — AND told the model to reply there
+    _handle_question     #986   misrouted the ANSWER      — found by enumeration
+
+`_handle_question` is as bad as `_handle_issue`: `_send_answer(from_agent, …)` addresses the
+hub, and `_generate_answer`'s prompt opens "Another agent (messagebus) is asking you a
+question". A question arriving through the bridge never gets its answer back.
+
+Two other `source_agent_id` uses were checked and left alone: line 695 feeds
+`_upstream_ready_agents` (a set membership test — a stray hub name is inert) and the rest are
+log lines.
+
+The three now share one resolver rather than three copies, because this was the third time
+and there is no reason to believe a fourth handler will not appear.
+
+★ Cost comparison, which is the point: #976 and #985 were each found by a live run, three
+hours apart, and #985 only because #976 had left a named signature behind. #986 took one grep
+and four minutes. **The enumeration was available the entire time — the first two just did not
+prompt me to run it.** Finding a defect is not the same as finding its class, and only the
+second one ends the sequence.
+
+★★ Also worth stating plainly: #976 chose "don't send" when the payload had the right
+recipient sitting in it. That decision looked complete, passed its tests, earned a signature —
+and was the weakest of the three fixes. **Suppressing a symptom passes the same tests as
+routing it correctly.**
+
+Suite 6,642.
