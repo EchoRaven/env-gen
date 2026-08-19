@@ -17763,3 +17763,33 @@ beside them — obvious once stated, missed four times (#970, #988, #991, here),
 test every time rather than by reading.
 
 Suite 6,712.
+
+### 397. the class #992 belongs to has four members, and only one was broken
+
+After #992, swept for its class: **a shape heuristic driving a destructive decision.** First
+attempt scanned `repair_*` function bodies and found nothing — because the heuristic lives in
+a HELPER (`_is_fabricated_fallback_literal`), not in the repair. **Third time this session an
+enumeration missed its target to indirection** (#980's direct-call sweep, #992's allowlist
+placement, this). Redone as "any boolean-returning function whose body uses
+`isupper/isalpha/isdigit/istitle`":
+
+    frontend_audit._is_fabricated_fallback_literal   REWRITES CODE      → broken (#992)
+    chain_executor._is_bare_self_scoped_read  (#580) relaxes a demand   → sound
+    frontend_scaffold._is_profiles_page       (#495) detects page type  → sound
+    test_user_runner._seed_value_ok                  filters probe data → sound
+
+Only one drives a rewrite, and it is the one that was broken.
+
+★ The instructive part is WHY the other three are sound. #495's docstring says it is "keyed on
+the PLURAL `profiles` collection … **so it does NOT match** a [singular profile page]" — the
+author names the near-miss he avoided. #580 explains what would be "unsatisfiable by
+construction" if the rule were wider. `_seed_value_ok` states which inputs it deliberately
+drops and why.
+
+**The one that broke is the one whose docstring described only what it catches.** Its comment
+reads `# proper-noun default (Hotel, Place)` — the positive case, no boundary. Four samples is
+not a law, but the correlation is exactly what you would predict: writing down the thing you
+are NOT trying to match is what forces you to check whether you match it.
+
+No new defects. Recorded because "swept, four members, three sound" is inheritable and
+"nobody looked at heuristic-driven rewrites" is not.
