@@ -486,7 +486,20 @@ class RunHub:
                         plan.url,
                         e,
                     )
+                # #1000: carry the response HEADERS to the verdict. A 405 without its
+                # `Allow` header is a number the lane has to reproduce; with it, the lane is
+                # told which methods the running app bound. r162 spent 17 tasks on one 405
+                # because every layer downstream — the smoke verdict, the verifier's
+                # paraphrase, the orchestrator's dispatch — was working from a bare integer.
+                _hdrs = {}
+                try:
+                    for _k, _v in dict(getattr(resp, "headers", {}) or {}).items():
+                        if str(_k).lower() in ("allow", "content-type", "location", "www-authenticate"):
+                            _hdrs[str(_k).lower()] = str(_v)[:200]
+                except Exception:
+                    pass
                 return {"status_code": resp.status_code, "body_excerpt": body,
+                        "headers": _hdrs,
                         "transport_error": None, "latency_ms": latency}
             except Exception as e:
                 kind = type(e).__name__.lower()

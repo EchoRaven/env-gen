@@ -151,8 +151,19 @@ class HealthcheckProbe:
 
 
 class _UrllibResponse:
+    # #1000: keep the HEADERS, not just the number.
+    #
+    # A 405 is REQUIRED by HTTP to carry `Allow:` naming the methods the server does accept —
+    # the single fact that answers "which methods did this app actually bind for this path".
+    # r162 died on `POST /api/continue-watching returns 405`, static analysis of the worktree
+    # came back clean on every line, and the header that would have settled it was discarded
+    # here, in four lines, at the moment of capture.
     def __init__(self, raw):
         self.status_code = getattr(raw, "status", getattr(raw, "code", 0))
+        try:
+            self.headers = dict(getattr(raw, "headers", {}) or {})
+        except Exception:
+            self.headers = {}
 
 
 __all__ = ["ComposeLifecycle", "ComposeResult", "HealthcheckProbe", "HealthcheckResult"]

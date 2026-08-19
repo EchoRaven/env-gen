@@ -18156,3 +18156,51 @@ it. What stopped it both times was the same question — *what does this code ac
 — and the cost of not asking would have been a "fix" to a heal that is working. **A replay is
 only as good as the surface it replays against, and choosing that surface is the whole
 judgement.**
+
+### 409. #1000 — the user's reframing was right, and it pointed at four lines
+
+The prompt that changed the search: *the generator is Opus 4.7, so a bug that will not die is
+probably not a capability problem — it is a framework bug, a prompt problem, a task-assignment
+problem, or information the agent never received.*
+
+Applied to r162's terminal blocker — one failed task, `POST /api/continue-watching returns
+405`, which spawned 17 tasks (#998) and was never fixed — the question becomes: **what did the
+backend lane actually see?** Its task description, in full, is 485 characters of instructions:
+
+    Investigate root cause first: REPRODUCE POST /api/continue-watching returning 405 while
+    GET on same path works; COMPARE route registration/projection and request contract…
+
+No status line, no response body, no headers, no route table. The lane is told to reproduce an
+observation the framework had already made. The verifier's originating report is 147 characters
+and equally evidence-free.
+
+★ Traced upstream to the capture point, and it is four lines:
+
+    class _UrllibResponse:
+        def __init__(self, raw):
+            self.status_code = getattr(raw, "status", getattr(raw, "code", 0))
+
+**HTTP requires every 405 to carry `Allow:` naming the methods the server does accept** — the
+exact fact that says which methods the RUNNING app bound, and the one thing static analysis
+could not recover. I had checked four static lines of inquiry (route declared in both files,
+router included, broken imports logged, image rebuilt 11×) and all came back clean, because
+the answer was never in the worktree. It was in a response header that a wrapper discarded at
+the moment of capture, before any paraphrase chain even began.
+
+#1000 keeps the headers in both transports and forwards `allow` / `content-type` / `location` /
+`www-authenticate` into the probe verdict — bounded, because a probe result gets quoted into
+task descriptions and must not become a header dump.
+
+★★ This is the deepest instance of the session's running class. #973/#978/#981/#982/#983/#987
+were all "the report names the failure but not the instance". This one is a layer below:
+**the instance was never captured, so no amount of fixing the reporting could have surfaced
+it.** Six diagnostics fixed downstream of a wrapper that had already thrown the evidence away.
+
+★★★ Collateral, and a small joke at the project's expense: numbering this #1000 turned two
+allocator tests red — `assert 800 < int(out) < 1000`. The guard's own docstring says it exists
+because "v1 answered 4022", so its PURPOSE is catching a parser blowout, not asserting the
+project has fewer than a thousand fixes. An absolute ceiling encoded a fact that expired;
+rebased both on the highest existing ticket, which catches 4022 forever and never needs
+editing again.
+
+Suite 6,782.

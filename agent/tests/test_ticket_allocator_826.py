@@ -28,6 +28,26 @@ import pytest
 
 
 _TOOL = pathlib.Path(__file__).resolve().parents[2] / "tools" / "ticket.sh"
+
+
+def _highest_existing_ticket() -> int:
+    """The largest ticket number this repo already carries.
+
+    #1000: the ceiling used to be the literal 1000, chosen when tickets sat in the 800s. The
+    guard's PURPOSE — documented below as "v1 answered 4022" — is to catch a parser blowout,
+    not to assert the project has fewer than a thousand fixes. It reached a thousand, the
+    absolute bound went stale, and a correct allocation of 1001 turned two tests red.
+
+    A relative bound keeps the intent and never expires: 4022 fails it forever, 1001 passes
+    it the day #1000 lands.
+    """
+    import re as _re
+    top = 0
+    for _p in (pathlib.Path(__file__).resolve().parent).glob("*_[0-9]*.py"):
+        _m = _re.search(r"_(\d{3,5})\.py$", _p.name)
+        if _m:
+            top = max(top, int(_m.group(1)))
+    return top
 _ROOT = _TOOL.parent.parent
 
 
@@ -55,7 +75,13 @@ def test_it_reports_a_plausible_next_number():
     """Non-vacuity with a ceiling: v1 answered 4022, which is the failure this guards."""
     out = _run().stdout.strip()
     assert out.isdigit(), out
-    assert 800 < int(out) < 1000, f"implausible next ticket: {out}"
+    # #1000: bound RELATIVE to what the repo already carries, not to a literal ceiling. The
+    # old `< 1000` was chosen when tickets sat in the 800s; the project reached 1000 and the
+    # bound went stale, failing a correct allocation of 1001. The purpose stated above —
+    # catching the v1 answer of 4022 — survives intact and now never expires.
+    _top = _highest_existing_ticket()
+    assert _top > 0, "no numbered tests found; this guard would be vacuous"
+    assert _top < int(out) <= _top + 10, f"implausible next ticket: {out} (highest={_top})"
 
 
 @pytest.mark.parametrize("n", ["817", "820", "822", "823"])

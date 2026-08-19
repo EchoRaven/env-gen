@@ -26,6 +26,7 @@ Every case drives the real script through `TICKET_LEDGER`, so the suite never to
 `.tickets` (#834 — a test with a side effect on a repo artifact makes the artifact untrustworthy).
 """
 import pathlib
+import re
 import subprocess
 
 import pytest
@@ -56,7 +57,18 @@ def test_a_clean_allocation_still_returns_a_bare_number(tmp_path):
     p = _run(tmp_path, [846])
     assert p.returncode == 0, p.stderr
     assert p.stdout.strip().isdigit(), repr(p.stdout)
-    assert 800 < int(p.stdout) < 1000, p.stdout
+    # #1000: relative to what the REPO carries. `_run` seeds a synthetic ledger in tmp_path
+    # but invokes the allocator with cwd=_ROOT, so the answer is correctly driven by the real
+    # ticket set — 1001 today. The old `< 1000` was a literal ceiling chosen when tickets sat
+    # in the 800s; it went stale the day #1000 landed and failed a correct allocation. The
+    # guard's purpose (the sibling test records v1 answering 4022) survives and never expires.
+    _top = 0
+    for _p in pathlib.Path(__file__).resolve().parent.glob("*_[0-9]*.py"):
+        _m = re.search(r"_(\d{3,5})\.py$", _p.name)
+        if _m:
+            _top = max(_top, int(_m.group(1)))
+    assert _top > 0, "no numbered tests found; this guard would be vacuous"
+    assert _top < int(p.stdout) <= _top + 10, f"{p.stdout} (highest={_top})"
 
 
 def test_a_quoted_number_does_not_become_the_high_water_mark(tmp_path):
