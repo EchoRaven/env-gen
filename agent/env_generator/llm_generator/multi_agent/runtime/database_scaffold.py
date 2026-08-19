@@ -233,7 +233,10 @@ _INLINE_UNIQUE_RE = re.compile(r"\bunique\b", re.IGNORECASE)
 # promoted below; ``\bnot\s+null\b`` deliberately does NOT match it, so the two cannot collide.
 _INLINE_NULLABLE_RE = re.compile(r"\bnullable\b", re.IGNORECASE)
 # #988: a trailing `?` in a TYPE position is the optional/nullable marker.
-_OPTIONAL_SUFFIX_988 = re.compile(r"\s*\?\s*$")
+# The marker terminates the TYPE TOKEN, which is not always the end of the string:
+# r160 shipped both `integer?` and `integer? DEFAULT 0`. Requires a word char before
+# and whitespace-or-end after, so `varchar(3?)` is left alone.
+_OPTIONAL_SUFFIX_988 = re.compile(r"(?<=\w)\s*\?(?=\s|$)")
 _INLINE_REFERENCES_RE = re.compile(
     r"\breferences\s+(\w+)\s*(?:\(\s*(\w+)\s*\)|\.\s*(\w+))", re.IGNORECASE
 )

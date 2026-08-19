@@ -25,15 +25,30 @@ from env_generator.llm_generator.multi_agent.runtime.database_scaffold import (
     _promote_inline_modifiers, _sql_type)
 
 
+# The three shapes recovered from r160's git history (commit ea94bce, the pre-heal
+# 01_init.sql that postgres rejected):
+#     "duration_minutes" integer?,
+#     "seasons_count"    integer? DEFAULT 0,
+#     "logo_url"         string?,
 @pytest.mark.parametrize("raw,expected", [
     ("integer?", "INTEGER"),
     ("text?", "TEXT"),
     ("integer ?", "INTEGER"),
     ("boolean?  ", "BOOLEAN"),
+    ("string?", "TEXT"),
 ])
 def test_the_marker_never_reaches_sql(raw, expected):
     assert "?" not in _sql_type(raw)
     assert _sql_type(raw).upper() == expected
+
+
+def test_the_marker_can_terminate_a_token_mid_string():
+    """r160 line 77: `integer? DEFAULT 0`. The first version of this fix only stripped a `?`
+    at the END of the whole string and silently missed this one — caught by replaying the
+    real DDL rather than the three shapes I had imagined."""
+    assert "?" not in _sql_type("integer? DEFAULT 0")
+    assert _promote_inline_modifiers(
+        {"name": "seasons_count", "type": "integer? DEFAULT 0"}).get("nullable") is True
 
 
 def test_a_plain_type_is_untouched():

@@ -17462,3 +17462,37 @@ thing.**
 ★★ The tell was identical in both cases: I reached for the corpus to CONFIRM something I had
 already committed. That impulse is the whole mechanism — the check is worthless if you only
 run it when you expect it to pass, and it is cheapest exactly when you are most sure.
+
+### 388. correcting the correction — the `?` is proven, and #988 was incomplete
+
+Item 387 retracted #988's rationale because 11,742 corpus columns held no `?`-suffixed type.
+**That retraction was wrong.** The generated project is a git repo, and the pre-heal DDL is
+still in it — `git show ea94bce:app/database/init/01_init.sql`:
+
+    76:    "duration_minutes" integer?,
+    77:    "seasons_count" integer? DEFAULT 0,
+    81:    "logo_url" string?,
+
+`duration_minutes` at character 255, exactly as the offset said. The original inference was
+right; the retraction used the wrong instrument. **Contracts store the NORMALISED column type,
+so the `?` never appears there — it exists at the DDL rendering stage, which is why three
+sessions of searching artifacts and contracts found nothing.**
+
+★ So the sequence was: inference (right) → refutation by a check of the wrong surface (wrong)
+→ proof from git history (right). Item 387's closing line — "only data verifies that what you
+wrote was the right thing" — held, but with a caveat it did not state: **data from the wrong
+surface refutes as confidently as it confirms.** The corpus scan was real, careful, and
+measured something that could not contain the answer.
+
+★★ And the proof immediately exposed a gap the retraction had hidden. Line 77 is
+`integer? DEFAULT 0`, and #988's regex was anchored to the END OF THE STRING — it stripped
+`integer?` and silently missed `integer? DEFAULT 0`. Two of the three real shapes worked, so a
+green suite and a red planted control both approved a fix that handled two thirds of the
+actual bug. **Replaying the real artifact caught in one command what three invented test cases
+had not.**
+
+Now anchored to the end of the TYPE TOKEN (`(?<=\w)\s*\?(?=\s|$)`), which takes all three
+r160 shapes and still leaves `varchar(3?)` alone. Tests carry the recovered lines verbatim,
+with the commit hash, so the next reader can re-derive them.
+
+Suite 6,661.
