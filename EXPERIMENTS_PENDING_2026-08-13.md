@@ -17664,3 +17664,32 @@ change my mind BEFORE I needed it to.
 The two-level blocking sweep stays in the record as a technique: sync helpers that block, then
 async callers of those helpers. It found 63 sites where the direct sweep found 12, of which one
 was already costing 300 seconds a run and three more turned out to cost nothing.
+
+### 394. #983 confirmed in production, and item 391's trap sprung again on the way
+
+r161 reached the delivery gate on the same pair that killed r159 —
+`['deliverability_ui_flow_failed', 'validation_ui_evidence_failed']` — which is the first live
+test of #981/#982/#983. The verifier's task now reads:
+
+    WHAT THE GATE ACTUALLY REPORTED:
+    - 1 critical UI flow(s) failed: browse_home_page
+
+r159 and r160 were handed the check name and nothing else. The lane now knows it is
+`browse_home_page`.
+
+★ It was **#983's generic replay** that carried it, not #981's bespoke branch —
+`_ui_flow_failed_names` came back empty this time, so the coverage report had no `failed`
+entries to name and the floor caught it. That is the design working: generic prose is the
+floor, a tailored body is the ceiling, and the ordering test I wrote (generic set BEFORE the
+specific branches so they can override) is what keeps them from fighting. **The fix that fired
+is the one I nearly did not write, because #981 and #982 already "covered" those two checks.**
+
+★★ And item 391's trap sprang again en route. My first check grepped the LOG for the new body
+text, found nothing, and I was one sentence from writing "the fix did not fire". The body goes
+into the TASK DESCRIPTION; the log line only carries the dispatch summary. The authoritative
+source was `workhub_tasks.json`, and it had the answer immediately.
+
+Third time this session: **log-absence is not evidence.** It cost me a wrong conclusion in
+item 390's evidence, nearly cost me one in #988's rationale, and would have cost me this one.
+The habit that catches it is cheap and I still have to force it — ask "where would this
+actually be written?" before concluding from where it isn't.
