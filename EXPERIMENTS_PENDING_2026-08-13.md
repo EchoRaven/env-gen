@@ -17857,3 +17857,36 @@ degrades quality leaves no trace to harvest** — which is exactly the kind of t
 harvest-driven loop cannot find, and the reason the question has to be asked at write time.
 
 Suite 6,733.
+
+### 400. the teardown race has a second victim — updating item 374's deferral
+
+Triaged r162's 17 `test_api` failures, the corpus's third-most-common tool failure and one I
+had waved at as "app defects" without checking:
+
+    10  "Connection refused — NOTHING IS LISTENING at localhost:N"
+     5  "this endpoint requires AUTH. A tokenless request is SUPPOSED to be rejected"
+     1  other
+
+The second group is the framework telling a lane it tested wrong, in a message that says so
+outright. Not a defect — a good diagnostic.
+
+The first group is **item 374's race, on a second surface.** A validation cycle tears the
+compose project down (`down -v` → build → up) and any lane calling `test_api` in that window
+gets nothing. Item 374 measured it on the browser walk (10 `ERR_CONNECTION_REFUSED`), judged
+that it "blocks nothing", and deferred fixing it because holding the smoke lock across a
+multi-minute walk would starve the validation cycle lanes depend on.
+
+That verdict still holds — nothing is blocked, and both surfaces cost retries rather than
+outcomes. But the cost is no longer a single observation: **~20 wasted tool calls per run
+across two surfaces**, and the number will grow with every new consumer of a live stack.
+
+★ Writing the trigger down, since that is what made #980's and #990's deferrals resolve
+themselves: **revisit when either (a) a run fails a gate check that traces to a
+connection-refused, or (b) a third surface appears.** Neither has happened. Until then the
+fix's cost — serializing lane work behind compose recycles — is larger than the defect's.
+
+★★ Worth noting the message quality here, because it is the counter-example to this session's
+running theme. Both failure classes print exactly what a lane needs: "NOTHING IS LISTENING at
+localhost:N" and "a tokenless request is SUPPOSED to be rejected". Nobody had to fix these.
+The four diagnostics I did fix (#973, #978, #981, #983) were all in code paths where the
+author never saw the message land.
