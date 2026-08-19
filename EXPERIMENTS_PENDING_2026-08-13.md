@@ -18583,3 +18583,37 @@ ops on the loop (104ms), the healthcheck and MCP probes dropping headers, the se
 framework files, `auth_dependency`'s early read race, and ten of twelve header-dropping HTTP
 helpers. **A list of things you decided not to do, with the measurement attached, is worth as
 much as the fixes** — it is the part a successor cannot reconstruct.
+
+### 421. r162's 405: four theories killed, one structural observation, mechanism still open
+
+The hardened probe caught a live container in r164 and the reading is unambiguous:
+
+    POST    /api/continue-watching  -> 401      (no token sent — CORRECT)
+    GET     /api/continue-watching  -> 401      (same)
+    OPTIONS /api/continue-watching  -> 405      (FastAPI, no CORS on that path — harmless)
+    openapi: /api/continue-watching: ['get', 'post']
+    in-container: /app/main.py:1095 @app.get   /app/main.py:1131 @app.post
+
+**The endpoint works.** Which makes r162's 405 a question about r162 specifically, and four
+explanations are now dead:
+
+    "main branch lacks it"      the image builds from the worktree (`build: ../app/backend`)
+    "the image was stale"       4 builds after the handler landed, ALL rc=0, each followed by up
+    "intra-module shadowing"    the framework's own duplicated_routes audit: zero
+    "the frontend rejects POST" nginx.conf.template proxies /api, /auth, /oauth to 
+
+★ One structural fact did surface. **The smoke probes `localhost:3000` — nginx — not
+`localhost:8000`.** Defensible on its own terms (it tests the path a user actually takes), but
+the consequence is that any nginx-layer problem presents as "the backend endpoint is
+unreachable" and gets dispatched to the BACKEND lane. That lane owns nothing in the frontend
+container. It is the same shape as #1004: **the symptom names A, the cause lives in B, and the
+work goes to A's owner.**
+
+★★ Recording the four dead theories deliberately. Each looked convincing enough that I nearly
+shipped a narrative on it, and a successor with the same symptom will generate the same four.
+**A list of what it is NOT is the part that cannot be reconstructed from the artifacts** — the
+artifacts only ever suggest what it might be.
+
+★★★ #1006 makes the mechanism less urgent than it was this morning. Whatever the cause,
+"main.py mounts this route and the app refuses it" is now classified as a framework defect and
+said out loud, instead of becoming seventeen tasks for a lane that cannot act on any of them.
