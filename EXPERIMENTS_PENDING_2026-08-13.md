@@ -17793,3 +17793,34 @@ are NOT trying to match is what forces you to check whether you match it.
 
 No new defects. Recorded because "swept, four members, three sound" is inheritable and
 "nobody looked at heuristic-driven rewrites" is not.
+
+### 398. #993 — #991 fixed the consumer; the producer kept emitting
+
+r162's harvest flipped `#991 stock host in seed media` from 0 to 1 while running the fixed
+code. Investigated, and #991 had missed:
+
+    media distributor fired in r162:        0 times
+    picsum URLs still in the generated app: 31, all in app/backend/seed_data.py
+
+#991 taught #512's degeneracy test to treat a stock host as degenerate. That distributor
+rewrites seed ROWS. The URLs are emitted into the `seed_data.py` SOURCE by
+`backend_skeleton._seed_cell`, which I had read during #991 and left alone. **Fixing a consumer
+never reaches a producer** — the heal I widened was simply never handed the data.
+
+Fixed at the emitter. Not with a local `/assets/…` path: that 404s for any row the staged pool
+does not cover, which is the same console error in different clothes. A data-URI SVG always
+resolves, needs no network and no file, and keeps per-row hues so a catalogue wall does not go
+flat (the thing #512 exists to prevent).
+
+★ **I nearly reported this as a success.** My first check ran
+`grep -roh picsum agent/generated/netflix-web-r162/app/` inside a backgrounded subshell whose
+cwd had drifted, got `0`, and I was composing "#991 is working". The next command — in the
+right directory — returned 31. The tell was that a sibling grep in the same block had failed
+with "No such file", which I had already read and not connected.
+
+That is the denominator trap for the fourth time this session (items 366, 381, 391, here), and
+the first time it would have produced a **false positive about my own fix** rather than a false
+negative about the system. Same cause each time: **a query that cannot distinguish "nothing
+there" from "nowhere to look."**
+
+Suite 6,732.

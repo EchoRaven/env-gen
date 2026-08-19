@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import keyword
 import re
+from urllib.parse import quote as _quote
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
@@ -2113,8 +2114,24 @@ def _seed_cell(col: str, table: str, i: int, fk_table: Optional[str], counts: Di
         return "@" + _seed_slug(_SEED_PEOPLE[i % len(_SEED_PEOPLE)])
     if (n.endswith("_url") or n in ("url", "avatar", "thumbnail", "banner", "image", "photo")
             or any(k in n for k in ("avatar", "thumbnail", "banner", "image_url", "photo", "video_url", "audio_url"))):
-        size = "200/200" if ("avatar" in n or "photo" in n) else "640/360"
-        return f"https://picsum.photos/seed/{table}{i}/{size}"
+        # #993: an INLINE placeholder, not a website. This line used to emit
+        # `https://picsum.photos/seed/<table><i>/<size>`, which the sandbox cannot reach:
+        # every page rendering a poster logged
+        # `Failed to load resource: net::ERR_TUNNEL_CONNECTION_FAILED`, console errors failed
+        # the UI-evidence gate, and r161 died on it. #991 taught #512's distributor to treat
+        # a stock host as degenerate — but that distributor rewrites seed ROWS, and these
+        # URLs live in the generated `seed_data.py` SOURCE, so it never saw them (r162: heal
+        # fired 0 times, 31 picsum URLs still in the file).
+        #
+        # A local /assets/… path would 404 for any row the staged asset pool does not cover,
+        # which is the same console error wearing different clothes. A data URI always
+        # resolves, needs no network and no file: the generated app becomes self-contained,
+        # which is the right property offline as much as in this sandbox.
+        w, h = ("200", "200") if ("avatar" in n or "photo" in n) else ("640", "360")
+        _hue = (hash(f"{table}{i}") % 360 + 360) % 360
+        _svg = (f"<svg xmlns='http://www.w3.org/2000/svg' width='{w}' height='{h}'>"
+                f"<rect width='100%' height='100%' fill='hsl({_hue},45%,28%)'/></svg>")
+        return "data:image/svg+xml;utf8," + _quote(_svg, safe="")
     if any(k in n for k in ("description", "bio", "summary", "about", "caption",
                             "content", "body", "message", "text", "comment")):
         return _SEED_SENTENCES[i % len(_SEED_SENTENCES)]
