@@ -18649,3 +18649,32 @@ file I had already grepped twice.**
 
 r162's mechanism is now MORE puzzling, not less: the backend, probed directly, returned 405
 for a POST whose handler was in main.py and in four successful rebuilds. Still open.
+
+### 423. #1007 — the Dockerfile asserted a port it cannot know, and I got it wrong twice
+
+Chasing r162's 405 I read the generated backend Dockerfile and found `EXPOSE 8081` while
+compose maps `"3000:8082"`. That looked like the inconsistency I had been hunting.
+
+It was not — `API_PORT: {backend_port}` is set in the compose environment and `main.py` binds
+it, so the runtime path is correct end to end. **Fifth theory disproved.** But EXPOSE was
+genuinely wrong, in a framework-owned file no lane can correct, and it had just cost me a
+search.
+
+★ **My first fix was the same mistake I had documented ten minutes earlier.** I changed
+`EXPOSE 8081` to `EXPOSE 8082` — recognising 8082 from the compose file I had just read,
+without checking whether it was a constant. It is not: `scaffolder.py:202` writes
+`API_PORT: {backend_port}`, a per-run value. I had swapped one false constant for another that
+happened to be true in exactly one run. Item 422 is *about* accepting a familiar number without
+reading what it refers to, and I did it again while the ink was wet.
+
+★★ The real answer was not "which number" but "no number". `_DOCKERFILE` is written verbatim
+(`w("Dockerfile", _DOCKERFILE)`) and cannot interpolate anything, so **any constant there is a
+false statement waiting for a reader.** Docker ignores EXPOSE for routing, so deleting it
+changes nothing at runtime and stops the file claiming knowledge it does not have.
+
+★★★ And my verification was sloppy in the same direction: I checked `"EXPOSE" in D`, which
+matched the word inside my own new comment, and briefly believed the directive was still
+there. Re-checked by line prefix. **Three sloppy reads in one twenty-minute fix** — the
+pattern is always the same, a substring or a number recognised instead of a structure read.
+
+Suite 6,818 (template-only change, no behaviour).

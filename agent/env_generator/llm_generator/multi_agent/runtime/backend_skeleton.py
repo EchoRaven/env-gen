@@ -1734,7 +1734,16 @@ RUN uv pip install --system -r pyproject.toml
 COPY *.py *.json ./
 COPY reset.sh /reset.sh
 RUN chmod +x /reset.sh
-EXPOSE 8081
+# #1007: no EXPOSE line, on purpose. It used to say `EXPOSE 8081`, which was wrong — main.py
+# binds `API_PORT`, and compose sets that to a per-run `{backend_port}`. This template is
+# written out verbatim (`w("Dockerfile", _DOCKERFILE)`), so it cannot interpolate the real
+# value; any constant here is a false statement waiting to mislead the next reader. It
+# misled me for a full search before I read the compose generator.
+#
+# Docker ignores EXPOSE for routing, so removing it changes nothing at runtime and stops the
+# file asserting a port it cannot know. My first attempt at this replaced 8081 with 8082 —
+# swapping one wrong constant for another that happened to be right in one run, which is
+# item 422's mistake committed minutes after writing item 422.
 CMD ["python", "main.py"]
 '''
 # ``COPY *.py *.json ./`` ships the agent-authored seed_data.json into the image — with
