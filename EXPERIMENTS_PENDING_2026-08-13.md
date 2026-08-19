@@ -17234,3 +17234,38 @@ count that did not fit the story I had just told (1088 vs 466), and the mismatch
 signal. **A number that disagrees with your explanation is more useful than one that confirms
 it** — I would not have re-examined a premise that produced a passing test suite and a clean
 fix.
+
+### 381. the sixth query surface was clean, and my first version of it was a lie
+
+Queried whether any prompt tells an agent to call something the tool layer does not define —
+#971's class ("the framework advertises what it has not made true"), moved to the prompt side.
+
+★ **The first run reported "no ghosts for any profile" while checking ZERO files.** It read
+`p.get("template")`, and the key is nested under `p["prompts"]["template"]`. Every path missed,
+every profile skipped, and the output was a clean bill of health. I only caught it because I
+added a line to print how many templates resolved before believing the result — `0 resolved,
+13 unresolved`.
+
+That is the session's recurring failure in its purest form (items 366, 374, 377, 380): **an
+empty result set is indistinguishable from a working check that found nothing, and the
+difference is the entire value of the check.** A sweep must report its denominator.
+
+With the key fixed, 13 templates resolved and the flagged names are all false positives:
+
+    Jinja macros           lead_specifics, _ownership_block, *_implementation_templates
+    example-code calls     declarative_base, commit, first, close  (inside SQLAlchemy samples)
+    driver functions       finalize_kickoff, request_revisions, synthesize_fallback
+    pipeline stages        retrieve_context
+
+The driver-function group was the one worth reading closely, because a previous fix removed
+`kickoff_synthesis_prompt` for "presenting those driver functions as orchestrator tool calls".
+The surviving mentions are descriptive and correctly framed — "**You do NOT author the M{n}
+task graph.** The kickoff coordinator (`finalize_kickoff` …) synthesizes …", "driver returns
+`synthesize_fallback(...)`". The earlier fix was complete; the detector flagged them for
+looking like calls.
+
+Six surfaces queried now: gate-check detail coverage (#983), tool-failure ranking (#984),
+internal-representation leaks (which corrected #984), self-heal frequency, dict-reprs in
+messages, ghost tools in prompts. **Two produced fixes, one produced a correction, three are
+now known-clean** — and "known-clean" is the point: it is a different state from "unexamined",
+and only one of them can be inherited by the next session.
