@@ -17334,3 +17334,28 @@ and was the weakest of the three fixes. **Suppressing a symptom passes the same 
 routing it correctly.**
 
 Suite 6,642.
+
+### 384. closing the class instead of stopping when the errors stop
+
+#986's enumeration covered `messaging.py` only. The bridge stamps the hub as sender on EVERY
+bridged message, so any handler anywhere that replies to a sender has the same exposure.
+Enumerated the rest:
+
+    messaging.py            3 reply paths   → #976 / #985 / #986, now one shared resolver
+    base.py:846             unaffected      → replies to a TASK's sender, and the bridge
+                                              never creates TaskMessage (corpus confirms:
+                                              every task is resident_message_wakeup /
+                                              task / resident_coordination_tick, all via
+                                              send_task)
+    workflow_policies:215,328  unaffected   → from_agent drives a policy decision, not a reply
+    communication_tools:1776,1908  already right → `sender = original_msg.get("from")`
+
+★ That last row is the useful one. Two call sites were ALREADY reading the payload's `from`,
+which is independent evidence that it is the canonical author field — #985/#986 did not invent
+a convention, they adopted one the codebase already had in the places written by someone who
+had hit this. The three broken paths were the ones written by someone who had not.
+
+Seven uses, three defective, all fixed, four proven sound. **The stopping rule was "the class
+is enumerated", not "the errors stopped" — those two coincide only by luck**, and this session
+has three examples where they did not (#976 looked complete for three hours; #984's rationale
+survived a green suite; the prompt sweep reported clean while reading nothing).
