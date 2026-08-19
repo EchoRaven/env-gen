@@ -16777,3 +16777,41 @@ plainest possible form — the same sentence twice, adjacent — and nobody read
 because logs are scenery. It took a measurement going wrong to make the scenery legible.
 
 Suite 6,560.
+
+### 368. #976 — the receipt addressed to a hub, found on the fifth pass
+
+82 warnings a run of `Target agent not found: messagebus`, deferred four times. The chain, end
+to end:
+
+    communication_tools      publish_event(source_hub="messagebus", ...)
+    eventhub/bridge.py:87    MessageHeader(source_agent_id=event["source_hub"], ...)
+    _send_delivery_ack       sender = header.source_agent_id   -> "messagebus"
+                             ack target = sender               -> never was an agent
+    communication.py:175     [W] Target agent not found: messagebus
+
+A bridged EVENT has no agent sender, so the bridge puts the HUB in that field. Every lane that
+receives one politely sends a delivery receipt to it.
+
+★ Why four passes missed it: I kept looking for something that ADDRESSES a hub, and nothing
+does — the hub arrives as a *sender* and only becomes a target one function later, in code
+whose job is unrelated. Item 365's ruled-out list (subscription fan-out, the `actor` variable,
+literal targets) was correct and exhaustive for the question I was asking; the question was
+wrong.
+
+★★ What finally worked was enumerating `target_agent_id=` assignments and reading the
+VARIABLE names instead of hunting the string. `-> from_agent` stood out in a way `messagebus`
+never could, because the bug's fingerprint was a data flow, not a literal. Grep finds what you
+already suspect; enumerating a small surface finds what you don't.
+
+The other reason it survived: measuring said "harmless" every time, and that was TRUE. Nothing
+is lost — the ack is a courtesy receipt and the message it acknowledges had already reached a
+real target. "No impact" kept being the right verdict on severity and kept being mistaken for
+a verdict on whether it was worth understanding.
+
+Fix: don't ack a sender the bus does not know. If the bus cannot enumerate its agents, still
+ack — suppressing a real receipt is a worse failure than the warning this removes.
+
+Promoted from "deliberately unfixed" to a regression signature in harvest_run, generalized to
+any hub name so `workhub`/`eventhub`/`registryhub` cannot reintroduce it quietly.
+
+Suite 6,567.

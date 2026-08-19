@@ -34,6 +34,7 @@ KNOWN_FIXED = {
     "#971 missing worktree skills": r"not found: \.agents/skills",
     "#973 DDL ? placeholder (now diagnosable, not yet fixed)": r'at or near "\?"',
     "#974 FK ambiguity refused": r"repair DECLINED \(ambiguous owner\)",
+    "#976 receipt to a hub": r"Target agent not found: (?:messagebus|workhub|eventhub|registryhub)",
 }
 
 # NOT defects — activity that is healthy at low volume and pathological in bulk. r158 fired
@@ -49,7 +50,6 @@ ACTIVITY = {
 # Known and deliberately unfixed — see EXPERIMENTS item 360. Listed so they do not read as
 # new findings every round.
 KNOWN_UNFIXED = {
-    "messagebus target (no loss measured)": r"Target agent not found: messagebus",
     "default_now (one occurrence)": r'syntax error at or near "default_now"',
 }
 
@@ -159,7 +159,7 @@ def selftest() -> int:
     try:
         h = harvest("selftest-harvest")
         assert h["regressions"]["#969 nullable in DDL"] == 2, h["regressions"]
-        assert h["known_unfixed"]["messagebus target (no loss measured)"] == 1
+        assert h["regressions"]["#976 receipt to a hub"] == 1
         # activity must NOT be graded pass/fail — a healthy single firing once read as a
         # regression, which is the whole reason this section exists
         assert "icon heal fired" in h["activity"]

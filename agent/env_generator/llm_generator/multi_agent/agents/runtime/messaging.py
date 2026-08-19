@@ -380,6 +380,27 @@ class AgentMessaging:
         bus = self._external_bus
         if not bus:
             return
+        # #976: a bridged EVENT is not from an agent. bridge.py stamps
+        # ``source_agent_id=event["source_hub"]`` (eventhub/bridge.py:87), so acking that
+        # "sender" addresses a HUB — messagebus / workhub / eventhub — and MessageBus logs
+        # `Target agent not found: messagebus`. 82 of those in r158, each reading like lost
+        # mail while nothing was lost: the ack is a courtesy receipt, and the message it
+        # acknowledges had already reached a real target.
+        #
+        # Four sessions to name, because every plausible mechanism was wrong — item 365 ruled
+        # out subscription fan-out, the `actor` variable, and any literal target in the tree.
+        # The tell was in the SEQUENCE, not the code: the warning always followed a
+        # send_message that had already resolved its own target fine.
+        try:
+            known = set(bus.list_agents() or ())
+        except Exception:
+            known = set()
+        if known and sender not in known:
+            return
+
+        bus = self._external_bus
+        if not bus:
+            return
 
         msg_type = message.metadata.get("msg_type", "")
         msg_id = message.header.message_id
