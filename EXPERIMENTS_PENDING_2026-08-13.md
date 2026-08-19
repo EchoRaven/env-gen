@@ -17496,3 +17496,39 @@ r160 shapes and still leaves `varchar(3?)` alone. Tests carry the recovered line
 with the commit hash, so the next reader can re-derive them.
 
 Suite 6,661.
+
+### 389. #989 — `default_now`, and the deliberately-unfixed list is now empty
+
+The last entry on that list, closed by the technique that cracked #988: **the generated
+project is a git repo, so every pre-heal artifact is still in it.**
+
+    git show 33894f8:app/database/init/01_init.sql      (netflix-web-r149)
+    112:    "created_at" timestamp default_now
+    127:    "updated_at" timestamp default_now
+
+postgres: `syntax error at or near "default_now" at character 202`. One occurrence, in one run,
+in April — filed under "unlocalizable" in item 360 and left there for months.
+
+The inline-default extraction searches `\bdefault\b\s+(.+)$`. `_` is a word character, so
+`default_now` is a single token, the boundary never matches, and the modifier sails into the
+rendered type. Third member of the family with #969 (`nullable`) and #988 (`?`): **a modifier
+standing in the type position that is not SQL.** Three separate spellings of the same mistake,
+each of which cost a run.
+
+Only unambiguous spellings translate (`now`, `utcnow`, `current_timestamp`, `uuid`). An
+unknown `default_<x>` is deliberately left to fail loudly — a silently wrong default value is
+worse than a syntax error, which is #988's lesson applied before making the mistake instead of
+after.
+
+★ What actually closed this was not persistence, it was **noticing that a technique which
+worked once had a second target.** The git-history recovery was invented for #988 twenty
+minutes earlier. The moment it worked, the right question was "what else did I abandon for
+exactly this reason?" — and the deliberately-unfixed list was the answer, sitting in the file
+where I had written it down.
+
+★★ That list is now EMPTY. It existed to record honest refusals, and every one of them turned
+out to be a defect I could not localise with the tools I had at the time. **"Unlocalizable"
+was never a property of the bugs; it was a property of the instruments** — and this session
+built three of them (#973 statement capture, #987 offset-aware cap, git-history recovery).
+
+Suite 6,670.

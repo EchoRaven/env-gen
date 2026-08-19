@@ -237,6 +237,15 @@ _INLINE_NULLABLE_RE = re.compile(r"\bnullable\b", re.IGNORECASE)
 # r160 shipped both `integer?` and `integer? DEFAULT 0`. Requires a word char before
 # and whitespace-or-end after, so `varchar(3?)` is left alone.
 _OPTIONAL_SUFFIX_988 = re.compile(r"(?<=\w)\s*\?(?=\s|$)")
+
+# #989: `default_now` and friends — the underscore spelling `\bdefault\b` cannot see.
+_DEFAULT_UNDERSCORE_MAP_989 = {
+    "now": "NOW()", "current_timestamp": "CURRENT_TIMESTAMP",
+    "utcnow": "NOW()", "uuid": "gen_random_uuid()",
+}
+_DEFAULT_UNDERSCORE_989 = re.compile(
+    r"\bdefault_(" + "|".join(sorted(_DEFAULT_UNDERSCORE_MAP_989, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE)
 _INLINE_REFERENCES_RE = re.compile(
     r"\breferences\s+(\w+)\s*(?:\(\s*(\w+)\s*\)|\.\s*(\w+))", re.IGNORECASE
 )
@@ -611,6 +620,18 @@ def _render_column(table_name: str, col: Any, suppress_pk: bool = False) -> str:
     # Mirror the #199 PK/NOT-NULL/UNIQUE handling: strip the embedded DEFAULT and
     # fold it into the flag so exactly one DEFAULT is emitted. Runs AFTER the
     # constraint strips above, so only the default value remains at the tail.
+    # #989: the UNDERSCORE spelling. ORM-ish contracts write `timestamp default_now`, and
+    # `\bdefault\b` cannot see it — `_` is a word character, so `default_now` is one token
+    # and the extraction below never fires. It reaches postgres verbatim:
+    # `syntax error at or near "default_now" at character 202` (r149, recovered from
+    # git history at 33894f8 — "created_at" timestamp default_now).
+    #
+    # Third member of the same family as #969 (`nullable`) and #988 (`?`): a MODIFIER
+    # sitting in the type position that is not SQL. Only the spellings whose intent is
+    # unambiguous are translated; an unknown `default_<x>` is deliberately left to fail
+    # loudly rather than be guessed into a silently wrong default value.
+    _sqlt = _DEFAULT_UNDERSCORE_989.sub(
+        lambda m: "default " + _DEFAULT_UNDERSCORE_MAP_989[m.group(1).lower()], _sqlt)
     _emb_default = None
     _m_def = re.search(r"\bdefault\b\s+(.+)$", _sqlt, re.IGNORECASE)
     if _m_def:

@@ -32,6 +32,7 @@ KNOWN_FIXED = {
     "#969 nullable in DDL": r'syntax error at or near "nullable"',
     "#970 duplicate icon import": r"has already been declared",
     "#971 missing worktree skills": r"not found: \.agents/skills",
+    "#989 default_now in DDL": r'at or near "default_now"',
     "#988 optional-suffix ? in DDL": r'at or near "\?"',
     "#974 FK ambiguity refused": r"repair DECLINED \(ambiguous owner\)",
     "#976/#985/#986 reply to a hub": r"Target agent not found: (?:messagebus|workhub|eventhub|registryhub)",
@@ -54,7 +55,6 @@ ACTIVITY = {
 # Known and deliberately unfixed — see EXPERIMENTS item 360. Listed so they do not read as
 # new findings every round.
 KNOWN_UNFIXED = {
-    "default_now (one occurrence)": r'syntax error at or near "default_now"',
 }
 
 _TS = re.compile(r"^(\d{2}):(\d{2}):(\d{2})")
