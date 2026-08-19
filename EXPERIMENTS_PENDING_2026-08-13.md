@@ -17964,3 +17964,38 @@ recorded and a lesson enforced, the same move as harvest_run's denominator warni
 sweep_indirect.
 
 Suite 6,746.
+
+### 403. #996 — the trigger item 400 wrote down, fired by r162
+
+r162's harvest surfaced a class I had not seen before: **`❌ capture_webpage` 22 times, all
+`ERR_CONNECTION_REFUSED` / `ERR_CONNECTION_RESET`.** That is the compose-recycle race, on its
+third surface:
+
+    browser walk      item 374   10   "blocks nothing" → deferred
+    test_api          item 400   10, then 55 in r162   → deferred, trigger written
+    capture_webpage   r162       22                    → trigger fires
+
+Item 400's exact words were "revisit when … a third surface appears". It appeared, the per-run
+cost is now ~77 failed tool calls, and `capture_webpage` feeds the VISUAL GATE — so the cost
+stopped being retries and started being missing evidence.
+
+★ The fix is not the one item 374 rejected. Holding the smoke lock across a multi-minute
+browser walk would serialize every lane behind compose recycles — that objection still stands.
+Retrying does not serialize anything: the stack is down for SECONDS, so three attempts with a
+3s/6s backoff cost less than one lost capture, and a genuinely dead stack still fails with the
+same error, just later. One change at the navigate call covers all three surfaces, since
+`capture_webpage`'s refusals come from the goto that precedes the screenshot.
+
+★★ **Third time a deferral resolved itself because it named its own trigger** (#980 spent by
+r161, #990 closed by measurement, this one fired by a third surface). None required me to
+remember to come back. Contrast items 380/387, corrections to fixes shipped on inferred
+rationales — the difference remains whether the thing that would change my mind was written
+down before it was needed.
+
+★★★ And the repo caught my test. First draft asserted against `SRC[i:i + 2000]`, a
+fixed-width source window, which `test_no_new_fixed_width_source_windows` forbids as a fragile
+locator — the same family as #923's bare-delimiter guard that caught me at item 371. **Two
+different meta-tests, both written long before this session, have now each caught a fragile
+locator in a test I wrote to catch something else.** Re-anchored on AST.
+
+Suite 6,752.

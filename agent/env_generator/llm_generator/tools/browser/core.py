@@ -56,12 +56,40 @@ class BrowserNavigateTool(BaseTool):
             self.browser.state.console_logs.clear()
             self.browser.state.network_errors.clear()
             
-            # Navigate
-            response = await self.browser.state.page.goto(
-                url, 
-                wait_until=wait_for,
-                timeout=30000
-            )
+            # Navigate.
+            # #996: RETRY a refused connection. A validation cycle recycles the compose
+            # project (`down -v` -> build -> up), and anything touching the live stack in
+            # that window gets nothing. Three surfaces have now paid for it — the browser
+            # walk (item 374, 10 failures), test_api (item 400, 55 in r162) and
+            # capture_webpage (22 in r162, all ERR_CONNECTION_REFUSED/RESET) — which is the
+            # third-surface trigger item 400 wrote down.
+            #
+            # The fix item 374 rejected was holding the smoke lock across a multi-minute
+            # walk, which would serialize every lane behind compose recycles. This one does
+            # not serialize anything: the stack is DOWN for seconds, so waiting briefly and
+            # retrying costs far less than a lost capture, and a genuinely dead stack still
+            # fails — just three attempts later, with the same error.
+            _last_exc = None
+            response = None
+            for _attempt in range(3):
+                try:
+                    response = await self.browser.state.page.goto(
+                        url,
+                        wait_until=wait_for,
+                        timeout=30000
+                    )
+                    break
+                except Exception as _e:
+                    _txt = str(_e)
+                    if not any(k in _txt for k in ("ERR_CONNECTION_REFUSED",
+                                                   "ERR_CONNECTION_RESET",
+                                                   "ERR_EMPTY_RESPONSE")):
+                        raise
+                    _last_exc = _e
+                    if _attempt < 2:
+                        await asyncio.sleep(3 * (_attempt + 1))
+            if response is None and _last_exc is not None:
+                raise _last_exc
             
             self.browser.state.current_url = url
             
