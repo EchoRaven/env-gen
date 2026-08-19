@@ -16591,3 +16591,41 @@ Suite 6,537. r158 itself is unaffected (it is running the old code) and healthy:
 up 9 minutes, database and backend both reporting healthy, and the three fixes it exists to
 validate are all still at zero — no duplicate imports, no missing skill reads, no DDL syntax
 errors, against r157's 12 / 80 / 4.
+
+### 363. #973 — the postgres error was reported and its cause discarded
+
+`syntax error at or near "?" at character 170` names neither the table nor the query. I wrote
+it off TWICE — item 360 lists it under "one occurrence, unlocalizable — a fix would be
+invention". It has now appeared **6 times across r149, r157 and r158**, four of them in r158
+alone.
+
+★ What changed my mind was not new thinking, it was the tool. `harvest_run.py` prints the
+deliberately-unfixed list every round, so "1 occurrence" became "4 occurrences" the first
+time it ran on a fresh log. The whole point of naming those signatures was to stop them
+re-reading as discoveries; the side effect is that a one-off turning into a pattern is now
+impossible to miss. **The tool did the noticing I had already failed at twice.**
+
+The cause was never missing. Postgres emits the pair:
+
+    ERROR:  syntax error at or near "?" at character 170
+    STATEMENT:  INSERT INTO ... VALUES (?, ?, ?)
+
+and `_backend_logs_tail` captures 3000 + 1500 chars of it. `_salient_error` keeps only lines
+matching `_ERR_MARKERS`, and `STATEMENT` is not a marker — so the line was **dropped, not
+truncated**. Raising `cap` would have changed nothing, which is exactly why three sessions of
+staring at the log never found it.
+
+Fix: when a marker line is followed by a `STATEMENT:` line, keep both. Bounded by the same
+cap; the #182 build-log behaviour is unchanged (pinned by a test, since that extractor exists
+to stop a misleading prefix winning over the real error at the end).
+
+Still not fixed: the `?` itself. Now that the statement will be logged, the NEXT run says
+which query emits MySQL-style placeholders against postgres — and then it can be fixed at the
+source instead of guessed at. That is the whole point of the change.
+
+Same family as #972, one layer up. #964 announced a failure without its transcript; #972 fixed
+that; this one reported an error without its statement. Three instances of the same shape in
+one session: **the diagnostic that names a failure and drops its cause feels finished and is
+half a feature.**
+
+Suite 6,543.

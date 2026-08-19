@@ -31,8 +31,16 @@ REPO = Path(__file__).resolve().parents[1]
 KNOWN_FIXED = {
     "#969 nullable in DDL": r'syntax error at or near "nullable"',
     "#970 duplicate icon import": r"has already been declared",
-    "#970 icon heal firing": r"imported via lucide-react",
     "#971 missing worktree skills": r"not found: \.agents/skills",
+}
+
+# NOT defects — activity that is healthy at low volume and pathological in bulk. r158 fired
+# the icon heal ONCE with zero duplicate-declaration errors, which is the fix working: a
+# genuinely missing icon got imported. r157 fired it 20 times because the heal and the lane
+# were overwriting each other. Counting it as a regression turned correct behaviour into a
+# FAIL, so it reports as a rate with its baseline instead of a pass/fail.
+ACTIVITY = {
+    "icon heal fired": (r"imported via lucide-react", "1-2 normal; r157 hit 20 while thrashing"),
 }
 
 # Known and deliberately unfixed — see EXPERIMENTS item 360. Listed so they do not read as
@@ -94,6 +102,7 @@ def harvest(run: str) -> dict:
         "max_gap_s": gap,
         "max_gap_at": gap_at,
         "regressions": {k: _count(v) for k, v in KNOWN_FIXED.items()},
+        "activity": {k: (_count(p), note) for k, (p, note) in ACTIVITY.items()},
         "known_unfixed": {k: _count(v) for k, v in KNOWN_UNFIXED.items()},
         "docker_up": _classes(r"docker_up:[^|'\n]{0,120}"),
         "tool_failures": _classes(r"❌ [a-z_]+"),
@@ -114,6 +123,11 @@ def _print(h: dict, against: dict | None = None) -> None:
     print("\n-- known, deliberately unfixed")
     for k, n in h["known_unfixed"].items():
         print(f"         {n:5d}  {k}")
+
+    print("\n-- activity (a rate, not a verdict)")
+    for k, (n, note) in h["activity"].items():
+        base = f"   (was {against['activity'][k][0]})" if against else ""
+        print(f"         {n:5d}  {k}{base}  — {note}")
 
     for title, key in (("docker_up failure causes", "docker_up"),
                        ("tool failures", "tool_failures"),
@@ -144,6 +158,9 @@ def selftest() -> int:
         h = harvest("selftest-harvest")
         assert h["regressions"]["#969 nullable in DDL"] == 2, h["regressions"]
         assert h["known_unfixed"]["messagebus target (no loss measured)"] == 1
+        # activity must NOT be graded pass/fail — a healthy single firing once read as a
+        # regression, which is the whole reason this section exists
+        assert "icon heal fired" in h["activity"]
         # the two docker_up lines differ only by container hash — they must collapse to ONE
         # class, or every occurrence reads as a separate finding
         assert len(h["docker_up"]) == 1, h["docker_up"]

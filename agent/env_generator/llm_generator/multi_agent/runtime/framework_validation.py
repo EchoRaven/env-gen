@@ -229,12 +229,28 @@ def _salient_error(detail: Any, cap: int = 400) -> str:
     cr.io/astral-sh/uv" — a prefix fragment of the cached backend build — while the real failure
     was a frontend "'LoginPage' has already been declared" at the END (#182). Returns the last few
     marker-matching lines; if none match, returns the TAIL (never the misleading prefix). Pure;
-    ``""`` on empty input."""
+    ``""`` on empty input.
+
+    #973: a postgres ``ERROR:`` is reported together with the ``STATEMENT:`` line that follows
+    it. Postgres always emits the pair, and the statement is the ONLY part that localizes the
+    fault — the error line alone says `syntax error at or near "?" at character 170`, which
+    names neither the table nor the query. That token has now appeared 6 times across r149,
+    r157 and r158 and stayed undiagnosable through all of them, because ``STATEMENT`` is not an
+    error marker and this extractor DROPPED the line rather than truncating it (raising `cap`
+    would not have helped). Same lesson as #972: knowing a thing failed is not knowing why.
+    """
     if not detail:
         return ""
     text = str(detail).replace("\\n", "\n")
     lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
-    hits = [ln for ln in lines if any(m in ln.lower() for m in _ERR_MARKERS)]
+    hits = []
+    for i, ln in enumerate(lines):
+        if not any(m in ln.lower() for m in _ERR_MARKERS):
+            continue
+        hits.append(ln)
+        nxt = lines[i + 1] if i + 1 < len(lines) else ""
+        if "statement:" in nxt.lower() and nxt not in hits:
+            hits.append(nxt)
     if hits:
         return " | ".join(hits[-3:])[:cap]
     return text[-cap:].strip()
