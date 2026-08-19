@@ -17890,3 +17890,44 @@ running theme. Both failure classes print exactly what a lane needs: "NOTHING IS
 localhost:N" and "a tokenless request is SUPPOSED to be rejected". Nobody had to fix these.
 The four diagnostics I did fix (#973, #978, #981, #983) were all in code paths where the
 author never saw the message land.
+
+### 401. #995 attempted and REVERTED — the fix broke what it was written to protect
+
+**Not shipped.** Recording it because the idea is sound, the failure is instructive, and the
+next attempt should not rediscover either.
+
+The finding stands: **46 framework functions write generated CODE, and six validate it before
+writing.** #979 was one of the other forty — it spliced `router = APIRouter()` after the last
+import LINE and, for the 26 corpus files whose imports end in `from models import (`, landed
+inside the parentheses. #979 corrected that splice; **the class survived it**, one edit away in
+every remaining unguarded repair, and it fires in an already-broken state where the fresh
+SyntaxError reads as the lane's own mistake.
+
+The intended fix was a narrow invariant: these repairs MODIFY an existing valid module, so if
+it parsed before it must parse after. Refuse output that does not parse, keep the old content,
+say so loudly.
+
+★ **What went wrong is the thing I have been writing down all session.** `backend_scaffold.py`
+is dense with triple-quoted templates of generated code, and I placed the helper with STRING
+POSITION heuristics three times:
+
+    1. "first `\\ndef ` after the typing import"   → landed inside `_AUTH_DEPENDENCY_PY`,
+       i.e. it would have been written into every generated app's auth_dependency.py
+    2. "after the last column-0 import"            → templates contain column-0 imports too
+    3. AST placement worked, but the EXTRACTION cut at the first `path.write_text(new_text`
+       and the helper has two, so the function was truncated and returned None
+
+Result: 10 failures + 3 errors, the rendered backend no longer compiling. Reverted whole.
+
+★★ Two things worth keeping. **AST was the authoritative locator from the first minute** — in a
+file I already knew was full of templates, I reached for string offsets anyway, which is
+exactly the "convenient measurement over authoritative source" failure items 387 and 391
+record. And the accident's shape was #995's own subject: **a repair that broke what it was
+repairing.** The suite caught me; the forty unguarded framework write paths have no such net,
+which is why the idea is still worth doing.
+
+Next attempt should: build the new file content in memory, `ast.parse` it, and only then write
+— placing the helper in a module WITHOUT embedded templates (a shared util) so nothing has to
+be threaded past a triple-quoted string.
+
+Suite restored: 6,733 passed, 0 failed.
