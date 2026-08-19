@@ -108,6 +108,12 @@ def test_the_decline_is_not_silent(tmp_path):
 
 # --- the return shape is uniform -------------------------------------------------------------------
 
+# The uniform return shape. #974 added ``narrowed`` (models where an actor REFINEMENT
+# resolved the ambiguity), so the literal moved — the INVARIANT these tests protect is that
+# every return path carries the same keys, not that there are exactly two of them.
+_RESULT_KEYS = {"fixed", "ambiguous", "narrowed"}
+
+
 @pytest.mark.parametrize("missing", ["main.py", "models.py"])
 def test_every_return_carries_both_keys(tmp_path, missing):
     """The early returns used to be `{"fixed": []}`, so a caller reading res["ambiguous"] would
@@ -116,7 +122,7 @@ def test_every_return_carries_both_keys(tmp_path, missing):
     b = _backend(tmp_path, "pass\n")
     (b / missing).unlink()
     res = hfr.repair_handler_fk_aliases(b)
-    assert set(res) == {"fixed", "ambiguous"}, missing
+    assert set(res) == _RESULT_KEYS, missing
 
 
 def test_no_owner_column_at_all_is_left_alone(tmp_path):
@@ -128,7 +134,8 @@ def test_no_owner_column_at_all_is_left_alone(tmp_path):
         encoding="utf-8")
     (b / "main.py").write_text("x = Tag.user_id\n", encoding="utf-8")
     res = hfr.repair_handler_fk_aliases(b)
-    assert res == {"fixed": [], "ambiguous": []}
+    assert set(res) == _RESULT_KEYS
+    assert not any(res.values()), f"nothing should have been touched: {res}"
     assert (b / "main.py").read_text() == "x = Tag.user_id\n"
 
 

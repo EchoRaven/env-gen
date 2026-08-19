@@ -16629,3 +16629,40 @@ one session: **the diagnostic that names a failure and drops its cause feels fin
 half a feature.**
 
 Suite 6,543.
+
+### 364. #974 — a refinement is not a guess; siblings still are
+
+r158's cause of death. `my_list`, `ratings` and `continue_watching` each carry BOTH `user_id`
+and `profile_id`, so `repair_handler_fk_aliases` declined **90 times**, the handlers kept
+raising, `business_chain` wedged for 7 post-cap cycles and the run aborted without delivering:
+`null value in column "profile_id" violates not-null constraint`.
+
+#784's refusal was correct for the case it was written against. `messages(sender_id,
+recipient_id)` points BOTH at `users`; picking one hands an inbox handler the caller's SENT
+mail, and no test would notice. So it counted owner-ish columns and refused above one.
+
+★ But counting conflates two different situations. Two actors are only ambiguous if neither
+**refines** the other. `profiles.user_id -> users.id` — profiles is a child of users, so
+`profile_id` is the narrower scope, and choosing it is a deduction from the declared FK graph
+rather than a guess. The netflix case and the messages case look identical to a counter and
+are opposites in fact.
+
+★★ What makes it admissible where #784 refused is an ASYMMETRY, not confidence. The narrower
+actor can only ever return TOO LITTLE; the wider one can return another user's rows. A wrong
+answer is therefore a visible over-restriction, never a silent cross-user leak — which is the
+precise harm #784 exists to prevent. Being wrong in the safe direction is what buys the right
+to decide at all.
+
+Siblings still refuse, and a test pins that: the messages shape must keep failing loudly.
+Also pinned — cycles terminate (generated schemas are not guaranteed acyclic), an unresolvable
+reference refuses, and with three nested actors the DEEPEST wins.
+
+The narrowing is logged as loudly as the refusal (`NARROWED (#974)`). An owner-scoping
+decision made silently is the thing #784 was afraid of; making the right call quietly would
+still leave the next person debugging a too-empty list with no idea the framework chose.
+
+Collateral: two #784 tests hardcoded `{"fixed","ambiguous"}` as the return shape. The
+invariant they protect — every return path carries the SAME keys — still holds; only the
+literal was stale, so they now assert the invariant instead of the enumeration.
+
+Suite 6,556.

@@ -1024,6 +1024,14 @@ class HealPipeline:
                     "one owner-ish FK, so a broken reference cannot be resolved to an actor "
                     "without guessing. Left as an AttributeError 500 on purpose — a loud failure "
                     "beats a silent wrong-owner query.", amb)
+            # #974: a narrowing DEDUCTION is not a guess, but it is still an owner-scoping
+            # decision — it must be as visible as the refusal above, or the next person
+            # debugging a too-empty list has no way to know the framework chose the actor.
+            for nar in (res.get("narrowed") or []):
+                orch._logger.warning(
+                    "handler FK-alias repair NARROWED (#974): %s — the second actor table "
+                    "references the first, so it is the narrower scope and was chosen. A "
+                    "narrower actor can only under-return, never leak across users.", nar)
             if fixed:
                 orch._logger.warning(
                     "By-construction handler FK-alias repair: rewrote %s handler "

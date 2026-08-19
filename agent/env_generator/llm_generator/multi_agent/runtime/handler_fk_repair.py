@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .route_projector import _OWNER_FK_NAMES, _orm_models, _owner_fk
 
@@ -29,6 +29,52 @@ from .route_projector import _OWNER_FK_NAMES, _orm_models, _owner_fk
 _ACTOR_TABLES_784 = ("users", "profiles", "accounts", "members")
 
 
+def _table_of(ref: Any) -> str:
+    """``users`` / ``users.id`` / ``ForeignKey('users.id')`` -> ``users``."""
+    return str(ref or "").strip().strip("'\"").split("(")[-1].strip("'\")").split(".")[0]
+
+
+def _reachable_tables_974(table: str, models: Dict[str, Any], _seen=None) -> set:
+    """Every table reachable from *table* by following its FKs, transitively."""
+    _seen = _seen or set()
+    out: set = set()
+    for _col, tgt in ((models.get(table) or {}).get("fks") or {}).items():
+        t = _table_of(tgt)
+        if t and t not in _seen:
+            out.add(t)
+            out |= _reachable_tables_974(t, models, _seen | {t})
+    return out
+
+
+def _narrowest_actor_974(owner_ish, fks, models) -> Optional[str]:
+    """#974: resolve an ambiguous owner WITHOUT guessing, or return None.
+
+    Two owner-ish FKs are only ambiguous if neither is a REFINEMENT of the other. When one
+    actor table transitively references the other — ``profiles.user_id -> users.id`` — the
+    descendant is the narrower scope, and a row owned by that profile is owned by exactly
+    one user. Picking it is a deduction from the declared FK graph, not a guess.
+
+    ★ The safety asymmetry is what makes this admissible where #784 refused. Scoping to the
+    NARROWER actor can only ever return too little; scoping to the wider one can return
+    another user's rows. So a wrong answer here is a visible over-restriction, never a
+    silent cross-user leak — the exact failure #784 was protecting against.
+
+    Returns None (still ambiguous) when the actors are SIBLINGS. ``messages(sender_id,
+    recipient_id)`` points both at ``users``: no refinement exists, guessing would hand an
+    inbox handler the caller's sent mail, and that case must keep failing loudly.
+    """
+    targets = {c: _table_of(fks.get(c)) for c in owner_ish}
+    if any(not t for t in targets.values()):
+        return None                                   # an unresolvable reference
+    if len(set(targets.values())) < len(targets):
+        return None                                   # siblings on one actor table
+    for col, tbl in targets.items():
+        others = {t for c, t in targets.items() if c != col}
+        if others and others <= _reachable_tables_974(tbl, models):
+            return col
+    return None
+
+
 def repair_handler_fk_aliases(backend_dir: Any) -> Dict[str, Any]:
     """Rewrite ``<Model>.<missing_owner_alias>`` → ``<Model>.<actual_owner_fk>`` in
     main.py. Returns ``{"fixed": [...], "ambiguous": [...]}`` — ``ambiguous`` names the models
@@ -36,13 +82,14 @@ def repair_handler_fk_aliases(backend_dir: Any) -> Dict[str, Any]:
     backend_dir = Path(backend_dir)
     main_py = backend_dir / "main.py"
     if not main_py.exists():
-        return {"fixed": [], "ambiguous": []}
+        return {"fixed": [], "ambiguous": [], "narrowed": []}
     models = _orm_models(backend_dir)
     if not models:
-        return {"fixed": [], "ambiguous": []}
+        return {"fixed": [], "ambiguous": [], "narrowed": []}
     src = main_py.read_text(encoding="utf-8")
     fixed: List[str] = []
     ambiguous: List[str] = []   # #784: models the repair refuses to guess on
+    narrowed: List[str] = []    # #974: models where an actor REFINEMENT resolved it
     for _table, meta in models.items():
         cls = meta.get("cls")
         cols = set(meta.get("cols") or [])
@@ -71,8 +118,18 @@ def repair_handler_fk_aliases(backend_dir: Any) -> Dict[str, Any]:
                             if c in _OWNER_FK_NAMES
                             or str(fks.get(c) or "") in _ACTOR_TABLES_784})
         if len(owner_ish) > 1:
-            ambiguous.append(f"{cls}: {owner_ish}")
-            continue
+            # #974: ambiguous only if neither actor REFINES the other (see
+            # _narrowest_actor_974). netflix r158 died here: my_list / ratings /
+            # continue_watching each carry user_id AND profile_id, the repair refused 90
+            # times, business_chain wedged for 7 cycles and the run aborted without
+            # delivering. `profiles` references `users`, so profile_id is the narrower
+            # scope and the deduction is free.
+            _narrowed = _narrowest_actor_974(owner_ish, fks, models)
+            if _narrowed is None:
+                ambiguous.append(f"{cls}: {owner_ish}")
+                continue
+            narrowed.append(f"{cls}: {owner_ish} -> {_narrowed}")
+            actual = _narrowed
         for alias in _OWNER_FK_NAMES:
             if alias == actual or alias in cols:
                 continue  # only rewrite an alias the model genuinely LACKS
@@ -83,4 +140,4 @@ def repair_handler_fk_aliases(backend_dir: Any) -> Dict[str, Any]:
                 fixed.append(f"{cls}.{alias} -> {cls}.{actual} (x{n})")
     if fixed:
         main_py.write_text(src, encoding="utf-8")
-    return {"fixed": fixed, "ambiguous": ambiguous}
+    return {"fixed": fixed, "ambiguous": ambiguous, "narrowed": narrowed}
