@@ -17359,3 +17359,39 @@ Seven uses, three defective, all fixed, four proven sound. **The stopping rule w
 is enumerated", not "the errors stopped" — those two coincide only by luck**, and this session
 has three examples where they did not (#976 looked complete for three hours; #984's rationale
 survived a green suite; the prompt sweep reported clean while reading nothing).
+
+### 385. #987 — r160 paid off #973, and immediately showed the next link
+
+r160: 170 min, FAIL-FAST on business_chain, and the harvest flipped `#977 qmark` from 0 to 4.
+A signature firing on my own fix, for the second time this session.
+
+★ But this time the log said why. **#973 worked exactly as designed:**
+
+    ERROR:  syntax error at or near "?" at character 255 |
+    STATEMENT:  CREATE TABLE IF NOT EXISTS "titles" (
+
+Three sessions of "unlocalizable" ended in one line. And it named a layer I had not fixed:
+the `?` is in **DDL**, a `CREATE TABLE`. #977 taught the generated `database.py` execute()
+shim to accept qmark params — a RUNTIME query path. Correct fix, wrong layer. The signature
+caught that within one run because #977 shipped with one.
+
+★★ And then the next link: the statement arrives truncated at `CREATE TABLE IF NOT EXISTS
+"titles" (`, because `_salient_error`'s cap is 200 and the error says character **255**.
+**Postgres reports an offset precisely when the problem is deep inside a long statement, so
+the offending token is beyond a flat cap BY CONSTRUCTION.** The diagnostic pointed at a
+location and withheld it.
+
+#987 widens the cap to reach a named offset (bounded at 2000, only when an offset appears,
+`max()` so a larger caller cap is never shrunk). The build-log path #182 exists for is
+untouched — no offset, no widening.
+
+Collateral, and it is trap #4 with me as the author: #973's own `test_output_stays_capped`
+went red, because its sample says "at character 170" and it asserted a flat ceiling of 200 —
+**pinning the exact behaviour #987 deliberately removed, four hours after I wrote it.** Fixed
+by asserting the real invariant (bounded, and reaches the offset) rather than loosening the
+number, plus a second test for the no-offset path that still honours the caller's cap exactly.
+
+The `?` in the DDL itself is still unfixed — but it is no longer unlocalizable. The next run
+prints the whole CREATE TABLE and names the column.
+
+Suite 6,649.

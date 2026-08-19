@@ -72,9 +72,21 @@ def test_a_lone_statement_line_is_not_promoted():
     assert "SELECT 1" not in out or "ERROR" not in out
 
 
-def test_output_stays_capped():
+def test_output_stays_bounded():
+    """#987 superseded the flat cap: an error naming "at character N" widens far enough to
+    reach N, because otherwise the diagnostic points at an offset it refuses to show. The
+    invariant is now BOUNDED, not fixed — PG_PAIR says character 170, so 200 is not the
+    ceiling here and asserting it would pin behaviour #987 deliberately removed."""
     out = _salient_error(PG_PAIR.replace("titles", "t" * 3000), cap=200)
-    assert len(out) <= 200
+    assert len(out) <= 2000, "the widening must stay bounded"
+    assert len(out) >= 170, "and must reach the offset the error names"
+
+
+def test_a_pair_without_an_offset_keeps_the_flat_cap():
+    """The un-widened path still honours the caller's cap exactly."""
+    no_offset = ('ERROR:  relation "titles" does not exist\n'
+                 'STATEMENT:  SELECT * FROM ' + "t" * 900 + "\n")
+    assert len(_salient_error(no_offset, cap=200)) <= 200
 
 
 if __name__ == "__main__":  # pragma: no cover

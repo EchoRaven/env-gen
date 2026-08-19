@@ -215,6 +215,8 @@ async def ensure_fresh_smoke_before_cut(orch: Any) -> bool:
 # #182: markers used to surface the ACTUAL failure line from a long build/validation log rather
 # than a blind prefix slice (which grabs meaningless cached-build fragments — image hashes, a
 # chopped 'ghcr.io'->'cr.io'). Build failures sit at the END, not the start.
+_CHAR_OFFSET_987 = re.compile(r"at character (\d{1,5})")
+
 _ERR_MARKERS = (
     "error:", "err!", "failed to solve", "build failed", "has already been declared",
     "npm err", "syntaxerror", "modulenotfound", "traceback", "exit code", "exited with",
@@ -252,7 +254,20 @@ def _salient_error(detail: Any, cap: int = 400) -> str:
         if "statement:" in nxt.lower() and nxt not in hits:
             hits.append(nxt)
     if hits:
-        return " | ".join(hits[-3:])[:cap]
+        _out = " | ".join(hits[-3:])
+        # #987: a postgres error that says "at character N" needs at least N characters of
+        # the STATEMENT to be readable at all. r160 reported `syntax error at or near "?" at
+        # character 255` and then handed over 200 characters — the offending token is beyond
+        # the cap BY CONSTRUCTION, so #973's captured STATEMENT arrived truncated to
+        # `CREATE TABLE IF NOT EXISTS "titles" (`. Widen just enough to reach the offset,
+        # bounded, and only when the error names one.
+        _m = _CHAR_OFFSET_987.search(_out)
+        if _m:
+            try:
+                cap = max(cap, min(2000, int(_m.group(1)) + 120))
+            except Exception:
+                pass
+        return _out[:cap]
     return text[-cap:].strip()
 
 
