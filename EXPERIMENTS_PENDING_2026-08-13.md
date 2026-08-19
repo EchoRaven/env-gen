@@ -18277,3 +18277,31 @@ rather than attempted now, because it only produces an answer when a run exercis
 carries "the app accepts [GET, HEAD]" where r162 had that sentence nowhere in the system, and
 the verifier reads probe records directly. Station three would make the same fact travel one
 hop further, into the dispatched task body.
+
+### 412. #1002 — instrumentation instead of a tenth search
+
+Item 411 recorded station three as proven-but-unlocated after seven keyword searches. I then
+tried two more (persisted check records in `codehub_checks.json`, then run records in
+`runhub_runs.json`) and both were empty — nine attempts, each a new *string* rather than a new
+*method*, which is exactly the reflex item 411 named.
+
+So the method item 411 prescribed, implemented rather than deferred to r165:
+
+    detail = str(c.get("detail") or "")
+    → log, once per check name, the check's KEYS and seven frames of stack
+
+A check record cannot say where it came from; the stack can. The next run that fails a
+business endpoint answers the question outright, with no guessing and nothing to search.
+
+★ Two design choices that matter more than the code. It fires **once per check name** — a
+dispatcher inside a coordination loop would otherwise emit this on every tick, and a
+diagnostic that floods is a diagnostic that gets filtered out. And it logs the check's KEYS
+alongside the stack, because the key set identifies the producer's schema even if the stack
+turns out to be a generic dispatch path.
+
+★★ This is not a fix and is labelled as such in the code. It buys the location of a defect
+already proven from artifacts, and it should be removed once #1003 fixes what it finds. Left
+unguarded by any test on purpose: a test would pin instrumentation that is meant to be
+deleted.
+
+Suite 6,790 (unchanged — instrumentation, no behaviour).

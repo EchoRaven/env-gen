@@ -656,6 +656,33 @@ class RemediationDispatcher:
                     continue  # one dispatch per milestone (storm control)
                 owner, title, how = spec
                 detail = str(c.get("detail") or "")
+                # #1002 (instrumentation, not a fix): name the builder of this `detail`.
+                #
+                # Item 411 records station three of r162's evidence path: the dispatched
+                # detail is `METHOD path → status` with no probe note, proven from the
+                # artifact — `failed=['business_endpoints_reachable:GET /api/search → 500;
+                # …']`. Nine keyword searches failed to find the code that composes it, which
+                # is the brute-force reflex rather than a method.
+                #
+                # A check record cannot say where it came from, but the stack can. One
+                # bounded frame list, logged once per check name, turns the next run that
+                # fails a business endpoint into the answer. Costs nothing when nobody reads
+                # it and removes the guessing entirely.
+                try:
+                    _seen1002 = getattr(orch, "_detail_origin_seen_1002", None)
+                    if _seen1002 is None:
+                        _seen1002 = set()
+                        orch._detail_origin_seen_1002 = _seen1002
+                    if name not in _seen1002:
+                        _seen1002.add(name)
+                        import traceback as _tb
+                        _frames = [f"{f.filename.split('/')[-1]}:{f.lineno}:{f.name}"
+                                   for f in _tb.extract_stack()[-8:-1]]
+                        orch._logger.info(
+                            "#1002 detail-origin for %s: keys=%s via %s",
+                            name, sorted(c.keys())[:8], " <- ".join(reversed(_frames)))
+                except Exception:
+                    pass
                 # #978: hand the LANE the salient line, not a blind prefix. r158 told the
                 # verifier `docker_up — bcd1251d323e...f732f1bf`: 64 hex characters of
                 # container id, because the raw detail begins with one and the dispatch
