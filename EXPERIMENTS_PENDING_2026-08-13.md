@@ -17160,3 +17160,41 @@ next pass over this ranking does not re-investigate it.
 ★ Two surfaces queried this way now (gate-check detail coverage → #983, self-heal frequency →
 nothing). The technique's value is not that it always finds something; it is that "nobody has
 looked" stops being the reason something is unknown.
+
+### 379. #984 — the corpus's most common tool failure was a message the lane could not act on
+
+Third surface queried the #983 way. Ranking every tool failure across the r15x runs put a
+FRAMEWORK tool at the top, not a file or browser op:
+
+    466x / 14 runs   registryhub_register_verification_chain
+    422x / 14 runs   read
+    366x / 10 runs   test_api
+
+I had seen it in single runs as "6" and "10" and skipped past it every time. Across the corpus
+it is number one.
+
+The message:
+
+    Endpoint(s) [PUT /api/profiles/{}] have now been rejected 3 times across your chains —
+    they are NOT in the registered contract … DROP those steps
+
+`{}` is `endpoint_id`'s canonical form. Collapsing `{profile_id}` / `{id}` / `` to `{}` is
+correct and load-bearing — it is how two spellings of one route match, and FIX #137 widened it
+further so a literal `/api/posts/1` matches `{id}` too. **Reporting it is the bug.** The
+verifier never wrote `{}`, cannot find it in a contract that lists `{profile_id}`, and is then
+instructed to drop steps for a string that exists nowhere it can look.
+
+The canonical id stays the counter's KEY — it must, or the repeat detection breaks across
+spellings. Only the display changes, and it now carries both: what was written and what the
+hub matched on.
+
+★ Fifth instance of one shape (#973, #978, #981, #982, #983 → #984), and the first found by
+ranking rather than by reading. **The class is "a correct internal representation leaking into
+a message meant for someone who cannot see internals."** Canonical ids, container hashes,
+check tokens, stack-less error lines — same mistake wearing four costumes.
+
+★★ Note what made it findable: not new insight, a different question. "Which tool fails most
+across all runs?" is a query I could have run on day one. Three surfaces asked that way have
+now produced #983 and #984 — both of them larger than anything found by reading logs in order.
+
+Suite 6,630.

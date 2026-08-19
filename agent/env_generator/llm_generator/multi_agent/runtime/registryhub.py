@@ -2150,6 +2150,25 @@ class RegistryHub:
                 _chain_eid(s) for s in norm if s.get("path")
                 if not _chain_eid_ok(s)
             })
+            # #984: report the path the VERIFIER WROTE, not the canonical id. `endpoint_id`
+            # deliberately collapses `{profile_id}` / `{id}` / `` to `{}` so spellings
+            # match — correct for comparison, useless as a message. The verifier was told
+            # `PUT /api/profiles/{}`: a string it never wrote, cannot find in the contract
+            # (which lists `{profile_id}`), and is then instructed to DROP. 466 rejections
+            # across 14 runs of the corpus, the single most common tool failure there is.
+            # The canonical id stays the KEY (stable across spellings, so the repeat counter
+            # still works); only the display changes.
+            _submitted_by_eid = {}
+            for _s in norm:
+                if not _s.get("path"):
+                    continue
+                _submitted_by_eid.setdefault(
+                    _chain_eid(_s),
+                    "%s %s" % (str(_s.get("method") or "").upper(), _s.get("path")))
+
+            def _shown(_eid: str) -> str:
+                _orig = _submitted_by_eid.get(_eid)
+                return f"{_orig} (canonical {_eid})" if _orig and _orig != _eid else _eid
             if unregistered:
                 # Fix #71 (netflix r75, 2026-08-05): a verifier that authors a chain step for
                 # an endpoint the contract never defined (r75: PUT /api/profiles/{id} — a
@@ -2218,7 +2237,7 @@ class RegistryHub:
                             "tested. Re-submitting ANY chain that references them (under any name) "
                             "will keep failing: DROP those steps (or the chain). If delivery "
                             "genuinely needs this coverage, ask the backend lane to implement + "
-                            "register the endpoint FIRST." % (", ".join(_repeat), _worst))
+                            "register the endpoint FIRST." % (", ".join(_shown(_e) for _e in _repeat), _worst))
                 except Exception:
                     _escalate = ""
                 # #636 — LEAD WITH THE INSTRUCTION, NOT THE CONTRACT DUMP.
