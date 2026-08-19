@@ -621,9 +621,23 @@ class RemediationDispatcher:
                 "the FULL error with file:line, then file a precise bug to the owning lane."),
             "business_endpoints_reachable": (
                 "backend", "Wire the unreachable business endpoints (blocks delivery)",
+                # #1004: point at the file the lane CAN write.
+                #
+                # This said "Wire them in app/backend/main.py". `main.py` is in
+                # _BACKEND_FRAMEWORK_OWNED, so `is_framework_owned()` makes the write guard
+                # DENY every lane edit to it — the remediation was ordering the backend lane
+                # to do the one thing it is structurally forbidden from doing. r162 produced
+                # 17 tasks against a single 405 and never fixed it; a lane cannot fix a route
+                # in a file it cannot open for writing.
+                #
+                # `custom_routes.py` is deliberately NOT framework-owned — it is the lane's
+                # file, and the framework's own include_router discovery already mounts
+                # whatever router it defines. That is where a missing route belongs.
                 "registered+implemented endpoints answer 404/405 — the routes are not "
-                "actually mounted. Wire them in app/backend/main.py (include_router / "
-                "the @app.<method> path) so each declared path responds."),
+                "actually mounted. Add them to app/backend/custom_routes.py (the file YOUR "
+                "lane owns; main.py is framework-owned and your writes to it are denied). "
+                "Define the handler on the module-level `router` with the declared method "
+                "and path — main.py already discovers and includes that router."),
             "business_endpoints_correct_shape": (
                 "backend", "Fix business endpoint response shapes (blocks delivery)",
                 "endpoints return the wrong response body/shape — match the declared "

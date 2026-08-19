@@ -18365,3 +18365,42 @@ harm comes before fixing.
 twelve edits across hub internals would have been churn with a plausible story attached. The
 question that stopped it was the same one that has worked all session: **what does this code
 actually feed?** Two feed a lane's diagnosis; ten feed the framework talking to itself.
+
+### 415. #1004 — the framework ordered the lane to edit a file it is forbidden to write
+
+The user's third hypothesis, checked and confirmed: *maybe the agent has no permission to
+modify the file the bug lives in.*
+
+    _BACKEND_FRAMEWORK_OWNED contains  main.py
+    is_framework_owned("app/backend/main.py")  ->  True  ->  write guard DENIES every lane edit
+
+and the remediation for `business_endpoints_reachable`, verbatim:
+
+    "…the routes are not actually mounted. Wire them in app/backend/main.py
+     (include_router / the @app.<method> path) so each declared path responds."
+
+**The framework told the backend lane to fix the 405 in the one file it is structurally
+forbidden from writing.** 17 tasks against a single endpoint, never fixed. No amount of model
+capability closes that: a lane cannot wire a route in a file it cannot open.
+
+`custom_routes.py` is deliberately NOT framework-owned — it is the lane's file, and main.py
+already discovers and includes the router it defines. The text now names it, and says why
+main.py is not the answer, because a lane that has been told "main.py" for months needs the
+instruction's change explained.
+
+★ Swept the other 13 remediation entries for the same mistake: **none**. This was the only
+one — which is why it survived. A defect present in one of fourteen entries looks like correct
+behaviour from every angle except the one that asks "can the recipient actually do this?"
+
+★★ The sweep first reported a second offender, `frontend_reachable`, and it was a **1400-char
+window bleeding into the next spec**. Third fixed-width-window false finding this session (the
+repo's own meta-test caught one at #996). Rebased on the next spec's offset, and the false
+positive vanished. The lesson keeps arriving in the same shape: **a window sized in bytes has
+no idea what it is looking at.**
+
+★★★ This is the strongest evidence yet for the user's reframing. Three of the four defects
+found today (#1000, #1003, #1004) are information-path failures invisible from the symptom,
+and this one is not even about information quality — the instruction was *accurate*, well
+written, and impossible to obey.
+
+Suite 6,803.
