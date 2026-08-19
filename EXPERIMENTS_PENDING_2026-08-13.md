@@ -17198,3 +17198,39 @@ across all runs?" is a query I could have run on day one. Three surfaces asked t
 now produced #983 and #984 — both of them larger than anything found by reading logs in order.
 
 Suite 6,630.
+
+### 380. correcting #984's rationale — I overstated the harm, and caught it one query later
+
+#984 shipped with this reasoning: the verifier is told `PUT /api/profiles/{}`, "a string it
+never wrote, cannot find in a contract that lists `{profile_id}`". The next query disproved
+half of it.
+
+Ranking internal-representation leaks across the corpus returned `{}` **1088 times in 15
+runs** — far more than #984's 466 rejections. Chasing the surplus showed most of it is the
+MODEL using the canonical form correctly, as a tool argument:
+
+    [frontend] registryhub_get_endpoint: endpoint_id=GET /api/titles/{}
+
+Which sent me back to the stored records, where each endpoint carries BOTH:
+
+    id:   GET /api/titles/{}        <- canonical, and what the listing exposes
+    path: /api/titles/{id}          <- original
+
+**So the contract does contain `{}`, and the verifier could have looked it up.** The rejection
+message was accurate; `PUT /api/profiles/{}` genuinely was not registered, which is why it was
+rejected.
+
+What survives: the message names the endpoint only in a form the verifier did not type, so
+mapping it back to WHICH OF ITS OWN STEPS to drop takes an extra inference. Showing both
+spellings still helps. The fix is net-positive and smaller than advertised.
+
+★ Trap #4 says a green test can pin a defect. This is the same hazard one level up: **a
+committed rationale can pin a wrong belief.** The commit message is now the most authoritative
+account of that code, and it is partly wrong — so the correction goes here rather than nowhere,
+because the next person to read #984 will read the commit, not my memory of it.
+
+★★ Worth noting what caught it: not review, the NEXT query. Ranking the class turned up a
+count that did not fit the story I had just told (1088 vs 466), and the mismatch was the whole
+signal. **A number that disagrees with your explanation is more useful than one that confirms
+it** — I would not have re-examined a premise that produced a passing test suite and a clean
+fix.
