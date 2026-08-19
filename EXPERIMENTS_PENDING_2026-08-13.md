@@ -16915,3 +16915,36 @@ hundred items ago caught a fresh mistake in a test written to catch a fresh mist
 is the whole argument for keeping meta-tests that only ever fail on your own work.
 
 Suite 6,590.
+
+### 372. #980 — the longest blocking calls in the codebase, found by AST not by a run
+
+Third class sweep. #963 was "a synchronous call inside `async def` freezes the whole loop" —
+r155 lost 683 seconds to it and the silence read as a hang, which cost a healthy run. Asking
+where else that shape lives, **by walking the AST rather than grepping**, found 12 more sites.
+Ranked by their own declared timeouts:
+
+    dependency_tools  npm install    300s  x2   <- fixed
+    dependency_tools  pip install    120s  x2   <- fixed
+    docker_tools      compose down    60s
+    docker_tools      (5 more)     10-30s
+    visual_fidelity   subprocess      20s
+    visual_fidelity   time.sleep       3s
+    orchestrator      _preflight      —         (startup only; nothing else is running yet)
+
+Five minutes of frozen loop starves the 60s LLM heartbeat, the 60s coordination tick, and
+every other lane's turn. The four ≥120s sites are now offloaded with `asyncio.to_thread`; the
+rest are recorded here with their caps rather than swept up silently, because a 10s block is a
+different question from a 300s one and I have no measurement saying the short ones hurt.
+
+★ Grep could not have found these. The signal is not a string — it is "a blocking call
+*inside* an async function", a relationship between two nodes. `subprocess.run` appears all
+over the codebase legitimately; only its position makes it a defect. The AST sweep is nine
+lines and returns a ranked list.
+
+★★ The bulk-rewrite hazard is `await` landing in a `def`. That fails loudly at import if the
+function is plainly sync — but a helper that merely *looks* async returns a coroutine nobody
+awaits and the work silently never happens. A test walks the AST for exactly that, and the
+behavioural test drives a ticker task to prove the loop keeps scheduling during a slow call
+(with the planted control proving the ticker really does starve without the fix).
+
+Suite 6,596.

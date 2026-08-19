@@ -7,6 +7,7 @@ Tools for analyzing and managing dependencies:
 """
 
 import ast
+import asyncio
 import json
 import re
 import sys
@@ -17,6 +18,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.tool import BaseTool, ToolResult, ToolCategory, create_tool_param
 from workspace import Workspace
+
+
+
+async def _run_blocking_980(*args, **kwargs):
+    """#980: run a blocking subprocess OFF the event loop.
+
+    These tools live in `async def execute`, so a plain `subprocess.run` freezes the whole
+    loop for its full duration — and the caps here are the largest in the codebase: two npm
+    installs at 300s and two pip installs at 120s. Everything stops for that window: the LLM
+    heartbeat (60s), the coordination tick (60s), every other lane's turn. That is #963
+    exactly, which cost r155 a 683-second blackout that read as a hang; found here by
+    sweeping for the same shape rather than waiting for a run to show it.
+    """
+    return await asyncio.to_thread(*args, **kwargs)
 
 
 class CheckImportsTool(BaseTool):
@@ -446,8 +461,9 @@ Example:
                 cmd.append("--include=dev")  # Explicitly include devDeps
             cmd.append("--legacy-peer-deps")  # Avoid ERESOLVE errors
             
-            result = subprocess.run(
-                cmd,
+            result = await _run_blocking_980(
+                    subprocess.run,
+cmd,
                 cwd=str(project_path),
                 capture_output=True,
                 text=True,
@@ -464,8 +480,9 @@ Example:
                 else:
                     cmd_retry.append("--include=dev")
                 
-                result = subprocess.run(
-                    cmd_retry,
+                result = await _run_blocking_980(
+                        subprocess.run,
+cmd_retry,
                     cwd=str(project_path),
                     capture_output=True,
                     text=True,
@@ -484,8 +501,9 @@ Example:
             # Step 2: Install specific packages if requested
             if packages:
                 pkg_cmd = ["npm", "install", "--legacy-peer-deps"] + packages
-                pkg_result = subprocess.run(
-                    pkg_cmd,
+                pkg_result = await _run_blocking_980(
+                        subprocess.run,
+pkg_cmd,
                     cwd=str(project_path),
                     capture_output=True,
                     text=True,
@@ -502,8 +520,9 @@ Example:
             # Step 3: Install dev packages if requested
             if dev_packages:
                 dev_cmd = ["npm", "install", "--save-dev", "--legacy-peer-deps"] + dev_packages
-                dev_result = subprocess.run(
-                    dev_cmd,
+                dev_result = await _run_blocking_980(
+                        subprocess.run,
+dev_cmd,
                     cwd=str(project_path),
                     capture_output=True,
                     text=True,
