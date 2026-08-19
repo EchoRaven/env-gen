@@ -16553,3 +16553,41 @@ gitignores `.agents/` and has never tracked it, so nothing reaches the delivered
 pins that property, since it is the thing that makes copying-everywhere acceptable.
 
 Suite 6,533.
+
+### 362. #972 — my own #964 announced failures without explaining them
+
+Found by supervising r158, and the defect is in the fix I shipped two sessions ago.
+
+r158 emitted two instant build failures:
+
+    19:39:14  compose spawn: docker build -> rc=1 in 0s
+    19:39:14  compose spawn: docker build -> rc=1 in 0s
+
+and that is ALL the log has. Zero seconds is not a compilation error — it is the command
+refusing to start — but nothing recorded which command, which file, or what it said. I could
+not diagnose it from the artifact, and I could not reproduce it either: running the same
+compose build against the live project would collide with the run's own compose project (the
+item-350 hazard), so the evidence was simply gone.
+
+★ #964 was written to end exactly this class of blindness, and it half-did the job. It
+announced the spawn and its rc, which is enough to see that something broke and useless for
+knowing what. The transcript was captured the whole time — `capture_output=True` — it was
+just never emitted. `_build_with_retry` does fold a tail into its return value, but only a
+caller that ULTIMATELY fails surfaces it, so a failure that later self-heals (exactly r158's
+case: the next build returned rc=0 and the containers came up healthy) disappears without
+trace.
+
+Fix: on non-zero rc, log a bounded transcript tail. stdout is used when stderr is blank —
+the classic builder writes some failures there. Silent on success, or every compose call in
+the run would drown the log.
+
+The lesson is about the shape of an observability fix, not about compose: **"it failed" and
+"why it failed" are different features, and shipping the first one feels like solving the
+problem.** The r155 post-mortem said the same thing one level up — a build with no start line
+was indistinguishable from a hang — and I fixed the start line while leaving the failure
+mute.
+
+Suite 6,537. r158 itself is unaffected (it is running the old code) and healthy: containers
+up 9 minutes, database and backend both reporting healthy, and the three fixes it exists to
+validate are all still at zero — no duplicate imports, no missing skill reads, no DDL syntax
+errors, against r157's 12 / 80 / 4.

@@ -102,6 +102,19 @@ def _compose(compose_file: Path, *args: str, cwd: Path, timeout: int = 300) -> s
         raise
     _LOG.info("compose spawn: %s %s -> rc=%s in %.0fs",
               _bin, _verb, cp.returncode, time.monotonic() - _t0)
+    # #972: a FAILING spawn must say WHY. #964 announced `rc=1 in 0s` and stopped there,
+    # which is enough to see that something broke and useless for diagnosing it — netflix
+    # r158 produced two instant `docker build -> rc=1 in 0s` and left no other trace, so
+    # the cause could not be recovered from the log at all. The transcript IS captured
+    # (capture_output=True); it was simply never emitted. `_build_with_retry` folds a tail
+    # into its return value, but only the caller that ultimately FAILS surfaces it, so a
+    # failure that later self-heals vanishes silently. Bounded so a noisy build cannot
+    # flood the log.
+    if cp.returncode != 0:
+        _tail = ((cp.stderr or "") + ("\n" + (cp.stdout or "") if not (cp.stderr or "").strip() else ""))
+        _tail = _tail.strip()[-600:]
+        _LOG.warning("compose spawn: %s %s FAILED rc=%s — transcript tail:\n%s",
+                     _bin, _verb, cp.returncode, _tail or "(the command produced no output)")
     return cp
 
 

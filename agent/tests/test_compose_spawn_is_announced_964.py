@@ -85,3 +85,48 @@ def test_the_control_is_silent(tmp_path, caplog, monkeypatch):
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- #972 ---------------------------------------------------------------------------
+
+def test_a_failing_spawn_reports_its_transcript(tmp_path, caplog, monkeypatch):
+    """#972: #964 announced `rc=1 in 0s` and stopped there — enough to see that something
+    broke, useless for diagnosing it. netflix r158 produced two instant build failures and
+    left no other trace, so the cause was unrecoverable from the log."""
+    monkeypatch.setattr(vr.subprocess, "run", lambda argv, **kw: _fake_cp(
+        argv, rc=1, err="ERROR: no configuration file provided: not found"))
+    with caplog.at_level(logging.INFO, logger=vr.__name__):
+        vr._compose(tmp_path / "docker-compose.yml", "build", cwd=tmp_path, timeout=900)
+
+    warned = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("no configuration file provided" in m for m in warned), (
+        "the captured transcript must reach the log; capture_output=True already collects "
+        "it, so dropping it is pure loss")
+
+
+def test_a_successful_spawn_stays_quiet(tmp_path, caplog, monkeypatch):
+    """The failure tail must not fire on success — every compose call would drown the log."""
+    monkeypatch.setattr(vr.subprocess, "run", lambda argv, **kw: _fake_cp(
+        argv, rc=0, out="Successfully built abc123"))
+    with caplog.at_level(logging.INFO, logger=vr.__name__):
+        vr._compose(tmp_path / "docker-compose.yml", "ps", cwd=tmp_path, timeout=30)
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_the_tail_is_bounded(tmp_path, caplog, monkeypatch):
+    monkeypatch.setattr(vr.subprocess, "run", lambda argv, **kw: _fake_cp(
+        argv, rc=1, err="x" * 50_000))
+    with caplog.at_level(logging.INFO, logger=vr.__name__):
+        vr._compose(tmp_path / "docker-compose.yml", "build", cwd=tmp_path, timeout=900)
+    worst = max(len(r.message) for r in caplog.records)
+    assert worst < 1500, f"an unbounded tail would flood the log ({worst} chars)"
+
+
+def test_stdout_is_used_when_stderr_is_empty(tmp_path, caplog, monkeypatch):
+    """Classic-builder compose writes the real error to stdout on some failures."""
+    monkeypatch.setattr(vr.subprocess, "run", lambda argv, **kw: _fake_cp(
+        argv, rc=1, out="failed to solve: executor failed running", err="   "))
+    with caplog.at_level(logging.INFO, logger=vr.__name__):
+        vr._compose(tmp_path / "docker-compose.yml", "build", cwd=tmp_path, timeout=900)
+    warned = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("failed to solve" in m for m in warned)
