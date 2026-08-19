@@ -32,9 +32,9 @@ KNOWN_FIXED = {
     "#969 nullable in DDL": r'syntax error at or near "nullable"',
     "#970 duplicate icon import": r"has already been declared",
     "#971 missing worktree skills": r"not found: \.agents/skills",
-    "#977 qmark placeholder to postgres": r'at or near "\?"',
+    "#988 optional-suffix ? in DDL": r'at or near "\?"',
     "#974 FK ambiguity refused": r"repair DECLINED \(ambiguous owner\)",
-    "#976 receipt to a hub": r"Target agent not found: (?:messagebus|workhub|eventhub|registryhub)",
+    "#976/#985/#986 reply to a hub": r"Target agent not found: (?:messagebus|workhub|eventhub|registryhub)",
     # #978: a remediation whose "detail" is nothing but a container id — the lane is told
     # 64 hex characters and no error. Anchored on the dispatch line so it cannot be
     # confused with a hash appearing anywhere else in the log.
@@ -178,7 +178,7 @@ def selftest() -> int:
     try:
         h = harvest("selftest-harvest")
         assert h["regressions"]["#969 nullable in DDL"] == 2, h["regressions"]
-        assert h["regressions"]["#976 receipt to a hub"] == 1
+        assert h["regressions"]["#976/#985/#986 reply to a hub"] == 1
         # activity must NOT be graded pass/fail — a healthy single firing once read as a
         # regression, which is the whole reason this section exists
         assert "icon heal fired" in h["activity"]
