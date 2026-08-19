@@ -81,6 +81,18 @@ def _sql_type(raw: str) -> str:
     # ``timestamp with time zone``, ``character varying``) must keep every token, so a
     # "first token wins" normalization would be wrong here.
     t = _INLINE_NULLABLE_RE.sub("", t).strip()
+    # #988: the OPTIONAL suffix. Spec and TypeScript-ish contracts write `integer?` /
+    # `text?` for "nullable", and rendering it verbatim gives postgres
+    # `"duration_minutes" INTEGER?` -> `syntax error at or near "?" at character 255`,
+    # initdb dies, docker_up fails, the run stalls in validation. Same family as this
+    # function's `nullable` strip directly above — a type-position word that means
+    # nullability, not a type.
+    #
+    # It took three sessions to name because the `?` never survives in an artifact (the
+    # DDL is regenerated between validations) and the log truncated the STATEMENT before
+    # reaching character 255. #973 printed the statement, #987 widened the cap to reach the
+    # offset, and the column fell out by counting characters.
+    t = _OPTIONAL_SUFFIX_988.sub("", t).strip()
     return _TYPE_ALIASES.get(t.lower(), t)
 
 
@@ -220,6 +232,8 @@ _INLINE_UNIQUE_RE = re.compile(r"\bunique\b", re.IGNORECASE)
 # FAILS. Same class as the inline ``check`` handled in _sql_type and the four modifiers
 # promoted below; ``\bnot\s+null\b`` deliberately does NOT match it, so the two cannot collide.
 _INLINE_NULLABLE_RE = re.compile(r"\bnullable\b", re.IGNORECASE)
+# #988: a trailing `?` in a TYPE position is the optional/nullable marker.
+_OPTIONAL_SUFFIX_988 = re.compile(r"\s*\?\s*$")
 _INLINE_REFERENCES_RE = re.compile(
     r"\breferences\s+(\w+)\s*(?:\(\s*(\w+)\s*\)|\.\s*(\w+))", re.IGNORECASE
 )
@@ -254,6 +268,13 @@ def _promote_inline_modifiers(col: Dict[str, Any]) -> Dict[str, Any]:
     # renderer agrees with the DDL (the #393 parity rule), but never let it overrule an
     # explicit NOT NULL — a contradictory ``"text not null nullable"`` keeps the stricter read.
     if (_INLINE_NULLABLE_RE.search(spec) and "nullable" not in out
+            and not out.get("not_null") and not _INLINE_NOTNULL_RE.search(spec)):
+        out["nullable"] = True
+    # #988: `integer?` means the same thing as `integer nullable`. Stripping the marker in
+    # `_sql_type` alone would render valid SQL that says the OPPOSITE — a NOT NULL column
+    # where the contract asked for an optional one — so promote it here too, under the same
+    # guards: never overrule an explicit NOT NULL, never overwrite a stated `nullable`.
+    if (_OPTIONAL_SUFFIX_988.search(spec) and "nullable" not in out
             and not out.get("not_null") and not _INLINE_NOTNULL_RE.search(spec)):
         out["nullable"] = True
     if not (out.get("references") or out.get("fk")):

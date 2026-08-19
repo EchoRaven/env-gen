@@ -17395,3 +17395,36 @@ The `?` in the DDL itself is still unfixed — but it is no longer unlocalizable
 prints the whole CREATE TABLE and names the column.
 
 Suite 6,649.
+
+### 386. #988 — `integer?` — the three-session mystery, named by counting characters
+
+`syntax error at or near "?"` cost r149, r157, r158 one occurrence each and r160 four more. I
+wrote it off as unlocalizable **twice** (items 360, 363), for a good reason each time: the `?`
+never survives in an artifact, because the DDL is regenerated between validations and the file
+is clean by the time anyone opens it.
+
+It fell to a chain of this session's own fixes:
+
+    #973   print the STATEMENT beside the postgres ERROR      → "CREATE TABLE … "titles" ("
+    #987   widen the cap to reach the offset the error names  → "at character 255" is legible
+    here   count characters into the healed titles DDL        → 255 lands on duration_minutes
+
+The contract said `integer?`. Spec and TypeScript-ish sources write that for "optional", and
+rendering it verbatim gives `"duration_minutes" INTEGER?` — initdb dies, docker_up fails, the
+run stalls in validation.
+
+★ **Neither #973 nor #987 was aimed at this bug.** Both were observability fixes made because
+a diagnostic felt incomplete, with no idea what they would eventually expose. The payoff came
+two and four hours later respectively, on a defect that had survived three sessions of direct
+searching. **Fixing the instrument beat looking harder through the broken one.**
+
+★★ The fix needs both halves, exactly like #969's inline `nullable`: strip the marker from the
+type AND promote it to `nullable`. Stripping alone renders valid SQL that says the OPPOSITE of
+the contract — a NOT NULL column where an optional one was asked for. A green initdb would
+have made that look finished, and the wrongness would only show up as a runtime insert failure
+much later.
+
+Guards match #969: an explicit `not null` still wins, a stated `nullable` is never overwritten,
+and a `?` anywhere but the end of the type is left alone (`varchar(3?)` is not ours to edit).
+
+Suite 6,659.
