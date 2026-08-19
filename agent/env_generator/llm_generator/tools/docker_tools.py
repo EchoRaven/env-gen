@@ -288,6 +288,23 @@ def _canonicalize_service_name(service: str, available: List[str]) -> Optional[s
 
     return None
 
+
+async def _await_blocking_990(fn, *args, **kwargs):
+    """#990: run a blocking compose/daemon helper OFF the event loop.
+
+    #980 swept for `subprocess.run` sitting DIRECTLY inside `async def` and offloaded the
+    four worst. It missed every call that reaches subprocess through a HELPER, and
+    `_run_compose` is exactly that. r161 paid for it:
+
+        08:47:18 [W] verifier ❌ docker_up FAILED (300696ms): Start timed out
+
+    300.7 seconds with the loop frozen — the LLM heartbeat, the coordination tick and every
+    other lane stopped dead. #963's failure mode at the magnitude that cost r155 a healthy
+    run, and #980 deferred these sites saying "nothing measured says the short ones hurt".
+    Something does now.
+    """
+    return await asyncio.to_thread(lambda: fn(*args, **kwargs))
+
 class DockerBuildTool(BaseTool):
     """Build Docker images using docker-compose."""
     
@@ -335,7 +352,7 @@ Example:
             should_skip, reason = env_cache.should_skip("docker_daemon", cooldown_seconds=300)
             if should_skip:
                 # If Docker recovered after a transient failure, clear stale cooldown.
-                if _docker_daemon_reachable():
+                if await _await_blocking_990(_docker_daemon_reachable, ):
                     env_cache.record_success("docker_daemon")
                 else:
                     return ToolResult.fail(
@@ -367,7 +384,7 @@ Example:
                     )
                 args.append(canonical or service)
 
-            result = _run_compose(compose_file, args, cwd=self.workspace.base_root, timeout=600)
+            result = await _await_blocking_990(_run_compose, compose_file, args, cwd=self.workspace.base_root, timeout=600)
             
             if result.returncode != 0:
                 stderr_lower = (result.stderr or "").lower()
@@ -505,7 +522,7 @@ Example:
             # before a full-env boot. Best-effort; skipped for a targeted
             # single-service ``up`` (the caller is managing specific services).
             if fresh and not service:
-                _run_compose(
+                await _await_blocking_990(_run_compose, 
                     compose_file, ["down", "-v", "--remove-orphans"],
                     cwd=self.workspace.base_root, timeout=120,
                 )
@@ -531,7 +548,7 @@ Example:
                     )
                 args.append(canonical or service)
 
-            result = _run_compose(compose_file, args, cwd=self.workspace.base_root, timeout=300)
+            result = await _await_blocking_990(_run_compose, compose_file, args, cwd=self.workspace.base_root, timeout=300)
             
             if result.returncode != 0:
                 port_hint = _compose_port_conflict_hint(result.stderr or "", compose_file)
@@ -694,7 +711,7 @@ Example:
                     f"Unknown compose service '{service}'. Available services: {', '.join(available)}"
                 )
 
-            result = _run_compose(
+            result = await _await_blocking_990(_run_compose, 
                 compose_file,
                 ["logs", "--tail", str(tail), canonical or service],
                 cwd=self.workspace.base_root,
@@ -839,7 +856,7 @@ Example:
                     f"Unknown compose service '{service}'. Available services: {', '.join(available)}"
                 )
 
-            result = _run_compose(
+            result = await _await_blocking_990(_run_compose, 
                 compose_file,
                 ["restart", canonical or service],
                 cwd=self.workspace.base_root,
@@ -1257,7 +1274,7 @@ Example:
             if not keep_volumes:
                 down_args.append("-v")
             
-            result = _run_compose(compose_file, down_args, cwd=self.workspace.base_root, timeout=120)
+            result = await _await_blocking_990(_run_compose, compose_file, down_args, cwd=self.workspace.base_root, timeout=120)
             steps_completed.append(f"docker compose down (exit={result.returncode})")
             
             # Step 2: Prune any dangling containers for this directory
@@ -1272,7 +1289,7 @@ Example:
             if start:
                 # Step 4: Build if requested
                 if build:
-                    build_result = _run_compose(
+                    build_result = await _await_blocking_990(_run_compose, 
                         compose_file,
                         ["-p", project_name, "build", "--no-cache"],
                         cwd=self.workspace.base_root,
@@ -1284,7 +1301,7 @@ Example:
                         steps_completed.append(f"docker compose build --no-cache")
                 
                 # Step 5: Start with fresh project name
-                up_result = _run_compose(
+                up_result = await _await_blocking_990(_run_compose, 
                     compose_file,
                     ["-p", project_name, "up", "-d", "--force-recreate"],
                     cwd=self.workspace.base_root,
@@ -1300,7 +1317,7 @@ Example:
                 await asyncio.sleep(3)
                 
                 # Check status
-                status_result = _run_compose(
+                status_result = await _await_blocking_990(_run_compose, 
                     compose_file,
                     ["-p", project_name, "ps"],
                     cwd=self.workspace.base_root,

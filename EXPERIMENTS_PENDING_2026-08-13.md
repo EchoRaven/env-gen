@@ -17601,3 +17601,38 @@ was.
 ★★ Absence of evidence is only evidence of absence when you have shown the evidence WOULD have
 appeared. That one extra step — "what would a success look like in this log?" — is the whole
 difference, and it costs one grep.
+
+### 392. #990 — the deferral #980 recorded, spent by r161 four hours later
+
+r161's harvest showed a **300-second** max silence. Every prior run in the corpus maxed out
+around 65s. The cause, in one line:
+
+    08:47:18 [W] verifier ❌ docker_up FAILED (300696ms): Start timed out
+
+300.7 seconds with the event loop frozen — the LLM heartbeat, the coordination tick, and every
+other lane stopped dead. #963's exact failure mode, at the magnitude that cost r155 a healthy
+run I then killed because the silence read as a hang.
+
+★ #980 swept for this class and MISSED it, for a reason worth naming precisely: the sweep
+looked for `subprocess.run` sitting **directly** inside `async def`. `_run_compose` is a
+helper — the blocking leaf is one call away, and an AST walk for direct calls cannot see
+through indirection. Re-running the sweep with a two-level rule (sync helpers that block, then
+async callers of those helpers) returns **63 sites** where the direct sweep found 12.
+
+Most of the 63 are name-collision noise (`wait()`, `execute()` are everywhere). The ones that
+are unambiguous and worth naming: `docker_tools` (10 compose/daemon calls, now offloaded),
+`visual_fidelity._compose_up`, `workflow_policies.commit_worktree` /
+`merge_agent_branch_to_main`, and `orchestrator.promote_integration_to_main` — the last three
+being git operations on a shared tree.
+
+★★ #980's own note deferred these with a stated condition: *"nothing measured says the short
+ones hurt."* That was honest and it was the right call at the time — and four hours later the
+measurement arrived and spent it. **A deferral with a written trigger is a different object
+from a deferral without one**: this one closed itself the moment the evidence existed, because
+the note said exactly what evidence would close it.
+
+Only the ten `docker_tools` sites are fixed here. The git-operation sites are recorded, not
+touched — they need their own measurement, and inventing one to justify a change is how items
+380 and 387 went wrong.
+
+Suite 6,676.
