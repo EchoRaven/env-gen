@@ -18437,3 +18437,42 @@ as the worked example. The last is the most damaging and the least visible — a
 its own instructions correctly, failing, and being re-dispatched seventeen times.
 
 Suite 6,809.
+
+### 417. closing the permission class — four surfaces, and the sentence it spread from
+
+The user's third hypothesis (*maybe the agent has no permission to modify the file*) produced
+#1004 and #1005. Rather than stop at two, swept every surface where the framework instructs a
+lane, each with a printed denominator:
+
+    remediation dispatcher   14 entries    1 defect (#1004)
+    prompt templates         18 files      1 defect (#1005, in BOTH versions)
+    bundled skills           12 documents  0
+    runtime guidance strings 260 files     1 hit -> scaffolder.py, and it is the origin
+
+The last one is not lane-facing — it is a code comment — but it says:
+
+    "…the backend then ADDS business routes to it [main.py]. Same 'framework owns the
+     boilerplate' basis as the AS modules."
+
+Three statements of design exist in this framework and they disagree:
+
+    auto_commit.py        main.py in _BACKEND_FRAMEWORK_OWNED  -> lane writes DENIED
+    route_projector.py    "the lane implements the real handler in custom_routes.py"
+    scaffolder.py         "the backend then ADDS business routes to it [main.py]"
+
+**Only the first is enforced.** The third is very likely where the mistake spread from: both
+#1004's remediation text and #1005's worked example told the lane to wire routes in main.py,
+and both read as if written by someone who had read that sentence. Corrected in place, with
+the contradiction spelled out.
+
+★ **A wrong comment in the framework becomes a wrong instruction to an agent.** That is a
+different failure mode from the rest of this session — not evidence lost in transit (#1000,
+#1003) and not a message naming the wrong thing (#978, #981), but documentation drift
+propagating outward into behaviour, through humans writing the next layer.
+
+★★ The skills sweep is worth noting for how it nearly lied: the first run pointed at two paths
+that do not exist, found 12 documents worth of nothing, and reported `0 defects`. The
+denominator line said `0 documents` and stopped it — sixth time this session. The real
+directory is `bundled_skills/`, and with it the answer is a genuine zero.
+
+Suite 6,809.

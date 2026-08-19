@@ -452,8 +452,18 @@ volumes:
         # (the framework owns only the AS modules), so the lane spins reporting
         # "scaffold exists but main.py absent" instead of writing code. Provide a
         # valid FastAPI app (AS wired, /health, uvicorn entrypoint) committed to the
-        # git base pre-spawn so every lane inherits it; the backend then ADDS business
-        # routes to it. Same "framework owns the boilerplate" basis as the AS modules.
+        # git base pre-spawn so every lane inherits it.
+        #
+        # #1005: this comment used to end "the backend then ADDS business routes to it",
+        # and that is not true — `main.py` is in `_BACKEND_FRAMEWORK_OWNED`, so
+        # `is_framework_owned()` makes the write guard DENY every lane edit to it. The
+        # projector states the real contract: "the lane implements the real handler in
+        # custom_routes.py" (route_projector), which main.py discovers and includes.
+        #
+        # The stale sentence is very likely where the mistake spread from: #1004's
+        # remediation text and #1005's worked example in backend_agent.j2 both told the
+        # lane to wire routes in main.py, and both were written by someone reading this.
+        # A wrong comment in the framework becomes a wrong instruction to an agent.
         main_py = orch.output_dir / "app" / "backend" / "main.py"
         if not main_py.exists():
             main_py.parent.mkdir(parents=True, exist_ok=True)
