@@ -18097,3 +18097,29 @@ own task. The refusal returns the existing task id and says why — "a second ta
 defect does not add a second fix, it adds a second thing blocking the delivery gate."
 
 Suite 6,776.
+
+### 407. checking #998's interaction before r164 runs, not after
+
+#994 taught the question — *does the consumer see what the producer now emits?* — so I asked
+the sibling one about #998: **something cancelled 7 of r162's 17 duplicates. Does my
+create-time refusal fight it?**
+
+It does not, and the answer is better than "no conflict". The cancellations were the
+orchestrator's own manual work:
+
+    "cancelled duplicate task_<id>, and dispatche…"
+    "cancelled the accidental duplicate, urgently re-drove backend and st…"
+
+**The model noticed it was cloning tasks and cleaned up by hand — then kept cloning.** There
+is no automatic canceller in the code (checked `workhub` and `hub_registry`), so #998 is not
+racing a mechanism; it replaces a chore.
+
+★ That raises #998's value above what I estimated when writing it. It removes the duplicate
+AND the turn spent noticing and cancelling it — seven such turns in r162, each one a full
+orchestrator step of "察觉 → 取消 → 重新驱动" that produced no progress on the actual 405.
+
+★★ Worth noting the shape of the underlying failure: the orchestrator called
+`workhub_list_tasks` 164 times in r162, so it was LOOKING at the task list constantly and
+still created duplicates. Seeing a list is not the same as noticing a match in it. Structured
+refusal at the point of creation is the only thing that closes that gap, and it is why keying
+on METHOD+PATH rather than asking the model to be more careful is the right shape.
