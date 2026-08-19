@@ -32,6 +32,8 @@ KNOWN_FIXED = {
     "#969 nullable in DDL": r'syntax error at or near "nullable"',
     "#970 duplicate icon import": r"has already been declared",
     "#971 missing worktree skills": r"not found: \.agents/skills",
+    "#973 DDL ? placeholder (now diagnosable, not yet fixed)": r'at or near "\?"',
+    "#974 FK ambiguity refused": r"repair DECLINED \(ambiguous owner\)",
 }
 
 # NOT defects — activity that is healthy at low volume and pathological in bulk. r158 fired
@@ -41,13 +43,13 @@ KNOWN_FIXED = {
 # FAIL, so it reports as a rate with its baseline instead of a pass/fail.
 ACTIVITY = {
     "icon heal fired": (r"imported via lucide-react", "1-2 normal; r157 hit 20 while thrashing"),
+    "FK actor narrowed": (r"NARROWED \(#974\)", "a refinement was deduced; r158 refused 90x instead"),
 }
 
 # Known and deliberately unfixed — see EXPERIMENTS item 360. Listed so they do not read as
 # new findings every round.
 KNOWN_UNFIXED = {
     "messagebus target (no loss measured)": r"Target agent not found: messagebus",
-    'DDL "?" (unlocalizable)': r'syntax error at or near "\?"',
     "default_now (one occurrence)": r'syntax error at or near "default_now"',
 }
 
