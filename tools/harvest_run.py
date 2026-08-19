@@ -41,7 +41,7 @@ KNOWN_FIXED = {
     # confused with a hash appearing anywhere else in the log.
     # #991: an unreachable stock-photo host in seed media — every page that renders one
     # logs a console error, and console errors fail the UI-evidence gate.
-    "#991 stock host in seed media": r"ERR_TUNNEL_CONNECTION_FAILED",
+    "#993 external image in seed (symptom)": r"ERR_TUNNEL_CONNECTION_FAILED",
     "#978 remediation is only a hash": r"remediation dispatched to [a-z_]+ \([^)]*\): [a-z_]+ — [0-9a-f]{32,}",
 }
 
