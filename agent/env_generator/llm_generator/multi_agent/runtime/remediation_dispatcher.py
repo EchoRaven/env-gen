@@ -1235,6 +1235,19 @@ class RemediationDispatcher:
                                           + "\n- ".join(_off[:10]))
                     except Exception:
                         pass
+                # #983: last-resort instance naming. Every bespoke branch below exists
+                # because someone hit that check and noticed the lane was told nothing;
+                # #981 and #982 were two of those, days apart, for sibling checks. This
+                # covers the ones nobody has hit yet — the gate already derived the token
+                # FROM prose that names the page or flow, so replay that prose when no
+                # branch has set something better. Set first so a bespoke branch overrides.
+                try:
+                    _prose = (getattr(orch, "_gate_blocker_prose_983", None) or {}).get(name) or []
+                    if _prose:
+                        _extra = ("\n\nWHAT THE GATE ACTUALLY REPORTED:\n- "
+                                  + "\n- ".join(str(x) for x in _prose[:8]))
+                except Exception:
+                    pass
                 if name == "validation_ui_evidence_failed":
                     # #982: the other half of r159's terminal pair. Same shape as #981.
                     _fp = _ui_evidence_failed_pages(orch)

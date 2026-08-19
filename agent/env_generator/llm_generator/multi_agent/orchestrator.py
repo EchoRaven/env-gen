@@ -4218,6 +4218,14 @@ class Orchestrator:
                 len(_did_not_run), "; ".join(_did_not_run[:6]))
         _persist_gate_948(self.output_dir, _gate793,
                           getattr(self, "_logger", None) or _lg.getLogger("DeliveryGate"))
+        # #983: stash the blocker prose so remediation can name the instance. The gate
+        # classifies each human blocker string into a stable token and the prose — the only
+        # part that says WHICH page or flow — used to stop here. 11 of the 16 blockers
+        # actually observed across r157-r159 reach the lane as a bare check name.
+        try:
+            self._gate_blocker_prose_983 = dict(_gate793.get("blocker_prose") or {})
+        except Exception:
+            self._gate_blocker_prose_983 = {}
         return _gate793
     def _validate_contract_alignment(self) -> Dict[str, Any]:
         from .runtime.delivery_gate import validate_contract_alignment

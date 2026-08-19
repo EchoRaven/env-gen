@@ -17088,3 +17088,42 @@ tag), 69 stall escalations (the watchdog re-driving mid-turn lanes in a 4-hour r
 ERR_CONNECTION_REFUSED from a genuine mid-walk teardown race that blocks nothing (item 374).
 
 Suite 6,616.
+
+### 377. #983 — stop fixing the same shape one branch at a time
+
+Four times this session a lane was handed a failure with its cause stripped: #973 (a postgres
+ERROR without its STATEMENT), #978 (a remediation whose detail was a container id), #981 and
+#982 (gate checks naming no instance). Each was fixed where it was noticed. That is the wrong
+unit of work, and measuring said so.
+
+Of the **16 delivery-gate blockers ACTUALLY observed across r157-r159**, only 5 name their
+instance. The other 11 reach the lane as a bare check token — including the single most
+frequent blocker of the whole arc, `deliverability_ui_page_unwired` at 37 occurrences.
+
+They share one line:
+
+    for blocker in (deliverability_report.blockers or []):
+        deliverability_failed_checks.append(_deliverability_check_token(blocker))
+
+`_deliverability_check_token` classifies human prose — "2 ui page(s) declared but unusable:
+player_page" — into a stable token. The token is what the tests assert on and what the
+dispatcher switches on, so classifying was right. **Discarding the input was not.** Carrying
+the prose through covers every check at once, including the ones nobody has hit yet.
+
+★ Ordering matters in the dispatcher: the generic replay is set BEFORE the bespoke branches,
+so #981/#982's tailored bodies still win where they exist. Generic prose is the floor, not the
+ceiling — a test pins that ordering, because reversing it would silently downgrade two fixes
+made hours earlier.
+
+★★ The methodological point is the one worth keeping. I found #981 and #982 days apart by
+noticing them; I found the other nine by ASKING THE CORPUS which checks had ever blocked a run
+and cross-referencing the dispatcher's branch list. **Nine defects the same size as the two I
+celebrated, invisible until the question was posed as a query instead of an observation.**
+
+A near-miss on the way: my first pass compared the gate's literal `failed_checks.append("…")`
+calls against the dispatcher's `if name == "…"` branches and reported "2 of 21 covered". That
+was two incomplete extractions multiplied together — most branches are reached by other
+paths. Grounding it in blockers the LOGS actually contain gave 5 of 16, a different and true
+number. Same trap as items 366 and 374: a decisive figure from a partial measurement.
+
+Suite 6,623.

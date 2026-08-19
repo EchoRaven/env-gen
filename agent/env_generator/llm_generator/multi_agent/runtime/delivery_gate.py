@@ -2114,6 +2114,14 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # consistent with the architectural pattern from the
     # two-pass dispatcher and GateRegistry extraction.
     deliverability_failed_checks: List[str] = []
+    # #983: keep the PROSE beside the token. `_deliverability_check_token` classifies a
+    # human blocker string ("… declared but unusable: player_page") into a stable name, and
+    # the prose — the only part that says WHICH page — was dropped on the next line. Every
+    # generic remediation this session traces here: 11 of the 16 blockers actually observed
+    # across r157-r159 reach the lane as a bare check name, and the most frequent of them
+    # (deliverability_ui_page_unwired, 37x) is one of them. Fixing it at the source beats
+    # adding a bespoke branch per check, which is what #981 and #982 had to do.
+    deliverability_blocker_prose: Dict[str, List[str]] = {}
     try:
         from .deliverability import compute_deliverability
         session_start_ts = session_start_ts or 0.0
@@ -2128,7 +2136,9 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             # them onto stable check tokens the test surface
             # can assert against (extracted to
             # ``_deliverability_check_token`` — unit-testable).
-            deliverability_failed_checks.append(_deliverability_check_token(blocker))
+            _tok = _deliverability_check_token(blocker)
+            deliverability_failed_checks.append(_tok)
+            deliverability_blocker_prose.setdefault(_tok, []).append(str(blocker))
     except Exception as deliv_err:
         # Defense in depth: a malformed aggregator call must
         # never crash the gate. Surface the exception as its
@@ -2317,6 +2327,9 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         "missing_dirs": missing_dirs,
         "invalid_json": invalid_json,
         "failed_checks": failed_checks,
+        # #983: {check_token: [the blocker prose it was derived from, …]} so a remediation
+        # can name the instance for checks that have no bespoke branch.
+        "blocker_prose": deliverability_blocker_prose,
         # #790: checks that could not RUN. Not a failure (the permissive default stands so a
         # hub hiccup cannot wedge every release) and NOT evidence of a pass either — a
         # release cut with this non-empty is unverified on those axes. Travels with the
