@@ -16815,3 +16815,34 @@ Promoted from "deliberately unfixed" to a regression signature in harvest_run, g
 any hub name so `workhub`/`eventhub`/`registryhub` cannot reintroduce it quietly.
 
 Suite 6,567.
+
+### 369. #977 — the shim knew one placeholder dialect and met the other
+
+`syntax error at or near "?"` — 4 in r158, 1 in r157, 1 in r149, each failing `docker_up`.
+Written off TWICE as unlocalizable (items 360, 363), because the `?` never survives in an
+artifact: the app source gets healed between validations, and the log printed postgres's
+ERROR line without the STATEMENT beside it.
+
+The generated `database.py` carries a compatibility shim (FIX #86) that coerces a raw-string
+statement to `text()` and rewrites psycopg's `%s` positional params into named binds. It never
+learned the other habit — `execute("... WHERE id = ?", (v,))`, the sqlite/qmark form — so that
+string reached postgres verbatim.
+
+★ Same technique as #976, one day later: **enumerate the surface, do not grep the symptom.**
+Searching for `?` finds nothing (it is punctuation, and it exists in no artifact). Listing the
+framework's SQL-execution sites returns three, one of which is a shim whose whole purpose is
+translating placeholder dialects — and it handles exactly one. Two multi-session mysteries
+fell to the same move within a day of each other.
+
+★★ And the ordering mattered: #973 (print the STATEMENT beside the ERROR) is what would have
+named this from a log. I could not wait for the next run to confirm, so I found it statically
+instead — but #973 is why the NEXT occurrence of any such error is a five-minute job rather
+than a fifth session. Observability first, then the bug it was blocking.
+
+`%s` keeps priority, so every statement that already worked is rewritten byte-identically.
+A bare `?` with no positional params (a question mark inside a string literal) is left alone.
+
+This edits a TEMPLATE, so a syntax error would break every generated app while the framework's
+own `py_compile` stayed green. The test `ast.parse`s the generated module for that reason.
+
+Suite 6,576.

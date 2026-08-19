@@ -526,8 +526,15 @@ class _Session(Session):
         ORM statements take the native path untouched."""
         if isinstance(statement, str):
             from sqlalchemy import text as _text
-            if isinstance(params, (list, tuple)) and "%s" in statement:
-                parts = statement.split("%s")
+            if isinstance(params, (list, tuple)) and ("%s" in statement or "?" in statement):
+                # #977: accept the qmark style too. FIX #86 taught the shim psycopg's `%s`;
+                # a lane writing the sqlite habit `execute("... WHERE id = ?", (v,))` still
+                # reached postgres verbatim as `syntax error at or near "?"` — 4 of those in
+                # r158, each failing docker_up, and undiagnosable from the log until #973
+                # started printing the STATEMENT beside the ERROR. `%s` keeps priority so
+                # existing behaviour is byte-identical whenever it appears.
+                marker = "%s" if "%s" in statement else "?"
+                parts = statement.split(marker)
                 stmt = parts[0]
                 bound = {}
                 for i, chunk in enumerate(parts[1:]):

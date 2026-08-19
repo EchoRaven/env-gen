@@ -32,7 +32,7 @@ KNOWN_FIXED = {
     "#969 nullable in DDL": r'syntax error at or near "nullable"',
     "#970 duplicate icon import": r"has already been declared",
     "#971 missing worktree skills": r"not found: \.agents/skills",
-    "#973 DDL ? placeholder (now diagnosable, not yet fixed)": r'at or near "\?"',
+    "#977 qmark placeholder to postgres": r'at or near "\?"',
     "#974 FK ambiguity refused": r"repair DECLINED \(ambiguous owner\)",
     "#976 receipt to a hub": r"Target agent not found: (?:messagebus|workhub|eventhub|registryhub)",
 }
