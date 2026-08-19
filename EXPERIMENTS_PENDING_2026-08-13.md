@@ -17127,3 +17127,36 @@ paths. Grounding it in blockers the LOGS actually contain gave 5 of 16, a differ
 number. Same trap as items 366 and 374: a decisive figure from a partial measurement.
 
 Suite 6,623.
+
+### 378. querying the corpus for repeat self-heals — one finding, and it is not a defect
+
+Applying #983's technique (ask the corpus, don't wait to notice) to a second surface: rank every
+framework self-repair by how often it fires across the r15x runs.
+
+    752x / 11 runs   Stall escalation
+    496x / 15 runs   Frontend build tooling pinned to known-good
+    484x /  4 runs   Kickoff
+    201x / 12 runs   Framework validation
+
+The pin is the interesting one — 496 firings (248 real, halved for the double-log era) across
+EVERY run in the window, ~16 per run. A repair that constant is usually one of two things: it
+does not stick, or something keeps undoing it.
+
+Checked rather than assumed: `pin_frontend_build_tooling` appends to `changed` only when the
+file content actually DIFFERS, and the caller logs only `if pin.get("pinned")`, which is
+`bool(changed)`. **It never announces a no-op.** So those are 248 genuine rewrites: the lane
+keeps writing unpinned versions and the framework keeps putting the known-good ones back.
+
+Not a defect — FIX #44 exists precisely because unpinned tooling kills the build ("the lane
+writes 'latest' everywhere → tailwind v4 vs v3 postcss config → npm build dies"). The guard is
+working, cheaply, sixteen times a run.
+
+The one honest observation left: **the lane is never told its dependency edits get reverted**,
+so it will write `latest` again forever. That is a candidate optimisation, not a bug, and it
+stays unfixed for the usual reason — the guard costs almost nothing, telling the lane costs
+noise, and nothing measured says the re-editing wastes meaningful lane effort. Recorded so the
+next pass over this ranking does not re-investigate it.
+
+★ Two surfaces queried this way now (gate-check detail coverage → #983, self-heal frequency →
+nothing). The technique's value is not that it always finds something; it is that "nobody has
+looked" stops being the reason something is unknown.
