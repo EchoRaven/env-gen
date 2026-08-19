@@ -238,6 +238,47 @@ def _ui_flow_missing_names(orch) -> List[str]:
         return []
 
 
+def _ui_flow_failed_names(orch) -> List[str]:
+    """#981: the flows the gate counts as FAILED — recorded, but not passing.
+
+    `compute_flow_coverage` has always returned `failed` alongside `missing`; only the
+    missing branch was ever read. So `deliverability_ui_flow_failed` reached the verifier as
+    six words and no instance, while its sibling `_missing` named every flow. r159 spent its
+    last hours on exactly that check with the walk's own findings (a blank player page, a
+    broken POST /api/continue-watching) sitting unused in the report.
+
+    Same source as the missing branch, and the same reason: recompute rather than trust a
+    status the verifier reported about itself (FIX #284, r68). Best-effort -> [] falls back
+    to the generic text."""
+    try:
+        _cfc = globals().get("compute_flow_coverage")
+        if _cfc is None:
+            from .flow_coverage import compute_flow_coverage as _cfc
+        report = _cfc(orch.hubs.registryhub)
+        seen: set = set()
+        out: List[str] = []
+        for f in (getattr(report, "failed", None) or []):
+            t = str(f).strip()
+            if t and t not in seen:
+                seen.add(t)
+                out.append(t)
+        return out
+    except Exception:
+        return []
+
+
+def _ui_flow_failed_extra(failed: List[str]) -> str:
+    """#981: name the failing flows. A gate check the lane cannot locate is a gate check it
+    cannot clear."""
+    if not failed:
+        return ""
+    return ("\n\nTHE FLOW(S) RECORDED BUT NOT PASSING (recomputed from the hub, not from "
+            "any status previously reported):\n- " + "\n- ".join(failed) +
+            "\n\nEach already HAS a record, so re-recording it changes nothing: open the "
+            "evidence on the named flow, fix what it reports, then re-run the walk so the "
+            "record flips to success.")
+
+
 def _ui_flow_missing_extra(missing: List[str]) -> str:
     """The gate-specific remediation body for deliverability_ui_flow_missing. Names the exact
     missing flows and states the contradiction that broke r68 out loud — so a verifier that
@@ -1162,6 +1203,12 @@ class RemediationDispatcher:
                                           + "\n- ".join(_off[:10]))
                     except Exception:
                         pass
+                if name == "deliverability_ui_flow_failed":
+                    # #981: the sibling branch below has named its instances since FIX #284;
+                    # this one never did, so the verifier was handed the check name alone.
+                    _ff = _ui_flow_failed_names(orch)
+                    if _ff:
+                        _extra = _ui_flow_failed_extra(_ff)
                 if name == "deliverability_ui_flow_missing":
                     # FIX #284: hand the verifier the EXACT missing flow names + the
                     # contradiction that broke r68 (it broadcast "already recorded" for

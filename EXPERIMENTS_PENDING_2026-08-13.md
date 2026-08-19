@@ -17017,3 +17017,38 @@ The mid-walk teardown race is left unfixed on purpose. Fixing it means holding t
 across a multi-minute browser walk, which would block the validation cycle that lanes depend
 on — a real cost, against a defect that costs some retries and blocks nothing. Recorded with
 the mechanism named so the next person does not re-derive it.
+
+### 375. #981 — the gate check r159 could not clear, because nothing said which flow
+
+r159 converged further than any run in the arc: eight failed delivery-gate checks in r158 down
+to two. It then spent hours on `deliverability_ui_flow_failed`. What the verifier was handed:
+
+    GATE-CHECK remediation dispatched to verifier (task …): deliverability_ui_flow_failed
+
+The check name. Nothing else. Meanwhile the sibling check one branch away:
+
+    if name == "deliverability_ui_flow_missing":
+        _extra = _ui_flow_missing_extra(_ui_flow_missing_names(orch))
+
+has named every offending flow since FIX #284, whose commit message says the reason out loud:
+"generic text gave a drifting verifier nothing to refute."
+
+★ The data was never missing. `compute_flow_coverage` returns `failed` alongside `missing` —
+both fields, same call — and the walk had already reported the specifics (`blank=
+['player_page']`, a broken `POST /api/continue-watching`). **One branch read its half of the
+report and the other did not**, for as long as both have existed.
+
+Third instance of this shape this session: #973 (a postgres ERROR reported without its
+STATEMENT), #978 (a remediation whose entire detail was a container id), and now a gate check
+the lane cannot locate. Each time the information existed, one code path used it, and the path
+that most needed it did not. **The pattern is not "we failed to capture the cause" — it is
+"the cause was captured and the last mile dropped it."**
+
+The added body also states that re-recording changes nothing: a recorded-but-failing flow
+already HAS a record, and a verifier that re-records it makes no progress. That is how r68's
+contradiction started, and #284 fixed it for the missing case only.
+
+Found by asking what the lane actually receives about r159's two remaining blockers — the
+critical path, not a sweep.
+
+Suite 6,606.
