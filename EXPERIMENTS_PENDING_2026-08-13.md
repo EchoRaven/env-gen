@@ -17428,3 +17428,37 @@ Guards match #969: an explicit `not null` still wins, a stated `nullable` is nev
 and a `?` anywhere but the end of the type is left alone (`varchar(3?)` is not ours to edit).
 
 Suite 6,659.
+
+### 387. correcting #988 — the `integer?` inference does not survive the corpus
+
+#988 shipped on this reasoning: character 255 of `CREATE TABLE IF NOT EXISTS "titles" (`
+lands on `duration_minutes`, so the contract must have said `integer?`. Checked it against
+the corpus straight afterwards:
+
+    161 contract files, 11,742 columns, types ending in '?': **0**
+
+The inference is unsupported. And the character count had a second flaw I should have named
+when I made it: **I counted on the HEALED r160 DDL, and the statement that failed was the
+pre-heal version** — different column names, different order, different lengths. The offset
+was measured against the wrong text.
+
+What I actually know: a `?` reaches postgres inside a `CREATE TABLE`, six times across four
+runs. Where it enters is still unproven. Contracts are clean, so the likely remaining source
+is a lane authoring `app/database/init/*.sql` by hand — unconfirmed, and I am not going to
+guess a second time.
+
+#988 STAYS, on narrower grounds than it shipped with. Stripping a trailing `?` from a type
+position and promoting it to `nullable` is correct for any input that has one, cheap, fully
+guarded (explicit NOT NULL wins, stated nullable is never overwritten, a `?` mid-type is left
+alone), and it defends a real postgres failure mode. It is now a **guard**, not a root-cause
+fix, and the log line #987 unlocked will name the true source on the next occurrence.
+
+★ Second time this session a follow-up query overturned my own just-committed rationale
+(#984 → item 380). Both times the fix was net-positive and the STORY was wrong, and both
+times a green suite plus a red planted control had certified the story. **Tests verify that
+code does what you wrote; nothing but data verifies that what you wrote was the right
+thing.**
+
+★★ The tell was identical in both cases: I reached for the corpus to CONFIRM something I had
+already committed. That impulse is the whole mechanism — the check is worthless if you only
+run it when you expect it to pass, and it is cheapest exactly when you are most sure.
