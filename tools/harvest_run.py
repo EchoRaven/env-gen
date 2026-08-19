@@ -53,6 +53,9 @@ KNOWN_FIXED = {
 ACTIVITY = {
     "icon heal fired": (r"imported via lucide-react", "1-2 normal; r157 hit 20 while thrashing"),
     "FK actor narrowed": (r"NARROWED \(#974\)", "a refinement was deduced; r158 refused 90x instead"),
+    # #995: each hit is a framework repair that WOULD have written unparseable code and was
+    # stopped. Non-zero is the guard earning its keep, not a regression.
+    "#995 refused a breaking repair": (r"#995 REFUSED", "each one is a SyntaxError that never reached disk"),
 }
 
 # Known and deliberately unfixed — see EXPERIMENTS item 360. Listed so they do not read as
@@ -93,6 +96,43 @@ def max_log_gap(lines):
         prev = sec
     return worst
 
+
+
+def _duplicate_endpoint_tasks(run: str):
+    """#998 verification, read from the task store.
+
+    r162 died on `incomplete_required_tasks` with NINE open tasks naming
+    `POST /api/continue-watching`, all authored by the orchestrator with varied titles. The
+    gate counts open tasks, so one unfixable defect became nine blockers.
+
+    Duplication is a property of the STORE, not of any log line, so this is the one check here
+    that opens an artifact. Returns None when the store is absent (a run that never got that
+    far), [] when clean, else [(endpoint, count)] — keeping "nothing there" distinguishable
+    from "nowhere to look", which is the mistake items 366/381/391/398 all share.
+    """
+    import collections
+    import json
+    import pathlib
+    import re as _re
+    p = pathlib.Path(f"agent/generated/{run}/shared/hubs/workhub_tasks.json")
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    rx = _re.compile(r"\b(GET|POST|PUT|PATCH|DELETE)\s+(/[A-Za-z0-9/_{}.-]*)", _re.I)
+    open_states = {"pending", "in_progress", "open", "claimed"}
+    seen = collections.Counter()
+    for k, v in data.items():
+        if k == "_meta" or not isinstance(v, dict):
+            continue
+        if str(v.get("status") or "").lower() not in open_states:
+            continue
+        m = rx.search(str(v.get("title") or ""))
+        if m:
+            seen[f"{m.group(1).upper()} {m.group(2).rstrip('/').lower()}"] += 1
+    return sorted(((e, n) for e, n in seen.items() if n > 1), key=lambda x: -x[1])
 
 def harvest(run: str) -> dict:
     lines = _log_path(run).read_text(encoding="utf-8", errors="replace").splitlines()
@@ -152,6 +192,18 @@ def _print(h: dict, against: dict | None = None) -> None:
     for k, (n, note) in h["activity"].items():
         base = f"   (was {against['activity'][k][0]})" if against else ""
         print(f"         {n:5d}  {k}{base}  — {note}")
+
+    # #998: the gate that killed r162 counts OPEN tasks, and one unfixable defect had produced
+    # nine of them. This reads the artifact rather than the log, because duplication is a
+    # property of the task store and never appears as a log line.
+    _dups = _duplicate_endpoint_tasks(h["run"])
+    if _dups is not None:
+        print("\n-- #998 open tasks per endpoint  (r162: 9 for one defect)")
+        if _dups:
+            for ep, n in _dups:
+                print(f"   FAIL  {n:5d}  {ep}")
+        else:
+            print("         ok  no endpoint holds more than one open task")
 
     for title, key in (("docker_up failure causes", "docker_up"),
                        ("tool failures", "tool_failures"),
