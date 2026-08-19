@@ -514,13 +514,20 @@ def _http(method: str, url: str, *, token: Optional[str] = None,
     # harvest → last_id never set → literal ${post_id} → 422 wedge, while the verifier's
     # wiring (save: posts.0.id) was perfect. Read the full body (512KB safety bound —
     # a 50-row page is ~20-30KB); display truncation stays at note-construction time.
+    # #1003: keep the response HEADERS. A 405 is REQUIRED by HTTP to carry `Allow:` naming
+    # the methods the server does accept, and the HTTPError branch below is exactly where a
+    # 405 lands — `e.headers` has it. #1000 fixed the sibling probe path in runhub; THIS is
+    # the path that feeds `business_endpoints_reachable`, so r162's detail was built without
+    # ever seeing the one header that explains it.
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            return {"status": r.status, "body_text": r.read(524288).decode("utf-8", "replace"), "error": None}
+            return {"status": r.status, "body_text": r.read(524288).decode("utf-8", "replace"),
+                    "error": None, "headers": dict(getattr(r, "headers", {}) or {})}
     except urllib.error.HTTPError as e:
-        return {"status": e.code, "body_text": (e.read(524288).decode("utf-8", "replace") if e.fp else ""), "error": None}
+        return {"status": e.code, "body_text": (e.read(524288).decode("utf-8", "replace") if e.fp else ""),
+                "error": None, "headers": dict(getattr(e, "headers", {}) or {})}
     except Exception as e:
-        return {"status": None, "body_text": "", "error": f"{type(e).__name__}: {e}"}
+        return {"status": None, "body_text": "", "error": f"{type(e).__name__}: {e}", "headers": {}}
 
 
 def _expected_shape(method: str, path: str) -> Optional[str]:
@@ -975,7 +982,20 @@ def run_smoke_validation(
                 "trace": f"{method} {url} -> {res['status'] or res['error']}",
             })
             if not reachable:
-                unreachable.append(f"{method} {path} → {res['status'] or res['error']}")
+                # #1003: a 405 says WHY in its own headers. `Allow:` names the methods the
+                # running app bound for this path — the fact that makes the difference
+                # between "reproduce this" and "look at the route declaration". r162 spent 17
+                # tasks on `POST /api/continue-watching → 405` because this line emitted the
+                # number alone. Appended only for 405 and capped hard, since
+                # compose_unreachable_detail budgets the first 300 chars for the traceback.
+                _extra1003 = ""
+                if res["status"] == 405:
+                    for _k, _v in (res.get("headers") or {}).items():
+                        if str(_k).lower() == "allow":
+                            _extra1003 = f" (app accepts: {str(_v)[:48]})"
+                            break
+                unreachable.append(
+                    f"{method} {path} → {res['status'] or res['error']}{_extra1003}")
             if _ur:
                 unimplemented.append(_ur)
             # gate C — behavioral COMPLETENESS: a 2xx response MUST match the contract

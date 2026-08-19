@@ -18305,3 +18305,36 @@ unguarded by any test on purpose: a test would pin instrumentation that is meant
 deleted.
 
 Suite 6,790 (unchanged — instrumentation, no behaviour).
+
+### 413. #1003 — station three, found on the twelfth search, and #1000 had fixed a sibling
+
+The trace ends. `business_endpoints_reachable`'s detail is built here:
+
+    validation_runner.py:978   unreachable.append(f"{method} {path} → {res['status'] or res['error']}")
+    validation_runner.py:319   compose_unreachable_detail() joins them with "; "
+
+and `res` comes from `validation_runner._http`, which returned `{status, body_text, error}` —
+**no headers**.
+
+★ So #1000 fixed the wrong path. It repaired `runhub`'s probe wrapper, which is a real defect
+and stands, but `business_endpoints_reachable` is fed by a **completely separate HTTP helper**.
+Two independent transports, both discarding the same header, and I fixed the one I found first
+while the one that actually built r162's detail kept dropping it. **"I fixed the capture point"
+was true and useless — there were two.**
+
+What located it, after eleven failures: searching for the LOG WRAPPER (`failed=`) rather than
+its contents. That gave `framework_validation.py:1352`, whose list comprehension reads
+`c.get('detail')` from `data["checks"]`, which named the producer as the validation runner —
+a chain of three hops from one string I already had the exact bytes for. **Every earlier
+attempt searched for what the text SAID; the one that worked searched for what printed it.**
+
+#1003 keeps headers on all three `_http` exits and appends `(app accepts: …)` for a 405 only,
+capped at 48 chars because `compose_unreachable_detail` budgets the first 300 for a backend
+traceback and its docstring records a lane acting on exactly that prefix.
+
+★★ #1002's instrumentation is now redundant for this question and should be removed once r165
+confirms nothing else feeds the same field. Leaving it one run, because "I found the producer"
+is a claim the instrumentation can cheaply verify — and this trace has already proved once
+that finding *a* capture point is not finding *the* capture point.
+
+Suite 6,796.
