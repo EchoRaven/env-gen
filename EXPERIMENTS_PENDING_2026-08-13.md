@@ -17636,3 +17636,31 @@ touched — they need their own measurement, and inventing one to justify a chan
 380 and 387 went wrong.
 
 Suite 6,676.
+
+### 393. closing #990's deferral with the measurement it asked for
+
+#990 fixed the ten `docker_tools` sites and left the git-operation sites — `commit_worktree`,
+`merge_agent_branch_to_main`, `promote_integration_to_main` — recorded but untouched, on the
+stated grounds that they needed their own measurement. Took it:
+
+    slowest git/hub operation observed across r160 + r161:   104ms
+    the block that justified #990:                       300,696ms
+
+Three orders of magnitude apart. ~0.1s on the event loop is the same order as ordinary task
+scheduling, and r160 ran 61 merges without the max-silence figure moving off 65s. **They do not
+need fixing**, and the two-level sweep's flagging of them was correct-but-uninteresting: the
+call really is blocking, the block really is negligible.
+
+★ This is the shape a deferral should have. #980's read "nothing measured says the short ones
+hurt" and r161 spent it within hours. #990's read "they need their own measurement" and the
+measurement closed it the other way. **Neither deferral required remembering to come back — each
+one named the evidence that would settle it, so the evidence settling it was automatic.**
+
+★★ Worth contrasting with the ones that went wrong. Items 380 and 387 are corrections to fixes
+I shipped on inferred rationales; items 392 and this one are deferrals that resolved on
+measurement. Same session, same me — the difference is entirely whether I wrote down what would
+change my mind BEFORE I needed it to.
+
+The two-level blocking sweep stays in the record as a technique: sync helpers that block, then
+async callers of those helpers. It found 63 sites where the direct sweep found 12, of which one
+was already costing 300 seconds a run and three more turned out to cost nothing.
