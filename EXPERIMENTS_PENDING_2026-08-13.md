@@ -16846,3 +16846,38 @@ This edits a TEMPLATE, so a syntax error would break every generated app while t
 own `py_compile` stayed green. The test `ast.parse`s the generated module for that reason.
 
 Suite 6,576.
+
+### 370. #978 — the remediation message told a lane a container id
+
+Found by sweeping for the CLASS of #972/#973 rather than waiting for a run: places that name a
+failure and drop its cause. The except-handler surface came back clean (every candidate does
+log its exception — my first grep said otherwise and was wrong, the variable sits on the next
+line). The truncation surface did not:
+
+    FAILING-CHECK remediation dispatched to verifier (task …): docker_up —
+    bcd1251d323e44bd8ebf4367215be5d1fc9b289acd296408d28e66b4f732f1bf
+
+64 hex characters of container id. The raw detail begins with one
+(`docker_up:<container> <ts> UTC [58] ERROR: …`) and the dispatcher sliced `detail[:160]`.
+
+★ This is #182 verbatim — "a blind prefix slice lands on the meaningless banner and hides the
+real cause" — and `_salient_error` was written to end it. The REPORTING path calls it. The
+DISPATCH path, whose entire job is telling an agent what to fix, never did. **The framework had
+the fix and the most consequential call site was not using it**; nobody noticed because the log
+line a human reads was correct while the message an agent acts on was not.
+
+Cap 600 rather than the reporting path's 200: a lane acts on this text, a human skims that one.
+
+Two self-inflicted test failures worth recording, both the same shape as the session's other
+measurement traps:
+
+  * the source-anchored assertion searched for `detail[:160]` and found it in MY OWN COMMENT
+    quoting the old code. Anchor on the call (`name, detail[:160])`), not the substring.
+  * I asserted the container id would disappear. `_salient_error` keeps whole LINES and the id
+    shares a line with the error, so it rides along — correctly. The property that matters is
+    that the error is PRESENT, not that the id is absent.
+
+Both times the test was wrong and the code was right, which is the safer direction to be wrong
+in, but only because I checked instead of "fixing" the code to satisfy a bad assertion.
+
+Suite 6,582.

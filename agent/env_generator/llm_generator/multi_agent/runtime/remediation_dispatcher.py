@@ -583,6 +583,18 @@ class RemediationDispatcher:
                     continue  # one dispatch per milestone (storm control)
                 owner, title, how = spec
                 detail = str(c.get("detail") or "")
+                # #978: hand the LANE the salient line, not a blind prefix. r158 told the
+                # verifier `docker_up — bcd1251d323e...f732f1bf`: 64 hex characters of
+                # container id, because the raw detail begins with one and the dispatch
+                # sliced `detail[:160]`. That is the #182 failure exactly, and
+                # `_salient_error` was written to end it — this call site simply never
+                # used it. The remediation message is the one text whose whole job is
+                # telling an agent what to fix.
+                try:
+                    from .framework_validation import _salient_error as _salient_978
+                    detail = _salient_978(detail, cap=600) or detail
+                except Exception:
+                    pass
                 if name == "docker_up":
                     # FIX #143: when the captured build tail names exactly one
                     # side's toolchain, skip the verifier diagnose-hop and P0
