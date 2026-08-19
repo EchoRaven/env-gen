@@ -98,7 +98,12 @@ def harvest(run: str) -> dict:
         return Counter(_norm(m) for m in re.findall(pattern, blob)).most_common(limit)
 
     gap, gap_at = max_log_gap(lines)
+    # #975 landed after r159: before it, each record was emitted by both the agent
+    # handler and the root, so raw counts double. Detected rather than hardcoded by
+    # run name, so it stays right for any log handed to this tool.
+    _dbl = bool(re.search(r"^\d{4}-\d{2}-\d{2} .* - Agent\.", blob, re.M))
     return {
+        "double_logged": _dbl,
         "run": run,
         "lines": len(lines),
         "max_gap_s": gap,
@@ -116,6 +121,8 @@ def harvest(run: str) -> dict:
 
 def _print(h: dict, against: dict | None = None) -> None:
     print(f"== {h['run']} — {h['lines']} lines, max silence {h['max_gap_s']}s at {h['max_gap_at']}")
+    if h["double_logged"]:
+        print("   NOTE: this log predates #975 — every line is emitted twice, so every\n         count below is 2x reality. Comparisons between two such runs still hold.")
 
     print("\n-- REGRESSIONS (must be 0)")
     for k, n in h["regressions"].items():
@@ -168,6 +175,10 @@ def selftest() -> int:
         assert len(h["docker_up"]) == 1, h["docker_up"]
         assert h["docker_up"][0][1] == 2
         assert h["max_gap_s"] == 144, h["max_gap_s"]
+        # the sample has no "YYYY-MM-DD ... - Agent." lines, so it must NOT be
+        # flagged as double-logged; a false flag would tell a reader to halve
+        # counts that are already correct
+        assert h["double_logged"] is False
         assert any("RuntimeError" in t for t, _ in h["exceptions"]), h["exceptions"]
         print("selftest OK")
         return 0
