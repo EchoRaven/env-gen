@@ -18032,3 +18032,35 @@ full revert, because the SHA snapshot and the reload run BEFORE anything else. *
 the last disaster paid for itself on the very next attempt at the same work.**
 
 Suite 6,755.
+
+### 405. #997 — turning three fixes into one standing assertion
+
+#969, #988 and #989 are the same accident in three spellings: a token that means something to
+a contract author and nothing to postgres, standing in a column's TYPE position.
+
+    #969   "duration" integer nullable          nullable is a flag, not a type
+    #988   "duration" integer?                  the optional marker
+    #989   "created_at" timestamp default_now   the underscore spelling of DEFAULT NOW()
+
+Each cost a run, and between them they cost **three sessions**. The cost profile is identical
+every time: initdb refuses the file, the database never starts, docker_up fails, and the run
+stalls behind an error naming a character offset inside a statement the log had already
+truncated.
+
+They were found one at a time, months apart. **There is no reason to believe the list is
+complete** — so the invariants now hold at the point the DDL is rendered, not at the point a
+container fails to boot. A fourth spelling raises with the line number and the fix that owns
+the family.
+
+★ The interesting question was where to put it, and the answer is what makes it cheap:
+`render_schema_sql` is the single exit through which all DDL passes. One call site, no
+threading, and the end-to-end test feeds the renderer BOTH `integer?` and
+`timestamp default_now` to prove the source-level strips (#988/#989) and the exit-level
+assertion (#997) agree rather than duplicating each other.
+
+★★ Note what this is NOT: it does not parse SQL. There is no cheap SQL parser here, and after
+#995's `.py`-only decision the same reasoning applies — a guard that pretends to validate is
+worse than one that checks three known-fatal tokens and says so. It catches the family it was
+built for and makes no wider claim.
+
+Suite 6,764.

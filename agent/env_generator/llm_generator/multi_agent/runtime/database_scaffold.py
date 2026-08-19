@@ -1148,6 +1148,41 @@ def _topological_table_order(tables: Dict[str, Any]) -> List[Tuple[Any, Any]]:
     return ordered
 
 
+
+# #997: the invariants #969, #988 and #989 established, asserted at WRITE time.
+#
+# Each of those was the same accident in a different spelling — a token that means something
+# to a contract author but nothing to postgres, left standing in a column's TYPE position:
+#
+#     #969   "integer nullable"     nullable is a flag, not a type
+#     #988   "integer?"             the optional marker
+#     #989   "timestamp default_now" the underscore spelling of DEFAULT NOW()
+#
+# Every one cost a run: initdb refuses the file, the database never comes up, docker_up fails,
+# and the run stalls in validation with an error naming a character offset in a statement the
+# log had already truncated. They took three sessions to find between them.
+#
+# The fixes strip each spelling at the source. This is the net UNDER those fixes: if a fourth
+# spelling appears — and the first three were found one at a time over months — it is caught
+# here, at the moment the DDL is rendered, instead of by a container failing to boot an hour
+# later. Raising is right: a DDL that postgres will reject is not better for being written.
+_DDL_FORBIDDEN_997 = (
+    (re.compile(r'"\s*\w+"\s+[a-z]+\s*\?', re.I), "an optional marker `?` (see #988)"),
+    (re.compile(r'"\s*\w+"\s+[a-z]+\s+nullable\b', re.I), "a bare `nullable` (see #969)"),
+    (re.compile(r"\bdefault_[a-z]+\b", re.I), "an underscore default (see #989)"),
+)
+
+
+def _ddl_invariants_997(ddl: str) -> None:
+    """Raise when the rendered DDL carries a token postgres cannot parse."""
+    for rx, what in _DDL_FORBIDDEN_997:
+        m = rx.search(ddl or "")
+        if m:
+            _line = (ddl or "")[:m.start()].count("\n") + 1
+            raise ValueError(
+                f"#997: refusing to write DDL containing {what} — {m.group(0)!r} at line "
+                f"{_line}. postgres would reject the file and the database would never start.")
+
 def render_schema_sql(tables: Dict[str, Any]) -> str:
     """Render ``init/01_init.sql``: the deterministic tenancy/identity spine
     followed by the registered SchemaHub business tables (the spine owns
@@ -1276,7 +1311,9 @@ def write_database_scaffold(output_dir: Path, tables: Dict[str, Any]) -> Dict[st
     init_dir.mkdir(parents=True, exist_ok=True)
 
     schema_sql = init_dir / "01_init.sql"
-    schema_sql.write_text(render_schema_sql(tables), encoding="utf-8")
+    _ddl = render_schema_sql(tables)
+    _ddl_invariants_997(_ddl)
+    schema_sql.write_text(_ddl, encoding="utf-8")
     # #896: verify the ARTIFACT, not the input.
     #
     # ★ The first cut checked `if not tables:` — the argument that came IN. r152 proved why that
