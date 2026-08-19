@@ -18617,3 +18617,35 @@ artifacts only ever suggest what it might be.
 ★★★ #1006 makes the mechanism less urgent than it was this morning. Whatever the cause,
 "main.py mounts this route and the app refuses it" is now classified as a framework defect and
 said out loud, instead of becoming seventeen tasks for a lane that cannot act on any of them.
+
+### 422. retracting item 421's structural claim — 3000 was the BACKEND
+
+Item 421 stated that "the smoke probes `localhost:3000` — nginx — not the API" and built a
+#1004-shaped argument on it: symptom names A, cause lives in B, work goes to A's owner. **That
+is wrong.** r162's compose:
+
+    database:  "5432:5432"
+    backend:   "3000:8082"     <- HOST 3000 -> container 8082
+    frontend:  "8081:3000"     <- HOST 8081 -> container 3000
+
+`localhost:3000` IS the backend. The frontend is on 8081. **The smoke was probing the API
+directly, with no nginx in the path**, exactly as it should.
+
+★ I saw the number 3000, recognised it as "the React port", and stopped. It appears on BOTH
+lines — as the host port for the backend and the container port for the frontend — and I read
+the one that matched what I already believed. The compose file was open in front of me the
+whole time; I did not read it until the theory was already written down.
+
+★★ That is the third retraction this session (item 388 corrected 387, item 413 corrected
+#1000's completeness, this corrects 421) and they share a mechanism: **a familiar-looking
+number or name accepted without checking what it referred to in THIS artifact.** `3000` means
+React almost everywhere; here it did not. `main.py` mounts routes almost everywhere; here it
+is a stub. The corpus punishes recognition and rewards reading.
+
+★★★ What survives from 421: the four dead theories, the probe reading (POST -> 401, both
+methods bound, handlers on disk), and #1006. What dies: the nginx misrouting story, and with
+it the fix I was about to build on top of it. **Fifteen minutes of work saved by re-reading a
+file I had already grepped twice.**
+
+r162's mechanism is now MORE puzzling, not less: the backend, probed directly, returned 405
+for a POST whose handler was in main.py and in four successful rebuilds. Still open.
