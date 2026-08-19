@@ -18338,3 +18338,30 @@ is a claim the instrumentation can cheaply verify — and this trace has already
 that finding *a* capture point is not finding *the* capture point.
 
 Suite 6,796.
+
+### 414. "are there more than two?" — asked immediately, answered with a triage not a reflex
+
+#1003's lesson was that finding *a* capture point is not finding *the* capture point: two
+independent HTTP transports discarded the same header and I fixed the wrong one first. So
+rather than wait for a third to surface, enumerated every HTTP helper in the tree that returns
+a dict — 15 of them, 3 keeping headers (the ones now fixed) and 12 dropping them.
+
+**12 is not the answer, though.** Triaged by whether the helper probes a GENERATED APP and
+reports a verdict, which is the class the defect lives in:
+
+    in class, still dropping     runhub/service.py:_probe()                 healthcheck
+                                 runhub/service.py:_default_mcp_http_probe() MCP endpoints
+    out of class                 codehub/service.py x8   (review/merge/diff/file — hub
+                                 codehub/stores.py:versions()   internals, not app probes)
+                                 visual_fidelity.py      (browser capture, different shape)
+
+The two in-class ones stay unfixed, deliberately. `_probe` is a healthcheck: its failure mode
+is "container unhealthy", which is loud on its own and halts the pipeline visibly — the exact
+opposite of r162's 405, which hid inside a semicolon-joined list of business endpoints where
+nobody looked. No measurement says either costs anything, and item 393 settled that measuring
+harm comes before fixing.
+
+★ The useful part is the shape of the answer. The reflex after #1003 is "fix all twelve" — and
+twelve edits across hub internals would have been churn with a plausible story attached. The
+question that stopped it was the same one that has worked all session: **what does this code
+actually feed?** Two feed a lane's diagnosis; ten feed the framework talking to itself.
