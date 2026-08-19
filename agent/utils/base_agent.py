@@ -1021,7 +1021,22 @@ class BaseAgent(ABC):
         }
         logger.setLevel(level_map.get(self._config.logging.level, logging.INFO))
         
-        if not logger.handlers:
+        # #975: only add a sink when NOTHING upstream will emit. This logger propagates, so
+        # once `setup_logging` has configured the root (every real run does, before any agent
+        # exists) an own handler makes each agent line appear TWICE - once in this class's
+        # `%(asctime)s - %(name)s - %(levelname)s - %(message)s` and once in the root's
+        # `%H:%M:%S [%(levelname).1s]` form. The launcher pipes `2>&1 | tee`, so both land in
+        # the same file: 10,355 of r158's 30,059 lines were the second copy - 34% of a 4.1MB log.
+        #
+        # It is not only volume. Two lines per event silently doubles every count taken off the
+        # log, and it corrupted a real measurement this session: pairing consecutive `get_skill`
+        # lines paired the two COPIES OF ONE CALL and reported 66 SAME / 0 DIFFERENT, which
+        # would have shipped an inert dedupe with a confident savings estimate. A log that lies
+        # to its own analysis is a defect, not cosmetics.
+        #
+        # The guard preserves the library/test case: with an unconfigured root the agent still
+        # gets its own sink rather than logging into the void.
+        if not logger.handlers and not logging.getLogger().handlers:
             handler = logging.StreamHandler()
             handler.setFormatter(logging.Formatter(self._config.logging.log_format))
             logger.addHandler(handler)

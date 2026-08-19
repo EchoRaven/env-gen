@@ -16747,3 +16747,33 @@ oversight, and I am not overturning it from the outside.
 
 **This cycle's optimization result is: nothing to ship.** Recorded because a measured "no" is a
 finding — the alternative is re-deriving the same dead end next round.
+
+### 367. #975 — one event, two log lines, and a measurement that believed them
+
+Found as the mechanism behind item 366's near-miss, then measured: **10,355 of r158's 30,059
+log lines are duplicates** — 34% of a 4.1MB file.
+
+`BaseAgent._setup_logger` gives each `Agent.<name>` logger its own StreamHandler and leaves
+`propagate` at True. In a real run `setup_logging()` has configured the root long before any
+agent exists, so every record is emitted twice — once in this class's
+`%(asctime)s - %(name)s - %(levelname)s` form and once in the root's `%H:%M:%S [%(levelname).1s]`
+form. The launcher pipes `2>&1 | tee`, so both land in the same file. The guard was
+`if not logger.handlers` — it asked whether THIS logger had a sink, never whether anything
+upstream already did.
+
+★ The volume is the smaller half of the harm. Two lines per event doubles every count taken
+off the log, and it produced a wrong answer the same day: pairing consecutive `get_skill`
+lines paired the two copies of ONE call, reported 66 SAME / 0 DIFFERENT, and would have
+shipped an inert dedupe with a confident savings estimate (item 366). **A log that lies to
+its own analysis is a defect, not cosmetics** — every conclusion drawn from counting it
+inherits the error, silently.
+
+The fix adds one condition: take a sink only when nothing upstream will emit. Library and
+test use keep theirs (an unconfigured root still gets a handler), which a test pins, because
+the obvious "just delete the handler" would leave embedded agents logging into the void.
+
+Worth noting how long this survived. It is visible in every log file in the corpus, in the
+plainest possible form — the same sentence twice, adjacent — and nobody read it as a bug
+because logs are scenery. It took a measurement going wrong to make the scenery legible.
+
+Suite 6,560.
