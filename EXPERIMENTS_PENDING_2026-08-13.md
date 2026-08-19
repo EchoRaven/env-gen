@@ -16948,3 +16948,36 @@ behavioural test drives a ticker task to prove the loop keeps scheduling during 
 (with the planted control proving the ticker really does starve without the fix).
 
 Suite 6,596.
+
+### 373. the fourth class sweep found correct code, and that is the point
+
+#967 and #974 share a shape: **a rule that counts where it should read structure.** #967
+counted regex hits in model prose to decide "idle"; #974 counted owner-ish columns to decide
+"ambiguous". Sweeping for other count-based refusals turned up `backend_skeleton.py:1596`:
+
+    _principals = {c for c, tgt in _fks.items() if str(tgt).lower() == "users"}
+    _principals |= {c for c in _cols if str(c).lower() in _TARGET_FK_NAMES}
+    if len(_principals) > 1:
+        continue  # multi-principal (DM sender+recipient) → ambiguous → keep lane-wins
+
+Structurally identical to #974's pre-fix rule, in a different file, guarding a different
+decision. The obvious move was to drop in `_narrowest_actor_974` and call it a fifth fix.
+
+Measured first:
+
+    netflix my_list   principals = ['user_id']                     len 1  → passes
+    DM messages       principals = ['recipient_id', 'sender_id']   len 2  → bails
+
+★ **The code is right.** `profile_id` points at `profiles`, not `users`, and is not in
+`_TARGET_FK_NAMES` — so it is never counted as a principal at all. This set is deliberately
+narrower than #974's: it collects only columns targeting the ACTOR table, which makes the
+count a genuine sibling test rather than a refinement test. The two sites look the same and
+are asking different questions.
+
+Pattern-matching on `if len(x) > 1:` would have "fixed" correct code and broken the DM
+guard — the exact harm #784 was written to prevent, reintroduced by someone tidying up.
+
+**A sweep that returns nothing is not a wasted sweep.** Three of this session's four class
+sweeps found real defects (#978, #979, #980); this one found a false positive I was one
+edit away from committing. Recording it so the next pass over this shape does not re-derive
+the same near-miss.
