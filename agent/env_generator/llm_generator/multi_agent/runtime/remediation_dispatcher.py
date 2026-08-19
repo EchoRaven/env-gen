@@ -238,6 +238,38 @@ def _ui_flow_missing_names(orch) -> List[str]:
         return []
 
 
+def _ui_evidence_failed_pages(orch) -> List[str]:
+    """#982: the PAGES whose UI evidence records say failure.
+
+    `_ui_evidence_breadth_739` already returns `pages_failed` beside the count the gate
+    trips on, and #757 added those names for exactly this reason — its comment reads "a gate
+    that cannot say WHICH page failed cannot be acted on". The gate computes them; the
+    dispatcher had no branch for `validation_ui_evidence_failed` at all, so the verifier got
+    generic text. r159 died on this check and its sibling, with both name lists sitting
+    computed and unused.
+
+    Best-effort -> [] falls back to the generic body."""
+    try:
+        _b = globals().get("_ui_evidence_breadth_739")
+        if _b is None:
+            from .delivery_gate import _ui_evidence_breadth_739 as _b
+        report = _b(getattr(orch, "_last_validation_results", None)
+                    or getattr(orch, "_validation_results", None))
+        return [str(x) for x in (report or {}).get("pages_failed") or [] if str(x) and str(x) != "?"]
+    except Exception:
+        return []
+
+
+def _ui_evidence_failed_extra(pages: List[str]) -> str:
+    """#982: name the pages. Mirrors _ui_flow_failed_extra; same reason, other check."""
+    if not pages:
+        return ""
+    return ("\n\nTHE PAGE(S) WHOSE UI EVIDENCE RECORDS FAILURE:\n- " + "\n- ".join(pages) +
+            "\n\nThe record exists and says the page is broken, so re-recording it is not "
+            "the fix: open each page, reproduce what the record reports, repair it, then "
+            "re-run the walk so the record flips.")
+
+
 def _ui_flow_failed_names(orch) -> List[str]:
     """#981: the flows the gate counts as FAILED — recorded, but not passing.
 
@@ -1203,6 +1235,11 @@ class RemediationDispatcher:
                                           + "\n- ".join(_off[:10]))
                     except Exception:
                         pass
+                if name == "validation_ui_evidence_failed":
+                    # #982: the other half of r159's terminal pair. Same shape as #981.
+                    _fp = _ui_evidence_failed_pages(orch)
+                    if _fp:
+                        _extra = _ui_evidence_failed_extra(_fp)
                 if name == "deliverability_ui_flow_failed":
                     # #981: the sibling branch below has named its instances since FIX #284;
                     # this one never did, so the verifier was handed the check name alone.

@@ -17052,3 +17052,39 @@ Found by asking what the lane actually receives about r159's two remaining block
 critical path, not a sweep.
 
 Suite 6,606.
+
+### 376. r159 — 237 minutes, zero infrastructure failures, two app blockers (#982)
+
+The arc's longest run and its cleanest. Died the same way r158 did, on a different frontier:
+
+    r157   133min   docker_up failing, 8+ blockers
+    r158   215min   docker_up failing x4, 8 blockers, FK-ambiguity wedge
+    r159   237min   docker_up NEVER failed, 2 blockers
+
+★ `docker_up failure causes: (none)` for a four-hour run. The app built, booted and stayed
+healthy throughout — the whole infrastructure layer that consumed r155 through r158 is gone
+from the harvest. Nine of this session's fixes were aimed at that layer and it now holds.
+
+What killed it was the pair:
+
+    ['deliverability_ui_flow_failed', 'validation_ui_evidence_failed']
+
+and neither told the verifier what to fix. #981 handled the first; #982 does the second, which
+had no dispatcher branch at all. Both name lists were already computed:
+`compute_flow_coverage` returns `failed` beside `missing`, and `_ui_evidence_breadth_739`
+returns `pages_failed` beside the count the gate trips on. #757 even added the latter with the
+comment "a gate that cannot say WHICH page failed cannot be acted on" — the gate could say it;
+the last mile dropped it.
+
+★★ Four instances of that one shape in a single session (#973, #978, #981, #982). It is not a
+coding slip, it is a structural bias: **when you add a diagnostic you fix the path you were
+staring at, and the sibling path keeps its generic text because nothing points at it.** The
+guard against it is not care, it is asking "who else formats this same failure?" every time —
+which is how #978, #981 and #982 were each found within minutes once the question was asked.
+
+Also confirmed benign this round, with measurement rather than assumption: the icon heal firing
+21 times on one file (idempotency proven on the real artifact — the lane kept reintroducing the
+tag), 69 stall escalations (the watchdog re-driving mid-turn lanes in a 4-hour run), and 10
+ERR_CONNECTION_REFUSED from a genuine mid-walk teardown race that blocks nothing (item 374).
+
+Suite 6,616.
