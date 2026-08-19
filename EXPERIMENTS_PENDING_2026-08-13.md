@@ -17728,3 +17728,38 @@ images require the public internet is broken offline too. Majority rule matches 
 test beside it, so one stray placeholder in a real catalogue does not trigger a rewrite.
 
 Suite 6,689.
+
+### 396. #992 — the heal that put a dash on the button
+
+r161's harvest, second-highest warning class: `Fabricated member-field fallbacks rewritten to
+honest empty states` — **72 firings**. Read what it actually rewrote:
+
+    AuthForm.jsx:3  `initialEmail || 'haibot2@illinois.edu'`  →  `(initialEmail ?? '—')`
+    AuthForm.jsx:5  `? 'Continue' : mode`                     →  `? '—' : mode`
+
+The first is #175 earning its keep — the lane had hardcoded **the operator's own email
+address** as a display fallback. The second puts a dash on a button.
+
+The misfiring rule:
+
+    if t[:1].isupper() and len(t) >= 4 and t.isalpha():   # proper-noun default (Hotel, Place)
+        return True
+
+`Continue` is uppercase, alphabetic, 8 characters. So are `Submit`, `Cancel`, `Search`,
+`Login`, `Download` — **essentially every button label there is.** And a browser walk hunting
+for "Continue" cannot find "—", so the heal built to keep the UI honest was failing the very
+flows it protects. r161 ended on `validation_ui_evidence_failed` with `browser_fill` failing
+14 times.
+
+★ The distinction that resolves it is not string shape but what the literal DENOTES. `Hotel`
+standing in for a missing venue name is invented content. `Continue` on a control is the
+control's own text — it is there whether or not any record exists behind it. No amount of
+casing/length heuristics separates those; an explicit allowlist does.
+
+★★ Fourth time this session: **the guard went into the right function at the wrong point.**
+`"Sign in"` still failed after my first patch, because `if " " in t: return True` sits above
+where I put the allowlist. An allowlist belongs ABOVE the heuristics it exempts from, not
+beside them — obvious once stated, missed four times (#970, #988, #991, here), and caught by a
+test every time rather than by reading.
+
+Suite 6,712.

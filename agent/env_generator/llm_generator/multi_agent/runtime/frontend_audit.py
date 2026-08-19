@@ -1708,6 +1708,19 @@ def audit_asset_usage(frontend_dir: Any, design_system: Mapping[str, Any]) -> Di
 # `? selectedPlace.name : 'HI Point Montara Lighthouse'`. Each renders FABRICATED data when
 # the real field is absent — the user's "no placeholder/mock" bar. #170 added a PROMPT rule;
 # the lane ignored it, so this is the ENFORCING gate. Deterministic + static, best-effort.
+# #992: verbs and control words a UI puts ON a control. Not data, never fabricated —
+# rewriting them to "—" blanks the button and fails the walk that looks for them.
+_UI_ACTION_LABELS_992 = frozenset({
+    "continue", "submit", "cancel", "save", "delete", "remove", "edit", "close", "back",
+    "next", "previous", "prev", "confirm", "apply", "reset", "clear", "search", "filter",
+    "sort", "login", "log in", "logout", "log out", "signin", "sign in", "signup",
+    "sign up", "register", "subscribe", "send", "share", "copy", "download", "upload",
+    "retry", "refresh", "reload", "more", "less", "show", "hide", "open", "view",
+    "create", "add", "update", "select", "choose", "browse", "play", "pause", "resume",
+    "skip", "done", "finish", "start", "stop", "yes", "no", "ok", "okay", "accept",
+    "decline", "dismiss", "settings", "profile", "account", "home", "menu", "help",
+})
+
 _INVENTED_HONEST = frozenset({
     "n/a", "na", "n.a.", "tbd", "tba", "unknown", "none", "null", "nil", "unset",
     "untitled", "anonymous", "guest", "unnamed", "no name", "no title", "placeholder",
@@ -1782,6 +1795,18 @@ def _is_fabricated_fallback_literal(s: str) -> bool:
     if any(sub in low for sub in _INVENTED_HONEST_SUBSTR):
         return False
     if low.startswith(_INVENTED_HONEST_PREFIX):   # "No description", "Unknown Place", "Anonymous User"
+        return False
+    # #992: a UI ACTION LABEL is not fabricated data. The proper-noun rule below fires on
+    # `Continue` / `Submit` / `Cancel` / `Search` — uppercase, alphabetic, >=4 chars — and
+    # r161 rewrote `? 'Continue' : mode` to `? '—' : mode`, putting a dash on the button.
+    # 72 firings in that run, and a browser walk hunting for "Continue" cannot find a dash,
+    # so the heal that exists to remove fake DATA was breaking real UI COPY and failing the
+    # very flows it was meant to keep honest.
+    #
+    # The distinction is what the literal DENOTES: `Hotel` standing in for a missing name is
+    # invented content; `Continue` on a button is the control's own text, present whether or
+    # not any record exists behind it.
+    if low in _UI_ACTION_LABELS_992:
         return False
     # Styling / placeholder-asset defaults are NOT display DATA: a hex color, or an asset
     # path ('/assets/…', '…/ph-img-1.svg') — a placeholder image is an HONEST "no photo"
