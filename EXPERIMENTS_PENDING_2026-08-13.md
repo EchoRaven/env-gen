@@ -16521,3 +16521,35 @@ Kept out of the fix set on purpose, each with the reason:
 thrashing. It was not — the self-heal last fired at 16:11, and the count rose only because
 every gate evaluation re-lists its blockers. **Counting log mentions measures how often you
 looked, not how bad it is.** Measure the blocker SET, not the word frequency.
+
+### 361. #971 — the framework handed out a path that resolved in 2 of 7 worktrees
+
+80 failed `read` calls in r157, all the same shape:
+
+    not found: .agents/skills/release-readiness/SKILL.md (nearest existing dir './')
+
+Not the model guessing. `list_skills` / `get_skill` return each skill's `file_path`
+(`knowledge_tools.py`, three sites: `"path": skill.file_path`), so a lane that opens a skill
+reasonably follows up by reading it. A lane's `read` resolves against ITS WORKTREE.
+
+The materialization only ever happened as a SIDE EFFECT of `discover_workspace_skills()`
+(`skill_loader.py:173`), against whichever root happened to call it. r157 finished with:
+
+    backend YES · orchestrator YES
+    debugger · design_analyst_1 · frontend · knowledge · verifier   all MISSING
+
+★ The failure is not "skills are missing" — the content was always reachable through
+`get_skill`, which worked (60 calls, 333k chars). The failure is that **the framework
+advertised a filesystem path it had not made true for that lane.** Either end could have been
+fixed; making the path real keeps the affordance (reading the skill source directly) instead
+of removing it.
+
+Moved to `CodeHub.register_agent_worktree` — the one seam every lane worktree passes through,
+including the early-return path a respawn takes (which would otherwise leave a respawned lane
+with the r157 hole). Best-effort: a lane must never fail to start over a skill copy.
+
+Checked BEFORE writing it, because the fix copies files into git worktrees: the generated app
+gitignores `.agents/` and has never tracked it, so nothing reaches the delivered tree. A test
+pins that property, since it is the thing that makes copying-everywhere acceptable.
+
+Suite 6,533.

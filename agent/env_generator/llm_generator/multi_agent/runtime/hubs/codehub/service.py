@@ -113,8 +113,10 @@ class CodeHub:
         branch = f"agent/{agent_id}"
         wt_path = self.repo_root / "worktrees" / agent_id
         if wt_path.exists():
+            self._sync_skills_into_worktree_971(wt_path)
             return wt_path
         self.git.add_worktree(wt_path, branch)
+        self._sync_skills_into_worktree_971(wt_path)
         # Emit path relative to repo_root — the inbox event must not
         # leak the host's absolute prefix to the agent.
         self._emit(
@@ -123,6 +125,29 @@ class CodeHub:
             recipients=[agent_id],
         )
         return wt_path
+
+    @staticmethod
+    def _sync_skills_into_worktree_971(wt_path: Path) -> None:
+        """#971: materialize the bundled skills inside the lane's worktree.
+
+        ``list_skills`` / ``get_skill`` hand the model each skill's ``file_path``
+        (``knowledge_tools.py`` returns ``"path": skill.file_path``), so it reasonably
+        follows up with ``read('.agents/skills/<name>/SKILL.md')``. A lane's read resolves
+        against ITS WORKTREE, and the skills were only ever materialized as a side effect
+        of ``discover_workspace_skills`` on whichever root happened to call it — netflix
+        r157 ended with the directory present in 2 of 7 worktrees and **80 failed reads**
+        of a path the framework itself advertised.
+
+        Materializing here makes the advertised path true for every lane. Safe: the
+        generated app gitignores ``.agents/`` (and never tracked it), so nothing reaches
+        the delivered tree. Best-effort — a lane must never fail to start over a skill copy.
+        """
+        try:
+            from env_generator.llm_generator.multi_agent.skill_loader import (
+                sync_bundled_skills_into_workspace)
+            sync_bundled_skills_into_workspace(wt_path)
+        except Exception:
+            pass
 
     def cleanup_worktree(self, agent_id: str) -> bool:
         """
