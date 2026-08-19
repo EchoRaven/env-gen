@@ -35,6 +35,10 @@ KNOWN_FIXED = {
     "#977 qmark placeholder to postgres": r'at or near "\?"',
     "#974 FK ambiguity refused": r"repair DECLINED \(ambiguous owner\)",
     "#976 receipt to a hub": r"Target agent not found: (?:messagebus|workhub|eventhub|registryhub)",
+    # #978: a remediation whose "detail" is nothing but a container id — the lane is told
+    # 64 hex characters and no error. Anchored on the dispatch line so it cannot be
+    # confused with a hash appearing anywhere else in the log.
+    "#978 remediation is only a hash": r"remediation dispatched to [a-z_]+ \([^)]*\): [a-z_]+ — [0-9a-f]{32,}",
 }
 
 # NOT defects — activity that is healthy at low volume and pathological in bulk. r158 fired
