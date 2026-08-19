@@ -18064,3 +18064,36 @@ worse than one that checks three known-fatal tokens and says so. It catches the 
 built for and makes no wider claim.
 
 Suite 6,764.
+
+### 406. #998 — one defect became nine gate blockers
+
+r162 died on `incomplete_required_tasks`. Opened the task store to see WHICH tasks, and found
+**17 tasks for a single defect**:
+
+    by=orchestrator  assignee=backend  in_progress  Fix POST /api/continue-watching 405 contract failure
+    by=orchestrator  assignee=backend  in_progress  Restore missing table contract and fix POST /api/continue-watching 405
+    by=orchestrator  assignee=backend  in_progress  Fix POST /api/continue-watching returning 405
+    by=orchestrator  assignee=backend  in_progress  Fix POST /api/continue-watching 405 and align contract
+    by=orchestrator  assignee=backend  cancelled    Fix POST /api/continue-watching returning 405
+    …  (9 open, 7 cancelled, 1 the verifier's original report)
+
+Every one authored by the orchestrator through `workhub_task action=create`, titles varied
+just enough to look distinct. Nine were open at the end, and the gate counts open tasks:
+**one unfixable defect became nine blockers.**
+
+★ Fuzzy-grouping all 138 tasks showed 131 distinct problems and exactly ONE duplicated group.
+This is not sprawl — it is a single defect the lane could not fix, re-reported every tick. The
+gate was measuring the orchestrator's persistence, not the app's state.
+
+#794 stopped the GATE-CHECK dispatcher cloning tasks. This is the other creation path — the
+model's own tool call — which had no dedupe at all. Same defect class, one path fixed and the
+sibling left open, which is item 383's lesson (find the class, not the instance) turning up in
+a place I had already visited.
+
+★★ Keyed on **METHOD + PATH**, not title similarity. That is a structured signal the model
+itself wrote, so it cannot drift with phrasing, and it fails safe: a title naming no endpoint
+is never blocked, a different method on the same path is allowed, another lane may hold its
+own task. The refusal returns the existing task id and says why — "a second task for one
+defect does not add a second fix, it adds a second thing blocking the delivery gate."
+
+Suite 6,776.

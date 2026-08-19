@@ -7,6 +7,7 @@ from typing import Any, Mapping, Optional
 
 from ._base import BaseTool, ToolResult, create_tool_param
 from multi_agent.hub_tool_surface import HUB_NAMES, known_hub, writes_for_hub
+import re
 
 
 def _attach_plantool_after_claim(agent_id: str, task_id: str, hub_result: Any) -> None:
@@ -190,6 +191,49 @@ def _meeting_hint_608(page, meeting_id):
     n = len((((page or {}).get("metadata") or {}).get("decisions")) or [])
     return (f"the meeting page now holds {n} decisions — read them with "
             f"workhub_get_document(document_id='{(page or {}).get('id', meeting_id)}')")
+
+
+_ENDPOINT_IN_TITLE_998 = re.compile(
+    r"\b(GET|POST|PUT|PATCH|DELETE)\s+(/[A-Za-z0-9/_{}.-]*)", re.I)
+_OPEN_STATES_998 = ("pending", "in_progress", "open", "claimed")
+
+
+def _open_task_for_same_endpoint_998(workhub, title: str, assignee):
+    """#998: refuse a second open task for one endpoint.
+
+    r162 accumulated **17 tasks for a single defect** — every one authored by the orchestrator
+    via `workhub_task action=create`, all naming `POST /api/continue-watching` and a 405, with
+    titles varied just enough to look distinct ("Fix … 405", "Fix … returning 405", "Fix … 405
+    and align contract"). Nine were still open at the end, and `incomplete_required_tasks` —
+    the gate that killed the run — counts open tasks. One unfixable defect became nine
+    blockers.
+
+    #794 stopped the GATE-CHECK dispatcher cloning tasks. This is the other creation path: the
+    model's own tool call, which had no dedupe at all.
+
+    Deliberately keyed on METHOD + PATH, not on title similarity. That is a structured signal
+    the model itself wrote, so it cannot drift with phrasing, and a title carrying no endpoint
+    is never blocked — most tasks are not about one endpoint and must stay unaffected.
+    """
+    m = _ENDPOINT_IN_TITLE_998.search(title or "")
+    if not m:
+        return None
+    want = (m.group(1).upper(), m.group(2).rstrip("/").lower())
+    try:
+        tasks = workhub.list_tasks() or []
+    except Exception:
+        return None
+    for t in tasks:
+        if not isinstance(t, dict):
+            continue
+        if str(t.get("status") or "").lower() not in _OPEN_STATES_998:
+            continue
+        if assignee and str(t.get("assignee") or "") != str(assignee):
+            continue
+        m2 = _ENDPOINT_IN_TITLE_998.search(str(t.get("title") or ""))
+        if m2 and (m2.group(1).upper(), m2.group(2).rstrip("/").lower()) == want:
+            return t
+    return None
 
 class HubTool(BaseTool):
     def __init__(self, agent_id: str = "", hub_workspace: Any = None):
@@ -788,6 +832,18 @@ class WorkHubTaskTool(HubTool):
     # rather than hard-failing a whole step on an extra field.
     async def _run(self, action: str, task_id: Optional[str] = None, title: str = "", description: str = "", assignee: Optional[str] = None, result: Optional[dict] = None, evidence: Optional[dict] = None, priority: str = "P2", reason: str = "", **_ignored) -> ToolResult:
         if action == "create":
+            _dup = _open_task_for_same_endpoint_998(self._hubs.workhub, title, assignee)
+            if _dup:
+                return ToolResult(data={
+                    "created": False, "duplicate_of": _dup.get("id"),
+                    "status": _dup.get("status"),
+                    "message": (
+                        f"NOT created — task {_dup.get('id')} is already open against the same "
+                        f"endpoint and assigned to {_dup.get('assignee')}: "
+                        f"{str(_dup.get('title'))[:80]}. Re-read THAT task and finish it; a "
+                        f"second task for one defect does not add a second fix, it adds a "
+                        f"second thing blocking the delivery gate."),
+                })
             return ToolResult(data=self._hubs.workhub.create_task(title=title, description=description, assignee=assignee, agent=self._agent_id, task_id=task_id, priority=priority))
         if action == "claim":
             hub_result = self._hubs.workhub.claim_task(task_id, self._agent_id)
