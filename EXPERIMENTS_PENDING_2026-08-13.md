@@ -16666,3 +16666,43 @@ invariant they protect — every return path carries the SAME keys — still hol
 literal was stale, so they now assert the invariant instead of the enumeration.
 
 Suite 6,556.
+
+### 365. messagebus target — a fourth attempt, ruled out three mechanisms, still not fixed
+
+82 warnings per run of `MessageBus: Target agent not found: messagebus`. Deferred three times
+as "unlocalized"; this pass narrowed it substantially without closing it, so the next attempt
+starts here instead of at zero.
+
+**Established:**
+
+    the emitting sequence      📤 SEND_MESSAGE to=orchestrator type=issue priority=urgent
+                               [W] MessageBus: Target agent not found: messagebus
+                               \u2014 immediately after a send_message whose real target resolved fine
+    the user's message         DELIVERED. `to=orchestrator` succeeds; the warning is a SECOND,
+                               extra delivery attempt, not the failure of the first
+    `messagebus` is a HUB name three sites use it, all as `publish_event(source_hub=...)`:
+                               eventhub.py:119 (declared source), communication_tools.py:336, :608
+
+**Ruled out:**
+
+    eventhub \u2192 bridge fan-out   recipients = explicit \u222a subscription matches. r158's live
+                               subscriptions are orchestrator/backend/frontend/verifier/
+                               debugger/knowledge \u2014 nothing subscribes AS `messagebus`
+    the `actor` variable       `actor = source_hub or "eventhub"` (eventhub.py:268) feeds store
+                               attribution (`change_info={"agent": actor}`) only, never a target
+    a literal in the source    `target_agent_id` is set from a hub name nowhere in the tree
+
+So something turns a source_hub into a `message.header.target_agent_id` on a path none of the
+three obvious candidates explains.
+
+**Still not fixed, and the reason is unchanged:** reachability before severity. Events arrive
+(38 cross-process deliveries in r157), the addressed message arrives, and no failure in three
+runs traces to it. Fixing an emitter I cannot name would be guessing at which of several
+plausible paths is real \u2014 the same error I made three times on r158's visual-coverage gap,
+where every hypothesis sounded right and all were false.
+
+★ Worth noting what it costs to leave: 82 WARNING lines per run that read like lost mail. The
+honest options next time are (a) find the emitter, or (b) if it proves benign, make the
+warning say so \u2014 a hub name reaching MessageBus.send is a CATEGORY error and deserves a
+message that names it, not one that implies delivery failure. Not (c) downgrade it to hide
+the noise while it is still unexplained.
