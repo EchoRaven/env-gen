@@ -670,6 +670,38 @@ class RemediationDispatcher:
                     continue  # one dispatch per milestone (storm control)
                 owner, title, how = spec
                 detail = str(c.get("detail") or "")
+                # #1006: do not hand a lane work it is structurally barred from doing.
+                #
+                # An endpoint that `served_routes()` says main.py MOUNTS, and the smoke
+                # cannot reach, is a framework-code defect: main.py is in
+                # _BACKEND_FRAMEWORK_OWNED, so the write guard denies every lane edit to it.
+                # r162 dispatched 17 tasks against one such endpoint and then died on
+                # `unresolved_failed_tasks`, counting its own undeliverable work as the
+                # blocker. A lane cannot fix a route in a file it cannot open.
+                #
+                # Classify and SAY SO. The task still goes out — suppressing it would hide a
+                # real failure — but it now opens with the fact that the route is already
+                # mounted, so the lane stops trying to add it and the operator sees a
+                # framework defect instead of a lane that "cannot fix a 405".
+                if name == "business_endpoints_reachable":
+                    try:
+                        from .backend_audit import unreachable_but_mounted
+                        _be = Path(getattr(orch, "output_dir", ".")) / "app" / "backend"
+                        _fw = unreachable_but_mounted(
+                            _be, [s.strip() for s in detail.split(";") if s.strip()])
+                        if _fw:
+                            orch._logger.warning(
+                                "#1006 FRAMEWORK DEFECT (not a lane bug): %s — main.py already "
+                                "mounts these and the app still refuses them. main.py is "
+                                "framework-owned; no lane can repair this.", "; ".join(_fw[:4]))
+                            detail = (
+                                "FRAMEWORK DEFECT — main.py ALREADY MOUNTS these routes and the "
+                                "running app still refuses them: " + "; ".join(_fw[:4]) +
+                                ". Do NOT try to add them; main.py is framework-owned and your "
+                                "writes to it are denied. Report what the running app returns "
+                                "(status + Allow header) and move on. || " + detail)
+                    except Exception:
+                        pass
                 # #1002 (instrumentation, not a fix): name the builder of this `detail`.
                 #
                 # Item 411 records station three of r162's evidence path: the dispatched

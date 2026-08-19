@@ -18476,3 +18476,41 @@ denominator line said `0 documents` and stopped it — sixth time this session. 
 directory is `bundled_skills/`, and with it the answer is a genuine zero.
 
 Suite 6,809.
+
+### 418. #1006 — the gate the user's question demanded: framework code must not be lane work
+
+The user's point: *main.py is framework-generated and nobody can modify it, so it must be
+correct — otherwise it is a dead end.* r162 is that dead end, and the framework had no way to
+say so.
+
+Three softer explanations were tested against the artifacts and **all three failed**:
+
+    "main branch lacks the fix"    the image builds from the WORKTREE (`build: ../app/backend`),
+                                   not a branch, so `main` is irrelevant
+    "the image was stale"          four rebuilds at 11:50/11:51/11:55/11:55, after the handler
+                                   landed at 11:46 and 23 min before the first 405 at 12:18
+    "intra-module shadowing"       the framework's own `duplicated_routes` audit reports ZERO
+
+What is left is exactly the user's concern: **the route is mounted, the app refuses it, and
+`main.py` is in `_BACKEND_FRAMEWORK_OWNED` so no lane can touch it.** The framework read that
+as a lane failure and dispatched 17 tasks; the run then died on `unresolved_failed_tasks`,
+counting its own undeliverable work as the blocker.
+
+★ The runtime cause is still unknown — but **the classification is knowable statically**, and
+that is the whole gate. `served_routes()` already computes what main.py mounts; intersecting
+it with what the smoke could not reach separates "framework code is broken" from "the lane has
+work to do". Validated on r162's real list: `POST /api/continue-watching → 405` and
+`GET /api/search → 500` classify as framework defects, `GET /api/nonexistent → 404` stays lane
+work. That split is what 17 tasks were missing.
+
+★★ Deliberately does NOT suppress the task — suppressing would hide a real failure. It
+prepends the fact that the route is already mounted and that writes to main.py are denied, so
+the lane stops trying to add what exists and an operator reading the log sees a framework
+defect rather than a lane that "cannot fix a 405".
+
+★★★ The repo's fixed-width-source-window guard caught my test for the **fourth** time this
+session. I keep reaching for `src[i:i+N]` and it keeps being wrong; re-anchored on AST again.
+Four catches by a guard written long before today is a strong argument that the guard is worth
+more than the tests it rejects.
+
+Suite 6,818.

@@ -29,8 +29,9 @@ from __future__ import annotations
 
 import ast
 import logging
+import re
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, Iterable, List, Set, Tuple
 
 from .route_projector import (
     _duplicate_routes, _existing_routes, _express_to_fastapi, _norm_path,
@@ -661,5 +662,37 @@ def stub_handler_blockers(backend_dir: Any) -> List[str]:
     return [_msg(name, rec) for name, rec in sorted(flagged.items())]
 
 
+def unreachable_but_mounted(backend_dir: Path, unreachable: Iterable[str]) -> List[str]:
+    """#1006: endpoints the smoke could not reach that main.py DOES mount.
+
+    A framework-owned file declares the route, the static route table agrees it is mounted,
+    and the running app answers 405/404 anyway. **Nobody can fix that.** `main.py` is in
+    `_BACKEND_FRAMEWORK_OWNED`, so the write guard denies every lane edit to it — dispatching
+    this to a backend lane cannot succeed no matter how capable the lane is.
+
+    r162 is the case this exists for. `POST /api/continue-watching` sat in `served_routes()`
+    from 11:46, four rebuilds followed, and the smoke still reported 405 from 12:18 to the end
+    of the run. The framework read that as a lane failure and dispatched 17 tasks against it;
+    the run then died on `unresolved_failed_tasks`, counting its own undeliverable work.
+
+    Three explanations were tested against the artifacts and all three failed: the image
+    builds from the worktree (not a branch, so `main` lacking the commit is irrelevant), four
+    rebuilds happened after the fix landed, and the framework's own `duplicated_routes` audit
+    reports zero intra-module shadowing. Whatever the runtime cause turns out to be, the
+    CLASSIFICATION is knowable statically and is what this returns.
+
+    Accepts the `METHOD path → status` fragments the validation runner already produces.
+    """
+    mounted = served_routes(backend_dir)
+    out: List[str] = []
+    for item in unreachable or ():
+        m = re.match(r"\s*([A-Z]+)\s+(\S+)", str(item))
+        if not m:
+            continue
+        if _norm_route(m.group(1), m.group(2)) in mounted:
+            out.append(str(item).strip())
+    return out
+
+
 __all__ = ["served_routes", "sync_endpoint_statuses", "BackendAuditError",
-           "stub_handler_blockers"]
+           "stub_handler_blockers", "unreachable_but_mounted"]
