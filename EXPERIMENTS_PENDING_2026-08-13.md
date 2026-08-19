@@ -17931,3 +17931,36 @@ Next attempt should: build the new file content in memory, `ast.parse` it, and o
 be threaded past a triple-quoted string.
 
 Suite restored: 6,733 passed, 0 failed.
+
+### 402. #995, done the way item 401 said to do it
+
+Redone and shipped. Same finding, same invariant; only the method changed, and the method was
+the whole problem.
+
+Item 401's prescription, followed literally:
+
+    put the helper in a module WITHOUT embedded templates   → new `runtime/safe_code_write.py`
+    locate every edit by AST, never by string offset        → 11 sites, all AST-located
+    build in memory, verify, then write                     → the guard itself does exactly this
+
+★ And one addition that did not exist last time: **the rewrite snapshots every template
+constant's SHA before editing and compares after.** Result: `templates changed: NONE`. That
+check takes two seconds and would have caught the first attempt's disaster — the helper landing
+inside `_AUTH_DEPENDENCY_PY` — before a single test ran, instead of after ten failures and a
+full revert.
+
+I also ran the two files that broke last time FIRST, before the suite. Both green. Cheap
+targeted verification beats waiting three and a half minutes to learn the same thing.
+
+The guard is deliberately narrow: `.py` only (no cheap JSX parser exists here, and a guard
+that pretends to check is worse than one that says it does not), and it stays out of the way
+when the ORIGINAL does not parse, because a repair that fixes broken syntax must not be
+blocked by it.
+
+★★ Two tests exist purely because of item 401: one asserts the guard has not leaked into any
+generated template, the other `ast.parse`s every `*_PY` template directly. **The disaster is
+now a permanent test rather than a paragraph** — which is the difference between a lesson
+recorded and a lesson enforced, the same move as harvest_run's denominator warning and
+sweep_indirect.
+
+Suite 6,746.

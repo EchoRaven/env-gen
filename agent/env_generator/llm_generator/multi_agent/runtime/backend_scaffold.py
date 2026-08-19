@@ -1,3 +1,5 @@
+from .safe_code_write import write_py_if_still_parses as _write_py_995
+
 """Framework-owned backend auth dependency — FIX #45.
 
 The business handlers gate on ``Depends(get_current_user)``, but the lane writes a
@@ -162,13 +164,13 @@ def repair_backend_auth_dependency(backend_dir) -> Dict[str, object]:
                 placeholder_files.append(p)
         if not placeholder_files:
             return {"repaired": False, "reason": "no placeholder get_current_user"}
-        (be / "auth_dependency.py").write_text(_AUTH_DEPENDENCY_PY, encoding="utf-8")
+        _write_py_995((be / "auth_dependency.py"), _AUTH_DEPENDENCY_PY, what="repair_backend_auth_dependency")
         rewritten: List[str] = []
         for p in placeholder_files:
             src = p.read_text(encoding="utf-8", errors="ignore")
             new = _rewrite_local_get_current_user(src)
             if new != src:
-                p.write_text(new, encoding="utf-8")
+                _write_py_995(p, new, what="repair_backend_auth_dependency")
                 rewritten.append(p.name)
         return {"repaired": bool(rewritten), "auth_dependency": True,
                 "rewritten": rewritten}
@@ -269,7 +271,7 @@ def repair_custom_routes_router_prologue(backend_dir) -> Dict[str, object]:
                 last_import = len(lines) - 1
         lines[last_import + 1:last_import + 1] = [
             "", "from fastapi import APIRouter", "router = APIRouter()", ""]
-        p.write_text("\n".join(lines), encoding="utf-8")
+        _write_py_995(p, "\n".join(lines), what="repair_custom_routes_router_prologue")
         out["repaired"] = True
     except Exception:
         pass
@@ -303,7 +305,7 @@ def repair_auth_import_paths(backend_dir) -> Dict[str, object]:
                 continue
             new = _normalize_auth_imports_in_src(src)
             if new != src:
-                p.write_text(new, encoding="utf-8")
+                _write_py_995(p, new, what="repair_auth_import_paths")
                 rewritten.append(p.name)
         return {"repaired": bool(rewritten), "rewritten": rewritten}
     except Exception as exc:
@@ -372,7 +374,7 @@ def repair_inline_token_auth(backend_dir) -> Dict[str, object]:
             if s.startswith(("import ", "from ")) or s.strip() == "" or s.startswith("#"):
                 insert_at = i + 1
         new_src = "".join(lines[:insert_at]) + _JWT_SUB_HELPER + "".join(lines[insert_at:])
-        main_py.write_text(new_src, encoding="utf-8")
+        _write_py_995(main_py, new_src, what="repair_inline_token_auth")
         return {"fixed": n}
     except Exception as exc:
         return {"fixed": 0, "error": f"{type(exc).__name__}: {exc}"}
@@ -479,7 +481,7 @@ def repair_auth_enforcement_middleware(backend_dir) -> Dict[str, object]:
             idx = src.rfind(marker)
             new_src = (src[:idx] + _AUTH_MIDDLEWARE + "\n\n" + src[idx:]) if idx != -1 \
                 else src.rstrip() + "\n" + _AUTH_MIDDLEWARE
-        main_py.write_text(new_src, encoding="utf-8")
+        _write_py_995(main_py, new_src, what="repair_auth_enforcement_middleware")
         return {"injected": True}
     except Exception as exc:
         return {"injected": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -605,7 +607,7 @@ def repair_integrity_error_handler(backend_dir) -> Dict[str, object]:
             idx = src.rfind(marker)
             new_src = (src[:idx] + _INTEGRITY_HANDLER + "\n\n" + src[idx:]) if idx != -1 \
                 else src.rstrip() + "\n" + _INTEGRITY_HANDLER
-        main_py.write_text(new_src, encoding="utf-8")
+        _write_py_995(main_py, new_src, what="repair_integrity_error_handler")
         return {"injected": True}
     except Exception as exc:
         return {"injected": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -654,7 +656,7 @@ def repair_custom_routes_db_handle(backend_dir) -> Dict[str, object]:
         end = target.end_lineno
         new_src = "".join(lines[:start]) + repl + "".join(lines[end:])
         ast.parse(new_src)   # never write a syntax error
-        cr.write_text(new_src, encoding="utf-8")
+        _write_py_995(cr, new_src, what="repair_custom_routes_db_handle")
         return {"repaired": True}
     except Exception as exc:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -726,7 +728,7 @@ def repair_jwt_decode_audience(backend_dir) -> Dict[str, object]:
                 ast.parse(new_src)   # never write a syntax error
             except Exception:
                 continue
-            f.write_text(new_src, encoding="utf-8")
+            _write_py_995(f, new_src, what="repair_jwt_decode_audience")
             touched.append(f.name)
         result["repaired"] = touched
     except Exception as exc:  # never break generation/validation
@@ -825,7 +827,7 @@ def repair_custom_routes_param_types_vs_projection(backend_dir) -> Dict[str, obj
                 lines[ln] = lines[ln][:c0] + new + lines[ln][c1:]
         new_src = "".join(lines)
         ast.parse(new_src)   # never write a syntax error
-        cr.write_text(new_src, encoding="utf-8")
+        _write_py_995(cr, new_src, what="repair_custom_routes_param_types_vs_projection")
         return {"fixed": len(edits)}
     except Exception as exc:
         return {"fixed": 0, "error": f"{type(exc).__name__}: {exc}"}
@@ -930,7 +932,7 @@ def repair_custom_routes_param_types(backend_dir) -> Dict[str, object]:
         if fixed:
             new_src = "".join(lines)
             ast.parse(new_src)   # never write a syntax error
-            cr.write_text(new_src, encoding="utf-8")
+            _write_py_995(cr, new_src, what="repair_custom_routes_param_types")
         return {"fixed": fixed}
     except Exception as exc:
         return {"fixed": 0, "error": f"{type(exc).__name__}: {exc}"}
