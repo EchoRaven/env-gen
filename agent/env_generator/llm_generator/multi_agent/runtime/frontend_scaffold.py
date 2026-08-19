@@ -521,7 +521,18 @@ def repair_frontend_escaped_backticks(frontend_dir) -> Dict[str, object]:
 # is CRASH-PROOF by construction: a real icon renders, a wrongly-caught name degrades to a
 # visible placeholder the visual gate can flag — strictly better than a dead page.
 _JSX_TAG_RE = re.compile(r"<([A-Z][A-Za-z0-9_]*)[\s/>]")
-_IMPORT_NAMES_RE = re.compile(r"import\s+(?:([A-Za-z_$][\w$]*)\s*,?\s*)?(?:\{([^}]*)\})?\s*from", re.S)
+# #970: ``\bimport\b`` (not ``import\s+``) — the brace form is routinely emitted with NO
+# space, ``import{Link}from'react-router-dom'``, and ``\s+`` required at least one. The
+# binding was then invisible to the scan, ``Link`` looked unimported, and the icon heal
+# injected a SECOND ``import { Link } from 'lucide-react'`` → "The symbol "Link" has
+# already been declared" → vite build fails every cycle. netflix r157 failed docker_up 12
+# times on exactly this and aborted at the no-convergence gate without delivering.
+# ``\bimport\b`` still rejects ``importFoo`` (no boundary between two word chars).
+_IMPORT_NAMES_RE = re.compile(r"\bimport\b\s*(?:([A-Za-z_$][\w$]*)\s*,?\s*)?(?:\{([^}]*)\})?\s*from", re.S)
+# #970: a whole import STATEMENT, used to find where a new one may be spliced. Covers the
+# ``from '…'`` forms and the bare side-effect ``import './x.css'``.
+_IMPORT_STMT_RE = re.compile(
+    r"\bimport\b\s*(?:[^;\n]*?\bfrom\s*)?['\"][^'\"]+['\"]\s*;?", re.S)
 _LOCAL_DEF_RE = re.compile(r"(?:^|\n)\s*(?:export\s+)?(?:default\s+)?"
                            r"(?:function|class|const|let|var)\s+([A-Z][A-Za-z0-9_]*)")
 _REACT_BUILTINS = {"Fragment", "StrictMode", "Suspense", "Profiler", "ErrorBoundary"}
@@ -576,12 +587,22 @@ def repair_frontend_unimported_icons(frontend_dir) -> Dict[str, object]:
             if not missing:
                 continue
             add = "import { " + ", ".join(missing) + " } from 'lucide-react';\n"
-            lines = txt.split("\n")
-            last_import = max((i for i, l in enumerate(lines)
-                               if l.lstrip().startswith("import ")), default=-1)
-            lines.insert(last_import + 1, add.rstrip("\n"))
+            # #970: splice after the last import STATEMENT by character offset, not after
+            # the last LINE that starts with "import ". These generated components are
+            # routinely written minified — every import AND the whole component on one
+            # line — so the line rule put the new import after the closing brace of the
+            # component, i.e. an import statement in the middle of module body. Offsetting
+            # from the statement itself is correct for both shapes.
+            _last = None
+            for _m in _IMPORT_STMT_RE.finditer(txt):
+                _last = _m
+            if _last is None:
+                out = add + txt
+            else:
+                _at = _last.end()
+                out = txt[:_at] + "\n" + add.rstrip("\n") + txt[_at:]
             try:
-                f.write_text("\n".join(lines), encoding="utf-8")
+                f.write_text(out, encoding="utf-8")
                 repaired.append(str(f.relative_to(src_dir)))
             except Exception:
                 pass

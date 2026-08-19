@@ -16450,3 +16450,74 @@ be guessing at a contract shape I have not observed.
 
 r157 healed its own DDL at 16:34 and moved on to attempt 3/6 failing on the 404 instead. #969
 makes that determinism rather than luck. Full suite 6,518.
+
+### 359. #970 — the icon heal could not read a minified import, and fought the lane for 12 builds
+
+r157's single cause of non-convergence, and it is framework-owned. Twelve `docker_up`
+failures, all identical:
+
+    /app/src/components/LandingHero.jsx:2:9: ERROR: The symbol "Link" has already been declared
+
+The file, verbatim: the whole module on ONE line — three imports and the component — with
+`import { Link } from 'lucide-react';` appended on a second line, after the closing brace.
+
+Two bugs in `repair_frontend_unimported_icons`, both from one wrong assumption: that
+generated components are line-oriented. They are routinely emitted MINIFIED.
+
+    _IMPORT_NAMES_RE   required `import\s+`, so `import{Link}from'react-router-dom'`
+                       (no space — the common brace form) never matched. `Link` looked
+                       unimported, so the heal imported it AGAIN from lucide-react.
+    insertion point    "after the last LINE starting with `import `". In a minified file
+                       that line IS the whole module, so the new import landed after the
+                       component.
+
+★ The two compound into a fight the framework cannot win: the heal injects a duplicate, the
+build fails, the frontend lane repairs the file, the heal injects again. It fired **20 times**
+in one run. The lane was not failing to fix a trivial error — something was re-breaking it.
+
+Fixes: `\bimport\b\s*` (still rejects `importFoo` — no boundary between two word chars), and
+splice by CHARACTER OFFSET after the last import STATEMENT, which is correct for both shapes.
+`heal_pipeline` calls the same function rather than carrying a copy, so one fix covers both
+call sites.
+
+The test's first draft was WEAK and I nearly shipped it: the minified sample began
+`import{Link}` (no space), so the pre-fix line rule found no matching line, prepended at the
+top, and the end-to-end assertion passed on broken code. Only one of the two planted controls
+went red. Rewriting the sample to r157's exact shape — first import spaced, a later one not —
+made both go red. **A control that does not fail has not been verified, it has been assumed.**
+
+### 360. what r157 exposed that I deliberately did NOT fix
+
+Kept out of the fix set on purpose, each with the reason:
+
+    `syntax error at or near "?"`          ONE occurrence, log line truncated, and no `?`
+                                           survives in any of the 144 corpus init.sql files.
+                                           Unlocalizable — a fix would be invention.
+    `syntax error at or near "default_now"` r149, one occurrence, same class as #969 but a
+                                           token I have not seen twice.
+    `Target agent not found: messagebus`   71 warnings per run. "messagebus" is a HUB name,
+                                           not an agent, so something passes a source_hub
+                                           where a target agent id belongs — a real category
+                                           error. But events demonstrably still arrive (38
+                                           "picked up undelivered cross-process event"), the
+                                           run's failures all traced to LandingHero, and I
+                                           could not localize the emitter within budget.
+                                           Reachability measured before severity (item 351's
+                                           rule): no evidence of loss, so it is recorded, not
+                                           guessed at.
+    `deliverability_ui_flow_missing`       NOT an independent defect — the remediation task
+                                           reads "once runtime is healthy, execute and record
+                                           fresh validation:ui_flow", and the runtime was
+                                           never healthy. A consequence of #970.
+    the fail-fast abort                    Correct behaviour. "delivery gate has not gone
+                                           green in 75min since the contract built — the lanes
+                                           are active but not converging" is a better verdict
+                                           than idling to the wall clock.
+    the SUBSTITUTED capture diagnostic     I suspected it pointed at the wrong thing; #592
+                                           already says "fix that capture, not this endpoint".
+                                           I was wrong, and checking cost less than the fix.
+
+★ Also a metric lesson: I read "`deliverability_ui_flow_missing` count is climbing" as a heal
+thrashing. It was not — the self-heal last fired at 16:11, and the count rose only because
+every gate evaluation re-lists its blockers. **Counting log mentions measures how often you
+looked, not how bad it is.** Measure the blocker SET, not the word frequency.
