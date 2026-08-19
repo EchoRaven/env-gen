@@ -16706,3 +16706,44 @@ honest options next time are (a) find the emitter, or (b) if it proves benign, m
 warning say so \u2014 a hub name reaching MessageBus.send is a CATEGORY error and deserves a
 message that names it, not one that implies delivery failure. Not (c) downgrade it to hide
 the noise while it is still unexplained.
+
+### 366. the optimization I almost shipped, and the artifact that justified it
+
+Looking for waste rather than bugs (the user asked for both), r158's tool-io table pointed at
+`get_skill`: 66 calls returning 347k chars for **7 distinct skills**, `release-readiness` alone
+appearing 25 times. Skills are static files. The repo already has the right mechanism — #609's
+`_IDEMPOTENT_READ_TOOLS_609`, which collapses an identical read repeated inside ONE tool batch —
+and `get_skill` is not in the set. A one-line fix, obviously correct, obviously high-yield.
+
+Then I measured whether the repeats are actually IN-BATCH and IDENTICAL, because #609 keys on
+identical args. First measurement:
+
+    66 SAME, 0 DIFFERENT   → overwhelming; ship it
+
+★ It was an artifact. Every line in these logs is emitted TWICE — once by the root handler
+(`2026-08-18 15:48:50,679 - Agent.X - INFO - …`) and once by the per-agent handler
+(`15:48:50 [I] Agent.X: …`). My `paste - -` was pairing the two COPIES OF ONE CALL, so of course
+every pair matched. Filtering to a single prefix inverted the answer:
+
+    31 DIFFERENT pairs, 2 SAME   → the dedupe would fire twice in a whole run
+
+Each batch reads TWO DIFFERENT skills (`release-readiness` + `verification-before-completion`),
+not one skill twice. The fix would have been inert, and I would have shipped it with a
+confident paragraph about the savings.
+
+★★ This is trap #7's family but nastier. Counting log mentions at least measures something real
+(how often you looked). This measured the LOG FORMAT and reported it as system behaviour — and
+it did not look like a weak signal, it looked like 66-to-0. **A number that decisive should have
+prompted the question "what would make this true trivially?" before it prompted a commit.**
+
+Correction that outlives this: every `get_skill`/tool-call count I quoted earlier in the session
+was DOUBLE. The real figure is 66 calls, not 132.
+
+Also not shipped, deliberately: the bigger `read` total (1.59M chars, 323 calls). #609's comment
+already explains why a cross-turn read cache is unsafe — after a context trim the agent may no
+longer HOLD the earlier content, and answering "unchanged" would wedge the lane. That is a
+considered deferral with a stated prerequisite (`force=` escape hatch + a live run), not an
+oversight, and I am not overturning it from the outside.
+
+**This cycle's optimization result is: nothing to ship.** Recorded because a measured "no" is a
+finding — the alternative is re-deriving the same dead end next round.
