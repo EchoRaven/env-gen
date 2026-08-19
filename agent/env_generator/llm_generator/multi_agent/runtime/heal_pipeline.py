@@ -325,6 +325,15 @@ def _looks_like_image_ref(v) -> bool:
     return isinstance(v, str) and bool(_IMG_VALUE_RE.search(v))
 
 
+# #991: the stock image hosts a generated app must not depend on. Mirrors
+# frontend_scaffold._STOCK_HOST_RE, which already localises these in literal JSX <img>;
+# API-delivered URLs never passed through that path.
+_STOCK_HOST_991 = re.compile(
+    r"//(?:[a-z0-9-]+\.)*(?:picsum\.photos|unsplash\.com|pravatar\.cc|placeholder\.com|"
+    r"placehold\.(?:co|it)|dummyimage\.com|placekitten\.com|loremflickr\.com|"
+    r"placeimg\.com|fakeimg\.pl|via\.placeholder\.com)/", re.I)
+
+
 def _field_is_degenerate(rows, field) -> bool:
     """A media field is degenerate (needs distributing) when its values across the rows are
     all-empty, all-identical, or point at design '/crops/' fragments rather than real media.
@@ -347,6 +356,23 @@ def _field_is_degenerate(rows, field) -> bool:
     if not nonempty:
         return True                                   # all null/empty string → safe to fill
     # (2) VALUE guard — non-empty values must actually look like image refs to be degenerate media.
+    # #991: a STOCK-PHOTO HOST is degenerate media, and it must be tested BEFORE the
+    # image-ref guard below. `backend_skeleton` seeds image columns with
+    # `https://picsum.photos/seed/<table><i>/<size>` — no file extension, so
+    # `_looks_like_image_ref` says False and this function returns early. THAT is why #512's
+    # heal never fired on them while 60 real posters sat staged in public/assets/: not a
+    # missing degeneracy rule, a value guard that rejected the input first.
+    #
+    # r161's only real blocker. Every page rendering a poster logged
+    # `Failed to load resource: net::ERR_TUNNEL_CONNECTION_FAILED` (unreachable from the
+    # sandbox), console errors failed the UI-evidence gate, and `blank=[]` confirmed the
+    # pages otherwise RENDER. Majority rule matches the `/crops/` test below, so one stray
+    # placeholder in a real catalogue does not trigger a rewrite.
+    #
+    # Self-containment is right independent of this sandbox: a generated demo whose images
+    # need the public internet is broken offline too.
+    if sum(1 for v in nonempty if _STOCK_HOST_991.search(v)) >= max(1, len(nonempty) // 2):
+        return True
     if not all(_looks_like_image_ref(v) for v in nonempty):
         return False
     if len(set(nonempty)) <= 1 and len(rows) > 1:

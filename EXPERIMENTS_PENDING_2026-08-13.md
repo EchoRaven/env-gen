@@ -17693,3 +17693,38 @@ Third time this session: **log-absence is not evidence.** It cost me a wrong con
 item 390's evidence, nearly cost me one in #988's rationale, and would have cost me this one.
 The habit that catches it is cheap and I still have to force it — ask "where would this
 actually be written?" before concluding from where it isn't.
+
+### 395. #991 — r161's real blocker: the seed points at a website
+
+r161 reached the delivery gate and stuck on
+`['deliverability_ui_flow_failed', 'validation_ui_evidence_failed']` with **`blank=[]`** — the
+pages render fine. What failed them:
+
+    Failed to load resource: net::ERR_TUNNEL_CONNECTION_FAILED
+
+`backend_skeleton` seeds every image-ish column with
+`https://picsum.photos/seed/<table><i>/<size>`. Unreachable from the sandbox, so every page
+showing a poster logs a console error, and console errors fail the UI-evidence gate. 37 of
+those URLs in r161's app.
+
+★ #512 exists to fix precisely this — it round-robins 60 real posters, staged and unused in
+`public/assets/`, over DEGENERATE media fields. It never fired. **And the reason was not a
+missing degeneracy rule, which is what I assumed and coded first.** My initial patch added a
+stock-host test alongside the `/crops/` test, and the test still failed. The actual cause:
+
+    _looks_like_image_ref("https://picsum.photos/seed/titles1/640/360")  ->  False
+
+No file extension, so the VALUE GUARD above every degeneracy rule returns early. The heal was
+never reached at all. **My fix was in the right function, in the wrong place, and only the
+test told me** — it went red on the real URL shape while all twelve other assertions passed.
+
+★★ That is the third time this session a fix was corrected by its own test rather than by
+review (#970's weak sample, #988's `integer? DEFAULT 0`, this). The pattern: **I write the
+guard where the logic belongs and miss that something upstream already said no.** Replaying a
+real value — not an imagined one — is what surfaces it every time.
+
+Self-containment is the right property regardless of the sandbox: a generated demo whose
+images require the public internet is broken offline too. Majority rule matches the `/crops/`
+test beside it, so one stray placeholder in a real catalogue does not trigger a rewrite.
+
+Suite 6,689.

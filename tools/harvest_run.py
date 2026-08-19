@@ -39,6 +39,9 @@ KNOWN_FIXED = {
     # #978: a remediation whose "detail" is nothing but a container id — the lane is told
     # 64 hex characters and no error. Anchored on the dispatch line so it cannot be
     # confused with a hash appearing anywhere else in the log.
+    # #991: an unreachable stock-photo host in seed media — every page that renders one
+    # logs a console error, and console errors fail the UI-evidence gate.
+    "#991 stock host in seed media": r"ERR_TUNNEL_CONNECTION_FAILED",
     "#978 remediation is only a hash": r"remediation dispatched to [a-z_]+ \([^)]*\): [a-z_]+ — [0-9a-f]{32,}",
 }
 
