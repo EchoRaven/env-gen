@@ -18759,3 +18759,54 @@ in the code eighteen months before I asked the question**, and reading it cost l
 fix I was about to build.
 
 Suite 6,824.
+
+### 426. why it delivered before and does not now — task volume, not defect count
+
+The user asked the question this whole arc needed: *what change made the gate stop settling,
+and how did it ever deliver with so many problems?* Answered from artifacts:
+
+    run   endpoints  tasks   outcome
+    r100      29       75    delivered
+    r108      30       94    delivered
+    r138      25       89    delivered
+    r145      30      122
+    r150      30      134
+    r154      30      128    last run to ATTEMPT delivery
+    ----------------------------------- boundary
+    r158      30      193    zero delivery attempts
+    r164      34      209
+
+**The app never grew — the task count did.** 89 → 209 for the same 25-35 endpoints, and
+`incomplete_required_tasks` counts open tasks. When ~90 tasks fit inside the run budget the
+gate had a window where everything was simultaneously closed; at ~200 it does not. Nothing
+regressed in the app; the bookkeeping outgrew the clock.
+
+★ Checked whether my own fixes caused it, because they would be the obvious suspect:
+
+    creator        r154   r158   r164
+    orchestrator    105    151    174
+    verifier         14     21     28
+    deliverability    1      4      2      <- framework remediation dispatch
+
+**The framework's dispatch path is flat at 1-4.** Everything this session adds flows through
+it, so the direct answer is no. The growth is the ORCHESTRATOR authoring tasks — 85% of all
+tasks in r164. There is an indirect path I cannot rule out (more visible gate failures → more
+model-authored tasks), and it points the wrong way for me.
+
+★★ The duplication is real and visible in the titles:
+
+    [completed]   Complete missing login and signup validation flow evidence
+    [in_progress] Validate login and signup critical flows after frontend remediation
+    [in_progress] Complete missing login/signup and critical visual validation evidence
+    [in_progress] Record missing login and signup validation flows
+
+One job, four tasks, three still open. #998 misses these because it keys on METHOD+PATH and
+these name no endpoint.
+
+★★★ **Not implementing the obvious extension**, deliberately. A canonical key exists
+(`registryhub_ui_pages.json`: `login_page`, `signup_page`), so it need not be fuzzy — but
+"Fix login page missing signup link" (a defect) and "Record login+signup flow evidence"
+(verification) name the same pages and are different work. **Merging distinct work is worse
+than duplicating it**, and this thread has already killed four of my theories; adding a
+merge rule under deadline pressure is exactly the bet not to take. Design and risk recorded
+for a session with room to verify it against the corpus first.
