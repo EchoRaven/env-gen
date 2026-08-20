@@ -18916,3 +18916,36 @@ first-run scaffolding, so the guard belongs at the write site
 further downstream in a shared writer that still needs locating). The decisive test already
 exists: after the fix, `git log --format=%an -- app/frontend/src/pages/LoginPage.jsx` must
 show no alternation.
+
+### 429. #1010 — the stub test rewarded verbosity and punished reuse
+
+Item 428 found the framework overwriting the lane's LoginPage 46 times per run. The mechanism
+turned out to be one constant:
+
+    _DEFINITIVE_STUB_MAX_BYTES = 700
+    the lane's LoginPage.jsx   = 612 bytes   ->  classified as a stub, overwritten
+
+And it is 612 bytes **because it is good**: the lane moved the form into `<AuthForm mode=
+"login" />` and left the page as layout. The framework's replacement is 72 lines because it
+inlines that same state machine (`isRegister`, `email`, `password`, `step`, `error`,
+`onSubmit`) into every auth page. **The rule rewarded duplication and punished the refactor.**
+
+★ The calibration comment names its two samples: r59's 103-line real page (must not match) and
+r61's 7-line `<h2>Landing</h2>` (must match). Both are *large=real, small=empty*. **Nobody
+sampled small-and-real** — which is precisely what a page becomes once its logic moves into a
+component, i.e. what a competent author produces. A threshold validated on two points on one
+diagonal was applied to a plane.
+
+★★ Fixed structurally: an import of a LOCAL component that is then rendered in JSX means the
+page is finished, whatever its size. Deliberately asymmetric — it only ever moves cases OUT of
+"stub", because missing a real stub costs one unrepaired page while the false positive deletes
+the lane's work every tick, 46 times a run. Tests pin both directions, including that an
+unused import and a package import (`react-router-dom`) do NOT excuse an empty page.
+
+★★★ This is #992's class exactly (`'Continue'` read as fabricated data because it was
+uppercase, alphabetic, ≥4 chars) and the answer to the user's question about model capability.
+The model wrote correct, componentised React; **the ruler measuring it read brevity as
+incompleteness.** Six pages × ~50 overwrites is where a large share of r164's 56 repair tasks
+came from.
+
+Suite 6,831.

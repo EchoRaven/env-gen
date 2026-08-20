@@ -8566,6 +8566,29 @@ def _is_definitive_stub_page(text: str) -> bool:
         return False
     if _STUB_REAL_CONTENT_RE.search(text):
         return False
+    # #1010: a page that DELEGATES to a local component is finished work, not a stub.
+    #
+    # The byte threshold rewards verbosity and punishes reuse. r164's frontend lane wrote a
+    # 612-byte LoginPage that imports `AuthForm` and renders `<AuthForm mode="login" />` —
+    # correct, DRY, and 88 bytes under _DEFINITIVE_STUB_MAX_BYTES, so it read as a stub and
+    # the projector overwrote it with a 72-line inline copy of the same form. That happened
+    # 46 times in one run (95 commits to the file, alternating lane/framework), and the
+    # "Restore six registered UI pages" repair tasks are its downstream cost.
+    #
+    # The two samples the threshold was calibrated on (r59: 103 lines real, r61: 7 lines
+    # empty) are both "large=real, small=empty". Nobody sampled SMALL AND REAL — which is
+    # exactly what good code looks like once the logic moves into a component.
+    #
+    # Structural, not size-based: an import of a local component that is then rendered in
+    # JSX. Errs toward "not a stub", which is the safe direction — the cost of missing a
+    # real stub is one unrepaired page; the cost of the false positive is the lane's work
+    # deleted every tick.
+    try:
+        for _m in re.finditer(r"import\s+(\w+)\s+from\s+['\"][.][^'\"]*['\"]", text):
+            if re.search(r"<" + re.escape(_m.group(1)) + r"[\s/>]", text):
+                return False
+    except Exception:
+        pass
     return "export default" in text and "return" in text
 
 
