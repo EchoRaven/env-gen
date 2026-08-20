@@ -19143,3 +19143,30 @@ lane rewriting it each time, and #1010's byte threshold proven to misclassify a 
 guards mostly EXIST; at least one of them is demonstrably wrong. Which of the other 22 are
 wrong is unmeasured, and the way to measure it is to feed each one real corpus artifacts — the
 #1010 method — not to grep for its shape.
+
+### 435. #1010a — the corpus caught my own fix, exactly as item 434 prescribed
+
+Item 434's rule was: measure guards by feeding them real artifacts, never by grepping their
+shape. Applied it to the two page guards against 253 real corpus pages:
+
+    _is_generic_fallback_page      0 / 253 flagged   -> clean
+    _is_definitive_stub_page       2 / 253 flagged
+
+One of the two is a genuine 210-byte `<div>` stub, correctly caught. **The other was my own
+#1010 leaking**: r163's LandingPage writes `import LandingHeader from'../components/...'` with
+no space, and my regex demanded `from\s+['\"]`. A real page, importing three local components,
+still classified as a stub and still overwritable.
+
+One character (`\s+` → `\s*`). After it: 1 of 253, and that one is the real stub.
+
+★ The fix was 90 minutes old and had 7 tests, all of which passed, because **every test I
+wrote used the spacing I happened to type**. The corpus contains what agents actually emit,
+which includes compact import syntax I would never have thought to test. This is the same
+lesson as #992's `'Continue'` and #1010's 612 bytes: the sample you invent shares your
+assumptions; the sample the system produced does not.
+
+★★ Two guards measured, one wrong, one clean. **Twenty-one to go**, and the method is now
+proven twice on this exact question — feed it corpus artifacts and count what it misclassifies.
+That is the wiring pass, and it is measurement work rather than code work.
+
+Suite 6,848.

@@ -8584,7 +8584,11 @@ def _is_definitive_stub_page(text: str) -> bool:
     # real stub is one unrepaired page; the cost of the false positive is the lane's work
     # deleted every tick.
     try:
-        for _m in re.finditer(r"import\s+(\w+)\s+from\s+['\"][.][^'\"]*['\"]", text):
+        # #1010a: `from'../x'` with no space is valid JS and appears in the corpus —
+        # r163's LandingPage imports three local components that way, so `\s+` demanded
+        # a space and let a real page through to be overwritten. Found by replaying 253
+        # corpus pages through this predicate — the only method that held up today.
+        for _m in re.finditer(r"import\s+(\w+)\s+from\s*['\"][.][^'\"]*['\"]", text):
             if re.search(r"<" + re.escape(_m.group(1)) + r"[\s/>]", text):
                 return False
     except Exception:

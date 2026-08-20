@@ -89,3 +89,12 @@ def test_the_control_calls_the_good_page_a_stub():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_a_compact_import_still_counts():
+    """#1010a: `from'../x'` with no space is valid JS and r163's LandingPage uses it for three
+    local components. The first regex demanded `\\s+` and let that real page through to be
+    overwritten — caught by replaying 253 corpus pages, not by reading the pattern."""
+    text = ("import LandingHeader from'../components/LandingHeader';\n"
+            "export default function LandingPage(){ return <LandingHeader />; }\n")
+    assert _is_definitive_stub_page(text) is False
