@@ -105,8 +105,15 @@ _SPINE_TENANT_COLS: List[Dict[str, Any]] = [
 _SKIP_TABLES = {"oauth_clients", "oauth_authorization_codes", "oauth_tokens",
                 "oauth_refresh_tokens", "oauth_codes"}
 
-_FK_RE = re.compile(r"references\s+([A-Za-z_]\w*)\s*(?:\(\s*(\w+)\s*\)|\.\s*(\w+))",
-                    re.IGNORECASE)
+# #1022: the identifiers may be QUOTED. `REFERENCES "users" ("id")` is valid SQL and is what
+# a contract author writes about as often as the bare form — netflix r122 shipped
+# `"user_id" TEXT REFERENCES "users" ("id")` against an integer `users.id`. Without the
+# optional quotes this returned None, so `_fk_target` saw no FK, `_reconcile_fk_types_in_map`
+# skipped the column, and the unbootable type survived to initdb. The quotes are optional, so
+# every previously-matching form still matches unchanged.
+_FK_RE = re.compile(
+    r'references\s+"?([A-Za-z_]\w*)"?\s*(?:\(\s*"?(\w+)"?\s*\)|\.\s*"?(\w+)"?)',
+    re.IGNORECASE)
 
 
 def _class_name(table: str) -> str:
@@ -278,8 +285,16 @@ def _set_col_base_category(col: Dict[str, Any], category: str) -> None:
     cur = str(col.get("type") or "")
     m = _FK_RE.search(cur)
     if m and not (col.get("fk") or col.get("references")):
-        col["type"] = "{} references {}({})".format(
-            category, m.group(1), m.group(2) or m.group(3))
+        # #1022: keep whatever FOLLOWS the reference too. This rebuilt the clause from its
+        # two captured groups and silently dropped the rest, so coercing
+        # `TEXT REFERENCES "users" ("id") ON DELETE CASCADE` produced
+        # `integer references users(id)` — the FK survived, the cascade did not, and a
+        # parent delete would start raising instead of cascading. Harmless while #197 was
+        # dead (nothing was ever coerced in the DDL); live the moment it works.
+        _tail = cur[m.end():].strip()
+        col["type"] = "{} references {}({}){}".format(
+            category, m.group(1), m.group(2) or m.group(3),
+            (" " + _tail) if _tail else "")
     else:
         col["type"] = category
 

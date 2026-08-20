@@ -127,7 +127,13 @@ def test_only_the_genuinely_enriched_docs_pass():
                   for s in (d.get("screens") or []) if isinstance(s, dict)
                   for c in (s.get("components") or []) if isinstance(c, dict))
         assert (n in passing) == per, n
-    assert 5 <= len(passing) <= 30, len(passing)
+    # The equivalence asserted in the loop above is the REAL guard — it is exact and holds
+    # per document. This band is only a smoke check that the guard has not gone
+    # all-permissive or all-rejecting, so it tracks a corpus that keeps growing: netflix-web
+    # r172 arrived genuinely enriched and took the count 30 -> 31. Raise it when a NEW
+    # enriched run legitimately pushes past it; never to make a real over-permissiveness
+    # regression go quiet — that shows up in the loop, not here.
+    assert 5 <= len(passing) <= 40, len(passing)
 
 
 if __name__ == "__main__":  # pragma: no cover

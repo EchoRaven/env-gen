@@ -19965,3 +19965,116 @@ releases is a halt"*.
 is time-bound, and the repair churn is what consumes the time.** That makes minutes the unit
 to optimise, which is the argument for #1021 over a #638 re-check — 46 of 150 minutes went to
 one refused deletion, and the refusal recurs 2–6 times in every run.
+
+### 460. r172 final: #1021 validated in production, and the run died on a wall-clock cap
+
+    started 13:37:00   ended 16:26:58   ENVGEN_DEFER_TO_LANE_PAGE=1 (same as r171)
+    "Generation failed: Run budget exceeded (wall-clock 7214s exceeded cap 7200s)
+     without delivery; aborted after 20 coordination ticks"
+
+Not STUCK (0 occurrences) and not a gate — a **2-hour wall-clock cap**. r171 died on the
+STUCK detector (gate not green 75min after contract build), r172 on `ENVGEN_MAX_WALL...`.
+Two different terminators; both are clocks. Eleventh run without delivery.
+
+★ **#1021 fired and worked**, first production use:
+
+    15:46:15  lane: "removed API export shadowing so api.jsx/api.js re-export canonical api.js"
+    15:47:49  lane DELETES app/frontend/src/services/api.jsx via `*** Delete File:`   <- the
+              operation refused six times in r171
+    15:48:07  lane: "Fixed protected-route auth drift by deleting the duplicate api.jsx"
+    15:50:54  lane tries to delete the TRASH ARTIFACT too -> refused by the #1021b guard
+    15:54:08  lane writes a deliberate 98-byte re-export shim
+
+On disk: `worktrees/frontend/.openenv_trash/app__frontend__src__services__api.jsx.…deleted`.
+The duplicate-module problem took **~2 minutes (15:46→15:48)** against r171's ~46. Staging
+was clean (no auto-stage warning for that path). Both halves of the change fired in one run,
+and the guard from item 458 refused a real protected-path delete within three minutes of the
+feature going live — it would have allowed it yesterday.
+
+★★ **My instrument was wrong twice and I reported "0 attempts" from it.** `grep 'Delete File'`
+returns 0 in r172 — because that literal only ever appeared in r171 as part of the ERROR
+echoing the rejected line. When the operation SUCCEEDS the string never appears at all, and
+the success payload is not logged verbatim either (`grep 'moved to trash'` = 0). I measured
+the absence of failures and read it as absence of attempts. The instruments that work are the
+`.openenv_trash/` directory and the `refusing to delete protected path` line. Same shape as
+`report_issue` (31 hits, all tool-registration) and `delete_file` (170 hits, all
+registration): **a name in a log is not an invocation.**
+
+### 461. the P0 count does not oscillate because bugs reopen — four mechanisms, none of them that
+
+WorkHub ground truth at the end of r172: **10 P0 bug tasks, every one filed by the verifier**
+(6 completed / 3 in_progress / 1 pending). They map to roughly THREE root causes.
+
+  1. **Filed per SYMPTOM, not per root cause.** One unbootable DDL produced five: postgres
+     exits -> backend health check times out -> frontend container missing -> compose
+     "reports success but starts no services" -> port 3000 serves backend 404.
+  2. **Fixed per INSTANCE, not per class.** `profiles.user_id` FK mismatch -> fixed,
+     completed. The identical generator bug on `my_list.profile_id` -> filed as a NEW P0.
+     Same for the JSX pair (`malformed JSX in CardPreviewPage TitleCard props` and
+     `malformed TitleCard onToggleList prop in CardPreviewPage` are one defect, two tasks).
+  3. **Nothing retires a task when its condition stops being true.** Measured live at 16:12
+     with all three containers `Up (healthy)`: of four open P0s, **three were false** —
+     `PostgreSQL container exits` (it was up), `frontend container is missing` (it existed),
+     `my_list.profile_id FK type mismatch` (the DDL on disk was already consistent). Only
+     `port 3000 serves backend 404` reproduced under `curl`. Rises are automatic and fast;
+     falls are manual and batched -> sawtooth. The count tracks the ledger, not the system.
+  4. **At least one probably-unsatisfiable expectation** (#566z's class). "Canonical runtime
+     port 3000 serves backend 404 instead of frontend UI": r171 had the IDENTICAL port layout
+     and filed it zero times, and `canonical runtime port` appears nowhere in framework
+     source. Host 3000 is the backend BY DESIGN (r171's own log: "the projected backend
+     container is healthy on host port 3000 (container 8082)") while container-internal 3000
+     is the frontend. The verifier looks to be conflating host and container ports, and no
+     code change can close that task.
+
+Worth stating plainly: open-P0 is annotated by the framework itself as *"reported rather than
+blocking"*, and r172 carried only ONE `FAILED` task. So this is a churn signal, not the cut's
+blocker — but it is the churn that spends the 7200s.
+
+### 462. #1022 — FIX #197 has never once taken effect, and its own comment says why
+
+`render_schema_sql` calls `_reconcile_fk_types_in_map` and states:
+
+    # The reconciler mutates the col dicts in place; _columns_of returns those same
+    # dicts below, so the rendered types match the ORM by construction.
+
+`_columns_of()` builds **fresh dicts on every call**. The reconciler mutated throwaway copies
+and the render loop then called `_columns_of(table)` again. `render_models` does it right (it
+renders from `by_name` itself), so **the ORM was reconciled and the DDL was not** — precisely
+the divergence #197 exists to prevent, dead for the whole life of the fix, inside an
+`except Exception: pass` that would have hidden a hard failure too.
+
+Reproduced end-to-end on the real renderers with r172's contract:
+
+    models.py     Profile.id        = Column(String, …uuid4)
+                  MyList.profile_id = Column(String, ForeignKey("profiles.id"))
+    01_init.sql   "profiles"."id"        SERIAL PRIMARY KEY
+                  "my_list"."profile_id" uuid references profiles(id)
+    initdb        FK "my_list_profile_id_fkey" cannot be implemented: incompatible types
+                  uuid and integer   -> postgres exits   -> the five P0s of item 461
+
+Three defects in the area, all fixed together because fixing (1) alone is unsafe:
+
+  1. the reconciliation never reached the DDL — render from the reconciled map, keyed exactly
+     as `render_models` keys it, so the two agree by construction rather than by comment.
+  2. `_FK_RE` could not see a QUOTED reference: `REFERENCES "users" ("id")` returned None, so
+     the reconciler skipped those columns entirely. r122 shipped
+     `"user_id" TEXT REFERENCES "users" ("id")` against `users.id SERIAL`. Had I fixed only
+     (1), the new net would have fired on a shape the reconciler still could not repair.
+  3. `_set_col_base_category` rebuilt the clause from two capture groups and dropped the tail,
+     so coercing `… ON DELETE CASCADE` silently lost the cascade. Harmless while (1) kept it
+     dead; live the moment it works.
+
+Plus #997's net, which its own docstring predicted (*"a FOURTH spelling … there is no reason
+to think the list is complete"*): an FK/PK type-parity invariant, refusing the DDL at render
+with the table and column named instead of at initdb an hour later.
+
+★ **False-positive control before trusting it:** run over all **159** generated `01_init.sql`
+on disk — parser sees 9–14 tables in every file (zero blind parses), **1 flagged**, and that
+one (r122) is a true positive. 0/159 false.
+
+Also #1022b: `#743` printed `[:4]` against an uncapped count, so r172's 16:03:16 line claimed
+5 P0s and listed 4 with no marker — diffing those lists across ticks mis-reads a pushed-out
+task as resolved. Now says `(+N more not shown)`.
+
+Neither #1022 nor #1022b is exercised yet: both are next-run fixes. #1021 is the only one of
+the three with production evidence.

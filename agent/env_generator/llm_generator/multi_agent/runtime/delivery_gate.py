@@ -482,6 +482,24 @@ def _norm_gate_path(p: Any) -> str:
     return s.rstrip("/") or "/"
 
 
+def _join_capped_1022(items, total, cap: int = 4) -> str:
+    """Join at most ``cap`` items and SAY when the rest were dropped.
+
+    #743 printed `[:4]` against an uncapped count, so a gate reporting "5 P0 BUG task(s)"
+    listed four and gave no sign the fifth existed — the reader diffs the list across ticks
+    and silently mis-attributes which task came or went. A bounded list is fine; an
+    unannounced one reads as complete.
+    """
+    try:
+        shown = [str(i) for i in list(items)[:max(0, int(cap))]]
+        n = int(total) if total is not None else len(list(items))
+    except Exception:
+        return "; ".join(str(i) for i in (items or []))
+    text = "; ".join(shown)
+    hidden = n - len(shown)
+    return f"{text} (+{hidden} more not shown)" if hidden > 0 else text
+
+
 def unresolved_bug_tasks_743(hubs) -> Dict[str, Any]:
     """#743: bug tasks are excluded from the structural gate, delegated to a gate that isn't.
 
@@ -2247,16 +2265,19 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             "and 4 of those 20 released (#755: my first count said all 20, inflated by a "
             "bootstrap doc read as a release tag). Reported, not enforced.",
             _bugs743["failed_count"],
-            "; ".join(f"[{f.get('severity') or '-'}] {f.get('title')}"
-                      f"{' — ' + f['reason'] if f.get('reason') else ''}"
-                      for f in _bugs743.get("failed", [])[:4]))
+            _join_capped_1022(
+                [f"[{f.get('severity') or '-'}] {f.get('title')}"
+                 f"{' — ' + f['reason'] if f.get('reason') else ''}"
+                 for f in _bugs743.get("failed", [])],
+                _bugs743["failed_count"]))
     if logger and _bugs743.get("open_p0_bug_count"):
         logger.warning(
             "#743 %d P0 BUG task(s) are still open at the delivery cut: %s. Corpus: 90 of 129 "
             "runs end this way and 15 of them released (#755-corrected; 86 runs, not 90), so "
             "this is reported rather than blocking — 15 of the 29 real releases is a halt.",
             _bugs743["open_p0_bug_count"],
-            "; ".join(str(b.get("title")) for b in _bugs743.get("open_p0_bugs", [])[:4]))
+            _join_capped_1022([str(b.get("title")) for b in _bugs743.get("open_p0_bugs", [])],
+                              _bugs743["open_p0_bug_count"]))
     # #751 (user-approved) — A TASK EXPLICITLY MARKED FAILED BLOCKS THE CUT.
     #
     # #743 measured both candidates and only this one is a gate rather than a halt:

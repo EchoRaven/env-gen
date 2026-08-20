@@ -1173,6 +1173,81 @@ _DDL_FORBIDDEN_997 = (
 )
 
 
+# #1022: the FOURTH member of #997's class, and the first that is not a spelling — an FK
+# column whose TYPE does not match the PK it references. postgres refuses the file with
+# `foreign key constraint "…_fkey" cannot be implemented … incompatible types: uuid and
+# integer`, which is the same "initdb refuses, the database never starts, docker_up fails"
+# failure the three spellings produce, and #997 predicted the list was not complete.
+#
+# This is a NET, not the fix: `_reconcile_fk_types_in_map` is what makes the types agree,
+# and #1022 repaired it (it had been mutating discarded copies). The net exists so that if
+# reconciliation is ever bypassed or silently fails again, the DDL is refused HERE with the
+# table and column named, instead of an hour later behind a character offset in initdb.
+_DDL_CREATE_1022 = re.compile(
+    r'CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+"?([A-Za-z_][A-Za-z0-9_]*)"?\s*\((.*?)^\s*\)\s*;',
+    re.S | re.M | re.I)
+_DDL_COL_1022 = re.compile(r'^\s*"?([A-Za-z_][A-Za-z0-9_]*)"?\s+(\S.*?),?\s*$')
+_DDL_REF_1022 = re.compile(
+    r'\breferences\s+"?([A-Za-z_][A-Za-z0-9_]*)"?\s*\(\s*"?([A-Za-z_][A-Za-z0-9_]*)"?\s*\)', re.I)
+# Lines that are table CONSTRAINTS, not columns — they start with a keyword, so the column
+# regex would otherwise read `PRIMARY` / `FOREIGN` as a column name.
+_DDL_CONSTRAINT_1022 = re.compile(
+    r'^\s*(PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT|EXCLUDE|LIKE)\b', re.I)
+
+
+def _ddl_column_types_1022(ddl):
+    """``{table: {column: (type_text, is_pk)}}`` parsed from rendered DDL. Never raises."""
+    out = {}
+    try:
+        for m in _DDL_CREATE_1022.finditer(ddl or ""):
+            tname = m.group(1).strip().lower()
+            cols = {}
+            for raw in (m.group(2) or "").splitlines():
+                line = raw.strip().rstrip(",")
+                if not line or line.startswith("--") or _DDL_CONSTRAINT_1022.match(line):
+                    continue
+                cm = _DDL_COL_1022.match(line)
+                if not cm:
+                    continue
+                cols[cm.group(1).strip().lower()] = (
+                    cm.group(2).strip(), bool(re.search(r"\bPRIMARY\s+KEY\b", line, re.I)))
+            if cols:
+                out[tname] = cols
+    except Exception:
+        return out
+    return out
+
+
+def _fk_type_conflicts_1022(ddl):
+    """``[(table, column, its category, target, target category)]`` for every FK whose type
+    category differs from the PK it references. Only CONFIDENT mismatches are reported: an
+    unresolvable target, or a type either side of which cannot be categorised, is skipped."""
+    conflicts = []
+    try:
+        from .backend_skeleton import _fk_type_category
+    except Exception:
+        return conflicts
+    tables = _ddl_column_types_1022(ddl)
+    for tname, cols in tables.items():
+        for cname, (ctype, _pk) in cols.items():
+            rm = _DDL_REF_1022.search(ctype)
+            if not rm:
+                continue
+            ttab, tcol = rm.group(1).strip().lower(), rm.group(2).strip().lower()
+            target = (tables.get(ttab) or {}).get(tcol)
+            if target is None:
+                continue                      # target not in this file — nothing to compare
+            try:
+                own = _fk_type_category(ctype)
+                tgt = _fk_type_category(target[0])
+            except Exception:
+                continue
+            if not own or not tgt or own == tgt:
+                continue
+            conflicts.append((tname, cname, own, f"{ttab}.{tcol}", tgt))
+    return conflicts
+
+
 def _ddl_invariants_997(ddl: str) -> None:
     """Raise when the rendered DDL carries a token postgres cannot parse."""
     for rx, what in _DDL_FORBIDDEN_997:
@@ -1182,6 +1257,15 @@ def _ddl_invariants_997(ddl: str) -> None:
             raise ValueError(
                 f"#997: refusing to write DDL containing {what} — {m.group(0)!r} at line "
                 f"{_line}. postgres would reject the file and the database would never start.")
+    _bad = _fk_type_conflicts_1022(ddl)
+    if _bad:
+        _detail = "; ".join(f"{t}.{c} is {oc} but {tgt} is {tc}"
+                            for t, c, oc, tgt, tc in _bad)
+        raise ValueError(
+            f"#1022: refusing to write DDL whose FK type(s) do not match the PK they "
+            f"reference — {_detail}. initdb would report 'foreign key constraint cannot be "
+            f"implemented … incompatible types', postgres would exit and the database would "
+            f"never start. _reconcile_fk_types_in_map should have made these agree.")
 
 def render_schema_sql(tables: Dict[str, Any]) -> str:
     """Render ``init/01_init.sql``: the deterministic tenancy/identity spine
@@ -1203,13 +1287,39 @@ def render_schema_sql(tables: Dict[str, Any]) -> str:
     # framework re-emits the mismatch, so the lane can never fix it → 75-min
     # wall). The reconciler mutates the col dicts in place; _columns_of returns
     # those same dicts below, so the rendered types match the ORM by construction.
+    #
+    # #1022: FIX #197 HAS NEVER ONCE TAKEN EFFECT HERE. Its premise, stated above —
+    # "the reconciler mutates the col dicts in place; _columns_of returns those same
+    # dicts below" — is false: `_columns_of()` builds FRESH dicts on every call, so the
+    # reconciler mutated throwaway copies and the loop below then re-derived unreconciled
+    # ones. `render_models` does it correctly (it renders from `by_name` itself), so the
+    # ORM was reconciled and the DDL was not — which is precisely the divergence #197
+    # exists to prevent, left running for the entire life of the fix.
+    #
+    # r172, measured end-to-end on the real renderers:
+    #     models.py     Profile.id = Column(String, …uuid4)
+    #                   MyList.profile_id = Column(String, ForeignKey("profiles.id"))
+    #     01_init.sql   "profiles"."id"        SERIAL PRIMARY KEY
+    #                   "my_list"."profile_id" uuid references profiles(id)
+    #     initdb        FK constraint "my_list_profile_id_fkey" cannot be implemented:
+    #                   incompatible types uuid and integer  -> postgres exits
+    # and that one unbootable file produced FIVE separate P0 tasks (postgres exits ->
+    # backend health check times out -> frontend container missing -> compose "starts no
+    # services" -> port 3000 serves backend 404), i.e. #197's own "docker_up wedges every
+    # cycle … -> 75-min wall".
+    #
+    # Render from the reconciled map, keyed exactly as `render_models` keys it, so the two
+    # renderers agree BY CONSTRUCTION rather than by a comment asserting that they do.
+    _recon: Dict[str, List[Dict[str, Any]]] = {}
+    for _n, _t in (tables or {}).items():
+        if isinstance(_t, dict):
+            _recon[str(_n).lower()] = _columns_of(_t)
     try:
         from .backend_skeleton import _reconcile_fk_types_in_map
-        _by_name = {str(n).lower(): _columns_of(t)
-                    for n, t in tables.items() if isinstance(t, dict)}
-        _reconcile_fk_types_in_map(_by_name)
+        _reconcile_fk_types_in_map(_recon)
     except Exception:
-        pass  # best-effort: reconciliation must never break DDL emission
+        pass  # best-effort: reconciliation must never break DDL emission. `_recon` still
+              # holds the UNreconciled columns, i.e. exactly the pre-#1022 behaviour.
 
     # FIX #211: emit in topological FK order so an inline REFERENCES never hits a
     # not-yet-created table (r15 `videos`→`sounds` init crash).
@@ -1233,7 +1343,11 @@ def render_schema_sql(tables: Dict[str, Any]) -> str:
                     lines.append("")
             continue  # spine owns the base table; extras merged above
 
-        cols = _columns_of(table)
+        # #1022: the RECONCILED columns (see above), falling back to a fresh derivation
+        # only for a table the reconciler never saw.
+        cols = _recon.get(str(table_id).lower())
+        if cols is None:
+            cols = _columns_of(table)
         if not cols:
             # FIX #90 (instagram run-9, live): a lane registered a placeholder table
             # ('dummy') with NO columns at M2 kickoff and this raise KILLED the whole
