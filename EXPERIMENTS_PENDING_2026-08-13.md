@@ -19074,3 +19074,34 @@ first (they have the most alternations and the least justification), then the co
 
 Verification needs no new instrumentation — `tools/sweep_write_conflicts.py` after each group,
 watching `LoginPage.jsx` (2004) and `seed_data.json` (1286) fall.
+
+### 433. retracting item 432's headline claim — the compute write IS guarded
+
+Item 432 called `compute_deliverability`'s seed write a silent revert of uncommitted lane work
+and made it the section's find. **Wrong.** Six lines above the write:
+
+    if not any(isinstance(v, list) and v for v in _data.values()):
+        ... git show HEAD:app/backend/seed_data.json ...
+            _seed_path.write_text(_head)
+
+It restores from HEAD **only when the working tree's seed is empty of data**. That is
+create-if-absent semantics, and a lane's freshly authored seed is never touched.
+
+★ I read the write and not the guard six lines above it. The same failure as item 422 (read
+`3000`, recognised "React port", never checked the compose file that was open in front of me)
+and item 423 (swapped one wrong constant for another). **Seventh retraction today**, and the
+mechanism has not varied once: a conclusion drawn from the line that confirms it, without
+reading the lines that would refute it.
+
+★★ What survives from 432: the enumeration (23 writers) and the three-way triage, which were
+derived from names and call shapes rather than from this misreading. What dies: the claim that
+a compute function silently reverts lane work, and with it the priority ordering that put the
+"compute pair" ahead of the repair/heal group. **The repair/heal writers are now the only
+group with a demonstrated clobber** — #1010's page projector was one of them, measured at 46
+overwrites in one run.
+
+★★★ Method note for the wiring pass: `framework_may_write()` must not be bolted on by name or
+by grep. Every one of the 23 needs its existing guard read first — several already implement
+create-if-absent correctly, and adding a second check would be noise at best. The count that
+matters is not "23 writers" but "writers with no existing guard", and I have not measured that
+yet.
