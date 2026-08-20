@@ -18678,3 +18678,46 @@ there. Re-checked by line prefix. **Three sloppy reads in one twenty-minute fix*
 pattern is always the same, a substring or a number recognised instead of a structure read.
 
 Suite 6,818 (template-only change, no behaviour).
+
+### 424. the delivery history I never checked, and #1008
+
+The user corrected a premise I had built a two-day plan on: single-milestone *had* been run,
+and it *had* delivered. Both my claims were wrong, and both from the same habit — I searched
+`gm_netflix-web-r16*` and generalised to "never".
+
+    MILESTONE PLAN: single-milestone    126 runs   (every run is already single-milestone)
+    DELIVER_PROJECT fired              r100, r108, r138, …, r151, r153, r154
+    delivered                          r138 ("Substantive delivery gate is GREEN")
+
+**The pipeline has delivered.** My "seven runs, never delivered" was seven runs out of 119
+launch logs on disk.
+
+★ With the real history the boundary is sharp:
+
+    r138–r154   final gate 1–4   DELIVER_PROJECT fires 32–84x
+    r155–r158   final gate 7     fires 0x
+    r162        final gate 1     fires 0x
+    r164        20→2→1→6→3       fires 0x
+
+The zero is a SYMPTOM, not a cause: the orchestrator stops attempting because the gate never
+goes green, and r154 proves the tool itself is reachable (12 precondition blocks, then 42
+successful calls). So the question is not "why did delivery stop" but "why does the gate not
+settle" — and the gate has already been driven back from 7 to touching 1 this session.
+
+★★ Reading r164's gate sequence for the oscillation source produced **#1008**. The step from
+1 to 6 is not six problems:
+
+    1 failed: ['verification_checklist_not_ready']
+    6 failed: ['deliverability_ui_page_unwired'] x6
+
+One check, six pages, counted six times — and that check is in `_COVERED_ELSEWHERE`, so it is
+deliberately never dispatched. Six entries inflate the distance-to-green while producing no
+work for anyone. The count now reports distinct checks with the instance count beside the
+name (`deliverability_ui_page_unwired x6`), which is display-only; the gate's verdict is
+untouched.
+
+★★★ **This is the metric I used to judge every run in this session** — r158=8, r162=1,
+r164=20→2→1→6→3 — and it was counting instances while I read it as kinds. Every comparison I
+drew from it is softer than I stated.
+
+Suite 6,824.

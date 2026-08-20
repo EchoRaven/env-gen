@@ -3297,11 +3297,26 @@ class Orchestrator:
                 # failed-check set, deduped to once-per-CHANGE so it never spams the
                 # ≤60s loop.
                 _failed = sorted(str(c) for c in (gate.get("failed_checks") or []))
+                # #1008: count DISTINCT checks, keep the instance count beside the name.
+                #
+                # r164 logged "6 failed check(s)" where all six entries were
+                # `deliverability_ui_page_unwired` — one check, six pages. The previous
+                # evaluation had said 1, so the gate read as a 6x regression when nothing new
+                # had broken, and this number is what an operator (and the orchestrator
+                # deciding whether to attempt delivery) reads as the app's distance from
+                # green. It is also the metric this session used to judge every run.
+                #
+                # Worse, that particular check is in _COVERED_ELSEWHERE — deliberately never
+                # dispatched — so six entries inflate the distance while producing no work.
+                _seen1008: Dict[str, int] = {}
+                for _c in _failed:
+                    _seen1008[_c] = _seen1008.get(_c, 0) + 1
+                _shown = [(f"{k} x{v}" if v > 1 else k) for k, v in sorted(_seen1008.items())]
                 if _failed != getattr(self, "_fwdeliver_last_failed", None):
                     self._fwdeliver_last_failed = _failed
                     self._logger.warning(
                         "Framework deliver declined: delivery gate has %d failed check(s): %s",
-                        len(_failed), _failed,
+                        len(_seen1008), _shown,
                     )
                 # FIX #120 (run-38): a STALE build:* failure checklist (transient
                 # run_validation fail mid visual-churn, never re-recorded) must not
