@@ -19235,3 +19235,43 @@ route-table lookup, a modifier keyword in a declared type.
 on a threshold or a shape rather than on a structural fact, and measure those first.**
 
 Suite 6,859.
+
+### 438. eleven guards measured — the predictor holds, and it is a design rule
+
+Continued the corpus-replay pass while r165 runs (static work, no runtime cost):
+
+    guard                          corpus sample                  verdict
+    _is_definitive_stub_page        253 pages                     WRONG -> #1010/#1010a
+    _is_fabricated_fallback_literal 228 heal literals             WRONG -> #1012
+    _is_generic_fallback_page       250 pages                     clean
+    _field_is_degenerate            548 seed fields               clean
+    _promote_inline_modifiers      1350 column specs              clean
+    _MIN_AUTHORED_TOTAL_ROWS         17 seed files                clean (threshold in empty space)
+    _looks_like_image_ref          2804 seed values, 645 hits     clean — ZERO false positives
+    _is_profiles_page               275 page records              clean
+    _is_noop_fix_660               2089 agent texts, 2 hits       clean
+    _route_tokens_728                32 routes                    no finding (my harness conflated
+                                                                  stemming with dropping)
+    _is_dark_hex                    104 colours, 22 within ±0.08  danger signature, harm unproven
+
+★ **The split is total and it is not about which functions are careful.** Every guard whose
+decision rests on a STRUCTURAL FACT is clean — an image-reference shape, a declared type
+modifier, a page's registered purpose, a route table. Both failures rest on SIZE or CHARACTER
+CLASS: 612 bytes read as unfinished, `'w-8 h-8'` read as invented content.
+
+`_is_profiles_page` sharpens it: it *uses* `isalpha` and `len`, and it is clean, because those
+are auxiliary — its primary key is the page's declared purpose. **The danger is a size or
+character shape as the PRIMARY criterion, not its presence.**
+
+★★ That is now stated well enough to be a framework rule rather than a lesson: *a guard that
+decides whether to overwrite an agent's work must key on structure. Size and character class
+may refine, never decide.* Both violations cost real work — #1010's cost 46 overwrites of one
+file in one run.
+
+★★★ `_is_dark_hex` is recorded as **danger signature, harm unproven** and deliberately not
+touched: 21% of corpus colours sit within ±0.08 of its 0.5 threshold, which is #1010's shape
+exactly, but a colour at luminance 0.496 vs 0.502 has no obviously correct answer and no
+measured downstream cost. Item 393's rule — measure harm before repairing — outranks pattern
+recognition, even my own pattern.
+
+Suite 6,859.
