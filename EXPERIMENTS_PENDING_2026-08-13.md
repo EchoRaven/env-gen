@@ -19817,3 +19817,40 @@ a point estimate.
 The honest form: *with the flag on, total alternations were 81 and 207; with it off, 507, 839
 and 1108. n=5, ranges disjoint, magnitude unstable.* That sentence would have survived both my
 claim and my retraction.
+
+### 456. the actual delivery blocker: two API clients, and #638 already measured it
+
+The user's read — *"oscillation is either a persistence problem or a framework problem, not a
+model-capability one"* — turned out right, and following it found what eight runs of clobber
+work did not.
+
+r171's log, 76 times: *"the active blocker is the shared frontend `window.NetflixAPI`
+initialization failure"*, and 45 times *"NetflixAPI is undefined; Login UI flow blocked;
+Profiles UI flow blocked…"*. In the artifacts:
+
+    services/api.js    defines window.NetflixAPI   3303 B
+    services/api.jsx   does NOT                    1457 B
+    App.jsx imports    './services/api.jsx'        <- the one without the definition
+
+**Nine UI flows cannot run, so no UI evidence accumulates, so
+`validation_ui_evidence_failed` and `deliverability_ui_flow_failed` never clear, so the gate
+never settles.** That is the chain, and it is one wrong import specifier.
+
+★ **#638 documented it, with numbers:** *"the gap-fill asks 'does THIS FILENAME exist', but the
+unit JS resolves is the MODULE… the app ships two different API clients. Measured across the 45
+delivered frontends: 21 runs carry a `services/api` collision — 13 .js+.jsx, 6 .js+.mjs, 2 with
+all three — and the framework's own api.js is one side of EVERY one."* It also names the
+resulting crash class (#632) and the constraint on fixing it: *"Skipping the write is NOT safe
+— projected code imports `../services/api.js` by [path]"*.
+
+★★ Both `api.js` and `api.jsx` were in my contested-files list from the first sweep (r164:
+api.jsx 18, api.js 3). I read that as two files being clobbered. It was actually the signature
+of the collision — each side maintaining its own module.
+
+★★★ **Sixth item re-derived today** (#910, #914, #939, #794/restore_regressed_chains, #632,
+#638), and this one is the blocker itself. A day of tooling, 22,000 measured alternations, seven
+implementation reads at 0-for-7 — and the answer was in a comment that had already counted 21
+of 45 runs, plus a log line printed 76 times in the run I was grepping.
+
+Next session starts by reading #638 and #632 and fixing the module collision within the
+constraint #638 states. Not by guessing.
