@@ -19765,3 +19765,29 @@ What the session does add: the cost is now measured at a precision #910/#939 did
 (oscillation-filtered, co-commits excluded, 18 files and 1108 alternations in r164), the flag
 is verified to cut it 90%, and the tools are reusable. But the decision #939 named as pending
 in its own words is still pending.
+
+### 454. the flag's effect did not reproduce — retracting item 452's headline
+
+    run              real overwrites   alternations   top file
+    r166 (no flag)        15              839         LoginPage 92
+    r169 (flag)            3               81         LoginPage 50
+    r170 (flag)           15              207         App.jsx   44
+
+★ **Same flag, 3 vs 15 real overwrites.** Item 452 called it "a 90% cut, the only
+order-of-magnitude improvement all day" on the strength of a single comparison. r170 does not
+reproduce it. The honest statement is that run-to-run variance is larger than the effect I
+measured, and one paired comparison cannot separate them.
+
+★★ r170's worst file is `App.jsx`, which #914 deliberately does not cover — it protects pages
+importing components, and App.jsx is the router. So the flag's scope never included the file
+that dominated this run, and r170 simply had more router churn.
+
+★★★ **Fourteenth correction today, and the one with the clearest lesson.** I applied the
+duration caveat carefully all day (items 444, 446, 451) and still stated a cross-run effect
+from n=1. The caveat I kept reaching for was about *when* a reading is taken; the one I needed
+was about *how many runs* it rests on.
+
+Eight runs (r163-r170), zero deliveries. Net production-code change across the session: zero —
+#1013 guarded dead code, #1016 reversed a documented decision and was reverted, and the flag
+that looked like the answer is unproven. What survives is the measurement tooling and the
+retrieval rule (item 450/453), which is the only thing that found existing work reliably.
