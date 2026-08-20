@@ -19594,3 +19594,32 @@ is the one #910 documented as deliberate.
 
 Suite 6,866 with one corpus tripwire (`21 <= 20`, unrelated — it fires when enough verdicts
 carry a `code_state` and asks for #893's precision to be re-derived).
+
+### 449. #1018 — the tripwire counted stamps when validation needs repeats
+
+The `#893` tripwire fired during r167's corpus growth: *"21 of 144 verdicts now carry a
+code_state — #893 may be validatable; re-derive its precision."* Before deriving anything, I
+checked whether the derivation was even possible:
+
+    stamped verdicts        21
+    distinct code_states    21
+    appearing twice          0
+
+★ **#893 detects non-determinism by comparing two verdicts at the SAME sha.** No sha has ever
+been judged twice, so the detector has never had a single comparable pair — and never will
+merely by accumulating more stamps. The tripwire measured stamps and concluded validatability;
+the two are unrelated.
+
+★★ Fixed by counting repeats. It now fires when some `code_state` appears on 2+ verdicts,
+which is exactly the condition under which #893's precision can be derived. That is a
+correction to the criterion, not a suppression of the signal — the old assertion would have
+kept firing on a corpus that can never satisfy it, and each firing would have sent someone to
+do impossible work.
+
+★★★ Second time today a threshold was validated on the wrong quantity: `#1010`'s byte limit
+read brevity as incompleteness, and this read stamps as comparability. Both survived because
+their sample never contained the case that breaks them — nobody wrote a short-and-complete
+page, and nobody judged one sha twice. **A threshold is only as good as the counterexample its
+corpus happens to contain.**
+
+Suite 6,866, green.

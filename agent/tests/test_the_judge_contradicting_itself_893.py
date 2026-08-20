@@ -123,9 +123,31 @@ def test_the_corpus_coverage_claim_still_holds():
             if j.get("code_state"):
                 stamped += 1
     assert total >= 100, total
-    assert stamped <= 20, (
-        f"{stamped} of {total} verdicts now carry a code_state — #893 may be validatable; "
-        "re-derive its precision instead of leaving it recorded-only")
+    # #1018: the tripwire measured the wrong quantity. It counted verdicts CARRYING a
+    # code_state and fired at 21, but #893 detects non-determinism by comparing two verdicts
+    # at the SAME sha — so validation needs REPEATS, not stamps. Measured across the corpus:
+    # 21 stamped verdicts, 21 distinct code_states, **zero appearing twice**. No sha has ever
+    # been judged more than once, so #893 stays unvalidatable however many stamps accumulate.
+    #
+    # Counting repeats instead makes the tripwire fire when validation is genuinely possible.
+    _by_state: Dict[str, int] = {}
+    for r in sorted(g.glob("netflix-web-r*")):
+        vg = r / "design/visual_gate"
+        if not vg.is_dir():
+            continue
+        for f in vg.rglob("*.json"):
+            try:
+                j = json.loads(f.read_text())
+            except Exception:
+                continue
+            _cs = j.get("code_state")
+            if _cs:
+                _by_state[str(_cs)] = _by_state.get(str(_cs), 0) + 1
+    _repeats = sum(1 for _n in _by_state.values() if _n >= 2)
+    assert _repeats == 0, (
+        f"{_repeats} code_state(s) now appear on 2+ verdicts ({stamped} stamped of {total}) — "
+        "#893 is finally validatable: compare the paired verdicts' missing lists and scores "
+        "and derive its precision instead of leaving it recorded-only")
 
 
 if __name__ == "__main__":  # pragma: no cover
