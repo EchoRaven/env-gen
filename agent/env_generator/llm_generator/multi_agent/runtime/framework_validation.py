@@ -1048,7 +1048,48 @@ class FrameworkValidation:
                 # own App.jsx (never clobbers lane routes/bodies). Re-applied EVERY
                 # tick post-merge because the per-tick merge stashes+drops the
                 # uncommitted working-tree write (the at-release call commits it).
+                # #1015: does the frontend write happen INSIDE this call? One hash pair
+                # answers it. #1013 guarded scaffold_missing_local_pages and r166 shows
+                # LoginPage.jsx still overwritten 92 times (alt=64 in r165, so it got worse),
+                # which proves the writer is elsewhere. Seven static attempts have now failed
+                # to name it: six candidate reads, all correctly guarded, plus #1013 itself.
+                #
+                # Single site on purpose. Per-function attribution needs edits across the
+                # phase and #995 showed what a multi-site change costs without headroom to
+                # verify. This narrows to a binary — inside this call, or later in the phase.
+                import hashlib as _h1015
+                _t1015 = ("app/frontend/src/pages/LoginPage.jsx",
+                          "app/frontend/src/components/AppHeader.jsx",
+                          "app/frontend/src/services/api.js")
+
+                def _snap1015():
+                    out = {}
+                    for _rel in _t1015:
+                        _p = Path(orch.output_dir) / _rel
+                        try:
+                            out[_rel] = (_h1015.sha1(_p.read_bytes()).hexdigest()[:8]
+                                         if _p.is_file() else "<absent>")
+                        except Exception as _e:
+                            # Say so rather than defaulting to a value that reads as a real
+                            # state: an unreadable file and an absent one are different, and
+                            # collapsing them would make this instrument report a phantom
+                            # change. Guard #883 caught exactly that in the first draft.
+                            orch._logger.warning(
+                                "#1015 could not hash %s: %s", _rel, type(_e).__name__)
+                            out[_rel] = "<unreadable>"
+                    return out
+
+                _before1015 = _snap1015()
                 orch._scaffold_frontend_pages()
+                try:
+                    _after1015 = _snap1015()
+                    _chg = [r for r in _t1015 if _before1015.get(r) != _after1015.get(r)]
+                    if _chg:
+                        orch._logger.warning(
+                            "#1015 _scaffold_frontend_pages CHANGED %d target(s): %s",
+                            len(_chg), "; ".join(_chg))
+                except Exception:
+                    pass
                 orch._repair_backend_entrypoint()
                 orch._repair_backend_as_wiring()
                 orch._repair_backend_auth()

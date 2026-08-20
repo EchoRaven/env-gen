@@ -19495,3 +19495,43 @@ reusable: `#1002` settled a question nine keyword searches could not, `#1014` co
 candidates to 3 in one run after reading names went 0-for-3. **Both replaced inference with a
 log line, and both were written only after inference had visibly failed** — which is the
 correct trigger, not a reflex to instrument everything.
+
+### 446. r166 final — #1013 is disproved, and #1015 narrows the hunt to one binary
+
+r166 exited FAIL-FAST. Same-duration comparison, which is the reading I deferred all day:
+
+                    r165 final (153min)   r166 final (~130min)
+    real overwrites        14                    15
+    alternations          507                   839
+    top file        GamesPage  74         LoginPage  92
+    repair tasks           40                    19
+    tasks                 192                   110
+    gate final       3 (NO-CONVERGENCE)     2 (FAIL-FAST)
+    DELIVER_PROJECT         0                     0
+
+★ **#1013 did not work.** `LoginPage.jsx` went from 64 to 92 alternations — the surface it
+guards got *worse*. At 57 minutes r166 had shown 3 real overwrites with pages absent from the
+top, and I recorded that as "direction-favourable, unconfirmed" precisely because the durations
+did not match. The final values show it was a duration artifact. **Eleventh time today a
+mid-flight reading was refuted by the finish, and the first time the caveat I attached in
+advance did its job** — it stayed a caveat instead of becoming a wrong conclusion.
+
+★★ So the writer of `LoginPage.jsx` is NOT `scaffold_missing_local_pages`. Static methods have
+now failed seven times on this one question: six candidate reads (all correctly guarded) plus
+#1013 itself, which was the only one I acted on.
+
+★★★ #1015 answers it with a single edit rather than the multi-site attribution pass I keep
+declining: hash the three targets around `_scaffold_frontend_pages()`, the phase's only
+frontend call. The result is binary — inside that call, or later in the phase — and it costs
+one run.
+
+Guard #883 caught the first draft: my exception handler collapsed "unreadable" and "absent"
+into the same `None`, which would have made the instrument report a phantom change. An
+instrument that can lie about its own failure is worse than none, and that guard exists
+because of exactly this. Corrected to distinct sentinels with a log line.
+
+The one number that moved favourably — repair tasks 40 → 19 at 85% of the runtime — is NOT
+attributed to today's fixes. Every favourable mid-run signal today has been refuted at the
+finish, and this one has no mechanism tying it to a specific change.
+
+Suite 6,866.
