@@ -18949,3 +18949,45 @@ incompleteness.** Six pages × ~50 overwrites is where a large share of r164's 5
 came from.
 
 Suite 6,831.
+
+### 430. the ownership model is enforced in ONE direction — 21 contested files
+
+The user called the framework/model conflict serious enough to map completely before running
+anything else. Built `tools/sweep_write_conflicts.py` (every generated project is a git repo;
+a file is CONTESTED when both sides commit, THRASHING when they alternate) and ran it over 12
+recent projects:
+
+    file                                        fw   lane   alt   runs
+    app/frontend/src/pages/LoginPage.jsx         83    77    135     8
+    app/frontend/src/pages/BrowseHomePage.jsx   110    75    128    10
+    app/backend/seed_data.json                   80    72    126    10
+    app/frontend/src/App.jsx                     61    56     99     8
+    app/frontend/src/components/PosterCard.jsx   49    53     93     5
+    …21 files total, down to api.js at 38
+                    ← #1010 was ONE file, found by accident
+
+★ **`App.jsx` and `custom_routes.py` are the only two files the codebase documents as
+LANE-OWNED**, and the framework writes them 61 and 28 times. So this is not a gap in the
+ownership map — the map is right and nothing consults it.
+
+★★ Root cause, traced through every call site:
+
+    is_framework_owned()   ONE enforcement point — tooling.py:810, the guard that denies
+                           LANE writes to framework files
+    _*_LANE_OWNED          used only in auto_commit's merge-conflict resolution to pick
+                           --ours vs --theirs; never consulted before a write
+
+**Nothing stops the framework from overwriting a lane-owned file.** The model is enforced in
+exactly one direction: the framework can stop the lane, the lane has no equivalent protection,
+and the framework's own writers never ask. #1004/#1005 were the same asymmetry seen from the
+other side — the framework telling a lane to edit a file the lane is barred from.
+
+★★★ Scale: 21 files, essentially every run, up to 46 overwrites of one file in one run. Each
+overwrite costs the lane a full rewrite, which inflates the repair-task count (item 427's 56),
+consumes the wall clock (item 427's binding constraint), and produces the "Restore six
+registered UI pages" tasks that look like the lane failing.
+
+**#1010 fixed one path** (the stub classifier's byte threshold). The other 20 files imply more
+write paths that need the same treatment. The systemic fix is a guard on the framework's own
+writes — refuse to overwrite an existing non-empty lane-owned file — mirroring what
+tooling.py:810 already does in the opposite direction.
