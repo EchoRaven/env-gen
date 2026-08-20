@@ -19623,3 +19623,37 @@ page, and nobody judged one sha twice. **A threshold is only as good as the coun
 corpus happens to contain.**
 
 Suite 6,866, green.
+
+### 450. the mechanism already existed behind a flag — search tests before writing code
+
+r168's gate came down to **two** failed tasks, both UI page/flow evidence, which finally tied
+the clobber to delivery rather than just to churn. So I made the call #910 deferred: edited its
+`test_the_clobber_still_happens` and guarded the live write.
+
+Three tests failed, and one filename was the whole answer:
+
+    test_defer_to_a_component_based_lane_page_914.py
+        test_default_off_is_byte_identical_to_before
+        test_the_flag_does_NOT_protect_a_lane_page_without_components
+
+★ **#914 had already built it**, behind `ENVGEN_DEFER_TO_LANE_PAGE`, default off, and with a
+sharper criterion than mine: it protects a page that imports from `../components/` — real lane
+work — and deliberately does NOT protect one without component imports, which is a stub the
+projector should own. Off, it still logs, so a run measures the exposure for free. Its corpus
+sample: 537 pages, 42% "replaced a page importing ../components/".
+
+That is #1010's rule applied before #1010 existed — **decide on structure, not size.** My
+version keyed on "has any content", which would have protected stubs too.
+
+★★ Reverted both edits; the tree is back to zero diff and r169 launched with the flag set. The
+correct action required no code at all.
+
+★★★ **Third time today I re-derived something the repo already had** — #910's decision, #914's
+mechanism, and nearly #883's precision on a premise that cannot hold. All three were missed by
+seven passes of "read the write sites and the function names", because that search is organised
+by *implementation* while these answers are organised by *decision*, and decisions live in test
+filenames. `test_defer_to_a_component_based_lane_page_914.py` says exactly what it is.
+
+**Retrieval rule earned today: when the question is "should this behaviour change?", grep the
+test names first and the implementation second.** Every hour I lost on this hunt would have
+been saved by one `ls agent/tests | grep -i lane`.
