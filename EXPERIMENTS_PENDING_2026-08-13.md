@@ -19438,3 +19438,36 @@ writers on the next run; that is the cheap, non-speculative path.
 Comparison to r164 must wait for r165's final values — it is at 67% of r164's runtime with 36%
 of its alternations, but r165 does not carry #1013, so that gap cannot be attributed to
 today's work and is more likely run-to-run variance.
+
+### 444. r166 interim — #1014 delivered the list, and pages left the top of it
+
+`#1014` fired three times in r166's first hour, naming exactly what it was built to name:
+
+    tick 1   16 lane-owned paths   seed_data.json, App.jsx, 12+ pages
+    tick 2    3                    components/AppHeader.jsx, pages/MyListPage.jsx, services/api.js
+    tick 3    9                    components/AppHeader.jsx, several pages
+
+Qualified with `_oscillates()` (commit-point logging cannot tell a clobber from a co-commit —
+item 440's lesson, and the reason the list alone is not a verdict):
+
+    r165 final    14 contested, 14 real overwrites, top four all pages (alt 74/72/64/42)
+    r166 @57min   15 contested,  3 real overwrites, 12 co-commits
+
+        api.js            alt=6
+        AppHeader.jsx     alt=5
+        MyListPage.jsx    alt=2
+
+★ **Pages have left the top of the list**, which is the surface `#1013` guards. That is the
+shape the fix predicted. It is NOT proof: r166 is 57 minutes against r165's 153, and I never
+took r165's 57-minute reading, so the comparison is not same-duration. Recorded as
+direction-favourable, unconfirmed — the same discipline that caught the repair-task comparison
+earlier today.
+
+★★ The candidate set for `#1011` collapsed from 23 write functions to **3 files**, which is
+precisely what `#1014` was bought for. Identifying writers by reading names went 0-for-3 today;
+the instrumentation did it in one run.
+
+★★★ Note `seed_data.json` and `App.jsx` appear in tick 1 yet are absent from the real-overwrite
+list — they are being co-committed, not clobbered, in this run. Both sit in the DECLARED
+lane-owned sets, so the earlier plan to guard them first would have been aimed at the wrong
+thing. Measuring before wiring saved that.
