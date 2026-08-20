@@ -19105,3 +19105,41 @@ by grep. Every one of the 23 needs its existing guard read first — several alr
 create-if-absent correctly, and adding a second check would be noise at best. The count that
 matters is not "23 writers" but "writers with no existing guard", and I have not measured that
 yet.
+
+### 434. "3 unguarded writers" was also wrong — stop counting with grep in this codebase
+
+Item 433 ended by saying the number that matters is writers with NO existing guard. Measured
+it with a keyword scan (`exists()`, `is_file()`, `st_size`, the two stub classifiers…) and got
+3 of 23. Then read the first one:
+
+    reconcile_integration_seed():
+        """…NEVER overwrites a non-empty integration seed…"""
+
+It is guarded. The guard is a `_rows()` helper comparing row counts, so no keyword matched.
+**That is the indirection blindness `tools/sweep_indirect.py` exists to prevent — a tool I
+built today, for this exact failure, and did not use on my own scan.**
+
+★ Tally for the day, because the pattern is the finding:
+
+    item 422   read `3000`, recognised "the React port", never opened the compose file
+    item 423   swapped one wrong constant (8081) for another (8082) minutes later
+    item 433   read a write, not the guard six lines above it
+    item 434   counted guards by keyword, missed one implemented in a helper
+
+Four of the seven retractions share one mechanism, and every single number I produced today
+from a grep heuristic over this codebase has been wrong. The AST-based tools
+(`sweep_indirect`, `sweep_write_conflicts`) have been right every time — including the 22,000
+alternations, which came from git history rather than pattern matching.
+
+★★ **Rule for the wiring pass, stated so the next session does not repeat today:** do not
+produce a count of anything in this codebase from a keyword scan. Either read every candidate,
+or measure it from artifacts (git history, task stores, corpus replay) where the answer does
+not depend on how the code happens to be written. The measurement that has held up all day is
+the one that never looked at source at all.
+
+★★★ What stands, all artifact-derived: 25 contested files, ~22,000 alternations, `App.jsx` in
+93 runs and `custom_routes.py` in 114, `LoginPage.jsx` overwritten 46 times in r164 with the
+lane rewriting it each time, and #1010's byte threshold proven to misclassify a real page. The
+guards mostly EXIST; at least one of them is demonstrably wrong. Which of the other 22 are
+wrong is unmeasured, and the way to measure it is to feed each one real corpus artifacts — the
+#1010 method — not to grep for its shape.
