@@ -48,6 +48,34 @@ def _is_framework(author: str) -> bool:
     return author.strip().lower() in FRAMEWORK_AUTHORS
 
 
+def _oscillates(repo: pathlib.Path, path: str) -> bool:
+    """True when the file's SIZE flips back and forth, not merely grows.
+
+    Alternating authorship alone does not mean the work is being destroyed. r165's
+    `components/LoginPage.jsx` showed fw=2/lane=4 and looked contested, but every GitOps Bot
+    commit was byte-identical to the lane commit beside it (2060, 2060, 2059, 2059, 1795,
+    1795): the bot was committing the lane's work during a merge, not overwriting it.
+
+    Its `pages/LoginPage.jsx` was the real thing — 72 lines against 2, flipping every tick.
+    Size reversals separate the two, and reading commit messages agrees: the destructive case
+    carries a uniform framework phase name, the benign one carries the lane's own prose.
+
+    I concluded "the components are contested too" from the counts alone and had to retract it
+    two minutes later. The tool should make that mistake unavailable.
+    """
+    out = _git(repo, "log", "--all", "--format=%H", "--", path)
+    shas = [s for s in out.split("\n") if s.strip()][:12]
+    sizes = []
+    for s in shas:
+        blob = _git(repo, "show", f"{s}:{path}")
+        sizes.append(len(blob))
+    if len(sizes) < 4:
+        return False
+    reversals = sum(1 for i in range(1, len(sizes) - 1)
+                    if (sizes[i] - sizes[i - 1]) * (sizes[i + 1] - sizes[i]) < 0)
+    return reversals >= 2
+
+
 def contested_files(repo: pathlib.Path, min_alternations: int = 3
                     ) -> List[Tuple[str, int, int, int]]:
     """[(path, framework_commits, lane_commits, alternations)] sorted by alternations."""

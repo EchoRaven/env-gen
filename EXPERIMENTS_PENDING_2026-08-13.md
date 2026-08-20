@@ -19308,3 +19308,32 @@ what made this a five-minute diagnosis instead of another theory.
 paying rent.
 
 Suite 6,859.
+
+### 440. the sweeper counted co-commits as contention — and I fell for it twice
+
+r165's sweep listed `components/LoginPage.jsx` at fw=2/lane=4/alt=3, and I reported "the
+component layer is contested too." Two minutes later the commit messages said otherwise:
+
+    pages/LoginPage.jsx       "framework delivery: … projections" x8   content 72 <-> 2
+    components/LoginPage.jsx  "feat(frontend): add authenticated …"    content 2060, 2060,
+                              "fix(frontend): finalize M1 routes …"             2059, 2059,
+                                                                                1795, 1795
+
+Every GitOps Bot commit on the component is **byte-identical to the lane commit beside it** —
+the bot committing the lane's work during a merge, not overwriting it. The benign explanation
+I had explicitly ruled out for pages is the true one for components.
+
+★ Same error as item 428's first draft: **a mechanism inferred from counts without reading
+content.** I made it, caught it in two minutes, and the only reason I caught it was checking
+the commit messages — which I only did because the earlier pages investigation had taught me
+the messages differ.
+
+★★ So the fix went into the tool rather than my habits. `_oscillates()` compares blob sizes
+along the commit sequence and reports a real overwrite only when the size REVERSES twice —
+monotone growth is co-commit, flipping is clobber. Verified on both live samples:
+`pages/LoginPage.jsx` → overwrite, `components/LoginPage.jsx` → co-commit.
+
+★★★ This narrows the damage estimate honestly. The ~22,000 alternations from item 431 counted
+both kinds, so **some unknown fraction of it was never destructive**. The pages figures stand
+(content oscillation confirmed directly on r164 and r165), but the corpus-wide total is now an
+upper bound, not a measurement — and the tool will produce the real number next time it runs.
