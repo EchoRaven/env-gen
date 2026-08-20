@@ -1737,6 +1737,13 @@ _INVENTED_HONEST_SUBSTR = (
     # "…not available/set/provided/specified" absence phrasings (archive audit)
     "not available", "not set", "not provided", "not specified", "not listed",
     "no data", "no info", "coming soon",
+    # #1012: measured against the corpus — 228 literals the heal actually considers, 6
+    # rewritten, and three of those six were wrong. `Nothing here yet.` and `Unable to load
+    # title.` are the honest empty/error states this heal exists to PRODUCE, and it was
+    # turning them into '—'. Found by feeding the guard its real input shape (item 435's
+    # method); the earlier sweep that fed it whole page files reported a meaningless 21.
+    "nothing here", "nothing to show", "nothing yet", "unable to", "cannot load",
+    "can't load", "try again", "check back",
 )
 # A fallback that SIGNALS ABSENCE (rather than asserting a fabricated value) is honest even
 # when multi-word: "No description", "Unknown Place", "Anonymous User". Prefix-matched.
@@ -1807,6 +1814,15 @@ def _is_fabricated_fallback_literal(s: str) -> bool:
     # invented content; `Continue` on a button is the control's own text, present whether or
     # not any record exists behind it.
     if low in _UI_ACTION_LABELS_992:
+        return False
+    # #1012: a utility-class string is styling, not content. The corpus produced
+    # `item.size || 'w-8 h-8'` — rewriting that to '—' feeds a dash into className and the
+    # element loses its dimensions. Tailwind utilities are the common case: short tokens,
+    # every one matching a size/spacing/colour/layout shape, no prose.
+    _toks = t.split()
+    if _toks and len(_toks) <= 6 and all(
+            re.fullmatch(r"[a-z]+(-[a-z0-9./\[\]%]+)+|[a-z]{1,3}-\d+|flex|grid|block|hidden",
+                         _x) for _x in _toks):
         return False
     # Styling / placeholder-asset defaults are NOT display DATA: a hex color, or an asset
     # path ('/assets/…', '…/ph-img-1.svg') — a placeholder image is an HONEST "no photo"

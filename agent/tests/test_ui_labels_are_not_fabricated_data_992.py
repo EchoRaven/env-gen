@@ -70,3 +70,25 @@ def test_the_control_rewrites_the_button():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+@pytest.mark.parametrize("honest", [
+    "Nothing here yet.", "Nothing to show", "Unable to load title.",
+    "Cannot load results", "Try again later", "Check back soon",
+])
+def test_honest_empty_and_error_states_survive_1012(honest):
+    """#1012: these are what the heal exists to PRODUCE, and it was rewriting them to '—'.
+    Found by feeding the guard its real input shape — 228 corpus literals, 6 rewritten, 3 of
+    them wrong."""
+    assert _fab(honest) is False
+
+
+@pytest.mark.parametrize("classes", ["w-8 h-8", "flex items-center", "px-4 py-2 rounded-md"])
+def test_utility_class_strings_are_styling_not_content_1012(classes):
+    """`item.size || 'w-8 h-8'` rewritten to '—' feeds a dash into className."""
+    assert _fab(classes) is False
+
+
+def test_1012_does_not_excuse_real_fabrication():
+    for fake in ("Hotel", "4.5 stars", "John Smith", "Springfield"):
+        assert _fab(fake) is True

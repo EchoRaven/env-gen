@@ -19170,3 +19170,37 @@ proven twice on this exact question — feed it corpus artifacts and count what 
 That is the wiring pass, and it is measurement work rather than code work.
 
 Suite 6,848.
+
+### 436. #1012 — third guard measured, third one wrong, and the heal was erasing its own goal
+
+Continued item 435's measurement pass with input-shaped harnesses. First attempt fed 250 whole
+PAGE files to `_is_fabricated_fallback_literal`, which takes a single LITERAL, and reported
+"21/250" — a meaningless number, and the same category error as item 408. Caught it, rebuilt
+the harness to extract literals through the heal's own `_HEAL_OR` / `_HEAL_TERNARY_*` patterns:
+
+    literals the heal actually considers   228
+    rewritten to '—'                         6
+    of those, WRONG                          3
+
+    'Nothing here yet.'       an honest empty state
+    'Unable to load title.'   an error message
+    'w-8 h-8'                 a Tailwind class string
+
+★ The first two are **what this heal exists to produce.** #175 replaces fabricated data with
+honest empty states, and it was rewriting honest empty states into '—' because the allowlist
+listed "no data" and "not available" but not "nothing here" or "unable to". A repair erasing
+its own goal, in 2 of 228 cases, invisible without the corpus.
+
+★★ `'w-8 h-8'` is the dangerous one: `item.size || 'w-8 h-8'` becoming `?? '—'` puts a dash in
+`className` and the element loses its dimensions. Guarded structurally — a short string whose
+every token matches a utility-class shape is styling, not content.
+
+After: 6 → 3, and the remaining two (`'Genre'`, `'Signed in'`) are defensible data-position
+fallbacks. Real fabrication (`Hotel`, `4.5 stars`, `John Smith`) still caught.
+
+★★★ Three guards now measured against corpus artifacts; **two were wrong** (#1010's byte
+threshold, #1012's allowlist gaps) and one was clean. Both defects were invisible to their own
+test suites — #1010 had seven passing tests, #992 had twenty-three — because **a test written
+by the person who wrote the guard shares the guard's blind spot.** The corpus does not.
+
+Suite 6,859.
