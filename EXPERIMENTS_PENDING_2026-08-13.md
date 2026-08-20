@@ -19791,3 +19791,29 @@ Eight runs (r163-r170), zero deliveries. Net production-code change across the s
 #1013 guarded dead code, #1016 reversed a documented decision and was reverted, and the flag
 that looked like the answer is unproven. What survives is the measurement tooling and the
 retrieval rule (item 450/453), which is the only thing that found existing work reliably.
+
+### 455. the retraction was itself overcorrected — the ranges do not overlap
+
+Item 454 retracted the flag's "90% cut" because r170 showed 15 real overwrites against r169's
+3. Correct on the specific number, wrong on the conclusion. Totals across five runs:
+
+    flag off   r164 1108   r165 507   r166 839      range 507-1108
+    flag on    r169   81   r170 207                 range  81-207
+
+**The ranges do not overlap.** r170's 207 — the value that triggered my retraction — is still
+2.4x below the *lowest* flag-off run. What varies is the magnitude (75% vs 90%), not the
+direction.
+
+★ Also tested and rejected: displacement. If the flag merely pushed clobbering from pages onto
+files it does not cover, totals would hold roughly constant. They do not — 839 → 81 and 207,
+with r169 showing zero non-page churn and r170 showing 98 against r166's 127.
+
+★★ **Fifteenth correction, and the first that fixes an over-retraction.** After fourteen
+corrections in one direction I had started discounting my own positive findings, and discarded
+a real effect along with an unsupported number. Excess caution distorts exactly as much as
+excess optimism; the fix in both cases is to state the sample size and the interval rather than
+a point estimate.
+
+The honest form: *with the flag on, total alternations were 81 and 207; with it off, 507, 839
+and 1108. n=5, ranges disjoint, magnitude unstable.* That sentence would have survived both my
+claim and my retraction.
