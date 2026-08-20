@@ -18991,3 +18991,41 @@ registered UI pages" tasks that look like the lane failing.
 write paths that need the same treatment. The systemic fix is a guard on the framework's own
 writes — refuse to overwrite an existing non-empty lane-owned file — mirroring what
 tooling.py:810 already does in the opposite direction.
+
+### 431. #1011 — the ownership map, finally asked in both directions
+
+Full sweep, all 164 generated projects (`tools/sweep_write_conflicts.py --all`):
+
+    file                    fw    lane    alternations   runs
+    LoginPage.jsx         1162    1054        2004        70
+    BrowseHomePage.jsx    1185     926        1651        72
+    App.jsx                947     940        1620        93    <- documented LANE-OWNED
+    seed_data.json         838     749        1286       107
+    custom_routes.py       507     987         795       114    <- documented LANE-OWNED
+    …25 files, ~22,000 alternations total
+
+`seed_data.json` in 107 runs, `custom_routes.py` in 114, `App.jsx` in 93. **This is not a
+recent regression — it has run through essentially the entire history of the project.**
+
+★ Every contested path was already in the map: `_BACKEND_LANE_OWNED`
+(custom_routes.py, seed_data.json), `_FRONTEND_LANE_OWNED` (App.jsx), and
+`_FRONTEND_LANE_OWNED_DIRS` (src/pages/, src/components/, src/services/, …). **Coverage was
+never the problem — nobody asked.** `is_framework_owned` has exactly one enforcement point and
+it protects the framework from the lane; the reverse question did not exist as code.
+
+#1011 adds it: `is_lane_owned()` and `framework_may_write()`, the latter deliberately narrow —
+it refuses only when the path is lane-owned AND the file already has content, so first-run
+scaffolding is untouched and an emptied file stays repairable.
+
+★★ What this explains, all at once: the repair-task volume (item 427's 56), the wall-clock
+exhaustion (item 427's binding constraint), the "Restore six registered UI pages" tasks that
+read as lane failure, and the user's question about why a strong model needs so many fixes.
+**The model's work was being deleted up to 46 times per file per run.**
+
+★★★ The predicate is written but **not yet wired into the framework's writers** — that is the
+remaining work, and it is deliberately separate: adding the question is safe and testable in
+isolation, while changing ~20 write paths needs its own verification pass. The decisive test
+already exists and needs no new instrumentation: rerun the sweep after wiring, and
+`LoginPage.jsx`'s alternation count must collapse.
+
+Suite 6,848.

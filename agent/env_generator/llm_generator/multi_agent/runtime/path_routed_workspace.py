@@ -652,6 +652,64 @@ class PathRoutedWorkspace:
             return False
         return agent_id in writers
 
+    def is_lane_owned(self, path: Union[str, Path]) -> bool:
+        """#1011: True if ``path`` belongs to a LANE — the mirror of `is_framework_owned`.
+
+        The ownership map has always been enforced in one direction. `is_framework_owned`
+        has a single call site that matters (`tooling.py`'s write guard) and it stops a LANE
+        from touching framework files. Nothing ever asked the reverse question, so the
+        framework's own writers overwrite lane files freely.
+
+        Measured across all 164 generated projects (`tools/sweep_write_conflicts.py`), that
+        costs roughly 22,000 alternating overwrites in the top 25 files alone:
+
+            LoginPage.jsx     1162 framework / 1054 lane writes, 2004 alternations, 70 runs
+            App.jsx            947 /  940, 1620 alternations,  93 runs   (lane-owned!)
+            custom_routes.py   507 /  987,  795 alternations, 114 runs   (lane-owned!)
+
+        Every contested file is already covered by the existing map — `_*_LANE_OWNED` plus
+        `_FRONTEND_LANE_OWNED_DIRS` (src/pages/, src/components/, src/services/, …). This is
+        purely an enforcement gap, not a coverage gap.
+        """
+        try:
+            from ..agents.runtime.auto_commit import (  # local: avoids an import cycle
+                _OWNERSHIP, _FRONTEND_LANE_OWNED_DIRS)
+        except Exception:
+            return False
+        try:
+            rel = self.relative(self.resolve(path)).replace("\\", "/")
+        except (ValueError, OSError):
+            return False
+        for _lane, (prefix, _fw_owned, lane_owned) in (_OWNERSHIP or {}).items():
+            if not rel.startswith(prefix):
+                continue
+            if rel.rsplit("/", 1)[-1] in (lane_owned or ()):
+                return True
+            tail = rel[len(prefix):]
+            if any(tail.startswith(d) for d in (_FRONTEND_LANE_OWNED_DIRS or ())):
+                return True
+        return False
+
+    def framework_may_write(self, path: Union[str, Path]) -> bool:
+        """#1011: False when the framework would clobber existing lane work.
+
+        Deliberately narrow — it blocks only when the file is lane-owned AND already exists
+        with content. First-run scaffolding still works (nothing there yet), and a file the
+        lane emptied is still repairable. What it stops is the tick-after-tick overwrite that
+        deleted the frontend's componentised LoginPage 46 times in r164 while the lane kept
+        rewriting it (#1010 fixed one classifier; this closes the class).
+        """
+        try:
+            p = Path(self.resolve(path))
+        except (ValueError, OSError):
+            return True
+        if not self.is_lane_owned(p):
+            return True
+        try:
+            return not (p.is_file() and p.stat().st_size > 0)
+        except Exception:
+            return True
+
     def is_framework_owned(self, path: Union[str, Path]) -> bool:
         """CLASS B (#36): True if ``path`` is a framework-OWNED file in app/backend or
         app/frontend (the files the scaffold generates + overwrites every tick). Uses the
