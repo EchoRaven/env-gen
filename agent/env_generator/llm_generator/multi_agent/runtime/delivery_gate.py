@@ -2279,6 +2279,31 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             logger.warning("milestone-scoped delivery gate: deferred %d out-of-slice structural task(s)",
                            _before - len(incomplete_tasks))
     if incomplete_tasks:
+        # #1009: say WHICH tasks and WHY. `incomplete_required_tasks` computes a per-item
+        # `reason` — "endpoint has no passing contract-test record", "table not implemented
+        # in registry" — and every one of them was discarded here; r164's log contains that
+        # phrase zero times while the check blocked delivery.
+        #
+        # It is the last blocker standing in r164 and it is in _COVERED_ELSEWHERE, so no
+        # remediation task carries the detail either: the run reports "64 open tasks" and
+        # nobody, human or model, can tell which of the 64 actually hold the gate shut.
+        # Same class as #973/#978/#981/#983 — the report names the failure and not the
+        # instance — on the one check that now decides delivery.
+        if logger:
+            try:
+                _by1009: Dict[str, List[str]] = {}
+                for _t in incomplete_tasks[:40]:
+                    if not isinstance(_t, dict):
+                        continue
+                    _r = str(_t.get("reason") or "unspecified")
+                    _who = str(_t.get("title") or _t.get("id") or "?")
+                    _by1009.setdefault(_r, []).append(_who[:60])
+                for _r, _names in sorted(_by1009.items()):
+                    logger.warning(
+                        "#1009 incomplete_required_tasks — %d x %s: %s",
+                        len(_names), _r, "; ".join(_names[:6]))
+            except Exception:
+                pass
         failed_checks.append("incomplete_required_tasks")
 
     # PROMPT-C1 (2026-06-12): response_key by-construction. A projected

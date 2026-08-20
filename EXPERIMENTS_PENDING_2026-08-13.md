@@ -18721,3 +18721,41 @@ r164=20→2→1→6→3 — and it was counting instances while I read it as kin
 drew from it is softer than I stated.
 
 Suite 6,824.
+
+### 425. #1009 — the last blocker standing does not say what it is
+
+Tracing what still holds r164's gate shut led through two of my own wrong turns, both worth
+keeping:
+
+  * **"#998 will clear it."** Replayed r164's task store: 64 open tasks, exactly **2**
+    removable as endpoint duplicates. #998 fixed r162's pathology (10 copies of one endpoint)
+    and does almost nothing here. Predicted effect measured before claiming it — 64 → 62.
+  * **"collapse the per-endpoint smoke tasks."** 16 of the verifier's 37 open tasks are
+    `validate.api_smoke.get._api_titles`-style, one per endpoint, all satisfied by a single
+    `run_validation()`. Looked like task-count inflation. It is not: `delivery_gate` is
+    **coverage-aware** and documents this exact case — *"24 validate_api_smoke tasks sat
+    pending only because the verifier ran one run_validation() covering every endpoint …
+    blocking on raw pending status would falsely block that good release"*. A pending smoke
+    task blocks ONLY when the endpoint has no passing contract-test record.
+
+So the blocker is real evidence-absence, not bookkeeping. **And the check knows exactly which
+items and why** — it builds a per-item `reason`:
+
+    "endpoint not implemented in registry and no passing contract-test record"
+    "table not implemented in registry"
+    "endpoint has no passing contract-test record"
+
+★ **Every one of those was discarded.** r164's log contains those phrases zero times while
+the check blocked delivery, and `incomplete_required_tasks` is in `_COVERED_ELSEWHERE`, so no
+remediation task carries the detail either. The run reports "64 open tasks" and nobody — human
+or model — can tell which of the 64 hold the gate shut.
+
+Same class as #973/#978/#981/#983, on the one check that now decides delivery. #1009 logs the
+reasons grouped, with names, bounded to 40 items and 6 names per reason.
+
+★★ Two wrong turns in one investigation, both caught by measuring the predicted effect before
+claiming it. The second was caught by the framework's own comment — **the answer was written
+in the code eighteen months before I asked the question**, and reading it cost less than the
+fix I was about to build.
+
+Suite 6,824.
