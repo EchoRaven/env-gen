@@ -1988,6 +1988,32 @@ class HealPipeline:
                 staged_any = staged_any or (rc == 0)
             if not staged_any:
                 return
+            # #1014: name the lane-owned files this phase is about to commit.
+            #
+            # r164's oscillation-filtered sweep says the framework genuinely clobbers 18
+            # files — 12 pages, BrowseHeader (alt=99), App.jsx (alt=56, DECLARED lane-owned),
+            # api.jsx, AuthForm, seed_data.json — and every framework-side commit on all
+            # three surfaces carries THIS message. So one bulk phase writes them all, and
+            # precise wiring needs to know which projector inside it touched what.
+            #
+            # Reading the code to find out has a 0-for-3 record today: reconcile_integration_
+            # seed, wire_owned_list_shell_535 and reconcile_integration_frontend_app_jsx all
+            # look like clobberers by name and all three are correctly guarded. The one real
+            # offender (#1013) was found from runtime evidence. So: log it instead of guessing.
+            try:
+                _rc2, _staged, _ = _run_git(["diff", "--cached", "--name-only"], cwd=repo)
+                if _rc2 == 0 and _staged:
+                    _LANE_1014 = ("app/frontend/src/pages/", "app/frontend/src/components/",
+                                  "app/frontend/src/services/", "app/frontend/src/App.jsx",
+                                  "app/backend/custom_routes.py", "app/backend/seed_data.json")
+                    _hits = [p for p in _staged.splitlines()
+                             if p.strip() and any(p.strip().startswith(x) for x in _LANE_1014)]
+                    if _hits:
+                        orch._logger.warning(
+                            "#1014 framework delivery is committing %d LANE-OWNED path(s): %s",
+                            len(_hits), "; ".join(_hits[:10]))
+            except Exception:
+                pass
             rc, out, err = _run_git(
                 ["commit", "-m",
                  "framework delivery: backend skeleton + frontend infra + projections"],

@@ -19372,3 +19372,32 @@ run: **instrument the `framework delivery` step to log the writer of each path i
 then wire exactly those. `App.jsx` (alt=56) and `seed_data.json` (alt=4) are the priority — both
 are in the declared lane-owned sets, so unlike the nav takeover (item 440) there is no design
 decision to weigh against.
+
+### 442. #1014 — instrument the bulk phase instead of guessing which projector clobbers
+
+Asked to wire #1011 across the remaining paths. Delivered instrumentation at the one place
+that can name them, and the reason is a measured hit rate rather than caution.
+
+`commit_framework_delivery()` is the single phase behind every framework-side overwrite: the
+commits on pages (8), `components/BrowseHeader.jsx` (50) and `App.jsx` (28) all carry its
+identical message. It runs several projectors and commits their combined output, so precise
+wiring needs to know which projector touched what.
+
+★ **Identifying them by reading is 0-for-3 today.** `reconcile_integration_seed` documents
+"NEVER overwrites a non-empty integration seed"; `wire_owned_list_shell_535` reads current
+text and skips pages already wired; `reconcile_integration_frontend_app_jsx` injects missing
+routes additively and writes only on change. Three names that look exactly like the culprit,
+three correct implementations. The one genuine offender (#1013's `scaffold_missing_local_pages`)
+was found from r165's runtime evidence, never from inspection.
+
+★★ So #1014 logs, at the commit point, every LANE-OWNED path the phase is about to commit —
+capped at ten names. Next run produces the definitive per-tick list, and the wiring after that
+is mechanical rather than speculative. Same shape as #1002, which settled the dispatch-origin
+question the same way after nine failed searches.
+
+★★★ Priority is already fixed by the oscillation-filtered evidence: `App.jsx` (alt=56) and
+`seed_data.json` (alt=4) first, because both sit in the DECLARED lane-owned sets — unlike the
+nav takeover (item 440), there is no documented design decision to weigh against. The 12 page
+files are already covered by #1013, pending r166.
+
+Suite 6,866.
