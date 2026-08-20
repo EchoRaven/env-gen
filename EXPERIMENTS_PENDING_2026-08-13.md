@@ -19401,3 +19401,40 @@ nav takeover (item 440), there is no documented design decision to weigh against
 files are already covered by #1013, pending r166.
 
 Suite 6,866.
+
+### 443. r165 interim — the component layer is the uncovered surface
+
+r165 at 123 minutes (not yet exited, so these are NOT final):
+
+    gate trajectory   3 2 2 1 2 1 2 3 4 2 3 1
+    DELIVER_PROJECT   0
+    tasks             163, 50 open, 38 repair
+    true overwrites   15 files, 397 alternations
+
+    alt=41  components/CatalogPage.jsx
+    alt=34  pages/MoviesPage.jsx
+    alt=34  pages/LoginPage.jsx
+    alt=31  components/NavBar.jsx
+
+★ **`incomplete_required_tasks` appears in every single gate evaluation** and never clears.
+The other three checks flicker around it, which is what produces the apparent oscillation —
+so the run's "touching 1" moments are the other three going quiet simultaneously, not progress
+toward green. Chasing the oscillation is chasing noise; the constant is the target, and it is
+exactly what #1009 was written to make legible.
+
+★★ Two of the top four contested files are in `components/`, which **#1013 does not cover** —
+it guards `scaffold_missing_local_pages` only. Item 440 established the nav component is a
+deliberate framework takeover; `CatalogPage.jsx` sitting in `components/` at alt=41 is not
+explained by that and is new.
+
+★★★ Did NOT extend the guard to `scaffold_pages_from_contract`, whose first write site looks
+like #1013's shape (`if _body is not None: target.write_text(...)`) but carries a comment
+about a "content comparison … (#910)" just above it that I lacked the room to read properly.
+Guessing wrong here blocks a legitimate write, and **inspection-based identification is 0-for-3
+today** (reconcile_integration_seed, wire_owned_list_shell_535,
+reconcile_integration_frontend_app_jsx were all correctly guarded). #1014 will name the actual
+writers on the next run; that is the cheap, non-speculative path.
+
+Comparison to r164 must wait for r165's final values — it is at 67% of r164's runtime with 36%
+of its alternations, but r165 does not carry #1013, so that gap cannot be attributed to
+today's work and is more likely run-to-run variance.
