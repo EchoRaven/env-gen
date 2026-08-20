@@ -19725,3 +19725,43 @@ written**: `ls agent/tests | grep -i chain` surfaced #794, #510, #553 and
 `test_backend_boot_business_chain.py` instantly, and the guard itself was found by grepping the
 log message rather than the implementation. Seven earlier passes of reading write sites found
 none of it.
+
+### 453. #939 had already done the whole investigation
+
+One more `ls agent/tests | grep -iE "restor|clobber|overwrit"` surfaced
+`test_the_overwrite_loop_is_counted_939.py`, which contains this:
+
+    bb861b93  4118B   the framework's projection
+    25f7d87f  5768B   the lane's page          17:36 - 17:47
+    04fb6e8a  7260B   the lane's richer page   18:25 - 18:49
+
+    "The framework's version wins every oscillation"
+    "Which page SHOULD win is #914's open question and a user's decision."
+    "That nineteen rounds of lane work were written and discarded is not a question —
+     it is waste, whatever the answer."
+
+★ **That is this entire session, already written.** Same oscillation, same three-content
+signature, same conclusion, same pointer to #914 as the open decision. `sweep_write_conflicts`
+re-derived what #939 had counted.
+
+★★ Full list of what I re-invented today, all reachable by one `ls`:
+
+    #910                      the clobber is deliberate; measured; test-locked
+    #914                      the deferral mechanism, its flag, and a 42% corpus sample
+    #939                      the overwrite loop counted, with the waste stated outright
+    #794 / #510 / #553        the business-chain side
+    restore_regressed_chains  the chain regression guard
+
+★★★ The cost of learning this: a corpus sweeper, an oscillation filter, three instrumentation
+passes, nine candidate function reads at 0-for-7, and three fixes of which two were reverted —
+#1013 guarding dead code and #1016 reversing a documented decision.
+
+**The rule, stated as plainly as it deserves: in this repo, conclusions live in test filenames
+and log prose. For any "why is this happening" or "should this change" question, run
+`ls agent/tests | grep`, then grep the log text, and read implementation last.** Seven passes
+of reading write sites found none of the five items above; one `ls` found four of them.
+
+What the session does add: the cost is now measured at a precision #910/#939 did not have
+(oscillation-filtered, co-commits excluded, 18 files and 1108 alternations in r164), the flag
+is verified to cut it 90%, and the tools are reusable. But the decision #939 named as pending
+in its own words is still pending.
