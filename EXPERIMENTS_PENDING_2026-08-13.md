@@ -19689,3 +19689,39 @@ the conflict sweeper, the oscillation filter, three instrumentation passes, nine
 reads — measured *who was writing* while the log answered *which page should win*. The tools
 are reusable and the measurement is what makes the decision defensible, but the decision itself
 cost one `export`.
+
+### 452. r169 final, and the retrieval rule paying off four times in ten minutes
+
+r169 (flag on, ~140min) finals against comparable runs:
+
+    run              real overwrites   alternations   LoginPage   gate   DELIVER
+    r166 (130min)         15              839            92        2       0
+    r169 (~140min)         3               81            50        4       0
+
+**The flag cuts alternations 90% and real overwrites 80%** — the only order-of-magnitude
+improvement all day, and it is an environment variable, not code.
+
+★ The worse gate is NOT the flag's doing. r169's blockers are r167's two plus
+`business_chain_failing` and `deliverability_ui_flow_failed`; the first is a backend-chain
+failure unrelated to page ownership. I said "so the clobber is not the gate's main cause" and
+retracted it within the minute — the run simply had an extra, unrelated failure.
+
+★★ `business_chain_failing` turns out to be the same shape as the clobber:
+
+    "REGRESSION GUARD: business_chain was green then regressed with the contract unchanged
+     — restored the last-passing verification chains"
+
+Work that passed gets overwritten, and a guard (`restore_regressed_chains`) puts it back. It
+fired twice in r169 and still lost. **Two independent surfaces, one pattern: correct work
+undone faster than it can be restored.**
+
+★★★ Frequency across six runs: r164 7, r165 15, r166 4, **r167 0**, r168 4, r169 16 — and r167,
+the only run where it never appeared, is the only run that ever fired DELIVER_PROJECT. One
+correspondence in six samples is not causation, but it is the first signal that lines up
+exactly with willingness to deliver.
+
+**The retrieval rule earned in item 450 paid four times in the ten minutes after it was
+written**: `ls agent/tests | grep -i chain` surfaced #794, #510, #553 and
+`test_backend_boot_business_chain.py` instantly, and the guard itself was found by grepping the
+log message rather than the implementation. Seven earlier passes of reading write sites found
+none of it.
