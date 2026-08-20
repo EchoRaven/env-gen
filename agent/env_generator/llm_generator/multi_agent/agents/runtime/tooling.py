@@ -778,7 +778,13 @@ class AgentTooling:
                 patch_text = tool_args.get("patch", "")
                 if isinstance(patch_text, str):
                     for line in patch_text.splitlines():
-                        if line.startswith("*** Add File: ") or line.startswith("*** Update File: "):
+                        # #1021: `*** Delete File:` is a mutation like the other two. It is
+                        # listed here rather than only in the applier because THIS is the gate
+                        # that enforces framework ownership — omitting it would let a patch
+                        # delete a file the same lane is forbidden to write.
+                        if (line.startswith("*** Add File: ")
+                                or line.startswith("*** Update File: ")
+                                or line.startswith("*** Delete File: ")):
                             patch_path = line.split(": ", 1)[1].strip()
                             if patch_path:
                                 write_targets.append(patch_path)

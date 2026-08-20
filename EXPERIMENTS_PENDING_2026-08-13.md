@@ -19854,3 +19854,114 @@ of 45 runs, plus a log line printed 76 times in the run I was grepping.
 
 Next session starts by reading #638 and #632 and fixing the module collision within the
 constraint #638 states. Not by guessing.
+
+### 457. item 456's chain is right about the collision and wrong about who forms it — and the framework refused the lane's fix 37 times
+
+Item 456 and the handoff traced r171's blocker to the framework's #638 gap-fill writing
+`services/api.js` beside a lane-written `api.jsx`. Reading the log line by line, **the
+attribution does not hold**:
+
+    11:31:15  framework scaffolds baseline src/services/api.js   (_BASELINE_FILES template,
+                                                                  2123 B, no NetflixAPI;
+                                                                  no .jsx sibling yet, so
+                                                                  _reexport_shim_638 correctly
+                                                                  returned None)
+    11:36:23  Frontend Engineer Agent WRITE services/api.js      2822 chars   <- LANE
+    11:41:44  Frontend Engineer Agent WRITE services/api.jsx     2806 chars   <- LANE
+
+Both sides of r171's collision are lane-written. The decisive check: **`NetflixAPI` appears
+0 times in the entire framework source tree**, and the baseline template is 2123 B without it
+— so the 3303 B `api.js` that "defines window.NetflixAPI" cannot be the framework's baseline.
+#638's shim behaved correctly at 11:31; the collision formed 10m29s later between two lane
+writes.
+
+★ **The direction #638 actually pins is the opposite of the one the handoff states.**
+`test_baseline_module_collision_638.py` asserts `api.js` becomes `export * from './api.jsx'`
+— the LANE's file is the real one. The handoff's *"api.js 必须保留为真身"* is an inference from
+#638's constraint sentence, not the constraint. At 11:41 the two files were 2822 vs 2806
+chars, so no size heuristic separates them; a re-check that picks wrong DELETES the lane's
+real module, which is the harm class this whole arc is about. A re-check is therefore not the
+one-liner it was written up as.
+
+★★ **What the lane actually did, and what stopped it.** Between 11:54:03 and 12:23:20 the
+frontend lane diagnosed the duplicate module and tried to DELETE it **six times**:
+
+    11:54:03  apply_patch FAILED: invalid patch line: *** Delete File: …api.jsx
+    12:01:56  apply_patch FAILED: unknown patch section: *** Delete File: …api.jsx
+    12:04:21  invalid patch line      12:12:30  unknown patch section
+    12:22:38  unknown patch section   12:23:20  unknown patch section
+
+`_parse_patch` implemented `*** Add File:` and `*** Update File:` and **not** `*** Delete
+File:` — the third section of the format the models are trained on. Two error strings, one
+cause: at top level it hit the `unknown patch section` raise; after an Update section the
+update loop did not treat it as a boundary, so it fell through to the body validator.
+
+Not a one-run fluke — **37 rejections across 11 of the 12 runs r160–r171** (2–6 per run;
+only r161 had none). A `delete_file` tool is registered for every lane, and r171 invoked it
+**zero** times: the model reaches for the patch format.
+
+The lane then spent until 12:39:44 hand-building a workaround shim. **~46 minutes**, which is
+~30% of the run's 2h30m watchdog budget (see item 459).
+
+Fix (#1021), four sites, because three places already treat a patch as a mutation and would
+have disagreed:
+
+    shared.py:_parse_patch          parse the section + treat it as an update-loop boundary
+    patch.py:_apply_delete          apply it with delete_file's policy VERBATIM (protected
+                                    paths refused, trash not unlink) — so it grants no
+                                    authority the registered tool does not already grant
+    tooling.py:_enforce_write_permissions   collect it as a write target, or a patch deletes
+                                    a framework-owned file the lane may not write
+    step_pipeline/tooling.py        auto-stage as action="delete" (git add -A), or the removal
+                                    is left out of the commit and the file returns
+
+Tests: `test_apply_patch_can_delete_a_file_1021.py`, 20 cases, including a planted control
+that reconstructs the pre-fix parser from source and demands **both** original error strings.
+
+### 458. the protected-path guard had never protected anything it names
+
+#1021's protected-path test deleted `.git/HEAD` through apply_patch and PASSED. The guard is
+shared with `delete_file`, so this was live for both.
+
+    rel = _workspace_rel(...).replace("\\", "/").lstrip("./")
+    return rel == ".git" or rel.startswith((".git/", ".cursor/", ".openenv_trash/"))
+
+`str.lstrip` takes a **character set**, not a prefix. Every protected entry begins with `.`,
+so the strip removed the exact character the test then required:
+
+    ".git/HEAD"       -> "git/HEAD"        startswith(".git/")           False
+    ".cursor/rules"   -> "cursor/rules"    startswith(".cursor/")        False
+    ".openenv_trash/x"-> "openenv_trash/x" startswith(".openenv_trash/") False
+    ".git"            -> "git"             == ".git"                     False
+
+**False for every input it exists to refuse** — 4 of 4 protected forms. Present, called, and
+inert; the `./`-prefix case it was written for (`"./app/x.py"`) is the only one it handled.
+Another member of `an-unwatched-check-reports-did-not-run`: it ran on every delete and
+answered "not protected" every time, and nothing compared its answer to its intent.
+
+Found only because the new caller came with a test that tried to delete something forbidden.
+`test_protected_delete_paths_were_never_protected_1021.py`, 17 cases, control included.
+
+### 459. r171 final: killed by the watchdog, not by a gate — and the NetflixAPI blocker was gone
+
+Finals only (item 452's lesson). r171 ended at 13:15:27 on
+`[main-exit] shutdown watchdog fired — forcing exit (rc=1)` after ~2h30m. It did not fail a
+gate; it ran out of time while the frontend agent was still capturing and linting.
+
+Measured against the **served bundle**, not the record:
+
+    curl :8081/assets/index-CVZu3SJv.js  ->  typeof window<"u"&&(window.NetflixAPI=Zh)
+
+**The global was defined in the shipped build.** The lane's own workaround landed, the
+"NetflixAPI is undefined" messages stop at 12:39:44, and the run still delivered nothing. The
+65 later occurrences of *"initialization failure on port 8081"* are stale task TEXT repeated
+by `workhub_list_tasks` dumps, not live detections — the tasks are marked *"Superseded"*.
+
+Final gate was `#743 6 task(s) FAILED at the delivery cut and nothing reads them` plus one P0
+that the framework itself annotates *"reported rather than blocking — 15 of the 29 real
+releases is a halt"*.
+
+★ So there IS a fifth layer under the handoff's four, and it is not a code defect: **the run
+is time-bound, and the repair churn is what consumes the time.** That makes minutes the unit
+to optimise, which is the argument for #1021 over a #638 re-check — 46 of 150 minutes went to
+one refused deletion, and the refusal recurs 2–6 times in every run.

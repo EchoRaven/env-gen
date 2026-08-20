@@ -490,7 +490,10 @@ def _parse_patch(patch: str) -> List[_PatchOperation]:
             current: Optional[_PatchHunk] = None
             while idx < len(lines):
                 current_line = lines[idx]
-                if current_line == "*** End Patch" or current_line.startswith("*** Add File: ") or current_line.startswith("*** Update File: "):
+                if (current_line == "*** End Patch"
+                        or current_line.startswith("*** Add File: ")
+                        or current_line.startswith("*** Update File: ")
+                        or current_line.startswith("*** Delete File: ")):
                     break
                 if current_line.startswith("@@"):
                     if current and current.lines:
@@ -510,6 +513,34 @@ def _parse_patch(patch: str) -> List[_PatchOperation]:
             if current and current.lines:
                 hunks.append(current)
             operations.append(_PatchOperation(op_type="update", path=path, hunks=hunks, add_lines=[]))
+            continue
+
+        # #1021: `*** Delete File:` is part of the apply_patch format the models are trained
+        # on, and it was the ONLY section this parser did not implement — so every attempt
+        # raised, either "unknown patch section" (at top level) or "invalid patch line" (when
+        # it followed an Update File section, whose loop did not treat it as a boundary).
+        # Measured over r160–r171: 37 rejections in 11 of 12 runs. r171 is the worked example
+        # — the frontend lane correctly diagnosed the `services/api.js` + `api.jsx` duplicate
+        # module (#638's collision class, the one that leaves `window.NetflixAPI` undefined and
+        # blocks nine UI flows) and tried to delete the duplicate SIX times between 11:54 and
+        # 12:23, was refused every time, and spent ~46 minutes reaching a shim by hand.
+        #
+        # A `delete_file` tool already exists and is registered for every lane, but the lane
+        # invoked it ZERO times in r171 — it reaches for the patch format instead. Rather than
+        # teach the format away, accept it: this section applies EXACTLY the delete_file
+        # policy (protected-path refusal, trash rather than unlink), so it grants no authority
+        # the sanctioned tool does not already grant.
+        if line.startswith("*** Delete File: "):
+            path = line[len("*** Delete File: "):].strip()
+            idx += 1
+            # A delete carries no body. Models nonetheless sometimes append the removed lines;
+            # skipping patch-shaped lines keeps the unambiguous intent working, while anything
+            # else still raises rather than being silently swallowed.
+            while idx < len(lines) and not lines[idx].startswith("*** "):
+                if lines[idx] and lines[idx][0] not in {" ", "-", "+"}:
+                    raise ValueError(f"invalid patch line: {lines[idx]}")
+                idx += 1
+            operations.append(_PatchOperation(op_type="delete", path=path, hunks=[], add_lines=[]))
             continue
 
         raise ValueError(f"unknown patch section: {line}")

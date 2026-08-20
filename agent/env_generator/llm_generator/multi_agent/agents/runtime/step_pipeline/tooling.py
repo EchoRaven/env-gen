@@ -568,6 +568,7 @@ class AgentStepToolingMixin:
                 patch_text = tool_args.get("patch", "")
                 patch_paths: List[str] = []
                 patch_created: List[str] = []
+                patch_deleted: List[str] = []
                 if isinstance(patch_text, str):
                     for line in patch_text.splitlines():
                         if line.startswith("*** Add File: "):
@@ -578,6 +579,14 @@ class AgentStepToolingMixin:
                             patch_path = line.split(": ", 1)[1].strip()
                             if patch_path:
                                 patch_paths.append(patch_path)
+                        # #1021: a patch-delete stages as a DELETION. Staging it as "add"
+                        # (or not at all) leaves the removal out of the commit, so the file
+                        # returns on the next checkout and the lane's fix silently undoes
+                        # itself — the failure mode this whole change exists to end.
+                        elif line.startswith("*** Delete File: "):
+                            patch_path = line.split(": ", 1)[1].strip()
+                            if patch_path:
+                                patch_deleted.append(patch_path)
                 for patch_path in patch_created:
                     files_created.append(patch_path)
                     if hasattr(self, "memory"):
@@ -588,6 +597,8 @@ class AgentStepToolingMixin:
                     if hasattr(self, "memory"):
                         self.memory.record_file_modified(patch_path)
                     _auto_stage(self, patch_path, action="add")
+                for patch_path in patch_deleted:
+                    _auto_stage(self, patch_path, action="delete")
             elif tool_name == "delete_file":
                 path = tool_args.get("file_path") or tool_args.get("path")
                 if path:

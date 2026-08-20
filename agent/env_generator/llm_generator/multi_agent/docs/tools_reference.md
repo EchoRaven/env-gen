@@ -125,11 +125,16 @@ apply_patch(patch=\"\"\"*** Begin Patch
 @@
 -old_line
 +new_line
+*** Delete File: src/app_old.py
 *** End Patch\"\"\")
 ```
 **Tips**:
 - Prefer for grouped edits across a file
 - Patch context must match current file contents exactly
+- `*** Delete File: <path>` removes a file (moved to trash, recoverable). Use it to drop a
+  duplicate module in the same patch that repoints its importers — a same-stem sibling such
+  as `services/api.js` + `services/api.jsx` ships two API clients and leaves shared globals
+  undefined on whichever one the app did not import.
 
 ### delete_file
 **Purpose**: Delete a file

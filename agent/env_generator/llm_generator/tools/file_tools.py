@@ -612,9 +612,18 @@ class _FileLock:
 
 
 def _is_protected_delete_path(workspace: Workspace, file_path: Path) -> bool:
-    rel = _workspace_rel(workspace, file_path).replace("\\", "/").lstrip("./")
+    # #1021: `lstrip("./")` strips a CHARACTER SET, not a prefix — and every protected entry
+    # below begins with a dot, so it stripped the very character it then tested for:
+    #   ".git/HEAD".lstrip("./")  ->  "git/HEAD"  ->  .startswith(".git/") is False
+    # The guard therefore returned False for all three prefixes and for ".git" itself, i.e. it
+    # never protected anything it names. Found by #1021's protected-path test, which deleted
+    # `.git/HEAD` and passed. Strip the "./" PREFIX instead, which is what was meant.
+    rel = _workspace_rel(workspace, file_path).replace("\\", "/")
+    while rel.startswith("./"):
+        rel = rel[2:]
+    rel = rel.lstrip("/")
     protected_prefixes = (".git/", ".cursor/", ".openenv_trash/")
-    return rel == ".git" or rel.startswith(protected_prefixes)
+    return rel in {".git", ".cursor", ".openenv_trash"} or rel.startswith(protected_prefixes)
 
 
 def _move_to_trash(workspace: Workspace, file_path: Path) -> Path:
