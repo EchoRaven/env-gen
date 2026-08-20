@@ -18862,3 +18862,57 @@ as r162's duplicates: it notices, articulates, and keeps going. A guard is warra
 not being written today, because misclassifying a real app defect as framework-owned would
 suppress genuine work, and that is worse than five failed tasks. Recorded for a session that
 can validate the classifier against the corpus first.
+
+### 428. why a strong model produces 56 repair tasks — its work is overwritten 46 times
+
+The user asked the right question: *Claude writes good code, so why so many repair tasks?*
+The answer is in the generated repo's git history, and it is not about writing code.
+
+    app/frontend/src/pages/LoginPage.jsx      95 commits in ONE run
+      49 by "frontend"      (the lane)
+      46 by "GitOps Bot"    (the framework)
+
+    BrowseByLanguagesPage.jsx  72     GamesPage.jsx  54
+    GenreCategoryPage.jsx      54     BrowseHomePage.jsx  32
+
+Ruled out the boring explanation first — that the bot merely COMMITS the lane's work under its
+own identity. It does not. The file oscillates between two different contents:
+
+    453f43f  GitOps Bot   72 lines
+    2e6d160  frontend     12 lines
+    392ad07  GitOps Bot   72 lines
+    696c667  frontend     12 lines        (perfect alternation, 95 deep)
+
+★ And the direction is the opposite of "the model writes stubs". The **lane's** version:
+
+    import AuthForm from '../components/AuthForm';
+    export default function LoginPage() {
+      return <main className="auth-page"><AuthForm mode="login" /></main>;
+    }
+
+componentised, DRY, delegating to a shared component. The **framework's** version inlines a
+72-line form state machine (`isRegister`, `email`, `password`, `name`, `step`, `error`,
+`onSubmit`) from `_AUTH_PAGE_TEMPLATE`. **The framework overwrites good componentised code
+with a duplicated inline implementation, 46 times per run.**
+
+★★ Root cause is the same ownership vacuum as item 420:
+
+    LoginPage.jsx in _FRONTEND_FRAMEWORK_OWNED   NO
+    LoginPage.jsx in _FRONTEND_LANE_OWNED        NO   (that set holds only App.jsx)
+
+Neither side is told to stand down, so both write, forever. Item 420 found this shape on
+`bc_auth`, measured zero lane writes, and shelved it with a trigger — **I checked the wrong
+file.** The trigger said "revisit the moment any lane write appears"; there were 49.
+
+★★★ This explains the repair-task volume the user asked about. Five separate "Restore six
+registered UI pages" tasks exist because the pages really do keep disappearing — and each
+overwrite costs the lane a full rewrite, inflating both the task count and the wall clock that
+item 427 concluded was the binding constraint.
+
+**Fix, not attempted today** (low context, needs care): the projection must create a page when
+absent and stand down when present. Naively adding pages to `_FRONTEND_LANE_OWNED` may break
+first-run scaffolding, so the guard belongs at the write site
+(`frontend_scaffold.py` ~6509 / ~8086 assemble `_AUTH_PAGE_TEMPLATE`; the actual write is
+further downstream in a shared writer that still needs locating). The decisive test already
+exists: after the fix, `git log --format=%an -- app/frontend/src/pages/LoginPage.jsx` must
+show no alternation.
