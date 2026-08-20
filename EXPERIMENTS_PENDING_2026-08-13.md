@@ -19204,3 +19204,34 @@ test suites — #1010 had seven passing tests, #992 had twenty-three — because
 by the person who wrote the guard shares the guard's blind spot.** The corpus does not.
 
 Suite 6,859.
+
+### 437. five guards measured against the corpus — two wrong, three clean
+
+Continuing the measurement pass. Each guard fed the input shape it actually consumes, never a
+grep of its source (item 434's rule):
+
+    guard                             corpus sample              verdict
+    _is_definitive_stub_page          253 real pages             WRONG -> #1010 + #1010a
+    _is_fabricated_fallback_literal   228 heal-selected literals WRONG -> #1012
+    _is_generic_fallback_page         250 real pages             clean (0 flagged)
+    _field_is_degenerate              548 seed fields            clean (20 flagged, all image
+                                                                 columns — its exact target)
+    _promote_inline_modifiers        1350 contract column specs  clean (18 rewritten, all
+                                                                 'serial primary key' promoted
+                                                                 to the structured field)
+
+★ `_promote_inline_modifiers` measured 0 on the first attempt because I read columns from
+`table["columns"]` and the corpus stores them at `table["schema"]["columns"]`. **Denominator
+zero, reported as "unmeasured" rather than "clean"** — the discipline that items 366/381/391/
+398/414 were each written after failing. Re-measured at the right path: 1350 specs.
+
+★★ Two of five wrong is consistent with the earlier 2-of-3, and both defects shared a shape:
+a guard using SIZE or CHARACTER CLASS where it needed STRUCTURE. `_is_definitive_stub_page`
+read 612 bytes as incomplete; `_is_fabricated_fallback_literal` read `'w-8 h-8'` as invented
+content. The three clean guards all key on structure already — an image-reference test, a
+route-table lookup, a modifier keyword in a declared type.
+
+**That is a usable predictor for the remaining ~18: rank them by whether their decision rests
+on a threshold or a shape rather than on a structural fact, and measure those first.**
+
+Suite 6,859.
