@@ -2039,6 +2039,32 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # for absent evidence is a stop, not a quality bar, and #671 already recorded that
     # enforcing it needs a live run.
     if _breadth739["failed_records"]:
+        # #1017: name the flows, not just the failure. Same shape as #1009, applied to the
+        # other check that now blocks delivery: r167 reached 16/16 backend probes, fired
+        # DELIVER_PROJECT three times — the first attempts since r154 — and was held by this
+        # check plus unresolved_failed_tasks, with the log saying only that UI evidence
+        # "failed". `_breadth739["failed_records"]` has the instances the whole time.
+        #
+        # It also blocks a hypothesis worth testing: the clobbered pages (LoginPage.jsx at 92
+        # alternations in r166) may be the same ones that cannot accumulate stable UI
+        # evidence. That is checkable the moment the flows are named, and unfalsifiable while
+        # they are not.
+        if logger:
+            try:
+                _recs1017 = _breadth739["failed_records"]
+                _names = []
+                for _r in (_recs1017 if isinstance(_recs1017, (list, tuple)) else [])[:12]:
+                    if isinstance(_r, dict):
+                        _names.append(str(_r.get("flow") or _r.get("name")
+                                          or _r.get("id") or _r)[:44])
+                    else:
+                        _names.append(str(_r)[:44])
+                logger.warning("#1017 validation_ui_evidence_failed on %d record(s): %s",
+                               len(_recs1017) if hasattr(_recs1017, "__len__") else 0,
+                               "; ".join(_names) or "<unnamed records>")
+            except Exception as _e:
+                logger.warning("#1017 could not name the failed UI records: %s",
+                               type(_e).__name__)
         failed_checks.append("validation_ui_evidence_failed")
     if ui_smoke_pass and _breadth739["failed_records"]:
         logger.warning(

@@ -19566,3 +19566,31 @@ deliverable of the day**, because it is the input that decision needs and #910 d
 
 The right next move is not another guard. It is to put the measured cost in front of whoever
 owns that decision, together with #910's original reasoning.
+
+### 448. #1017 — r167 tried to deliver, and the check that stopped it would not say why
+
+r167 (FAIL-FAST, gate 2) produced the first state change across the r155 boundary:
+
+    DELIVER_PROJECT   r164: 0   r165: 0   r166: 0   r167: **3**
+
+The attempts are substantive, not flailing — *"16/16 business probes passing"*, *"all 16
+endpoint probes passing and zero failures; seed audit …"*. The backend is green and the model
+judged the work done for the first time since r154.
+
+What held it: `unresolved_failed_tasks` and `validation_ui_evidence_failed`. The log says only
+that UI evidence "failed" — no flow, no instance — while `_breadth739["failed_records"]` has
+held the instances all along. **#1009's exact shape, on the other check now deciding delivery.**
+
+★ This also blocks a hypothesis worth testing: the clobbered surface (`LoginPage.jsx`, 92
+alternations in r166) may be the same surface that cannot accumulate stable UI evidence — a
+page rewritten every tick is a poor place to build evidence on. If true, page ownership stops
+being an efficiency question and becomes a delivery prerequisite, which is exactly the input
+#910's *"until that decision is made"* is missing. **Unfalsifiable while the flows are
+unnamed**, which is why naming them comes first.
+
+★★ `#1015` closed cleanly this run: 35 hits, 100% `LoginPage.jsx`, zero drift to `AppHeader.jsx`
+or `api.js`. The writer inside `_scaffold_frontend_pages()` rewrites exactly one page, and it
+is the one #910 documented as deliberate.
+
+Suite 6,866 with one corpus tripwire (`21 <= 20`, unrelated — it fires when enough verdicts
+carry a `code_state` and asks for #893's precision to be re-derived).
