@@ -19029,3 +19029,48 @@ already exists and needs no new instrumentation: rerun the sweep after wiring, a
 `LoginPage.jsx`'s alternation count must collapse.
 
 Suite 6,848.
+
+### 432. the 23 writers — enumerated and triaged, before wiring anything
+
+#1011 added the predicate; wiring it needs to know which writers are legitimate. Enumerated
+every framework function that writes a lane-owned path (23), and triaged by intent:
+
+**Legitimate — create-if-absent, must keep writing**
+
+    frontend_scaffold.scaffold_pages_from_contract     3 writes  (first-run pages)
+    backend_skeleton._ensure_seed_json                 2         ("ensure" = create if missing)
+    backend_skeleton._ensure_seed_dataset              1
+    backend_skeleton.write_backend_skeleton            1
+
+**Repair/heal — must defer to existing lane content, the #1010 lesson**
+
+    frontend_scaffold.recover_agent_nav                2
+    heal_pipeline.reconcile_integration_frontend_app_jsx  1
+    heal_pipeline.reconcile_integration_seed           1
+    heal_pipeline.distribute_seed_media                1   (#512)
+    frontend_scaffold.localize_seed_external_images    1   (#993 territory)
+    frontend_scaffold.repair_frontend_default_api_import  1
+
+**Design smell — a COMPUTE function with a write side effect**
+
+    deliverability.compute_deliverability              1
+    deliverability._ui_page_wiring_blockers            1
+
+★ The last pair is the find. `compute_deliverability` reads `seed_data.json` out of git HEAD
+and, if HEAD's copy is non-empty, **writes it over the working tree** — "repair the working
+tree so the docker build ships the seed". If the lane has just authored a new seed and not yet
+committed it, that restore silently reverts it. It is part of why `seed_data.json` shows 838
+framework writes across 107 runs.
+
+A gate check that mutates the thing it is judging can also make its own verdict come true, and
+its name promises it does not. **This one should not write at all** — the restore belongs in a
+heal step that the gate then observes.
+
+★★ Wiring deliberately not done in this pass. The triage above is the prerequisite: bolting
+`framework_may_write()` onto all 23 would break the four create-if-absent writers, which are
+the reason first-run scaffolding works at all. The order that works is: repair/heal group
+first (they have the most alternations and the least justification), then the compute pair
+(which should lose its writes entirely), and never the scaffolders.
+
+Verification needs no new instrumentation — `tools/sweep_write_conflicts.py` after each group,
+watching `LoginPage.jsx` (2004) and `seed_data.json` (1286) fall.
