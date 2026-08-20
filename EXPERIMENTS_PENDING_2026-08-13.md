@@ -19657,3 +19657,35 @@ filenames. `test_defer_to_a_component_based_lane_page_914.py` says exactly what 
 **Retrieval rule earned today: when the question is "should this behaviour change?", grep the
 test names first and the implementation second.** Every hour I lost on this hunt would have
 been saved by one `ls agent/tests | grep -i lane`.
+
+### 451. r169 interim — the flag zeroes the tug-of-war
+
+r169 launched with `ENVGEN_DEFER_TO_LANE_PAGE=1`, verified live two ways: present in the
+process environment, and the framework stopped printing its own advice (595 occurrences across
+r164–r168, zero here).
+
+At 57 minutes, 12 pages generated:
+
+    run    real overwrites   alternations   failed tasks
+    r164        18              1108             —
+    r165        14               507             —
+    r166        15               839             —
+    r168         —                 —              2  (both UI page/flow evidence)
+    r169         0                 0              0
+
+★ **Both ends of the chain read zero.** The clobber that took all day to characterise, and the
+two failed tasks that were the entire content of r168's `unresolved_failed_tasks`, are absent.
+
+★★ Caveat, stated because the identical shape fooled me earlier today: r169 is at 57 minutes
+against r166's ~130, and r166 at 57 minutes showed 3 real overwrites before finishing at 15.
+Failed tasks also tend to appear later. **0 is a different kind of reading than 3** — nothing
+has started and been suppressed, it simply has not occurred — and the mechanism is understood
+(#914 defers on component-importing pages, 42% of its corpus sample). But the finals are not
+in, and item 446 is what happens when an early reading is treated as a result.
+
+★★★ Worth recording plainly: the fix was an environment variable the framework had been
+recommending 595 times per five runs, in a log I grepped all day. Everything built around it —
+the conflict sweeper, the oscillation filter, three instrumentation passes, nine candidate
+reads — measured *who was writing* while the log answered *which page should win*. The tools
+are reusable and the measurement is what makes the decision defensible, but the decision itself
+cost one `export`.
