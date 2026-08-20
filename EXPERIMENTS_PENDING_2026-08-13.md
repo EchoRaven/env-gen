@@ -19471,3 +19471,27 @@ the instrumentation did it in one run.
 list — they are being co-committed, not clobbered, in this run. Both sit in the DECLARED
 lane-owned sets, so the earlier plan to guard them first would have been aimed at the wrong
 thing. Measuring before wiring saved that.
+
+### 445. #1014's design boundary — it names the paths, not the writer
+
+r166's three real overwrites (`services/api.js` alt=6, `components/AppHeader.jsx` alt=5,
+`pages/MyListPage.jsx` alt=2) all carry the SAME framework commit message:
+`framework delivery: backend skeleton + frontend infra + projections`. One phase writes all
+three surfaces, and `#1013` guards one function inside it.
+
+★ **`#1014` logs at the commit point, by which time every writer in the phase has already
+run.** It can say which lane-owned paths were touched — which is what collapsed the candidate
+set from 23 functions to 3 files, exactly what it was bought for — but it structurally cannot
+attribute a path to a function. I hit that boundary trying to take the next step.
+
+★★ The next instrumentation is per-writer attribution: hash the candidate paths before and
+after each function inside the phase, and the diff names the writer. Bounded and unambiguous,
+but it touches several call sites, so it is recorded rather than attempted at the end of a
+session — the #995 disaster began exactly this way, a multi-site edit made with no room to
+verify it.
+
+★★★ Worth stating what the two instrumentations bought together, since the pattern is
+reusable: `#1002` settled a question nine keyword searches could not, `#1014` collapsed 23
+candidates to 3 in one run after reading names went 0-for-3. **Both replaced inference with a
+log line, and both were written only after inference had visibly failed** — which is the
+correct trigger, not a reflex to instrument everything.
