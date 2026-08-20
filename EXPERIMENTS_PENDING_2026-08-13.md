@@ -18810,3 +18810,55 @@ these name no endpoint.
 than duplicating it**, and this thread has already killed four of my theories; adding a
 merge rule under deadline pressure is exactly the bet not to take. Design and risk recorded
 for a session with room to verify it against the corpus first.
+
+### 427. are the extra tasks legitimate? Mostly yes — and r138's delivery looks worse for it
+
+The user pushed back on item 426's framing: *more tasks may simply mean defects that existed
+before and were never detected, and the run budget can be extended.* Checked, and the pushback
+is right.
+
+    task kind                r138 (delivered)   r164
+    fix / restore / remediate         0           56      <- the whole story
+    record evidence                   3           26
+    impl.* scaffolding               36           40
+    validate.* registration          10           17
+
+**r138 dispatched ZERO repair tasks.** r164 dispatched 56 and closed 44 of them (78%). What
+they repaired is not bookkeeping:
+
+    Restore six registered UI pages and route wiring
+    Fix breaking change in GET /api/titles/trending
+    Fix breaking change in GET /api/continue-watching
+    Remediate authored seed-data delivery blocker
+    Fix delivery coverage audit dead tables and backend files
+
+★ And r138's delivery message reads **"FORCE-DELIVERED. Substantive delivery gate is GREEN"**
+with a final gate of `1 failed check(s): ['business_chain_failing']`. So the run everyone
+points to as the success delivered *past a failing check, having detected no defects at all*.
+The likeliest reading is not that r138's app was clean — it is that **r138 could not see what
+r164 sees**, and shipped it.
+
+That inverts item 426. The task growth is detection working, and the correct lever is the one
+the user named: `ENVGEN_MAX_WALLCLOCK_SEC` (default 7200, with an `ENVGEN_BUDGET_UNLIMITED`
+switch already present). r164 was still closing ~26 tasks per 20 minutes when the cap hit.
+
+★★ One category IS illegitimate, and it is small and precise — **five framework-owned defects
+dispatched as agent work**:
+
+    by=orchestrator → debugger      Fix projection/RunHub backend host-port mismatch
+    by=verifier     → orchestrator  Validation stack disappears after successful startup
+    by=orchestrator → orchestrator  Fix Compose projection / RunHub startup timeout
+    by=orchestrator → orchestrator  Fix RunHub compose lifecycle
+    by=verifier     → orchestrator  Fresh Docker boot fails on malformed projected users uniqueness
+
+Compose lifecycle, RunHub startup, the projector's own DDL — none of it lives in the generated
+app, so no agent can touch it. All five failed or were cancelled, correctly. #1004's shape at
+runtime: the recipient cannot do the thing.
+
+★★★ The orchestrator **stated the correct rule itself** — "framework-owned blockers. Do not
+route malformed users uniqueness DDL or RunHub compose lifecycle fixes to backend/frontend" —
+twice in the log, zero times in any task body, while creating five tasks that break it. Same
+as r162's duplicates: it notices, articulates, and keeps going. A guard is warranted; it is
+not being written today, because misclassifying a real app defect as framework-owned would
+suppress genuine work, and that is worse than five failed tasks. Recorded for a session that
+can validate the classifier against the corpus first.
