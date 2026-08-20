@@ -1961,6 +1961,22 @@ def repair_frontend_named_default_imports(frontend_dir) -> Dict[str, object]:
         return {"repaired": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+def _target_exists_with_content_1013(target) -> bool:
+    """#1013: True when the lane has already written this page.
+
+    The page-scaffold write site had no content check, so it overwrote lane work every tick.
+    r165 measured the cost live: `LoginPage.jsx` alternating 72 lines (framework) against 2
+    lines (lane) with 4 commits in the first 10 minutes, on a page `_is_definitive_stub_page`
+    correctly reports is NOT a stub. The classifier was right and this path never asked it.
+
+    Empty or missing means there is nothing to protect, so first-run scaffolding still works.
+    """
+    try:
+        return bool(target.is_file() and target.stat().st_size > 0)
+    except Exception:
+        return False
+
+
 def _stub_page_component(name: str) -> str:
     """A minimal default-exported React component (JSX automatic runtime — no
     React import needed, matching the lane's pages). Used for build-integrity
@@ -8533,6 +8549,21 @@ def scaffold_missing_local_pages(frontend_dir, ui_pages=None) -> Dict[str, objec
                                                    get_endpoints=_all_get_endpoints(ui_pages))
                 else:
                     body = _stub_page_component(name)
+                # #1013: do not clobber a page the lane already wrote.
+                #
+                # This write had NO content check at all — unlike the sibling sites, which
+                # consult `_is_definitive_stub_page` (8661) and `_is_generic_fallback_page`
+                # (8801). r165 proved it is the live path: the lane's LoginPage (321 bytes,
+                # importing `LoginForm` and rendering it with props) answers False to
+                # `_is_definitive_stub_page` — #1010 classifies it correctly — and the
+                # framework overwrote it anyway, 72 lines against 2, alternating every tick
+                # exactly as r164 did before #1010 existed.
+                #
+                # Fixing the classifier could never have helped, because this path never
+                # asked it. Guarded with #1011's predicate, which returns True when the file
+                # is absent or empty, so first-run scaffolding is unaffected.
+                if _target_exists_with_content_1013(target):
+                    continue
                 target.write_text(body, encoding="utf-8")
                 scaffolded.append(str(target.relative_to(frontend_dir)))
         return {"scaffolded": sorted(set(scaffolded))}

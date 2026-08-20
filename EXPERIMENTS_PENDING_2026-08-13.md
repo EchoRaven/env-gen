@@ -19275,3 +19275,36 @@ measured downstream cost. Item 393's rule — measure harm before repairing — 
 recognition, even my own pattern.
 
 Suite 6,859.
+
+### 439. #1013 — r165 answered the question, and the answer was "wrong path"
+
+r165 existed to test one number. Ten minutes after its pages appeared:
+
+    LoginPage.jsx       4 commits — frontend 2 / GitOps Bot 2
+    BrowseHomePage.jsx  4 commits — frontend 2 / GitOps Bot 2
+    content oscillating 72 lines (framework) against 2 lines (lane)
+
+**The tug-of-war did not collapse.** Extrapolated over a 3-hour run that is ~72 commits per
+file, the same order as r164's 95.
+
+★ But the follow-up is the finding. The lane's page is 321 bytes and correct — it imports
+`LoginForm` from `../components/LoginPage` and renders it with props. Fed to
+`_is_definitive_stub_page`, it answers **False**. **#1010 classifies it correctly, and the
+framework overwrote it anyway.**
+
+Three sites project pages. Two consult a content guard. The third —
+`target.write_text(body, encoding="utf-8")` under nothing but `if is_page and route` — has
+never had one. **No amount of fixing the classifier could have moved this, because that path
+never asked it.** Exactly #1000 → #1003 repeating: a real fix, applied to a sibling of the
+path that actually runs.
+
+★★ Had r165 not run, I would have carried "#1010 fixed the page overwrites" forward as
+settled. It fixed *a* cause; the live cause was a missing check twenty lines away. The
+pre-specified branch — *if the alternation persists, wire #1011 at the unguarded site* — is
+what made this a five-minute diagnosis instead of another theory.
+
+★★★ Fifth fixed-width-source-window catch of the day, this time in my own #1013 test
+(`body[i:i+120]` looking for the `continue`). Re-anchored on the `ast.If` node. The rule keeps
+paying rent.
+
+Suite 6,859.
