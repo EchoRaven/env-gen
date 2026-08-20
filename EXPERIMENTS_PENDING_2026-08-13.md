@@ -19535,3 +19535,34 @@ attributed to today's fixes. Every favourable mid-run signal today has been refu
 finish, and this one has no mechanism tying it to a specific change.
 
 Suite 6,866.
+
+### 447. the clobber was documented as DELIBERATE — #1016 reverted
+
+`#1015` did its job: five hits, all `LoginPage.jsx`, all inside `_scaffold_frontend_pages()`.
+Then one `in src` check showed `scaffold_missing_local_pages` — the function **#1013 guarded**
+— is never called from that path, while `scaffold_pages_from_contract` is. That explained
+#1013's failure exactly: a real guard attached to dead code.
+
+So I attached the same guard to the live write (#1016). Five tests failed, one named
+`test_the_clobber_still_happens`, asserting:
+
+    "the projection must still win until that decision is made"
+
+★ **#910 already knew.** It measured this on r153's delivered history — *"30 revisions of
+BrowseHomePage.jsx alone, 479 → 166 lines"* — documented the asymmetry (`not _marked` means
+the lane wrote it, and that clobbers unconditionally), and deliberately left the projection
+winning pending a product decision. A test locks it in.
+
+★★ **I spent this session rediscovering a documented, intentional behaviour.** The 22,000
+alternations, the oscillation tooling, `#1010`/`#1013`/`#1014`/`#1015` — all of it converged on
+a decision someone had already made and written down, with a guard test to stop exactly the
+change I just tried. #1016 reverted; suite green again.
+
+★★★ What this reframes: the framework/lane overwrite is **not an unknown bug**, it is an open
+design question — *should the projector or the lane own page content?* — and the cost of the
+current answer is now measured far better than it was (18 files, 1108 alternations in r164,
+co-commits filtered out, `LoginPage.jsx` at 92 in r166). **That measurement is the real
+deliverable of the day**, because it is the input that decision needs and #910 did not have.
+
+The right next move is not another guard. It is to put the measured cost in front of whoever
+owns that decision, together with #910's original reasoning.
