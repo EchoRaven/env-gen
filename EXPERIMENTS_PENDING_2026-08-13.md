@@ -19337,3 +19337,38 @@ monotone growth is co-commit, flipping is clobber. Verified on both live samples
 both kinds, so **some unknown fraction of it was never destructive**. The pages figures stand
 (content oscillation confirmed directly on r164 and r165), but the corpus-wide total is now an
 upper bound, not a measurement — and the tool will produce the real number next time it runs.
+
+### 441. the wiring target list, derived from runtime evidence rather than source hunting
+
+Asked to wire #1011 across the remaining write paths, using r164's runtime evidence as the
+guide. The evidence, filtered through `_oscillates()` so co-commits are excluded:
+
+    12 files  app/frontend/src/pages/         <- #1013 guards scaffold_missing_local_pages
+     2 files  app/frontend/src/components/    BrowseHeader alt=99, AuthForm alt=4
+     2 files  app/frontend/src/services/      api.jsx alt=18, api.js alt=3
+     1 file   app/frontend/src/App.jsx        alt=56  <- DECLARED LANE-OWNED
+     1 file   app/backend/seed_data.json      alt=4   <- DECLARED LANE-OWNED
+
+★ **All three surfaces trace to one phase.** The framework-side commits on pages, on
+`components/BrowseHeader.jsx`, and on `App.jsx` all carry the identical message —
+`framework delivery: backend skeleton + frontend infra + projections` (8, 50 and 28 times
+respectively). It is one bulk step running several projectors under a single commit.
+
+★★ **Hunting the individual writers has a 0-for-3 hit rate today.** Every candidate I opened
+turned out to be properly guarded, and I only learned that by reading:
+
+    reconcile_integration_seed              "NEVER overwrites a non-empty integration seed"
+    wire_owned_list_shell_535               reads current text, skips if already wired
+    reconcile_integration_frontend_app_jsx  additive route injection, writes only if changed
+
+Three plausible names, three correct implementations. The writer that IS at fault (#1013's
+`scaffold_missing_local_pages`) was found by runtime evidence, not by reading names — the same
+asymmetry as every other finding today.
+
+★★★ So the wiring is **not** attempted here, and the reason is specific rather than caution:
+guarding a bulk phase requires knowing which projector inside it writes each surface, and my
+three attempts to identify those by inspection were all wrong. The reliable method costs one
+run: **instrument the `framework delivery` step to log the writer of each path it touches**,
+then wire exactly those. `App.jsx` (alt=56) and `seed_data.json` (alt=4) are the priority — both
+are in the declared lane-owned sets, so unlike the nav takeover (item 440) there is no design
+decision to weigh against.
