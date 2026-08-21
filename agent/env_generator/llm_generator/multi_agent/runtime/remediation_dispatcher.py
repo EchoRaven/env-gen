@@ -1207,6 +1207,9 @@ class RemediationDispatcher:
             "deliverability_no_successful_run", "frontend_build_not_recorded",
             "validation_api_smoke_missing", "validation_ui_smoke_missing",
             "incomplete_required_tasks",
+            # #1041: handled by the bespoke per-task re-wake below (the owner is the failed
+            # TASK's assignee, not a single lane), exactly like incomplete_required_tasks.
+            "unresolved_failed_tasks",
             # #1040: `database_sql_missing` has a deterministic framework self-heal (#74:
             # write the SQL from the live schema when the app DB is functional), so it was
             # never a dead end — but it was absent from this set, so 85 runs logged it as
@@ -1508,6 +1511,106 @@ class RemediationDispatcher:
                                 len(_by_assignee), ", ".join(sorted(_by_assignee)))
                     except Exception:
                         pass
+            # #1041: `unresolved_failed_tasks` — the sibling of the block above, and the
+            # fastest-growing wedge in the corpus. It was in NEITHER table, so a FAILED task
+            # blocked delivery with nobody told:
+            #
+            #     r1  - r149    0 of 149 runs      <- never fired
+            #     r150- r175   13 of  26 runs      <- half of them
+            #
+            # The check's own comment already says who can clear it and how: *"Clearing it is
+            # cheap and in the lane's hands: complete the task, or cancel it if it was wrong.
+            # That is the same escape any structural blocker already has."* Nothing said that
+            # to the lane. r174's terminal pair was this check plus
+            # validation_ui_evidence_failed — both unowned, so the run declined for 80 minutes
+            # with nothing dispatched.
+            #
+            # Not a `_GATE_OWNER` row: like `incomplete_required_tasks`, the owner is per-TASK
+            # (its own assignee), not per-check, so it needs the same bespoke re-wake rather
+            # than a single lane name. The tasks already exist — no new task is created.
+            if "unresolved_failed_tasks" in failed_checks:
+                _ftn = "unresolved_failed_tasks"
+                _fire = True
+                if guard.get(_ftn) == milestone:
+                    _persist[_ftn] = _persist.get(_ftn, 0) + 1
+                    _fire = (_persist[_ftn] % _GATECHECK_REFIRE == 0)
+                else:
+                    _persist[_ftn] = 0
+                if _fire:
+                    try:
+                        from .delivery_gate import unresolved_bug_tasks_743 as _ubt
+                        _granted = set()
+                        try:
+                            _granted = orch._all_registered_tool_names() or set()
+                        except Exception:
+                            _granted = set()
+                        _b743 = _ubt(orch.hubs, getattr(orch, "output_dir", None),
+                                     _granted) or {}
+                        # #1033: a fail_reason naming a tool we KNOW is granted is checkably
+                        # false. Quote that back — a blocker resting on a falsehood should be
+                        # re-attempted, not accepted.
+                        # ★ Field names verified by DUMPING a real record, not assumed: the
+                        # `failed` entries key on `id` and carry the text under `reason`
+                        # (not `fail_reason` — that is the WorkHub task's spelling, which the
+                        # collector renames), and contradictions key on `id` too. The first
+                        # draft of this handler guessed all three and would have re-woken
+                        # nobody while logging that it had nobody to wake.
+                        _contra = {str(c.get("id")): c
+                                   for c in (_b743.get("contradicted_tool_claims") or [])}
+                        _by_assignee = {}
+                        for _t in (_b743.get("failed") or []):
+                            _a = str((_t or {}).get("assignee") or "").strip()
+                            if _a:
+                                _by_assignee.setdefault(_a, []).append(_t)
+                        for _a, _ts in _by_assignee.items():
+                            _lines = []
+                            for _t in _ts[:6]:
+                                _tid = str(_t.get("id"))
+                                _why = str(_t.get("reason") or "<no reason recorded>")
+                                _note = ""
+                                if _tid in _contra:
+                                    _note = (" ⚠ THIS REASON IS CHECKABLY FALSE: it says the "
+                                             "tool `%s` is unavailable, and that tool IS in "
+                                             "your granted surface — call it and retry (#1033)."
+                                             % _contra[_tid].get("tool"))
+                                _lines.append("%s: %s%s" % (_tid, _why[:300], _note))
+                            _wmsg = _create_message(
+                                source_agent_id="orchestrator", target_agent_id=_a,
+                                content=(
+                                    f"URGENT: delivery is BLOCKED by {len(_ts)} task(s) you "
+                                    f"marked FAILED. A failed task blocks the cut until it is "
+                                    f"resolved, and you have two ways to resolve it: COMPLETE "
+                                    f"it (retry — conditions may have changed since you gave "
+                                    f"up), or CANCEL it if the task itself was wrong or is no "
+                                    f"longer needed. Leaving it failed is not an option; it "
+                                    f"stops the release.\n\n- "
+                                    + "\n- ".join(_lines)),
+                                msg_type="task_ready", priority="urgent", persist=True,
+                                tags=[_ftn, "remediation"])
+                            if _a == "verifier":
+                                _wmsg.metadata["validation_phase"] = True
+                            await orch.message_bus.send(_wmsg)
+                        if _by_assignee:
+                            guard[_ftn] = milestone
+                            _persist[_ftn] = 0
+                            _owned_1040 += 1   # something WAS dispatched — not a wedge
+                            orch._logger.warning(
+                                "#1041 FAILED-TASK remediation re-woke %d assignee(s) over %d "
+                                "task(s)%s: %s", len(_by_assignee),
+                                sum(len(v) for v in _by_assignee.values()),
+                                (" (%d resting on a checkably false reason)" % len(_contra))
+                                if _contra else "",
+                                join_capped(sorted(_by_assignee), len(_by_assignee), sep=", "))
+                        else:
+                            orch._logger.warning(
+                                "#1041 unresolved_failed_tasks is blocking but NO failed task "
+                                "carries an assignee, so there is nobody to re-wake — the "
+                                "orchestrator must re-assign or cancel these itself.")
+                    except Exception as _e1041:
+                        orch._logger.warning(
+                            "#1041 failed-task remediation could not run (%s: %s) — the "
+                            "blocker stands with nobody dispatched",
+                            type(_e1041).__name__, _e1041)
             # Dedup to once-per-CHANGE (mirrors #45) — _maybe_framework_deliver runs every
             # ≤60s loop, so an undeduped log would spam while the same checks persist.
             _uncov = sorted(uncovered)

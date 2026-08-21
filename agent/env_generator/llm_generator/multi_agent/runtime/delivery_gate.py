@@ -675,8 +675,13 @@ def unresolved_bug_tasks_743(hubs, output_dir=None, granted_tool_names=None) -> 
         meta = t.get("metadata") or {}
         status = str(t.get("status") or "")
         if status == "failed":
+            # #1041: `assignee` was absent here while the `open_p0` record two branches down
+            # has always carried it. Nothing could re-wake the owner of a FAILED task, which
+            # is why `unresolved_failed_tasks` had no remediation at all — the data needed to
+            # route it was dropped at the point of collection.
             failed.append({"id": t.get("id"), "title": str(t.get("title") or "")[:120],
                            "severity": meta.get("severity"),
+                           "assignee": t.get("assignee"),
                            "reason": str(t.get("fail_reason") or "")[:200],
                            "kind": meta.get("kind")})
         elif (meta.get("kind") == "bug" and meta.get("severity") == "P0"
