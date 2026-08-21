@@ -23,6 +23,7 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List, Optional
+from .message_format import join_capped  # #1034
 
 _IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
 _DOC_EXTS = (".md", ".markdown", ".txt", ".rst", ".html", ".htm", ".pdf")
@@ -887,7 +888,8 @@ def _write_design_system(design_dir: Path, ds: Dict) -> None:
                 logging.getLogger("design_prep").warning(
                     "[design_system] %d section(s) written that NO framework code reads: %s — "
                     "the framework consumes %s. Effort spent on the others does not reach the "
-                    "app (#643).", len(_ignored), ", ".join(_ignored[:8]),
+                    "app (#643).", len(_ignored),
+                    join_capped(_ignored, len(_ignored), cap=8, sep=", "),
                     ", ".join(sorted(_CONSUMED_DESIGN_KEYS_643)))
             except Exception:
                 pass

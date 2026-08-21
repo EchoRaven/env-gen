@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 import logging
 from typing import Optional, Any, Dict, List, Set
+from .message_format import join_capped  # #1034
 
 
 # Placeholder marker words (case-insensitive)
@@ -349,7 +350,8 @@ def audit_authored_seed(data: Any) -> List[str]:
         if len(markers) >= 2:
             issues.append(
                 f"table '{table}' reads as placeholder content "
-                f"(markers: {', '.join(markers[:5])}) — replace those exact "
+                f"(markers: {join_capped(markers, len(markers), cap=5, sep=', ')}) "
+                "— replace those exact "
                 "values with believable domain content")
     if total < min_total:
         issues.append(

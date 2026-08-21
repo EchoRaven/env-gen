@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
+from .message_format import join_capped  # #1034
 
 # FIX #143 — content-based owner routing for docker_up build failures.
 # run-65 M4 (2nd occurrence of the run-52 class): a frontend syntax error
@@ -693,10 +694,10 @@ class RemediationDispatcher:
                             orch._logger.warning(
                                 "#1006 FRAMEWORK DEFECT (not a lane bug): %s — main.py already "
                                 "mounts these and the app still refuses them. main.py is "
-                                "framework-owned; no lane can repair this.", "; ".join(_fw[:4]))
+                                "framework-owned; no lane can repair this.", join_capped(_fw, len(_fw), cap=4))
                             detail = (
                                 "FRAMEWORK DEFECT — main.py ALREADY MOUNTS these routes and the "
-                                "running app still refuses them: " + "; ".join(_fw[:4]) +
+                                "running app still refuses them: " + join_capped(_fw, len(_fw), cap=4) +
                                 ". Do NOT try to add them; main.py is framework-owned and your "
                                 "writes to it are denied. Report what the running app returns "
                                 "(status + Allow header) and move on. || " + detail)
@@ -890,7 +891,9 @@ class RemediationDispatcher:
                 "UI-PAGE-UNWIRED remediation dispatched to frontend (task %s): %s "
                 "unwired page(s): %s",
                 (task or {}).get("id"), len(blockers),
-                "; ".join(str(b) for b in blockers)[:200])
+                # #1034: was `"; ".join(...)[:200]` — a CHARACTER cut on the joined string,
+                # so it could sever a page name mid-word and read as a different page.
+                join_capped(blockers, len(blockers), cap=8))
         except Exception as exc:
             orch._logger.error("ui-page-unwired dispatch failed: %s", exc)
 
@@ -1435,7 +1438,8 @@ class RemediationDispatcher:
                             if _a:
                                 _by_assignee.setdefault(_a, []).append(_t)
                         for _a, _ts in _by_assignee.items():
-                            _ids = ", ".join(str(t.get("id")) for t in _ts[:8])
+                            _ids = join_capped([str(t.get("id")) for t in _ts],
+                                               len(_ts), cap=8, sep=", ")
                             _wmsg = _create_message(
                                 source_agent_id="orchestrator", target_agent_id=_a,
                                 content=(

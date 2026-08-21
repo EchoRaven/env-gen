@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
 # `flow_coverage` imports nothing from this package (no cycle), and a function-local import inside
 # the scaffold loop would raise where it is hardest to see.
 from .flow_coverage import _is_navigable_page
+from .message_format import join_capped  # #1034
 
 _EXPORT_RE = re.compile(
     r"export\s+(?:async\s+)?(?:function|const|let|var)\s+([A-Za-z0-9_$]+)"
@@ -11585,7 +11586,7 @@ def stage_missing_frontend_assets(output_dir) -> List[str]:
                     "#707 staged %d placeholder asset(s) the frontend referenced but nobody "
                     "provided: %s. Each is a path the lane invented instead of using "
                     "search_icons/search_photos/save_image or drawing it in code.",
-                    len(staged), ", ".join(staged[:8]))
+                    len(staged), join_capped(staged, len(staged), cap=8, sep=", "))
             except Exception:
                 pass
         return staged

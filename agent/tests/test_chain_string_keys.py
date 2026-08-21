@@ -22,6 +22,8 @@ def _load_chain_executor():
     pkg = types.ModuleType("ce_pkg")
     pkg.__path__ = []
     sys.modules["ce_pkg"] = pkg
+    import env_generator.llm_generator.multi_agent.runtime.message_format as _mf1034
+    sys.modules["ce_pkg.message_format"] = _mf1034  # #1034: leaf helper, no deps
     vr = types.ModuleType("ce_pkg.validation_runner")
     vr._http = lambda *a, **k: {"status": 0}
     vr._form_retry_warranted = lambda *a, **k: False

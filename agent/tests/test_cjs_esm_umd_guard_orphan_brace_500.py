@@ -28,6 +28,8 @@ def _load():
     pkg = types.ModuleType("fs_pkg500")
     pkg.__path__ = []
     sys.modules["fs_pkg500"] = pkg
+    import env_generator.llm_generator.multi_agent.runtime.message_format as _mf1034
+    sys.modules["fs_pkg500.message_format"] = _mf1034  # #1034: leaf helper, no deps
     # #911: `frontend_scaffold` gained a MODULE-LEVEL sibling import
     # (`from .flow_coverage import _is_navigable_page`), so the synthetic package needs that
     # sibling present or collection dies here. Deliberately module-level in the real file: its

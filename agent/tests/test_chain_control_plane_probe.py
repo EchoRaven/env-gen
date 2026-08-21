@@ -27,6 +27,8 @@ def _load():
     exec(compile((_RT / "control_plane.py").read_text(encoding="utf-8"),
                  "control_plane.py", "exec"), cp.__dict__)
     sys.modules["ce_pkg"] = pkg
+    import env_generator.llm_generator.multi_agent.runtime.message_format as _mf1034
+    sys.modules["ce_pkg.message_format"] = _mf1034  # #1034: leaf helper, no deps
     sys.modules["ce_pkg.validation_runner"] = vr
     sys.modules["ce_pkg.control_plane"] = cp
     ce = types.ModuleType("ce_pkg.chain_executor")

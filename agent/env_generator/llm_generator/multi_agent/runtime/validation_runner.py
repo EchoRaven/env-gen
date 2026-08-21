@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 # #936: docker is absent on a podman gen host; resolve the runtime instead of assuming.
 from env_generator.llm_generator.multi_agent.runtime.container_runtime import runtime_bin as _rt936
+from .message_format import join_capped  # #1034
 
 _LOG = logging.getLogger(__name__)
 
@@ -1017,10 +1018,13 @@ def run_smoke_validation(
              compose_unreachable_detail(unreachable, _salient) if unreachable
              else f"{len(business_endpoints or [])} endpoint(s) reachable")
         _add("business_endpoints_implemented", not unimplemented,
-             ("; ".join(unimplemented))[:800] if unimplemented
+             # #1034: was a [:800] cut on the JOINED string — this detail is what a lane reads
+             # to know WHICH endpoints to implement, so a silent cut costs a repair round.
+             join_capped(unimplemented, len(unimplemented), cap=12) if unimplemented
              else f"{len(business_endpoints or [])} registered-implemented endpoint(s) serve their route")
         _add("business_endpoints_correct_shape", not shape_violations,
-             ("; ".join(shape_violations))[:800] if shape_violations
+             join_capped(shape_violations, len(shape_violations), cap=12)
+             if shape_violations
              else f"{len(business_endpoints or [])} endpoint(s) match the item/items contract")
 
         # gate C (persistence): a parameterless POST collection endpoint must REALLY

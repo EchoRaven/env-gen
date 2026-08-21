@@ -1433,7 +1433,7 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
             "detail": (f"{len(framework_blocked)} chain(s) are blocked ONLY by a "
                        "framework-PROJECTED handler crashing (5xx from a _projected_ "
                        "function — emitted by route_projector, which the lane cannot edit): "
-                       + "; ".join(_defs[:4])
+                       + join_capped(_defs, len(_defs), cap=4)
                        + ". This is a FRAMEWORK defect, not an app bug — do not dispatch a "
                        "lane. Fix the projector/skeleton generator."),
         }
@@ -1442,7 +1442,8 @@ def business_chain_blockers(hubs) -> Dict[str, Any]:
             "reason": "business_chain_failing", "authored": len(authored),
             "chains": not_passing,
             "detail": (f"{len(not_passing)} verification chain(s) have NOT passed: "
-                       + ", ".join(not_passing[:8]) + ". run_validation must show "
+                       + join_capped(not_passing, len(not_passing), cap=8, sep=", ")
+                       + ". run_validation must show "
                        "business_chain green (re-author the broken step or fix the "
                        "endpoint) before delivery."),
         }
@@ -1697,7 +1698,7 @@ def validate_contract_alignment(output_dir, hubs) -> Dict[str, Any]:
         if missing_endpoints:
             warnings.append(
                 "Backend route coverage missing declared endpoints: "
-                + ", ".join(missing_endpoints[:10])
+                + join_capped(missing_endpoints, len(missing_endpoints), cap=10, sep=", ")
             )
 
     # Code-derived consumer gate (P0, contract_enforcement_and_lifecycle_design §A2):
@@ -1740,7 +1741,7 @@ def validate_contract_alignment(output_dir, hubs) -> Dict[str, Any]:
     if unregistered_calls:
         errors.append(
             "Frontend calls unregistered endpoint(s) (register in RegistryHub): "
-            + ", ".join(unregistered_calls[:10])
+            + join_capped(unregistered_calls, len(unregistered_calls), cap=10, sep=", ")
         )
 
     return {
@@ -1954,10 +1955,11 @@ def enforce_completeness(output_dir, hubs, tables: Dict[str, Any],
                     "completeness oracle (#557, %s) flagged %d gap(s): %s",
                     "ENFORCED" if _enforce else "reported/not-blocking",
                     len(completeness_results),
-                    ", ".join(
-                        f"{r.get('check_id')}[{r.get('severity')}]:"
-                        f"{r.get('entity') or r.get('flow')}"
-                        for r in completeness_results[:8]
+                    join_capped(
+                        [f"{r.get('check_id')}[{r.get('severity')}]:"
+                         f"{r.get('entity') or r.get('flow')}"
+                         for r in completeness_results],
+                        len(completeness_results), cap=8, sep=", "
                     ),
                 )
             except Exception:
@@ -2223,9 +2225,14 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 # STUCK runs, and what ended r173), so the flows it exists to name have never
                 # once been visible.
                 _names1017 = [str(p)[:44] for p in (_breadth739.get("pages_failed") or [])]
-                logger.warning("#1017 validation_ui_evidence_failed on %d record(s): %s",
-                               int(_breadth739.get("failed_records") or 0),
-                               "; ".join(_names1017[:12]) or "<unnamed records>")
+                # #1034: the count is `failed_records` but the list is built from
+                # `pages_failed` — two different collections, so "N record(s): <list>" could
+                # never be read as "these are the N". Print both, and declare the cut.
+                logger.warning("#1017 validation_ui_evidence_failed on %d record(s), "
+                               "%d named page(s): %s",
+                               int(_breadth739.get("failed_records") or 0), len(_names1017),
+                               join_capped(_names1017, len(_names1017), cap=12)
+                               or "<unnamed records>")
             except Exception as _e:
                 logger.warning("#1017 could not name the failed UI records: %s",
                                type(_e).__name__)
@@ -2386,8 +2393,8 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 "implement the requirement — r150 shipped my_list/ratings/continue_watching on "
                 "user_id while its spec said profile_id, so every profile on an account shared "
                 "them. Reported, not enforced.",
-                "; ".join(f"{x['table']}.{x['column']} (has: {x['has'] or 'no *_id'})"
-                          for x in _lost774[:6]))
+                join_capped([f"{x['table']}.{x['column']} (has: {x['has'] or 'no *_id'})"
+                             for x in _lost774], len(_lost774), cap=6))
     except Exception:
         pass
     try:

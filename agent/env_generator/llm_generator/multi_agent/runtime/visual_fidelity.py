@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Set
 
 from .validation_runner import _service_host_port
+from .message_format import join_capped  # #1034
 
 
 def _resolve_app_port(resolver, service_names):
@@ -2594,7 +2595,9 @@ async def run_visual_fidelity(
                                     "so those screens will photograph another page and score "
                                     "near zero. That is a STALE BUILD, not a bad page — the "
                                     "scores and deviations from this pass are void for them.",
-                                    len(_stale_serve_715), ", ".join(_stale_serve_715[:6]))
+                                    len(_stale_serve_715),
+                                    join_capped(_stale_serve_715, len(_stale_serve_715),
+                                                cap=6, sep=", "))
                             else:
                                 # #722: SAY SO WHEN IT IS CLEAN. Until now #715 had two warning
                                 # branches and no third, so silence covered three different
@@ -2880,7 +2883,8 @@ async def run_visual_fidelity(
         # #935's `_cap_err935` is in scope and holds the actual exception per screen. Name it when
         # it exists, say plainly that nothing was recorded when it does not, and hand the dict out
         # so the caller can record it rather than re-deriving it from a sentence.
-        _why949 = "; ".join(f"{_k}: {_v}" for _k, _v in list(_cap_err935.items())[:3])
+        _why949 = join_capped([f"{_k}: {_v}" for _k, _v in _cap_err935.items()],
+                              len(_cap_err935), cap=3)
         return {"passed": False,
                 "summary": ("capture unavailable — 0 of "
                             f"{len(judged_screens)} screen(s) photographed; not judged"
@@ -3141,10 +3145,14 @@ async def run_visual_fidelity(
             "could only be described as 'rendered BLANK' and the cause had to be rediscovered "
             "by whoever drove a browser next. These are now in each screen's deviations.",
             len(_by740),
-            "; ".join(f"{_m740[:160]} (on {len(_ns740)} screen(s): "
-                      f"{', '.join(sorted(_ns740)[:4])})"
-                      for _m740, _ns740 in sorted(
-                          _by740.items(), key=lambda kv: -len(kv[1]))[:4]))
+            # #1034: BOTH lists here were silently capped — the distinct errors (outer) and
+            # the screens each was seen on (inner), each printed beside its own full count.
+            join_capped(
+                [f"{_m740[:160]} (on {len(_ns740)} screen(s): "
+                 f"{join_capped(sorted(_ns740), len(_ns740), cap=4, sep=', ')})"
+                 for _m740, _ns740 in sorted(
+                     _by740.items(), key=lambda kv: -len(kv[1]))],
+                len(_by740), cap=4))
     # #419: PERSIST the per-dimension verdict to disk so fidelity iteration is
     # TARGETED, not guessed (see _persist_verdict). Best-effort + write-only.
     _persist_verdict(project_dir, passed=passed, min_similarity=min_similarity,
@@ -3663,7 +3671,8 @@ def _persist_verdict(project_dir: Any, *, passed: bool, min_similarity: float,
                     "with no code between rounds is judge noise, not a defect; weigh `missing` "
                     "accordingly (#893).",
                     str(_head_sha)[:8], len(_unstable_893),
-                    ", ".join(str(u["screen"]) for u in _unstable_893[:4]))
+                    join_capped([str(u["screen"]) for u in _unstable_893],
+                                len(_unstable_893), cap=4, sep=", "))
         except Exception:
             _unstable_893 = []
 

@@ -41,6 +41,8 @@ def _load():
     vr = types.ModuleType("vf_pkg.validation_runner")
     vr._service_host_port = lambda *a, **k: None
     sys.modules["vf_pkg"] = pkg
+    import env_generator.llm_generator.multi_agent.runtime.message_format as _mf1034
+    sys.modules["vf_pkg.message_format"] = _mf1034  # #1034: leaf helper, no deps
     sys.modules["vf_pkg.validation_runner"] = vr
     # #898: `visual_fidelity` derives its ceilings via `stage_contract.llm_ceiling_898`, imported
     # inside the accessor. This harness hand-stubs each module the source reaches, so a new one

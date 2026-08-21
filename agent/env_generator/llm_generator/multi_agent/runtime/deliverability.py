@@ -11,6 +11,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
+from .message_format import join_capped  # #1034
 
 _LOG_700 = logging.getLogger(__name__)
 # #760: groups already announced this process. See the call site for why a module-level set is
@@ -592,12 +593,12 @@ def _flow_coverage_summary(hub_registry, app_root) -> Tuple[Dict[str, Any], List
         blockers.append(
             f"{len(report.missing)} critical UI flow(s) missing "
             f"`validation:ui_flow` records: "
-            + ", ".join(report.missing[:10])
+            + join_capped(report.missing, len(report.missing), cap=10, sep=", ")
         )
     if report.failed:
         blockers.append(
             f"{len(report.failed)} critical UI flow(s) failed: "
-            + ", ".join(report.failed[:10])
+            + join_capped(report.failed, len(report.failed), cap=10, sep=", ")
         )
     if report.source == "critical_flows_invalid":
         # Designer wrote ``critical_flows: [...]`` but every entry was

@@ -30,6 +30,8 @@ def _load():
     vr = types.ModuleType("vf491_pkg.validation_runner")
     vr._service_host_port = lambda *a, **k: None
     sys.modules["vf491_pkg"] = pkg
+    import env_generator.llm_generator.multi_agent.runtime.message_format as _mf1034
+    sys.modules["vf491_pkg.message_format"] = _mf1034  # #1034: leaf helper, no deps
     sys.modules["vf491_pkg.validation_runner"] = vr
     mod = types.ModuleType("vf491_pkg.visual_fidelity")
     mod.__package__ = "vf491_pkg"

@@ -1,0 +1,13 @@
+[2026-08-16 17:50:12] monitor start for netflix-web-r152 (pid 2027164)
+[2026-08-16 17:50:12] etime=00:41 | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+[2026-08-16 18:20:14] etime=DOWN | tags=[(none)] | undefcol=0 | advance_signals=0
+         blocker: (no decline logged)
+==================== TERMINAL @ 2026-08-16 18:20:15 ====================
+gen process:      DOWN
+main-exit:        main() returned 1 | <none>
+GENERATION COMPLETE lines: 1 | Status: FAILED
+release tags (0): [(none)]
+rc verdict:       NONZERO (main() returned 1)
+VERDICT:          NON-SUCCESS / WEDGE — diagnose ground-truth-first, STOP+report before relaunch.
+========================================================

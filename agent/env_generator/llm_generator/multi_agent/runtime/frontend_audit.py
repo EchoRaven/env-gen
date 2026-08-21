@@ -75,6 +75,7 @@ from .route_projector import _express_to_fastapi, _norm_path
 # package (no cycle), and a function-local import here would raise INSIDE the `except Exception:
 # pass` that wraps the ui_page audit, silently disabling every blocker it produces (#827's shape).
 from .flow_coverage import _is_navigable_page
+from .message_format import join_capped  # #1034
 
 # Tokens that prove a page does real work (a handler or an API call), used by both the
 # dead-controls check and the "declared apis but built nothing" stub check.
@@ -1227,7 +1228,8 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
                             "NONE is reachable from the page's own import/render closure (%d "
                             "file(s)): %s. The call may exist elsewhere in src — a user on this "
                             "page still cannot make it (#918).",
-                            name, len(_unreachable), len(_reach), ", ".join(_unreachable[:4]))
+                            name, len(_unreachable), len(_reach),
+                            join_capped(_unreachable, len(_unreachable), cap=4, sep=", "))
                     except Exception:
                         pass
             _decl_909 = [str(c) for c in (page.get("components") or []) if str(c) in comp_status]
@@ -1243,7 +1245,8 @@ def sync_ui_page_statuses(project_dir: Any, workhub: Any,
                             "COMPONENT DRIFT: ui_page `%s` declares %d component(s) and the "
                             "delivered page renders NONE of them (%s). The contract describes a "
                             "page that was not shipped (#909).",
-                            name, len(_orphaned), ", ".join(_orphaned[:6]))
+                            name, len(_orphaned),
+                            join_capped(_orphaned, len(_orphaned), cap=6, sep=", "))
                     except Exception:
                         pass
             if ok and status != "implemented":
