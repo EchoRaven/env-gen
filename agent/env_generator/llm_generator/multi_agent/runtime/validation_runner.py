@@ -604,8 +604,30 @@ def _path_with_params(path: str, sample: str = "1") -> str:
     return path
 
 
+# #1051: a 404 whose BODY proves the route ran. The generated backend maps a foreign-key
+# violation onto 404 with its own marker (main.py: "(rating / my_list / continue_watching)
+# FK-VIOLATE -> 404 'referenced ...'"), so "referenced resource not found" means the route
+# matched, executed, and rejected the PAYLOAD. FastAPI's genuine unrouted 404 is the literal
+# {"detail":"Not Found"}.
+_ROUTE_RAN_404_MARKERS_1051 = (
+    "referenced resource not found",
+    "referenced resource does not exist",
+    "does not exist",
+    "referenced",
+)
+
+
+def _route_ran_despite_404_1051(body_text: Any) -> bool:
+    """True when a 404 body shows the ROUTE executed and rejected the request payload."""
+    t = str(body_text or "").lower()
+    if not t:
+        return False
+    return any(m in t for m in _ROUTE_RAN_404_MARKERS_1051)
+
+
 def _unimplemented_route(method: str, path: str, ep_status: Any,
-                         status_code: Optional[int]) -> Optional[str]:
+                         status_code: Optional[int],
+                         body_text: Any = None) -> Optional[str]:
     """Return a violation message when an endpoint REGISTERED as
     ``status=implemented`` answers 404/405 — the route isn't actually wired, a
     contract lie the bare <500 rule counted as a pass (GATE-C1: the single
@@ -629,6 +651,17 @@ def _unimplemented_route(method: str, path: str, ep_status: Any,
     if str(ep_status or "").lower() != "implemented":
         return None
     if status_code == 404 and _path_with_params(path) != path:
+        return None
+    # #1051: ...and a param-LESS 404 whose body is the backend's FK-violation marker is also
+    # not an unregistered route. r179: `POST /api/my-list -> 404` with
+    # {"detail":"referenced resource not found"} was reported as "route not registered" while
+    # the route existed twice in the delivered source (main.py + custom_routes.py) and the
+    # verifier had just passed business_chain 64/64 across 16 chains. r178 then died on
+    # exactly this misdiagnosis: "Real blocker: business_endpoints_implemented". The endpoint
+    # was fine; the CHAIN sent a title_id/profile_id that does not exist. Those are different
+    # defects with different owners, and conflating them routes the backend lane at an
+    # endpoint it already implemented.
+    if status_code == 404 and _route_ran_despite_404_1051(body_text):
         return None
     why = ("route not registered" if status_code == 404
            else "path matched but the method is not wired")
@@ -996,7 +1029,8 @@ def run_smoke_validation(
             body = {} if method in ("POST", "PUT", "PATCH") else None
             res = _http(method, url, token=token, body=body)
             reachable = res["status"] is not None and res["status"] < 500
-            _ur = _unimplemented_route(method, path, ep.get("status"), res["status"])
+            _ur = _unimplemented_route(method, path, ep.get("status"), res["status"],
+                                       res.get("body_text"))
             endpoint_results.append({
                 "id": ep.get("id"),
                 "method": method,
