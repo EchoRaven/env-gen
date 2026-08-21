@@ -244,6 +244,10 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
         self._last_hub_pulse_prompt = None
         # #1027: the same per-wake reset for the SIBLING stage, which had no dedup at all.
         self._last_runtime_team_status_prompt = None
+        # #1028: the reminder block is MOVED to the end each step rather than re-appended.
+        # Reset per wake — `messages` is rebuilt per wake, so a stale reference would never
+        # be found anyway, but leaving it set invites a cross-wake identity match later.
+        self._last_step_reminder_msg = None
         try:
             for step in range(max_steps):
                 # FIX #147: step-activity stamp — the busy-wedge watchdog
@@ -383,7 +387,37 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                 retrieved_action_names: Dict[str, Set[str]] = {}
 
                 if step_reminder_prompt:
-                    messages.append(Message.user(step_reminder_prompt))
+                    # #1028: MOVE TO END rather than accumulate a copy per step.
+                    #
+                    # `_build_step_reminder_prompt`'s own docstring calls this "a fixed
+                    # reminder block injected at the start of every step", and it is exactly
+                    # that: rendered from `execution_pipeline_defaults.step_reminders`, 488
+                    # chars / ~122 tokens, byte-identical on every call. `advance_step_
+                    # reminders` only consumes TTL-bound items and `ttl_steps` appears ZERO
+                    # times in agents_config, so nothing ever expires. It was appended
+                    # unguarded every step, so a wake accumulated one identical copy per step
+                    # — and `_mask_old_observations` cannot reclaim any of it: it truncates
+                    # TOOL output bodies only, and it skips entirely while history fits the
+                    # working budget (666,400 chars here), which it does.
+                    #
+                    # Plain dedup (hub_pulse's fix, #1027's fix) is WRONG for this one: the
+                    # block exists to be read "before doing anything in this step", so
+                    # suppressing it after step 1 would defeat its purpose. Moving it instead
+                    # keeps precisely one copy, always last — which IS the documented intent
+                    # — and drops the N-1 stale duplicates.
+                    #
+                    # Removed by IDENTITY, not equality: `messages` legitimately contains
+                    # other user turns, and an `==` removal could delete a different message
+                    # that happens to compare equal.
+                    _prev_reminder = getattr(self, "_last_step_reminder_msg", None)
+                    if _prev_reminder is not None:
+                        for _i, _m in enumerate(messages):
+                            if _m is _prev_reminder:
+                                del messages[_i]
+                                break
+                    _reminder_msg = Message.user(step_reminder_prompt)
+                    messages.append(_reminder_msg)
+                    self._last_step_reminder_msg = _reminder_msg
                     if hasattr(self, "advance_step_reminders"):
                         self.advance_step_reminders()
 
