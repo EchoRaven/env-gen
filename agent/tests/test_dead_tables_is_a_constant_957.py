@@ -1,5 +1,11 @@
 r"""#957: every table reports "dead" because nothing ever registers a table consumer.
 
+★ VERDICT CHANGED BY #1023b: when the index is wholly unpopulated the scan now reports NO dead
+tables instead of all of them. #957's reasoning below is kept as written (item 48) — what it
+got wrong was only the disposition, on the grounds that a live run was needed. It is not:
+while the index is empty the old answer was 100% false positives, so suppressing it can only
+remove false blockers, and one registration anywhere restores the original behaviour exactly.
+
 `scan_dead_tables` calls a table dead when `get_table_consumers(name)` is empty. Corpus-wide,
 `registryhub_table_consumers.json` holds **0 records in every run**, while
 `registryhub_consumers.json` holds **1145** — every one keyed by `endpoint_id`, none by table. So
@@ -33,14 +39,46 @@ class _Hub:
         return self._c.get(name) or []
 
 
-def test_all_dead_is_announced(caplog):
-    """★ THE point: a count that is always the table count is a constant, not a finding."""
+def test_an_empty_index_now_reports_NOTHING_1023b(caplog):
+    """★ #957 announced the constant and deliberately changed no verdict, because dropping the
+    tables term alters a blocker's arithmetic and that "needs a live run". #1023b overturns
+    that, and the reason it does not need a run is that the change is safe by CONSTRUCTION:
+
+        index empty      the old answer was 100% false positives -> suppressing it can only
+                         remove false blockers (#566j cost r117/r120 a 75-minute abort)
+        index non-empty  `registered_any` is True and behaviour is byte-identical
+
+    Corpus: 0 real records in `registryhub_table_consumers.json` in 172 of 172 runs, while the
+    `registryhub_register_table_consumer` tool is offered to every lane and has never been
+    called once. r172 reported "12 dead tables" against a database serving eight populated ones.
+    """
     hub = _Hub({"titles": {}, "users": {}, "genres": {}})
     with caplog.at_level(logging.WARNING,
                          logger="env_generator.llm_generator.multi_agent.runtime.coverage_audit"):
         out = ca.scan_dead_tables(hub)
-    assert len(out) == 3, "the verdict must not change — this ticket adds no exemption"
-    assert "all 3 table(s) report as dead" in " ".join(r.getMessage() for r in caplog.records)
+    assert out == [], "an unpopulated index must not read as 'every table is dead'"
+    assert "index is EMPTY" in " ".join(r.getMessage() for r in caplog.records)
+
+
+def test_the_suppression_is_announced_not_silent(caplog):
+    """It must still be audible: a term that stopped contributing must say so, or the next
+    reader sees a clean dead-count and believes it was measured."""
+    hub = _Hub({"titles": {}, "users": {}})
+    with caplog.at_level(logging.WARNING,
+                         logger="env_generator.llm_generator.multi_agent.runtime.coverage_audit"):
+        ca.scan_dead_tables(hub)
+    msg = " ".join(r.getMessage() for r in caplog.records)
+    assert "#1023b" in msg and "register_table_consumer" in msg
+
+
+def test_a_genuinely_dead_table_is_STILL_reported_once_anything_registers(caplog):
+    """★ The guarantee that makes it safe: the check is suppressed only while the index is
+    wholly unpopulated. One registration anywhere restores the original behaviour, including
+    reporting a table that really has no consumer."""
+    hub = _Hub({"titles": {}, "users": {}, "orphan": {}},
+               consumers={"titles": [{"file": "x.py"}]})
+    out = ca.scan_dead_tables(hub)
+    assert sorted(d["table"] for d in out) == ["orphan", "users"]
 
 
 def test_a_partial_result_is_not_announced(caplog):

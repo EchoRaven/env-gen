@@ -140,10 +140,37 @@ def scan_dead_tables(hub_registry) -> List[dict]:
     # ``RegistryHub.get_consumers(endpoint_id)`` — iterate tables and ask
     # SchemaHub directly instead of reaching into the private store.
     out = []
+    registered_any = False
     for name, table in tables.items():
         if schema_hub.get_table_consumers(name):
+            registered_any = True
             continue
         out.append({"table": name, "provider": table.get("provider")})
+    # #1023b: AN EMPTY INDEX IS NOT A FACT. If NOT ONE table in this run has a registered
+    # consumer, the index is unpopulated rather than telling us every table is unused, and
+    # "dead" would be a verdict read off missing data. Measured over the whole corpus:
+    # **0 real records in `registryhub_table_consumers.json` in 172 of 172 runs**, while
+    # `registryhub_consumers.json` carries endpoint consumers by the hundred. The
+    # `registryhub_register_table_consumer` tool exists and is offered to the lanes, and no
+    # agent has called it once.
+    #
+    # So this branch was returning EVERY table, EVERY run — r172 reported "12 dead tables"
+    # while its database served titles, episodes, genres and five more populated tables — and
+    # the count feeds a delivery blocker ("N dead artifact(s)").
+    #
+    # Safe by construction, which is why it does not need a live run to justify: when the index
+    # is empty the previous answer was 100% false positives, so suppressing it can only remove
+    # false blockers (#566j: a false blocker cost r117/r120 a 75-minute no-deliver abort); and
+    # the moment anything DOES register a table consumer, `registered_any` is True and the scan
+    # behaves exactly as before, including reporting genuinely unreferenced tables.
+    if tables and not registered_any:
+        logging.getLogger(__name__).warning(
+            "COVERAGE: table-consumer index is EMPTY for all %d table(s), so 'dead' cannot be "
+            "distinguished from 'never registered' — reporting NO dead tables instead of all "
+            "%d (#1023b). Nothing has called registryhub_register_table_consumer in 172 of 172 "
+            "corpus runs; until something does, the `tables` term carries no information.",
+            len(tables), len(tables))
+        return []
     # #957: "dead" here means "no REGISTERED consumer", and nothing in the system ever registers
     # one. `registryhub_table_consumers.json` holds **0 records across the entire corpus**, while
     # `registryhub_consumers.json` holds 1145 — every one keyed by `endpoint_id`, none by table.
