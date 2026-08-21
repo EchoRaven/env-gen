@@ -20398,3 +20398,53 @@ Running tally of my own errors today: `max()` aggregation, name-based grant chec
 chars-as-tokens, masking-as-explanation (x2), fixed-width source windows (x2). Every one was
 the INSTRUMENT or the ATTRIBUTION, never the underlying system. The rule that keeps holding:
 **measure the thing you are about to claim, in the unit you are about to claim it in.**
+
+### 470. r174 analysed: the top blocker's remediation was going out EMPTY, and that is why it stuck
+
+    r171  ticks 24  DELIVER 0  STUCK
+    r172  ticks 20  DELIVER 6  wall-clock budget
+    r173  ticks 12  DELIVER 3  Delivery gate failed
+    r174  ticks 31  DELIVER 8  STUCK  -> failing ['unresolved_failed_tasks',
+                                                  'validation_ui_evidence_failed']
+
+r174 went furthest on both counters and still died on the live top-2 (item 468's recency
+split: both 7 of 10). The causal chain, closed end to end:
+
+  1. `orchestrator._get_validation_results` omitted `"name"` while
+     `hub_registry.get_validation_results` sets it — and the orchestrator's copy is the one the
+     gate receives. Its own docstring promises "the two readers must agree".
+  2. `_ui_evidence_breadth_739` labels a record by metadata.page/route/name else
+     `record["name"].split(":")[-1]`. With no name, all six failing flows became `"?"`,
+     `sorted(set(...))` collapsed them to one, and #1017 printed `on 6 record(s): ?`.
+  3. ★ `remediation_dispatcher._ui_evidence_failed_pages` FILTERS `?` out, so it returned []
+     and the dispatcher fell back to its generic body. The verifier — nagged every few minutes
+     by #794 — was told "UI evidence failed" with no page names.
+  4. The named body it should have received says exactly what was missing: *"open each page,
+     reproduce what the record reports, repair it, then re-run the walk so the record flips."*
+
+Evidence timeline, which is the proof:
+
+    23:51   6 failures written (authentication, catalog_to_playback, profile_creation,
+                                rating, search_and_filter, sign_out)
+    23:52   9 passes written
+    01:11   ONE record written: landing=success      <- the only write in 80 minutes
+    01:11   abort
+
+**Not one of the six was ever re-verified.** The whole mechanism existed — #757 computes the
+names, #982 wires them into the remediation, #794 re-nags — and one missing dict key silently
+emptied the payload. #1032 fixes it.
+
+★★ And the defect itself was already gone. Probing r174's live stack: `/auth/login` 200 with a
+valid RS256 token, `/api/profiles` **200** with it, both direct on :3000 and through the nginx
+proxy on :8081; the frontend stores `access_token` and attaches `Bearer`. The run spent 80
+minutes blocked on records describing a state that no longer existed, because the message
+asking it to re-check could not say what to re-check.
+
+★★★ Six symptoms, ONE root cause (`GET /api/profiles 401`) — item 461's shape again, and now
+legible in a single line instead of six tasks.
+
+Corrections I made to my own reading while doing this: a probe that truncated the body to 300
+chars and so reported `token: None` (my bug, not the app's); a pre/post comparison that used
+the already-patched extractor and therefore proved nothing until I reproduced the original
+expression as a control; and a "0 min stale" figure computed from max() across ALL records
+when the FAILING ones were 80 minutes old. Three more instrument errors, same lesson.
