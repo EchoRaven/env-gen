@@ -1885,6 +1885,18 @@ def _deliverability_check_token(blocker: str) -> str:
         # App.jsx route → 404 on click. Owner = frontend (routes + nav both
         # lane-owned). Anchored on the exact prose dead_nav_link_blockers emits.
         return "deliverability_dead_nav_link"
+    if "parameterised route with an empty" in low:
+        # #1042: the LAST unmapped token in the corpus. Replaying every historical
+        # "NO remediation owner" list against the owner tables left 8 mentions, all of them
+        # this one blocker falling into `deliverability_other` — `/title/` from
+        # HoverPreviewCard.jsx and `/watch/` from ContinueWatchingRail.jsx.
+        #
+        # It is NOT `deliverability_dead_nav_link`: that fires when a target resolves to no
+        # route, and here the route IS declared and wired. The defect is the interpolated
+        # VALUE (`/watch/${title.id}` where `title.id` is undefined), so the two need
+        # different remediations — repointing the link, which is what the dead-nav advice
+        # says, would be exactly wrong.
+        return "deliverability_empty_param_nav_link"
     # Unmapped blocker — surface verbatim under a catch-all so the operator
     # sees it instead of silently dropping; future canonicalization work can
     # move it into a named token.

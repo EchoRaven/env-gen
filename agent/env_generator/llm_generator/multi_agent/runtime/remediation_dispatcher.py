@@ -1143,6 +1143,70 @@ class RemediationDispatcher:
                 "isn't recorded yet, run_validation records it; if a flow FAILS, bug_create for the "
                 "owning lane (usually frontend) and re-run once fixed. Re-run until every critical "
                 "flow has a passing validation:ui_flow record."),
+            "deliverability_empty_param_nav_link": (
+                # #1042: the last unmapped token. The route IS declared and wired — the link
+                # interpolated an empty id — so this must NOT reuse the dead-nav-link advice,
+                # which says to add or repoint a route. The blocker's own prose already says
+                # the right thing and arrives with the task via `_gate_blocker_prose_983`.
+                "frontend", "Fix the empty interpolated route parameter (blocks delivery)",
+                "a nav link builds a parameterised route with an EMPTY parameter (e.g. "
+                "`/watch/${title.id}` where `title.id` is undefined), so clicking it lands on "
+                "a broken URL. The route itself is DECLARED and WIRED — do NOT add a route or "
+                "repoint the link. Fix the VALUE: check the field name the API actually "
+                "returns for that id, and do not render the link at all while the id is "
+                "missing."),
+            # --- #1042: four more checks that declined delivery with nobody dispatched. ---
+            # Each is assigned from EVIDENCE the framework already computes, not from a guess:
+            # every one of them has remediation text somewhere in the tree that no owner could
+            # ever reach. Recent-era rates (r150-r175, 26 runs) are why these four and not the
+            # rest: 11/26, 9/26, 8/26, 3/26.
+            "completeness_state_entity_no_write": (
+                # 11/26. `check_state_entity_no_write` already builds a per-entity
+                # `suggested_fix` ("Declare + implement a write endpoint for `X` ... then
+                # register it in RegistryHub") and the delivery gate already appends an
+                # operator suggestion saying the same. Neither could reach a lane.
+                # This is the Continue-Watching write-path class: a table you can READ and
+                # never WRITE, which the declared-contract coverage gate cannot see because
+                # the write endpoint was never declared in the first place.
+                "backend", "Add the missing write endpoint for a state-bearing table "
+                           "(blocks delivery)",
+                "a state-bearing table (it has mutable columns like progress_seconds / "
+                "status / value) has a GET but NO POST/PUT/PATCH — the feature can be READ "
+                "and never WRITTEN, so nothing a user does can persist. Declare + implement "
+                "the write endpoint on that table's collection, register it in RegistryHub, "
+                "then re-run run_validation. The contract-coverage gate cannot catch this for "
+                "you: it checks DECLARED endpoints, and this one was never declared."),
+            "frontend_code_missing": (
+                # 8/26. `app/frontend` contains no files at all — the gate's own operator
+                # suggestion is "Generate frontend implementation files under app/frontend".
+                "frontend", "Write the frontend implementation files (blocks delivery)",
+                "`app/frontend` contains NO files, so there is nothing to build or serve. "
+                "Author the pages/components under `app/frontend/src` for the ui_pages you "
+                "declared at kickoff (App.jsx routes + one component file per page), not a "
+                "placeholder — the visual and ui_flow gates open these routes for real."),
+            "deliverability_dead_artifacts": (
+                # 9/26. #1042 also fixed the blocker text to name the KINDS, so the
+                # per-kind counts now arrive with this task via `_gate_blocker_prose_983`
+                # ("WHAT THE GATE ACTUALLY REPORTED"). Owner is backend because
+                # endpoints/tables/mcp_tools are the backend-side kinds; the routing sentence
+                # handles the frontend ones, mirroring `deliverability_ui_flow_failed`.
+                "backend", "Remove or wire up the dead artifacts (blocks delivery)",
+                "artifacts are registered but nothing consumes them. The gate now reports the "
+                "breakdown by KIND — endpoints / tables / mcp_tools are yours: either wire "
+                "each one into a real caller or deprecate it "
+                "(registryhub_deprecate_endpoint). If the breakdown names `files` or "
+                "`pages_without_files`, those are FRONTEND: bug_create for frontend with the "
+                "names rather than deleting their declarations."),
+            "deliverability_missing_seed": (
+                # 3/26, and newly meaningful: #1039 made the seed audit count LIVE rows, so
+                # this token now fires on a table the database itself reports as empty
+                # instead of on a missing hub registration.
+                "backend", "Seed the empty business table (blocks delivery)",
+                "a business table is EMPTY in the running database, so every screen that "
+                "lists it renders blank. Insert realistic rows (mixed states, believable "
+                "names/timestamps — not `test`/`item_1` placeholders), then re-run "
+                "run_validation. Framework-owned identity/tenancy tables (tenants, users, "
+                "oauth_*) are excluded and are not your concern here."),
             "validation_ui_evidence_failed": (
                 # #1040 — #280's defect, exactly, one check to the left, five months later.
                 #

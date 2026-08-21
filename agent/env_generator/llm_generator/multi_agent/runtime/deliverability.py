@@ -683,7 +683,14 @@ def compute_deliverability(hub_registry, app_root,
     if not coverage.get("is_clean", True) and not functionally_validated:
         dead = coverage.get("dead_count_by_kind") or {}
         total = sum(dead.values()) if dead else 0
-        blockers.append(f"{total} dead artifact(s) (Cutover 19 gate)")
+        # #1042: the KINDS were summed away. "7 dead artifact(s)" cannot be acted on and
+        # cannot even be routed — `endpoints`/`tables`/`mcp_tools` are backend work while
+        # `files`/`pages_without_files` are frontend, and the reader was told neither. The
+        # breakdown is already computed one function up; only the sum was ever printed.
+        _kinds = ", ".join(f"{k}={v}" for k, v in sorted(dead.items()) if v)
+        blockers.append(
+            f"{total} dead artifact(s) (Cutover 19 gate)"
+            + (f" — {_kinds}" if _kinds else ""))
 
     # ui_page HARD wiring gate (B1, 2026-06-12). A declared ui_page whose route
     # isn't wired in App.jsx, or whose component file is absent, ships a page
