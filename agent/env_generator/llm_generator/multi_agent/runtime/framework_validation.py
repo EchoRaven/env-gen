@@ -1473,9 +1473,43 @@ class FrameworkValidation:
                         orch._fwval_source_churn, _FWVAL_SOURCE_CHURN_CAP)
                 else:
                     # Same failure set as last validation → no functional progress.
+                    #
+                    # #1047: say WHY neither grace fired, every time this branch is taken.
+                    # r178 aborted here on "no lane progress" while the backend lane was
+                    # demonstrably working (12 workhub_task, 7 test_api) and `main.py` was
+                    # written ONE SECOND after the kill; `custom_routes.py`, which defines the
+                    # very endpoint named as the blocker (POST /api/my-list), had landed 12
+                    # minutes earlier. Across 22 validations spanning both edits,
+                    # SOURCE-EDIT PROGRESS (#186) — the grace built for exactly this — fired
+                    # ZERO times, and nothing recorded which of its three conditions failed.
+                    # An unwatched grace is indistinguishable from an absent one, so log the
+                    # decision inputs rather than the outcome only.
+                    _prev_app_sig_1047 = getattr(orch, "_fwval_app_sig", None)
+                    _sig_moved_1047 = (
+                        _app_sig is not None
+                        and _prev_app_sig_1047 is not None
+                        and _app_sig != _prev_app_sig_1047)
                     orch._fwval_chain_sig = _chain_sig
                     orch._fwval_app_sig = _app_sig
                     orch._fwval_stuck_count = getattr(orch, "_fwval_stuck_count", 0) + 1
+                    try:
+                        orch._logger.warning(
+                            "#1047 stuck++ (%d): app_sig moved=%s (now=%s prev=%s) "
+                            "source_churn=%s/%s attempts=%s fast_cap=%s post_cap=%s "
+                            "-> SOURCE-EDIT grace %s. Failure set %s.",
+                            orch._fwval_stuck_count, _sig_moved_1047,
+                            str(_app_sig)[:12] if _app_sig else None,
+                            str(_prev_app_sig_1047)[:12] if _prev_app_sig_1047 else None,
+                            getattr(orch, "_fwval_source_churn", 0), _FWVAL_SOURCE_CHURN_CAP,
+                            _attempts, FWVAL_FAST_CAP, _attempts >= FWVAL_FAST_CAP,
+                            ("would have fired but this branch was reached — INVESTIGATE"
+                             if (_sig_moved_1047 and _attempts >= FWVAL_FAST_CAP
+                                 and int(getattr(orch, "_fwval_source_churn", 0) or 0)
+                                 < int(_FWVAL_SOURCE_CHURN_CAP))
+                             else "correctly not applicable"),
+                            sorted(_fset) or "(none)")
+                    except Exception:
+                        pass
                     # Only escalate once the FAST budget is spent (the converging
                     # window is over); below the cap we are still in the normal
                     # fast-retry phase and must not interfere with a healthy run.
