@@ -797,6 +797,26 @@ _TERMINAL_ERROR_PHRASES = (
 )
 
 
+def _is_timeout_error_1036(error: Exception) -> bool:
+    """True iff `error` is a call TIMEOUT rather than a provider-side refusal.
+
+    #1036: ONE definition, because the retry loop asks this question twice — once to reject
+    the rate-limit path and once to pick a backoff — and a predicate spelled out twice
+    becomes two predicates the first time either is edited.
+
+    Our own hard timeout raises `TimeoutError("LLM call exceeded 240s")`. The rate-limit
+    classifier's `"exceeded"` keyword matched that string, so all 674 "Rate limit hit" events
+    in the r1-r175 corpus were timeouts and none was throttling.
+    """
+    if isinstance(error, (asyncio.TimeoutError, TimeoutError)):
+        return True
+    if "timeout" in type(error).__name__.lower():
+        return True
+    # our own hard-timeout text, any duration; `str()` because the type may be a provider
+    # wrapper that merely carries the message
+    return "call exceeded" in str(error).lower()
+
+
 def _is_terminal_llm_error(error: Exception) -> bool:
     """True for an UNRECOVERABLE provider error — spend/budget/quota exhaustion or a hard auth
     rejection (401/403). A 429 rate limit is transient and explicitly NOT terminal."""
@@ -921,7 +941,10 @@ class BaseLLMClient(ABC):
         return await self.chat(messages, **kwargs)
     
     def _is_rate_limit_error(self, error: Exception) -> bool:
-        """Check if error is a rate limit error"""
+        """Check if error is a rate limit error.
+
+        #1036: see `_is_timeout_error_1036` — a timeout must never answer True here.
+        """
         # An explicit HTTP status is authoritative: only 429 is a rate limit.
         # Other 4xx (e.g. 400 invalid_request) must NOT be retried as throttling
         # even if the message happens to contain words like "quota"/"exceeded".
@@ -935,12 +958,30 @@ class BaseLLMClient(ABC):
         error_str = str(error).lower()
         error_type = type(error).__name__.lower()
 
-        # Common rate limit indicators
+        # #1036: a TIMEOUT is not throttling. Our own hard-timeout raises
+        # `TimeoutError("LLM call exceeded 240s")`, and the bare "exceeded" keyword below
+        # matched it — so EVERY ONE of the 674 "Rate limit hit" events in the r1-r175 corpus
+        # was a timeout and NOT ONE was a real rate limit. The cost is not only the false
+        # label: it selected rate-limit backoff (base * 2^attempt, capped 240s) over normal
+        # backoff and granted `rate_limit_extra_retries`, spending 6.4 HOURS asleep across
+        # the corpus — 570s of r175's 7200s cap. Checked before the keywords, because the
+        # message is what misleads.
+        if _is_timeout_error_1036(error):
+            return False
+
+        # Common rate limit indicators.
+        # ★ "exceeded" alone is NOT here: it is the substring of a dozen unrelated failures
+        # ("call exceeded 240s", "context length exceeded", "maximum tokens exceeded"), and
+        # retrying a context-length error as throttling can only fail slower. The comment
+        # above already made this argument for the 4xx path and then left the keyword in.
+        # Genuine throttling phrasings stay covered: "quota" catches "quota exceeded",
+        # and the rate/request forms are spelled out.
         rate_limit_keywords = [
             "rate_limit", "rate limit", "ratelimit",
+            "rate exceeded", "requests exceeded",
             "429", "too many requests",
             "resource_exhausted", "resourceexhausted",
-            "quota", "exceeded",
+            "quota",
             "throttl",
         ]
         
@@ -1055,6 +1096,19 @@ class BaseLLMClient(ABC):
                         self._logger.warning(
                             f"[LLM] Rate limit hit on attempt {attempt + 1}. "
                             f"Sleeping {delay:.0f}s before retry... [{error_type}] {error_msg}"
+                        )
+                    elif _is_timeout_error_1036(e):
+                        # #1036: a timeout is not throttling, but it is also not a normal
+                        # transient error. Ending the false rate-limit label must NOT drop it
+                        # onto `retry_delay * 2^attempt` (~seconds): the provider that just
+                        # failed to answer in 240s is plausibly overloaded, and retrying it
+                        # near-instantly is how a slow provider becomes a failing one. Give it
+                        # its own moderate, capped backoff — honest label, conservative delay.
+                        delay = min(10.0 * (2 ** min(attempt, 3)), 120.0)
+                        self._logger.warning(
+                            f"[LLM] TIMEOUT on attempt {attempt + 1} after {elapsed:.1f}s "
+                            f"(not a rate limit — see #1036). Sleeping {delay:.0f}s before "
+                            f"retry... [{error_type}] {error_msg}"
                         )
                     else:
                         # Normal exponential backoff for other errors

@@ -3013,7 +3013,24 @@ class Orchestrator:
                 # Validate the agent's output: parseable AND a design doc. A spawned LLM that wrote
                 # MALFORMED JSON must not discard the whole phase — rebuild via the single-shot
                 # enrich (which re-lays a valid skeleton + doc) instead.
-                ds = load_valid_design_system(dsp) if agent_done else None
+                # #1035: this was `load_valid_design_system(dsp) if agent_done else None`, so a
+                # TIMED-OUT analyst's doc was never even READ. The analyst writes incrementally
+                # (r175: 96 `update_json_path` calls into this exact file, still writing at the
+                # 1800s cut), and `agent_done=False` means "did not SIGNAL completion", not
+                # "produced nothing" — an empty container is not a fact. Load it either way and
+                # let `design_system_is_enriched` below judge it, which is the same gate the
+                # success path already passes through: verified that a bare skeleton and a
+                # scales-only doc both read as NOT enriched, so this cannot ship a hollow doc.
+                ds = load_valid_design_system(dsp)
+                if ds is not None and not agent_done:
+                    _kept = design_system_is_enriched(ds)
+                    self._logger.warning(
+                        "#1035 the design_analyst did not finish (%s) but left a %s "
+                        "design_system.json — %s",
+                        getattr(self, "_design_analyst_outcome", "?"),
+                        "measured/ENRICHED" if _kept else "hollow",
+                        "keeping its partial measurements" if _kept else
+                        "discarding it for the single-shot fallback")
                 # FIX #85a: an agent doc that parses but was never ENRICHED (run-5/6 live:
                 # build_notes 0/98, all scales empty — the analyst wrote a script it could
                 # not execute and finished) must ALSO fall back to the single-shot enrich,
@@ -3056,7 +3073,11 @@ class Orchestrator:
                     self._logger.info(
                         "Design-Prep: design_system.json ready (%d screens, %d real assets) [%s]",
                         len(ds.get("screens") or []), len(ds.get("assets") or []),
-                        "agent" if used_agent else "single-shot fallback")
+                        # #1035: "agent" must not hide that the analyst was CUT SHORT — that
+                        # distinction is the whole signal for tuning the timeout.
+                        ("agent" if agent_done else
+                         f"agent PARTIAL, {getattr(self, '_design_analyst_outcome', '?')}")
+                        if used_agent else "single-shot fallback")
                     # Fold the measured design system into the requirements every lane reads, so
                     # it drives the build from turn 1 (non-voluntary), mirroring the reference-spec
                     # summary. Stored + appended to the returned requirements below.
@@ -3078,13 +3099,18 @@ class Orchestrator:
         # A model-specific non-convergence must NOT become the global default: that silently
         # downgrades visual fidelity for every env. Default ON; turn OFF per-model/per-run with
         # ENVGEN_DESIGN_ANALYST=0 (which is the right knob for the GPT-5.6 path).
+        self._design_analyst_outcome = "unavailable"  # #1035: overwritten by every exit below
         if os.environ.get("ENVGEN_DESIGN_ANALYST", "1").strip().lower() in ("0", "false", "no", "off"):
+            self._design_analyst_outcome = "disabled"
             self._logger.info(
                 "design_analyst subagent disabled via ENVGEN_DESIGN_ANALYST — using "
                 "deterministic single-shot design prep (skeleton + enrich + completion floor)")
             return False
         spawn_service = getattr(self, "spawn_service", None)
         if spawn_service is None:
+            self._logger.info(
+                "design_analyst not spawned: no spawn_service on this orchestrator — "
+                "single-shot design prep")
             return False
         from .agent_spawn_service import AgentSpawnRequest
         from .runtime.design_prep import build_design_analyst_briefing
@@ -3109,12 +3135,30 @@ class Orchestrator:
             # converging maximum, not inside it. Keep 1800s (validated); the GPT-5.6 path can
             # set ENVGEN_DESIGN_ANALYST_TIMEOUT=600 (or ENVGEN_DESIGN_ANALYST=0) for its model.
             timeout = float(os.environ.get("ENVGEN_DESIGN_ANALYST_TIMEOUT", "1800"))
+            _t0 = time.monotonic()
             await asyncio.wait_for(ev.wait(), timeout=timeout)
+            self._design_analyst_outcome = "completed"
             self._logger.info("design_analyst finished — design_system.json enriched")
             return True
-        except Exception as exc:
+        except asyncio.TimeoutError:
+            # #1035: this branch used to share the generic handler below, and
+            # `str(asyncio.TimeoutError())` is EMPTY — so a 30-minute timeout printed as
+            # "unavailable/incomplete ()" and read identically to "there is no analyst".
+            # 16 of the 26 runs r150-r175 ended here (vs 1 in the 149 before), and the blank
+            # reason is why that regression went unread for 25 runs.
+            self._design_analyst_outcome = "timeout"
             self._logger.warning(
-                "design_analyst agent unavailable/incomplete (%s) — single-shot fallback", exc)
+                "design_analyst TIMED OUT after %.0fs (ENVGEN_DESIGN_ANALYST_TIMEOUT=%.0f) "
+                "while still working — its partial design_system.json is kept if enriched, "
+                "else single-shot fallback. Raise the timeout or set ENVGEN_DESIGN_ANALYST=0 "
+                "if this run's model does not converge inside it.",
+                time.monotonic() - _t0, timeout)
+            return False
+        except Exception as exc:
+            self._design_analyst_outcome = "error"
+            self._logger.warning(
+                "design_analyst agent unavailable/incomplete (%s: %s) — single-shot fallback",
+                type(exc).__name__, exc or "<no message>")
             return False
         finally:
             if spawned:
