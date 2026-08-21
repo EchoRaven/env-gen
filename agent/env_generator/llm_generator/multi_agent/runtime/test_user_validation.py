@@ -655,6 +655,50 @@ async def _ui_test_user(project_dir: Path, llm: Any) -> Dict[str, Any]:
         return {"ran": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}
 
 
+def describe_non_pass_1038(summary: Any, mcp: Any = None) -> str:
+    """Name whatever actually produced a non-PASS test-user verdict.
+
+    #1038: the delivery-time log printed ONLY `summary["broken"]`. But the verdict ladder is
+
+        broken            -> ISSUES
+        missing or MCP    -> PARTIAL
+        neither           -> PASS
+
+    so PARTIAL is *defined* as "broken is empty". Every PARTIAL report therefore printed
+    ``BROKEN: []`` and named nothing — 84 of them across r1-r175, 100% of the PARTIAL
+    verdicts, at the delivery cut, where the whole point is to say what a new user would hit.
+
+    Lives beside the summary it formats so the two shapes cannot drift apart, which is how
+    #1032's two normalisers came to disagree.
+    """
+    summary = summary if isinstance(summary, Mapping) else {}
+    mcp = mcp if isinstance(mcp, Mapping) else {}
+    bits = []
+    for label, key, cap in (("BROKEN", "broken", 6), ("MISSING (404/405)", "missing", 6)):
+        vals = summary.get(key) or []
+        try:
+            vals = list(vals)
+        except Exception:
+            vals = []
+        if vals:
+            shown = "; ".join(str(v) for v in vals[:cap])
+            hidden = len(vals) - min(cap, len(vals))
+            bits.append(f"{label}: {shown}"
+                        + (f" (+{hidden} more not shown)" if hidden > 0 else ""))
+    # ★ `"mcp_complete" in summary`, not `.get(..., False)`: an ABSENT key means the MCP probe
+    # did not report, and answering "INCOMPLETE (None/None tools)" would state as a finding
+    # something nobody measured. An empty container is not a fact — the trap this very fix
+    # exists to close, reproduced once inside the fix itself.
+    if "mcp_complete" in summary and not summary.get("mcp_complete"):
+        note = mcp.get("note")
+        bits.append("MCP surface INCOMPLETE (%s/%s tools%s)" % (
+            mcp.get("tools_found"), mcp.get("tools_expected"), f"; {note}" if note else ""))
+    # #1035's lesson: the cause slot must never render empty.
+    return "; ".join(bits) or (
+        "no cause recorded — the verdict was not PASS but nothing was flagged broken, "
+        "missing or MCP-incomplete (report a framework defect)")
+
+
 def run_test_user_validation(
     project_dir: Any,
     business_endpoints: List[Mapping[str, Any]],
@@ -750,7 +794,7 @@ def run_test_user_validation(
             verdict = "PARTIAL"
         else:
             verdict = "PASS"
-        report["summary"] = {
+        report["summary"] = {  # NOTE (#1038): `describe_non_pass_1038` below formats this
             "api_steps": len(steps),
             "api_passed": len(passed),
             "api_failed": len(broken),

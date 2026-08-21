@@ -35,11 +35,24 @@ from env_generator.llm_generator.multi_agent.runtime import seed_audit as sa
 
 
 def _src() -> str:
-    """The SOURCE of the missing_seed branch — comments included, for provenance."""
+    """The SOURCE of the missing_seed branch that carries the HINT — comments included.
+
+    ★ Anchored on the hint, not on the FIRST `"reason": "missing_seed"`. #956's live-row-count
+    repair added a second, earlier `missing_seed` branch (the live-COUNT(*) path, which needs
+    no hint — it reports a measured row count instead), and this locator silently retargeted
+    onto it, failing four provenance assertions at once. A locator that means "the branch with
+    the hint" must say so ([[a-bare-name-search-is-never-a-locator]]).
+    """
     import inspect
     src = inspect.getsource(sa)
-    i = src.index('"reason": "missing_seed"')
-    return src[i:src.index('"low_row_count"', i)]
+    start = 0
+    while True:
+        i = src.index('"reason": "missing_seed"', start)
+        end = src.index('"low_row_count"', i)
+        block = src[i:end]
+        if '"hint"' in block:
+            return block
+        start = i + 1
 
 
 def _hint() -> str:

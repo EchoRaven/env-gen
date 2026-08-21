@@ -535,13 +535,16 @@ def _invented_field_blockers(app_root) -> List[str]:
         return []
 
 
-def _seed_summary(hub_registry) -> Dict[str, Any]:
+def _seed_summary(hub_registry, project_dir=None) -> Dict[str, Any]:
     try:
         from .seed_audit import audit_seed_data
     except Exception:
         return {"tables": 0, "registered": 0, "missing": 0, "flagged": 0}
     try:
-        report = audit_seed_data(hub_registry)
+        # #956: hand the audit a path so it can count ROWS in the running database instead of
+        # reading `list_seed_registrations()`, which holds 0 records corpus-wide. Passing None
+        # (or an unreachable DB) leaves the old behaviour byte-for-byte.
+        report = audit_seed_data(hub_registry, project_dir)
     except Exception:
         return {"tables": 0, "registered": 0, "missing": 0, "flagged": 0}
     schema_hub = getattr(hub_registry, "schema_hub", None)
@@ -759,7 +762,7 @@ def compute_deliverability(hub_registry, app_root,
     # (register mints a user row; the smoke inserts + reads notes), so a missing /
     # low-row seed REGISTRATION is a WARNING, not a hard blocker. It still blocks
     # when the app is NOT functionally validated.
-    seed = _seed_summary(hub_registry)
+    seed = _seed_summary(hub_registry, app_root)
     if seed.get("missing", 0) > 0 and not functionally_validated:
         blockers.append(
             f"{seed['missing']} table(s) missing seed registration (Cutover 21 gate)")

@@ -73,10 +73,28 @@ def test_a_defined_table_without_a_registration_is_still_flagged():
 
 
 def test_the_message_carries_the_registration_count():
-    """The number that explains why widening the filter is not the fix."""
+    """The number that explains why widening the STATUS FILTER was never the fix.
+
+    ★ Premise updated: this file documented #956 as a dead check and its message told the
+    reader "widening it needs the seeded-ness test fixed first". That repair has since landed
+    (`live_row_counts_1039`, validated against r175's live database — see
+    test_seed_audit_counts_live_rows_1039.py), so the old wording would now send the next
+    reader at a fix that already exists. The registration count stays — it is still the number
+    that explains why `list_seed_registrations()` is not the right notion of seeded-ness — but
+    the instruction beside it now points at DB reachability.
+    """
     import inspect
     src = inspect.getsource(sa.audit_seed_data)
-    assert "len(seed_regs)" in src and "seeded-ness" in src
+    assert "len(seed_regs)" in src
+    assert "#956's repair IS now implemented" in src
+    assert "Widening it needs the seeded-ness test fixed first" not in src
+
+
+def test_this_file_documents_a_state_that_is_now_conditional():
+    """The dead path still exists — it is what runs when the database is unreachable — so
+    these tests remain live. They no longer describe the ONLY behaviour."""
+    import inspect
+    assert "def live_row_counts_1039" in inspect.getsource(sa)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -126,16 +126,180 @@ _DEFAULT_MIN_ROWS = 5
 _PLACEHOLDER_THRESHOLD = 0.5
 
 
-def audit_seed_data(hub_registry) -> SeedReport:
+def _spine_tables_1039() -> frozenset:
+    """Framework-owned identity/tenancy tables — never app seed content.
+
+    Imports the canonical set rather than re-spelling it; `completeness_audit._SPINE_FALLBACK`
+    is the precedent for the fallback, and the two agree member-for-member (checked).
+    `_seed_meta` and `alembic_version` are framework BOOKKEEPING tables emitted by
+    backend_skeleton's template, legitimately tiny or empty.
+    """
+    try:
+        from .database_scaffold import _SPINE_OWNED_TABLES as _spine
+        base = set(_spine)
+    except Exception:
+        base = {"tenants", "users", "oauth_clients", "oauth_authorization_codes"}
+    return frozenset(base | {"_seed_meta", "alembic_version"})
+
+
+def live_row_counts_1039(project_dir: Any, *, timeout: int = 30) -> Dict[str, int]:
+    """Exact `COUNT(*)` per public table from the RUNNING database, or `{}`.
+
+    #956's stated repair: "count ROWS at gate time — the database is up when this runs".
+    The audit's notion of seeded-ness is `list_seed_registrations()`, which holds 0 records
+    across the corpus while the app seeds via SQL INSERT, so the audit examined 0 tables in
+    145 of 147 runs.
+
+    ★ `COUNT(*)`, deliberately, NOT `pg_stat_user_tables.n_live_tup`. That column is an
+    autovacuum ESTIMATE and can read 0 for a freshly-seeded table — a false zero here becomes
+    a false `missing_seed` blocker, and false blockers wedge runs (#566j cost r117/r120 a
+    75-minute no-deliver abort). An estimate is not a count.
+
+    Returns `{}` on ANY failure — no DB, no container, bad parse. An empty result must mean
+    "not measured" and is never interpreted as "every table is empty".
+    """
+    from pathlib import Path as _P
+    counts: Dict[str, int] = {}
+    try:
+        proj = _P(project_dir)
+        # #563's trap: callers hold `app_root` (<project>/app) as often as the project root,
+        # and a compose file looked for in the wrong one reads as "no database" — a silent
+        # downgrade to the dead path. Accept either, plus the compose dir itself.
+        compose = None
+        for cand in (proj / "docker" / "docker-compose.yml",
+                     proj.parent / "docker" / "docker-compose.yml",
+                     proj / "docker-compose.yml"):
+            if cand.exists():
+                compose = cand
+                break
+        if compose is None:
+            return _not_measured_1039("no docker-compose.yml under %s (nor its parent)" % proj)
+        from .container_runtime import runtime_bin
+        cid = _db_container_1039(compose, timeout)
+        if not cid:
+            return _not_measured_1039(
+                "no database container resolved from %s (tried services database/db/postgres)"
+                % compose)
+        import subprocess
+        # one round trip: build a UNION ALL of exact counts over the public tables
+        sql = (
+            "SELECT string_agg(format('SELECT %L AS t, COUNT(*) AS n FROM %I', "
+            "tablename, tablename), ' UNION ALL ') FROM pg_tables "
+            "WHERE schemaname = 'public'")
+        def _psql(q):
+            return subprocess.run(
+                [runtime_bin(), "exec", cid, "sh", "-c",
+                 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAF"\t" -c ' + _shq(q)],
+                capture_output=True, text=True, timeout=timeout)
+        built = _psql(sql)
+        inner = (built.stdout or "").strip()
+        if built.returncode != 0 or not inner:
+            return _not_measured_1039(
+                "could not list public tables: rc=%s %s"
+                % (built.returncode, (built.stderr or "").strip()[:200]))
+        res = _psql(inner)
+        if res.returncode != 0:
+            return _not_measured_1039(
+                "COUNT(*) query failed: rc=%s %s"
+                % (res.returncode, (res.stderr or "").strip()[:200]))
+        for line in (res.stdout or "").splitlines():
+            if "\t" not in line:
+                continue
+            t, _, n = line.partition("\t")
+            try:
+                counts[t.strip()] = int(n.strip())
+            except ValueError:
+                continue
+        if not counts:
+            return _not_measured_1039("the query returned no parseable rows")
+    except Exception as exc:
+        return _not_measured_1039("%s: %s" % (type(exc).__name__, exc))
+    return counts
+
+
+def _not_measured_1039(why: str) -> Dict[str, int]:
+    """Announce that the live row count did not happen, and return the empty mapping.
+
+    #883's rule: an empty default inside a gate/audit must SAY it could not run, or it reads
+    as a clean measurement. Here `{}` is the fail-open direction — it silently reverts the
+    seed audit to the status-filter path that examines 0 tables in 145 of 147 runs — so the
+    reason has to reach the log or the degradation is invisible. Same argument as `#790`'s
+    `_swallowed_790`, spelled locally because importing `delivery_gate` from an audit it
+    feeds would be circular.
+    """
+    try:
+        logging.getLogger(__name__).warning(
+            "#1039 live seed row-count DID NOT RUN (%s) — falling back to the "
+            "`status == 'defined'` filter, which examines 0 tables in 145 of 147 runs. The "
+            "audit's verdict below is therefore NOT CHECKED, not clean.", why)
+    except Exception:
+        pass
+    return {}
+
+
+def _db_container_1039(compose, timeout: int) -> str:
+    """Resolve the database container id from the compose file, or "".
+
+    A separate function so the per-service probe's `except: continue` is not an empty-default
+    ASSIGN inside a gate file — #883 flags those, correctly, because that shape is how a
+    failed probe comes to read as a measurement.
+    """
+    from .container_runtime import container_id
+    for svc in ("database", "db", "postgres"):
+        try:
+            cid = container_id(compose, svc, timeout=timeout)
+        except Exception:
+            continue
+        if cid:
+            return cid
+    return ""
+
+
+def _shq(s: str) -> str:
+    """Single-quote a string for `sh -c`."""
+    return "'" + str(s).replace("'", "'\"'\"'") + "'"
+
+
+def audit_seed_data(hub_registry, project_dir: Any = None) -> SeedReport:
     schema_hub = getattr(hub_registry, "schema_hub", None)
     if schema_hub is None or not hasattr(schema_hub, "list_tables"):
         return SeedReport()
     tables = schema_hub.list_tables() or {}
     seed_regs = schema_hub.list_seed_registrations() or {}
 
+    # #956 repair: when the database is reachable, its exact row counts are authoritative and
+    # the `status == "defined"` filter (which skips 1729 of 1745 corpus tables) is bypassed.
+    # Strictly additive: `{}` — no DB, no compose, any error — leaves every branch below
+    # exactly as it was.
+    _live = live_row_counts_1039(project_dir) if project_dir is not None else {}
+    _spine = _spine_tables_1039()
+
     flagged: List[dict] = []
     _examined_956 = 0
     for name, table in tables.items():
+        if _live:
+            if name in _spine or name not in _live:
+                # framework-owned, or the DB does not have this table at all (declared but
+                # never created) — the latter is a SCHEMA defect other checks own, and
+                # answering "missing seed" for it would name the wrong cause.
+                continue
+            _examined_956 += 1
+            meta = table.get("metadata") or {}
+            min_rows = meta.get("min_seed_rows", _DEFAULT_MIN_ROWS)
+            if min_rows == 0:
+                continue
+            n = _live[name]
+            if n == 0:
+                flagged.append({
+                    "table": name, "reason": "missing_seed",
+                    "detail": {"min_seed_rows": min_rows, "live_row_count": 0,
+                               "source": "live COUNT(*) at gate time (#956)"}})
+            elif n < min_rows:
+                flagged.append({
+                    "table": name, "reason": "low_row_count",
+                    "detail": {"row_count": n, "min_seed_rows": min_rows,
+                               "source": "live COUNT(*) at gate time (#956)"}})
+            continue
         if (table.get("status") or "defined") != "defined":
             continue
         _examined_956 += 1
@@ -239,8 +403,11 @@ def audit_seed_data(hub_registry) -> SeedReport:
             "SEED AUDIT EXAMINED 0 OF %d TABLES: every one has a status other than 'defined', "
             "which is the only status this audit inspects (corpus: 1729 implemented vs 16 "
             "defined; 145 of 147 runs have none). Its clean verdict below means NOT CHECKED, not "
-            "nothing wrong. Widening it needs the seeded-ness test fixed first — %d seed "
-            "registration(s) exist while the app seeds via SQL (#956).",
+            "nothing wrong. %d seed registration(s) exist while the app seeds via SQL. "
+            "#956's repair IS now implemented — the audit counts live rows when it can reach "
+            "the database — so reaching this line means the live count came back EMPTY: no "
+            "project_dir was passed, no docker-compose.yml was found under it, or the db "
+            "container/query failed. Fix the reachability, not the status filter.",
             len(tables), len(seed_regs))
     # #1023d: carry the coverage with the verdict, not only in a log line — a consumer reading
     # `is_clean` must be able to tell "checked and fine" from "checked nothing".

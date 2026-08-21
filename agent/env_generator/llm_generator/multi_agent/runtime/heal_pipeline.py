@@ -1175,10 +1175,18 @@ class HealPipeline:
                     "MCP surface complete.", version,
                     summ.get("api_passed"), summ.get("api_steps"))
             else:
+                # #1038: this printed only `broken`, but PARTIAL is DEFINED as "nothing
+                # broken — only missing endpoints (404/405) or an incomplete MCP surface".
+                # So every PARTIAL was structurally guaranteed to read "BROKEN: []" and name
+                # nothing: 84 of them across r1-r175, 100% of the PARTIAL verdicts. Report
+                # whichever cause actually produced the verdict.
+                from .test_user_validation import describe_non_pass_1038
                 orch._logger.warning(
-                    "TEST-USER validation (v%s): %s — %s/%s journey steps passed; "
-                    "BROKEN: %s", version, summ.get("verdict"),
-                    summ.get("api_passed"), summ.get("api_steps"), summ.get("broken"))
+                    "TEST-USER validation (v%s): %s — %s/%s journey steps passed; %s",
+                    version, summ.get("verdict"), summ.get("api_passed"),
+                    summ.get("api_steps"),
+                    describe_non_pass_1038(
+                        summ, (report.get("mcp") or {}) if isinstance(report, dict) else {}))
             # BROWSER test-user (2026-06-22): drive a real browser through the frontend
             # — the auth FLOW (catches a dead login form) + every declared page route
             # (screenshot + blank/console-error checks). The structured feedback is
