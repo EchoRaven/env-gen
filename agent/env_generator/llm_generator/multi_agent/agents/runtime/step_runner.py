@@ -30,6 +30,22 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
         def get_loop_breaker_prompt(self, *a: Any, **k: Any) -> Any: ...
         def clear_stuck_history(self, *a: Any, **k: Any) -> Any: ...
         def _check_and_handle_urgent(self, *a: Any, **k: Any) -> Any: ...
+        # #1027: this block DRIFTED. #681's whole argument is that an undeclared host
+        # attribute is reported as missing and BURIES the real diagnostics — it cites #658
+        # and a dangling WorkHub annotation found under exactly that noise. Seven names
+        # added to this file since then were never declared, so the checker reported 7 false
+        # missing-attributes here and 1 TRUE one (`resolve_ctx_working_chars(_model)` with
+        # `_model: Any | None` against a `str` parameter) sat 8th in the list. All seven are
+        # verified present on the host before being declared here — the two constants on
+        # base.py:148/152, the five methods in agents/runtime/sync.py — so this silences
+        # noise, it does not paper over a missing implementation.
+        KNOWLEDGE_FETCH_TOOL_NAMES: Any
+        KNOWLEDGE_STORE_TOOL_NAMES: Any
+        def _build_interrupt_prompt(self, *a: Any, **k: Any) -> Any: ...
+        def _collect_eventhub_catchup_summary(self, *a: Any, **k: Any) -> Any: ...
+        def _build_eventhub_catchup_prompt(self, *a: Any, **k: Any) -> Any: ...
+        def _build_runtime_team_status_snapshot(self, *a: Any, **k: Any) -> Any: ...
+        def _build_runtime_team_status_prompt(self, *a: Any, **k: Any) -> Any: ...
 
 
     def _stamp_step_activity(self) -> None:
@@ -226,6 +242,8 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
         # last step (see the hub_pulse stage). Reset the tracker each wake so the FIRST
         # pulse of a fresh wake always renders (orientation), then dedups within the wake.
         self._last_hub_pulse_prompt = None
+        # #1027: the same per-wake reset for the SIBLING stage, which had no dedup at all.
+        self._last_runtime_team_status_prompt = None
         try:
             for step in range(max_steps):
                 # FIX #147: step-activity stamp — the busy-wedge watchdog
@@ -683,8 +701,27 @@ class AgentStepRunner(AgentStepHelperMixin, AgentStepStageMixin, AgentStepToolin
                     try:
                         runtime_team_snapshot = self._build_runtime_team_status_snapshot()
                         runtime_team_status_prompt = self._build_runtime_team_status_prompt(runtime_team_snapshot)
-                        if runtime_team_status_prompt:
+                        # #1027: dedup exactly as hub_pulse does one stage above. That stage
+                        # spells out why: the block is "re-collected every step but is
+                        # identical while a lane is heads-down building; re-appending the same
+                        # block each step bloated context (prior pulse is still in the
+                        # conversation)". This stage has the same shape — rebuilt every step,
+                        # body dominated by stable counts — and had no dedup and no
+                        # `_last_...` tracker anywhere in the tree, so the defect its sibling
+                        # documents and fixes was sitting unfixed one stage later.
+                        #
+                        # Currently LATENT, and worth saying so rather than overselling it:
+                        # `_build_runtime_team_status_prompt` returns None unless the agent
+                        # owns a spawned runtime or a managed team, and nothing spawns in the
+                        # netflix workload — "Runtime / Team Status" appears 0 times in r172
+                        # and r173, and `launch_agent_team` is invoked in 0 of 298 run logs.
+                        # This restores the symmetry before that changes, at no behavioural
+                        # cost while the stage stays silent.
+                        if (runtime_team_status_prompt
+                                and runtime_team_status_prompt != getattr(
+                                    self, "_last_runtime_team_status_prompt", None)):
                             messages.append(Message.user(runtime_team_status_prompt))
+                            self._last_runtime_team_status_prompt = runtime_team_status_prompt
                         _mark_stage(
                             "runtime_team_status",
                             executed=bool(runtime_team_snapshot),

@@ -158,10 +158,16 @@ def _token_subset_match(candidates, table, default):
     return best_val if best_val is not None else default
 
 
-def resolve_context_window(model: str,
+def resolve_context_window(model: str | None,
                            default: int = SAFE_DEFAULT_CONTEXT_WINDOW) -> int:
     """Return the INPUT context window (tokens) for ``model`` (prefix match, then #256
-    token-subset match for gateway-reordered ids)."""
+    token-subset match for gateway-reordered ids).
+
+    #1027: annotated `str | None` because the very next line handles None deliberately and
+    every caller reaches it that way — `step_runner` passes
+    `getattr(getattr(self, "config", None), "model_name", None)`. The annotation was narrower
+    than the implementation, which is the only reason a real type error was reported there.
+    """
     if not model:
         return default
     name = model.strip().lower()
@@ -175,7 +181,7 @@ def resolve_context_window(model: str,
     return _token_subset_match(candidates, _CONTEXT_WINDOW_TABLE, default)
 
 
-def resolve_ctx_working_chars(model: str,
+def resolve_ctx_working_chars(model: str | None,
                               default: int = SAFE_DEFAULT_CONTEXT_WINDOW) -> int:
     """RECOMMENDED working char budget for the live context (accumulated history +
     in-context memory), from the model's window with response headroom: ~3.5
