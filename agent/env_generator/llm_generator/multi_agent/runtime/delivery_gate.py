@@ -2151,17 +2151,25 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         # they are not.
         if logger:
             try:
-                _recs1017 = _breadth739["failed_records"]
-                _names = []
-                for _r in (_recs1017 if isinstance(_recs1017, (list, tuple)) else [])[:12]:
-                    if isinstance(_r, dict):
-                        _names.append(str(_r.get("flow") or _r.get("name")
-                                          or _r.get("id") or _r)[:44])
-                    else:
-                        _names.append(str(_r)[:44])
+                # #1029: #1017 READ THE COUNT AND TRIED TO ITERATE IT.
+                #
+                # `_ui_evidence_breadth_739` returns `"failed_records": len(failed)` — an INT —
+                # alongside `"pages_failed": sorted(set(failed))`, which is the list of names.
+                # #1017 took `failed_records`, so `isinstance(..., (list, tuple))` was always
+                # False (no names collected) and `hasattr(int, "__len__")` was always False
+                # (count printed as 0). Every firing since it landed read:
+                #
+                #     #1017 validation_ui_evidence_failed on 0 record(s): <unnamed records>
+                #
+                # 269 of 269 occurrences across r170-r173, and it was never verified by a run
+                # — the item that shipped it says so. It is the instrument for the single
+                # most common live blocker (`validation_ui_evidence_failed`: 7 of the last 10
+                # STUCK runs, and what ended r173), so the flows it exists to name have never
+                # once been visible.
+                _names1017 = [str(p)[:44] for p in (_breadth739.get("pages_failed") or [])]
                 logger.warning("#1017 validation_ui_evidence_failed on %d record(s): %s",
-                               len(_recs1017) if hasattr(_recs1017, "__len__") else 0,
-                               "; ".join(_names) or "<unnamed records>")
+                               int(_breadth739.get("failed_records") or 0),
+                               "; ".join(_names1017[:12]) or "<unnamed records>")
             except Exception as _e:
                 logger.warning("#1017 could not name the failed UI records: %s",
                                type(_e).__name__)
