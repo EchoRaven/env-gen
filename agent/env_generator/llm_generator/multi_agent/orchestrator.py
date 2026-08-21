@@ -966,8 +966,18 @@ class Orchestrator:
         records = []
         for c in checks:
             ev = c.get("evidence", {}) or {}
+            # #1032: `name` was MISSING here while `hub_registry.get_validation_results`
+            # sets it — and this docstring already promises "the two readers must agree".
+            # This is the copy the delivery gate actually receives, and
+            # `_ui_evidence_breadth_739` labels a UI record by
+            # `metadata.page/route/name` else `record["name"].split(":")[-1]`. With no
+            # `name`, all six failing flows in r174 collapsed to a single "?" and #1017
+            # printed `on 6 record(s): ?` — the count fixed by #1029, the label still blank.
+            # A duplicated normaliser that drifted on one key, exactly the shape of
+            # `grep-the-literal-not-the-constant`.
             records.append({
                 "task_id": c.get("name", "").removeprefix("validation:"),
+                "name": c.get("name", ""),
                 "status": _canon_validation_status(c.get("status", "error")),
                 "summary": ev.get("summary", ""),
                 "execution_mode": ev.get("execution_mode", "auto"),
@@ -978,6 +988,15 @@ class Orchestrator:
                 "recorded_by": c.get("agent", ""),
                 "recorded_at": c.get("updated_at", 0),
             })
+            # #1032: the OTHER half of #236 this copy was missing — derive check/flow from the
+            # name when the writer left them off. hub_registry does this; without it a bare
+            # ui_flow record is invisible to flow_coverage, which is the exact failure #236
+            # records (35 SUCCESS ui_flow checks invisible -> a fully-green run held to abort).
+            _parts = str(c.get("name", "")).split(":", 2)
+            if len(_parts) >= 2 and _parts[0] == "validation" and _parts[1]:
+                records[-1]["metadata"].setdefault("check", _parts[1])
+                if len(_parts) == 3 and _parts[2]:
+                    records[-1]["metadata"].setdefault("flow", _parts[2])
         records.sort(key=lambda r: r.get("recorded_at", 0), reverse=True)
         return records[:max(1, int(limit))]
 

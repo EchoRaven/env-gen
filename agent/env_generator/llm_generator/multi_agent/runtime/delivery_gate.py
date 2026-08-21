@@ -456,8 +456,13 @@ def _ui_evidence_breadth_739(validation_results: Any) -> Dict[str, Any]:
         # ?" for all 19 because none of page/route/name was set in metadata, and a gate that
         # cannot say WHICH page failed cannot be acted on. Names look like
         # `validation:ui_flow:browse_home`; the last segment is the page.
-        page = str(meta.get("page") or meta.get("route") or meta.get("name")
-                   or str(r.get("name") or "").split(":")[-1] or "?")
+        # #1032: `flow` FIRST. #236 sets `metadata.flow` from the check name precisely to
+        # identify a UI flow, so it is the semantically correct label and it survives both
+        # normalisers; page/route/name are the older, inconsistently-populated spellings and
+        # the `record["name"]` fallback is only as good as whichever copy of the normaliser
+        # produced the record (the orchestrator's omitted `name` entirely until #1032).
+        page = str(meta.get("flow") or meta.get("page") or meta.get("route")
+                   or meta.get("name") or str(r.get("name") or "").split(":")[-1] or "?")
         # #752: canonicalise the spelling. Readers normally arrive through #193/#236's
         # normaliser, but the raw store carries THREE spellings — `success` 1198, `passed` 310,
         # `failure` 252 — and this function is now load-bearing (#752 blocks on `failed`), so a
