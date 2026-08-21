@@ -44,12 +44,16 @@ _BE_BUILD_RE = re.compile(
     re.IGNORECASE)
 
 
-def docker_up_owner(detail: str) -> str:
+def docker_up_owner(detail: Any) -> str:
     """'frontend'/'backend' when the build-failure tail names exactly one
     side's toolchain; 'verifier' (the diagnose-first route) otherwise."""
-    d = str(detail or "")
-    fe = bool(_FE_BUILD_RE.search(d))
-    be = bool(_BE_BUILD_RE.search(d))
+    # #1043c: narrow explicitly rather than wrapping in `str()`. `detail` is `Any` (it reaches
+    # here from a dict), so the coercion is real — but written as `str(detail or "")` a checker
+    # reads it as a redundant conversion. An isinstance guard says the same thing and is honest
+    # about which case is which.
+    d = detail if isinstance(detail, str) else ("" if detail is None else str(detail))
+    fe = _FE_BUILD_RE.search(d) is not None
+    be = _BE_BUILD_RE.search(d) is not None
     if fe and not be:
         return "frontend"
     if be and not fe:
@@ -80,7 +84,11 @@ def action_unimplemented_broken(broken) -> List[str]:
     return [str(b) for b in (broken or []) if _ACTION_404_RE.search(str(b))]
 
 
-def suppress_verifier_chain_reauthor(name: str, owner: str, chain_rerun_armed: bool) -> bool:
+def suppress_verifier_chain_reauthor(name: str, owner: str, chain_rerun_armed: Any) -> bool:
+    # #1043c: `chain_rerun_armed` is annotated `Any`, not `bool`, because its only caller passes
+    # `getattr(orch, "_chain_rerun_armed", False)` — an arbitrary attribute no annotation can
+    # constrain. The `bool()` below is therefore real narrowing, not the redundant conversion a
+    # `bool` annotation made it look like. Same for `docker_up_owner(detail)` above.
     """#70(b) (netflix r76, 2026-08-05): should the ``business_chain_failing`` verifier
     RE-AUTHOR dispatch be SKIPPED this deliver-tail tick?
 
@@ -94,8 +102,10 @@ def suppress_verifier_chain_reauthor(name: str, owner: str, chain_rerun_armed: b
     never-run chains piling up, 0 delivery). Bounded by #475's 4/milestone cap: once spent,
     ``chain_rerun_armed`` is False here and normal dispatch resumes; a genuinely-BROKEN chain
     (where #475 no-ops) also leaves it False → the verifier IS dispatched to fix it. Pure."""
-    return bool(name == "business_chain_failing" and owner == "verifier"
-                and chain_rerun_armed)
+    # #1043c: `bool()` on the Any operand only, not around the whole expression — same result,
+    # and it no longer reads as a redundant conversion of an already-bool comparison chain.
+    return (name == "business_chain_failing" and owner == "verifier"
+            and bool(chain_rerun_armed))
 
 
 def _uncovered_endpoints_799(orch) -> List[str]:
