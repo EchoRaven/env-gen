@@ -20180,3 +20180,55 @@ CLASS, not by one sweep: four closed today, and the residual is honest —
     unswept: orchestrator coordination, the projector/visual path, timing/races, dead functions
     the 874 numbered fixes are not individually re-validated — and #197 proves a fix can carry
     a comment, a corpus measurement AND a passing test while never once having executed
+
+### 465. review round 2: where the wall clock actually goes, and two more scanners
+
+**★ The largest finding of the whole review, and it is about wasted TIME, not correctness.**
+r172 died on `wall-clock 7214s exceeded cap 7200s`. Where it went:
+
+    LLM calls            4546
+    prompt tokens        230,947,225
+    completion tokens      1,030,351      -> 224 : 1
+    total content chars  3,339,897,418
+    median request       149,739 chars    p90 bucket 283,179
+
+Prompt size grows monotonically with conversation length (94k chars at 0-50 messages ->
+283k at 400+), and **87% of all prompt content comes from requests with >=150 messages.** Tool
+schemas are not the driver: ~36 tools/request is single-digit percent of a 150k prompt.
+
+★ `step_runner`'s condensation claimed to be "the sole bound" and to keep "context ~28-100".
+Measured: median 139 messages, p90 573, **max 1274**; 57% of requests over 100. It fired 5
+times in 4546 calls. Cause is arithmetic — `_pressured` opens at 90% of a 666,400-char budget
+(~599,760) while the median request is 149,739. **The threshold is ~4x above our traffic.**
+Not F3/F4's fault: `_pressured` is an OVERFLOW guard, the sentence described a SIZE bound.
+#1025 removes the false claim and logs the declined path with the numbers; the trigger is
+UNCHANGED because changing it has F3/F4's failure mode on the other side (#1016's lesson).
+
+**Two more scanners, both bounded:**
+
+    complete tool sweep      290 names from SOURCE (the log truncates the registration line,
+    (fixing round 1's gap)   which is why round 1 only saw 27). 163 never invoked in 298 logs.
+                             Applying the wanted-but-blocked discriminator: still exactly ONE
+                             real bug, delete_file (#1021). The rest is unused surface.
+
+    dead module functions    1810 module-level functions, 30 referenced nowhere = 1.7%, a
+                             healthy rate. Sampled the most load-bearing-sounding one,
+                             `_resolve_backend_conflict_by_ownership`: a redundant wrapper
+                             whose behaviour IS live via the generic dynamic-lane call sites
+                             (auto_commit:610 `--ours`, :1056 `--theirs`). Harmless.
+                             ★ This scanner does NOT reproduce #1013 and must not be sold as
+                             if it did: `scaffold_missing_local_pages` IS called
+                             (heal_pipeline:1599). #1013 was "not on the path the fix assumed",
+                             which is a per-path question, not a reachability one.
+
+★★ **I made the fixed-width-source-window mistake a SECOND time today** (`s[i:i+700]`,
+`s[i:i+900]` in #1025's tests, after `src[i:i+400]` in #1022b's). Three suite tests caught it
+both times. `errors-cluster-at-seams-i-introduce` is understated: it is not only seams, it is
+the same seam twice in one session when I am writing tests fast.
+
+**Running total of the review:** six scanners, each validated on a known true positive before
+its count was quoted; two of the six returned a WRONG first answer (max() aggregation hiding
+171 runs; name-based grant check missing factory registration) and both were caught by that
+validation step. Real defects found across all six: #1021, #1022(x3), #1023b, #1023d, #1024,
+#1025 — and the single highest-value one is the context measurement above, which no artifact
+sweep would ever have surfaced because nothing in 172 runs records it.
