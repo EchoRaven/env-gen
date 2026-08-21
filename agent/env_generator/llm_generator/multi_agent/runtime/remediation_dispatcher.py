@@ -261,14 +261,60 @@ def _ui_evidence_failed_pages(orch) -> List[str]:
         return []
 
 
+# #1043: flows whose NAME says they are the authentication step every other flow depends on.
+# Deliberately a small, literal set — a fuzzy match ("anything containing 'log'") would catch
+# `login_to_profile_to_browse`, which is a DOWNSTREAM flow, and invert the advice.
+_AUTH_ROOT_FLOWS_1043 = frozenset({
+    "login", "log_in", "signin", "sign_in", "signup", "sign_up", "register", "auth",
+})
+
+
+def auth_root_among_1043(pages) -> List[str]:
+    """The failing flows that ARE the auth step, not merely flows that need auth."""
+    out = []
+    for p in (pages or []):
+        if str(p).strip().lower().replace("-", "_") in _AUTH_ROOT_FLOWS_1043:
+            out.append(str(p))
+    return out
+
+
 def _ui_evidence_failed_extra(pages: List[str]) -> str:
     """#982: name the pages. Mirrors _ui_flow_failed_extra; same reason, other check."""
+    # #1043: coerce, as defence in depth. `"\n- ".join(pages)` raises TypeError on a non-str
+    # entry; checked, and all three producers (`_ui_evidence_failed_pages`,
+    # `_ui_flow_failed_names`, `_ui_flow_missing_names`) already `str()` their output, so this
+    # is LATENT rather than a live defect — worth saying plainly instead of overstating it.
+    # It is guarded anyway because the consequence is invisible: the raise would be swallowed
+    # by the dispatcher's try/except and the lane would quietly receive the GENERIC
+    # remediation, which is the exact bug #982 set out to fix, wearing its own fix's face.
+    pages = [str(p) for p in (pages or []) if str(p).strip()]
     if not pages:
         return ""
+    # #1043: in BOTH runs where this blocker was terminal, the failing set had ONE upstream
+    # cause and the rest were downstream of it — r174: six flows, all failing on a single
+    # `GET /api/profiles` 401; r175: nine flows where `login` itself failed and the other
+    # eight (profile_switch, my_list_add_remove, rating, search, sign_out, detail_to_play,
+    # genre_navigation, login_to_profile_to_browse) all require being logged in. A lane handed
+    # nine equal-looking items will work them as nine; naming the root turns it into one.
+    _root = auth_root_among_1043(pages)
+    _hint = ""
+    if _root and len(pages) > len(_root):
+        _hint = (
+            "\n\n★ START WITH `%s`. It is the AUTHENTICATION flow and the other %d failing "
+            "flow(s) all run after it, so they are very likely the same defect reported %d "
+            "times — fix it first, re-run the walk, and re-read this list before treating the "
+            "rest as separate work."
+            % ("`, `".join(_root), len(pages) - len(_root), len(pages)))
     return ("\n\nTHE PAGE(S) WHOSE UI EVIDENCE RECORDS FAILURE:\n- " + "\n- ".join(pages) +
+            _hint +
             "\n\nThe record exists and says the page is broken, so re-recording it is not "
             "the fix: open each page, reproduce what the record reports, repair it, then "
-            "re-run the walk so the record flips.")
+            "re-run the walk so the record flips."
+            "\n\n★ A record can also be STALE: it keeps saying FAILED until a walk overwrites "
+            "it, so a flow repaired after the record was written still blocks the gate. r174 "
+            "lost 80 minutes to exactly that — all six of its failing records described a "
+            "defect that was already fixed (the endpoint returned 200 when probed live). If "
+            "the page works when you open it, re-run the walk and move on.")
 
 
 def _ui_flow_failed_names(orch) -> List[str]:
@@ -303,6 +349,9 @@ def _ui_flow_failed_names(orch) -> List[str]:
 def _ui_flow_failed_extra(failed: List[str]) -> str:
     """#981: name the failing flows. A gate check the lane cannot locate is a gate check it
     cannot clear."""
+    # #1043: same latent coercion as `_ui_evidence_failed_extra` — the producer already
+    # str()s its output, and a raise here would be swallowed into the generic text.
+    failed = [str(x) for x in (failed or []) if str(x).strip()]
     if not failed:
         return ""
     return ("\n\nTHE FLOW(S) RECORDED BUT NOT PASSING (recomputed from the hub, not from "
@@ -317,6 +366,9 @@ def _ui_flow_missing_extra(missing: List[str]) -> str:
     missing flows and states the contradiction that broke r68 out loud — so a verifier that
     believes it "already recorded" them is forced to re-check the hub instead of re-asserting.
     Empty when nothing is missing, leaving #280's generic text untouched."""
+    # #1043: same latent coercion as `_ui_evidence_failed_extra` — the producer already
+    # str()s its output, and a raise here would be swallowed into the generic text.
+    missing = [str(x) for x in (missing or []) if str(x).strip()]
     if not missing:
         return ""
     names = "\n- ".join(missing)
