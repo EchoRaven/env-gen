@@ -487,6 +487,52 @@ def _norm_gate_path(p: Any) -> str:
     return s.rstrip("/") or "/"
 
 
+_TOOL_CLAIM_RE_1033 = re.compile(
+    r"[`'\"]?([a-z][a-z0-9_]{4,})[`'\"]?\s+(?:tool\s+)?(?:is\s+)?"
+    r"(?:not\s+(?:exposed|available|present)|unavailable|missing)",
+    re.IGNORECASE)
+
+
+def contradicted_tool_claims_1033(tasks, granted_tool_names) -> List[Dict[str, str]]:
+    """#1033: a FAILED task whose reason says a tool is unavailable — WHEN IT IS GRANTED.
+
+    #751 made a FAILED task block the cut, and its reasoning is sound: `fail_task` is
+    authorised and requires a reason, so the status means "attempted and did not work". That
+    argument assumes the reason is TRUE.
+
+    r174's only failed task was `Restore verifier kickoff decision tool exposure`, reason
+    "canonical verifier tool-profile is outside the generated workspace, and no lane with
+    repository access can patch or lint it" — i.e. by construction unfixable by any agent, so
+    it blocked `unresolved_failed_tasks` to the abort. The premise was false: the verifier
+    called `workhub_add_meeting_decision` successfully **4/4 times in r172 and 6/6 in r173**,
+    the profile grants it (`meeting_tools` + an explicit `kickoff:action` allowlist entry),
+    `_HUB_REGISTRATION` pins it into `edit_code`, and `validate_stage_allowlist_alignment`
+    reported it as granted (its only DEAD findings in r174 were the debugger's
+    `codehub_list_prs`). In r174 the verifier never called it once — it asserted the tool was
+    missing, another lane "confirmed" that, and the false claim became a permanent blocker.
+
+    So: whenever a fail reason NAMES a tool as unavailable and that tool IS in the granted
+    set, say so. This changes no verdict — the task still blocks — but a blocker resting on a
+    checkable falsehood must not read like a real one.
+    """
+    out: List[Dict[str, str]] = []
+    granted = {str(g) for g in (granted_tool_names or set())}
+    if not granted:
+        return out                    # cannot judge -> stay quiet (an empty set is not a fact)
+    for t in tasks or []:
+        if not isinstance(t, dict) or str(t.get("status") or "") != "failed":
+            continue
+        reason = str(t.get("fail_reason") or "")
+        for m in _TOOL_CLAIM_RE_1033.finditer(reason):
+            name = m.group(1)
+            if name in granted:
+                out.append({"id": str(t.get("id") or ""),
+                            "title": str(t.get("title") or "")[:100],
+                            "tool": name})
+                break
+    return out
+
+
 def _bug_reference_time_1023(task) -> float:
     """When this bug's EVIDENCE was taken: the latest of claim/triage/creation. Never raises."""
     best = 0.0
@@ -580,7 +626,7 @@ def _join_capped_1022(items, total, cap: int = 4) -> str:
     return f"{text} (+{hidden} more not shown)" if hidden > 0 else text
 
 
-def unresolved_bug_tasks_743(hubs, output_dir=None) -> Dict[str, Any]:
+def unresolved_bug_tasks_743(hubs, output_dir=None, granted_tool_names=None) -> Dict[str, Any]:
     """#743: bug tasks are excluded from the structural gate, delegated to a gate that isn't.
 
     `incomplete_required_tasks` deliberately counts only structural kickoff kinds, and says why:
@@ -642,10 +688,13 @@ def unresolved_bug_tasks_743(hubs, output_dir=None) -> Dict[str, Any]:
             open_p0.append({"id": t.get("id"), "title": str(t.get("title") or "")[:120],
                             "status": status, "assignee": t.get("assignee"),
                             "stale_evidence": _stale})
+    # #1033: FAILED tasks whose reason names a GRANTED tool as unavailable.
+    _contradicted = contradicted_tool_claims_1033(tasks, granted_tool_names)
     _stale_p0 = [b for b in open_p0 if b.get("stale_evidence")]
     return {"failed": failed[:10], "failed_count": len(failed),
             "open_p0_bugs": open_p0[:10], "open_p0_bug_count": len(open_p0),
-            "stale_open_p0": _stale_p0[:10], "stale_open_p0_count": len(_stale_p0)}
+            "stale_open_p0": _stale_p0[:10], "stale_open_p0_count": len(_stale_p0),
+            "contradicted_tool_claims": _contradicted}
 
 
 def scope_filter_incomplete(incomplete_tasks: List[Dict[str, Any]], scope_paths) -> List[Dict[str, Any]]:
@@ -1933,7 +1982,8 @@ def enforce_completeness(output_dir, hubs, tables: Dict[str, Any],
 def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                            scaffold_design_readme, get_validation_results,
                            get_validation_summary,
-                           milestone_scope: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                           milestone_scope: Optional[Dict[str, Any]] = None,
+                           granted_tool_names: Optional[Any] = None) -> Dict[str, Any]:
     """
     Validate objective delivery readiness.
 
@@ -2372,7 +2422,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 "(#807). Reported, not enforced.", "; ".join(_nokind844))
     except Exception:
         pass
-    _bugs743 = unresolved_bug_tasks_743(hubs, output_dir)
+    _bugs743 = unresolved_bug_tasks_743(hubs, output_dir, granted_tool_names)
     if logger and _bugs743.get("failed_count"):
         logger.warning(
             "#743 %d task(s) are in status FAILED at the delivery cut and nothing reads them: "
@@ -2394,6 +2444,20 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
             _bugs743["open_p0_bug_count"],
             _join_capped_1022([str(b.get("title")) for b in _bugs743.get("open_p0_bugs", [])],
                               _bugs743["open_p0_bug_count"]))
+    # #1033: a FAILED task blocking the cut on a claim we can check and that is FALSE.
+    if logger and _bugs743.get("contradicted_tool_claims"):
+        logger.warning(
+            "#1033 %d FAILED task(s) block the cut on a tool claim that is CONTRADICTED — the "
+            "named tool IS in the granted surface: %s. #751 blocks on `failed` because the "
+            "status means 'attempted and did not work', which assumes the REASON is true. r174 "
+            "lost a run to exactly this: the verifier asserted `workhub_add_meeting_decision` "
+            "was not exposed and never called it, having called it 4/4 in r172 and 6/6 in r173. "
+            "Re-open or re-assign rather than accepting it as a framework blocker.",
+            len(_bugs743["contradicted_tool_claims"]),
+            _join_capped_1022(
+                [f"{c.get('title')} -> claims '{c.get('tool')}' unavailable"
+                 for c in _bugs743["contradicted_tool_claims"]],
+                len(_bugs743["contradicted_tool_claims"])))
     # #1023: of those, the ones whose own evidence the code has since overtaken. Reported to
     # the ASSIGNEE as grounds to re-verify — deliberately not closed, cancelled, or aged out
     # here (a lifecycle timeout would cancel slow work, and the stale ones are the fast ones).
@@ -2539,7 +2603,7 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
         # verdict rather than living only in a log line nobody reads at the cut.
         "checks_errored_790": check_errors_790(),
         "incomplete_required_tasks": incomplete_tasks,
-        "unresolved_bugs": _bugs743,     # #743: reported, never enforced
+        "unresolved_bugs": _bugs743,     # #743: reported, never enforced + #1033 contradictions
         # #1023c: #774's finding reached a LOG LINE ONLY, so no agent ever saw it and nothing
         # could act on it. Published here for the same reason #790 publishes its errored
         # checks — it travels with the verdict instead of living in a line nobody reads at the

@@ -140,6 +140,15 @@ class AgentStepToolingMixin:
                 f"allowed_tool_categories={getattr(self, 'allowed_tool_categories', [])}"
             )
             return
+        # #1033: keep the registered NAMES on the agent. They existed only as a local here, so
+        # nothing downstream could answer "is this tool actually granted?" — and r174 lost a run
+        # to a FAILED task whose reason asserted a granted tool was "not exposed in my current
+        # tool surface" (the verifier had called it 4/4 in r172 and 6/6 in r173). A claim about
+        # capability is checkable only if the capability is recorded somewhere.
+        try:
+            self._registered_tool_names = set(tool_schema_map)
+        except Exception:
+            pass
         preview = list(tool_schema_map.keys())[:15]
         self._logger.info(
             f"[{self.agent_id}] Tools registered for LLM: {len(tool_schema_map)} -> {', '.join(preview)}"

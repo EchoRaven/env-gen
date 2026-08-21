@@ -956,6 +956,18 @@ class Orchestrator:
         except Exception:
             return []
 
+    def _all_registered_tool_names(self) -> set:
+        """#1033: union of `_registered_tool_names` across live lanes. Empty when nothing has
+        registered yet — and the consumer treats an empty set as "cannot judge" rather than
+        "nothing is granted", so a cold gate never manufactures a contradiction."""
+        out: set = set()
+        try:
+            for a in (self._agents or {}).values():
+                out |= set(getattr(a, "_registered_tool_names", None) or set())
+        except Exception:
+            return set()
+        return out
+
     def _get_validation_results(self, limit: int = 200) -> list:
         """Return validation records shaped for legacy orchestrator consumers.
         #193: same canonical status vocabulary + nested-metadata flatten as
@@ -4199,6 +4211,9 @@ class Orchestrator:
             getattr(self, "_session_start_ts", 0.0),
             getattr(self, "_logger", None) or _lg.getLogger("DeliveryGate"),
             scaffold_design_readme=self._scaffold_design_readme,
+            # #1033: the union of every lane's REGISTERED tool names, so the gate can tell a
+            # real capability blocker from a FAILED task asserting a tool it actually has.
+            granted_tool_names=self._all_registered_tool_names(),
             get_validation_results=self._get_validation_results,
             get_validation_summary=self._get_validation_summary,
             milestone_scope=_scope)
