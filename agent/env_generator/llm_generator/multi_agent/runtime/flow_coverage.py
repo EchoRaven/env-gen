@@ -20,6 +20,7 @@ never looser.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
@@ -351,6 +352,29 @@ def _flow_key(name: str) -> str:
     stable so compound suffixes (``_page_ui``, ``_screen_ui``, ``_ui_page``) all
     collapse to the same bare journey key."""
     n = str(name or "").strip().lower()
+    # #1049: drop a PROSE tail before folding suffixes. `codehub_record_check` takes a free-text
+    # `name`, and the verifier writes SENTENCES into it — netflix r179's store, verbatim:
+    #
+    #     validation:ui_flow:landing navigation
+    #     validation:ui_flow:login after landing flow
+    #     validation:ui_flow:browse_home after landing/login
+    #     validation:ui_flow:shows navigation to /browse/shows
+    #
+    # `_index_ui_flow_records` slices everything after the prefix, so the key became
+    # "landing navigation", which never equals the required "landing". The verifier had DONE
+    # the work — 11 run_validation calls, 240 browser navigations, records written for 4
+    # journeys — and every one was discarded on the name, leaving
+    # `deliverability_ui_flow_missing` terminal in r178 AND r179 with a record in the same
+    # store reading "0/13 executed; no passes recorded".
+    #
+    # A canonical flow name is an identifier (`landing`, `browse_home`), so truncating at the
+    # first non-identifier character is a no-op for every REQUIRED name and only ever trims the
+    # commentary off a record. It cannot merge two distinct journeys: the leading token IS the
+    # journey the verifier named, and `profiles_guarded` keeps its underscore and stays
+    # distinct from `profiles`.
+    _lead = re.match(r"[a-z0-9_]+", n)
+    if _lead and _lead.end() < len(n):
+        n = _lead.group(0)
     changed = True
     while changed:
         changed = False
