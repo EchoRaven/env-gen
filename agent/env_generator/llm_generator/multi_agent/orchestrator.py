@@ -3263,11 +3263,23 @@ class Orchestrator:
         try:
             rh = getattr(getattr(self, "hubs", None), "registryhub", None)
             _vc = getattr(rh, "_verification_chains", None) if rh is not None else None
+            # #1046: a successful container REBUILD is forward progress too. Every other term
+            # here is SOURCE-side, and a route already written to main.py but not yet built into
+            # the image moves none of them — yet building it is the only event that can flip the
+            # "route 404s" evidence the gate is failing on. r177 aborted 17s after the rebuild
+            # that fixed its terminal blocker, denied the grace because nothing source-side had
+            # changed.
+            try:
+                from .runtime.validation_runner import builds_completed_1046 as _b1046
+                _builds = _b1046()
+            except Exception:
+                _builds = 0
             return (
                 self._compute_app_source_signature(),
                 tuple(sorted((rh.get_versions() or {}).items()))
                 if (rh is not None and hasattr(rh, "get_versions")) else None,
                 _vc.get_version() if (_vc is not None and hasattr(_vc, "get_version")) else 0,
+                _builds,
             )
         except Exception:
             return None

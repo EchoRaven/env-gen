@@ -61,6 +61,30 @@ _DOCKER_UP_TIMEOUT = int(os.environ.get("ENVGEN_DOCKER_UP_TIMEOUT", "1200") or 1
 _DOCKER_BUILD_TIMEOUT = int(os.environ.get("ENVGEN_DOCKER_BUILD_TIMEOUT", "900") or 900)
 _UP_ONLY_TIMEOUT = int(os.environ.get("ENVGEN_DOCKER_UP_ONLY_TIMEOUT", "240") or 240)
 _BUILD_RETRIES = int(os.environ.get("ENVGEN_DOCKER_BUILD_RETRIES", "1") or 1)
+
+# #1046: successful container rebuilds, so the stuck-abort's forward-PROGRESS signature can see
+# a DEPLOY. `_deliver_progress_sig` keys on app SOURCE + contract + chain versions, none of which
+# move when an already-written route is finally built into the image — and that build is the one
+# event that can flip a "route 404s" blocker. r177 died on exactly that gap: `main.py` had
+# `@app.post("/api/continue-watching")` from 08:12, the 404 evidence behind its terminal
+# `business_chain_failing` was last observed at 09:22:45, the image was rebuilt at 10:08:53, and
+# the STUCK detector aborted at 10:09:10 — 17 seconds later, on 46-minute-old evidence, without
+# the grace that a rebuild should have earned. The rebuilt image DOES serve the route (verified:
+# it answers 401, not 404).
+#
+# Process-global on purpose: one generation per process, and threading a counter through the
+# compose helpers would put it in five signatures for one integer.
+_BUILDS_OK_1046: int = 0
+
+
+def _note_build_ok_1046() -> None:
+    global _BUILDS_OK_1046
+    _BUILDS_OK_1046 += 1
+
+
+def builds_completed_1046() -> int:
+    """Count of successful container builds this run — a DEPLOY-side progress signal."""
+    return _BUILDS_OK_1046
 _SKIP_UNCHANGED_BUILD = (
     os.environ.get("ENVGEN_SKIP_UNCHANGED_BUILD", "1") or "1").strip().lower() in (
     "1", "true", "yes", "on")
@@ -186,6 +210,7 @@ def _build_with_retry(compose_file: Path, cwd: Path) -> Tuple[bool, str]:
         cp, timed_out = _compose_capture(
             compose_file, "build", cwd=cwd, timeout=_DOCKER_BUILD_TIMEOUT)
         if cp.returncode == 0:
+            _note_build_ok_1046()
             return True, ""
         tail = (((cp.stdout or "") + "\n" + (cp.stderr or "")).strip())[-3000:]
         if timed_out:
