@@ -20078,3 +20078,58 @@ task as resolved. Now says `(+N more not shown)`.
 
 Neither #1022 nor #1022b is exercised yet: both are next-run fixes. #1021 is the only one of
 the three with production evidence.
+
+### 463. the known-bug sweep: five fixed, three retired on inspection, four left open with reasons
+
+User's call on the stale-P0 mechanism, taken verbatim: **the agent decides whether to close, not
+a task lifecycle** — a timeout would passively cancel work that is merely slow, and here that is
+backwards. The stale P0s are the FAST ones (a symptom whose cause was fixed minutes later); a
+slow task is exactly what must survive. `#1023` therefore reports evidence and closes nothing,
+and `test_no_age_based_cancellation_anywhere` pins it.
+
+**Fixed (5):**
+
+    #1020   ENVGEN_DEFER_TO_LANE_PAGE defaults ON. Ranges disjoint at n=5.
+    #1023   stale open-P0 evidence: every file the bug NAMED changed since the bug's own
+            evidence timestamp. Conservative — one unchanged/missing file, no named files or
+            no timestamp all return "" rather than guess.
+    #1023b  an empty table-consumer index is not "every table is dead" (0 real records in
+            172 of 172 runs; r172 reported 12 dead tables against 8 populated ones).
+    #1023c  #774's finding reached a LOG LINE ONLY — published in the gate result so an agent
+            can see the one check that compares CONTRACT to REQUIREMENT. Still not blocking.
+    #1023d  SeedReport now carries examined/candidates/measured. Verdict untouched.
+
+★ The shape shared by #1023b and #1023d is `empty-collapsed-onto-a-plausible-default`, and both
+were *permissive in the blocking direction*: an unpopulated index read as "all dead" (a
+blocker's input) and an unexamined audit read as "clean" (a pass). Same root, opposite signs.
+
+**Retired on inspection — do not spend time on these again (3):**
+
+    #739  "ui_smoke_pass is existential" — already mitigated. #752 made ANY failing UI record
+          append `validation_ui_evidence_failed` unconditionally, and the only consumer of the
+          existential predicate is `validation_ui_smoke_missing`, which sits behind
+          `task_suite_exists` — TRUE in 0 of 144 runs. Changing the predicate would be a guard
+          on code that never runs, which is #1013's exact mistake. Frequency in the log (77x in
+          r172) measures the WARNING, not the exposure.
+    #511  documented SOUND and it is: gated on a real gate-passing api_smoke run, never
+          fabricates success.
+    #815  instrumented on purpose. The repair (a tolerant id-join) would be a guess between two
+          live causes that the next run separates in one line; #813/#815 exist to make that
+          one line readable.
+
+**Left open, with the reason (4):**
+
+    #956 real repair    count ROWS at gate time — needs a live database.
+    #638 re-check       still blocked on a canonical-module rule; r172 had 2822 vs 2806 bytes,
+                        so size cannot discriminate. Less urgent now: with #1021 the lane
+                        deleted the duplicate itself in ~2 minutes.
+    business_chain      not diagnosed to root.
+    port-3000 P0        I have evidence the expectation is probably WRONG (r171: identical port
+                        layout, 0 filings; `canonical runtime port` absent from framework
+                        source; host 3000 is the backend by design, container-internal 3000 is
+                        the frontend) but no evidence of what the RIGHT expectation is. Not
+                        fixable by guessing.
+
+Suite 6963 / 0 failed, accounted exactly: 6939 + 14 (#1023) + 1 (#1020) + 2 (#957) + 3 (#774)
++ 4 (#1023d). Five commits, one per fix, so any one can be reverted alone — the attribution
+cost of batching, paid down as far as it can be without a run per fix.
