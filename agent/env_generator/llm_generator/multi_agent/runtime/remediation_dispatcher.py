@@ -1688,6 +1688,13 @@ class RemediationDispatcher:
                         # nobody while logging that it had nobody to wake.
                         _contra = {str(c.get("id")): c
                                    for c in (_b743.get("contradicted_tool_claims") or [])}
+                        # #1050: the mirror set — reasons that are TRUE and name a
+                        # framework-owned artifact. Re-dispatch cannot help these (no lane can
+                        # mount framework source), so the nag must carry the ONE action that
+                        # actually resolves them instead of asking for a retry that will fail
+                        # identically. r179 re-woke the debugger 10x for one such task.
+                        _fwown = {str(c.get("id")): c
+                                  for c in (_b743.get("framework_owned_failed") or [])}
                         _by_assignee = {}
                         for _t in (_b743.get("failed") or []):
                             _a = str((_t or {}).get("assignee") or "").strip()
@@ -1704,6 +1711,15 @@ class RemediationDispatcher:
                                              "tool `%s` is unavailable, and that tool IS in "
                                              "your granted surface — call it and retry (#1033)."
                                              % _contra[_tid].get("tool"))
+                                if _tid in _fwown:
+                                    _note += (
+                                        " ⚠ THE FRAMEWORK AGREES with this reason (#1050): "
+                                        "'%s' is framework-owned and is not reachable from any "
+                                        "lane worktree, so retrying will fail identically. Do "
+                                        "NOT retry — CANCEL this task with that reason. The "
+                                        "underlying defect is the framework's to fix, and "
+                                        "cancelling is what unblocks the cut."
+                                        % _fwown[_tid].get("marker"))
                                 _lines.append("%s: %s%s" % (_tid, _why[:300], _note))
                             _wmsg = _create_message(
                                 source_agent_id="orchestrator", target_agent_id=_a,

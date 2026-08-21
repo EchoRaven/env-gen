@@ -493,6 +493,59 @@ _TOOL_CLAIM_RE_1033 = re.compile(
     re.IGNORECASE)
 
 
+_FRAMEWORK_OWNED_MARKERS_1050 = (
+    "framework-owned", "framework owned", "framework-managed",
+    "not mounted in the generated project", "outside the generated workspace",
+    "no lane with repository access", "no lane can repair",
+)
+
+
+def framework_owned_failed_tasks_1050(tasks) -> List[Dict[str, str]]:
+    """#1050: a FAILED task whose reason is TRUE — the artifact is framework-owned.
+
+    The exact mirror of `contradicted_tool_claims_1033`. That one catches a lane claiming a
+    capability it demonstrably HAS; this one catches the opposite and unhandled case: the lane
+    is RIGHT, the thing it was asked to fix is not reachable from any lane, and nothing in the
+    system does anything different about it.
+
+    r179's only failed task, verbatim:
+
+        Fix RunHub current-contract snapshot binding — RunHub is framework-owned runtime
+        infrastructure and its source/tests are not mounted in the generated project or any
+        resident lane worktree. Reproduced namespace/snapshot lookup failure, but no access.
+
+    That is a good bug report: the debugger reproduced the failure, located it, and said
+    precisely why it could not act. The framework's answer was to re-wake the debugger TEN
+    times (#1041) and then block the cut on `unresolved_failed_tasks`. Every one of those
+    wakes was provably futile — no lane can mount framework source — and the run died on a
+    task no agent could ever have closed.
+
+    ★ Deliberately changes NO verdict, exactly as #1033 chose. Whether an unfixable task should
+    still block is a blocker-arithmetic question, and this session's rule is that those need a
+    live run to validate, not a plausible argument. What it does is stop the futile nag (see
+    the dispatcher) and label the item as a FRAMEWORK defect rather than a lane that would not
+    do its job — so the next reader routes it to the framework instead of at an agent.
+    """
+    out: List[Dict[str, str]] = []
+    for t in (tasks or []):
+        if not isinstance(t, dict):
+            continue
+        if str(t.get("status") or "").lower() != "failed":
+            continue
+        reason = str(t.get("fail_reason") or t.get("reason") or "")
+        low = reason.lower()
+        hit = next((m for m in _FRAMEWORK_OWNED_MARKERS_1050 if m in low), None)
+        if not hit:
+            continue
+        out.append({
+            "id": str(t.get("id") or ""),
+            "title": str(t.get("title") or "")[:120],
+            "marker": hit,
+            "reason": reason[:240],
+        })
+    return out
+
+
 def contradicted_tool_claims_1033(tasks, granted_tool_names) -> List[Dict[str, str]]:
     """#1033: a FAILED task whose reason says a tool is unavailable — WHEN IT IS GRANTED.
 
@@ -699,7 +752,10 @@ def unresolved_bug_tasks_743(hubs, output_dir=None, granted_tool_names=None) -> 
     return {"failed": failed[:10], "failed_count": len(failed),
             "open_p0_bugs": open_p0[:10], "open_p0_bug_count": len(open_p0),
             "stale_open_p0": _stale_p0[:10], "stale_open_p0_count": len(_stale_p0),
-            "contradicted_tool_claims": _contradicted}
+            "contradicted_tool_claims": _contradicted,
+            # #1050: the mirror case — a FAILED task whose reason is TRUE and names a
+            # framework-owned artifact no lane can reach.
+            "framework_owned_failed": framework_owned_failed_tasks_1050(tasks)}
 
 
 def scope_filter_incomplete(incomplete_tasks: List[Dict[str, Any]], scope_paths) -> List[Dict[str, Any]]:
@@ -2483,6 +2539,21 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
                 [f"{c.get('title')} -> claims '{c.get('tool')}' unavailable"
                  for c in _bugs743["contradicted_tool_claims"]],
                 len(_bugs743["contradicted_tool_claims"])))
+    # #1050: the mirror — a FAILED task whose reason is TRUE and names a framework-owned
+    # artifact. Reported as a FRAMEWORK defect so the next reader routes it at the framework
+    # instead of nagging a lane that already said, correctly, that it cannot reach the code.
+    if logger and _bugs743.get("framework_owned_failed"):
+        logger.warning(
+            "#1050 %d FAILED task(s) block the cut on a FRAMEWORK-OWNED artifact no lane can "
+            "reach — the reason is TRUE, so re-dispatching cannot help and every re-wake is "
+            "waste (r179 re-woke the debugger 10x for one such task, then died on "
+            "unresolved_failed_tasks). This is a FRAMEWORK defect, not a lane that would not "
+            "do its job: %s",
+            len(_bugs743["framework_owned_failed"]),
+            _join_capped_1022(
+                [f"{c.get('title')} -> '{c.get('marker')}'"
+                 for c in _bugs743["framework_owned_failed"]],
+                len(_bugs743["framework_owned_failed"])))
     # #1023: of those, the ones whose own evidence the code has since overtaken. Reported to
     # the ASSIGNEE as grounds to re-verify — deliberately not closed, cancelled, or aged out
     # here (a lifecycle timeout would cancel slow work, and the stale ones are the fast ones).

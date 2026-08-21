@@ -55,9 +55,9 @@ def _join_calls():
 
 def test_every_bug_list_gate_line_uses_the_capped_join():
     """The FAILED list, the open-P0 list, #1023's stale-P0 list and #1033's contradicted-claim
-    list. Growing this number is expected when a gate line is added; what must not happen is a
-    NEW list printed with a bare `[:4]`."""
-    assert len(_join_calls()) == 4, "a gate line printing a bug list without the capped join"
+    list, and #1050's framework-owned-failure list. Growing this number is expected when a gate
+    line is added; what must not happen is a NEW list printed with a bare `[:4]`."""
+    assert len(_join_calls()) == 5, "a gate line printing a bug list without the capped join"
 
 
 def test_the_count_and_the_list_come_from_the_same_number():
@@ -67,7 +67,9 @@ def test_the_count_and_the_list_come_from_the_same_number():
     totals = {ast.unparse(c.args[1]) for c in _join_calls()}
     assert totals == {"_bugs743['failed_count']", "_bugs743['open_p0_bug_count']",
                       "_bugs743['stale_open_p0_count']",
-                      "len(_bugs743['contradicted_tool_claims'])"}, totals
+                      "len(_bugs743['contradicted_tool_claims'])",
+                      # #1050's sibling line: a FAILED task whose reason is TRUE.
+                      "len(_bugs743['framework_owned_failed'])"}, totals
 
 
 def test_each_warning_prints_the_count_it_capped_by():
@@ -89,7 +91,7 @@ def test_each_warning_prints_the_count_it_capped_by():
             assert cap in printed, (
                 f"the list is capped by {cap}, which this message never prints")
             checked += 1
-    assert checked == 4, f"expected 4 gate lines, checked {checked}"
+    assert checked == 5, f"expected 5 gate lines, checked {checked}"
 
 
 def test_no_bare_slice_remains_on_those_lists():
