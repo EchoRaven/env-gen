@@ -20448,3 +20448,48 @@ chars and so reported `token: None` (my bug, not the app's); a pre/post comparis
 the already-patched extractor and therefore proved nothing until I reproduced the original
 expression as a control; and a "0 min stale" figure computed from max() across ALL records
 when the FAILING ones were 80 minutes old. Three more instrument errors, same lesson.
+
+### 471. r174's OTHER terminal check: a blocker resting on a falsehood, and how to tell
+
+r174 died on `['unresolved_failed_tasks', 'validation_ui_evidence_failed']`. Item 470 covers
+the second. The first was ONE task:
+
+    Restore verifier kickoff decision tool exposure
+    reason: canonical verifier tool-profile is outside the generated workspace, and no lane
+            with repository access can patch or lint it
+
+Unfixable by construction -> blocked to the abort. **The premise was false**, and every leg of
+that is checkable:
+
+    verifier called workhub_add_meeting_decision   4/4 in r172, 6/6 in r173
+    granted by                                     meeting_tools bundle
+    allowlisted for                                "kickoff:action" (verifier profile)
+    pinned into edit_code by                       _HUB_REGISTRATION (base.py:458)
+    validate_stage_allowlist_alignment             reported it GRANTED (its only DEAD finding
+                                                   in r174 was debugger/codehub_list_prs)
+    calls by the verifier in r174                  ZERO — it never tried
+
+So a lane asserted it lacked a capability it had, a second lane "confirmed" it, and the false
+claim became a permanent delivery blocker.
+
+★ I nearly fixed the wrong thing twice here. First I read the agent's triage as fact and went
+looking for a missing grant; the config had it. Then I suspected the `edit_code` stage filter;
+`_HUB_REGISTRATION` covers it. The thing that settled it was asking whether the tool had EVER
+been called successfully — 4/4 and 6/6 in the two previous runs. Same lesson as the r114
+"chain-runner session-isolation" triage: **an agent's diagnosis is a hypothesis, not evidence.**
+
+#1033 reports the contradiction and changes no verdict. It needed one enabling change worth
+noting on its own: `tool_schema_map` existed only as a LOCAL inside `_log_registered_tools`,
+so nothing in the system could answer "is this tool granted?" — a capability nobody records
+cannot be used to refute a claim about it.
+
+**Running list of what actually stopped the last four runs**, now that the diagnostics work:
+
+    r171  STUCK    ui_flow_failed + unresolved_failed_tasks + ui_evidence_failed
+    r172  wall     (2h cap; DDL FK cascade -> 5 P0s -> #1022)
+    r173  gate     validation_ui_evidence_failed alone
+    r174  STUCK    unresolved_failed_tasks (#1033, a falsehood)
+                 + validation_ui_evidence_failed (#1032, an empty remediation)
+
+Both of r174's are now diagnosed to root and fixed. Neither was an app defect: one was a false
+claim nobody could check, the other a remediation that could not name what to re-check.
