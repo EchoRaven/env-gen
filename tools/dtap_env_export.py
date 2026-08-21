@@ -48,7 +48,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # Ports already claimed in dt_arena/envs/registry.yaml (read off the vendored file, 2026-08-20):
 # 8025 8030 8032-8036 8038-8040 8054-8057 8060-8073 8076 8077 8453 8454, and paypal's pg on 5544.
@@ -157,6 +157,88 @@ def check_app_env_contract(run: Path) -> List[str]:
                             f"the container will use its built-in default and the healthcheck "
                             f"may probe a dead port")
     return warn
+
+
+_FROM_RE = re.compile(r'^(\s*FROM\s+)(\S+)(.*)$', re.IGNORECASE | re.MULTILINE)
+
+
+def rewrite_base_images(root: Path, base_map: Dict[str, str]) -> List[str]:
+    """Rewrite `FROM <public>` to an internal mirror across every Dockerfile under `root`.
+
+    WHY THIS IS NEEDED AT ALL. `tbr/build_images.sh` states plainly: "Base images resolve from
+    the INTERNAL vmvm-registry (docker.io is not reachable from the devserver)", and pins
+    `vmvm-registry.fbinfra.net/decodingtrustagent/uv:python3.12-bookworm-slim` for exactly
+    that reason. Our generated contexts use PUBLIC bases —
+
+        ghcr.io/astral-sh/uv:python3.11-bookworm-slim   (backend)
+        node:20-alpine + nginx:alpine                   (frontend)
+        postgres:16                                     (the pg image this exporter emits)
+
+    — so a devserver build fails at the base fetch, before any of our code is even copied.
+    Nothing is guessed here: the map is supplied by the caller, and CHECK_BASES.sh below
+    reports which bases actually resolve so the right names are discovered in one command
+    rather than assumed.
+    """
+    changed: List[str] = []
+    for df in sorted(root.rglob("Dockerfile")):
+        try:
+            src = df.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        def _sub(m: "re.Match[str]") -> str:
+            base = m.group(2)
+            new_base = base_map.get(base)
+            if not new_base:
+                return m.group(0)
+            changed.append(f"{df.name}: {base} -> {new_base}")
+            return f"{m.group(1)}{new_base}{m.group(3)}"
+        out = _FROM_RE.sub(_sub, src)
+        if out != src:
+            df.write_text(out, encoding="utf-8")
+    return changed
+
+
+def render_check_bases(bases: List[str]) -> str:
+    listed = "\n".join(f'  "{b}"' for b in sorted(set(bases)))
+    return f"""#!/bin/bash
+# Which base images can this machine actually pull?
+#
+# tbr/build_images.sh: "Base images resolve from the INTERNAL vmvm-registry (docker.io is not
+# reachable from the devserver)". Run this BEFORE BUILD_AND_PUSH.sh — a base that cannot be
+# fetched fails the build before any of our code is copied, and the error names the base, not
+# the cause. Feed whatever fails back in via --base-map on the exporter.
+set -uo pipefail
+
+BASES=(
+{listed}
+)
+
+fail=0
+for b in "${{BASES[@]}}"; do
+  if podman pull -q "$b" >/dev/null 2>&1; then
+    echo "  OK        $b"
+  else
+    echo "  UNREACHABLE  $b"
+    fail=1
+  fi
+done
+[ "$fail" = 0 ] && echo "all bases reachable — BUILD_AND_PUSH.sh can run" \
+  || echo "re-export with --base-map '<public>=<internal mirror>' for each UNREACHABLE line"
+exit $fail
+"""
+
+
+def collect_bases(root: Path) -> List[str]:
+    out: List[str] = []
+    for df in sorted(root.rglob("Dockerfile")):
+        try:
+            for m in _FROM_RE.finditer(df.read_text(encoding="utf-8", errors="ignore")):
+                b = m.group(2)
+                if not b.lower().startswith("$"):
+                    out.append(b)
+        except OSError:
+            pass
+    return out
 
 
 def _load_endpoints(run: Path) -> List[Dict[str, Any]]:
@@ -461,7 +543,8 @@ echo "pushed $NS/{env}-{{pg,api,ui}}:$TAG"
 
 
 def export(run: Path, env: str, out: Path, *, api_port: int, ui_port: int, pg_port: int,
-           mcp_port: int, image_ns: str, tag: str = "clawfish") -> Dict[str, Any]:
+           mcp_port: int, image_ns: str, tag: str = "clawfish",
+           base_map: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     envs = out / "dt_arena" / "envs" / env
     mcp = out / "dt_arena" / "mcp_server" / env
     envs.mkdir(parents=True, exist_ok=True)
@@ -498,12 +581,20 @@ def export(run: Path, env: str, out: Path, *, api_port: int, ui_port: int, pg_po
     st.write_text(render_mcp_start(env, api_port, mcp_port), encoding="utf-8")
     st.chmod(0o755)
 
+    # #1030d: base images + the preflight that says which of them this machine can fetch.
+    rewrites = rewrite_base_images(envs, base_map or {})
+    bases = collect_bases(envs)
+    cb = envs / "CHECK_BASES.sh"
+    cb.write_text(render_check_bases(bases), encoding="utf-8")
+    cb.chmod(0o755)
+
     (out / "registry.snippet.yaml").write_text(
         render_registry_snippet(env, api_port, ui_port), encoding="utf-8")
 
     return {"env": env, "files": counts, "tools": len(tools),
             "endpoints": len(endpoints), "out": str(out), "sql_repairs": sql_notes,
-            "env_contract_warnings": check_app_env_contract(run)}
+            "env_contract_warnings": check_app_env_contract(run),
+            "base_images": sorted(set(bases)), "base_rewrites": rewrites}
 
 
 def main(argv: List[str]) -> int:
@@ -518,6 +609,9 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--mcp-port", type=int, default=8878)
     ap.add_argument("--image-ns", default="vmvm-registry.fbinfra.net/zhaorun/dtap")
     ap.add_argument("--tag", default="clawfish")
+    ap.add_argument("--base-map", action="append", default=[], metavar="PUBLIC=INTERNAL",
+                    help="rewrite a Dockerfile FROM base (repeatable). Run CHECK_BASES.sh "
+                         "first to learn which bases this machine cannot fetch.")
     a = ap.parse_args(argv)
 
     run = Path(a.run)
@@ -527,7 +621,7 @@ def main(argv: List[str]) -> int:
     out = Path(a.out) if a.out else Path("dtap_export") / a.env_name
     res = export(run, a.env_name, out, api_port=a.api_port, ui_port=a.ui_port,
                  pg_port=a.pg_port, mcp_port=a.mcp_port, image_ns=a.image_ns,
-                 tag=a.tag)
+                 tag=a.tag, base_map=dict(x.split("=", 1) for x in a.base_map if "=" in x))
     print(json.dumps(res, indent=2))
     if not res["endpoints"]:
         print("WARNING: no registryhub_endpoints.json — 0 MCP tools generated. The env will "

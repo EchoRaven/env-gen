@@ -324,3 +324,53 @@ def test_a_real_generated_app_satisfies_the_contract():
     if not (run / "app" / "backend").is_dir():
         pytest.skip("r174 artifact not present")
     assert X.check_app_env_contract(run) == []
+
+
+# --- #1030d: base images the devserver cannot fetch -------------------------------------------
+
+def test_it_reports_every_base_image_the_contexts_need(tmp_path):
+    """`tbr/build_images.sh`: "Base images resolve from the INTERNAL vmvm-registry (docker.io
+    is not reachable from the devserver)". Our contexts use PUBLIC bases, so a build dies at
+    the base fetch before any of our code is copied. Listing them is what makes that fixable
+    instead of a mystery."""
+    r = _run(tmp_path)
+    (r / "app" / "backend" / "Dockerfile").write_text(
+        "FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim\n", encoding="utf-8")
+    out = tmp_path / "out"
+    res = X.export(r, "netflix", out, api_port=8078, ui_port=8079, pg_port=5545,
+                   mcp_port=8878, image_ns="ns")
+    assert "ghcr.io/astral-sh/uv:python3.11-bookworm-slim" in res["base_images"]
+    assert "postgres:16" in res["base_images"], "the pg image this exporter emits counts too"
+
+
+def test_a_base_can_be_rewritten_to_an_internal_mirror(tmp_path):
+    r = _run(tmp_path)
+    out = tmp_path / "out"
+    res = X.export(r, "netflix", out, api_port=8078, ui_port=8079, pg_port=5545,
+                   mcp_port=8878, image_ns="ns",
+                   base_map={"postgres:16": "vmvm-registry.fbinfra.net/dt/postgres:16"})
+    df = (out / "dt_arena" / "envs" / "netflix" / "pg" / "Dockerfile").read_text(encoding="utf-8")
+    assert "FROM vmvm-registry.fbinfra.net/dt/postgres:16" in df
+    assert res["base_rewrites"] and "postgres:16" in res["base_rewrites"][0]
+
+
+def test_an_unmapped_base_is_left_exactly_alone(tmp_path):
+    """Rewriting something the caller did not ask for would be a silent substitution."""
+    r = _run(tmp_path)
+    (r / "app" / "backend" / "Dockerfile").write_text("FROM node:20-alpine\nRUN x\n",
+                                                      encoding="utf-8")
+    out = tmp_path / "out"
+    X.export(r, "netflix", out, api_port=8078, ui_port=8079, pg_port=5545, mcp_port=8878,
+             image_ns="ns", base_map={"postgres:16": "mirror/postgres:16"})
+    df = (out / "dt_arena" / "envs" / "netflix" / "api" / "Dockerfile").read_text(encoding="utf-8")
+    assert "FROM node:20-alpine" in df
+
+
+def test_the_preflight_script_lists_and_is_executable(tmp_path):
+    out, _ = _export(tmp_path)
+    p = out / "dt_arena" / "envs" / "netflix" / "CHECK_BASES.sh"
+    assert p.stat().st_mode & 0o111
+    txt = p.read_text(encoding="utf-8")
+    assert "postgres:16" in txt and "podman pull" in txt
+    assert "UNREACHABLE" in txt and "--base-map" in txt, (
+        "it must say what to DO with a failure, not just report one")
