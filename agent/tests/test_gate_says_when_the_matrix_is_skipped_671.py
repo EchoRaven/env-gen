@@ -58,14 +58,34 @@ def test_the_reason_names_the_missing_file():
     assert "no tasks/tasks.yaml" in _block()
 
 
-def test_the_reason_says_the_requirements_were_not_evaluated():
+def test_the_reason_says_the_requirements_are_not_ENFORCED():
+    """#1024 corrected what this asserted. The old text — and this test, which pinned it —
+    said the requirements "were NOT evaluated". They are evaluated: `api_smoke_pass` and
+    `ui_smoke_pass` are computed unconditionally and published in `validation_runtime` every
+    run. Only the enforcement is gated by `task_suite_exists`.
+
+    A test asserting the exact wording is what kept the contradiction alive, which is the
+    `a-green-suite-can-pin-the-defect` shape. This one asserts the distinction that matters
+    (evaluated vs enforced) rather than a phrase.
+    """
     body = _block()
-    assert "were NOT evaluated" in body
+    assert "NOT ENFORCED" in body
+    assert "were NOT evaluated" not in body, (
+        "the contradictory phrasing is back — see #1024")
 
 
 def test_it_marks_the_smoke_flags_as_reported_not_enforced():
-    """The two booleans stay in the payload; the caveat stops them reading as a verdict."""
-    assert "REPORTED, not enforced" in _block()
+    """The two booleans stay in the payload; the caveat stops them reading as a verdict.
+
+    #1024 reworded this. The original said the requirements "were NOT evaluated" and then, in
+    the same sentence, that the values are "REPORTED" — a contradiction, and the first half is
+    the false one: both are computed unconditionally and published every run. What is off is
+    the ENFORCEMENT. Assert the surviving meaning rather than the old phrasing.
+    """
+    body = _block()
+    assert "NOT ENFORCED" in body
+    assert "ARE evaluated" in body
+    assert "were NOT evaluated" not in body, "the contradictory phrasing is back"
 
 
 def test_the_reason_is_empty_when_the_suite_exists():
@@ -99,9 +119,14 @@ def test_it_is_surfaced_beside_task_suite_exists():
 # --- it must not change the verdict -----------------------------------------------------------
 
 def test_nothing_was_added_to_failed_checks():
-    """A visibility change must not block a delivery that used to pass."""
+    """A visibility change must not block a delivery that used to pass.
+
+    #1024: assert no APPEND, not the absence of the word. The block's prose now explains what
+    `task_suite_exists` gates, and a bare substring check reads that explanation as an
+    emission — the same over-loose matching #765/#774 refuse elsewhere.
+    """
     body = _block()
-    assert "failed_checks" not in body
+    assert "failed_checks.append" not in body
 
 
 def test_the_matrix_itself_is_untouched():

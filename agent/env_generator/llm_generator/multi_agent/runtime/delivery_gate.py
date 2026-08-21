@@ -2209,9 +2209,27 @@ def validate_delivery_gate(output_dir, hubs, session_start_ts, logger, *,
     # ENFORCING them is a real gate-tightening that needs a live run to validate, so it is
     # recorded in EXPERIMENTS_PENDING rather than switched on blind. What is safe now is to
     # stop the skip being silent: an unchecked matrix must not read like a passed one.
+    # #1024: the previous wording contradicted itself — it claimed the two requirements had
+    # gone unevaluated, then said in the same sentence that both are REPORTED below. Both values
+    # ARE computed every run, unconditionally, and published in `validation_runtime`; what
+    # `task_suite_exists` gates is only whether they are ENFORCED (appended to failed_checks).
+    # That contradiction cost a full re-derivation of #671: read as "never evaluated", the
+    # three checks look like a validation layer that has never run, when the measurement runs
+    # every time and only the blocking is off. Same class as #694/#682/#690 — the wording, not
+    # the detection, is what costs the rounds.
+    #
+    # Root cause, traced past #671: `tasks/tasks.yaml` has a producer — `save_task_suite`, one
+    # of five tools in `task_definition_tools` — and the verifier IS granted them
+    # (agents_config `tool_categories: [... "task_definition" ...]`) and does spawn. None of
+    # the five names appears in ANY of the 298 run logs, and the shared prompt
+    # (`agent_definition.j2`) tells every agent to use them. So the branch is dead by agent
+    # choice, not by a missing grant, and it is dead in 172 of 172 runs.
     matrix_skipped_reason = "" if task_suite_exists else (
-        "no tasks/tasks.yaml — the API-smoke and UI-smoke requirements were NOT evaluated; "
-        "api_smoke_pass/ui_smoke_pass below are REPORTED, not enforced")
+        "no tasks/tasks.yaml (0 of 172 runs have ever had one) — api_smoke_pass/ui_smoke_pass "
+        "ARE evaluated and reported below, but are NOT ENFORCED: the three checks behind this "
+        "flag (validation_api_smoke_missing / validation_ui_smoke_missing / "
+        "validation_retry_pending) have never fired in 298 logs. Producer `save_task_suite` is "
+        "granted to the verifier and has never been called")
     if task_suite_exists:
         if retry_pending_count > 0:
             # Soft-fail: auto-retry loop is still in progress.
