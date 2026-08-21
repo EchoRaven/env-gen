@@ -1207,6 +1207,14 @@ class RemediationDispatcher:
             "deliverability_no_successful_run", "frontend_build_not_recorded",
             "validation_api_smoke_missing", "validation_ui_smoke_missing",
             "incomplete_required_tasks",
+            # #1040: `database_sql_missing` has a deterministic framework self-heal (#74:
+            # write the SQL from the live schema when the app DB is functional), so it was
+            # never a dead end — but it was absent from this set, so 85 runs logged it as
+            # having "NO remediation owner". Measured: the self-heal fires in 45 of those 85
+            # and the check is still present near the end in only 2. Listing it stops the
+            # misreport; it does NOT buy silence, because #1040's wedge detector still fires
+            # on a covered-elsewhere check that keeps failing (those 2 are the case it is for).
+            "database_sql_missing",
         }
         orch = self._orch
         try:
@@ -1518,20 +1526,33 @@ class RemediationDispatcher:
             # ['unresolved_failed_tasks', 'validation_ui_evidence_failed'] and BOTH were
             # unowned. Nothing said so — the line above reports the unowned names, and reads
             # as informational, without the one fact that makes it terminal.
-            if _uncov and not _owned_1040:
+            #
+            # ★ `_COVERED_ELSEWHERE` is NOT treated as protective here, only as less urgent.
+            # "Another mechanism owns it" is a claim about intent, and a self-heal that is not
+            # firing looks exactly like one that is. Measured on `database_sql_missing`: it is
+            # reported unowned in 85 runs, #74's self-heal fires in 45, and it is still present
+            # near the end in 2 — so the covering mechanism works ~98% of the time and fails
+            # occasionally, which is precisely the case a wedge detector exists to catch. A
+            # covered-elsewhere-only decline therefore still wedges, just with a longer fuse so
+            # the self-heal gets its ticks first.
+            _stuck = (_uncov or _elsewhere_1040) and not _owned_1040
+            if _stuck:
                 _n = getattr(orch, "_gatecheck_wedged_ticks_1040", 0) + 1
                 orch._gatecheck_wedged_ticks_1040 = _n
-                if _n == 1 or _n % 5 == 0:
+                _fuse = 1 if _uncov else 10
+                if _n == _fuse or (_n > _fuse and _n % 5 == 0):
                     orch._logger.error(
-                        "#1040 DELIVERY IS WEDGED: all %d failing gate check(s) are UNOWNED, so "
-                        "NOTHING was dispatched and this decline cannot clear by itself "
-                        "(%d consecutive tick(s)). Unowned: %s.%s This needs an owner in "
+                        "#1040 DELIVERY IS WEDGED: NONE of the %d failing gate check(s) was "
+                        "dispatched to a lane, so this decline cannot clear by itself "
+                        "(%d consecutive tick(s)). No owner: %s.%s This needs an owner in "
                         "_GATE_OWNER, an entry in _COVERED_ELSEWHERE with a reason, or a fix at "
                         "the check's source — the run will otherwise decline until the wall "
                         "clock.",
-                        len(_uncov), _n, join_capped(_uncov, len(_uncov)),
-                        (" Covered elsewhere (not dispatched here): "
-                         + join_capped(_elsewhere_1040, len(_elsewhere_1040)) + ".")
+                        len(_uncov) + len(_elsewhere_1040), _n,
+                        join_capped(_uncov, len(_uncov)) or "<none>",
+                        (" Claimed covered elsewhere but STILL FAILING after %d tick(s), so "
+                         "whatever owns them is not clearing them: %s."
+                         % (_n, join_capped(_elsewhere_1040, len(_elsewhere_1040))))
                         if _elsewhere_1040 else "")
             else:
                 orch._gatecheck_wedged_ticks_1040 = 0
