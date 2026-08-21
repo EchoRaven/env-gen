@@ -1525,14 +1525,16 @@ class WorkhubAddMeetingDecisionTool(HubTool):
                 # implying truncation, so it stops looping.
                 _wrong = non_contract_keys(_content, _sec)
                 if _wrong:
+                    # #1037: the remediation used to be the auth paragraph unconditionally.
+                    # 145 of the ~171 rejections in the r1-r175 corpus are ['api_endpoints']
+                    # and only 10 involve auth, so the advice addressed 6% of cases and
+                    # misdirected the rest. Now it names the near-miss key it actually got.
+                    from multi_agent.runtime.kickoff.section_substance import (
+                        wrong_keys_remediation_1037)
                     return ToolResult.fail(
                         f"decision for section '{_sec}' carried only NON-CONTRACT "
                         f"keys {_wrong} — these are not part of your kickoff section. "
-                        "Auth is FRAMEWORK-OWNED (the generated stack embeds an "
-                        "OAuth2 AS minting JWTs) — do NOT declare auth_model/auth; "
-                        "the framework supplies it. Declare your real contract "
-                        f"({_keys}) via the dedicated kickoff_declare_* tools (e.g. "
-                        f"{_eg}). Do NOT re-submit this decision.")
+                        + wrong_keys_remediation_1037(_wrong, _sec, _keys, _eg))
                 # AUX-ONLY ACCEPT (2026-06-24): a decision with no buildable substance
                 # but carrying legit AUX keys (done_def / feature_inventory /
                 # reference_image_manifest / task_tree) MUST be accepted + recorded — the

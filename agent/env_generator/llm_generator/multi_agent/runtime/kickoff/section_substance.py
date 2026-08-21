@@ -106,6 +106,66 @@ def non_contract_keys(content: Any, section: str) -> list:
     return wrong
 
 
+_AUTH_KEYS_1037 = ("auth", "auth_model", "authentication", "auth_scheme", "auth_strategy")
+
+
+def near_miss_contract_keys_1037(wrong: Any, section: str) -> dict:
+    """Map each wrong key to the contract key it is obviously reaching for.
+
+    #1037: `non_contract_keys` names the wrong key, but the REMEDIATION beside it was
+    hard-coded to the auth case it was written for (youtube run #13). Across the r1-r175
+    corpus the actual distribution of rejected key-sets is:
+
+        145  ['api_endpoints']      <- one key, 85% of all rejections
+         10  auth / auth+notes / ... <- what the message actually talks about
+         ~16 everything else
+
+    So the guidance addressed 6% of the cases and misdirected the other 94%: a backend that
+    sent `api_endpoints` was told, at length, not to declare auth — which it had not done.
+    A wrong cause in an error message is the same defect as #1035's blank one and #1036's
+    misnamed one; here it is simply the most repeated.
+
+    Matching is deliberately conservative — a suffix/prefix relationship to a real contract
+    key ("api_endpoints" -> "endpoints", "tables_declared" -> "tables"). Anything else gets
+    no suggestion rather than a wrong one.
+    """
+    recognized = _RECOGNIZED_KEYS.get(section, ())
+    out = {}
+    for k in (wrong or []):
+        kl = str(k).lower()
+        for r in recognized:
+            if kl == r:
+                continue
+            if kl.endswith("_" + r) or kl.startswith(r + "_"):
+                out[str(k)] = r
+                break
+    return out
+
+
+def wrong_keys_remediation_1037(wrong: Any, section: str, keys_hint: str, example: str) -> str:
+    """The section-appropriate remediation for a wrong-keys decision.
+
+    Says the auth sentence ONLY when an auth key is actually present, and names the
+    near-miss substitution when there is one. See `near_miss_contract_keys_1037`.
+    """
+    wrong = list(wrong or [])
+    parts = []
+    near = near_miss_contract_keys_1037(wrong, section)
+    if near:
+        subs = ", ".join(f"`{k}` -> `{v}`" for k, v in sorted(near.items()))
+        parts.append(
+            f"You used a near-miss key name: {subs}. This section's contract key is spelled "
+            f"exactly as shown on the right.")
+    if any(str(k).lower() in _AUTH_KEYS_1037 for k in wrong):
+        parts.append(
+            "Auth is FRAMEWORK-OWNED (the generated stack embeds an OAuth2 AS minting JWTs) "
+            "— do NOT declare auth_model/auth; the framework supplies it.")
+    parts.append(
+        f"Declare your real contract ({keys_hint}) via the dedicated kickoff_declare_* tools "
+        f"(e.g. {example}). Do NOT re-submit this decision.")
+    return " ".join(parts)
+
+
 def _norm_ref_path(p: Any) -> str:
     """Normalize a reference-image path for comparison (strip, './', backslashes)."""
     return str(p or "").strip().replace("\\", "/").lstrip("./")
