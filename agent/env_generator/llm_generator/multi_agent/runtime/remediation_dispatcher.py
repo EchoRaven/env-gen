@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 from .message_format import join_capped  # #1034
 
 # FIX #143 — content-based owner routing for docker_up build failures.
@@ -278,7 +278,7 @@ def auth_root_among_1043(pages) -> List[str]:
     return out
 
 
-def _ui_evidence_failed_extra(pages: List[str]) -> str:
+def _ui_evidence_failed_extra(pages: Sequence[Any]) -> str:
     """#982: name the pages. Mirrors _ui_flow_failed_extra; same reason, other check."""
     # #1043: coerce, as defence in depth. `"\n- ".join(pages)` raises TypeError on a non-str
     # entry; checked, and all three producers (`_ui_evidence_failed_pages`,
@@ -346,7 +346,7 @@ def _ui_flow_failed_names(orch) -> List[str]:
         return []
 
 
-def _ui_flow_failed_extra(failed: List[str]) -> str:
+def _ui_flow_failed_extra(failed: Sequence[Any]) -> str:
     """#981: name the failing flows. A gate check the lane cannot locate is a gate check it
     cannot clear."""
     # #1043: same latent coercion as `_ui_evidence_failed_extra` — the producer already
@@ -361,7 +361,7 @@ def _ui_flow_failed_extra(failed: List[str]) -> str:
             "record flips to success.")
 
 
-def _ui_flow_missing_extra(missing: List[str]) -> str:
+def _ui_flow_missing_extra(missing: Sequence[Any]) -> str:
     """The gate-specific remediation body for deliverability_ui_flow_missing. Names the exact
     missing flows and states the contradiction that broke r68 out loud — so a verifier that
     believes it "already recorded" them is forced to re-check the hub instead of re-asserting.
@@ -716,6 +716,11 @@ class RemediationDispatcher:
                 if not isinstance(c, dict) or c.get("status") != "fail":
                     continue
                 name = c.get("name")
+                if not name:
+                    # An unnamed failing check cannot be routed, and letting it through keys
+                    # `guard` and `_persist` on None — one unnamed check would then share
+                    # storm-control state with the next one.
+                    continue
                 spec = _CHECK_OWNER.get(name)
                 if not spec:
                     continue  # covered by a bespoke helper, or not lane-actionable
