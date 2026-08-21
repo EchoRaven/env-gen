@@ -961,6 +961,37 @@ def _fw_fill_required_defaults(cls, valid, db):
             except Exception:
                 _d = None
             if _d is None:
+                # #1045 (netflix r176, live): NOT-NULL with NO DB default. Everything below only
+                # rescues a column that HAS a default; with none, the ORM still emits an explicit
+                # NULL and the insert 400s. On a FRAMEWORK-PROJECTED route no lane can repair
+                # that — r176 spent its last gate on
+                #   POST /api/continue-watching -> 400
+                #   {"detail":"null value in column \\"progress_seconds\\" violates not-null"}
+                # tagged [FRAMEWORK-PROJECTED route]. 20 recent runs hit a not-null violation.
+                #
+                # Fill ONLY types whose zero is unambiguous. Text is deliberately excluded: ""
+                # for `synopsis`/`poster_url` (the other observed violators) would invent
+                # content, which is precisely what the fabricated-fallback gate exists to stop —
+                # and a missing synopsis is a real contract gap the lane SHOULD see as a 400.
+                try:
+                    _pt = _c.type.python_type
+                except Exception:
+                    continue
+                if _pt is bool:
+                    valid[_c.name] = False
+                elif _pt is int:
+                    valid[_c.name] = 0
+                elif _pt is float:
+                    valid[_c.name] = 0.0
+                elif _pt.__name__ in ("datetime", "date"):
+                    from datetime import datetime as _dt0, timezone as _tz0
+                    _now = _dt0.now(_tz0.utc)
+                    valid[_c.name] = _now.date() if _pt.__name__ == "date" else _now
+                else:
+                    _fw_dbg("fill_required_no_default",
+                            Exception("%s.%s is NOT NULL with no default and type %s — declining "
+                                      "to invent a value; the 400 is the correct signal"
+                                      % (_tbl, _c.name, _pt.__name__)))
                 continue
             _ds = str(_d).strip()
             if _ds.lower().startswith(("nextval(", "null")):
