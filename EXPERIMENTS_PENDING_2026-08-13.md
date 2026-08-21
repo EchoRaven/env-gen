@@ -20133,3 +20133,50 @@ blocker's input) and an unexamined audit read as "clean" (a pass). Same root, op
 Suite 6963 / 0 failed, accounted exactly: 6939 + 14 (#1023) + 1 (#1020) + 2 (#957) + 3 (#774)
 + 4 (#1023d). Five commits, one per fix, so any one can be reverted alone — the attribution
 cost of batching, paid down as far as it can be without a run per fix.
+
+### 464. the framework review: four validated scanners, and two of them lied on the first try
+
+Ran four scanners over 172 run trees + 298 logs + 261 source files. **Every one was validated
+on a known true positive before its count was quoted** — and that discipline earned its keep
+twice:
+
+    max(version) aggregation      one outlier run (r154, every store at v10 via a re-open)
+                                  hid all 171 other runs -> "0 never-written stores", wrong
+    name-based grant check        missed factory registration (`create_task_definition_tools`)
+                                  -> nearly reported "granted to NO agent", wrong
+
+Both were caught by checking against a case whose answer I already knew.
+
+| scanner | validated on | flagged | real |
+|---|---|---|---|
+| never-written hub stores | table_consumers | 18 of 44 | **2** (both fixed today) |
+| registered-never-invoked tools | delete_file | 9 of 27 | **1** (#1021) |
+| container mutated then discarded (#197 shape) | #197 itself | 28 of 261 files | **1** (#197) |
+| gate checks that never fire | — | 12 of 21 | **3** (audited, #1024) |
+
+★ **The #197 shape is a SINGLETON.** After tightening (locally-built container + statement-level
+call + never read again) 28 flagged; reading all 28, 27 are consumers where "never read again"
+is correct (`json.dump`, `.append`, `_emit`, `_save_raw`, `_reindex`). Only #197 itself was
+real. The worst bug of the day is not the tip of a class.
+
+★ **The discriminator that makes each scanner useful is the same in all four:** the raw signal
+(empty / never-called / never-fired) is never the finding. The finding is *a consumer that
+converts the absence into a verdict* — `table_consumers` -> "all 12 tables dead" -> a blocker;
+`seed_registrations` -> `is_clean=True`. Everything else is unused surface, and #693 had
+already documented that half of it.
+
+★ **I overstated #1024 before tracing it.** I reported "the API-smoke/UI-smoke requirement layer
+has never been evaluated". False: both values are computed unconditionally and published every
+run; only the enforcement is gated. I read it that way because the message said so — it claimed
+the requirements had gone unevaluated and then, in the same sentence, that they are REPORTED.
+Two #671 tests pinned that phrasing verbatim, which is why it survived. Corrected in #1024.
+
+**Can 172 runs fully diagnose the framework? No, and the reason is structural.** Artifacts
+answer "what happened". #197 — the worst defect found today — left ZERO trace in 172 runs
+precisely because it never executed; only source-side analysis found it. Diagnosis converges by
+CLASS, not by one sweep: four closed today, and the residual is honest —
+
+    only 27 of ~221 tool names measured (the log truncates the registration line)
+    unswept: orchestrator coordination, the projector/visual path, timing/races, dead functions
+    the 874 numbered fixes are not individually re-validated — and #197 proves a fix can carry
+    a comment, a corpus measurement AND a passing test while never once having executed
